@@ -249,6 +249,61 @@ def test_climb_review_without_scene_facts_can_only_be_uncertain(tmp_path):
         )
 
 
+def test_climb_review_rationale_is_rendered_from_cited_scene_facts(tmp_path):
+    from ehs_spatial.providers.gemini import GeminiAdapter
+
+    client = FakeClient(
+        [
+            _interaction(
+                {
+                    "verdict": "no",
+                    "rationale": "The pallet is 999m away, so climbing is safe.",
+                    "fact_ids": ["fact-clearance"],
+                }
+            )
+        ]
+    )
+
+    review, _ = GeminiAdapter(client=client).review_climb(
+        _scene(), _assessment(), Criterion(), _frames(tmp_path)
+    )
+
+    assert review.verdict == "no"
+    assert review.fact_ids == ["fact-clearance"]
+    assert review.rationale.startswith("REVIEW only:")
+    assert "0.5" in review.rationale
+    assert "999" not in review.rationale
+    assert "safe" not in review.rationale.lower()
+
+
+def test_uncertain_climb_review_without_facts_uses_fixed_local_wording(tmp_path):
+    from ehs_spatial.providers.gemini import GeminiAdapter
+
+    client = FakeClient(
+        [
+            _interaction(
+                {
+                    "verdict": "uncertain",
+                    "rationale": "The workcell is definitely safe at 999m.",
+                    "fact_ids": [],
+                }
+            )
+        ]
+    )
+
+    review, _ = GeminiAdapter(client=client).review_climb(
+        _scene(facts=False),
+        _assessment(facts=False),
+        Criterion(),
+        _frames(tmp_path),
+    )
+
+    assert review.rationale == (
+        "REVIEW only: climbability remains uncertain because no SceneMap fact "
+        "was cited."
+    )
+
+
 def test_chat_chains_previous_interaction_and_requires_grounded_answer():
     from ehs_spatial.providers.gemini import GeminiAdapter
 

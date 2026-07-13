@@ -13,6 +13,7 @@ from ..contracts import (
     GeometryFrame,
     GroundedAnswer,
     SceneMap,
+    SpatialFact,
 )
 from .base import ProviderError
 
@@ -57,6 +58,15 @@ def _image_block(image_path: str) -> object:
     return interactions.ImageContent(
         data=base64.b64encode(raw).decode("ascii"),
         mime_type=mime_type,
+    )
+
+
+def _render_fact(fact: SpatialFact) -> str:
+    value = "unknown" if fact.value is None else format(fact.value, ".12g")
+    unit = f" {fact.unit}" if fact.unit else ""
+    return (
+        f"{fact.predicate}({fact.subject_id}, {fact.object_id}) = "
+        f"{value}{unit} [{fact.fact_id}]"
     )
 
 
@@ -168,7 +178,29 @@ class GeminiAdapter:
                 "climb.grounding",
                 "a definitive climb verdict requires a fact id",
             )
-        return review, interaction_id
+        if review.fact_ids:
+            facts_by_id = {fact.fact_id: fact for fact in scene.facts}
+            rationale = (
+                f"REVIEW only: semantic climb hint verdict={review.verdict}. "
+                "SceneMap facts: "
+                + "; ".join(
+                    _render_fact(facts_by_id[fact_id])
+                    for fact_id in review.fact_ids
+                )
+            )
+        else:
+            rationale = (
+                "REVIEW only: climbability remains uncertain because no "
+                "SceneMap fact was cited."
+            )
+        return (
+            ClimbReview(
+                verdict=review.verdict,
+                rationale=rationale,
+                fact_ids=review.fact_ids,
+            ),
+            interaction_id,
+        )
 
     def answer(
         self,
@@ -241,13 +273,7 @@ class GeminiAdapter:
             )
         rendered_facts = []
         for fact_id in selected_ids:
-            fact = facts_by_id[fact_id]
-            value = "unknown" if fact.value is None else format(fact.value, ".12g")
-            unit = f" {fact.unit}" if fact.unit else ""
-            rendered_facts.append(
-                f"{fact.predicate}({fact.subject_id}, {fact.object_id}) = "
-                f"{value}{unit} [{fact.fact_id}]"
-            )
+            rendered_facts.append(_render_fact(facts_by_id[fact_id]))
         return (
             GroundedAnswer(
                 answer="SceneMap facts: " + "; ".join(rendered_facts),
