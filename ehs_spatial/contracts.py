@@ -83,9 +83,9 @@ class SpatialFact(BaseModel):
 
 class SceneMap(BaseModel):
     run_id: str
-    floor_plane: tuple[float, float, float, float]
-    scale_source: str
-    scale_factor: float = Field(gt=0)
+    floor_plane: tuple[float, float, float, float] | None
+    scale_source: str | None
+    scale_factor: float | None = Field(gt=0)
     fence_polygon: list[Point2]
     entities: list[Entity3D]
     facts: list[SpatialFact]

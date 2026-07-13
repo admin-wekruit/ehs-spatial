@@ -128,6 +128,25 @@ def test_scene_map_round_trips_entities_and_evidence_backed_facts():
     assert restored.model_dump(mode="json")["fence_polygon"][2] == [2.0, 2.0]
 
 
+def test_scene_map_represents_missing_floor_and_scale_without_inventing_values():
+    contracts = importlib.import_module("ehs_spatial.contracts")
+
+    scene = contracts.SceneMap(
+        run_id="run-insufficient",
+        floor_plane=None,
+        scale_source=None,
+        scale_factor=None,
+        fence_polygon=[],
+        entities=[],
+        facts=[],
+        warnings=["floor evidence requires at least 2 frames"],
+    )
+
+    assert scene.floor_plane is None
+    assert scene.scale_source is None
+    assert scene.scale_factor is None
+
+
 def test_assessment_and_answer_keep_typed_grounding_references():
     contracts = importlib.import_module("ehs_spatial.contracts")
     assessment = contracts.Assessment(
