@@ -2,7 +2,7 @@ from collections.abc import Callable
 from typing import Any
 
 from .artifacts import ArtifactStore
-from .contracts import Assessment, CaptureRun, GroundedAnswer, SceneMap
+from .contracts import Assessment, CaptureRun, ClimbReview, GroundedAnswer, SceneMap
 from .providers.base import ProviderError
 from .providers.gemini import GeminiAdapter
 from .providers.map_anything import MapAnythingAdapter
@@ -74,12 +74,16 @@ class EHSAssessmentPipeline:
         climb_review, interaction_id = self.gemini.review_climb(
             scene, assessment, prepared.criterion, frames
         )
+        climb_review = ClimbReview.model_validate(climb_review)
         if not isinstance(interaction_id, str) or not interaction_id:
             raise ProviderError(
                 "gemini", "climb.cursor", "response is missing an interaction id"
             )
-        final_assessment = assessment.model_copy(
-            update={"climb_review": climb_review}
+        final_assessment = Assessment.model_validate(
+            {
+                **assessment.model_dump(mode="python"),
+                "climb_review": climb_review,
+            }
         )
         self.store.save_json(paths.assessment_json, final_assessment)
         self.store.append_chat(
@@ -101,27 +105,24 @@ class EHSAssessmentPipeline:
             scene,
             previous_interaction_id=interaction_id,
         )
+        answer = GroundedAnswer.model_validate(answer)
         if not isinstance(next_interaction_id, str) or not next_interaction_id:
             raise ProviderError(
                 "gemini", "chat.cursor", "response is missing an interaction id"
             )
         self.store.append_chat(
             run_id,
-            {"type": "message", "role": "user", "content": question},
-        )
-        self.store.append_chat(
-            run_id,
             {
-                "type": "message",
-                "role": "assistant",
-                "content": answer.answer,
-                "fact_ids": answer.fact_ids,
-                "evidence_frame_ids": answer.evidence_frame_ids,
+                "type": "chat_turn",
+                "user": {"role": "user", "content": question},
+                "assistant": {
+                    "role": "assistant",
+                    "content": answer.answer,
+                    "fact_ids": answer.fact_ids,
+                    "evidence_frame_ids": answer.evidence_frame_ids,
+                },
+                "interaction_id": next_interaction_id,
             },
-        )
-        self.store.append_chat(
-            run_id,
-            {"type": "gemini_cursor", "interaction_id": next_interaction_id},
         )
         return answer
 

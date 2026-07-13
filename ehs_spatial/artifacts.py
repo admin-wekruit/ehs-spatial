@@ -89,7 +89,7 @@ class ArtifactStore:
             return None
         for line in reversed(path.read_text(encoding="utf-8").splitlines()):
             entry = json.loads(line)
-            if entry.get("type") != "gemini_cursor":
+            if entry.get("type") not in {"gemini_cursor", "chat_turn"}:
                 continue
             interaction_id = entry.get("interaction_id")
             if not isinstance(interaction_id, str) or not interaction_id:

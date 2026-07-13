@@ -3,6 +3,7 @@ from pathlib import Path
 
 from PIL import Image
 import pytest
+from pydantic import ValidationError
 
 from ehs_spatial.artifacts import ArtifactStore
 from ehs_spatial.contracts import (
@@ -255,6 +256,14 @@ def test_answer_question_recovers_cursor_in_a_new_pipeline_and_appends_after_val
     from ehs_spatial.pipeline import EHSAssessmentPipeline
 
     fresh_pipeline = EHSAssessmentPipeline(store=store, gemini=next_gemini)
+    append_calls = []
+    original_append = store.append_chat
+
+    def record_single_append(run_id, entry):
+        append_calls.append((run_id, entry))
+        original_append(run_id, entry)
+
+    store.append_chat = record_single_append
 
     answer = fresh_pipeline.answer_question("run-1", "How far is the pallet?")
 
@@ -267,19 +276,22 @@ def test_answer_question_recovers_cursor_in_a_new_pipeline_and_appends_after_val
     entries = [json.loads(line) for line in appended.splitlines()]
     assert entries == [
         {
-            "type": "message",
-            "role": "user",
-            "content": "How far is the pallet?",
-        },
-        {
-            "type": "message",
-            "role": "assistant",
-            "content": "The clearance is approximately 0.5 m.",
-            "fact_ids": ["fact-clearance"],
-            "evidence_frame_ids": ["frame-1"],
-        },
-        {"type": "gemini_cursor", "interaction_id": "interaction-next"},
+            "type": "chat_turn",
+            "user": {
+                "role": "user",
+                "content": "How far is the pallet?",
+            },
+            "assistant": {
+                "role": "assistant",
+                "content": "The clearance is approximately 0.5 m.",
+                "fact_ids": ["fact-clearance"],
+                "evidence_frame_ids": ["frame-1"],
+            },
+            "interaction_id": "interaction-next",
+        }
     ]
+    assert len(append_calls) == 1
+    assert append_calls[0][1] == entries[0]
 
 
 def test_answer_question_does_not_append_chat_when_provider_validation_fails(tmp_path):
@@ -313,3 +325,42 @@ def test_run_assessment_propagates_provider_error_without_fallback(tmp_path):
     paths = store.paths("run-1")
     assert not paths.observations_json.exists()
     assert not paths.assessment_json.exists()
+
+
+def test_run_assessment_rejects_malformed_provider_climb_review(tmp_path):
+    class MalformedClimbGemini(FakeGemini):
+        def review_climb(self, scene, assessment, criterion, frames):
+            return (
+                {"verdict": "maybe", "rationale": "invalid", "fact_ids": []},
+                "interaction-initial",
+            )
+
+    pipeline, store, *_ = _pipeline(tmp_path, gemini=MalformedClimbGemini())
+
+    with pytest.raises(ValidationError):
+        pipeline.run_assessment(_capture(tmp_path))
+
+    assert not store.paths("run-1").assessment_json.exists()
+    assert not store.paths("run-1").chat_jsonl.exists()
+
+
+def test_answer_question_rejects_malformed_provider_answer_before_chat_write(tmp_path):
+    pipeline, store, *_ = _pipeline(tmp_path)
+    pipeline.run_assessment(_capture(tmp_path))
+    chat_before = store.paths("run-1").chat_jsonl.read_text(encoding="utf-8")
+
+    class MalformedAnswerGemini(FakeGemini):
+        def answer(self, question, scene, *, previous_interaction_id):
+            return (
+                {"answer": "unvalidated", "fact_ids": ["fact-clearance"]},
+                "interaction-next",
+            )
+
+    from ehs_spatial.pipeline import EHSAssessmentPipeline
+
+    failing = EHSAssessmentPipeline(store=store, gemini=MalformedAnswerGemini())
+
+    with pytest.raises(ValidationError):
+        failing.answer_question("run-1", "How far?")
+
+    assert store.paths("run-1").chat_jsonl.read_text(encoding="utf-8") == chat_before

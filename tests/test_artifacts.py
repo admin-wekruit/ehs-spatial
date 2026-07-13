@@ -106,7 +106,15 @@ def test_chat_cursor_uses_the_latest_persisted_interaction_id(tmp_path):
 
     store.append_chat("run-1", {"type": "gemini_cursor", "interaction_id": "old"})
     store.append_chat("run-1", {"type": "message", "role": "user"})
-    store.append_chat("run-1", {"type": "gemini_cursor", "interaction_id": "new"})
+    store.append_chat(
+        "run-1",
+        {
+            "type": "chat_turn",
+            "user": {"content": "How far?"},
+            "assistant": {"content": "0.5 m"},
+            "interaction_id": "new",
+        },
+    )
 
     assert store.latest_chat_cursor("run-1") == "new"
     assert store.latest_chat_cursor("missing") is None
