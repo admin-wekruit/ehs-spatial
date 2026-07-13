@@ -114,6 +114,13 @@ def _read_provider_bytes(location: object) -> bytes:
     raise ValueError(f"unsupported provider file location: {value}")
 
 
+def _download_provider_bytes(location: object) -> bytes:
+    try:
+        return _read_provider_bytes(location)
+    except Exception as exc:
+        raise ProviderError("replicate", "map_anything.download", str(exc)) from exc
+
+
 class MapAnythingAdapter:
     def __init__(self, runner: Callable[..., object] | None = None) -> None:
         self.runner = runner or _default_runner
@@ -159,43 +166,49 @@ class MapAnythingAdapter:
         except Exception as exc:
             raise ProviderError("replicate", "map_anything.run", str(exc)) from exc
 
-        if not isinstance(response, Mapping):
-            raise ValueError("MapAnything response must be an object")
-        response_metadata = _json_safe(response)
+        try:
+            response_metadata = _json_safe(response)
+        except Exception as exc:
+            raise ProviderError("replicate", "map_anything.response", str(exc)) from exc
         (output_dir / "map_anything_response.json").write_text(
             json.dumps(response_metadata, indent=2) + "\n",
             encoding="utf-8",
         )
-        data = response.get("data")
-        point_cloud_location = response.get("point_cloud")
-        if not isinstance(data, (list, tuple)) or len(data) != 4:
-            raise ValueError("MapAnything response must contain four data files")
-        if point_cloud_location is None:
-            raise ValueError("MapAnything response is missing point_cloud")
+        try:
+            if not isinstance(response, Mapping):
+                raise ValueError("MapAnything response must be an object")
+            data = response.get("data")
+            point_cloud_location = response.get("point_cloud")
+            if not isinstance(data, (list, tuple)) or len(data) != 4:
+                raise ValueError("MapAnything response must contain four data files")
+            if point_cloud_location is None:
+                raise ValueError("MapAnything response is missing point_cloud")
+        except Exception as exc:
+            raise ProviderError("replicate", "map_anything.response", str(exc)) from exc
 
         provider_dir = output_dir / "provider"
         provider_dir.mkdir(exist_ok=True)
         raw_json_paths = []
         point_cloud_path = output_dir / "point_cloud.glb"
-        try:
-            for index, location in enumerate(data, start=1):
-                raw_json_path = provider_dir / f"frame_{index:04d}.json"
-                raw_json_path.write_bytes(_read_provider_bytes(location))
-                raw_json_paths.append(raw_json_path)
-            point_cloud_path.write_bytes(_read_provider_bytes(point_cloud_location))
-        except Exception as exc:
-            if isinstance(exc, (ValueError, KeyError)):
-                raise
-            raise ProviderError("replicate", "map_anything.download", str(exc)) from exc
+        for index, location in enumerate(data, start=1):
+            raw_json_path = provider_dir / f"frame_{index:04d}.json"
+            raw_json_path.write_bytes(_download_provider_bytes(location))
+            raw_json_paths.append(raw_json_path)
+        point_cloud_path.write_bytes(_download_provider_bytes(point_cloud_location))
 
         frames = []
         for index, raw_json_path in enumerate(raw_json_paths, start=1):
             frame_id = f"frame_{index:04d}"
-            frames.append(
-                parse_frame_json(
-                    raw_json_path,
-                    output_dir / "frames" / frame_id,
-                    frame_id,
+            try:
+                frames.append(
+                    parse_frame_json(
+                        raw_json_path,
+                        output_dir / "frames" / frame_id,
+                        frame_id,
+                    )
                 )
-            )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ProviderError(
+                    "replicate", "map_anything.decode", str(exc)
+                ) from exc
         return frames, point_cloud_path

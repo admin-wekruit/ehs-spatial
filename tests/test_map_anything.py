@@ -218,6 +218,76 @@ def test_adapter_wraps_provider_failures_with_operation_context(tmp_path):
     assert caught.value.original_message == "provider timed out"
 
 
+def test_adapter_wraps_provider_file_read_value_error(tmp_path):
+    map_anything = importlib.import_module("ehs_spatial.providers.map_anything")
+    images = []
+    data_paths = []
+    for index in range(4):
+        image_path = tmp_path / f"input-{index}.png"
+        Image.new("RGB", (1, 1)).save(image_path)
+        images.append(str(image_path))
+        data_path = tmp_path / f"data-{index}.json"
+        data_path.write_text(json.dumps(provider_frame_payload()))
+        data_paths.append(str(data_path))
+    mesh = tmp_path / "mesh.glb"
+    mesh.write_bytes(b"mesh")
+    point_cloud = tmp_path / "point-cloud.glb"
+    point_cloud.write_bytes(b"glTF")
+
+    class FailingRemoteFile:
+        url = "https://replicate.delivery/fake/frame.json"
+
+        def read(self):
+            raise ValueError("provider stream could not be read")
+
+    response = {
+        "data": [FailingRemoteFile(), *data_paths[1:]],
+        "mesh": str(mesh),
+        "point_cloud": str(point_cloud),
+    }
+
+    with pytest.raises(map_anything.ProviderError) as caught:
+        map_anything.MapAnythingAdapter(
+            runner=lambda model_identifier, *, input: response
+        ).run(images, tmp_path / "geometry")
+
+    assert caught.value.provider == "replicate"
+    assert caught.value.operation == "map_anything.download"
+    assert caught.value.original_message == "provider stream could not be read"
+
+
+@pytest.mark.parametrize(
+    ("response", "message"),
+    [
+        ([], "MapAnything response must be an object"),
+        (
+            {"data": [], "point_cloud": "unused.glb"},
+            "MapAnything response must contain four data files",
+        ),
+        (
+            {"data": ["unused.json"] * 4},
+            "MapAnything response is missing point_cloud",
+        ),
+    ],
+)
+def test_adapter_wraps_provider_response_shape_errors(tmp_path, response, message):
+    map_anything = importlib.import_module("ehs_spatial.providers.map_anything")
+    images = []
+    for index in range(4):
+        image_path = tmp_path / f"input-{index}.png"
+        Image.new("RGB", (1, 1)).save(image_path)
+        images.append(str(image_path))
+
+    with pytest.raises(map_anything.ProviderError) as caught:
+        map_anything.MapAnythingAdapter(
+            runner=lambda model_identifier, *, input: response
+        ).run(images, tmp_path / "geometry")
+
+    assert caught.value.provider == "replicate"
+    assert caught.value.operation == "map_anything.response"
+    assert caught.value.original_message == message
+
+
 def test_adapter_persists_all_raw_outputs_before_parsing_frames(tmp_path):
     map_anything = importlib.import_module("ehs_spatial.providers.map_anything")
     images = []
@@ -234,11 +304,14 @@ def test_adapter_persists_all_raw_outputs_before_parsing_frames(tmp_path):
     response = {"data": data_paths, "mesh": None, "point_cloud": str(point_cloud)}
     geometry_dir = tmp_path / "geometry"
 
-    with pytest.raises(json.JSONDecodeError):
+    with pytest.raises(map_anything.ProviderError) as caught:
         map_anything.MapAnythingAdapter(
             runner=lambda model_identifier, *, input: response
         ).run(images, geometry_dir)
 
+    assert caught.value.provider == "replicate"
+    assert caught.value.operation == "map_anything.decode"
+    assert "Expecting value" in caught.value.original_message
     assert [
         (geometry_dir / "provider" / f"frame_{index:04d}.json").read_bytes()
         for index in range(1, 5)
