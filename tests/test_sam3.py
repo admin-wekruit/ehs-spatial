@@ -1,0 +1,180 @@
+import base64
+import importlib
+import json
+
+import numpy as np
+import pytest
+from PIL import Image
+
+
+def test_decode_coco_rle_supports_serialized_standard_object():
+    sam3 = importlib.import_module("ehs_spatial.providers.sam3")
+    serialized = json.dumps({"size": [2, 3], "counts": [1, 2, 3]})
+
+    mask = sam3.decode_coco_rle(serialized)
+
+    assert mask.dtype == np.uint8
+    np.testing.assert_array_equal(
+        mask,
+        np.array([[0, 1, 0], [1, 0, 0]], dtype=np.uint8),
+    )
+
+
+def test_decode_coco_rle_supports_compressed_and_counts_only_forms():
+    sam3 = importlib.import_module("ehs_spatial.providers.sam3")
+    expected = np.array([[0, 1, 0], [1, 0, 0]], dtype=np.uint8)
+
+    compressed_object = json.dumps({"size": [2, 3], "counts": "123"})
+    np.testing.assert_array_equal(sam3.decode_coco_rle(compressed_object), expected)
+    np.testing.assert_array_equal(
+        sam3.decode_coco_rle("123", height=2, width=3),
+        expected,
+    )
+
+
+def test_decode_coco_rle_fails_loudly_for_unknown_object_shape():
+    sam3 = importlib.import_module("ehs_spatial.providers.sam3")
+
+    with pytest.raises(ValueError, match="requires size and counts"):
+        sam3.decode_coco_rle(json.dumps({"size": [2, 2], "unexpected": []}))
+
+
+def test_adapter_normalizes_complete_fal_response_and_resizes_masks_nearest(tmp_path):
+    sam3 = importlib.import_module("ehs_spatial.providers.sam3")
+    canonical_path = tmp_path / "canonical.png"
+    Image.new("RGB", (4, 4), (10, 20, 30)).save(canonical_path)
+    provider_response = {
+        "rle": [
+            json.dumps({"size": [2, 2], "counts": [0, 4]}),
+            json.dumps({"size": [2, 2], "counts": [0, 1, 3]}),
+        ],
+        "boundingbox_frames_zip": {
+            "url": "https://fal.media/example/boxes.zip",
+            "content_type": "application/zip",
+            "file_name": "boxes.zip",
+            "file_size": 123,
+        },
+        "metadata": [
+            {"index": 7, "score": 0.91, "box": [0.5, 0.5, 1.0, 1.0]},
+            {"index": 8, "score": 0.82, "box": [0.25, 0.25, 0.5, 0.5]},
+        ],
+        "scores": [0.91, 0.82],
+        "boxes": [[0.5, 0.5, 1.0, 1.0], [0.25, 0.25, 0.5, 0.5]],
+    }
+    seen = {}
+
+    def subscriber(endpoint, *, arguments):
+        seen["endpoint"] = endpoint
+        seen["arguments"] = arguments
+        return provider_response
+
+    observations = sam3.SAM3Adapter(subscriber=subscriber).segment(
+        canonical_path,
+        prompt="pallet",
+        frame_id="frame_0001",
+        output_dir=tmp_path / "masks",
+    )
+
+    assert seen["endpoint"] == "fal-ai/sam-3/image-rle"
+    assert {key: value for key, value in seen["arguments"].items() if key != "image_url"} == {
+        "prompt": "pallet",
+        "return_multiple_masks": True,
+        "include_scores": True,
+        "include_boxes": True,
+    }
+    prefix, encoded_image = seen["arguments"]["image_url"].split(",", 1)
+    assert prefix == "data:image/png;base64"
+    assert base64.b64decode(encoded_image) == canonical_path.read_bytes()
+    assert [observation.instance_id for observation in observations] == ["7", "8"]
+    assert [observation.score for observation in observations] == [0.91, 0.82]
+    assert observations[1].bbox == (0.25, 0.25, 0.5, 0.5)
+    assert all(observation.source_prompt == "pallet" for observation in observations)
+    first_mask = np.asarray(Image.open(observations[0].mask_path))
+    second_mask = np.asarray(Image.open(observations[1].mask_path))
+    np.testing.assert_array_equal(first_mask, np.full((4, 4), 255, dtype=np.uint8))
+    np.testing.assert_array_equal(
+        second_mask,
+        np.array(
+            [
+                [255, 255, 0, 0],
+                [255, 255, 0, 0],
+                [0, 0, 0, 0],
+                [0, 0, 0, 0],
+            ],
+            dtype=np.uint8,
+        ),
+    )
+    assert set(sam3.PROMPT_VOCABULARY) == {
+        "factory floor",
+        "safety fence",
+        "industrial robot arm",
+        "material cart",
+        "pallet",
+        "crate",
+        "step ladder",
+        "portable work platform",
+    }
+
+
+def test_adapter_normalizes_single_rle_string(tmp_path):
+    sam3 = importlib.import_module("ehs_spatial.providers.sam3")
+    canonical_path = tmp_path / "canonical.png"
+    Image.new("RGB", (2, 2)).save(canonical_path)
+    provider_response = {
+        "rle": json.dumps({"size": [2, 2], "counts": [0, 4]}),
+        "boundingbox_frames_zip": None,
+        "metadata": [{"index": 3, "score": 0.75, "box": [0.5, 0.5, 1, 1]}],
+        "scores": [0.75],
+        "boxes": [[0.5, 0.5, 1, 1]],
+    }
+
+    observations = sam3.SAM3Adapter(
+        subscriber=lambda endpoint, *, arguments: provider_response
+    ).segment(
+        canonical_path,
+        prompt="crate",
+        frame_id="frame_0002",
+        output_dir=tmp_path / "masks",
+    )
+
+    assert len(observations) == 1
+    assert observations[0].instance_id == "3"
+    np.testing.assert_array_equal(
+        np.asarray(Image.open(observations[0].mask_path)),
+        np.full((2, 2), 255, dtype=np.uint8),
+    )
+
+
+def test_adapter_wraps_fal_failure_with_operation_context(tmp_path):
+    sam3 = importlib.import_module("ehs_spatial.providers.sam3")
+    canonical_path = tmp_path / "canonical.png"
+    Image.new("RGB", (2, 2)).save(canonical_path)
+
+    def failing_subscriber(*args, **kwargs):
+        raise RuntimeError("queue unavailable")
+
+    with pytest.raises(sam3.ProviderError) as caught:
+        sam3.SAM3Adapter(subscriber=failing_subscriber).segment(
+            canonical_path,
+            prompt="pallet",
+            frame_id="frame_0001",
+            output_dir=tmp_path / "masks",
+        )
+
+    assert caught.value.provider == "fal"
+    assert caught.value.operation == "sam3.subscribe"
+    assert caught.value.original_message == "queue unavailable"
+
+
+def test_adapter_rejects_prompts_outside_fixed_vocabulary(tmp_path):
+    sam3 = importlib.import_module("ehs_spatial.providers.sam3")
+    canonical_path = tmp_path / "canonical.png"
+    Image.new("RGB", (2, 2)).save(canonical_path)
+
+    with pytest.raises(ValueError, match="unsupported SAM 3 prompt"):
+        sam3.SAM3Adapter(subscriber=lambda *args, **kwargs: {}).segment(
+            canonical_path,
+            prompt="anything nearby",
+            frame_id="frame_0001",
+            output_dir=tmp_path / "masks",
+        )

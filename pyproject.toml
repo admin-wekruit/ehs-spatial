@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ehs-spatial"
+version = "0.1.0"
+description = "Single-process EHS visual-spatial assessment MVP"
+requires-python = ">=3.12"
+dependencies = [
+    "fal-client",
+    "google-genai==2.11.0",
+    "gradio==6.20.0",
+    "numpy",
+    "open3d==0.19.0",
+    "Pillow",
+    "pydantic>=2",
+    "replicate",
+    "shapely",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+include = ["ehs_spatial*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

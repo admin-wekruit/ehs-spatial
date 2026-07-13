@@ -1,0 +1,206 @@
+import base64
+from collections.abc import Callable, Mapping
+import json
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+
+from ..contracts import Observation2D
+from .base import ProviderError
+
+
+SAM3_ENDPOINT = "fal-ai/sam-3/image-rle"
+PROMPT_VOCABULARY = (
+    "factory floor",
+    "safety fence",
+    "industrial robot arm",
+    "material cart",
+    "pallet",
+    "crate",
+    "step ladder",
+    "portable work platform",
+)
+
+
+def _mask_from_counts(counts: list[int], height: int, width: int) -> np.ndarray:
+    total = height * width
+    flat = np.zeros(total, dtype=np.uint8)
+    offset = 0
+    value = 0
+    for count in counts:
+        if count < 0 or offset + count > total:
+            raise ValueError("invalid COCO RLE run lengths")
+        if value:
+            flat[offset : offset + count] = 1
+        offset += count
+        value = 1 - value
+    if offset != total:
+        raise ValueError(f"COCO RLE covers {offset} pixels, expected {total}")
+    return flat.reshape((height, width), order="F")
+
+
+def _decode_compressed_counts(value: str) -> list[int]:
+    counts = []
+    position = 0
+    while position < len(value):
+        decoded = 0
+        shift = 0
+        more = True
+        while more:
+            if position >= len(value):
+                raise ValueError("truncated compressed COCO RLE")
+            code = ord(value[position]) - 48
+            if code < 0 or code > 63:
+                raise ValueError("invalid compressed COCO RLE character")
+            decoded |= (code & 0x1F) << shift
+            more = bool(code & 0x20)
+            position += 1
+            if not more and code & 0x10:
+                decoded |= -1 << (shift + 5)
+            shift += 5
+        if len(counts) > 2:
+            decoded += counts[-2]
+        if decoded < 0:
+            raise ValueError("invalid negative compressed COCO RLE count")
+        counts.append(decoded)
+    return counts
+
+
+def decode_coco_rle(
+    rle: str,
+    *,
+    height: int | None = None,
+    width: int | None = None,
+) -> np.ndarray:
+    try:
+        payload = json.loads(rle)
+    except json.JSONDecodeError:
+        payload = None
+
+    if isinstance(payload, dict):
+        if not {"size", "counts"} <= payload.keys():
+            raise ValueError("COCO RLE object requires size and counts")
+        rle_height, rle_width = payload["size"]
+        counts = payload["counts"]
+    elif height is not None and width is not None:
+        rle_height, rle_width = height, width
+        counts = payload if isinstance(payload, (list, str)) else rle
+    else:
+        raise ValueError("counts-only COCO RLE requires height and width")
+
+    if not isinstance(rle_height, int) or not isinstance(rle_width, int):
+        raise ValueError("COCO RLE size must contain integer height and width")
+    if isinstance(counts, str):
+        decoded_counts = _decode_compressed_counts(counts)
+    elif isinstance(counts, list) and all(
+        isinstance(count, int) and not isinstance(count, bool) for count in counts
+    ):
+        decoded_counts = counts
+    else:
+        raise ValueError("unknown COCO RLE counts format")
+    return _mask_from_counts(decoded_counts, rle_height, rle_width)
+
+
+def _default_subscriber(endpoint: str, *, arguments: dict[str, object]) -> object:
+    import fal_client
+
+    return fal_client.subscribe(endpoint, arguments=arguments)
+
+
+class SAM3Adapter:
+    def __init__(self, subscriber: Callable[..., object] | None = None) -> None:
+        self.subscriber = subscriber or _default_subscriber
+
+    def segment(
+        self,
+        image_path: str | Path,
+        *,
+        prompt: str,
+        frame_id: str,
+        output_dir: str | Path,
+    ) -> list[Observation2D]:
+        if prompt not in PROMPT_VOCABULARY:
+            raise ValueError(f"unsupported SAM 3 prompt: {prompt}")
+        source = Path(image_path)
+        raw_image = source.read_bytes()
+        with Image.open(source) as canonical:
+            width, height = canonical.size
+            mime_type = Image.MIME.get(canonical.format or "", "image/png")
+        request = {
+            "image_url": (
+                f"data:{mime_type};base64,"
+                f"{base64.b64encode(raw_image).decode('ascii')}"
+            ),
+            "prompt": prompt,
+            "return_multiple_masks": True,
+            "include_scores": True,
+            "include_boxes": True,
+        }
+        try:
+            response = self.subscriber(SAM3_ENDPOINT, arguments=request)
+        except Exception as exc:
+            raise ProviderError("fal", "sam3.subscribe", str(exc)) from exc
+        if not isinstance(response, Mapping):
+            raise ValueError("SAM 3 response must be an object")
+
+        rle_value = response.get("rle")
+        if isinstance(rle_value, str):
+            rles = [rle_value]
+        elif isinstance(rle_value, list) and all(
+            isinstance(item, str) for item in rle_value
+        ):
+            rles = rle_value
+        else:
+            raise ValueError("SAM 3 response rle must be a string or list of strings")
+        metadata = response.get("metadata") or []
+        scores = response.get("scores") or []
+        boxes = response.get("boxes") or []
+        if (
+            not isinstance(metadata, list)
+            or not isinstance(scores, list)
+            or not isinstance(boxes, list)
+        ):
+            raise ValueError("SAM 3 scores, boxes, and metadata must be lists")
+
+        destination = Path(output_dir)
+        destination.mkdir(parents=True, exist_ok=True)
+        prompt_slug = prompt.replace(" ", "_")
+        observations = []
+        for ordinal, serialized in enumerate(rles):
+            item_metadata = metadata[ordinal] if ordinal < len(metadata) else {}
+            if not isinstance(item_metadata, Mapping):
+                raise ValueError("SAM 3 mask metadata must be an object")
+            instance_index = item_metadata.get("index", ordinal)
+            if not isinstance(instance_index, int) or isinstance(instance_index, bool):
+                raise ValueError("SAM 3 mask metadata index must be an integer")
+            score = (
+                scores[ordinal]
+                if ordinal < len(scores)
+                else item_metadata.get("score")
+            )
+            box = boxes[ordinal] if ordinal < len(boxes) else item_metadata.get("box")
+            if score is None or box is None:
+                raise ValueError("SAM 3 response is missing requested score or box")
+
+            mask = decode_coco_rle(serialized, height=height, width=width)
+            mask_image = Image.fromarray(mask * 255)
+            if mask_image.size != (width, height):
+                mask_image = mask_image.resize((width, height), Image.Resampling.NEAREST)
+            binary_mask = (np.asarray(mask_image) > 0).astype(np.uint8) * 255
+            instance_id = str(instance_index)
+            mask_path = destination / f"{frame_id}_{prompt_slug}_{instance_id}.png"
+            Image.fromarray(binary_mask).save(mask_path)
+            observations.append(
+                Observation2D(
+                    observation_id=f"{frame_id}:{prompt_slug}:{instance_id}",
+                    frame_id=frame_id,
+                    label=prompt,
+                    instance_id=instance_id,
+                    mask_path=str(mask_path),
+                    score=score,
+                    bbox=box,
+                    source_prompt=prompt,
+                )
+            )
+        return observations
