@@ -145,16 +145,15 @@ def _fit_floor(
         normal = -normal
         offset = -offset
         signed_heights = -signed_heights
-    positive_heights = signed_heights[signed_heights > 0]
-    if not len(positive_heights):
-        return None, ["camera-to-floor height is nonpositive"]
-    predicted_height = float(np.median(positive_heights))
-    if not np.isfinite(predicted_height) or predicted_height <= 0:
-        return None, ["camera-to-floor height is nonfinite or nonpositive"]
+    if not np.isfinite(signed_heights).all() or np.any(signed_heights <= 0):
+        return None, [
+            "camera-to-floor heights must all be finite and strictly positive"
+        ]
+    predicted_height = float(np.median(signed_heights))
     scale_factor = camera_height_m / predicted_height
     if not np.isfinite(scale_factor) or scale_factor <= 0:
         return None, ["camera-height scale is nonfinite or nonpositive"]
-    scaled_heights = positive_heights * scale_factor
+    scaled_heights = signed_heights * scale_factor
     scaled_mad = float(np.median(np.abs(scaled_heights - np.median(scaled_heights))))
     if scaled_mad > 0.25:
         return None, ["scaled camera-height MAD exceeds 0.25 m"]

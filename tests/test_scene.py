@@ -365,6 +365,35 @@ def test_floor_seen_in_only_one_frame_is_insufficient_without_fake_plane(tmp_pat
     assert any("2 distinct frames" in warning for warning in scene.warnings)
 
 
+@pytest.mark.parametrize(
+    "invalid_raw_height",
+    [pytest.param(np.nan, id="nan"), pytest.param(-1.0, id="below-plane")],
+)
+def test_invalid_camera_plane_height_is_insufficient(tmp_path, invalid_raw_height):
+    from ehs_spatial.scene import build_scene_and_assess
+
+    frames, observations = _synthetic_scene(tmp_path, clearance_m=0.5)
+    pose = np.asarray(frames[0].camera_to_world).copy()
+    pose[2, 3] = invalid_raw_height
+    frames[0] = GeometryFrame.model_validate(
+        {**frames[0].model_dump(), "camera_to_world": pose.tolist()}
+    )
+
+    scene, assessment = build_scene_and_assess(
+        run_id="invalid-camera-height",
+        frames=frames,
+        observations=observations,
+        camera_height_m=1.6,
+        criterion=Criterion(),
+    )
+
+    assert assessment.status.value == "INSUFFICIENT_EVIDENCE"
+    assert assessment.approximate_distance_m is None
+    assert scene.scale_factor is None
+    assert scene.facts == []
+    assert any("camera-to-floor heights" in warning for warning in scene.warnings)
+
+
 def test_topdown_png_is_created_and_readable(tmp_path):
     from ehs_spatial.scene import build_scene_and_assess
 
