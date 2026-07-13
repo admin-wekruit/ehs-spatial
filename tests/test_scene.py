@@ -23,8 +23,13 @@ def _raw_rotation(tilted: bool) -> np.ndarray:
     )
 
 
-def _raw(points_m: np.ndarray, *, tilted: bool = False) -> np.ndarray:
-    unrotated = np.asarray(points_m, dtype=np.float64) / RAW_TO_METERS
+def _raw(
+    points_m: np.ndarray,
+    *,
+    tilted: bool = False,
+    raw_to_meters: float = RAW_TO_METERS,
+) -> np.ndarray:
+    unrotated = np.asarray(points_m, dtype=np.float64) / raw_to_meters
     return unrotated @ _raw_rotation(tilted).T
 
 
@@ -75,6 +80,7 @@ def _synthetic_scene(
     object_views: int = 2,
     inside: bool = False,
     tilted: bool = False,
+    raw_to_meters: float = RAW_TO_METERS,
 ):
     shape = (40, 40)
     floor_xy = np.asarray(
@@ -83,7 +89,11 @@ def _synthetic_scene(
     floor = np.column_stack([floor_xy, np.zeros(len(floor_xy))])
     fence = _fence_points()
     movable = _object_points(clearance_m, inside=inside)
-    all_points = _raw(np.vstack([floor, fence, movable]), tilted=tilted)
+    all_points = _raw(
+        np.vstack([floor, fence, movable]),
+        tilted=tilted,
+        raw_to_meters=raw_to_meters,
+    )
 
     floor_indices = np.arange(len(floor))
     fence_indices = np.arange(len(floor), len(floor) + len(fence))
@@ -112,9 +122,10 @@ def _synthetic_scene(
         camera_to_world = np.eye(4)
         rotation = _raw_rotation(tilted)
         camera_to_world[:3, :3] = rotation
-        camera_to_world[:3, 3] = rotation @ np.array(
-            [0.1 * frame_index, 0.05 * frame_index, 2.0]
+        camera_center_m = np.array(
+            [0.08 * frame_index, 0.04 * frame_index, 1.6]
         )
+        camera_to_world[:3, 3] = rotation @ (camera_center_m / raw_to_meters)
         frames.append(
             GeometryFrame(
                 frame_id=frame_id,
@@ -255,7 +266,7 @@ def test_object_inside_fence_fails_regardless_of_boundary_distance(tmp_path):
         fact for fact in scene.facts if fact.predicate == "inside_or_intersects"
     )
     assert assessment.status.value == "FAIL"
-    assert assessment.approximate_distance_m > 0.6
+    assert assessment.approximate_distance_m == 0.0
     assert inside_fact.value == 1.0
     assert inside_fact.unit == "boolean"
 
@@ -321,6 +332,46 @@ def test_same_object_in_two_views_reconciles_to_one_entity(tmp_path):
     assert pallets[0].evidence_frame_ids == ["frame-1", "frame-2"]
 
 
+def test_one_cluster_point_does_not_count_as_a_second_evidence_view(tmp_path):
+    from ehs_spatial.scene import build_scene_and_assess
+
+    frames, observations = _synthetic_scene(tmp_path, clearance_m=0.5)
+    second_mask_path = next(
+        observation.mask_path
+        for observation in observations
+        if observation.observation_id == "pallet-frame-2"
+    )
+    second_mask = np.asarray(Image.open(second_mask_path)).astype(bool)
+    second_points = np.load(frames[1].pts3d_path)
+    object_indices = np.flatnonzero(
+        second_mask.reshape(-1) & (second_points.reshape(-1, 3)[:, 2] > 0)
+    )
+    noise_m = np.column_stack(
+        [
+            10.0 + 0.3 * np.arange(len(object_indices) - 1),
+            np.full(len(object_indices) - 1, 10.0),
+            np.full(len(object_indices) - 1, 0.2),
+        ]
+    )
+    second_points.reshape(-1, 3)[object_indices[1:]] = _raw(noise_m)
+    np.save(frames[1].pts3d_path, second_points)
+
+    scene, assessment = build_scene_and_assess(
+        run_id="one-stray-cluster-point",
+        frames=frames,
+        observations=observations,
+        camera_height_m=1.6,
+        criterion=Criterion(),
+    )
+
+    pallet = next(entity for entity in scene.entities if entity.label == "pallet")
+    assert assessment.status.value == "INSUFFICIENT_EVIDENCE"
+    assert assessment.approximate_distance_m is None
+    assert scene.facts == []
+    assert pallet.observation_ids == ["pallet-frame-1"]
+    assert pallet.evidence_frame_ids == ["frame-1"]
+
+
 def test_camera_height_scale_normalizes_tilted_floor_and_removes_floor_leakage(
     tmp_path,
 ):
@@ -341,6 +392,64 @@ def test_camera_height_scale_normalizes_tilted_floor_and_removes_floor_leakage(
     pallet_x = [point[0] for point in pallet.footprint_xy]
     assert min(pallet_x) == pytest.approx(2.5, abs=0.03)
     assert max(pallet_x) == pytest.approx(2.7, abs=0.03)
+
+
+def test_floor_ransac_final_tolerance_is_three_centimeters_at_any_raw_scale(
+    tmp_path,
+):
+    from ehs_spatial.scene import build_scene_and_assess
+
+    for raw_to_meters in (0.08, 8.0):
+        scene_dir = tmp_path / str(raw_to_meters)
+        scene_dir.mkdir()
+        frames, observations = _synthetic_scene(
+            scene_dir,
+            clearance_m=0.5,
+            raw_to_meters=raw_to_meters,
+        )
+        for frame in frames:
+            points = np.load(frame.pts3d_path)
+            points.reshape(-1, 3)[:400:4, 2] += 0.08 / raw_to_meters
+            np.save(frame.pts3d_path, points)
+
+        scene, assessment = build_scene_and_assess(
+            run_id=f"raw-scale-{raw_to_meters}",
+            frames=frames,
+            observations=observations,
+            camera_height_m=1.6,
+            criterion=Criterion(),
+        )
+
+        assert scene.scale_factor == pytest.approx(raw_to_meters, rel=0.002)
+        assert assessment.status.value == "FAIL"
+        assert assessment.approximate_distance_m == pytest.approx(0.5, abs=0.01)
+
+
+def test_top_surface_only_object_height_is_measured_above_floor(tmp_path):
+    from ehs_spatial.scene import build_scene_and_assess
+
+    frames, observations = _synthetic_scene(tmp_path, clearance_m=0.5)
+    for observation in observations:
+        if observation.label != "pallet":
+            continue
+        frame = next(frame for frame in frames if frame.frame_id == observation.frame_id)
+        points = np.load(frame.pts3d_path)
+        mask = np.asarray(Image.open(observation.mask_path)).astype(bool)
+        object_points = mask & (points[:, :, 2] > 0)
+        points[:, :, 2][object_points] = 0.15 / RAW_TO_METERS
+        np.save(frame.pts3d_path, points)
+
+    scene, assessment = build_scene_and_assess(
+        run_id="top-surface-height",
+        frames=frames,
+        observations=observations,
+        camera_height_m=1.6,
+        criterion=Criterion(),
+    )
+
+    pallet = next(entity for entity in scene.entities if entity.label == "pallet")
+    assert pallet.height_m == pytest.approx(0.15, abs=0.01)
+    assert assessment.status.value == "FAIL"
 
 
 def test_floor_seen_in_only_one_frame_is_insufficient_without_fake_plane(tmp_path):

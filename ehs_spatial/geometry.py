@@ -1,3 +1,4 @@
+from collections import Counter
 from dataclasses import dataclass
 import re
 
@@ -119,44 +120,50 @@ def _fit_floor(
 
     floor_points = np.vstack([points for _, points in selected_by_frame])
     cloud = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(floor_points))
-    o3d.utility.random.seed(0)
-    _, inlier_indices = cloud.segment_plane(
-        distance_threshold=0.03,
-        ransac_n=3,
-        num_iterations=1000,
-    )
-    if len(inlier_indices) < 3:
-        return None, ["floor plane RANSAC produced fewer than 3 inliers"]
-
-    inliers = floor_points[np.asarray(inlier_indices)]
-    center = np.mean(inliers, axis=0)
-    _, singular_values, right_vectors = np.linalg.svd(inliers - center)
-    if not np.isfinite(singular_values).all() or singular_values[1] <= 1e-12:
-        return None, ["floor plane inliers are degenerate"]
-    normal = right_vectors[-1]
-    normal /= np.linalg.norm(normal)
-    offset = -float(np.dot(normal, center))
-
     camera_centers = np.asarray(
         [np.asarray(frame.camera_to_world)[:3, 3] for frame in frames.values()]
     )
-    signed_heights = camera_centers @ normal + offset
-    if float(np.median(signed_heights)) < 0:
-        normal = -normal
-        offset = -offset
-        signed_heights = -signed_heights
-    if not np.isfinite(signed_heights).all() or np.any(signed_heights <= 0):
-        return None, [
-            "camera-to-floor heights must all be finite and strictly positive"
-        ]
-    predicted_height = float(np.median(signed_heights))
-    scale_factor = camera_height_m / predicted_height
-    if not np.isfinite(scale_factor) or scale_factor <= 0:
-        return None, ["camera-height scale is nonfinite or nonpositive"]
-    scaled_heights = signed_heights * scale_factor
-    scaled_mad = float(np.median(np.abs(scaled_heights - np.median(scaled_heights))))
-    if scaled_mad > 0.25:
-        return None, ["scaled camera-height MAD exceeds 0.25 m"]
+    scale_factor: float | None = None
+    for fit_index in range(2):
+        distance_threshold = 0.03 if scale_factor is None else 0.03 / scale_factor
+        o3d.utility.random.seed(0)
+        _, inlier_indices = cloud.segment_plane(
+            distance_threshold=distance_threshold,
+            ransac_n=3,
+            num_iterations=1000,
+        )
+        if len(inlier_indices) < 3:
+            return None, ["floor plane RANSAC produced fewer than 3 inliers"]
+
+        inliers = floor_points[np.asarray(inlier_indices)]
+        center = np.mean(inliers, axis=0)
+        _, singular_values, right_vectors = np.linalg.svd(inliers - center)
+        if not np.isfinite(singular_values).all() or singular_values[1] <= 1e-12:
+            return None, ["floor plane inliers are degenerate"]
+        normal = right_vectors[-1]
+        normal /= np.linalg.norm(normal)
+        offset = -float(np.dot(normal, center))
+
+        signed_heights = camera_centers @ normal + offset
+        if float(np.median(signed_heights)) < 0:
+            normal = -normal
+            offset = -offset
+            signed_heights = -signed_heights
+        if not np.isfinite(signed_heights).all() or np.any(signed_heights <= 0):
+            return None, [
+                "camera-to-floor heights must all be finite and strictly positive"
+            ]
+        predicted_height = float(np.median(signed_heights))
+        scale_factor = camera_height_m / predicted_height
+        if not np.isfinite(scale_factor) or scale_factor <= 0:
+            return None, ["camera-height scale is nonfinite or nonpositive"]
+        if fit_index == 1:
+            scaled_heights = signed_heights * scale_factor
+            scaled_mad = float(
+                np.median(np.abs(scaled_heights - np.median(scaled_heights)))
+            )
+            if scaled_mad > 0.25:
+                return None, ["scaled camera-height MAD exceeds 0.25 m"]
 
     origin = -offset * normal
     return (
@@ -204,6 +211,7 @@ def _reconcile_entities(
         )
 
     candidates: list[dict[str, object]] = []
+    minimum_cluster_support = 5
     for label in sorted(grouped):
         point_groups = grouped[label]
         pooled = np.vstack([points for points, _ in point_groups])
@@ -221,7 +229,11 @@ def _reconcile_entities(
         )
         cloud = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(pooled))
         cluster_labels = np.asarray(
-            cloud.cluster_dbscan(eps=0.15, min_points=5, print_progress=False)
+            cloud.cluster_dbscan(
+                eps=0.15,
+                min_points=minimum_cluster_support,
+                print_progress=False,
+            )
         )
         for cluster_id in sorted(set(cluster_labels) - {-1}):
             selected = cluster_labels == cluster_id
@@ -231,18 +243,27 @@ def _reconcile_entities(
                 warnings.append(f"{label} cluster has no nonzero-area polygon footprint")
                 continue
             centroid = np.median(cluster_points, axis=0)
+            observation_counts = Counter(point_observations[selected])
+            frame_counts = Counter(point_frames[selected])
             candidates.append(
                 {
                     "label": label,
                     "centroid": centroid,
-                    "observation_ids": sorted(set(point_observations[selected])),
-                    "frame_ids": sorted(set(point_frames[selected])),
+                    "observation_ids": sorted(
+                        observation_id
+                        for observation_id, count in observation_counts.items()
+                        if count >= minimum_cluster_support
+                    ),
+                    "frame_ids": sorted(
+                        frame_id
+                        for frame_id, count in frame_counts.items()
+                        if count >= minimum_cluster_support
+                    ),
                     "footprint": [
                         (float(x), float(y)) for x, y in list(hull.exterior.coords)[:-1]
                     ],
-                    "height": float(
-                        np.quantile(cluster_points[:, 2], 0.95)
-                        - np.quantile(cluster_points[:, 2], 0.05)
+                    "height": max(
+                        0.0, float(np.quantile(cluster_points[:, 2], 0.95))
                     ),
                 }
             )

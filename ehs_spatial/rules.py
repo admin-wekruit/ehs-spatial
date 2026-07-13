@@ -84,10 +84,19 @@ def _assess_clearance(entities: list[Entity3D], criterion: Criterion) -> _RuleRe
 
     movable, movable_polygon = min(
         valid_movables,
-        key=lambda item: (item[1].distance(fence_polygon.boundary), item[0].entity_id),
+        key=lambda item: (
+            0.0
+            if fence_polygon.intersects(item[1])
+            else item[1].distance(fence_polygon.boundary),
+            item[0].entity_id,
+        ),
     )
-    distance = float(movable_polygon.distance(fence_polygon.boundary))
     inside_or_intersects = fence_polygon.intersects(movable_polygon)
+    distance = (
+        0.0
+        if inside_or_intersects
+        else float(movable_polygon.distance(fence_polygon.boundary))
+    )
     status = (
         AssessmentStatus.FAIL
         if inside_or_intersects or distance < criterion.minimum_clearance_m
