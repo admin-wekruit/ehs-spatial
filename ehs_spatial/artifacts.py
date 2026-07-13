@@ -57,11 +57,18 @@ class ArtifactStore:
             copied.append(str(destination))
         return capture.model_copy(update={"image_paths": copied})
 
-    def save_json(self, path: str | Path, model: BaseModel) -> None:
+    def save_json(
+        self, path: str | Path, model: BaseModel | list[BaseModel]
+    ) -> None:
         destination = Path(path)
         destination.parent.mkdir(parents=True, exist_ok=True)
+        payload = (
+            [item.model_dump(mode="json") for item in model]
+            if isinstance(model, list)
+            else model.model_dump(mode="json")
+        )
         destination.write_text(
-            json.dumps(model.model_dump(mode="json"), indent=2) + "\n",
+            json.dumps(payload, indent=2) + "\n",
             encoding="utf-8",
         )
 
@@ -75,3 +82,17 @@ class ArtifactStore:
         payload = entry.model_dump(mode="json") if isinstance(entry, BaseModel) else entry
         with path.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(payload) + "\n")
+
+    def latest_chat_cursor(self, run_id: str) -> str | None:
+        path = self.paths(run_id).chat_jsonl
+        if not path.exists():
+            return None
+        for line in reversed(path.read_text(encoding="utf-8").splitlines()):
+            entry = json.loads(line)
+            if entry.get("type") != "gemini_cursor":
+                continue
+            interaction_id = entry.get("interaction_id")
+            if not isinstance(interaction_id, str) or not interaction_id:
+                raise ValueError("gemini cursor requires a non-empty interaction_id")
+            return interaction_id
+        return None

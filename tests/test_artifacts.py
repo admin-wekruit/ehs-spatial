@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from ehs_spatial.contracts import CaptureRun, SceneMap
+from ehs_spatial.contracts import CaptureRun, Observation2D, SceneMap
 
 
 def test_prepare_run_creates_layout_and_copies_four_images_to_stable_names(tmp_path):
@@ -74,6 +74,42 @@ def test_append_chat_writes_one_json_object_per_line(tmp_path):
         {"role": "user", "content": "How far?"},
         {"role": "assistant", "content": "0.42 m"},
     ]
+
+
+def test_save_json_accepts_a_list_of_pydantic_models(tmp_path):
+    artifacts = importlib.import_module("ehs_spatial.artifacts")
+    store = artifacts.ArtifactStore(tmp_path / "runs")
+    observations = [
+        Observation2D(
+            observation_id="obs-1",
+            frame_id="frame-1",
+            label="pallet",
+            instance_id="0",
+            mask_reference="rle",
+            score=0.9,
+            bbox=[0, 0, 1, 1],
+            source_prompt="pallet",
+        )
+    ]
+
+    store.save_json(store.paths("run-1").observations_json, observations)
+
+    payload = json.loads(
+        store.paths("run-1").observations_json.read_text(encoding="utf-8")
+    )
+    assert payload == [observations[0].model_dump(mode="json")]
+
+
+def test_chat_cursor_uses_the_latest_persisted_interaction_id(tmp_path):
+    artifacts = importlib.import_module("ehs_spatial.artifacts")
+    store = artifacts.ArtifactStore(tmp_path / "runs")
+
+    store.append_chat("run-1", {"type": "gemini_cursor", "interaction_id": "old"})
+    store.append_chat("run-1", {"type": "message", "role": "user"})
+    store.append_chat("run-1", {"type": "gemini_cursor", "interaction_id": "new"})
+
+    assert store.latest_chat_cursor("run-1") == "new"
+    assert store.latest_chat_cursor("missing") is None
 
 
 @pytest.mark.parametrize("run_id", ["../escape", "..", "/tmp/escape", "back\\slash"])
