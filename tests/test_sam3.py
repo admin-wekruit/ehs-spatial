@@ -178,3 +178,115 @@ def test_adapter_rejects_prompts_outside_fixed_vocabulary(tmp_path):
             frame_id="frame_0001",
             output_dir=tmp_path / "masks",
         )
+
+
+@pytest.mark.parametrize(
+    "frame_id",
+    ["../escaped", "/absolute", "nested/path", ".", "..", "back\\slash", ""],
+)
+def test_adapter_rejects_unsafe_frame_id_before_provider_or_write(tmp_path, frame_id):
+    sam3 = importlib.import_module("ehs_spatial.providers.sam3")
+    canonical_path = tmp_path / "canonical.png"
+    Image.new("RGB", (2, 2)).save(canonical_path)
+    provider_called = False
+
+    def subscriber(*args, **kwargs):
+        nonlocal provider_called
+        provider_called = True
+        raise AssertionError("unsafe frame id reached provider")
+
+    output_dir = tmp_path / "masks"
+    with pytest.raises(ValueError, match="frame_id"):
+        sam3.SAM3Adapter(subscriber=subscriber).segment(
+            canonical_path,
+            prompt="pallet",
+            frame_id=frame_id,
+            output_dir=output_dir,
+        )
+
+    assert provider_called is False
+    assert not output_dir.exists()
+
+
+def test_adapter_wraps_malformed_fal_response(tmp_path):
+    sam3 = importlib.import_module("ehs_spatial.providers.sam3")
+    canonical_path = tmp_path / "canonical.png"
+    Image.new("RGB", (2, 2)).save(canonical_path)
+    response = {"rle": 123, "metadata": [], "scores": [], "boxes": []}
+
+    with pytest.raises(sam3.ProviderError) as caught:
+        sam3.SAM3Adapter(
+            subscriber=lambda endpoint, *, arguments: response
+        ).segment(
+            canonical_path,
+            prompt="pallet",
+            frame_id="frame_0001",
+            output_dir=tmp_path / "masks",
+        )
+
+    assert caught.value.provider == "fal"
+    assert caught.value.operation == "sam3.response"
+    assert caught.value.original_message == (
+        "SAM 3 response rle must be a string or list of strings"
+    )
+
+
+def test_adapter_wraps_invalid_provider_rle(tmp_path):
+    sam3 = importlib.import_module("ehs_spatial.providers.sam3")
+    canonical_path = tmp_path / "canonical.png"
+    Image.new("RGB", (2, 2)).save(canonical_path)
+    response = {
+        "rle": json.dumps({"size": [2, 2], "counts": [5]}),
+        "metadata": [{"index": 0, "score": 0.9, "box": [0.5, 0.5, 1, 1]}],
+        "scores": [0.9],
+        "boxes": [[0.5, 0.5, 1, 1]],
+    }
+
+    with pytest.raises(sam3.ProviderError) as caught:
+        sam3.SAM3Adapter(
+            subscriber=lambda endpoint, *, arguments: response
+        ).segment(
+            canonical_path,
+            prompt="pallet",
+            frame_id="frame_0001",
+            output_dir=tmp_path / "masks",
+        )
+
+    assert caught.value.provider == "fal"
+    assert caught.value.operation == "sam3.decode"
+    assert caught.value.original_message == "invalid COCO RLE run lengths"
+
+
+@pytest.mark.parametrize(
+    ("scores", "boxes", "message"),
+    [
+        ([], [], "SAM 3 response is missing requested score or box"),
+        ([2.0], [[0.5, 0.5, 1, 1]], "less than or equal to 1"),
+    ],
+)
+def test_adapter_wraps_provider_normalization_errors(
+    tmp_path, scores, boxes, message
+):
+    sam3 = importlib.import_module("ehs_spatial.providers.sam3")
+    canonical_path = tmp_path / "canonical.png"
+    Image.new("RGB", (2, 2)).save(canonical_path)
+    response = {
+        "rle": json.dumps({"size": [2, 2], "counts": [0, 4]}),
+        "metadata": [{"index": 0}],
+        "scores": scores,
+        "boxes": boxes,
+    }
+
+    with pytest.raises(sam3.ProviderError) as caught:
+        sam3.SAM3Adapter(
+            subscriber=lambda endpoint, *, arguments: response
+        ).segment(
+            canonical_path,
+            prompt="pallet",
+            frame_id="frame_0001",
+            output_dir=tmp_path / "masks",
+        )
+
+    assert caught.value.provider == "fal"
+    assert caught.value.operation == "sam3.normalize"
+    assert message in caught.value.original_message

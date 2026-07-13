@@ -7,6 +7,7 @@ from typing import TypeVar
 from pydantic import BaseModel
 
 from .contracts import CaptureRun
+from .path_safety import validate_safe_path_segment
 
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
@@ -30,8 +31,7 @@ class ArtifactStore:
         self.root = Path(root)
 
     def paths(self, run_id: str) -> RunPaths:
-        if run_id in {"", ".", ".."} or Path(run_id).name != run_id or "\\" in run_id:
-            raise ValueError("run_id must be a single path-safe segment")
+        validate_safe_path_segment(run_id, "run_id")
         run_root = self.root / run_id
         return RunPaths(
             root=run_root,

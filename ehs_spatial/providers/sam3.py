@@ -7,6 +7,7 @@ import numpy as np
 from PIL import Image
 
 from ..contracts import Observation2D
+from ..path_safety import validate_safe_path_segment
 from .base import ProviderError
 
 
@@ -120,6 +121,7 @@ class SAM3Adapter:
         frame_id: str,
         output_dir: str | Path,
     ) -> list[Observation2D]:
+        validate_safe_path_segment(frame_id, "frame_id")
         if prompt not in PROMPT_VOCABULARY:
             raise ValueError(f"unsupported SAM 3 prompt: {prompt}")
         source = Path(image_path)
@@ -141,58 +143,75 @@ class SAM3Adapter:
             response = self.subscriber(SAM3_ENDPOINT, arguments=request)
         except Exception as exc:
             raise ProviderError("fal", "sam3.subscribe", str(exc)) from exc
-        if not isinstance(response, Mapping):
-            raise ValueError("SAM 3 response must be an object")
-
-        rle_value = response.get("rle")
-        if isinstance(rle_value, str):
-            rles = [rle_value]
-        elif isinstance(rle_value, list) and all(
-            isinstance(item, str) for item in rle_value
-        ):
-            rles = rle_value
-        else:
-            raise ValueError("SAM 3 response rle must be a string or list of strings")
-        metadata = response.get("metadata") or []
-        scores = response.get("scores") or []
-        boxes = response.get("boxes") or []
-        if (
-            not isinstance(metadata, list)
-            or not isinstance(scores, list)
-            or not isinstance(boxes, list)
-        ):
-            raise ValueError("SAM 3 scores, boxes, and metadata must be lists")
+        try:
+            if not isinstance(response, Mapping):
+                raise ValueError("SAM 3 response must be an object")
+            rle_value = response.get("rle")
+            if isinstance(rle_value, str):
+                rles = [rle_value]
+            elif isinstance(rle_value, list) and all(
+                isinstance(item, str) for item in rle_value
+            ):
+                rles = rle_value
+            else:
+                raise ValueError(
+                    "SAM 3 response rle must be a string or list of strings"
+                )
+            metadata = response.get("metadata") or []
+            scores = response.get("scores") or []
+            boxes = response.get("boxes") or []
+            if (
+                not isinstance(metadata, list)
+                or not isinstance(scores, list)
+                or not isinstance(boxes, list)
+            ):
+                raise ValueError("SAM 3 scores, boxes, and metadata must be lists")
+        except Exception as exc:
+            raise ProviderError("fal", "sam3.response", str(exc)) from exc
 
         destination = Path(output_dir)
         destination.mkdir(parents=True, exist_ok=True)
         prompt_slug = prompt.replace(" ", "_")
         observations = []
         for ordinal, serialized in enumerate(rles):
-            item_metadata = metadata[ordinal] if ordinal < len(metadata) else {}
-            if not isinstance(item_metadata, Mapping):
-                raise ValueError("SAM 3 mask metadata must be an object")
-            instance_index = item_metadata.get("index", ordinal)
-            if not isinstance(instance_index, int) or isinstance(instance_index, bool):
-                raise ValueError("SAM 3 mask metadata index must be an integer")
-            score = (
-                scores[ordinal]
-                if ordinal < len(scores)
-                else item_metadata.get("score")
-            )
-            box = boxes[ordinal] if ordinal < len(boxes) else item_metadata.get("box")
-            if score is None or box is None:
-                raise ValueError("SAM 3 response is missing requested score or box")
+            try:
+                item_metadata = metadata[ordinal] if ordinal < len(metadata) else {}
+                if not isinstance(item_metadata, Mapping):
+                    raise ValueError("SAM 3 mask metadata must be an object")
+                instance_index = item_metadata.get("index", ordinal)
+                if not isinstance(instance_index, int) or isinstance(
+                    instance_index, bool
+                ):
+                    raise ValueError("SAM 3 mask metadata index must be an integer")
+                score = (
+                    scores[ordinal]
+                    if ordinal < len(scores)
+                    else item_metadata.get("score")
+                )
+                box = (
+                    boxes[ordinal]
+                    if ordinal < len(boxes)
+                    else item_metadata.get("box")
+                )
+                if score is None or box is None:
+                    raise ValueError(
+                        "SAM 3 response is missing requested score or box"
+                    )
+            except Exception as exc:
+                raise ProviderError("fal", "sam3.normalize", str(exc)) from exc
 
-            mask = decode_coco_rle(serialized, height=height, width=width)
+            try:
+                mask = decode_coco_rle(serialized, height=height, width=width)
+            except Exception as exc:
+                raise ProviderError("fal", "sam3.decode", str(exc)) from exc
             mask_image = Image.fromarray(mask * 255)
             if mask_image.size != (width, height):
                 mask_image = mask_image.resize((width, height), Image.Resampling.NEAREST)
             binary_mask = (np.asarray(mask_image) > 0).astype(np.uint8) * 255
             instance_id = str(instance_index)
             mask_path = destination / f"{frame_id}_{prompt_slug}_{instance_id}.png"
-            Image.fromarray(binary_mask).save(mask_path)
-            observations.append(
-                Observation2D(
+            try:
+                observation = Observation2D(
                     observation_id=f"{frame_id}:{prompt_slug}:{instance_id}",
                     frame_id=frame_id,
                     label=prompt,
@@ -202,5 +221,8 @@ class SAM3Adapter:
                     bbox=box,
                     source_prompt=prompt,
                 )
-            )
+            except (TypeError, ValueError) as exc:
+                raise ProviderError("fal", "sam3.normalize", str(exc)) from exc
+            Image.fromarray(binary_mask).save(mask_path)
+            observations.append(observation)
         return observations
