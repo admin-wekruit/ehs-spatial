@@ -106,6 +106,38 @@ def _load_root_app():
     return module
 
 
+def _assert_analysis_failure(
+    result: tuple[object, ...],
+    expected_error: str,
+    *,
+    forbidden: tuple[str, ...] = (),
+) -> None:
+    assert result[0] is None
+    assert result[1]["elem_classes"] == ["result-status", "status-error"]
+    assert "### RUN ERROR" in result[1]["value"]
+    assert "### FAIL" not in result[1]["value"]
+    assert "No assessment was produced" in result[1]["value"]
+    assert "No fallback result was generated" in result[1]["value"]
+    assert expected_error in result[1]["value"]
+    assert result[2:4] == (None, None)
+    assert result[4] == {
+        "status": "RUN_ERROR",
+        "error": expected_error,
+        "assessment": None,
+        "scene_map": None,
+    }
+    assert result[5] == []
+    assert result[6] == {
+        "value": "",
+        "interactive": False,
+        "__type__": "update",
+    }
+    assert result[7] == {"interactive": False, "__type__": "update"}
+    visible_copy = f"{result[1]['value']}\n{result[4]['error']}"
+    for value in forbidden:
+        assert value not in visible_copy
+
+
 @pytest.mark.parametrize("missing_value", [None, ""], ids=["none", "empty"])
 @pytest.mark.parametrize("missing_index", range(4))
 def test_analysis_requires_all_four_images_before_provider_call(
@@ -117,9 +149,11 @@ def test_analysis_requires_all_four_images_before_provider_call(
     images = _images(tmp_path)
     images[missing_index] = missing_value
 
-    with pytest.raises(gr.Error, match="Upload all four"):
-        analyze_run(pipeline, *images, 1.5)
+    failed = analyze_run(pipeline, *images, 1.5)
 
+    _assert_analysis_failure(
+        failed, "Upload all four workcell views before analysis."
+    )
     assert pipeline.assessment_calls == []
 
 
@@ -174,37 +208,68 @@ def test_failed_reanalysis_returns_atomic_cleared_state_without_fallback(tmp_pat
     pipeline = FakePipeline(tmp_path / "runs")
     images = _images(tmp_path)
     previous_run = analyze_run(pipeline, *images, 1.5)[0]
-    pipeline.run_error = ProviderError(
+    original_message = (
+        "service unavailable; Authorization: Bearer SECRET_SENTINEL"
+    )
+    error = ProviderError(
         "replicate",
         "map_anything.run",
-        "service unavailable; Authorization: Bearer SECRET_SENTINEL",
+        original_message,
     )
+    pipeline.run_error = error
 
     failed = analyze_run(pipeline, *images, 1.5)
 
     assert previous_run is not None
-    assert failed[0] is None
-    assert failed[1]["elem_classes"] == ["result-status", "status-error"]
-    assert "### RUN ERROR" in failed[1]["value"]
-    assert "### FAIL" not in failed[1]["value"]
-    assert "No assessment was produced" in failed[1]["value"]
-    assert "No fallback result was generated" in failed[1]["value"]
-    assert "replicate map_anything.run failed" in failed[1]["value"]
-    assert "service unavailable" in failed[1]["value"]
-    assert "SECRET_SENTINEL" not in failed[1]["value"]
-    assert failed[2:4] == (None, None)
-    assert failed[4]["status"] == "RUN_ERROR"
-    assert failed[4]["assessment"] is None
-    assert failed[4]["scene_map"] is None
-    assert "SECRET_SENTINEL" not in failed[4]["error"]
-    assert failed[5] == []
-    assert failed[6] == {
-        "value": "",
-        "interactive": False,
-        "__type__": "update",
-    }
-    assert failed[7] == {"interactive": False, "__type__": "update"}
+    assert error.original_message == original_message
+    _assert_analysis_failure(
+        failed,
+        (
+            "replicate map_anything.run failed. Check provider credentials, "
+            "quota, and service status, then retry."
+        ),
+        forbidden=("service unavailable", "SECRET_SENTINEL"),
+    )
     assert ".status-error" in APP_CSS
+
+
+def test_analysis_returns_cleared_state_for_capture_validation_error(tmp_path):
+    from ehs_spatial.app import analyze_run
+
+    pipeline = FakePipeline(tmp_path / "runs")
+
+    failed = analyze_run(pipeline, *_images(tmp_path), 0)
+
+    _assert_analysis_failure(
+        failed,
+        (
+            "Local processing failed (ValidationError). Check the uploaded "
+            "files and local artifacts, then retry."
+        ),
+    )
+    assert pipeline.assessment_calls == []
+
+
+def test_analysis_returns_cleared_state_for_corrupt_scene_artifact(tmp_path):
+    from ehs_spatial.app import analyze_run
+
+    class CorruptScenePipeline(FakePipeline):
+        def run_assessment(self, capture):
+            assessment = super().run_assessment(capture)
+            self.store.paths(capture.run_id).scene_json.write_text("{")
+            return assessment
+
+    pipeline = CorruptScenePipeline(tmp_path / "runs")
+
+    failed = analyze_run(pipeline, *_images(tmp_path), 1.5)
+
+    _assert_analysis_failure(
+        failed,
+        (
+            "Local processing failed (JSONDecodeError). Check the uploaded "
+            "files and local artifacts, then retry."
+        ),
+    )
 
 
 def test_chat_requires_successful_run_before_provider_call(tmp_path):
@@ -253,59 +318,59 @@ def test_chat_appends_message_dicts_and_locally_grounded_fact_ids(tmp_path):
     assert cleared_question == ""
 
 
-def test_chat_sanitizes_provider_error_without_changing_history(tmp_path):
+def test_chat_never_exposes_provider_original_message(tmp_path):
     from ehs_spatial.app import answer_run_question
 
-    credential_cases = [
-        ("bearer authorization", "Authorization: Bearer SECRET_SENTINEL"),
-        ("basic authorization", "Authorization: Basic SECRET_SENTINEL"),
+    provider_failures = [
+        ("basic", "Basic BASIC_SENTINEL", "BASIC_SENTINEL"),
         (
-            "aws authorization",
-            "Authorization: AWS4-HMAC-SHA256 Credential=example/request, "
+            "aws",
+            "AWS4-HMAC-SHA256 Credential=example/request, "
             "SignedHeaders=content-type;host;x-amz-date, "
-            "Signature=SECRET_SENTINEL",
+            "Signature=AWS_SENTINEL",
+            "AWS_SENTINEL",
         ),
         (
-            "digest authorization",
-            'Authorization: Digest username="operator", '
-            'nonce="SECRET_SENTINEL", response="SECRET_SENTINEL"',
+            "digest",
+            'Digest username="operator", '
+            'nonce="nonce", response="DIGEST_SENTINEL"',
+            "DIGEST_SENTINEL",
         ),
-        ("standalone bearer", "Bearer SECRET_SENTINEL"),
-        ("hyphenated API key", "api-key=SECRET_SENTINEL"),
-        ("spaced API key", "API KEY: SECRET_SENTINEL"),
-        ("token", "token: SECRET_SENTINEL"),
-        ("query token", "token=SECRET_SENTINEL&request_status=418"),
-        ("secret", "secret=SECRET_SENTINEL"),
-        ("quoted password", 'password="correct horse SECRET_SENTINEL"'),
         (
-            "quoted authorization",
-            "headers={'Authorization': 'Bearer SECRET_SENTINEL', 'status': 401}",
+            "query key",
+            "request failed: /endpoint?key=QUERY_SENTINEL&status=401",
+            "QUERY_SENTINEL",
+        ),
+        (
+            "escaped quote",
+            r'upstream said \"credential=ESCAPED_SENTINEL\"',
+            "ESCAPED_SENTINEL",
+        ),
+        (
+            "arbitrary",
+            "opaque upstream diagnostic ARBITRARY_SENTINEL",
+            "ARBITRARY_SENTINEL",
         ),
     ]
     pipeline = FakePipeline(tmp_path / "runs")
     history = [{"role": "user", "content": "Earlier question"}]
+    expected_public_copy = (
+        "gemini chat.create failed. Check provider credentials, quota, and "
+        "service status, then retry."
+    )
 
-    for case_name, credential in credential_cases:
-        pipeline.question_error = ProviderError(
-            "gemini",
-            "chat.create",
-            f"service unavailable\n{credential}\nretryable context",
-        )
+    for case_name, original_message, sentinel in provider_failures:
+        error = ProviderError("gemini", "chat.create", original_message)
+        pipeline.question_error = error
 
         with pytest.raises(gr.Error) as caught:
             answer_run_question(
                 pipeline, "What is the clearance?", history, "run-1"
             )
 
-        message = caught.value.message
-        assert "gemini chat.create failed" in message, case_name
-        assert "service unavailable" in message, case_name
-        assert "retryable context" in message, case_name
-        assert "SECRET_SENTINEL" not in message, case_name
-        if case_name == "query token":
-            assert "request_status=418" in message
-        if case_name == "quoted authorization":
-            assert "'Authorization': '[REDACTED]'" in message
+        assert error.original_message == original_message, case_name
+        assert caught.value.message == expected_public_copy, case_name
+        assert sentinel not in caught.value.message, case_name
 
     assert history == [{"role": "user", "content": "Earlier question"}]
 
@@ -326,7 +391,14 @@ def test_successful_new_analysis_replaces_run_and_clears_chat(tmp_path):
     assert second[6]["value"] == ""
 
 
-def test_failed_reanalysis_clears_gradio_state_and_blocks_old_run_questions(tmp_path):
+@pytest.mark.parametrize(
+    "failure_mode",
+    ["provider", "runtime", "incomplete"],
+    ids=["provider-error", "runtime-error", "incomplete-capture"],
+)
+def test_failed_reanalysis_clears_gradio_state_and_blocks_old_run_questions(
+    tmp_path, failure_mode
+):
     from ehs_spatial.app import build_app
 
     pipeline = FakePipeline(tmp_path / "runs")
@@ -357,14 +429,37 @@ def test_failed_reanalysis_clears_gradio_state_and_blocks_old_run_questions(tmp_
         previous_run = state[analyze.outputs[0]._id]
         assert previous_run is not None
 
-        pipeline.run_error = ProviderError(
-            "replicate", "map_anything.run", "service unavailable"
-        )
+        replacement_inputs = [*upload_data, 1.5]
+        if failure_mode == "provider":
+            pipeline.run_error = ProviderError(
+                "replicate",
+                "map_anything.run",
+                "provider detail PROVIDER_SENTINEL",
+            )
+            expected_error = (
+                "replicate map_anything.run failed. Check provider credentials, "
+                "quota, and service status, then retry."
+            )
+            forbidden = "PROVIDER_SENTINEL"
+        elif failure_mode == "runtime":
+            pipeline.run_error = RuntimeError(
+                "local detail LOCAL_RUNTIME_SENTINEL"
+            )
+            expected_error = (
+                "Local processing failed (RuntimeError). Check the uploaded "
+                "files and local artifacts, then retry."
+            )
+            forbidden = "LOCAL_RUNTIME_SENTINEL"
+        else:
+            replacement_inputs[0] = None
+            expected_error = "Upload all four workcell views before analysis."
+            forbidden = ""
+
         failed = await demo.process_api(
             analyze,
-            [*upload_data, 1.5],
+            replacement_inputs,
             state=state,
-            session_hash="failed-reanalysis-regression",
+            session_hash=f"failed-reanalysis-{failure_mode}",
         )
 
         assert state[analyze.outputs[0]._id] is None
@@ -373,9 +468,21 @@ def test_failed_reanalysis_clears_gradio_state_and_blocks_old_run_questions(tmp_
             "status-error",
         ]
         assert failed["data"][2:4] == [None, None]
+        assert failed["data"][4].root == {
+            "status": "RUN_ERROR",
+            "error": expected_error,
+            "assessment": None,
+            "scene_map": None,
+        }
         assert failed["data"][5] == []
         assert failed["data"][6]["interactive"] is False
         assert failed["data"][7]["interactive"] is False
+        visible_copy = (
+            f"{failed['data'][1]['value']}\n{failed['data'][4].root['error']}"
+        )
+        assert expected_error in visible_copy
+        if forbidden:
+            assert forbidden not in visible_copy
 
         calls_before_ask = list(pipeline.question_calls)
         with pytest.raises(gr.Error, match="Analyze a workcell"):
@@ -383,7 +490,7 @@ def test_failed_reanalysis_clears_gradio_state_and_blocks_old_run_questions(tmp_
                 ask,
                 ["What is the clearance?", [], None],
                 state=state,
-                session_hash="failed-reanalysis-regression",
+                session_hash=f"failed-reanalysis-{failure_mode}",
             )
         assert pipeline.question_calls == calls_before_ask
 

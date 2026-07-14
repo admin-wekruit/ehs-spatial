@@ -1,5 +1,4 @@
 from functools import partial
-import re
 from typing import Any
 from uuid import uuid4
 
@@ -12,54 +11,39 @@ from .providers.base import ProviderError
 
 DEMO_RULE_COPY = "0.6 m demo rule — not an official EHS standard"
 PIPELINE_CONCURRENCY_ID = "ehs-provider-pipeline"
-_CREDENTIAL_PATTERNS = (
-    re.compile(
-        r"""
-        \b(?P<prefix>(?:proxy-)?authorization["']?\s*[:=]\s*)
-        (?:
-            (?P<quote>["']).*?(?P=quote)
-            |
-            [^\r\n]+
-        )
-        """,
-        re.IGNORECASE | re.VERBOSE,
-    ),
-    re.compile(
-        r"\b(?P<prefix>bearer\s+)[^\s,;&]+",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"""
-        \b(?P<prefix>
-            (?:
-                [a-z0-9_-]*(?:api[\s_-]?key|token|secret|password)[a-z0-9_-]*
-                |fal[_-]?key
-            )
-            ["']?\s*[:=]\s*
-        )
-        (?:
-            (?P<quote>["']).*?(?P=quote)
-            |
-            [^\s,;&]+
-        )
-        """,
-        re.IGNORECASE | re.VERBOSE,
-    ),
-)
 
 
 def _provider_error_copy(error: ProviderError) -> str:
-    diagnostic = error.original_message
-    for pattern in _CREDENTIAL_PATTERNS:
-        diagnostic = pattern.sub(
-            lambda match: (
-                f"{match.group('prefix')}"
-                f"{match.groupdict().get('quote') or ''}[REDACTED]"
-                f"{match.groupdict().get('quote') or ''}"
+    return (
+        f"{error.provider} {error.operation} failed. Check provider credentials, "
+        "quota, and service status, then retry."
+    )
+
+
+def _analysis_error_outputs(error_copy: str) -> tuple[object, ...]:
+    return (
+        None,
+        gr.update(
+            value=(
+                "### RUN ERROR\n\n"
+                "Analysis failed. No assessment was produced.\n\n"
+                f"{error_copy}\n\n"
+                "No fallback result was generated."
             ),
-            diagnostic,
-        )
-    return f"{error.provider} {error.operation} failed: {diagnostic}"
+            elem_classes=["result-status", "status-error"],
+        ),
+        None,
+        None,
+        {
+            "status": "RUN_ERROR",
+            "error": error_copy,
+            "assessment": None,
+            "scene_map": None,
+        },
+        [],
+        gr.update(value="", interactive=False),
+        gr.update(interactive=False),
+    )
 
 
 def _status_copy(assessment: Assessment) -> str:
@@ -91,61 +75,44 @@ def analyze_run(
 ) -> tuple[object, ...]:
     image_paths = [image_1, image_2, image_3, image_4]
     if not all(image_paths):
-        raise gr.Error("Upload all four workcell views before analysis.")
-
-    run_id = uuid4().hex
-    capture = CaptureRun(
-        run_id=run_id,
-        image_paths=[str(path) for path in image_paths],
-        camera_height_m=camera_height_m,
-    )
-    try:
-        assessment = pipeline.run_assessment(capture)
-    except ProviderError as exc:
-        error_copy = _provider_error_copy(exc)
-        return (
-            None,
-            gr.update(
-                value=(
-                    "### RUN ERROR\n\n"
-                    "Analysis failed. No assessment was produced.\n\n"
-                    f"{error_copy}\n\n"
-                    "No fallback result was generated."
-                ),
-                elem_classes=["result-status", "status-error"],
-            ),
-            None,
-            None,
-            {
-                "status": "RUN_ERROR",
-                "error": error_copy,
-                "assessment": None,
-                "scene_map": None,
-            },
-            [],
-            gr.update(value="", interactive=False),
-            gr.update(interactive=False),
+        return _analysis_error_outputs(
+            "Upload all four workcell views before analysis."
         )
 
-    paths = pipeline.store.paths(run_id)
-    scene = pipeline.store.load_json(paths.scene_json, SceneMap)
-    status_class = assessment.status.value.lower().replace("_", "-")
-    return (
-        run_id,
-        gr.update(
-            value=_status_copy(assessment),
-            elem_classes=["result-status", f"status-{status_class}"],
-        ),
-        str(paths.point_cloud_glb),
-        str(paths.topdown_png),
-        {
-            "assessment": assessment.model_dump(mode="json"),
-            "scene_map": scene.model_dump(mode="json"),
-        },
-        [],
-        gr.update(value="", interactive=True),
-        gr.update(interactive=True),
-    )
+    try:
+        run_id = uuid4().hex
+        capture = CaptureRun(
+            run_id=run_id,
+            image_paths=[str(path) for path in image_paths],
+            camera_height_m=camera_height_m,
+        )
+        assessment = pipeline.run_assessment(capture)
+        paths = pipeline.store.paths(run_id)
+        scene = pipeline.store.load_json(paths.scene_json, SceneMap)
+        status_class = assessment.status.value.lower().replace("_", "-")
+        return (
+            run_id,
+            gr.update(
+                value=_status_copy(assessment),
+                elem_classes=["result-status", f"status-{status_class}"],
+            ),
+            str(paths.point_cloud_glb),
+            str(paths.topdown_png),
+            {
+                "assessment": assessment.model_dump(mode="json"),
+                "scene_map": scene.model_dump(mode="json"),
+            },
+            [],
+            gr.update(value="", interactive=True),
+            gr.update(interactive=True),
+        )
+    except ProviderError as exc:
+        return _analysis_error_outputs(_provider_error_copy(exc))
+    except Exception as exc:
+        return _analysis_error_outputs(
+            f"Local processing failed ({type(exc).__name__}). Check the uploaded "
+            "files and local artifacts, then retry."
+        )
 
 
 def answer_run_question(
