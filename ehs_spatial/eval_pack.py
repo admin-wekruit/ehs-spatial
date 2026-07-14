@@ -14,6 +14,7 @@ from PIL import Image
 WIDTH = 512
 HEIGHT = 384
 FX = FY = 450.0
+CAMERA_HEIGHT_M = 1.65
 K = np.array(
     [
         [FX, 0.0, (WIDTH - 1) / 2],
@@ -103,7 +104,7 @@ def _build_fence():
                 _cylinder_between((x1, y0, z), (x1, y1, z), 0.025),
             ]
         )
-    # ponytail: sparse analytic bars stand in for real mesh fencing; densify here if wire-level geometry is evaluated.
+    # ponytail: this analytic synthetic fence is a domain simplification; real measured capture is the upgrade path.
     for x in np.linspace(x0 + 0.3, x1 - 0.3, 7):
         parts.extend(
             _cylinder_between((x, y, 0.12), (x, y, 1.55), 0.012, 8)
@@ -221,17 +222,17 @@ def _case_meshes(movable_label: str, distance_m: float):
 def _normal_cameras():
     target = (0.20, 0.0, 0.75)
     return [
-        ((4.6, -4.4, 2.15), target),
-        ((4.6, 4.4, 2.00), target),
-        ((-4.4, 4.2, 2.25), target),
-        ((-4.6, -4.1, 1.95), target),
+        ((4.6, -4.4, CAMERA_HEIGHT_M), target),
+        ((4.6, 4.4, CAMERA_HEIGHT_M), target),
+        ((-4.4, 4.2, CAMERA_HEIGHT_M), target),
+        ((-4.6, -4.1, CAMERA_HEIGHT_M), target),
     ]
 
 
 def _occluded_cameras():
     return _normal_cameras()[:2] + [
-        ((2.8, -2.7, 1.7), (4.4, -3.8, -0.3)),
-        ((2.6, 2.3, 2.4), (4.4, 3.8, -0.8)),
+        ((2.8, -2.7, CAMERA_HEIGHT_M), (4.4, -3.8, -0.3)),
+        ((2.6, 2.3, CAMERA_HEIGHT_M), (4.4, 3.8, -0.8)),
     ]
 
 
@@ -254,6 +255,7 @@ def _write_frame(
     cast = scene.cast_rays(rays)
     distances = cast["t_hit"].numpy()
     geometry_ids = cast["geometry_ids"].numpy().astype(np.uint32, copy=False)
+    primitive_normals = cast["primitive_normals"].numpy()
     valid = np.isfinite(distances)
 
     ray_values = rays.numpy()
@@ -267,14 +269,19 @@ def _write_frame(
 
     rgb = np.empty((HEIGHT, WIDTH, 3), dtype=np.uint8)
     rgb[:] = (226, 232, 238)
+    light_direction = np.array([0.35, -0.45, 0.82], dtype=np.float32)
+    light_direction /= np.linalg.norm(light_direction)
+    diffuse = np.clip(primitive_normals @ light_direction, 0.0, 1.0)
+    lighting = 0.35 + 0.65 * diffuse
     masks: dict[str, np.ndarray] = {}
     for geometry_id, label in geometry_labels.items():
         mask = geometry_ids == geometry_id
         masks[label] = mask
         if np.any(mask):
-            shade = np.clip(1.04 - 0.035 * distances[mask], 0.62, 1.0)
             base_color = np.asarray(COLORS[label]) * 255.0
-            rgb[mask] = np.rint(base_color[None, :] * shade[:, None]).astype(
+            rgb[mask] = np.rint(
+                base_color[None, :] * lighting[mask, None]
+            ).astype(
                 np.uint8
             )
 
@@ -334,6 +341,7 @@ def generate_eval_pack(output_root: str | Path):
     }
     manifest: dict[str, object] = {
         "image_size": {"width": WIDTH, "height": HEIGHT},
+        "camera_height_m": CAMERA_HEIGHT_M,
         "coordinate_system": "world metres; z up; camera +z forward",
         "renderer": "Open3D RaycastingScene (CPU)",
         "cases": {},
@@ -361,6 +369,17 @@ def generate_eval_pack(output_root: str | Path):
             str(scene_path), combined, write_vertex_colors=True
         ):
             raise RuntimeError(f"Could not write scene mesh: {scene_path}")
+        round_trip = o3d.io.read_triangle_mesh(str(scene_path))
+        round_trip_vertices = np.asarray(round_trip.vertices)
+        round_trip_triangles = np.asarray(round_trip.triangles)
+        round_trip_colors = np.asarray(round_trip.vertex_colors)
+        if (
+            not len(round_trip_vertices)
+            or not len(round_trip_triangles)
+            or round_trip_colors.shape != round_trip_vertices.shape
+            or not np.isfinite(round_trip_colors).all()
+        ):
+            raise RuntimeError(f"Invalid scene PLY round-trip: {scene_path}")
 
         frames = [
             _write_frame(

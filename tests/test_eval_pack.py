@@ -45,6 +45,7 @@ def test_generate_eval_pack_writes_four_cases_with_metric_truth(generated_pack):
     assert json.loads((root / "manifest.json").read_text(encoding="utf-8")) == manifest
     assert set(manifest["cases"]) == set(CASE_EXPECTATIONS)
     assert manifest["image_size"] == {"width": WIDTH, "height": HEIGHT}
+    assert manifest["camera_height_m"] == pytest.approx(1.65)
 
     for case_id, (status, distance_m, movable_label) in CASE_EXPECTATIONS.items():
         case = manifest["cases"][case_id]
@@ -107,6 +108,9 @@ def test_generate_eval_pack_artifacts_are_pixel_aligned_and_calibrated(
             assert intrinsics[0, 2] == pytest.approx((WIDTH - 1) / 2)
             assert intrinsics[1, 2] == pytest.approx((HEIGHT - 1) / 2)
             assert np.allclose(camera_to_world[3], [0, 0, 0, 1])
+            assert camera_to_world[2, 3] == pytest.approx(
+                manifest["camera_height_m"]
+            )
             camera_poses.append(camera_to_world)
 
         assert len({pose.tobytes() for pose in camera_poses}) == 4
@@ -160,3 +164,17 @@ def test_generate_eval_pack_scene_ply_round_trips_with_colored_meshes(
         assert len(triangles) > 0
         assert colors.shape == vertices.shape
         assert np.isfinite(colors).all()
+
+
+def test_generate_eval_pack_rejects_empty_scene_ply_round_trip(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        o3d.io,
+        "read_triangle_mesh",
+        lambda _path: o3d.geometry.TriangleMesh(),
+    )
+
+    with pytest.raises(RuntimeError, match="scene PLY round-trip"):
+        generate_eval_pack(tmp_path)
