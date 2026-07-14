@@ -75,7 +75,7 @@ def test_adapter_normalizes_complete_fal_response_and_resizes_masks_nearest(tmp_
         output_dir=tmp_path / "masks",
     )
 
-    assert seen["endpoint"] == "fal-ai/sam-3/image-rle"
+    assert seen["endpoint"] == "fal-ai/sam-3-1/image-rle"
     assert {key: value for key, value in seen["arguments"].items() if key != "image_url"} == {
         "prompt": "pallet",
         "return_multiple_masks": True,

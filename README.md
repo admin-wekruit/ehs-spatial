@@ -16,12 +16,12 @@ professional.
 - Replicate Map Anything:
   `vufinder/map-anything:bb68c254a65d3ce6b173909181d2dfbd044300b3ebca25ab63f07aa7eb1eebff`
   using the `map-anything-apache` checkpoint.
-- fal SAM 3 endpoint: `fal-ai/sam-3/image-rle`.
+- fal SAM 3.1 endpoint: `fal-ai/sam-3-1/image-rle`.
 - Gemini model: `gemini-3.5-flash` through the Interactions API.
 
 Provider pages:
 [Map Anything](https://replicate.com/vufinder/map-anything),
-[SAM 3 image RLE](https://fal.ai/models/fal-ai/sam-3/image-rle), and
+[SAM 3.1 image RLE](https://fal.ai/models/fal-ai/sam-3-1/image-rle), and
 [Gemini 3.5 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash).
 
 ## Install and run

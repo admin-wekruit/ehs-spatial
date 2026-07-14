@@ -11,7 +11,7 @@ from ..path_safety import validate_safe_path_segment
 from .base import ProviderError
 
 
-SAM3_ENDPOINT = "fal-ai/sam-3/image-rle"
+SAM3_ENDPOINT = "fal-ai/sam-3-1/image-rle"
 PROMPT_VOCABULARY = (
     "factory floor",
     "safety fence",
