@@ -34,6 +34,10 @@ cp .env.example .env
 Fill `REPLICATE_API_TOKEN`, `FAL_KEY`, and `GEMINI_API_KEY` in `.env`, then use
 uv's native environment-file support:
 
+- `REPLICATE_API_TOKEN`: [Replicate API tokens](https://replicate.com/account/api-tokens)
+- `FAL_KEY`: [fal API keys](https://fal.ai/dashboard/keys)
+- `GEMINI_API_KEY`: [Google AI Studio API keys](https://aistudio.google.com/apikey)
+
 ```bash
 uv run --env-file .env python app.py
 ```

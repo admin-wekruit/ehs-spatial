@@ -1,4 +1,5 @@
 from functools import partial
+import re
 from typing import Any
 from uuid import uuid4
 
@@ -11,11 +12,59 @@ from .providers.base import ProviderError
 
 DEMO_RULE_COPY = "0.6 m demo rule — not an official EHS standard"
 PIPELINE_CONCURRENCY_ID = "ehs-provider-pipeline"
+_CREDENTIAL_PATTERNS = (
+    re.compile(
+        r"""
+        \b(?P<prefix>(?:proxy-)?authorization["']?\s*[:=]\s*)
+        (?:
+            (?P<quote>["']).*?(?P=quote)
+            |
+            [^\r\n]+
+        )
+        """,
+        re.IGNORECASE | re.VERBOSE,
+    ),
+    re.compile(
+        r"\b(?P<prefix>bearer\s+)[^\s,;&]+",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"""
+        \b(?P<prefix>
+            (?:
+                [a-z0-9_-]*(?:api[\s_-]?key|token|secret|password)[a-z0-9_-]*
+                |fal[_-]?key
+            )
+            ["']?\s*[:=]\s*
+        )
+        (?:
+            (?P<quote>["']).*?(?P=quote)
+            |
+            [^\s,;&]+
+        )
+        """,
+        re.IGNORECASE | re.VERBOSE,
+    ),
+)
+
+
+def _provider_error_copy(error: ProviderError) -> str:
+    diagnostic = error.original_message
+    for pattern in _CREDENTIAL_PATTERNS:
+        diagnostic = pattern.sub(
+            lambda match: (
+                f"{match.group('prefix')}"
+                f"{match.groupdict().get('quote') or ''}[REDACTED]"
+                f"{match.groupdict().get('quote') or ''}"
+            ),
+            diagnostic,
+        )
+    return f"{error.provider} {error.operation} failed: {diagnostic}"
 
 
 def _status_copy(assessment: Assessment) -> str:
     distance = (
-        f"{assessment.approximate_distance_m:.2f} m"
+        f"{assessment.approximate_distance_m:.1f} m"
         if assessment.approximate_distance_m is not None
         else "unavailable from the evidence"
     )
@@ -53,7 +102,30 @@ def analyze_run(
     try:
         assessment = pipeline.run_assessment(capture)
     except ProviderError as exc:
-        raise gr.Error(str(exc), print_exception=False) from exc
+        error_copy = _provider_error_copy(exc)
+        return (
+            None,
+            gr.update(
+                value=(
+                    "### RUN ERROR\n\n"
+                    "Analysis failed. No assessment was produced.\n\n"
+                    f"{error_copy}\n\n"
+                    "No fallback result was generated."
+                ),
+                elem_classes=["result-status", "status-error"],
+            ),
+            None,
+            None,
+            {
+                "status": "RUN_ERROR",
+                "error": error_copy,
+                "assessment": None,
+                "scene_map": None,
+            },
+            [],
+            gr.update(value="", interactive=False),
+            gr.update(interactive=False),
+        )
 
     paths = pipeline.store.paths(run_id)
     scene = pipeline.store.load_json(paths.scene_json, SceneMap)
@@ -92,7 +164,9 @@ def answer_run_question(
             pipeline.answer_question(run_id, normalized_question)
         )
     except ProviderError as exc:
-        raise gr.Error(str(exc), print_exception=False) from exc
+        raise gr.Error(
+            _provider_error_copy(exc), print_exception=False
+        ) from None
 
     fact_ids = ", ".join(answer.fact_ids) if answer.fact_ids else "none"
     updated_history = list(history or [])
@@ -376,6 +450,11 @@ APP_CSS = """
   border-color: var(--ehs-warn) !important;
 }
 .status-insufficient-evidence h3 { color: var(--ehs-warn) !important; }
+.status-error {
+  background: var(--ehs-warn-bg) !important;
+  border-color: var(--ehs-warn) !important;
+}
+.status-error h3 { color: var(--ehs-warn) !important; }
 
 .analyze-action,
 .ask-action,

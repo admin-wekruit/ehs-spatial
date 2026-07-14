@@ -1,8 +1,10 @@
+import asyncio
 import importlib.util
 from pathlib import Path
 import re
 
 import gradio as gr
+from gradio.state_holder import SessionState
 from PIL import Image
 import pytest
 
@@ -149,6 +151,8 @@ def test_analysis_returns_real_artifacts_grounded_data_and_demo_copy(tmp_path):
     assert Path(point_cloud_path).suffix == ".glb"
     assert Path(topdown_path).is_file()
     assert "approximate" in status_update["value"].lower()
+    assert "Approximate boundary clearance: **0.5 m**." in status_update["value"]
+    assert "0.50 m" not in status_update["value"]
     assert "0.6 m demo rule — not an official EHS standard" in status_update["value"]
     assert "REVIEW only" in status_update["value"]
     assert status_update["elem_classes"] == ["result-status", "status-fail"]
@@ -164,14 +168,43 @@ def test_analysis_returns_real_artifacts_grounded_data_and_demo_copy(tmp_path):
     assert ask_update == {"interactive": True, "__type__": "update"}
 
 
-def test_analysis_surfaces_raw_provider_error_without_fallback(tmp_path):
-    from ehs_spatial.app import analyze_run
+def test_failed_reanalysis_returns_atomic_cleared_state_without_fallback(tmp_path):
+    from ehs_spatial.app import APP_CSS, analyze_run
 
-    error = ProviderError("replicate", "map_anything.run", "service unavailable")
-    pipeline = FakePipeline(tmp_path / "runs", run_error=error)
+    pipeline = FakePipeline(tmp_path / "runs")
+    images = _images(tmp_path)
+    previous_run = analyze_run(pipeline, *images, 1.5)[0]
+    pipeline.run_error = ProviderError(
+        "replicate",
+        "map_anything.run",
+        "service unavailable; Authorization: Bearer SECRET_SENTINEL",
+    )
 
-    with pytest.raises(gr.Error, match=str(error)):
-        analyze_run(pipeline, *_images(tmp_path), 1.5)
+    failed = analyze_run(pipeline, *images, 1.5)
+
+    assert previous_run is not None
+    assert failed[0] is None
+    assert failed[1]["elem_classes"] == ["result-status", "status-error"]
+    assert "### RUN ERROR" in failed[1]["value"]
+    assert "### FAIL" not in failed[1]["value"]
+    assert "No assessment was produced" in failed[1]["value"]
+    assert "No fallback result was generated" in failed[1]["value"]
+    assert "replicate map_anything.run failed" in failed[1]["value"]
+    assert "service unavailable" in failed[1]["value"]
+    assert "SECRET_SENTINEL" not in failed[1]["value"]
+    assert failed[2:4] == (None, None)
+    assert failed[4]["status"] == "RUN_ERROR"
+    assert failed[4]["assessment"] is None
+    assert failed[4]["scene_map"] is None
+    assert "SECRET_SENTINEL" not in failed[4]["error"]
+    assert failed[5] == []
+    assert failed[6] == {
+        "value": "",
+        "interactive": False,
+        "__type__": "update",
+    }
+    assert failed[7] == {"interactive": False, "__type__": "update"}
+    assert ".status-error" in APP_CSS
 
 
 def test_chat_requires_successful_run_before_provider_call(tmp_path):
@@ -220,15 +253,59 @@ def test_chat_appends_message_dicts_and_locally_grounded_fact_ids(tmp_path):
     assert cleared_question == ""
 
 
-def test_chat_surfaces_raw_provider_error_without_changing_history(tmp_path):
+def test_chat_sanitizes_provider_error_without_changing_history(tmp_path):
     from ehs_spatial.app import answer_run_question
 
-    error = ProviderError("gemini", "chat.create", "service unavailable")
-    pipeline = FakePipeline(tmp_path / "runs", question_error=error)
+    credential_cases = [
+        ("bearer authorization", "Authorization: Bearer SECRET_SENTINEL"),
+        ("basic authorization", "Authorization: Basic SECRET_SENTINEL"),
+        (
+            "aws authorization",
+            "Authorization: AWS4-HMAC-SHA256 Credential=example/request, "
+            "SignedHeaders=content-type;host;x-amz-date, "
+            "Signature=SECRET_SENTINEL",
+        ),
+        (
+            "digest authorization",
+            'Authorization: Digest username="operator", '
+            'nonce="SECRET_SENTINEL", response="SECRET_SENTINEL"',
+        ),
+        ("standalone bearer", "Bearer SECRET_SENTINEL"),
+        ("hyphenated API key", "api-key=SECRET_SENTINEL"),
+        ("spaced API key", "API KEY: SECRET_SENTINEL"),
+        ("token", "token: SECRET_SENTINEL"),
+        ("query token", "token=SECRET_SENTINEL&request_status=418"),
+        ("secret", "secret=SECRET_SENTINEL"),
+        ("quoted password", 'password="correct horse SECRET_SENTINEL"'),
+        (
+            "quoted authorization",
+            "headers={'Authorization': 'Bearer SECRET_SENTINEL', 'status': 401}",
+        ),
+    ]
+    pipeline = FakePipeline(tmp_path / "runs")
     history = [{"role": "user", "content": "Earlier question"}]
 
-    with pytest.raises(gr.Error, match=str(error)):
-        answer_run_question(pipeline, "What is the clearance?", history, "run-1")
+    for case_name, credential in credential_cases:
+        pipeline.question_error = ProviderError(
+            "gemini",
+            "chat.create",
+            f"service unavailable\n{credential}\nretryable context",
+        )
+
+        with pytest.raises(gr.Error) as caught:
+            answer_run_question(
+                pipeline, "What is the clearance?", history, "run-1"
+            )
+
+        message = caught.value.message
+        assert "gemini chat.create failed" in message, case_name
+        assert "service unavailable" in message, case_name
+        assert "retryable context" in message, case_name
+        assert "SECRET_SENTINEL" not in message, case_name
+        if case_name == "query token":
+            assert "request_status=418" in message
+        if case_name == "quoted authorization":
+            assert "'Authorization': '[REDACTED]'" in message
 
     assert history == [{"role": "user", "content": "Earlier question"}]
 
@@ -247,6 +324,70 @@ def test_successful_new_analysis_replaces_run_and_clears_chat(tmp_path):
     assert second[0] != first_run
     assert second[5] == []
     assert second[6]["value"] == ""
+
+
+def test_failed_reanalysis_clears_gradio_state_and_blocks_old_run_questions(tmp_path):
+    from ehs_spatial.app import build_app
+
+    pipeline = FakePipeline(tmp_path / "runs")
+    demo = build_app(pipeline)
+    state = SessionState(demo)
+    analyze = next(
+        function
+        for function in demo.fns.values()
+        if function.api_name == "analyze_workcell"
+    )
+    ask = next(
+        function
+        for function in demo.fns.values()
+        if function.api_name == "ask_about_run"
+    )
+    upload_data = [
+        {"path": path, "meta": {"_type": "gradio.FileData"}}
+        for path in _images(tmp_path)
+    ]
+
+    async def exercise_events() -> None:
+        await demo.process_api(
+            analyze,
+            [*upload_data, 1.5],
+            state=state,
+            session_hash="failed-reanalysis-regression",
+        )
+        previous_run = state[analyze.outputs[0]._id]
+        assert previous_run is not None
+
+        pipeline.run_error = ProviderError(
+            "replicate", "map_anything.run", "service unavailable"
+        )
+        failed = await demo.process_api(
+            analyze,
+            [*upload_data, 1.5],
+            state=state,
+            session_hash="failed-reanalysis-regression",
+        )
+
+        assert state[analyze.outputs[0]._id] is None
+        assert failed["data"][1]["elem_classes"] == [
+            "result-status",
+            "status-error",
+        ]
+        assert failed["data"][2:4] == [None, None]
+        assert failed["data"][5] == []
+        assert failed["data"][6]["interactive"] is False
+        assert failed["data"][7]["interactive"] is False
+
+        calls_before_ask = list(pipeline.question_calls)
+        with pytest.raises(gr.Error, match="Analyze a workcell"):
+            await demo.process_api(
+                ask,
+                ["What is the clearance?", [], None],
+                state=state,
+                session_hash="failed-reanalysis-regression",
+            )
+        assert pipeline.question_calls == calls_before_ask
+
+    asyncio.run(exercise_events())
 
 
 def test_build_app_has_required_gradio_620_components_events_and_serialization(tmp_path):
@@ -347,6 +488,19 @@ def test_root_main_launches_built_app_with_css(monkeypatch):
 
     module.main()
 
-    assert demo.launches == [
-        {"css": module.APP_CSS, "footer_links": [], "show_error": True}
-    ]
+    assert demo.launches == [{"css": module.APP_CSS, "footer_links": []}]
+
+
+def test_readme_links_each_provider_credential_source():
+    readme = (Path(__file__).parents[1] / "README.md").read_text()
+    credential_urls = {
+        "REPLICATE_API_TOKEN": "https://replicate.com/account/api-tokens",
+        "FAL_KEY": "https://fal.ai/dashboard/keys",
+        "GEMINI_API_KEY": "https://aistudio.google.com/apikey",
+    }
+
+    for variable, url in credential_urls.items():
+        assert re.search(
+            rf"(?m)^- `{variable}`: \[[^]]+\]\({re.escape(url)}\)$",
+            readme,
+        )
