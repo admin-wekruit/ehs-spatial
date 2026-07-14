@@ -6,7 +6,7 @@ import open3d as o3d
 import pytest
 from PIL import Image
 
-from ehs_spatial.eval_pack import generate_eval_pack
+from ehs_spatial.eval_pack import COLORS, generate_eval_pack
 
 
 WIDTH = 512
@@ -178,3 +178,93 @@ def test_generate_eval_pack_rejects_empty_scene_ply_round_trip(
 
     with pytest.raises(RuntimeError, match="scene PLY round-trip"):
         generate_eval_pack(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("case_id", "expected_clearance_m"),
+    [
+        ("ladder_050", 0.5),
+        ("ladder_070", 0.7),
+        ("fence_occluded", 0.5),
+    ],
+)
+def test_scene_ply_encodes_metric_ladder_clearance(
+    generated_pack,
+    case_id,
+    expected_clearance_m,
+):
+    root, manifest = generated_pack
+    scene = o3d.io.read_triangle_mesh(
+        str(_artifact(root, manifest["cases"][case_id]["scene_ply"]))
+    )
+    vertices = np.asarray(scene.vertices)
+    colors = np.asarray(scene.vertex_colors)
+
+    def vertices_for(label):
+        stored_color = np.rint(np.asarray(COLORS[label]) * 255.0) / 255.0
+        selected = np.all(np.isclose(colors, stored_color, atol=1e-6), axis=1)
+        assert np.any(selected)
+        return vertices[selected]
+
+    fence_vertices = vertices_for("safety fence")
+    ladder_vertices = vertices_for("step ladder")
+    measured_clearance_m = float(
+        ladder_vertices[:, 0].min() - fence_vertices[:, 0].max()
+    )
+    assert measured_clearance_m == pytest.approx(expected_clearance_m, abs=1e-6)
+
+
+def test_pts3d_reprojects_to_source_pixel_centers(generated_pack):
+    root, manifest = generated_pack
+
+    for case in manifest["cases"].values():
+        for frame in case["frames"]:
+            points = np.load(_artifact(root, frame["pts3d"]), allow_pickle=False)
+            valid = np.load(_artifact(root, frame["valid_mask"]), allow_pickle=False)
+            rows, columns = np.nonzero(valid)
+            assert len(rows) > 0
+            sample_indices = np.linspace(
+                0,
+                len(rows) - 1,
+                num=min(128, len(rows)),
+                dtype=int,
+            )
+            rows = rows[sample_indices]
+            columns = columns[sample_indices]
+            world_points = points[rows, columns]
+
+            world_to_camera = np.linalg.inv(np.asarray(frame["camera_to_world"]))
+            homogeneous = np.column_stack(
+                [world_points, np.ones(len(world_points))]
+            )
+            camera_points = (world_to_camera @ homogeneous.T).T[:, :3]
+            assert np.all(camera_points[:, 2] > 0)
+
+            projected = (np.asarray(frame["K"]) @ camera_points.T).T
+            projected = projected[:, :2] / projected[:, 2, None]
+            source_pixel_centers = np.column_stack(
+                [columns + 0.5, rows + 0.5]
+            )
+            assert np.allclose(projected, source_pixel_centers, atol=2e-4)
+
+
+def test_generate_eval_pack_is_deterministic(generated_pack, tmp_path):
+    first_root, first_manifest = generated_pack
+    second_manifest = generate_eval_pack(tmp_path)
+    assert second_manifest == first_manifest
+
+    case_id = "ladder_050"
+    first_case = first_manifest["cases"][case_id]
+    second_case = second_manifest["cases"][case_id]
+    assert (first_root / first_case["scene_ply"]).read_bytes() == (
+        tmp_path / second_case["scene_ply"]
+    ).read_bytes()
+
+    first_frame = first_case["frames"][0]
+    second_frame = second_case["frames"][0]
+    assert (first_root / first_frame["rgb"]).read_bytes() == (
+        tmp_path / second_frame["rgb"]
+    ).read_bytes()
+    first_points = np.load(first_root / first_frame["pts3d"], allow_pickle=False)
+    second_points = np.load(tmp_path / second_frame["pts3d"], allow_pickle=False)
+    assert np.array_equal(first_points, second_points, equal_nan=True)

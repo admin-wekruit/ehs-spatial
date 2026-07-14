@@ -24,6 +24,7 @@ K = np.array(
     dtype=np.float64,
 )
 FENCE = {"xmin": -1.5, "xmax": 1.5, "ymin": -1.2, "ymax": 1.2}
+FENCE_POST_RADIUS_M = 0.035
 COLORS = {
     "factory floor": (0.58, 0.61, 0.64),
     "safety fence": (0.96, 0.72, 0.05),
@@ -92,7 +93,7 @@ def _build_fence():
     post_xy = [(x, y) for x in (x0, 0.0, x1) for y in (y0, y1)]
     post_xy += [(x, y) for x in (x0, x1) for y in (0.0,)]
     parts.extend(
-        _cylinder_between((x, y, 0.0), (x, y, 1.6), 0.035)
+        _cylinder_between((x, y, 0.0), (x, y, 1.6), FENCE_POST_RADIUS_M)
         for x, y in post_xy
     )
     for z in (0.12, 0.85, 1.55):
@@ -140,7 +141,8 @@ def _build_robot():
 
 def _build_ladder(clearance_m: float):
     radius = 0.04
-    front_x = FENCE["xmax"] + clearance_m + radius
+    fence_outer_x = FENCE["xmax"] + FENCE_POST_RADIUS_M
+    front_x = fence_outer_x + clearance_m + radius
     rear_x = front_x + 0.55
     top_x = (front_x + rear_x) / 2
     sides = (-0.38, 0.38)
@@ -159,7 +161,7 @@ def _build_ladder(clearance_m: float):
     parts.append(_box((0.48, 0.76, 0.07), (top_x - 0.24, sides[0], 1.30)))
     mesh = _merge(parts, "step ladder")
     measured_clearance = (
-        float(mesh.get_axis_aligned_bounding_box().min_bound[0]) - FENCE["xmax"]
+        float(mesh.get_axis_aligned_bounding_box().min_bound[0]) - fence_outer_x
     )
     return mesh.translate((clearance_m - measured_clearance, 0.0, 0.0))
 
