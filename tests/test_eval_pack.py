@@ -6,7 +6,12 @@ import open3d as o3d
 import pytest
 from PIL import Image
 
-from ehs_spatial.eval_pack import COLORS, generate_eval_pack
+from ehs_spatial.contracts import Assessment, SceneMap
+from ehs_spatial.eval_pack import (
+    COLORS,
+    generate_eval_pack,
+    run_offline_benchmark,
+)
 
 
 WIDTH = 512
@@ -268,3 +273,119 @@ def test_generate_eval_pack_is_deterministic(generated_pack, tmp_path):
     first_points = np.load(first_root / first_frame["pts3d"], allow_pickle=False)
     second_points = np.load(tmp_path / second_frame["pts3d"], allow_pickle=False)
     assert np.array_equal(first_points, second_points, equal_nan=True)
+
+
+def test_offline_benchmark_matches_calibrated_metric_truth(generated_pack):
+    root, _ = generated_pack
+
+    report = run_offline_benchmark(root)
+
+    assert report["passed"] is True
+    assert report["cases"]["ladder_050"]["actual_status"] == "FAIL"
+    assert report["cases"]["ladder_050"]["actual_distance_m"] == pytest.approx(
+        0.5, abs=0.1
+    )
+    assert report["cases"]["ladder_070"]["actual_status"] == "PASS"
+    assert report["cases"]["ladder_070"]["actual_distance_m"] == pytest.approx(
+        0.7, abs=0.1
+    )
+    assert report["cases"]["platform_inside"]["actual_status"] == "FAIL"
+    assert report["cases"]["platform_inside"]["actual_distance_m"] == 0.0
+    assert (
+        report["cases"]["fence_occluded"]["actual_status"]
+        == "INSUFFICIENT_EVIDENCE"
+    )
+    assert report["cases"]["fence_occluded"]["actual_distance_m"] is None
+
+    for case_id in ("ladder_050", "ladder_070"):
+        case_report = report["cases"][case_id]
+        assert case_report["absolute_error_m"] <= 0.1
+
+
+def test_offline_benchmark_records_reconciled_evidence_and_artifacts(
+    generated_pack,
+):
+    root, manifest = generated_pack
+
+    report = run_offline_benchmark(root)
+
+    assert (
+        json.loads((root / "offline_report.json").read_text(encoding="utf-8"))
+        == report
+    )
+    assert set(report) == {"passed", "cases"}
+    for case_id, case_manifest in manifest["cases"].items():
+        case_report = report["cases"][case_id]
+        assert set(case_report) == {
+            "expected_status",
+            "actual_status",
+            "expected_distance_m",
+            "actual_distance_m",
+            "absolute_error_m",
+            "entity_labels",
+            "warnings",
+            "passed",
+            "artifacts",
+        }
+        assert case_report["expected_status"] == case_manifest["expected_status"]
+        assert case_report["expected_distance_m"] == case_manifest[
+            "expected_distance_m"
+        ]
+        assert case_report["passed"] is True
+        assert case_report["artifacts"] == {
+            "scene_json": f"{case_id}/scene.json",
+            "assessment_json": f"{case_id}/assessment.json",
+            "topdown_png": f"{case_id}/topdown.png",
+        }
+
+        scene_path = _artifact(root, case_report["artifacts"]["scene_json"])
+        assessment_path = _artifact(
+            root, case_report["artifacts"]["assessment_json"]
+        )
+        topdown_path = _artifact(root, case_report["artifacts"]["topdown_png"])
+        scene = SceneMap.model_validate_json(scene_path.read_text(encoding="utf-8"))
+        assessment = Assessment.model_validate_json(
+            assessment_path.read_text(encoding="utf-8")
+        )
+        with Image.open(topdown_path) as topdown:
+            assert topdown.format == "PNG"
+            assert topdown.size == (640, 640)
+
+        assert case_report["actual_status"] == assessment.status.value
+        assert case_report["actual_distance_m"] == assessment.approximate_distance_m
+        assert case_report["entity_labels"] == [
+            entity.label for entity in scene.entities
+        ]
+        assert case_report["warnings"] == scene.warnings
+
+        if case_id == "fence_occluded":
+            continue
+
+        movables = [
+            entity
+            for entity in scene.entities
+            if entity.label == case_manifest["movable_label"]
+        ]
+        robots = [
+            entity
+            for entity in scene.entities
+            if entity.label == "industrial robot arm"
+        ]
+        fences = [
+            entity for entity in scene.entities if entity.label == "safety fence"
+        ]
+        clearance_fact = next(
+            fact
+            for fact in scene.facts
+            if fact.predicate == "minimum_boundary_clearance"
+        )
+
+        assert len(movables) == 1
+        assert len(set(movables[0].evidence_frame_ids)) >= 2
+        assert robots
+        assert len(fences) == 1
+        assert len(set(fences[0].evidence_frame_ids)) >= 3
+        assert clearance_fact.subject_id == movables[0].entity_id
+        assert clearance_fact.subject_id not in {
+            robot.entity_id for robot in robots
+        }

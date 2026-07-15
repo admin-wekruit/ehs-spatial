@@ -137,7 +137,9 @@ def _fit_floor(
 
         inliers = floor_points[np.asarray(inlier_indices)]
         center = np.mean(inliers, axis=0)
-        _, singular_values, right_vectors = np.linalg.svd(inliers - center)
+        _, singular_values, right_vectors = np.linalg.svd(
+            inliers - center, full_matrices=False
+        )
         if not np.isfinite(singular_values).all() or singular_values[1] <= 1e-12:
             return None, ["floor plane inliers are degenerate"]
         normal = right_vectors[-1]

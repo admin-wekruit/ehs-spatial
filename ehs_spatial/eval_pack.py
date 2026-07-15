@@ -5,10 +5,16 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import open3d as o3d
 from PIL import Image
+from pydantic import TypeAdapter
+
+from .artifacts import ArtifactStore
+from .contracts import Criterion, GeometryFrame, Observation2D
+from .scene import build_scene_and_assess
 
 
 WIDTH = 512
@@ -407,3 +413,126 @@ def generate_eval_pack(output_root: str | Path):
         json.dumps(manifest, indent=2), encoding="utf-8"
     )
     return manifest
+
+
+def run_offline_benchmark(pack_root: str | Path) -> dict:
+    """Assess a generated pack from its calibrated pointmaps and oracle masks."""
+
+    root = Path(pack_root)
+    manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    camera_height_m = manifest["camera_height_m"]
+    store = ArtifactStore(root)
+    case_reports: dict[str, dict[str, Any]] = {}
+
+    for case_id, case in manifest["cases"].items():
+        frames = []
+        observations = []
+        for frame in case["frames"]:
+            frame_id = f"frame-{frame['frame_id']:02d}"
+            frames.append(
+                GeometryFrame(
+                    frame_id=frame_id,
+                    canonical_image_path=str(root / frame["rgb"]),
+                    pts3d_path=str(root / frame["pts3d"]),
+                    conf_path=str(root / frame["confidence"]),
+                    valid_mask_path=str(root / frame["valid_mask"]),
+                    camera_to_world=frame["camera_to_world"],
+                    intrinsics=frame["K"],
+                )
+            )
+            for label, bbox in sorted(frame["bboxes"].items()):
+                observations.append(
+                    Observation2D(
+                        observation_id=f"{frame_id}-{label.replace(' ', '-')}",
+                        frame_id=frame_id,
+                        label=label,
+                        instance_id=label,
+                        mask_path=str(root / frame["label_masks"][label]),
+                        score=1.0,
+                        bbox=bbox,
+                        source_prompt=label,
+                    )
+                )
+
+        paths = store.paths(case_id)
+        scene, assessment = build_scene_and_assess(
+            case_id,
+            frames,
+            observations,
+            camera_height_m,
+            Criterion(minimum_clearance_m=0.6),
+            topdown_path=paths.topdown_png,
+        )
+        store.save_json(paths.scene_json, scene)
+        store.save_json(paths.assessment_json, assessment)
+
+        expected_status = case["expected_status"]
+        expected_distance_m = case["expected_distance_m"]
+        actual_distance_m = assessment.approximate_distance_m
+        absolute_error_m = (
+            None
+            if actual_distance_m is None
+            else abs(actual_distance_m - expected_distance_m)
+        )
+        sufficient = expected_status != "INSUFFICIENT_EVIDENCE"
+        movables = [
+            entity
+            for entity in scene.entities
+            if entity.label == case["movable_label"]
+        ]
+        robots = [
+            entity
+            for entity in scene.entities
+            if entity.label == "industrial robot arm"
+        ]
+        fences = [
+            entity for entity in scene.entities if entity.label == "safety fence"
+        ]
+        clearance_fact = next(
+            (
+                fact
+                for fact in scene.facts
+                if fact.predicate == "minimum_boundary_clearance"
+            ),
+            None,
+        )
+        evidence_passed = not sufficient or (
+            len(movables) == 1
+            and len(set(movables[0].evidence_frame_ids)) >= 2
+            and bool(robots)
+            and len(fences) == 1
+            and len(set(fences[0].evidence_frame_ids)) >= 3
+            and clearance_fact is not None
+            and clearance_fact.subject_id == movables[0].entity_id
+        )
+        distance_passed = (
+            actual_distance_m is None
+            if not sufficient
+            else absolute_error_m is not None and absolute_error_m <= 0.1
+        )
+        case_reports[case_id] = {
+            "expected_status": expected_status,
+            "actual_status": assessment.status.value,
+            "expected_distance_m": expected_distance_m,
+            "actual_distance_m": actual_distance_m,
+            "absolute_error_m": absolute_error_m,
+            "entity_labels": [entity.label for entity in scene.entities],
+            "warnings": scene.warnings,
+            "passed": assessment.status.value == expected_status
+            and distance_passed
+            and evidence_passed,
+            "artifacts": {
+                "scene_json": paths.scene_json.relative_to(root).as_posix(),
+                "assessment_json": paths.assessment_json.relative_to(root).as_posix(),
+                "topdown_png": paths.topdown_png.relative_to(root).as_posix(),
+            },
+        }
+
+    report = {
+        "passed": all(case["passed"] for case in case_reports.values()),
+        "cases": case_reports,
+    }
+    (root / "offline_report.json").write_bytes(
+        TypeAdapter(dict[str, Any]).dump_json(report, indent=2) + b"\n"
+    )
+    return report

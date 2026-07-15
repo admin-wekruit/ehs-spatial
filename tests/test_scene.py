@@ -425,6 +425,35 @@ def test_floor_ransac_final_tolerance_is_three_centimeters_at_any_raw_scale(
         assert assessment.approximate_distance_m == pytest.approx(0.5, abs=0.01)
 
 
+def test_floor_fit_requests_compact_svd_for_tall_point_matrix(
+    tmp_path,
+    monkeypatch,
+):
+    from ehs_spatial.scene import build_scene_and_assess
+
+    frames, observations = _synthetic_scene(tmp_path, clearance_m=0.5)
+    original_svd = np.linalg.svd
+    seen_shapes = []
+
+    def require_compact_svd(matrix, *args, **kwargs):
+        seen_shapes.append(matrix.shape)
+        assert kwargs.get("full_matrices") is False
+        return original_svd(matrix, *args, **kwargs)
+
+    monkeypatch.setattr(np.linalg, "svd", require_compact_svd)
+
+    build_scene_and_assess(
+        run_id="compact-floor-svd",
+        frames=frames,
+        observations=observations,
+        camera_height_m=1.6,
+        criterion=Criterion(),
+    )
+
+    assert seen_shapes
+    assert all(rows > columns for rows, columns in seen_shapes)
+
+
 def test_top_surface_only_object_height_is_measured_above_floor(tmp_path):
     from ehs_spatial.scene import build_scene_and_assess
 
