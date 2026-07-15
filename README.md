@@ -44,6 +44,26 @@ uv run --env-file .env python app.py
 
 No custom `.env` loader is used.
 
+## Reproducible EHS evaluation
+
+Generate the four calibrated CPU scenes and validate the deterministic
+SceneMap/rule path without any provider calls:
+
+```bash
+uv run python scripts/ehs_eval.py generate --output outputs/ehs_v1
+uv run python scripts/ehs_eval.py offline --pack outputs/ehs_v1
+```
+
+Then run one explicit paid end-to-end case:
+
+```bash
+uv run --env-file .env python scripts/ehs_eval.py live \
+  --pack outputs/ehs_v1 --case ladder_050 --live
+```
+
+See [the calibrated eval guide](eval/README.md) for truth boundaries, exact
+artifacts, call counts, and the opt-in four-case benchmark command.
+
 ## Capture and evidence
 
 Upload four local images in the labeled front/right/rear/left slots. Capture the
@@ -77,7 +97,7 @@ Offline verification never calls a provider:
 
 ```bash
 uv run pytest -q
-uv run python -m compileall -q app.py ehs_spatial tests
+uv run python -m compileall -q app.py ehs_spatial scripts tests
 uv lock --check
 uv pip check
 ```

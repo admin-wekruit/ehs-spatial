@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import numpy as np
 import open3d as o3d
@@ -13,7 +15,16 @@ from PIL import Image
 from pydantic import TypeAdapter
 
 from .artifacts import ArtifactStore
-from .contracts import Criterion, GeometryFrame, Observation2D
+from .contracts import (
+    Assessment,
+    CaptureRun,
+    Criterion,
+    GeometryFrame,
+    GroundedAnswer,
+    Observation2D,
+    SceneMap,
+)
+from .providers.base import ProviderError
 from .scene import build_scene_and_assess
 
 
@@ -564,3 +575,207 @@ def run_offline_benchmark(pack_root: str | Path) -> dict:
         TypeAdapter(dict[str, Any]).dump_json(report, indent=2) + b"\n"
     )
     return report
+
+
+def _redact_provider_values(message: str) -> str:
+    for name in ("REPLICATE_API_TOKEN", "FAL_KEY", "GEMINI_API_KEY"):
+        value = os.getenv(name)
+        if value:
+            message = message.replace(value, "[REDACTED]")
+    return message
+
+
+def _write_live_report(root: Path, report: dict[str, Any]) -> dict[str, Any]:
+    (root / "live_report.json").write_text(
+        json.dumps(report, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return report
+
+
+def run_live_benchmark_case(
+    pack_root: str | Path,
+    case_id: str,
+    *,
+    pipeline: Any | None = None,
+) -> dict[str, Any]:
+    """Run one provider-backed case and write ``live_report.json``."""
+
+    root = Path(pack_root).resolve()
+    manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    cases = manifest.get("cases")
+    if not isinstance(cases, dict) or set(cases) != _CASE_IDS:
+        raise ValueError("eval pack must contain exactly the four calibrated cases")
+    if case_id not in cases:
+        raise ValueError(f"unknown calibrated case: {case_id}")
+    case = cases[case_id]
+    frames = case.get("frames")
+    if not isinstance(frames, list) or len(frames) != 4:
+        raise ValueError("live benchmark case must contain exactly four frames")
+    image_paths = [_pack_path(root, frame.get("rgb")) for frame in frames]
+    scene_ply = _pack_path(root, case.get("scene_ply"))
+    for path in [*image_paths, scene_ply]:
+        if not path.is_file():
+            raise FileNotFoundError(path)
+
+    if pipeline is None:
+        from .pipeline import EHSAssessmentPipeline
+
+        pipeline = EHSAssessmentPipeline(store=ArtifactStore(root / "live_runs"))
+    run_id = f"live-{case_id}-{uuid4().hex}"
+    capture = CaptureRun(
+        run_id=run_id,
+        image_paths=[str(path) for path in image_paths],
+        camera_height_m=manifest["camera_height_m"],
+        criterion=Criterion(minimum_clearance_m=0.6),
+    )
+
+    try:
+        assessment = Assessment.model_validate(pipeline.run_assessment(capture))
+        paths = pipeline.store.paths(run_id)
+        scene = pipeline.store.load_json(paths.scene_json, SceneMap)
+        if scene.run_id != run_id:
+            raise ValueError("provider SceneMap run_id does not match the capture")
+
+        expected_status = case["expected_status"]
+        expected_distance_m = float(case["expected_distance_m"])
+        actual_distance_m = assessment.approximate_distance_m
+        threshold_m = capture.criterion.minimum_clearance_m
+        threshold_side_matches = (
+            None
+            if actual_distance_m is None
+            else (actual_distance_m >= threshold_m)
+            == (expected_distance_m >= threshold_m)
+        )
+        absolute_error_m = (
+            None
+            if actual_distance_m is None
+            else abs(actual_distance_m - expected_distance_m)
+        )
+
+        movables = [
+            entity
+            for entity in scene.entities
+            if entity.label == case["movable_label"]
+        ]
+        fences = [
+            entity for entity in scene.entities if entity.label == "safety fence"
+        ]
+        robots = [
+            entity
+            for entity in scene.entities
+            if entity.label == "industrial robot arm"
+        ]
+        clearance_fact = next(
+            (
+                fact
+                for fact in scene.facts
+                if fact.predicate == "minimum_boundary_clearance"
+            ),
+            None,
+        )
+        sufficient = expected_status != "INSUFFICIENT_EVIDENCE"
+        entity_evidence_passed = not sufficient or (
+            len(movables) == 1
+            and len(set(movables[0].evidence_frame_ids)) >= 2
+            and len(fences) == 1
+            and len(set(fences[0].evidence_frame_ids)) >= 3
+            and bool(robots)
+            and clearance_fact is not None
+            and clearance_fact.subject_id == movables[0].entity_id
+        )
+        scene_fact_ids = {fact.fact_id for fact in scene.facts}
+        fact_grounding_passed = (
+            set(assessment.fact_ids) <= scene_fact_ids
+            and (
+                assessment.climb_review is None
+                or set(assessment.climb_review.fact_ids) <= scene_fact_ids
+            )
+        )
+
+        chat_report = None
+        chat_grounded = True
+        if case_id == "ladder_050":
+            answer = GroundedAnswer.model_validate(
+                pipeline.answer_question(
+                    run_id,
+                    "Why did this workcell fail the clearance check?",
+                )
+            )
+            chat_grounded = (
+                bool(answer.fact_ids)
+                and set(answer.fact_ids) <= scene_fact_ids
+            )
+            chat_report = {
+                "answer": answer.answer,
+                "fact_ids": answer.fact_ids,
+                "grounded": chat_grounded,
+            }
+
+        artifact_paths = {
+            "point_cloud_glb": paths.point_cloud_glb,
+            "observations_json": paths.observations_json,
+            "scene_json": paths.scene_json,
+            "assessment_json": paths.assessment_json,
+            "topdown_png": paths.topdown_png,
+            "chat_jsonl": paths.chat_jsonl,
+        }
+        provider_artifacts: dict[str, str] = {}
+        artifact_passed = True
+        for name, path in artifact_paths.items():
+            resolved = path.resolve()
+            if not resolved.is_relative_to(root):
+                raise ValueError("provider artifact escaped the eval pack root")
+            provider_artifacts[name] = resolved.relative_to(root).as_posix()
+            artifact_passed &= resolved.is_file() and resolved.stat().st_size > 0
+
+        report = {
+            "passed": (
+                assessment.status.value == expected_status
+                and (not sufficient or threshold_side_matches is True)
+                and entity_evidence_passed
+                and fact_grounding_passed
+                and chat_grounded
+                and artifact_passed
+            ),
+            "case_id": case_id,
+            "run_id": run_id,
+            "expected_status": expected_status,
+            "actual_status": assessment.status.value,
+            "expected_distance_m": expected_distance_m,
+            "actual_distance_m": actual_distance_m,
+            "absolute_error_m": absolute_error_m,
+            "threshold_side_matches": threshold_side_matches,
+            "entity_evidence_passed": entity_evidence_passed,
+            "fact_grounding_passed": fact_grounding_passed,
+            "entity_labels": [entity.label for entity in scene.entities],
+            "warnings": scene.warnings,
+            "climb_review": (
+                None
+                if assessment.climb_review is None
+                else assessment.climb_review.model_dump(mode="json")
+            ),
+            "chat": chat_report,
+            "source_artifacts": {
+                "scene_ply": scene_ply.relative_to(root).as_posix(),
+                "images": [path.relative_to(root).as_posix() for path in image_paths],
+            },
+            "provider_artifacts": provider_artifacts,
+        }
+        return _write_live_report(root, report)
+    except ProviderError as exc:
+        error = {
+            "type": type(exc).__name__,
+            "provider": exc.provider,
+            "operation": exc.operation,
+            "message": _redact_provider_values(exc.original_message),
+        }
+        return _write_live_report(
+            root,
+            {
+                "passed": False,
+                "case_id": case_id,
+                "run_id": run_id,
+                "error": error,
+            },
+        )
