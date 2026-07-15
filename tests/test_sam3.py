@@ -32,6 +32,17 @@ def test_decode_coco_rle_supports_compressed_and_counts_only_forms():
     )
 
 
+def test_decode_coco_rle_supports_fal_one_indexed_row_major_pairs():
+    sam3 = importlib.import_module("ehs_spatial.providers.sam3")
+
+    mask = sam3.decode_coco_rle("1 2 5 1", height=2, width=3)
+
+    np.testing.assert_array_equal(
+        mask,
+        np.array([[1, 1, 0], [0, 1, 0]], dtype=np.uint8),
+    )
+
+
 def test_decode_coco_rle_fails_loudly_for_unknown_object_shape():
     sam3 = importlib.import_module("ehs_spatial.providers.sam3")
 

@@ -68,6 +68,28 @@ def _decode_compressed_counts(value: str) -> list[int]:
     return counts
 
 
+def _mask_from_fal_pairs(value: str, height: int, width: int) -> np.ndarray:
+    tokens = value.split()
+    if not tokens or len(tokens) % 2:
+        raise ValueError("fal RLE requires start/length pairs")
+    try:
+        pairs = [int(token) for token in tokens]
+    except ValueError as exc:
+        raise ValueError("fal RLE pairs must be integers") from exc
+
+    total = height * width
+    flat = np.zeros(total, dtype=np.uint8)
+    previous_end = 0
+    for start, length in zip(pairs[::2], pairs[1::2], strict=True):
+        offset = start - 1
+        end = offset + length
+        if start < 1 or length < 1 or offset < previous_end or end > total:
+            raise ValueError("invalid fal RLE start/length pairs")
+        flat[offset:end] = 1
+        previous_end = end
+    return flat.reshape((height, width))
+
+
 def decode_coco_rle(
     rle: str,
     *,
@@ -92,6 +114,8 @@ def decode_coco_rle(
 
     if not isinstance(rle_height, int) or not isinstance(rle_width, int):
         raise ValueError("COCO RLE size must contain integer height and width")
+    if isinstance(counts, str) and any(character.isspace() for character in counts):
+        return _mask_from_fal_pairs(counts, rle_height, rle_width)
     if isinstance(counts, str):
         decoded_counts = _decode_compressed_counts(counts)
     elif isinstance(counts, list) and all(
