@@ -358,11 +358,20 @@ def test_live_runner_reconciles_provider_result_with_metric_truth(tmp_path):
     assert report["threshold_side_matches"] is True
     assert report["entity_evidence_passed"] is True
     assert report["absolute_error_m"] == pytest.approx(0.02)
+    assert report["criterion_m"] == pytest.approx(0.6)
+    assert report["observations"] == {"count": 0, "by_label": {}}
     assert report["entity_labels"] == [
         "safety fence",
         "industrial robot arm",
         "step ladder",
     ]
+    assert report["entities"][2] == {
+        "entity_id": "step-ladder-1",
+        "label": "step ladder",
+        "observation_ids": ["ladder-0", "ladder-1"],
+        "evidence_frame_ids": ["frame-00", "frame-01"],
+    }
+    assert report["assessment_fact_ids"] == ["fact-clearance"]
     assert report["chat"]["fact_ids"] == ["fact-clearance"]
     assert report["chat"]["grounded"] is True
     assert pipeline.captures[0].camera_height_m == pytest.approx(1.65)

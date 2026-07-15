@@ -729,6 +729,18 @@ def run_live_benchmark_case(
             provider_artifacts[name] = resolved.relative_to(root).as_posix()
             artifact_passed &= resolved.is_file() and resolved.stat().st_size > 0
 
+        observation_payload = json.loads(
+            paths.observations_json.read_text(encoding="utf-8")
+        )
+        observations = TypeAdapter(list[Observation2D]).validate_python(
+            observation_payload
+        )
+        observations_by_label: dict[str, int] = {}
+        for observation in observations:
+            observations_by_label[observation.label] = (
+                observations_by_label.get(observation.label, 0) + 1
+            )
+
         report = {
             "passed": (
                 assessment.status.value == expected_status
@@ -742,13 +754,29 @@ def run_live_benchmark_case(
             "run_id": run_id,
             "expected_status": expected_status,
             "actual_status": assessment.status.value,
+            "criterion_m": threshold_m,
             "expected_distance_m": expected_distance_m,
             "actual_distance_m": actual_distance_m,
             "absolute_error_m": absolute_error_m,
             "threshold_side_matches": threshold_side_matches,
+            "observations": {
+                "count": len(observations),
+                "by_label": dict(sorted(observations_by_label.items())),
+            },
             "entity_evidence_passed": entity_evidence_passed,
             "fact_grounding_passed": fact_grounding_passed,
             "entity_labels": [entity.label for entity in scene.entities],
+            "entities": [
+                {
+                    "entity_id": entity.entity_id,
+                    "label": entity.label,
+                    "observation_ids": entity.observation_ids,
+                    "evidence_frame_ids": entity.evidence_frame_ids,
+                }
+                for entity in scene.entities
+            ],
+            "assessment_fact_ids": assessment.fact_ids,
+            "assessment_evidence_frame_ids": assessment.evidence_frame_ids,
             "warnings": scene.warnings,
             "climb_review": (
                 None
