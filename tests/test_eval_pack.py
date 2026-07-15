@@ -155,13 +155,15 @@ def test_generate_eval_pack_occlusion_comes_from_cameras_pointing_away(
         assert points_toward_cell is (index < 2)
 
 
-def test_generate_eval_pack_scene_ply_round_trips_with_colored_meshes(
+def test_generate_eval_pack_scene_meshes_round_trip_for_eval_and_viewer(
     generated_pack,
 ):
     root, manifest = generated_pack
 
     for case in manifest["cases"].values():
-        scene = o3d.io.read_triangle_mesh(str(_artifact(root, case["scene_ply"])))
+        scene = o3d.io.read_triangle_mesh(
+            str(_artifact(root, case["scene_ply"]))
+        )
         vertices = np.asarray(scene.vertices)
         triangles = np.asarray(scene.triangles)
         colors = np.asarray(scene.vertex_colors)
@@ -169,6 +171,8 @@ def test_generate_eval_pack_scene_ply_round_trips_with_colored_meshes(
         assert len(triangles) > 0
         assert colors.shape == vertices.shape
         assert np.isfinite(colors).all()
+
+        assert _artifact(root, case["scene_glb"]).read_bytes()[:4] == b"glTF"
 
 
 def test_generate_eval_pack_rejects_empty_scene_ply_round_trip(

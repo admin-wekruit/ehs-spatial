@@ -46,6 +46,7 @@ Each generated case contains:
 case_id/
   manifest.json
   scene.ply
+  scene.glb
   frame_0001/
     rgb.png
     pts3d.npy
@@ -58,10 +59,12 @@ case_id/
   ... frame_0004/
 ```
 
-`scene.ply` is the calibrated 3D visualization artifact. Gradio 6.20 supports
-PLY directly. Open3D 0.19's macOS GLB writer is not used because a feasibility
-run produced an invalid GLB buffer view; the production MapAnything GLB remains
-unchanged.
+`scene.ply` is the calibrated mesh used for exact Open3D verification.
+`scene.glb` contains the same vertices, faces, normals, and colors for Gradio
+6.20 browser display. Gradio's PLY path is not used because its loader rejects
+triangle-face `property list` data. Open3D's Assimp reader does not round-trip
+its data-URI GLB, so the generator validates the GLB container and a real Gradio
+browser test validates rendering. The production MapAnything GLB is unchanged.
 
 Generated binary artifacts live under ignored `outputs/`. Source code,
 manifests-as-schema, documentation, and tests are committed.
@@ -82,7 +85,7 @@ Hard gates:
 - one fence entity has at least three evidence views in sufficient cases;
 - one ladder/platform entity has at least two evidence views;
 - the robot arm is present but never selected as the rule subject;
-- the PLY can be read back and contains non-empty geometry and colors.
+- the PLY reads back with non-empty colored geometry and the GLB renders in Gradio.
 
 ### Opt-in live provider benchmark
 
@@ -97,9 +100,10 @@ correct sides of the threshold. Absolute error is recorded but is not a
 measurement-grade acceptance claim.
 
 Live execution is paid and opt-in. One case performs one MapAnything call,
-32 SAM calls, and at least one Gemini call. Four cases therefore make four
-MapAnything calls and 128 SAM calls. Keys are read only from local environment
-variables and are never written to reports.
+32 SAM calls, and at least one Gemini call. As checked on 2026-07-15, fal lists
+SAM 3.1 at `$0.01/request`, so segmentation alone is about `$0.32/case`.
+Four cases make four MapAnything calls and 128 SAM calls. Keys are read only
+from local environment variables and are never written to reports.
 
 ## Provider versions
 
@@ -108,7 +112,7 @@ variables and are never written to reports.
 - Move fal image segmentation from `fal-ai/sam-3/image-rle` to the current
   `fal-ai/sam-3-1/image-rle` endpoint. Its schema still accepts one text prompt
   per request, so the fixed eight-class vocabulary remains 32 calls per case.
-- Keep Gemini explanation/chat behavior unchanged.
+- Keep stable GA `gemini-3.5-flash` explanation/chat behavior unchanged.
 
 ## Explicit limits
 
@@ -117,4 +121,3 @@ fence. It does not validate an open gate, a missing fence panel, a fence gap,
 multiple cells, non-convex boundaries, formal EHS standards, CAD comparison,
 video, OCR, S3, robotics, or certified measurement. The current convex-hull
 geometry would close a real gap, so those claims remain out of scope.
-

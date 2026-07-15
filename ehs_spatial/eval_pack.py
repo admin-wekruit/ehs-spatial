@@ -416,6 +416,22 @@ def generate_eval_pack(output_root: str | Path):
         ):
             raise RuntimeError(f"Invalid scene PLY round-trip: {scene_path}")
 
+        scene_glb_path = case_dir / "scene.glb"
+        if not o3d.io.write_triangle_mesh(
+            str(scene_glb_path), combined, write_vertex_colors=True
+        ):
+            raise RuntimeError(f"Could not write browser scene mesh: {scene_glb_path}")
+        glb_payload = scene_glb_path.read_bytes()
+        if (
+            len(glb_payload) < 20
+            or glb_payload[:4] != b"glTF"
+            or int.from_bytes(glb_payload[4:8], "little") != 2
+            or int.from_bytes(glb_payload[8:12], "little") != len(glb_payload)
+        ):
+            raise RuntimeError(
+                f"Invalid browser scene GLB round-trip: {scene_glb_path}"
+            )
+
         frames = [
             _write_frame(
                 root,
@@ -433,6 +449,7 @@ def generate_eval_pack(output_root: str | Path):
             "expected_distance_m": distance_m,
             "movable_label": movable_label,
             "scene_ply": scene_path.relative_to(root).as_posix(),
+            "scene_glb": scene_glb_path.relative_to(root).as_posix(),
             "frames": frames,
         }
 
@@ -614,7 +631,8 @@ def run_live_benchmark_case(
         raise ValueError("live benchmark case must contain exactly four frames")
     image_paths = [_pack_path(root, frame.get("rgb")) for frame in frames]
     scene_ply = _pack_path(root, case.get("scene_ply"))
-    for path in [*image_paths, scene_ply]:
+    scene_glb = _pack_path(root, case.get("scene_glb"))
+    for path in [*image_paths, scene_ply, scene_glb]:
         if not path.is_file():
             raise FileNotFoundError(path)
 
@@ -786,6 +804,7 @@ def run_live_benchmark_case(
             "chat": chat_report,
             "source_artifacts": {
                 "scene_ply": scene_ply.relative_to(root).as_posix(),
+                "scene_glb": scene_glb.relative_to(root).as_posix(),
                 "images": [path.relative_to(root).as_posix() for path in image_paths],
             },
             "provider_artifacts": provider_artifacts,

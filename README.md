@@ -83,7 +83,8 @@ shown as an error and the run does not invent a result.
 
 One analysis makes **1 paid Map Anything call, 32 paid fal segmentation calls,
 and at least 1 paid Gemini interaction**; each chat question adds another Gemini
-interaction. Review provider pricing before use.
+interaction. fal listed SAM 3.1 at `$0.01/request` on 2026-07-15, making its
+portion about `$0.32/case`. Review current provider pricing before use.
 
 Gemini requests use `store=True` so follow-up questions can chain through the
 stored interaction ID. Provider retention therefore applies. Do not upload Tesla

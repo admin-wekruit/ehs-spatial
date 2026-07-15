@@ -22,9 +22,10 @@ validate MapAnything, SAM 3.1, or Gemini.
 
 Useful artifacts after those commands:
 
-- calibrated colored mesh: `outputs/ehs_v1/ladder_050/scene.ply`
-- four input views: `outputs/ehs_v1/ladder_050/frame_01_rgb.png` through
-  `frame_04_rgb.png`
+- calibrated verification mesh: `outputs/ehs_v1/ladder_050/scene.ply`
+- Gradio-compatible display mesh: `outputs/ehs_v1/ladder_050/scene.glb`
+- four input views: `outputs/ehs_v1/ladder_050/frame_00_rgb.png` through
+  `frame_03_rgb.png`
 - spatial evidence: `outputs/ehs_v1/ladder_050/topdown.png`
 - machine-readable result: `outputs/ehs_v1/offline_report.json`
 
@@ -47,8 +48,13 @@ MapAnything → SAM 3.1 → SceneMap → Gemini path without retry or fallback.
 
 One case makes 1 MapAnything call, 32 SAM calls (8 prompts × 4 images), and at
 least 1 Gemini interaction. `ladder_050` makes a second Gemini interaction for
-the grounded chat check. A four-case run therefore makes 4 MapAnything calls,
-128 SAM calls, and at least 5 Gemini interactions.
+the grounded chat check. As checked on 2026-07-15, fal lists SAM 3.1 at
+`$0.01/request`, so segmentation is about `$0.32/case`; Replicate is
+usage-time billed and Gemini is token billed. A four-case run therefore makes
+4 MapAnything calls, 128 SAM calls, and at least 5 Gemini interactions. Recheck the official
+[fal](https://fal.ai/models/fal-ai/sam-3-1/image-rle),
+[Replicate](https://replicate.com/vufinder/map-anything), and
+[Gemini](https://ai.google.dev/gemini-api/docs/pricing) pages before scaling.
 
 The pack-level result is `outputs/ehs_v1/live_report.json`. Provider artifacts
 are stored below `outputs/ehs_v1/live_runs/{run_id}/`; their exact relative paths

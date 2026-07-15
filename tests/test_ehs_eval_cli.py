@@ -41,8 +41,10 @@ def _write_small_pack(root: Path) -> None:
         image = root / f"image-{index}.png"
         image.write_bytes(b"png")
         frames.append({"frame_id": index, "rgb": image.name})
-    scene = root / "scene.ply"
-    scene.write_bytes(b"ply")
+    scene_ply = root / "scene.ply"
+    scene_ply.write_bytes(b"ply")
+    scene_glb = root / "scene.glb"
+    scene_glb.write_bytes(b"glTF")
     manifest = {
         "camera_height_m": 1.65,
         "cases": {
@@ -50,7 +52,8 @@ def _write_small_pack(root: Path) -> None:
                 "expected_status": status,
                 "expected_distance_m": distance,
                 "movable_label": label,
-                "scene_ply": scene.name,
+                "scene_ply": scene_ply.name,
+                "scene_glb": scene_glb.name,
                 "frames": frames,
             }
             for case_id, (status, distance, label) in CASE_TRUTH.items()
@@ -374,6 +377,7 @@ def test_live_runner_reconciles_provider_result_with_metric_truth(tmp_path):
     assert report["assessment_fact_ids"] == ["fact-clearance"]
     assert report["chat"]["fact_ids"] == ["fact-clearance"]
     assert report["chat"]["grounded"] is True
+    assert report["source_artifacts"]["scene_glb"] == "scene.glb"
     assert pipeline.captures[0].camera_height_m == pytest.approx(1.65)
     assert pipeline.captures[0].criterion.minimum_clearance_m == pytest.approx(0.6)
     assert pipeline.captures[0].image_paths == [

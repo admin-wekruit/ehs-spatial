@@ -4,7 +4,7 @@
 
 **Goal:** Build a reproducible CPU-only robot-workcell eval pack and compare its metric truth with both the deterministic spatial pipeline and the opt-in cloud-provider pipeline.
 
-**Architecture:** An Open3D raycaster generates four-view RGB, exact world pointmaps, masks, camera calibration, and a colored PLY for four fixed EHS cases. A small benchmark module loads those artifacts into the existing contracts and invokes the existing scene/rule pipeline offline or the existing provider pipeline live; it writes evidence and a machine-readable report without changing production APIs.
+**Architecture:** An Open3D raycaster generates four-view RGB, exact world pointmaps, masks, camera calibration, a colored PLY for metric verification, and a matching GLB for browser display across four fixed EHS cases. A small benchmark module loads those artifacts into the existing contracts and invokes the existing scene/rule pipeline offline or the existing provider pipeline live; it writes evidence and a machine-readable report without changing production APIs.
 
 **Tech Stack:** Python 3.12, NumPy, Pillow, Open3D 0.19, existing Pydantic contracts, pytest, Replicate MapAnything, fal SAM 3.1, Gemini 3.5 Flash.
 
@@ -78,7 +78,8 @@ assert len(manifest["cases"]["ladder_050"]["frames"]) == 4
 
 For every normal frame, load RGB, pointmap, valid mask, and label masks and
 assert identical pixel dimensions. Read `scene.ply` with Open3D and assert that
-it has vertices, triangles, and vertex colors. Assert each of the four normal
+it has vertices, triangles, and vertex colors. Validate the `scene.glb` header,
+then browser-test it in Gradio. Assert each of the four normal
 views contains visible robot, fence, floor, and movable pixels; for
 `fence_occluded`, assert exactly two frames contain a usable fence mask.
 
@@ -103,8 +104,9 @@ portable work platform
 Use `open3d.t.geometry.RaycastingScene` with fixed `512x384` intrinsics and four
 camera poses. Derive RGB, `pts3d`, valid mask, label masks, and normalized boxes
 from the same `geometry_ids` result. Use simple per-label colors plus normal
-shading; do not call a generative image model. Write a colored `scene.ply` and
-read it back before declaring generation successful.
+shading; do not call a generative image model. Write a colored `scene.ply` for
+metric verification and matching `scene.glb` for Gradio. Read the PLY back and
+validate the GLB container before declaring generation successful.
 
 For `fence_occluded`, make the final two camera frames point away from the cell
 so their RGB and masks genuinely lack fence evidence; do not merely delete an
@@ -237,7 +239,7 @@ No retries, fallback, queue, database, or benchmark service.
 `eval/README.md` must state that offline mode uses oracle masks/pointmaps and
 does not validate MapAnything or SAM. Document the per-case paid call count and
 show how to run one case before the full four-case set. Link the generated PLY,
-RGB, top-down, and report paths.
+GLB, RGB, top-down, and report paths.
 
 - [ ] **Step 5: Verify GREEN**
 
@@ -323,10 +325,13 @@ Open one RGB from each case and each top-down image. Confirm that the 0.5/0.7
 scenes differ only in ladder placement, the platform is inside the fence, and
 the insufficient case lacks fence evidence in exactly two views.
 
-- [ ] **Step 3: Browser-test the calibrated PLY**
+- [ ] **Step 3: Browser-test the calibrated GLB**
 
-Serve one generated `scene.ply` through Gradio `Model3D`, then use a real
+Serve one generated `scene.glb` through Gradio `Model3D`, then use a real
 browser to verify load, rotate, and zoom. Save a screenshot under `outputs/`.
+The PLY remains the metric validation artifact; Gradio 6.20 rejects its triangle
+face `property list`, while the generated GLB renders in the same viewer used by
+the MapAnything result.
 
 - [ ] **Step 4: Run one paid case only after rotated keys exist locally**
 
@@ -339,4 +344,3 @@ and raw artifacts and report the exact failing layer; do not add a fallback.
 Review against
 `docs/superpowers/specs/2026-07-14-ehs-calibrated-eval-design.md`, then resolve
 all important findings and rerun the full offline gates.
-
