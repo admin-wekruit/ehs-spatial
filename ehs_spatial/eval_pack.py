@@ -38,6 +38,22 @@ COLORS = {
     "step ladder": (0.12, 0.36, 0.86),
     "portable work platform": (0.05, 0.58, 0.52),
 }
+_CASE_IDS = {
+    "ladder_050",
+    "ladder_070",
+    "platform_inside",
+    "fence_occluded",
+}
+
+
+def _pack_path(root: Path, value: object) -> Path:
+    if not isinstance(value, str) or not value or Path(value).is_absolute():
+        raise ValueError("artifact path must be a relative path inside the pack root")
+    resolved_root = root.resolve()
+    candidate = (resolved_root / value).resolve()
+    if not candidate.is_relative_to(resolved_root):
+        raise ValueError("artifact path must be a relative path inside the pack root")
+    return candidate
 
 
 def _box(size: tuple[float, float, float], origin: tuple[float, float, float]):
@@ -420,11 +436,21 @@ def run_offline_benchmark(pack_root: str | Path) -> dict:
 
     root = Path(pack_root)
     manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    cases = manifest.get("cases")
+    if not isinstance(cases, dict) or set(cases) != _CASE_IDS:
+        raise ValueError("eval pack must contain exactly the four calibrated cases")
+    for case in cases.values():
+        for frame in case["frames"]:
+            for key in ("rgb", "pts3d", "confidence", "valid_mask"):
+                _pack_path(root, frame[key])
+            for mask_path in frame["label_masks"].values():
+                _pack_path(root, mask_path)
+
     camera_height_m = manifest["camera_height_m"]
     store = ArtifactStore(root)
     case_reports: dict[str, dict[str, Any]] = {}
 
-    for case_id, case in manifest["cases"].items():
+    for case_id, case in cases.items():
         frames = []
         observations = []
         for frame in case["frames"]:
@@ -432,10 +458,10 @@ def run_offline_benchmark(pack_root: str | Path) -> dict:
             frames.append(
                 GeometryFrame(
                     frame_id=frame_id,
-                    canonical_image_path=str(root / frame["rgb"]),
-                    pts3d_path=str(root / frame["pts3d"]),
-                    conf_path=str(root / frame["confidence"]),
-                    valid_mask_path=str(root / frame["valid_mask"]),
+                    canonical_image_path=str(_pack_path(root, frame["rgb"])),
+                    pts3d_path=str(_pack_path(root, frame["pts3d"])),
+                    conf_path=str(_pack_path(root, frame["confidence"])),
+                    valid_mask_path=str(_pack_path(root, frame["valid_mask"])),
                     camera_to_world=frame["camera_to_world"],
                     intrinsics=frame["K"],
                 )
@@ -447,7 +473,9 @@ def run_offline_benchmark(pack_root: str | Path) -> dict:
                         frame_id=frame_id,
                         label=label,
                         instance_id=label,
-                        mask_path=str(root / frame["label_masks"][label]),
+                        mask_path=str(
+                            _pack_path(root, frame["label_masks"][label])
+                        ),
                         score=1.0,
                         bbox=bbox,
                         source_prompt=label,

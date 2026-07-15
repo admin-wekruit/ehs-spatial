@@ -275,6 +275,68 @@ def test_generate_eval_pack_is_deterministic(generated_pack, tmp_path):
     assert np.array_equal(first_points, second_points, equal_nan=True)
 
 
+def test_offline_benchmark_rejects_artifact_path_escapes_before_reads(
+    tmp_path,
+    monkeypatch,
+):
+    root = tmp_path / "pack"
+    manifest = generate_eval_pack(root)
+    frame = manifest["cases"]["ladder_050"]["frames"][0]
+    absolute_rgb = str((root / frame["rgb"]).resolve())
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (root / "escape").symlink_to(outside, target_is_directory=True)
+
+    def fail_artifact_read(*_args, **_kwargs):
+        pytest.fail("artifact read started before manifest validation")
+
+    monkeypatch.setattr(np, "load", fail_artifact_read)
+    monkeypatch.setattr(Image, "open", fail_artifact_read)
+
+    for invalid_path in (
+        absolute_rgb,
+        "../outside/frame.png",
+        "escape/frame.png",
+        123,
+    ):
+        frame["rgb"] = invalid_path
+        (root / "manifest.json").write_text(
+            json.dumps(manifest, indent=2), encoding="utf-8"
+        )
+
+        with pytest.raises(ValueError, match="relative path inside the pack root"):
+            run_offline_benchmark(root)
+
+
+def test_offline_benchmark_requires_exact_case_set_before_artifact_reads(
+    tmp_path,
+    monkeypatch,
+):
+    root = tmp_path / "pack"
+    manifest = generate_eval_pack(root)
+    cases = manifest["cases"]
+    invalid_case_sets = (
+        {},
+        {key: value for key, value in cases.items() if key != "ladder_050"},
+        {**cases, "unexpected_case": cases["ladder_050"]},
+    )
+
+    def fail_artifact_read(*_args, **_kwargs):
+        pytest.fail("artifact read started before manifest validation")
+
+    monkeypatch.setattr(np, "load", fail_artifact_read)
+    monkeypatch.setattr(Image, "open", fail_artifact_read)
+
+    for invalid_cases in invalid_case_sets:
+        manifest["cases"] = invalid_cases
+        (root / "manifest.json").write_text(
+            json.dumps(manifest, indent=2), encoding="utf-8"
+        )
+
+        with pytest.raises(ValueError, match="exactly the four calibrated cases"):
+            run_offline_benchmark(root)
+
+
 def test_offline_benchmark_matches_calibrated_metric_truth(generated_pack):
     root, _ = generated_pack
 
