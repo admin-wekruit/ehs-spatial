@@ -187,17 +187,22 @@ def test_adapter_persists_complete_provider_output_and_returns_geometry_frames(t
     }
 
 
-def test_adapter_requires_exactly_four_local_images(tmp_path):
+def test_adapter_requires_one_to_four_local_images(tmp_path):
     map_anything = importlib.import_module("ehs_spatial.providers.map_anything")
     images = []
-    for index in range(3):
+    for index in range(5):
         path = tmp_path / f"image-{index}.png"
         Image.new("RGB", (1, 1)).save(path)
         images.append(str(path))
 
-    with pytest.raises(ValueError, match="exactly four image paths"):
+    with pytest.raises(ValueError, match="one to four image paths"):
         map_anything.MapAnythingAdapter(runner=lambda *args, **kwargs: {}).run(
             images,
+            tmp_path / "geometry",
+        )
+    with pytest.raises(ValueError, match="one to four image paths"):
+        map_anything.MapAnythingAdapter(runner=lambda *args, **kwargs: {}).run(
+            [],
             tmp_path / "geometry",
         )
 

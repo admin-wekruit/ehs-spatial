@@ -131,8 +131,8 @@ class MapAnythingAdapter:
         image_paths: list[str],
         geometry_dir: str | Path,
     ) -> tuple[list[GeometryFrame], Path]:
-        if len(image_paths) != 4:
-            raise ValueError("MapAnything requires exactly four image paths")
+        if not 1 <= len(image_paths) <= 4:
+            raise ValueError("MapAnything requires one to four image paths")
         sources = [Path(value) for value in image_paths]
         for source in sources:
             if not source.is_file():
