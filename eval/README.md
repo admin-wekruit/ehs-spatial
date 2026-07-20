@@ -46,12 +46,15 @@ The duplicated `live` is intentional: the first selects the command and the
 RGB images only—never the oracle pointmaps or masks—and runs the production
 MapAnything → SAM 3.1 → SceneMap → Gemini path without retry or fallback.
 
-One case makes 1 MapAnything call, 32 SAM calls (8 prompts × 4 images), and at
-least 1 Gemini interaction. `ladder_050` makes a second Gemini interaction for
-the grounded chat check. As checked on 2026-07-15, fal lists SAM 3.1 at
-`$0.01/request`, so segmentation is about `$0.32/case`; Replicate is
-usage-time billed and Gemini is token billed. A four-case run therefore makes
-4 MapAnything calls, 128 SAM calls, and at least 5 Gemini interactions. Recheck the official
+One case makes 1 MapAnything call, 28 baseline SAM calls (7 object labels × 4
+images — the floor is fitted geometrically from the full point cloud, not
+segmented) plus synonym-fallback calls only for frame-labels whose canonical
+prompt returns nothing, and at least 1 Gemini interaction. `ladder_050` makes a
+second Gemini interaction for the grounded chat check. As checked on
+2026-07-15, fal lists SAM 3.1 at `$0.01/request`, so segmentation is roughly
+`$0.28–0.5/case`; Replicate is usage-time billed and Gemini is token billed. A
+four-case run therefore makes 4 MapAnything calls and ~112–160 SAM calls, and
+at least 5 Gemini interactions. Recheck the official
 [fal](https://fal.ai/models/fal-ai/sam-3-1/image-rle),
 [Replicate](https://replicate.com/vufinder/map-anything), and
 [Gemini](https://ai.google.dev/gemini-api/docs/pricing) pages before scaling.
