@@ -164,7 +164,8 @@ def build_app(pipeline: Any | None = None) -> gr.Blocks:
         run_id = gr.State(None)
         gr.Markdown(
             "# EHS Spatial Inspection Workbench\n"
-            "Four-view spatial evidence for a deterministic fence-clearance demo.",
+            "Photo-based spatial evidence (1-4 views) for a deterministic "
+            "fence-clearance demo.",
             elem_classes="workbench-title",
         )
         gr.Markdown(
