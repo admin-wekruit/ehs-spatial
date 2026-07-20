@@ -81,10 +81,13 @@ shown as an error and the run does not invent a result.
 
 ## Cost, privacy, and data restrictions
 
-One analysis makes **1 paid Map Anything call, 32 paid fal segmentation calls,
-and at least 1 paid Gemini interaction**; each chat question adds another Gemini
-interaction. fal listed SAM 3.1 at `$0.01/request` on 2026-07-15, making its
-portion about `$0.32/case`. Review current provider pricing before use.
+One analysis makes **1 paid Map Anything call, 28 paid fal segmentation calls
+(7 object labels × 4 frames; the floor is fitted geometrically, not segmented)
+plus up to 3 extra calls per frame-label whose canonical prompt returns nothing
+(synonym fallback), and at least 1 paid Gemini interaction**; each chat question
+adds another Gemini interaction. fal listed SAM 3.1 at `$0.01/request` on
+2026-07-15, making segmentation roughly `$0.28–0.5/case`. Review current
+provider pricing before use.
 
 Gemini requests use `store=True` so follow-up questions can chain through the
 stored interaction ID. Provider retention therefore applies. Do not upload Tesla
