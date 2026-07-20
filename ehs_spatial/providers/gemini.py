@@ -133,9 +133,9 @@ class GeminiAdapter:
         criterion: Criterion,
         frames: list[GeometryFrame],
     ) -> tuple[ClimbReview, str]:
-        if len(frames) != 4:
+        if not 1 <= len(frames) <= 4:
             raise ProviderError(
-                "gemini", "climb.input", "climb review requires exactly four frames"
+                "gemini", "climb.input", "climb review requires one to four frames"
             )
         prompt = json.dumps(
             {
