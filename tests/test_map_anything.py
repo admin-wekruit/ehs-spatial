@@ -273,7 +273,7 @@ def test_adapter_wraps_provider_file_read_value_error(tmp_path):
         ([], "MapAnything response must be an object"),
         (
             {"data": [], "point_cloud": "unused.glb"},
-            "MapAnything response must contain four data files",
+            "MapAnything response must contain one data file per input image (4)",
         ),
         (
             {"data": ["unused.json"] * 4},

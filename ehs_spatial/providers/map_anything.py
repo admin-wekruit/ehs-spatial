@@ -187,8 +187,11 @@ class MapAnythingAdapter:
                 raise ValueError("MapAnything response must be an object")
             data = response.get("data")
             point_cloud_location = response.get("point_cloud")
-            if not isinstance(data, (list, tuple)) or len(data) != 4:
-                raise ValueError("MapAnything response must contain four data files")
+            if not isinstance(data, (list, tuple)) or len(data) != len(image_paths):
+                raise ValueError(
+                    "MapAnything response must contain one data file per "
+                    f"input image ({len(image_paths)})"
+                )
             if point_cloud_location is None:
                 raise ValueError("MapAnything response is missing point_cloud")
         except Exception as exc:
