@@ -43,7 +43,7 @@ class FakeMapAnything:
         glb_path = geometry_dir / "point_cloud.glb"
         glb_path.write_bytes(b"glb")
         frames = []
-        for index in range(1, 5):
+        for index in range(1, len(image_paths) + 1):
             canonical = geometry_dir / f"canonical-{index}.png"
             Image.new("RGB", (2, 2), (index, index, index)).save(canonical)
             frames.append(
@@ -415,3 +415,25 @@ def test_pipeline_falls_back_through_synonym_prompts_until_hit(tmp_path):
     assert all(
         observation.source_prompt == "barrier" for observation in fence_observations
     )
+
+
+def test_run_assessment_accepts_a_single_image_capture(tmp_path):
+    pipeline, store, map_adapter, sam, gemini, scene_builder = _pipeline(tmp_path)
+    path = tmp_path / "upload-1.png"
+    Image.new("RGB", (2, 2), (1, 1, 1)).save(path)
+    capture = CaptureRun(run_id="run-1", image_paths=[str(path)])
+
+    pipeline.run_assessment(capture)
+
+    assert len(map_adapter.calls) == 1
+    assert len(map_adapter.calls[0][0]) == 1
+    # 7 segmented labels x 1 frame (floor is fitted geometrically).
+    assert len(sam.calls) == 7
+    assert len(scene_builder.calls[0][1]) == 1
+
+
+def test_capture_run_rejects_zero_and_five_images(tmp_path):
+    with pytest.raises(ValidationError):
+        CaptureRun(run_id="run-1", image_paths=[])
+    with pytest.raises(ValidationError):
+        CaptureRun(run_id="run-1", image_paths=["a.png"] * 5)

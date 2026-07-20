@@ -205,9 +205,13 @@ def _fit_floor(
 
     evidence_frames = {frame_id for frame_id, _ in selected_by_frame}
     point_count = sum(len(points) for _, points in selected_by_frame)
-    if len(evidence_frames) < 2 or point_count < 200:
+    # Gates scale down for reduced captures (a monocular pointmap is one
+    # frame's worth of evidence by construction).
+    required_frames = min(2, len(frames))
+    if len(evidence_frames) < required_frames or point_count < 200:
         return None, [
-            "floor evidence requires at least 2 distinct frames and 200 selected points"
+            f"floor evidence requires at least {required_frames} distinct "
+            "frame(s) and 200 selected points"
         ]
 
     floor_points = np.vstack([points for _, points in selected_by_frame])

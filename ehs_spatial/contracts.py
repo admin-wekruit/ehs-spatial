@@ -28,7 +28,7 @@ class Criterion(BaseModel):
 
 class CaptureRun(BaseModel):
     run_id: str
-    image_paths: list[str] = Field(min_length=4, max_length=4)
+    image_paths: list[str] = Field(min_length=1, max_length=4)
     camera_height_m: float = Field(default=1.5, gt=0)
     criterion: Criterion = Field(default_factory=Criterion)
 

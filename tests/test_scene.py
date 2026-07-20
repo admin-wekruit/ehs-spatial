@@ -512,7 +512,7 @@ def test_geometry_in_only_one_frame_is_insufficient_without_fake_plane(tmp_path)
     assert assessment.approximate_distance_m is None
     assert scene.floor_plane is None
     assert scene.scale_factor is None
-    assert any("2 distinct frames" in warning for warning in scene.warnings)
+    assert any("2 distinct frame(s)" in warning for warning in scene.warnings)
 
 
 @pytest.mark.parametrize(

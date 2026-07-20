@@ -73,10 +73,12 @@ def analyze_run(
     image_4: str | None,
     camera_height_m: float,
 ) -> tuple[object, ...]:
-    image_paths = [image_1, image_2, image_3, image_4]
-    if not all(image_paths):
+    image_paths = [
+        path for path in (image_1, image_2, image_3, image_4) if path
+    ]
+    if not image_paths:
         return _analysis_error_outputs(
-            "Upload all four workcell views before analysis."
+            "Upload at least one workcell view before analysis."
         )
 
     try:
@@ -184,10 +186,10 @@ def build_app(pipeline: Any | None = None) -> gr.Blocks:
                         buttons=["fullscreen"],
                     )
                     for label in (
-                        "View 1 — workcell front",
-                        "View 2 — workcell right",
-                        "View 3 — workcell rear",
-                        "View 4 — workcell left",
+                        "View 1 — workcell front (required)",
+                        "View 2 — workcell right (optional)",
+                        "View 3 — workcell rear (optional)",
+                        "View 4 — workcell left (optional)",
                     )
                 ]
                 camera_height = gr.Number(
@@ -207,7 +209,8 @@ def build_app(pipeline: Any | None = None) -> gr.Blocks:
             with gr.Column(scale=7, min_width=420, elem_classes="evidence-canvas"):
                 gr.Markdown("## Evidence", elem_classes="section-heading")
                 status = gr.Markdown(
-                    "### Awaiting capture\n\nUpload four views to begin.",
+                    "### Awaiting capture\n\nUpload 1-4 views to begin "
+                    "(more views = stronger evidence).",
                     elem_classes=["result-status", "status-idle"],
                 )
                 with gr.Row(elem_classes="evidence-views"):

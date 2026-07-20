@@ -139,22 +139,32 @@ def _assert_analysis_failure(
 
 
 @pytest.mark.parametrize("missing_value", [None, ""], ids=["none", "empty"])
-@pytest.mark.parametrize("missing_index", range(4))
-def test_analysis_requires_all_four_images_before_provider_call(
-    tmp_path, missing_index, missing_value
+def test_analysis_requires_at_least_one_image_before_provider_call(
+    tmp_path, missing_value
 ):
     from ehs_spatial.app import analyze_run
 
     pipeline = FakePipeline(tmp_path / "runs")
-    images = _images(tmp_path)
-    images[missing_index] = missing_value
 
-    failed = analyze_run(pipeline, *images, 1.5)
+    failed = analyze_run(pipeline, *([missing_value] * 4), 1.5)
 
     _assert_analysis_failure(
-        failed, "Upload all four workcell views before analysis."
+        failed, "Upload at least one workcell view before analysis."
     )
     assert pipeline.assessment_calls == []
+
+
+@pytest.mark.parametrize("provided_count", [1, 2, 3])
+def test_analysis_accepts_partial_captures(tmp_path, provided_count):
+    from ehs_spatial.app import analyze_run
+
+    pipeline = FakePipeline(tmp_path / "runs")
+    images = _images(tmp_path)[:provided_count] + [None] * (4 - provided_count)
+
+    analyze_run(pipeline, *images, 1.5)
+
+    [capture] = pipeline.assessment_calls
+    assert len(capture.image_paths) == provided_count
 
 
 def test_analysis_returns_real_artifacts_grounded_data_and_demo_copy(tmp_path):
@@ -451,8 +461,8 @@ def test_failed_reanalysis_clears_gradio_state_and_blocks_old_run_questions(
             )
             forbidden = "LOCAL_RUNTIME_SENTINEL"
         else:
-            replacement_inputs[0] = None
-            expected_error = "Upload all four workcell views before analysis."
+            replacement_inputs[:4] = [None] * 4
+            expected_error = "Upload at least one workcell view before analysis."
             forbidden = ""
 
         failed = await demo.process_api(
@@ -514,10 +524,10 @@ def test_build_app_has_required_gradio_620_components_events_and_serialization(t
     ]
     assert len(uploads) == 4
     assert [component["props"]["label"] for component in uploads] == [
-        "View 1 — workcell front",
-        "View 2 — workcell right",
-        "View 3 — workcell rear",
-        "View 4 — workcell left",
+        "View 1 — workcell front (required)",
+        "View 2 — workcell right (optional)",
+        "View 3 — workcell rear (optional)",
+        "View 4 — workcell left (optional)",
     ]
     assert any(
         component["type"] == "number" and component["props"].get("value") == 1.5

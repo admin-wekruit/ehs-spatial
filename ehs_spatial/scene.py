@@ -22,6 +22,14 @@ def build_scene_and_assess(
     topdown_path: str | Path | None = None,
 ) -> tuple[SceneMap, Assessment]:
     geometry = _build_geometry(frames, observations, camera_height_m)
+    capture_warnings = (
+        [
+            f"reduced capture ({len(frames)} view(s) instead of 4): evidence "
+            "redundancy and cross-view confirmation are weaker"
+        ]
+        if len(frames) < 4
+        else []
+    )
     if geometry.transform is None:
         scene = SceneMap(
             run_id=run_id,
@@ -31,7 +39,7 @@ def build_scene_and_assess(
             fence_polygon=[],
             entities=[],
             facts=[],
-            warnings=geometry.warnings,
+            warnings=[*capture_warnings, *geometry.warnings],
         )
         assessment = Assessment(
             status=AssessmentStatus.INSUFFICIENT_EVIDENCE,
@@ -43,7 +51,9 @@ def build_scene_and_assess(
             _render_topdown(topdown_path, [], [], None, assessment)
         return scene, assessment
 
-    rule = _assess_clearance(geometry.entities, criterion)
+    rule = _assess_clearance(
+        geometry.entities, criterion, capture_frame_count=len(frames)
+    )
     scene = SceneMap(
         run_id=run_id,
         floor_plane=geometry.transform.plane,
@@ -52,7 +62,7 @@ def build_scene_and_assess(
         fence_polygon=rule.fence_polygon,
         entities=geometry.entities,
         facts=rule.facts,
-        warnings=[*geometry.warnings, *rule.warnings],
+        warnings=[*capture_warnings, *geometry.warnings, *rule.warnings],
     )
     if topdown_path is not None:
         _render_topdown(

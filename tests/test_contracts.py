@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 
-def test_capture_run_requires_exactly_four_images_and_has_clearance_defaults():
+def test_capture_run_accepts_one_to_four_images_and_has_clearance_defaults():
     contracts = importlib.import_module("ehs_spatial.contracts")
 
     capture = contracts.CaptureRun(
@@ -19,8 +19,9 @@ def test_capture_run_requires_exactly_four_images_and_has_clearance_defaults():
         "object_label": "safety fence",
         "minimum_clearance_m": 0.6,
     }
+    assert contracts.CaptureRun(run_id="mono", image_paths=["a"]).image_paths == ["a"]
     with pytest.raises(ValidationError):
-        contracts.CaptureRun(run_id="short", image_paths=["a", "b", "c"])
+        contracts.CaptureRun(run_id="short", image_paths=[])
     with pytest.raises(ValidationError):
         contracts.CaptureRun(
             run_id="tall",

@@ -35,11 +35,12 @@ class EHSAssessmentPipeline:
         frames, point_cloud_path = self.map_anything.run(
             prepared.image_paths, paths.geometry_dir
         )
-        if len(frames) != 4:
+        if len(frames) != len(prepared.image_paths):
             raise ProviderError(
                 "replicate",
                 "map_anything.response",
-                f"expected four geometry frames, got {len(frames)}",
+                f"expected {len(prepared.image_paths)} geometry frames, "
+                f"got {len(frames)}",
             )
         if point_cloud_path.resolve() != paths.point_cloud_glb.resolve() or not (
             paths.point_cloud_glb.is_file()

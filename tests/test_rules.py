@@ -164,3 +164,42 @@ def test_none_spatial_state_fields_emit_only_the_original_facts():
 
     assert [fact.fact_id for fact in result.facts] == _BASE_FACT_IDS
     assert result.assessment.fact_ids == _BASE_FACT_IDS
+
+
+def test_single_frame_capture_scales_evidence_gates_down():
+    fence = _entity(
+        "fence",
+        "safety fence",
+        [(0, 0), (2, 0), (2, 2), (0, 2)],
+        ["frame-1"],
+    )
+    movable = _entity(
+        "movable",
+        "pallet",
+        [(0.8, 0.8), (1.0, 0.8), (1.0, 1.0), (0.8, 1.0)],
+        ["frame-1"],
+    )
+
+    result = _assess_clearance([fence, movable], Criterion(), capture_frame_count=1)
+
+    assert result.assessment.status.value == "FAIL"
+    assert result.selected_entity_id == "movable"
+
+
+def test_default_capture_keeps_full_evidence_gates():
+    fence = _entity(
+        "fence",
+        "safety fence",
+        [(0, 0), (2, 0), (2, 2), (0, 2)],
+        ["frame-1"],
+    )
+    movable = _entity(
+        "movable",
+        "pallet",
+        [(0.8, 0.8), (1.0, 0.8), (1.0, 1.0), (0.8, 1.0)],
+        ["frame-1"],
+    )
+
+    result = _assess_clearance([fence, movable], Criterion())
+
+    assert result.assessment.status.value == "INSUFFICIENT_EVIDENCE"

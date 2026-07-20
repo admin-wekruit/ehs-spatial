@@ -45,14 +45,23 @@ def _insufficient(warning: str) -> _RuleResult:
     )
 
 
-def _assess_clearance(entities: list[Entity3D], criterion: Criterion) -> _RuleResult:
+def _assess_clearance(
+    entities: list[Entity3D],
+    criterion: Criterion,
+    capture_frame_count: int = 4,
+) -> _RuleResult:
+    # Frame-evidence gates scale down for reduced captures: a single-photo
+    # run can never satisfy a 3-frame gate, so the gate becomes "every
+    # captured frame". The reduced-redundancy warning is added by the caller.
+    fence_frame_gate = min(3, capture_frame_count)
+    movable_frame_gate = min(2, capture_frame_count)
     valid_fences = []
     discarded_fence_fragments = 0
     for entity in entities:
         if entity.label != FENCE_LABEL:
             continue
         polygon = Polygon(entity.footprint_xy)
-        if len(set(entity.evidence_frame_ids)) < 3 or polygon.area < 0.25:
+        if len(set(entity.evidence_frame_ids)) < fence_frame_gate or polygon.area < 0.25:
             # A fence fragment failing the gates must never vanish silently:
             # measuring clearance against a partial hull is the false-PASS mode.
             discarded_fence_fragments += 1
@@ -60,7 +69,8 @@ def _assess_clearance(entities: list[Entity3D], criterion: Criterion) -> _RuleRe
         valid_fences.append((entity, polygon))
     if len(valid_fences) != 1:
         return _insufficient(
-            "expected exactly one safety fence with at least 3 evidence frames and 0.25 m2 area"
+            f"expected exactly one safety fence with at least {fence_frame_gate} "
+            "evidence frame(s) and 0.25 m2 area"
         )
     fence, fence_polygon = valid_fences[0]
     fence_warnings = (
@@ -78,14 +88,15 @@ def _assess_clearance(entities: list[Entity3D], criterion: Criterion) -> _RuleRe
             continue
         polygon = Polygon(entity.footprint_xy)
         if (
-            len(set(entity.evidence_frame_ids)) >= 2
+            len(set(entity.evidence_frame_ids)) >= movable_frame_gate
             and polygon.area >= 0.0025
             and entity.height_m >= 0.05
         ):
             valid_movables.append((entity, polygon))
     if not valid_movables:
         result = _insufficient(
-            "no movable entity has at least 2 evidence frames, 0.0025 m2 area, and 0.05 m height"
+            f"no movable entity has at least {movable_frame_gate} evidence "
+            "frame(s), 0.0025 m2 area, and 0.05 m height"
         )
         return _RuleResult(
             fence_polygon=list(fence.footprint_xy),
