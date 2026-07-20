@@ -6,7 +6,8 @@ from .contracts import Assessment, CaptureRun, ClimbReview, GroundedAnswer, Scen
 from .providers.base import ProviderError
 from .providers.gemini import GeminiAdapter
 from .providers.map_anything import MapAnythingAdapter
-from .providers.sam3 import PROMPT_VOCABULARY, SAM3Adapter
+from .geometry import FLOOR_LABEL
+from .providers.sam3 import LABEL_PROMPTS, PROMPT_VOCABULARY, SAM3Adapter
 from .scene import build_scene_and_assess
 
 
@@ -51,15 +52,25 @@ class EHSAssessmentPipeline:
 
         observations = []
         for frame in frames:
-            for prompt in PROMPT_VOCABULARY:
-                observations.extend(
-                    self.sam3.segment(
+            for label in PROMPT_VOCABULARY:
+                # The floor is fitted geometrically from the full point cloud;
+                # segmenting it would spend provider calls on a class SAM does
+                # not need to recognise.
+                if label == FLOOR_LABEL:
+                    continue
+                # First-hit synonym fallback: extra provider calls happen only
+                # when the canonical phrase returns nothing.
+                for prompt in LABEL_PROMPTS[label]:
+                    label_observations = self.sam3.segment(
                         frame.canonical_image_path,
                         prompt=prompt,
+                        label=label,
                         frame_id=frame.frame_id,
                         output_dir=paths.geometry_dir / "masks" / frame.frame_id,
                     )
-                )
+                    if label_observations:
+                        observations.extend(label_observations)
+                        break
         self.store.save_json(paths.observations_json, observations)
 
         scene, assessment = self.scene_builder(

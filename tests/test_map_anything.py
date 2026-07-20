@@ -132,7 +132,7 @@ def test_adapter_persists_complete_provider_output_and_returns_geometry_frames(t
 
     def runner(model_identifier, *, input):
         seen["model_identifier"] = model_identifier
-        seen["input_names"] = [value.name for value in input["inputs"]]
+        seen["input_values"] = list(input["inputs"])
         seen["flags"] = {key: value for key, value in input.items() if key != "inputs"}
         return provider_response
 
@@ -144,7 +144,13 @@ def test_adapter_persists_complete_provider_output_and_returns_geometry_frames(t
 
     assert seen == {
         "model_identifier": map_anything.MAP_ANYTHING_MODEL_ID,
-        "input_names": image_paths,
+        # The model's Cog wrapper cannot fetch authenticated Files-API URLs, so
+        # images must travel as self-contained base64 data URIs.
+        "input_values": [
+            "data:image/png;base64,"
+            + base64.b64encode(Path(path).read_bytes()).decode("ascii")
+            for path in image_paths
+        ],
         "flags": {
             "normals": False,
             "to_base64": True,
@@ -317,3 +323,24 @@ def test_adapter_persists_all_raw_outputs_before_parsing_frames(tmp_path):
         for index in range(1, 5)
     ] == [Path(path).read_bytes() for path in data_paths]
     assert (geometry_dir / "point_cloud.glb").read_bytes() == b"glTF"
+
+
+def test_default_runner_uses_polling_instead_of_blocking_wait(monkeypatch):
+    import sys
+    import types
+
+    map_anything = importlib.import_module("ehs_spatial.providers.map_anything")
+    seen = {}
+
+    def fake_run(model_identifier, *, input, wait):
+        seen["model"] = model_identifier
+        seen["input"] = input
+        seen["wait"] = wait
+        return {"ok": True}
+
+    monkeypatch.setitem(sys.modules, "replicate", types.SimpleNamespace(run=fake_run))
+
+    result = map_anything._default_runner("m/x:abc", input={"k": 1})
+
+    assert result == {"ok": True}
+    assert seen == {"model": "m/x:abc", "input": {"k": 1}, "wait": False}

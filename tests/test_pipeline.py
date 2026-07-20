@@ -64,14 +64,15 @@ class FakeSAM3:
     def __init__(self):
         self.calls = []
 
-    def segment(self, image_path, *, prompt, frame_id, output_dir):
+    def segment(self, image_path, *, prompt, frame_id, output_dir, label=None):
+        label = prompt if label is None else label
         self.calls.append((str(image_path), prompt, frame_id, Path(output_dir)))
         ordinal = len(self.calls)
         return [
             Observation2D(
                 observation_id=f"obs-{ordinal}",
                 frame_id=frame_id,
-                label=prompt,
+                label=label,
                 instance_id=str(ordinal),
                 mask_reference="fake-rle",
                 score=0.9,
@@ -191,7 +192,7 @@ def _pipeline(tmp_path, *, map_adapter=None, gemini=None):
     return pipeline, store, map_adapter, sam, gemini, scene_builder
 
 
-def test_run_assessment_executes_one_map_call_and_stable_32_sam_calls(tmp_path):
+def test_run_assessment_executes_one_map_call_and_stable_28_sam_calls(tmp_path):
     pipeline, store, map_adapter, sam, gemini, scene_builder = _pipeline(tmp_path)
 
     result = pipeline.run_assessment(_capture(tmp_path))
@@ -203,15 +204,17 @@ def test_run_assessment_executes_one_map_call_and_stable_32_sam_calls(tmp_path):
         "image_03.png",
         "image_04.png",
     ]
+    # "factory floor" is fitted geometrically, never segmented: 7 labels x 4 frames.
     assert [(call[2], call[1]) for call in sam.calls] == [
         (f"frame-{frame}", prompt)
         for frame in range(1, 5)
         for prompt in PROMPT_VOCABULARY
+        if prompt != "factory floor"
     ]
     assert len(scene_builder.calls) == 1
     scene_call = scene_builder.calls[0]
     assert len(scene_call[1]) == 4
-    assert len(scene_call[2]) == 32
+    assert len(scene_call[2]) == 28
     assert scene_call[3] == 1.5
     assert result.model_dump(exclude={"climb_review"}) == Assessment(
         status="FAIL",
@@ -239,7 +242,7 @@ def test_run_assessment_executes_one_map_call_and_stable_32_sam_calls(tmp_path):
             paths.chat_jsonl,
         ]
     )
-    assert len(json.loads(paths.observations_json.read_text(encoding="utf-8"))) == 32
+    assert len(json.loads(paths.observations_json.read_text(encoding="utf-8"))) == 28
     assert json.loads(paths.assessment_json.read_text(encoding="utf-8"))[
         "status"
     ] == "FAIL"
@@ -364,3 +367,51 @@ def test_answer_question_rejects_malformed_provider_answer_before_chat_write(tmp
         failing.answer_question("run-1", "How far?")
 
     assert store.paths("run-1").chat_jsonl.read_text(encoding="utf-8") == chat_before
+
+
+def test_pipeline_falls_back_through_synonym_prompts_until_hit(tmp_path):
+    from ehs_spatial.pipeline import EHSAssessmentPipeline
+    from ehs_spatial.providers.sam3 import LABEL_PROMPTS
+
+    class SynonymFakeSAM3(FakeSAM3):
+        def segment(self, image_path, *, prompt, frame_id, output_dir, label=None):
+            if label == "safety fence" and prompt != "barrier":
+                self.calls.append((str(image_path), prompt, frame_id, Path(output_dir)))
+                return []
+            return super().segment(
+                image_path,
+                prompt=prompt,
+                frame_id=frame_id,
+                output_dir=output_dir,
+                label=label,
+            )
+
+    store = ArtifactStore(tmp_path / "runs")
+    sam = SynonymFakeSAM3()
+    scene_builder = FakeSceneBuilder()
+    pipeline = EHSAssessmentPipeline(
+        store=store,
+        map_anything=FakeMapAnything(),
+        sam3=sam,
+        gemini=FakeGemini(),
+        scene_builder=scene_builder,
+    )
+
+    pipeline.run_assessment(_capture(tmp_path))
+
+    fence_prompts = [
+        call[1] for call in sam.calls if call[1] in LABEL_PROMPTS["safety fence"]
+    ]
+    # Per frame: canonical fails, "fence" fails, "barrier" hits, "guardrail" skipped.
+    assert fence_prompts[:3] == ["safety fence", "fence", "barrier"]
+    assert "guardrail" not in fence_prompts
+
+    observations = scene_builder.calls[0][2]
+    fence_observations = [
+        observation for observation in observations
+        if observation.label == "safety fence"
+    ]
+    assert len(fence_observations) == 4
+    assert all(
+        observation.source_prompt == "barrier" for observation in fence_observations
+    )

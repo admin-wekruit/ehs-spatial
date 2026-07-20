@@ -301,3 +301,90 @@ def test_adapter_wraps_provider_normalization_errors(
     assert caught.value.provider == "fal"
     assert caught.value.operation == "sam3.normalize"
     assert message in caught.value.original_message
+
+
+def test_adapter_rejects_colliding_instance_ids(tmp_path):
+    sam3 = importlib.import_module("ehs_spatial.providers.sam3")
+    canonical_path = tmp_path / "canonical.png"
+    Image.new("RGB", (4, 4), (10, 20, 30)).save(canonical_path)
+    # Metadata covers only the first mask; the second falls back to its
+    # ordinal (1), colliding with the first mask's explicit index 1. Without
+    # the guard, both observations share one mask path and the second save
+    # silently overwrites the first mask's pixels.
+    response = {
+        "rle": [
+            json.dumps({"size": [2, 2], "counts": [0, 4]}),
+            json.dumps({"size": [2, 2], "counts": [0, 1, 3]}),
+        ],
+        "metadata": [{"index": 1, "score": 0.91, "box": [0.5, 0.5, 1.0, 1.0]}],
+        "scores": [0.91, 0.82],
+        "boxes": [[0.5, 0.5, 1.0, 1.0], [0.25, 0.25, 0.5, 0.5]],
+    }
+
+    with pytest.raises(sam3.ProviderError) as caught:
+        sam3.SAM3Adapter(
+            subscriber=lambda endpoint, *, arguments: response
+        ).segment(
+            canonical_path,
+            prompt="pallet",
+            frame_id="frame_0001",
+            output_dir=tmp_path / "masks",
+        )
+
+    assert caught.value.provider == "fal"
+    assert caught.value.operation == "sam3.normalize"
+    assert "duplicate SAM 3 mask instance id: 1" in caught.value.original_message
+
+
+def test_label_prompt_registry_covers_vocabulary_with_canonical_first():
+    sam3 = importlib.import_module("ehs_spatial.providers.sam3")
+
+    assert set(sam3.LABEL_PROMPTS) == set(sam3.PROMPT_VOCABULARY)
+    for label, prompts in sam3.LABEL_PROMPTS.items():
+        assert prompts[0] == label
+
+
+def test_adapter_maps_synonym_prompt_to_canonical_label(tmp_path):
+    sam3 = importlib.import_module("ehs_spatial.providers.sam3")
+    canonical_path = tmp_path / "canonical.png"
+    Image.new("RGB", (4, 4), (10, 20, 30)).save(canonical_path)
+    response = {
+        "rle": [json.dumps({"size": [2, 2], "counts": [0, 4]})],
+        "metadata": [{"index": 0, "score": 0.9, "box": [0.5, 0.5, 1.0, 1.0]}],
+        "scores": [0.9],
+        "boxes": [[0.5, 0.5, 1.0, 1.0]],
+    }
+    seen = {}
+
+    def subscriber(endpoint, *, arguments):
+        seen["prompt"] = arguments["prompt"]
+        return response
+
+    [observation] = sam3.SAM3Adapter(subscriber=subscriber).segment(
+        canonical_path,
+        prompt="barrier",
+        label="safety fence",
+        frame_id="frame_0001",
+        output_dir=tmp_path / "masks",
+    )
+
+    assert seen["prompt"] == "barrier"
+    assert observation.label == "safety fence"
+    assert observation.source_prompt == "barrier"
+    assert observation.observation_id == "frame_0001:safety_fence:0"
+    assert observation.mask_path.endswith("frame_0001_safety_fence_0.png")
+
+
+def test_adapter_rejects_prompt_not_registered_for_label(tmp_path):
+    sam3 = importlib.import_module("ehs_spatial.providers.sam3")
+    canonical_path = tmp_path / "canonical.png"
+    Image.new("RGB", (4, 4), (10, 20, 30)).save(canonical_path)
+
+    with pytest.raises(ValueError, match="unsupported SAM 3 prompt for label"):
+        sam3.SAM3Adapter(subscriber=lambda endpoint, *, arguments: {}).segment(
+            canonical_path,
+            prompt="barrier",
+            label="pallet",
+            frame_id="frame_0001",
+            output_dir=tmp_path / "masks",
+        )

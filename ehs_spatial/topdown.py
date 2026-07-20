@@ -30,7 +30,7 @@ def _render_topdown(
     draw = ImageDraw.Draw(image)
     status_text = f"Status: {assessment.status.value}"
     if assessment.approximate_distance_m is not None:
-        status_text += f"  clearance: {assessment.approximate_distance_m:.1f} m"
+        status_text += f"  clearance: {assessment.approximate_distance_m:.2f} m"
     draw.text((24, 20), status_text, fill="black")
 
     fences = [fence_polygon] if fence_polygon else [

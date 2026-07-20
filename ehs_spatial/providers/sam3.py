@@ -23,6 +23,20 @@ PROMPT_VOCABULARY = (
     "portable work platform",
 )
 
+# Ordered prompt candidates per canonical label, canonical phrase first. SAM 3 is
+# trained on short noun phrases, so compound labels need short fallbacks; measured
+# on the eval pack: "safety fence" -> 0 detections, "barrier" -> 0.97 recall.
+LABEL_PROMPTS: dict[str, tuple[str, ...]] = {
+    "factory floor": ("factory floor", "floor", "ground"),
+    "safety fence": ("safety fence", "fence", "barrier", "guardrail"),
+    "industrial robot arm": ("industrial robot arm", "robot arm", "robot"),
+    "material cart": ("material cart", "cart"),
+    "pallet": ("pallet",),
+    "crate": ("crate",),
+    "step ladder": ("step ladder", "ladder"),
+    "portable work platform": ("portable work platform", "work platform"),
+}
+
 
 def _mask_from_counts(counts: list[int], height: int, width: int) -> np.ndarray:
     total = height * width
@@ -144,10 +158,16 @@ class SAM3Adapter:
         prompt: str,
         frame_id: str,
         output_dir: str | Path,
+        label: str | None = None,
     ) -> list[Observation2D]:
         validate_safe_path_segment(frame_id, "frame_id")
-        if prompt not in PROMPT_VOCABULARY:
-            raise ValueError(f"unsupported SAM 3 prompt: {prompt}")
+        label = prompt if label is None else label
+        if label not in PROMPT_VOCABULARY:
+            raise ValueError(f"unsupported SAM 3 prompt: {label}")
+        if prompt not in LABEL_PROMPTS[label]:
+            raise ValueError(
+                f"unsupported SAM 3 prompt for label {label!r}: {prompt}"
+            )
         source = Path(image_path)
         raw_image = source.read_bytes()
         with Image.open(source) as canonical:
@@ -195,8 +215,9 @@ class SAM3Adapter:
 
         destination = Path(output_dir)
         destination.mkdir(parents=True, exist_ok=True)
-        prompt_slug = prompt.replace(" ", "_")
+        prompt_slug = label.replace(" ", "_")
         observations = []
+        seen_instance_ids: set[str] = set()
         for ordinal, serialized in enumerate(rles):
             try:
                 item_metadata = metadata[ordinal] if ordinal < len(metadata) else {}
@@ -233,12 +254,19 @@ class SAM3Adapter:
                 mask_image = mask_image.resize((width, height), Image.Resampling.NEAREST)
             binary_mask = (np.asarray(mask_image) > 0).astype(np.uint8) * 255
             instance_id = str(instance_index)
+            if instance_id in seen_instance_ids:
+                raise ProviderError(
+                    "fal",
+                    "sam3.normalize",
+                    f"duplicate SAM 3 mask instance id: {instance_id}",
+                )
+            seen_instance_ids.add(instance_id)
             mask_path = destination / f"{frame_id}_{prompt_slug}_{instance_id}.png"
             try:
                 observation = Observation2D(
                     observation_id=f"{frame_id}:{prompt_slug}:{instance_id}",
                     frame_id=frame_id,
-                    label=prompt,
+                    label=label,
                     instance_id=instance_id,
                     mask_path=str(mask_path),
                     score=score,

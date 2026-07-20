@@ -436,3 +436,26 @@ def test_live_runner_writes_redacted_provider_failure_report(
     assert report["error"]["operation"] == "sam3.segment"
     assert "[REDACTED]" in report["error"]["message"]
     assert secret not in saved
+
+
+def test_live_runner_clears_stale_report_before_unwrapped_crash(tmp_path):
+    pack = tmp_path / "pack"
+    _write_small_pack(pack)
+    (pack / "live_report.json").write_text(
+        json.dumps({"passed": True, "case_id": "ladder_050"}),
+        encoding="utf-8",
+    )
+
+    class CrashingPipeline:
+        def __init__(self):
+            self.store = ArtifactStore(pack / "live_runs")
+
+        def run_assessment(self, _capture):
+            raise OSError("disk full after paid provider calls")
+
+    with pytest.raises(OSError):
+        run_live_benchmark_case(pack, "ladder_050", pipeline=CrashingPipeline())
+
+    # Only ProviderError writes a failure report; an unwrapped crash must not
+    # leave the previous invocation's verdict behind as the current report.
+    assert not (pack / "live_report.json").exists()

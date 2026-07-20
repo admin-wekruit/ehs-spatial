@@ -9,6 +9,16 @@ from ehs_spatial.contracts import Criterion, GeometryFrame, Observation2D
 
 RAW_TO_METERS = 0.8
 
+# OpenCV camera axes expressed in the unrotated metric world (z up): camera +Y
+# points down so the geometry layer's average-camera-up prior recovers world up.
+CAMERA_BASIS = np.array(
+    [
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, -1.0, 0.0],
+    ]
+)
+
 
 def _raw_rotation(tilted: bool) -> np.ndarray:
     if not tilted:
@@ -78,6 +88,7 @@ def _synthetic_scene(
     floor_views: int = 4,
     fence_views: int = 3,
     object_views: int = 2,
+    geometry_views: int = 4,
     inside: bool = False,
     tilted: bool = False,
     raw_to_meters: float = RAW_TO_METERS,
@@ -107,7 +118,8 @@ def _synthetic_scene(
         points = np.full((*shape, 3), np.nan, dtype=np.float64)
         points.reshape(-1, 3)[: len(all_points)] = all_points
         valid = np.zeros(shape, dtype=bool)
-        valid.reshape(-1)[: len(all_points)] = True
+        if frame_index < geometry_views:
+            valid.reshape(-1)[: len(all_points)] = True
         confidence = valid.astype(np.float32)
 
         image_path = tmp_path / f"{frame_id}.png"
@@ -121,7 +133,7 @@ def _synthetic_scene(
 
         camera_to_world = np.eye(4)
         rotation = _raw_rotation(tilted)
-        camera_to_world[:3, :3] = rotation
+        camera_to_world[:3, :3] = rotation @ CAMERA_BASIS
         camera_center_m = np.array(
             [0.08 * frame_index, 0.04 * frame_index, 1.6]
         )
@@ -481,11 +493,11 @@ def test_top_surface_only_object_height_is_measured_above_floor(tmp_path):
     assert assessment.status.value == "FAIL"
 
 
-def test_floor_seen_in_only_one_frame_is_insufficient_without_fake_plane(tmp_path):
+def test_geometry_in_only_one_frame_is_insufficient_without_fake_plane(tmp_path):
     from ehs_spatial.scene import build_scene_and_assess
 
     frames, observations = _synthetic_scene(
-        tmp_path, clearance_m=0.5, floor_views=1
+        tmp_path, clearance_m=0.5, geometry_views=1
     )
 
     scene, assessment = build_scene_and_assess(
@@ -558,7 +570,7 @@ def test_pre_floor_insufficiency_still_writes_text_topdown(tmp_path):
     from ehs_spatial.scene import build_scene_and_assess
 
     frames, observations = _synthetic_scene(
-        tmp_path, clearance_m=0.5, floor_views=1
+        tmp_path, clearance_m=0.5, geometry_views=1
     )
     topdown_path = tmp_path / "insufficient.png"
 
@@ -584,7 +596,7 @@ def test_mask_pointmap_shape_mismatch_fails_loudly(tmp_path):
     corrupt_mask = next(
         observation.mask_path
         for observation in observations
-        if observation.label == "factory floor"
+        if observation.label == "safety fence"
     )
     Image.new("L", (8, 8), 255).save(corrupt_mask)
 
@@ -596,3 +608,22 @@ def test_mask_pointmap_shape_mismatch_fails_loudly(tmp_path):
             camera_height_m=1.6,
             criterion=Criterion(),
         )
+
+
+def test_floor_ransac_prefers_lowest_supported_plane_over_dominant_tabletop():
+    from ehs_spatial.geometry import _ransac_floor_plane
+
+    rng = np.random.default_rng(7)
+    tabletop = np.column_stack(
+        [rng.uniform(0, 2, 4000), rng.uniform(0, 2, 4000), np.full(4000, 0.7)]
+    )
+    floor = np.column_stack(
+        [rng.uniform(0, 2, 500), rng.uniform(0, 2, 500), np.zeros(500)]
+    )
+    points = np.vstack([tabletop, floor])
+    cameras = np.array([[0.5, 0.5, 1.6], [1.5, 1.5, 1.7]])
+
+    inliers = _ransac_floor_plane(points, cameras, np.array([0.0, 0.0, 1.0]), 0.03)
+
+    assert inliers is not None
+    assert float(np.mean(points[inliers][:, 2])) == pytest.approx(0.0, abs=0.02)

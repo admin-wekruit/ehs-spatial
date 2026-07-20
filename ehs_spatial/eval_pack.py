@@ -648,6 +648,11 @@ def run_live_benchmark_case(
         criterion=Criterion(minimum_clearance_m=0.6),
     )
 
+    # Drop any stale report first: only ProviderError is caught below, so an
+    # unwrapped post-spend crash must not leave a previous invocation's verdict
+    # as the pack's current live_report.json.
+    (root / "live_report.json").unlink(missing_ok=True)
+
     try:
         assessment = Assessment.model_validate(pipeline.run_assessment(capture))
         paths = pipeline.store.paths(run_id)

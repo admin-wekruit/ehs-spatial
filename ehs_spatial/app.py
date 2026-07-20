@@ -48,7 +48,7 @@ def _analysis_error_outputs(error_copy: str) -> tuple[object, ...]:
 
 def _status_copy(assessment: Assessment) -> str:
     distance = (
-        f"{assessment.approximate_distance_m:.1f} m"
+        f"{assessment.approximate_distance_m:.2f} m"
         if assessment.approximate_distance_m is not None
         else "unavailable from the evidence"
     )

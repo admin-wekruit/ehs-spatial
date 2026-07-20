@@ -185,8 +185,8 @@ def test_analysis_returns_real_artifacts_grounded_data_and_demo_copy(tmp_path):
     assert Path(point_cloud_path).suffix == ".glb"
     assert Path(topdown_path).is_file()
     assert "approximate" in status_update["value"].lower()
-    assert "Approximate boundary clearance: **0.5 m**." in status_update["value"]
-    assert "0.50 m" not in status_update["value"]
+    assert "Approximate boundary clearance: **0.50 m**." in status_update["value"]
+    assert "**0.5 m**" not in status_update["value"]
     assert "0.6 m demo rule — not an official EHS standard" in status_update["value"]
     assert "REVIEW only" in status_update["value"]
     assert status_update["elem_classes"] == ["result-status", "status-fail"]

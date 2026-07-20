@@ -69,6 +69,15 @@ class Entity3D(BaseModel):
     footprint_xy: list[Point2]
     height_m: float = Field(ge=0)
     evidence_frame_ids: list[str]
+    # Spatial-state primitives; each is None when the cluster is too
+    # degenerate to measure. orientation_deg: undirected yaw of the XY
+    # footprint's first principal axis, so range is [0, 180). tilt_deg: angle
+    # between the 3D first principal axis and vertical +Z; flat/squat objects
+    # with a horizontal dominant axis read ~90. overhang_m: max XY protrusion
+    # of upper-band points beyond the base-band convex hull, metres.
+    orientation_deg: float | None = Field(default=None, ge=0, lt=180)
+    tilt_deg: float | None = Field(default=None, ge=0, le=90)
+    overhang_m: float | None = Field(default=None, ge=0)
 
 
 class SpatialFact(BaseModel):

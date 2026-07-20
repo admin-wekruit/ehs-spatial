@@ -5,7 +5,7 @@ import re
 import numpy as np
 import open3d as o3d
 from PIL import Image
-from shapely.geometry import MultiPoint, Polygon
+from shapely.geometry import MultiPoint, Point, Polygon
 
 from .contracts import Entity3D, GeometryFrame, Observation2D
 
@@ -98,18 +98,110 @@ def _rotation_to_positive_z(normal: np.ndarray) -> np.ndarray:
     return np.eye(3) + skew + skew @ skew * ((1.0 - cosine) / sine**2)
 
 
+_FLOOR_NORMAL_MAX_ANGLE_COS = float(np.cos(np.radians(20.0)))
+_FLOOR_RANSAC_ITERATIONS = 1000
+_FLOOR_MAX_FIT_POINTS = 60_000
+
+
+def _camera_up_prior(frames: dict[str, GeometryFrame]) -> np.ndarray:
+    # OpenCV camera convention points +Y down in the image, so -Y of each
+    # camera_to_world rotation approximates world "up" for roughly upright
+    # captures (nerfstudio-style average-camera-up prior). Used to gate plane
+    # orientation and to place the floor below the cameras.
+    ups = [
+        -np.asarray(frame.camera_to_world, dtype=float)[:3, 1]
+        for frame in frames.values()
+    ]
+    mean_up = np.mean(ups, axis=0)
+    norm = float(np.linalg.norm(mean_up))
+    if norm < 1e-9:
+        return np.array([0.0, 0.0, 1.0])
+    return mean_up / norm
+
+
+def _ransac_floor_plane(
+    points: np.ndarray,
+    camera_centers: np.ndarray,
+    up_axis: np.ndarray,
+    distance_threshold: float,
+) -> np.ndarray | None:
+    # Deterministic NumPy RANSAC replacing Open3D segment_plane, whose
+    # OpenMP-parallel implementation returns different inlier sets run-to-run
+    # even when seeded. Candidate normals must lie near the up axis (rejects
+    # walls) and are oriented toward it. The floor is the LOWEST adequately
+    # supported horizontal plane below the cameras, not the largest: in real
+    # close-up captures a tabletop or seat cushion can dominate the view, so
+    # max-consensus alone selects furniture, not floor.
+    rng = np.random.default_rng(0)
+    sample_indices = rng.integers(0, len(points), size=(_FLOOR_RANSAC_ITERATIONS, 3))
+    a = points[sample_indices[:, 0]]
+    b = points[sample_indices[:, 1]]
+    c = points[sample_indices[:, 2]]
+    normals = np.cross(b - a, c - a)
+    lengths = np.linalg.norm(normals, axis=1)
+    keep = lengths > 1e-12
+    normals = normals[keep] / lengths[keep, None]
+    anchors = a[keep]
+
+    alignment = normals @ up_axis
+    aligned = np.abs(alignment) >= _FLOOR_NORMAL_MAX_ANGLE_COS
+    normals = normals[aligned] * np.sign(alignment[aligned])[:, None]
+    anchors = anchors[aligned]
+    if not len(normals):
+        return None
+    offsets = -np.einsum("ij,ij->i", normals, anchors)
+
+    counts = np.zeros(len(normals), dtype=np.int64)
+    for start in range(0, len(normals), 64):
+        distances = np.abs(
+            points @ normals[start : start + 64].T + offsets[start : start + 64]
+        )
+        counts[start : start + 64] = (distances < distance_threshold).sum(axis=0)
+    if not counts.max():
+        return None
+    finite_cameras = camera_centers[np.isfinite(camera_centers).all(axis=1)]
+    cameras_above = (
+        ((finite_cameras @ normals.T + offsets) > 0).all(axis=0)
+        if len(finite_cameras)
+        else np.ones(len(normals), dtype=bool)
+    )
+    support_floor = max(150, int(0.1 * counts.max()))
+    eligible = cameras_above & (counts >= support_floor)
+    if eligible.any():
+        # Rank candidates by the median up-coordinate of their actual inlier
+        # points (extrapolation-proof: a tilted plane can dip below the floor
+        # far from its own support, but its inliers cannot). Floor = lowest.
+        candidates = np.flatnonzero(eligible)
+        points_up = points @ up_axis
+        median_heights = np.empty(len(candidates))
+        for position, candidate in enumerate(candidates):
+            member = (
+                np.abs(points @ normals[candidate] + offsets[candidate])
+                < distance_threshold
+            )
+            median_heights[position] = np.median(points_up[member])
+        chosen = int(candidates[np.argmin(median_heights)])
+    else:
+        chosen = int(np.argmax(counts))
+    distances = np.abs(points @ normals[chosen] + offsets[chosen])
+    return np.flatnonzero(distances < distance_threshold)
+
+
 def _fit_floor(
     frames: dict[str, GeometryFrame],
-    floor_observations: list[Observation2D],
     frame_data: dict[str, _FrameData],
     camera_height_m: float,
 ) -> tuple[_FloorTransform | None, list[str]]:
+    # The floor is a geometric primitive (dominant horizontal plane below the
+    # cameras), not a semantic class: it is fitted from the full reconstructed
+    # cloud so no segmentation model has to recognise it.
     selected_by_frame: list[tuple[str, np.ndarray]] = []
-    for observation in sorted(floor_observations, key=lambda item: item.observation_id):
-        data = _data_for(observation.frame_id, frames, frame_data)
-        points = _select_points(observation, data)
+    for frame_id in sorted(frames):
+        data = _data_for(frame_id, frames, frame_data)
+        finite = data.valid & np.isfinite(data.points).all(axis=2)
+        points = data.points[finite]
         if len(points):
-            selected_by_frame.append((observation.frame_id, points))
+            selected_by_frame.append((frame_id, points))
 
     evidence_frames = {frame_id for frame_id, _ in selected_by_frame}
     point_count = sum(len(points) for _, points in selected_by_frame)
@@ -119,23 +211,23 @@ def _fit_floor(
         ]
 
     floor_points = np.vstack([points for _, points in selected_by_frame])
-    cloud = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(floor_points))
+    if len(floor_points) > _FLOOR_MAX_FIT_POINTS:
+        stride = int(np.ceil(len(floor_points) / _FLOOR_MAX_FIT_POINTS))
+        floor_points = floor_points[::stride]
     camera_centers = np.asarray(
         [np.asarray(frame.camera_to_world)[:3, 3] for frame in frames.values()]
     )
+    up_axis = _camera_up_prior(frames)
     scale_factor: float | None = None
     for fit_index in range(2):
         distance_threshold = 0.03 if scale_factor is None else 0.03 / scale_factor
-        o3d.utility.random.seed(0)
-        _, inlier_indices = cloud.segment_plane(
-            distance_threshold=distance_threshold,
-            ransac_n=3,
-            num_iterations=1000,
+        inlier_indices = _ransac_floor_plane(
+            floor_points, camera_centers, up_axis, distance_threshold
         )
-        if len(inlier_indices) < 3:
+        if inlier_indices is None or len(inlier_indices) < 3:
             return None, ["floor plane RANSAC produced fewer than 3 inliers"]
 
-        inliers = floor_points[np.asarray(inlier_indices)]
+        inliers = floor_points[inlier_indices]
         center = np.mean(inliers, axis=0)
         _, singular_values, right_vectors = np.linalg.svd(
             inliers - center, full_matrices=False
@@ -146,11 +238,10 @@ def _fit_floor(
         normal /= np.linalg.norm(normal)
         offset = -float(np.dot(normal, center))
 
-        signed_heights = camera_centers @ normal + offset
-        if float(np.median(signed_heights)) < 0:
+        if float(np.dot(normal, up_axis)) < 0:
             normal = -normal
             offset = -offset
-            signed_heights = -signed_heights
+        signed_heights = camera_centers @ normal + offset
         if not np.isfinite(signed_heights).all() or np.any(signed_heights <= 0):
             return None, [
                 "camera-to-floor heights must all be finite and strictly positive"
@@ -186,6 +277,51 @@ def _voxel_downsample(points: np.ndarray) -> np.ndarray:
 
 def _slug(label: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")
+
+
+def _spatial_state(
+    points: np.ndarray, height: float
+) -> tuple[float | None, float | None, float | None]:
+    """Return (orientation_deg, tilt_deg, overhang_m); None per field on degenerate input.
+
+    orientation_deg: yaw of the XY first principal axis, [0, 180) (undirected).
+    tilt_deg: angle of the 3D first principal axis from +Z, [0, 90].
+    overhang_m: max XY distance of upper-band points (z > 60% of height)
+    outside the base-band (z < 40% of height) convex hull.
+    """
+    orientation = None
+    if len(points) >= 3:
+        xy_eigenvalues, xy_eigenvectors = np.linalg.eigh(
+            np.cov(points[:, :2], rowvar=False)
+        )
+        # eigenvalue ratio < 1.2 means near-isotropic: no trustworthy axis
+        if xy_eigenvalues[1] > 0 and (
+            xy_eigenvalues[0] <= 0 or xy_eigenvalues[1] / xy_eigenvalues[0] >= 1.2
+        ):
+            major = xy_eigenvectors[:, 1]
+            orientation = float(np.degrees(np.arctan2(major[1], major[0])) % 180.0)
+            if orientation >= 180.0:  # float rounding at the wrap point
+                orientation = 0.0
+
+    tilt = None
+    if len(points) >= 20:
+        eigenvalues, eigenvectors = np.linalg.eigh(np.cov(points, rowvar=False))
+        # elongation ratio < 1.5 means no dominant 3D axis to measure against +Z
+        if eigenvalues[2] > 0 and (
+            eigenvalues[1] <= 0 or eigenvalues[2] / eigenvalues[1] >= 1.5
+        ):
+            axis_z = min(1.0, abs(float(eigenvectors[2, 2])))
+            tilt = float(np.degrees(np.arccos(axis_z)))
+
+    overhang = None
+    upper = points[points[:, 2] > 0.6 * height][:, :2]
+    base = points[points[:, 2] < 0.4 * height][:, :2]
+    if len(upper) >= 10 and len(base) >= 10:
+        base_hull = MultiPoint(base).convex_hull
+        overhang = max(
+            0.0, max(float(Point(x, y).distance(base_hull)) for x, y in upper)
+        )
+    return orientation, tilt, overhang
 
 
 def _reconcile_entities(
@@ -247,6 +383,8 @@ def _reconcile_entities(
             centroid = np.median(cluster_points, axis=0)
             observation_counts = Counter(point_observations[selected])
             frame_counts = Counter(point_frames[selected])
+            height = max(0.0, float(np.quantile(cluster_points[:, 2], 0.95)))
+            orientation, tilt, overhang = _spatial_state(cluster_points, height)
             candidates.append(
                 {
                     "label": label,
@@ -264,9 +402,10 @@ def _reconcile_entities(
                     "footprint": [
                         (float(x), float(y)) for x, y in list(hull.exterior.coords)[:-1]
                     ],
-                    "height": max(
-                        0.0, float(np.quantile(cluster_points[:, 2], 0.95))
-                    ),
+                    "height": height,
+                    "orientation": orientation,
+                    "tilt": tilt,
+                    "overhang": overhang,
                 }
             )
 
@@ -290,6 +429,9 @@ def _reconcile_entities(
                 footprint_xy=candidate["footprint"],
                 height_m=candidate["height"],
                 evidence_frame_ids=candidate["frame_ids"],
+                orientation_deg=candidate["orientation"],
+                tilt_deg=candidate["tilt"],
+                overhang_m=candidate["overhang"],
             )
         )
     return entities, warnings
@@ -310,12 +452,7 @@ def _build_geometry(
         raise ValueError(f"observations reference unknown frames: {unknown_frames}")
 
     frame_data: dict[str, _FrameData] = {}
-    transform, warnings = _fit_floor(
-        frames_by_id,
-        [item for item in observations if item.label == FLOOR_LABEL],
-        frame_data,
-        camera_height_m,
-    )
+    transform, warnings = _fit_floor(frames_by_id, frame_data, camera_height_m)
     if transform is None:
         return _GeometryResult(transform=None, entities=[], warnings=warnings)
     entities, entity_warnings = _reconcile_entities(

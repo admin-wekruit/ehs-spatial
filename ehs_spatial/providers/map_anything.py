@@ -1,6 +1,5 @@
 import base64
 from collections.abc import Callable, Mapping
-from contextlib import ExitStack
 import json
 import math
 from pathlib import Path
@@ -85,7 +84,9 @@ def parse_frame_json(
 def _default_runner(model_identifier: str, *, input: dict[str, object]) -> object:
     import replicate
 
-    return replicate.run(model_identifier, input=input)
+    # wait=False polls with short requests instead of holding one blocking read;
+    # cold-boots longer than the HTTP read timeout otherwise kill the call.
+    return replicate.run(model_identifier, input=input, wait=False)
 
 
 def _json_safe(value: object) -> object:
@@ -157,12 +158,19 @@ class MapAnythingAdapter:
             encoding="utf-8",
         )
         try:
-            with ExitStack() as stack:
-                inputs = [stack.enter_context(source.open("rb")) for source in sources]
-                response = self.runner(
-                    MAP_ANYTHING_MODEL_ID,
-                    input={"inputs": inputs, **flags},
-                )
+            # Data URIs instead of file handles: the replicate client uploads
+            # handles to its authenticated Files API, whose URLs the model's
+            # Cog wrapper cannot fetch ("No valid data, image, or video files
+            # found in the input!"). Base64 payloads are self-contained.
+            inputs = [
+                "data:image/png;base64,"
+                + base64.b64encode(source.read_bytes()).decode("ascii")
+                for source in sources
+            ]
+            response = self.runner(
+                MAP_ANYTHING_MODEL_ID,
+                input={"inputs": inputs, **flags},
+            )
         except Exception as exc:
             raise ProviderError("replicate", "map_anything.run", str(exc)) from exc
 
