@@ -37,6 +37,14 @@ def _render_topdown(
         entity.footprint_xy for entity in entities if entity.label == FENCE_LABEL
     ]
     movables = _valid_movables(entities)
+    # The display filter must never hide the entity the rule ruled on: the
+    # rule engine's gates scale with capture size, this cosmetic one does not.
+    if selected_entity_id and all(
+        entity.entity_id != selected_entity_id for entity in movables
+    ):
+        movables += [
+            entity for entity in entities if entity.entity_id == selected_entity_id
+        ]
     polygons = [*fences, *(entity.footprint_xy for entity in movables)]
     points = [point for polygon in polygons for point in polygon]
     if points:

@@ -627,3 +627,37 @@ def test_floor_ransac_prefers_lowest_supported_plane_over_dominant_tabletop():
 
     assert inliers is not None
     assert float(np.mean(points[inliers][:, 2])) == pytest.approx(0.0, abs=0.02)
+
+
+def test_topdown_always_draws_the_selected_entity(tmp_path):
+    from ehs_spatial.contracts import Assessment, Entity3D
+    from ehs_spatial.topdown import _render_topdown
+    from PIL import Image
+
+    # A single-frame movable passes the scaled rule gates on a 1-view capture
+    # but fails the renderer's cosmetic 2-frame filter; selection must win.
+    movable = Entity3D(
+        entity_id="entity-ladder-01",
+        label="step ladder",
+        observation_ids=["obs-1"],
+        centroid_xyz=(3.0, 1.0, 0.5),
+        footprint_xy=[(2.8, 0.8), (3.2, 0.8), (3.2, 1.2), (2.8, 1.2)],
+        height_m=1.2,
+        evidence_frame_ids=["frame-1"],
+    )
+    path = tmp_path / "topdown.png"
+    _render_topdown(
+        path,
+        [movable],
+        [(0, 0), (2, 0), (2, 2), (0, 2)],
+        "entity-ladder-01",
+        Assessment(
+            status="FAIL",
+            fact_ids=[],
+            evidence_frame_ids=["frame-1"],
+            approximate_distance_m=0.8,
+        ),
+    )
+
+    pixels = np.array(Image.open(path).convert("RGB")).reshape(-1, 3)
+    assert (pixels == (255, 138, 101)).all(axis=1).any()  # selected fill #ff8a65
