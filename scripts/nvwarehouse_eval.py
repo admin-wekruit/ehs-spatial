@@ -84,10 +84,18 @@ def _run_geometry(image: str) -> None:
             MapAnythingAdapter().run([str(_image_path(image))], target)
             return
         except ProviderError as exc:
-            if "429" not in str(exc) and "throttled" not in str(exc):
+            message = str(exc)
+            transient = (
+                "429" in message
+                or "throttled" in message
+                or "502" in message
+                or "503" in message
+                or "500" in message
+            )
+            if not transient:
                 raise
             time.sleep(15 * (attempt + 1))
-    raise RuntimeError(f"MapAnything kept throttling for {image}")
+    raise RuntimeError(f"MapAnything kept failing transiently for {image}")
 
 
 def _mask_points(image: str, rle: dict) -> np.ndarray | None:
@@ -143,15 +151,14 @@ def main(argv: list[str] | None = None) -> int:
         print("pass --live to spend them (cached reruns are free)", file=sys.stderr)
         return 2
 
-    exhausted = None
+    failures = []
     for image in images:
         try:
             _fetch_image(image)
             _run_geometry(image)
-        except Exception as exc:  # credit exhaustion mid-batch: score what we have
-            exhausted = f"stopped at {image}: {exc}"
-            print(exhausted, file=sys.stderr)
-            break
+        except Exception as exc:  # one bad image must not kill the batch
+            failures.append(f"{image}: {exc}")
+            print(f"skipping {image}: {exc}", file=sys.stderr)
     questions = [
         q
         for q in questions
@@ -206,7 +213,7 @@ def main(argv: list[str] | None = None) -> int:
         "centroid": summarize("centroid_rel"),
         "min_dist": summarize("min_rel"),
         "scale_source": "MapAnything native metric mono (synthetic warehouse)",
-        "stopped_early": exhausted,
+        "image_failures": failures,
     }
     WORK.mkdir(parents=True, exist_ok=True)
     (WORK / "report.json").write_text(json.dumps(summary, indent=2) + "\n")
