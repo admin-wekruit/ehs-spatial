@@ -288,7 +288,10 @@ def main(argv: list[str] | None = None) -> int:
             "harness_m": None if predicted is None else round(predicted, 4),
         }
         if predicted is not None and gt_m > 0:
-            row["harness_ratio"] = round(max(predicted / gt_m, gt_m / predicted), 2)
+            # A zero prediction is an answered failure, not an abstention:
+            # clamp so the ratio blows up instead of dividing by zero.
+            bounded = max(predicted, 1e-6)
+            row["harness_ratio"] = round(max(bounded / gt_m, gt_m / bounded), 2)
         if args.vlm:
             value = _ask_vlm(question)
             vlm_m = (

@@ -19,9 +19,9 @@ Usage:
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
-import urllib.request
 from pathlib import Path
 
 import numpy as np
@@ -56,12 +56,16 @@ def _fetch_image(image: str) -> None:
     if target.exists():
         return
     target.parent.mkdir(parents=True, exist_ok=True)
-    request = urllib.request.Request(
-        f"{BASE}/val/images/{image}",
-        headers={"Authorization": f"Bearer {os.environ['HF_TOKEN']}"},
+    # curl instead of urllib: this environment's python lacks SSL certs.
+    subprocess.run(
+        [
+            "curl", "-sSfL",
+            "-H", f"Authorization: Bearer {os.environ['HF_TOKEN']}",
+            "-o", str(target),
+            f"{BASE}/val/images/{image}",
+        ],
+        check=True,
     )
-    with urllib.request.urlopen(request) as response:
-        target.write_bytes(response.read())
 
 
 def _geometry_dir(image: str) -> Path:
