@@ -16,15 +16,206 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from ehs_spatial.contracts import GeometryFrame
+from ehs_spatial.contracts import GeometryFrame, Observation2D
 from ehs_spatial.geometry import (
     _fit_floor,
     _FloorTransform,
     _FrameData,
     _load_frame,
     _ransac_floor_plane,
+    _reconcile_entities,
     _rotation_to_positive_z,
 )
+
+
+# Eval-only prompt map for the annotated pack objects. Deliberately separate
+# from the production PROMPT_VOCABULARY: these classes exist to give the
+# binding+clustering layer a laser-ground-truth exam, not to ship.
+EVAL_PROMPTS: dict[str, tuple[str, ...]] = {
+    "sofa": ("sofa", "couch"),
+    "plant": ("potted plant", "plant"),
+    "wicker": ("wicker basket", "basket"),
+    "table": ("table",),
+    "desk": ("desk", "office desk"),
+    "chair": ("office chair", "chair"),
+    "bin": ("trash bin", "waste bin"),
+}
+
+
+def _pipeline_observations(
+    pack: Path,
+    frames: list[GeometryFrame],
+    object_names: list[str],
+    *,
+    live: bool,
+) -> tuple[list[Observation2D] | None, int]:
+    """SAM masks for the annotated objects, disk-cached per (frame, prompt).
+
+    Returns (observations, planned_live_calls). observations is None when
+    uncached calls are needed but --live was not passed. First-hit synonym
+    fallback mirrors production: extra prompts fire only when the canonical
+    one returns nothing."""
+    import base64
+
+    from PIL import Image as PILImage
+
+    from ehs_spatial.providers.sam3 import SAM3_ENDPOINT, decode_coco_rle
+
+    cache_dir = pack / "sam_cache_v1"
+    mask_dir = pack / "sam_masks"
+    cache_dir.mkdir(exist_ok=True)
+    mask_dir.mkdir(exist_ok=True)
+
+    def cached(frame_id: str, prompt: str) -> Path:
+        return cache_dir / f"{frame_id}__{prompt.replace(' ', '_')}.json"
+
+    # Count the live calls this run would make (worst case: every fallback).
+    planned = 0
+    for frame in frames:
+        for name in object_names:
+            for prompt in EVAL_PROMPTS[name]:
+                if not cached(frame.frame_id, prompt).exists():
+                    planned += 1
+                else:
+                    break
+    if planned and not live:
+        return None, planned
+
+    observations: list[Observation2D] = []
+    for frame in frames:
+        source = Path(frame.canonical_image_path)
+        with PILImage.open(source) as image:
+            width, height = image.size
+        payload = None
+        for name in object_names:
+            hits = 0
+            for prompt in EVAL_PROMPTS[name]:
+                cache_path = cached(frame.frame_id, prompt)
+                if cache_path.exists():
+                    response = json.loads(cache_path.read_text(encoding="utf-8"))
+                else:
+                    import fal_client
+
+                    if payload is None:
+                        payload = (
+                            "data:image/png;base64,"
+                            + base64.b64encode(source.read_bytes()).decode("ascii")
+                        )
+                    response = fal_client.subscribe(
+                        SAM3_ENDPOINT,
+                        arguments={
+                            "image_url": payload,
+                            "prompt": prompt,
+                            "return_multiple_masks": True,
+                            "include_scores": True,
+                            "include_boxes": True,
+                            "max_masks": 4,
+                        },
+                    )
+                    cache_path.write_text(
+                        json.dumps(response) + "\n", encoding="utf-8"
+                    )
+                rles = response.get("rle") or []
+                if isinstance(rles, str):
+                    rles = [rles]
+                scores = response.get("scores") or [1.0] * len(rles)
+                for index, rle in enumerate(rles):
+                    mask = decode_coco_rle(rle, height=height, width=width)
+                    if int(mask.sum()) < 40:
+                        continue
+                    mask_path = (
+                        mask_dir
+                        / f"{frame.frame_id}__{name}__{index}.png"
+                    )
+                    PILImage.fromarray(
+                        (mask.astype(np.uint8)) * 255
+                    ).save(mask_path)
+                    observations.append(
+                        Observation2D(
+                            observation_id=(
+                                f"{name}-{frame.frame_id}-{index}"
+                            ),
+                            frame_id=frame.frame_id,
+                            label=name,
+                            instance_id=f"{name}-{index}",
+                            mask_path=str(mask_path),
+                            score=float(scores[index])
+                            if index < len(scores)
+                            else 1.0,
+                            bbox=(0, 0, 1, 1),
+                            source_prompt=prompt,
+                        )
+                    )
+                    hits += 1
+                if hits:
+                    break
+    return observations, planned
+
+
+def _score_pipeline_mode(
+    frames_by_id: dict,
+    frame_data: dict[str, _FrameData],
+    transform: _FloorTransform,
+    observations: list[Observation2D],
+    annotations: dict,
+    frames: list[GeometryFrame],
+) -> tuple[list[dict], dict]:
+    from shapely.geometry import Polygon
+
+    entities, entity_warnings = _reconcile_entities(
+        frames_by_id, observations, frame_data, transform
+    )
+    gt_objects = _object_points(frames, frame_data, annotations, transform)
+    gt_centroids = {
+        name: np.median(points[:, :2], axis=0)
+        for name, points in gt_objects.items()
+    }
+
+    def match(name: str):
+        candidates = [e for e in entities if e.label == name]
+        if not candidates or name not in gt_centroids:
+            return None
+        target = gt_centroids[name]
+        return min(
+            candidates,
+            key=lambda e: float(
+                np.hypot(e.centroid_xyz[0] - target[0], e.centroid_xyz[1] - target[1])
+            ),
+        )
+
+    rows = []
+    for pair in annotations["pairs"]:
+        name_a, name_b = pair["pair_id"].split("-")
+        ea, eb = match(name_a), match(name_b)
+        if ea is None or eb is None:
+            predicted = None
+        else:
+            pa, pb = Polygon(ea.footprint_xy), Polygon(eb.footprint_xy)
+            predicted = 0.0 if pa.intersects(pb) else float(pa.distance(pb))
+        gt = pair["gt_distance_m"]
+        rows.append(
+            {
+                "mode": "pipeline",
+                "pair": pair["pair_id"],
+                "gt_m": gt,
+                "predicted_m": None if predicted is None else round(predicted, 4),
+                "error_cm": None
+                if predicted is None
+                else round(abs(predicted - gt) * 100, 1),
+            }
+        )
+    meta = {
+        "pipeline_entity_counts": dict(
+            sorted(
+                {
+                    name: sum(1 for e in entities if e.label == name)
+                    for name in {e.label for e in entities}
+                }.items()
+            )
+        ),
+        "pipeline_entity_warnings": entity_warnings,
+    }
+    return rows, meta
 
 
 def _fit_floor_no_gate(
@@ -142,6 +333,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--pack", default="outputs/redwood_v2")
     parser.add_argument("--live", action="store_true")
     parser.add_argument("--reuse", action="store_true")
+    parser.add_argument(
+        "--pipeline",
+        action="store_true",
+        help="also score distances through SAM masks + entity clustering "
+        "(the production binding path) instead of annotation boxes only",
+    )
     args = parser.parse_args(argv)
 
     pack = Path(args.pack).resolve()
@@ -268,8 +465,33 @@ def main(argv: list[str] | None = None) -> int:
                     "error_cm": None if gap is None else round(abs(gap - gt) * 100, 1),
                 }
             )
+    if args.pipeline:
+        object_names = sorted(
+            {
+                name
+                for boxes in annotations["object_boxes_px"].values()
+                for name in boxes
+            }
+        )
+        observations, planned = _pipeline_observations(
+            pack, frames, object_names, live=args.live
+        )
+        if observations is None:
+            print(
+                f"pipeline mode needs {planned} uncached SAM call(s); "
+                "pass --live to spend them (cached reruns are free)",
+                file=sys.stderr,
+            )
+            return 2
+        pipeline_rows, pipeline_meta = _score_pipeline_mode(
+            frames_by_id, frame_data, transform, observations, annotations, frames
+        )
+        results.extend(pipeline_rows)
+        report.update(pipeline_meta)
+
     report["results"] = results
-    for mode, _, _ in modes:
+    mode_names = list(dict.fromkeys(r["mode"] for r in results))
+    for mode in mode_names:
         errors = [r["error_cm"] for r in results if r["mode"] == mode and r["error_cm"] is not None]
         report[f"{mode}_mae_cm"] = round(float(np.mean(errors)), 1) if errors else None
         report[f"{mode}_max_cm"] = round(float(np.max(errors)), 1) if errors else None
@@ -277,7 +499,7 @@ def main(argv: list[str] | None = None) -> int:
     for row in results:
         print(row)
     print("scale_factor:", round(transform.scale_factor, 4))
-    print("MAE cm:", " | ".join(f"{mode}={report[f'{mode}_mae_cm']}" for mode, _, _ in modes))
+    print("MAE cm:", " | ".join(f"{mode}={report[f'{mode}_mae_cm']}" for mode in mode_names))
     return 0
 
 
