@@ -139,9 +139,20 @@ def main(argv: list[str] | None = None) -> int:
         print("pass --live to spend them (cached reruns are free)", file=sys.stderr)
         return 2
 
+    exhausted = None
     for image in images:
-        _fetch_image(image)
-        _run_geometry(image)
+        try:
+            _fetch_image(image)
+            _run_geometry(image)
+        except Exception as exc:  # credit exhaustion mid-batch: score what we have
+            exhausted = f"stopped at {image}: {exc}"
+            print(exhausted, file=sys.stderr)
+            break
+    questions = [
+        q
+        for q in questions
+        if (_geometry_dir(q["image"]) / "frames").is_dir()
+    ]
 
     rows = []
     for question in questions:
@@ -191,6 +202,7 @@ def main(argv: list[str] | None = None) -> int:
         "centroid": summarize("centroid_rel"),
         "min_dist": summarize("min_rel"),
         "scale_source": "MapAnything native metric mono (synthetic warehouse)",
+        "stopped_early": exhausted,
     }
     WORK.mkdir(parents=True, exist_ok=True)
     (WORK / "report.json").write_text(json.dumps(summary, indent=2) + "\n")
