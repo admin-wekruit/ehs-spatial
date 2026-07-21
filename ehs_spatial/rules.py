@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from shapely.geometry import Polygon
+from shapely.ops import unary_union
 
 from .contracts import (
     Assessment,
@@ -67,13 +68,39 @@ def _assess_clearance(
             discarded_fence_fragments += 1
             continue
         valid_fences.append((entity, polygon))
-    if len(valid_fences) != 1:
+    if not valid_fences:
         return _insufficient(
-            f"expected exactly one safety fence with at least {fence_frame_gate} "
-            "evidence frame(s) and 0.25 m2 area"
+            f"no safety fence passed the evidence gates (at least "
+            f"{fence_frame_gate} evidence frame(s) and 0.25 m2 area)"
         )
-    fence, fence_polygon = valid_fences[0]
-    fence_warnings = (
+    if len(valid_fences) == 1:
+        fence, fence_polygon = valid_fences[0]
+        fence_polygon_out = list(fence.footprint_xy)
+        fence_evidence = set(fence.evidence_frame_ids)
+        merge_warnings = []
+    else:
+        # One physical fence often reconstructs as several clusters (thin
+        # rails, occlusion, single-view depth). Merging the gated fragments
+        # into one hull is what clustering would have produced had they
+        # connected; the largest fragment lends its entity_id to the facts.
+        fence = max(
+            valid_fences, key=lambda item: (item[1].area, item[0].entity_id)
+        )[0]
+        fence_polygon = unary_union(
+            [polygon for _, polygon in valid_fences]
+        ).convex_hull
+        fence_polygon_out = [
+            (float(x), float(y))
+            for x, y in list(fence_polygon.exterior.coords)[:-1]
+        ]
+        fence_evidence = set().union(
+            *(set(entity.evidence_frame_ids) for entity, _ in valid_fences)
+        )
+        merge_warnings = [
+            f"{len(valid_fences)} safety fence segments merged into a single "
+            "boundary hull; clearance is measured against the merged hull"
+        ]
+    fence_warnings = merge_warnings + (
         [
             f"{discarded_fence_fragments} safety fence fragment(s) discarded by "
             "evidence gates; clearance may be measured against a partial fence"
@@ -99,7 +126,7 @@ def _assess_clearance(
             "frame(s), 0.0025 m2 area, and 0.05 m height"
         )
         return _RuleResult(
-            fence_polygon=list(fence.footprint_xy),
+            fence_polygon=fence_polygon_out,
             facts=result.facts,
             assessment=result.assessment,
             warnings=[*fence_warnings, *result.warnings],
@@ -127,7 +154,7 @@ def _assess_clearance(
         else AssessmentStatus.PASS
     )
     combined_evidence = sorted(
-        set(fence.evidence_frame_ids) | set(movable.evidence_frame_ids)
+        fence_evidence | set(movable.evidence_frame_ids)
     )
     facts = [
         SpatialFact(
@@ -178,7 +205,7 @@ def _assess_clearance(
             )
         )
     return _RuleResult(
-        fence_polygon=list(fence.footprint_xy),
+        fence_polygon=fence_polygon_out,
         facts=facts,
         assessment=Assessment(
             status=status,

@@ -203,3 +203,115 @@ def test_default_capture_keeps_full_evidence_gates():
     result = _assess_clearance([fence, movable], Criterion())
 
     assert result.assessment.status.value == "INSUFFICIENT_EVIDENCE"
+
+
+def test_multiple_valid_fences_merge_into_one_boundary_hull():
+    big = _entity(
+        "fence-big",
+        "safety fence",
+        [(0, 0), (1.5, 0), (1.5, 2), (0, 2)],
+        ["frame-1", "frame-2", "frame-3"],
+    )
+    small = _entity(
+        "fence-small",
+        "safety fence",
+        [(1.7, 0), (2.2, 0), (2.2, 2), (1.7, 2)],
+        ["frame-2", "frame-3", "frame-4"],
+    )
+    movable = _entity(
+        "movable",
+        "pallet",
+        [(2.9, 0.8), (3.1, 0.8), (3.1, 1.0), (2.9, 1.0)],
+        ["frame-1", "frame-2"],
+    )
+
+    result = _assess_clearance([big, small, movable], Criterion())
+
+    # Merged hull spans x in [0, 2.2]; the pallet sits 0.7 m off its edge.
+    assert result.assessment.status.value == "PASS"
+    assert abs(result.assessment.approximate_distance_m - 0.7) < 1e-9
+    assert any(
+        "2 safety fence segments merged into a single boundary hull" in warning
+        for warning in result.warnings
+    )
+    # Facts cite the largest fragment; evidence unions all merged fragments.
+    assert all(
+        fact.object_id == "fence-big"
+        for fact in result.facts
+        if fact.predicate in ("inside_or_intersects", "minimum_boundary_clearance")
+    )
+    assert result.assessment.evidence_frame_ids == [
+        "frame-1",
+        "frame-2",
+        "frame-3",
+        "frame-4",
+    ]
+    # The reported fence polygon is the merged hull, covering both fragments.
+    xs = [x for x, _ in result.fence_polygon]
+    assert min(xs) == 0.0 and max(xs) == 2.2
+
+
+def test_merged_hull_measures_against_gap_spanning_boundary():
+    # A movable sitting in the gap BETWEEN two fragments intersects the merged
+    # hull and must FAIL at distance 0.0 (the false-PASS mode the merge exists
+    # to prevent is measuring against only one fragment).
+    left = _entity(
+        "fence-left",
+        "safety fence",
+        [(0, 0), (1, 0), (1, 2), (0, 2)],
+        ["frame-1", "frame-2", "frame-3"],
+    )
+    right = _entity(
+        "fence-right",
+        "safety fence",
+        [(2, 0), (3, 0), (3, 2), (2, 2)],
+        ["frame-1", "frame-2", "frame-3"],
+    )
+    movable = _entity(
+        "movable",
+        "pallet",
+        [(1.4, 0.8), (1.6, 0.8), (1.6, 1.0), (1.4, 1.0)],
+        ["frame-1", "frame-2"],
+    )
+
+    result = _assess_clearance([left, right, movable], Criterion())
+
+    assert result.assessment.status.value == "FAIL"
+    assert result.assessment.approximate_distance_m == 0.0
+
+
+def test_single_valid_fence_emits_no_merge_warning():
+    fence = _entity(
+        "fence",
+        "safety fence",
+        [(0, 0), (2, 0), (2, 2), (0, 2)],
+        ["frame-1", "frame-2", "frame-3"],
+    )
+    movable = _entity(
+        "movable",
+        "pallet",
+        [(2.7, 0.8), (2.9, 0.8), (2.9, 1.0), (2.7, 1.0)],
+        ["frame-1", "frame-2"],
+    )
+
+    result = _assess_clearance([fence, movable], Criterion())
+
+    assert not any("merged" in warning for warning in result.warnings)
+    assert result.fence_polygon == list(fence.footprint_xy)
+
+
+def test_zero_valid_fences_reports_gate_insufficiency():
+    fragment = _entity(
+        "fragment",
+        "safety fence",
+        [(0, 0), (0.1, 0), (0.1, 0.1), (0, 0.1)],
+        ["frame-1"],
+    )
+
+    result = _assess_clearance([fragment], Criterion())
+
+    assert result.assessment.status.value == "INSUFFICIENT_EVIDENCE"
+    assert any(
+        "no safety fence passed the evidence gates" in warning
+        for warning in result.warnings
+    )
