@@ -661,3 +661,33 @@ def test_topdown_always_draws_the_selected_entity(tmp_path):
 
     pixels = np.array(Image.open(path).convert("RGB")).reshape(-1, 3)
     assert (pixels == (255, 138, 101)).all(axis=1).any()  # selected fill #ff8a65
+
+
+def test_scene_builder_emits_plan_view_and_semantic_ply(tmp_path):
+    from ehs_spatial.scene import build_scene_and_assess
+
+    frames, observations = _synthetic_scene(tmp_path, clearance_m=0.5)
+    plan_path = tmp_path / "plan_view.png"
+    ply_path = tmp_path / "semantic_cloud.ply"
+
+    build_scene_and_assess(
+        run_id="plan-artifacts",
+        frames=frames,
+        observations=observations,
+        camera_height_m=1.6,
+        criterion=Criterion(),
+        plan_view_path=plan_path,
+        semantic_ply_path=ply_path,
+    )
+
+    with Image.open(plan_path) as plan:
+        assert plan.size == (760, 760)
+    raw = ply_path.read_bytes()
+    assert raw.startswith(b"ply\nformat binary_little_endian 1.0\n")
+    header_end = raw.index(b"end_header\n") + len(b"end_header\n")
+    count = int(
+        [line for line in raw[:header_end].split(b"\n") if b"element vertex" in line][0]
+        .split()[-1]
+    )
+    assert count > 0
+    assert len(raw) - header_end == count * (12 + 3)

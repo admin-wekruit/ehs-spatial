@@ -125,6 +125,8 @@ class FakeSceneBuilder:
         camera_height_m,
         criterion,
         topdown_path=None,
+        plan_view_path=None,
+        semantic_ply_path=None,
     ):
         self.calls.append(
             (

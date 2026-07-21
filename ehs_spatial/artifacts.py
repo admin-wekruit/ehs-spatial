@@ -22,8 +22,10 @@ class RunPaths:
     scene_json: Path
     assessment_json: Path
     topdown_png: Path
+    plan_view_png: Path
     chat_jsonl: Path
     point_cloud_glb: Path
+    semantic_ply: Path
 
 
 class ArtifactStore:
@@ -41,8 +43,10 @@ class ArtifactStore:
             scene_json=run_root / "scene.json",
             assessment_json=run_root / "assessment.json",
             topdown_png=run_root / "topdown.png",
+            plan_view_png=run_root / "plan_view.png",
             chat_jsonl=run_root / "chat.jsonl",
             point_cloud_glb=run_root / "geometry" / "point_cloud.glb",
+            semantic_ply=run_root / "geometry" / "semantic_cloud.ply",
         )
 
     def prepare_run(self, capture: CaptureRun) -> CaptureRun:

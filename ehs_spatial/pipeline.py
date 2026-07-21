@@ -81,6 +81,8 @@ class EHSAssessmentPipeline:
             prepared.camera_height_m,
             prepared.criterion,
             topdown_path=paths.topdown_png,
+            plan_view_path=paths.plan_view_png,
+            semantic_ply_path=paths.semantic_ply,
         )
         self.store.save_json(paths.scene_json, scene)
         climb_review, interaction_id = self.gemini.review_climb(
