@@ -279,6 +279,26 @@ def _voxel_downsample(points: np.ndarray) -> np.ndarray:
     return np.asarray(cloud.voxel_down_sample(voxel_size=0.03).points)
 
 
+# Depth reconstruction smears thin structures (fence rails) toward the
+# background; statistical denoising trims that tail before clustering.
+# Conservative on purpose: nb=20/std=2.0 leaves dense uniform structure
+# untouched, while harsher settings (nb=50/std=0.8) measurably shrink
+# single-view smear but delete most real fence points too — tradeoff
+# numbers in docs/reviews/2026-07-20-sor-preclustering.md.
+_OUTLIER_NB_NEIGHBORS = 20
+_OUTLIER_STD_RATIO = 2.0
+
+
+def _remove_outliers(points: np.ndarray) -> np.ndarray:
+    if len(points) <= _OUTLIER_NB_NEIGHBORS:
+        return points
+    cloud = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(points))
+    cleaned, _ = cloud.remove_statistical_outlier(
+        nb_neighbors=_OUTLIER_NB_NEIGHBORS, std_ratio=_OUTLIER_STD_RATIO
+    )
+    return np.asarray(cleaned.points)
+
+
 def _slug(label: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")
 
@@ -343,6 +363,7 @@ def _reconcile_entities(
         data = _data_for(observation.frame_id, frames, frame_data)
         points = transform.apply(_select_points(observation, data))
         points = points[points[:, 2] > 0.05]
+        points = _remove_outliers(points)
         if len(points) < 20:
             warnings.append(
                 f"observation {observation.observation_id} has fewer than 20 object points above floor"
