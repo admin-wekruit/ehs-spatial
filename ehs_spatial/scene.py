@@ -22,6 +22,7 @@ def build_scene_and_assess(
     topdown_path: str | Path | None = None,
     plan_view_path: str | Path | None = None,
     semantic_ply_path: str | Path | None = None,
+    cloud_views_paths: tuple[str | Path, str | Path] | None = None,
 ) -> tuple[SceneMap, Assessment]:
     geometry = _build_geometry(frames, observations, camera_height_m)
     capture_warnings = (
@@ -89,6 +90,16 @@ def build_scene_and_assess(
 
         _write_semantic_ply(
             semantic_ply_path, frames, observations, geometry.transform
+        )
+    if cloud_views_paths is not None:
+        from .planview import _render_cloud_views
+
+        _render_cloud_views(
+            cloud_views_paths[0],
+            cloud_views_paths[1],
+            frames,
+            observations,
+            geometry.transform,
         )
     return scene, rule.assessment
 

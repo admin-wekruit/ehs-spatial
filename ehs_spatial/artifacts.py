@@ -23,6 +23,8 @@ class RunPaths:
     assessment_json: Path
     topdown_png: Path
     plan_view_png: Path
+    cloud_perspective_png: Path
+    cloud_topdown_png: Path
     chat_jsonl: Path
     point_cloud_glb: Path
     semantic_ply: Path
@@ -44,6 +46,8 @@ class ArtifactStore:
             assessment_json=run_root / "assessment.json",
             topdown_png=run_root / "topdown.png",
             plan_view_png=run_root / "plan_view.png",
+            cloud_perspective_png=run_root / "cloud_perspective.png",
+            cloud_topdown_png=run_root / "cloud_topdown.png",
             chat_jsonl=run_root / "chat.jsonl",
             point_cloud_glb=run_root / "geometry" / "point_cloud.glb",
             semantic_ply=run_root / "geometry" / "semantic_cloud.ply",

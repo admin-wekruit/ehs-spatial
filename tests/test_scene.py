@@ -691,3 +691,26 @@ def test_scene_builder_emits_plan_view_and_semantic_ply(tmp_path):
     )
     assert count > 0
     assert len(raw) - header_end == count * (12 + 3)
+
+
+def test_scene_builder_renders_cloud_views_fail_soft(tmp_path):
+    from ehs_spatial.scene import build_scene_and_assess
+
+    frames, observations = _synthetic_scene(tmp_path, clearance_m=0.5)
+    persp = tmp_path / "cloud_perspective.png"
+    top = tmp_path / "cloud_topdown.png"
+
+    # Must never raise, even on hosts where offscreen GL is unavailable.
+    build_scene_and_assess(
+        run_id="cloud-views",
+        frames=frames,
+        observations=observations,
+        camera_height_m=1.6,
+        criterion=Criterion(),
+        cloud_views_paths=(persp, top),
+    )
+
+    if persp.exists():  # renderer available on this host
+        with Image.open(persp) as image:
+            assert image.size == (1280, 860)
+        assert top.exists()

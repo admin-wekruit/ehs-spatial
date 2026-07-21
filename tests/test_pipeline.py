@@ -127,6 +127,7 @@ class FakeSceneBuilder:
         topdown_path=None,
         plan_view_path=None,
         semantic_ply_path=None,
+        cloud_views_paths=None,
     ):
         self.calls.append(
             (

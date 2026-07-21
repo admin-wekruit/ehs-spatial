@@ -144,14 +144,12 @@ _LABEL_TINTS = (
 )
 
 
-def _write_semantic_ply(
-    path: str | Path,
+def _semantic_cloud_arrays(
     frames: list[GeometryFrame],
     observations: list[Observation2D],
     transform: _FloorTransform,
-) -> None:
-    """Full-scene point cloud in the floor frame (z = height above floor),
-    with points belonging to a segmented observation tinted per label."""
+) -> tuple[np.ndarray, np.ndarray]:
+    """Floor-frame points and per-point colors, observation labels tinted."""
     labels = sorted({obs.label for obs in observations})
     tint_by_label = {
         label: _LABEL_TINTS[index % len(_LABEL_TINTS)]
@@ -191,6 +189,65 @@ def _write_semantic_ply(
         if colors
         else np.zeros((0, 3), np.uint8)
     )
+    return points, rgb
+
+
+def _render_cloud_views(
+    perspective_path: str | Path,
+    topdown_path: str | Path,
+    frames: list[GeometryFrame],
+    observations: list[Observation2D],
+    transform: _FloorTransform,
+) -> bool:
+    """Open3D offscreen renders (perspective + top-down) of the semantic
+    cloud. Fail-soft: rendering must never kill an assessment — returns
+    False on any renderer failure (e.g. headless hosts without GLFW)."""
+    points, rgb = _semantic_cloud_arrays(frames, observations, transform)
+    if not len(points):
+        return False
+    try:
+        import open3d as o3d
+
+        cloud = o3d.geometry.PointCloud(
+            o3d.utility.Vector3dVector(points.astype(np.float64))
+        )
+        cloud.colors = o3d.utility.Vector3dVector(rgb.astype(np.float64) / 255.0)
+        for path, front, up, zoom in (
+            (perspective_path, (0.25, -0.72, 0.65), (0.0, 0.0, 1.0), 0.55),
+            (topdown_path, (0.0, -0.02, 1.0), (0.0, 1.0, 0.0), 0.62),
+        ):
+            visualizer = o3d.visualization.Visualizer()
+            if not visualizer.create_window(width=1280, height=860, visible=False):
+                return False
+            visualizer.add_geometry(cloud)
+            options = visualizer.get_render_option()
+            options.background_color = np.array([0.98, 0.98, 0.97])
+            options.point_size = 2.4
+            control = visualizer.get_view_control()
+            control.set_front(list(front))
+            control.set_lookat(cloud.get_center())
+            control.set_up(list(up))
+            control.set_zoom(zoom)
+            visualizer.poll_events()
+            visualizer.update_renderer()
+            destination = Path(path)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            visualizer.capture_screen_image(str(destination), do_render=True)
+            visualizer.destroy_window()
+        return True
+    except Exception:
+        return False
+
+
+def _write_semantic_ply(
+    path: str | Path,
+    frames: list[GeometryFrame],
+    observations: list[Observation2D],
+    transform: _FloorTransform,
+) -> None:
+    """Full-scene point cloud in the floor frame (z = height above floor),
+    with points belonging to a segmented observation tinted per label."""
+    points, rgb = _semantic_cloud_arrays(frames, observations, transform)
     record = np.zeros(len(points), dtype=[("xyz", "<f4", 3), ("rgb", "u1", 3)])
     record["xyz"] = points
     record["rgb"] = rgb
@@ -208,4 +265,4 @@ def _write_semantic_ply(
         stream.write(record.tobytes())
 
 
-__all__ = ["_render_plan_view", "_write_semantic_ply"]
+__all__ = ["_render_cloud_views", "_render_plan_view", "_write_semantic_ply"]
