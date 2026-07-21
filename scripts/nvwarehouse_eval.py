@@ -132,10 +132,60 @@ def _min_distance(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.percentile(nn, 0.5))
 
 
+def _ask_vlm(question: dict) -> float | None:
+    """SpatialRGPT-style baseline: draw the two GT regions on the image and
+    ask the distance in metres."""
+    cache = WORK / "vlm" / f"{question['id']}.json"
+    if cache.exists():
+        return json.loads(cache.read_text()).get("value")
+    import io
+    import re as _re
+
+    import numpy as np
+    from PIL import Image, ImageDraw
+    from google import genai
+    from google.genai import types
+
+    with Image.open(_image_path(question["image"])) as source:
+        canvas = source.convert("RGB")
+    draw = ImageDraw.Draw(canvas)
+    colors = ["red", "blue"]
+    for index, rle in enumerate(question["rle"]):
+        height, width = rle["size"]
+        mask = decode_coco_rle(rle["counts"], height=height, width=width)
+        ys, xs = np.nonzero(mask)
+        draw.rectangle(
+            [int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())],
+            outline=colors[index],
+            width=5,
+        )
+    text = question["conversations"][0]["value"].replace("<image>\n", "")
+    for index in range(2):
+        text = text.replace(
+            "<mask>", f"[Region {index} in {colors[index]}]", 1
+        )
+    buffer = io.BytesIO()
+    canvas.save(buffer, format="PNG")
+    client = genai.Client()
+    response = client.models.generate_content(
+        model="gemini-3.5-flash",
+        contents=[
+            types.Part.from_bytes(data=buffer.getvalue(), mime_type="image/png"),
+            text + " Respond with ONLY a number in meters.",
+        ],
+    )
+    match = _re.search(r"[\d.]+", response.text or "")
+    value = float(match.group(0)) if match else None
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(json.dumps({"value": value}) + "\n")
+    return value
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--live", action="store_true")
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--vlm", action="store_true")
     args = parser.parse_args(argv)
 
     questions = _questions(args.limit)
@@ -180,17 +230,21 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         minimum = _min_distance(points[0], points[1])
-        rows.append(
-            {
-                "id": question["id"],
-                "image": question["image"],
-                "gt_m": gt,
-                "centroid_m": round(centroid, 3),
-                "min_m": round(minimum, 3),
-                "centroid_rel": round(abs(centroid - gt) / gt, 3),
-                "min_rel": round(abs(minimum - gt) / gt, 3),
-            }
-        )
+        row = {
+            "id": question["id"],
+            "image": question["image"],
+            "gt_m": gt,
+            "centroid_m": round(centroid, 3),
+            "min_m": round(minimum, 3),
+            "centroid_rel": round(abs(centroid - gt) / gt, 3),
+            "min_rel": round(abs(minimum - gt) / gt, 3),
+        }
+        if args.vlm:
+            value = _ask_vlm(question)
+            if value is not None:
+                row["vlm_m"] = round(value, 3)
+                row["vlm_rel"] = round(abs(value - gt) / gt, 3)
+        rows.append(row)
 
     def summarize(key: str) -> dict:
         errors = [r[key] for r in rows if key in r]
@@ -212,6 +266,7 @@ def main(argv: list[str] | None = None) -> int:
         "rows": rows,
         "centroid": summarize("centroid_rel"),
         "min_dist": summarize("min_rel"),
+        "vlm": summarize("vlm_rel") if args.vlm else None,
         "scale_source": "MapAnything native metric mono (synthetic warehouse)",
         "image_failures": failures,
     }
