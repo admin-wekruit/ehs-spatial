@@ -378,6 +378,83 @@ def test_chat_renders_selected_facts_locally_and_ignores_injected_provider_prose
     assert answer.evidence_frame_ids == ["frame-1", "frame-2"]
 
 
+def _policy_fact():
+    return SpatialFact(
+        fact_id="fact-p06-portable-ladder-tilt-limit-01",
+        predicate="max_tilt",
+        subject_id="entity-step-ladder-02",
+        object_id="entity-step-ladder-02",
+        value=21.5716,
+        unit="deg",
+        evidence_frame_ids=["frame-1"],
+    )
+
+
+def test_chat_offers_policy_facts_as_citable_context_and_renders_locally():
+    from ehs_spatial.providers.gemini import GeminiAdapter
+
+    policy_fact = _policy_fact()
+    client = FakeClient(
+        [
+            _interaction(
+                {
+                    "answer": "The ladder leans 999 degrees.",
+                    "fact_ids": [policy_fact.fact_id],
+                    "evidence_frame_ids": ["frame-1"],
+                },
+                interaction_id="interaction-2",
+            )
+        ]
+    )
+
+    answer, cursor = GeminiAdapter(client=client).answer(
+        "Why did the tilt policy fail?",
+        _scene(),
+        previous_interaction_id="interaction-1",
+        policy_facts=[policy_fact],
+    )
+
+    assert cursor == "interaction-2"
+    [call] = client.interactions.calls
+    # The policy facts ride as an application-authored block before the
+    # untrusted question, so the model can select their fact_ids.
+    assert len(call["input"]) == 2
+    assert "Policy evaluation facts" in call["input"][0].text
+    assert policy_fact.fact_id in call["input"][0].text
+    assert "21.5716 deg" in call["input"][0].text
+    assert call["input"][1].text == "Why did the tilt policy fail?"
+    # The answer is rendered locally from the cited fact, never provider prose.
+    assert answer.fact_ids == [policy_fact.fact_id]
+    assert "21.5716" in answer.answer
+    assert "999" not in answer.answer
+    assert answer.evidence_frame_ids == ["frame-1"]
+
+
+def test_chat_with_policy_facts_still_rejects_unknown_fact_ids():
+    from ehs_spatial.providers.gemini import GeminiAdapter
+
+    client = FakeClient(
+        [
+            _interaction(
+                {
+                    "answer": "It failed.",
+                    "fact_ids": ["fact-invented"],
+                    "evidence_frame_ids": [],
+                },
+                interaction_id="interaction-2",
+            )
+        ]
+    )
+
+    with pytest.raises(ProviderError, match="grounding"):
+        GeminiAdapter(client=client).answer(
+            "Why did the tilt policy fail?",
+            _scene(),
+            previous_interaction_id="interaction-1",
+            policy_facts=[_policy_fact()],
+        )
+
+
 @pytest.mark.parametrize(
     "payload",
     [

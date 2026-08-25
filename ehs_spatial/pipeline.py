@@ -14,6 +14,7 @@ from .contracts import (
     ProviderManifest,
     RunManifest,
     SceneMap,
+    SpatialFact,
 )
 from .providers.base import ProviderError
 from .providers.gemini import GeminiAdapter
@@ -264,6 +265,21 @@ class EHSAssessmentPipeline:
             warnings.warn(f"3D viewer build failed ({error}); run continues")
         return final_assessment
 
+    def _policy_facts(self, paths) -> list[SpatialFact]:
+        """PolicyResult facts from policies.json, so a grounded answer can
+        cite the measurements behind a policy verdict. Fail-soft like every
+        other policies.json reader: missing or malformed means no policy
+        facts, never a broken chat."""
+        try:
+            payload = json.loads(paths.policies_json.read_text(encoding="utf-8"))
+            return [
+                SpatialFact.model_validate(fact)
+                for result in payload["results"]
+                for fact in result.get("facts", [])
+            ]
+        except Exception:
+            return []
+
     def answer_question(self, run_id: str, question: str) -> GroundedAnswer:
         paths = self.store.paths(run_id)
         scene = self.store.load_json(paths.scene_json, SceneMap)
@@ -272,10 +288,14 @@ class EHSAssessmentPipeline:
             raise ProviderError(
                 "gemini", "chat.cursor", "run has no stored interaction id"
             )
+        policy_facts = self._policy_facts(paths)
         answer, next_interaction_id = self.gemini.answer(
             question,
             scene,
             previous_interaction_id=interaction_id,
+            # Only added when the run has policy facts: adapters without the
+            # parameter (and runs without policies) keep the exact legacy call.
+            **({"policy_facts": policy_facts} if policy_facts else {}),
         )
         answer = GroundedAnswer.model_validate(answer)
         if not isinstance(next_interaction_id, str) or not next_interaction_id:

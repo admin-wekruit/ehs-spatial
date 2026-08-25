@@ -316,6 +316,77 @@ def test_answer_question_recovers_cursor_in_a_new_pipeline_and_appends_after_val
     assert append_calls[0][1] == entries[0]
 
 
+def _policy_fact_payload() -> dict:
+    return {
+        "fact_id": "fact-p06-portable-ladder-tilt-limit-01",
+        "predicate": "max_tilt",
+        "subject_id": "entity-step-ladder-02",
+        "object_id": "entity-step-ladder-02",
+        "value": 21.5716,
+        "unit": "deg",
+        "evidence_frame_ids": ["frame-1"],
+    }
+
+
+def test_answer_question_hands_policy_facts_to_the_grounded_answer(tmp_path):
+    """Policy measurements become citable context for Q&A: the facts stored
+    in policies.json ride into gemini.answer as SpatialFacts."""
+
+    class PolicyAwareFakeGemini(FakeGemini):
+        def answer(
+            self, question, scene, *, previous_interaction_id, policy_facts=None
+        ):
+            self.policy_facts = policy_facts
+            return super().answer(
+                question, scene, previous_interaction_id=previous_interaction_id
+            )
+
+    pipeline, store, *_ = _pipeline(tmp_path)
+    pipeline.run_assessment(_capture(tmp_path))
+    store.paths("run-1").policies_json.write_text(
+        json.dumps(
+            {
+                "specs": [],
+                "results": [
+                    {
+                        "policy_id": "p06-portable-ladder-tilt-limit",
+                        "status": "FAIL",
+                        "facts": [_policy_fact_payload()],
+                    },
+                    {"policy_id": "p05-pallet-max-height", "status": "PASS"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    gemini = PolicyAwareFakeGemini()
+    from ehs_spatial.pipeline import EHSAssessmentPipeline
+
+    fresh = EHSAssessmentPipeline(store=store, gemini=gemini)
+
+    fresh.answer_question("run-1", "Why did the tilt policy fail?")
+
+    assert gemini.policy_facts == [
+        SpatialFact.model_validate(_policy_fact_payload())
+    ]
+
+
+def test_answer_question_without_usable_policy_facts_keeps_legacy_call(tmp_path):
+    """A run with no policies.json — or a malformed one — keeps the exact
+    legacy gemini.answer call, so adapters without the policy_facts
+    parameter (like this fake) still work."""
+    pipeline, store, *_ = _pipeline(tmp_path)
+    pipeline.run_assessment(_capture(tmp_path))
+    store.paths("run-1").policies_json.write_text("{", encoding="utf-8")
+    from ehs_spatial.pipeline import EHSAssessmentPipeline
+
+    fresh = EHSAssessmentPipeline(store=store, gemini=FakeGemini())
+
+    answer = fresh.answer_question("run-1", "How far is the pallet?")
+
+    assert answer.fact_ids == ["fact-clearance"]
+
+
 def test_answer_question_does_not_append_chat_when_provider_validation_fails(tmp_path):
     pipeline, store, *_ = _pipeline(tmp_path)
     pipeline.run_assessment(_capture(tmp_path))

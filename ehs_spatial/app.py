@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, timezone
 from functools import partial
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -11,6 +12,7 @@ from .contracts import (
     Assessment,
     CaptureRun,
     GroundedAnswer,
+    PolicySpec,
     ReviewDisposition,
     SceneMap,
 )
@@ -19,11 +21,36 @@ from .providers.base import ProviderError
 
 
 DEMO_RULE_COPY = "0.6 m demo rule — not an official EHS standard"
+# Compilation from prose is an offline, reviewed step (scripts/
+# policy_compile.py); the UI only offers specs a reviewer could have read.
+POLICIES_DIR = "outputs/policies/compiled"
+POLICY_REVIEW_COPY = (
+    "Compiled specs are reviewed before use — this UI selects reviewed "
+    "specs and never compiles prose live."
+)
 PIPELINE_CONCURRENCY_ID = "ehs-provider-pipeline"
 # History/disposition handlers only touch local run artifacts; their own lane
 # keeps them responsive while a multi-minute provider analysis holds the
 # provider lane.
 LOCAL_CONCURRENCY_ID = "ehs-local-ui"
+
+
+def load_policy_specs(policies_dir: str | Path = POLICIES_DIR) -> list[PolicySpec]:
+    """Precompiled PolicySpecs found at app build time. An unreadable file is
+    skipped so one bad cache entry never blocks startup."""
+    specs = []
+    for path in sorted(Path(policies_dir).glob("*.json")):
+        try:
+            specs.append(
+                PolicySpec.model_validate_json(path.read_text(encoding="utf-8"))
+            )
+        except Exception:
+            continue
+    return specs
+
+
+def _policy_label(spec: PolicySpec) -> str:
+    return f"{spec.policy_id} — {spec.source_text[:60]}"
 
 
 def _provider_error_copy(error: ProviderError) -> str:
@@ -147,6 +174,8 @@ def analyze_run(
     image_3: str | None,
     image_4: str | None,
     camera_height_m: float,
+    selected_policies: list[str] | None = None,
+    available_policies: dict[str, PolicySpec] | None = None,
 ) -> tuple[object, ...]:
     image_paths = [
         path for path in (image_1, image_2, image_3, image_4) if path
@@ -162,6 +191,13 @@ def analyze_run(
             run_id=run_id,
             image_paths=[str(path) for path in image_paths],
             camera_height_m=camera_height_m,
+            # Only reviewed, build-time specs are selectable; a stale or
+            # unknown id from the client degrades to "not selected".
+            policies=[
+                available_policies[policy_id]
+                for policy_id in selected_policies or []
+                if policy_id in (available_policies or {})
+            ],
         )
         assessment = pipeline.run_assessment(capture)
         paths = pipeline.store.paths(run_id)
@@ -470,9 +506,17 @@ def save_disposition(
     return gr.update(value=_disposition_copy(disposition)), list_history(pipeline)
 
 
-def build_app(pipeline: Any | None = None) -> gr.Blocks:
+def build_app(
+    pipeline: Any | None = None,
+    policies_dir: str | Path = POLICIES_DIR,
+) -> gr.Blocks:
     service = pipeline if pipeline is not None else EHSAssessmentPipeline()
-    analyze = partial(analyze_run, service)
+    specs = load_policy_specs(policies_dir)
+    supported = {
+        spec.policy_id: spec for spec in specs if not spec.unsupported_reason
+    }
+    refused = [spec for spec in specs if spec.unsupported_reason]
+    analyze = partial(analyze_run, service, available_policies=supported)
     ask = partial(answer_run_question, service)
 
     with gr.Blocks(
@@ -522,6 +566,36 @@ def build_app(pipeline: Any | None = None) -> gr.Blocks:
                             step=0.1,
                             precision=2,
                         )
+                        with gr.Accordion(
+                            "Policies", open=False, elem_classes="policy-rail"
+                        ):
+                            gr.Markdown(POLICY_REVIEW_COPY)
+                            policy_selector = gr.CheckboxGroup(
+                                choices=[
+                                    (_policy_label(spec), policy_id)
+                                    for policy_id, spec in supported.items()
+                                ],
+                                value=[],
+                                label="Compiled policy specs",
+                                info=(
+                                    "Selected specs are evaluated "
+                                    "deterministically against the "
+                                    "reconstructed scene."
+                                ),
+                            )
+                            # A refusal is a feature: the compiler said why it
+                            # cannot measure this rule, so the operator sees a
+                            # disabled entry with that reason, not silence.
+                            for spec in refused:
+                                gr.Checkbox(
+                                    value=False,
+                                    interactive=False,
+                                    label=_policy_label(spec),
+                                    info=(
+                                        "Compiler refusal: "
+                                        f"{spec.unsupported_reason}"
+                                    ),
+                                )
                         analyze_button = gr.Button(
                             "Analyze workcell",
                             variant="primary",
@@ -665,7 +739,7 @@ def build_app(pipeline: Any | None = None) -> gr.Blocks:
         )
         analyze_button.click(
             analyze,
-            inputs=[*uploads, camera_height],
+            inputs=[*uploads, camera_height, policy_selector],
             outputs=[
                 run_id,
                 status,
@@ -964,6 +1038,7 @@ __all__ = [
     "build_app",
     "list_history",
     "load_history_run",
+    "load_policy_specs",
     "load_run_evidence",
     "save_disposition",
 ]

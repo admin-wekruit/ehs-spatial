@@ -208,15 +208,30 @@ class GeminiAdapter:
         scene: SceneMap,
         *,
         previous_interaction_id: str,
+        policy_facts: list[SpatialFact] | None = None,
     ) -> tuple[GroundedAnswer, str]:
         if not previous_interaction_id:
             raise ProviderError(
                 "gemini", "chat.cursor", "previous interaction id is required"
             )
+        # Policy evaluation facts are citable exactly like SceneMap facts:
+        # the model never saw them in the climb prompt, so they ride along as
+        # an application-authored block, distinct from the untrusted question.
+        extra_facts = list(policy_facts or [])
+        input_blocks = [_text_block(question)]
+        if extra_facts:
+            input_blocks.insert(
+                0,
+                _text_block(
+                    "Policy evaluation facts for this run (citable fact_ids, "
+                    "same grounding rules as SceneMap facts): "
+                    + "; ".join(_render_fact(fact) for fact in extra_facts)
+                ),
+            )
         response = self._create(
             "chat.create",
             model=GEMINI_MODEL_ID,
-            input=[_text_block(question)],
+            input=input_blocks,
             store=True,
             stream=False,
             background=False,
@@ -232,7 +247,9 @@ class GeminiAdapter:
         )
         parsed, interaction_id = self._parse(response, GroundedAnswer, "chat")
         selection = GroundedAnswer.model_validate(parsed)
-        facts_by_id = {fact.fact_id: fact for fact in scene.facts}
+        facts_by_id = {
+            fact.fact_id: fact for fact in [*scene.facts, *extra_facts]
+        }
         if not selection.fact_ids:
             if selection.evidence_frame_ids:
                 raise ProviderError(
@@ -257,8 +274,9 @@ class GeminiAdapter:
                 "chat.grounding",
                 "response cites an unknown fact id",
             )
+        cited = set(selection.fact_ids)
         selected_ids = [
-            fact.fact_id for fact in scene.facts if fact.fact_id in selection.fact_ids
+            fact_id for fact_id in facts_by_id if fact_id in cited
         ]
         allowed_evidence = {
             frame_id
