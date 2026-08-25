@@ -168,12 +168,19 @@ def main(argv: list[str] | None = None) -> int:
     scene = SceneMap.model_validate_json(scene_path.read_text())
     frame_count = len({f for e in scene.entities for f in e.evidence_frame_ids}) or 1
     results = evaluate_policies(specs, scene, capture_frame_count=frame_count)
+    # The same {"specs", "results"} envelope pipeline.py writes, at the
+    # location every reader consumes (app verdict/history cards, report.py):
+    # runs/<id>/policies.json. Evaluating a bare --scene has no run dir, so
+    # those verdicts land in the cache dir in the same envelope.
     report = {
-        "run": args.run or str(scene_path),
-        "capture_frame_count": frame_count,
+        "specs": [spec.model_dump(mode="json") for spec in specs],
         "results": [r.model_dump(mode="json") for r in results],
     }
-    out = CACHE_DIR / f"report_{args.run or scene_path.stem}.json"
+    out = (
+        Path("runs") / args.run / "policies.json"
+        if args.run
+        else CACHE_DIR / f"report_{scene_path.stem}.json"
+    )
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2) + "\n")
 

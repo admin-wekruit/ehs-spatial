@@ -4,7 +4,7 @@ import json
 import math
 from pathlib import Path
 from urllib.parse import urlparse
-from urllib.request import urlopen
+from urllib.request import HTTPRedirectHandler, build_opener
 
 import numpy as np
 from PIL import Image
@@ -108,6 +108,22 @@ def _json_safe(value: object) -> object:
 _ALLOWED_URL_SUFFIXES = (".replicate.delivery", ".replicate.com")
 
 
+class _NoRedirectHandler(HTTPRedirectHandler):
+    """The suffix check below runs on the initial URL only; a followed
+    redirect could land anywhere (metadata IPs, internal services), so any
+    30x from an allowed host is treated as hostile and refused outright."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise ValueError(f"provider URL redirect refused: {newurl}")
+
+
+def _redirect_refusing_opener(*extra_handlers):
+    return build_opener(_NoRedirectHandler(), *extra_handlers)
+
+
+_OPENER = _redirect_refusing_opener()
+
+
 def _read_provider_bytes(location: object, *, allow_local: bool = False) -> bytes:
     if not isinstance(location, (str, Path)) and hasattr(location, "read"):
         content = location.read()
@@ -118,7 +134,7 @@ def _read_provider_bytes(location: object, *, allow_local: bool = False) -> byte
         hostname = parsed.hostname or ""
         if not hostname.endswith(_ALLOWED_URL_SUFFIXES):
             raise ValueError(f"provider URL host not allowed: {hostname}")
-        with urlopen(value, timeout=60) as response:
+        with _OPENER.open(value, timeout=60) as response:
             return response.read()
     if allow_local:
         # Test/replay seam only: replaying a saved response with local paths.
