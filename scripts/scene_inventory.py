@@ -241,80 +241,162 @@ def _clip_segment(start, end, min_x, min_y, max_x, max_y):
     )
 
 
-def _render_plan(path: Path, walls: list[dict], objects: list[dict]) -> None:
-    size, margin = 1400, 90
-    image = Image.new("RGB", (size, size), "white")
+def _render_plan(path: Path, walls: list[dict], objects: list[dict], run_id: str) -> None:
+    """A drawing, not a scatter plot: title block, coordinate grid, oriented
+    object rectangles with dimension strings, dimensioned clearances between
+    the closest pairs, and hatched walls."""
+    from shapely.geometry import LineString
+    from shapely.ops import nearest_points as _nearest
+
+    W, H = 1600, 1240
+    plot_w, plot_h = 1180, 1120
+    left, top = 40, 60
+    image = Image.new("RGB", (W, H), "white")
     draw = ImageDraw.Draw(image)
-    # Frame on the measured objects and the camera. A long wall must not set
-    # the scale, or the workcell shrinks into a corner — walls get clipped to
-    # the frame instead.
+
     xs = [0.0] + [x for o in objects for x, _ in o["footprint"]]
     ys = [0.0] + [y for o in objects for _, y in o["footprint"]]
     min_x, max_x = min(xs) - 1.2, max(xs) + 1.2
     min_y, max_y = min(ys) - 1.2, max(ys) + 1.2
     span = max(max_x - min_x, max_y - min_y, 1e-6)
     min_x -= (span - (max_x - min_x)) / 2
-    max_x = min_x + span
     min_y -= (span - (max_y - min_y)) / 2
-    max_y = min_y + span
-    scale = (size - 2 * margin) / span
+    max_x, max_y = min_x + span, min_y + span
+    scale = min(plot_w, plot_h) / span
 
     def px(point):
         return (
-            margin + (point[0] - min_x) * scale,
-            size - margin - (point[1] - min_y) * scale,
+            left + (point[0] - min_x) * scale,
+            top + plot_h - (point[1] - min_y) * scale,
         )
 
-    for gx in np.arange(np.floor(min_x), np.ceil(max_x) + 1):
-        draw.line([px((gx, min_y)), px((gx, max_y))], fill="#ececec")
-    for gy in np.arange(np.floor(min_y), np.ceil(max_y) + 1):
-        draw.line([px((min_x, gy)), px((max_x, gy))], fill="#ececec")
+    # sheet border and plot frame
+    draw.rectangle([12, 12, W - 12, H - 12], outline="#111111", width=3)
+    draw.rectangle([left, top, left + plot_w, top + plot_h], outline="#555555", width=1)
 
+    for gx in np.arange(np.ceil(min_x), np.floor(max_x) + 1):
+        a, b = px((gx, min_y)), px((gx, max_y))
+        draw.line([a, b], fill="#e8e8e8")
+        draw.text((a[0] - 8, top + plot_h + 4), f"{gx:.0f}", fill="#9a9a9a")
+    for gy in np.arange(np.ceil(min_y), np.floor(max_y) + 1):
+        a, b = px((min_x, gy)), px((max_x, gy))
+        draw.line([a, b], fill="#e8e8e8")
+        draw.text((left - 26, a[1] - 6), f"{gy:.0f}", fill="#9a9a9a")
+
+    # walls: thick line plus hatch ticks on the occupied side
     for wall in walls:
-        clipped = _clip_segment(
-            wall["start"], wall["end"], min_x, min_y, max_x, max_y
-        )
+        clipped = _clip_segment(wall["start"], wall["end"], min_x, min_y, max_x, max_y)
         if clipped is None:
             continue
         start, end = clipped
-        draw.line([px(start), px(end)], fill="#333333", width=7)
-        mid = ((start[0] + end[0]) / 2, (start[1] + end[1]) / 2)
-        draw.text(px(mid), f"wall {wall['length_m']:.1f}m", fill="#333333")
+        draw.line([px(start), px(end)], fill="#1a1a1a", width=9)
+        direction = np.asarray(end) - np.asarray(start)
+        length = float(np.hypot(*direction))
+        if length < 1e-6:
+            continue
+        unit = direction / length
+        normal = np.array([-unit[1], unit[0]])
+        for offset in np.arange(0.12, length, 0.32):
+            base = np.asarray(start) + unit * offset
+            draw.line([px(base), px(base + normal * 0.18)], fill="#7a7a7a", width=2)
+        mid = np.asarray(start) + unit * (length / 2) + normal * 0.35
+        draw.text(px(mid), f"WALL  {wall['length_m']:.2f} m  h {wall['height_m']:.2f}",
+                  fill="#1a1a1a", anchor="mm")
 
-    palette = [
-        "#e5194b", "#2f7de1", "#12a15a", "#c86a00", "#8a4fd0",
-        "#0f9aa8", "#b8860b", "#d4457f", "#5a7d2a", "#7a6a5a",
-    ]
+    def dimension(a, b, text, colour, offset=0.0):
+        """Extension lines + arrowed dimension line, CAD convention."""
+        a, b = np.asarray(a, dtype=float), np.asarray(b, dtype=float)
+        direction = b - a
+        length = float(np.hypot(*direction))
+        if length < 1e-6:
+            return
+        unit = direction / length
+        normal = np.array([-unit[1], unit[0]]) * offset
+        pa, pb = px(a + normal), px(b + normal)
+        if offset:
+            draw.line([px(a), pa], fill=colour, width=1)
+            draw.line([px(b), pb], fill=colour, width=1)
+        draw.line([pa, pb], fill=colour, width=2)
+        for point, sign in ((pa, 1), (pb, -1)):
+            tip = np.asarray(point)
+            back = tip + sign * np.array([unit[0], -unit[1]]) * 11
+            side = np.array([-unit[1], -unit[0]]) * 4.5
+            draw.polygon([tuple(tip), tuple(back + side), tuple(back - side)], fill=colour)
+        mid = (a + b) / 2 + normal
+        draw.text(px(mid), text, fill=colour, anchor="mm")
+
+    palette = ["#c1121f", "#1d4ed8", "#047857", "#b45309", "#6d28d9",
+               "#0e7490", "#9d174d", "#4d7c0f", "#7c2d12", "#334155"]
+    legend = []
     for index, obj in enumerate(objects):
         colour = palette[index % len(palette)]
-        draw.polygon([px(p) for p in obj["footprint"]], outline=colour, width=3)
+        box = Polygon(obj["footprint"]).minimum_rotated_rectangle
+        ring = list(box.exterior.coords)
+        draw.polygon([px(p) for p in ring], outline=colour, width=3)
+        draw.line([px(p) for p in obj["footprint"] + [obj["footprint"][0]]],
+                  fill=colour, width=1)
         cx, cy = obj["centroid_xy"]
-        anchor_px = px((cx, cy))
-        # Fan labels down the right margin with leader lines: plan symbols
-        # overlap in a crowded workcell, their captions must not.
-        label_y = margin + 26 * index + 10
-        label_x = size - margin - 250
-        draw.line([anchor_px, (label_x - 8, label_y + 8)], fill=colour, width=1)
-        draw.ellipse(
-            [anchor_px[0] - 3, anchor_px[1] - 3, anchor_px[0] + 3, anchor_px[1] + 3],
-            fill=colour,
-        )
-        draw.text(
-            (label_x, label_y),
-            f"{obj['label']}  H {obj['height_m']:.2f} m  "
-            f"{obj['size_m']} m  d {obj['camera_dist_m']:.2f} m",
-            fill=colour,
-        )
+        draw.text(px((cx, cy)), f"{index + 1}", fill=colour, anchor="mm")
+        # dimension the two sides of the oriented box
+        for i in (0, 1):
+            p0, p1 = np.asarray(ring[i]), np.asarray(ring[i + 1])
+            side = float(np.hypot(*(p1 - p0)))
+            if side * scale > 46:
+                dimension(p0, p1, f"{side:.2f}", colour, offset=0.14)
+        legend.append((index + 1, colour, obj))
 
+    # clearance dimensions for the closest object pairs — what a rule reads
+    pairs = []
+    for i, a in enumerate(objects):
+        for b in objects[i + 1:]:
+            pa, pb = Polygon(a["footprint"]), Polygon(b["footprint"])
+            gap = pa.distance(pb)
+            # Sub-decimetre gaps are parts of one thing (worker / jumpsuit /
+            # hard hat); dimensioning them buries the drawing in arrows.
+            if pa.intersects(pb) or gap < 0.15:
+                continue
+            pairs.append((gap, a, b, pa, pb))
+    pairs.sort(key=lambda item: item[0])
+    for gap, a, b, pa, pb in pairs[:3]:
+        p1, p2 = _nearest(pa, pb)
+        dimension((p1.x, p1.y), (p2.x, p2.y), f"{gap:.2f} m", "#047857")
     camera = px((0.0, 0.0))
-    draw.ellipse(
-        [camera[0] - 8, camera[1] - 8, camera[0] + 8, camera[1] + 8], fill="#c62828"
-    )
-    draw.text((camera[0] + 12, camera[1] - 6), "camera", fill="#c62828")
-    draw.line(
-        [(margin, size - 40), (margin + scale, size - 40)], fill="black", width=4
-    )
-    draw.text((margin, size - 34), "1 m", fill="black")
+    draw.ellipse([camera[0] - 7, camera[1] - 7, camera[0] + 7, camera[1] + 7],
+                 fill="#c1121f")
+    draw.line([(camera[0] - 14, camera[1]), (camera[0] + 14, camera[1])],
+              fill="#c1121f", width=1)
+    draw.line([(camera[0], camera[1] - 14), (camera[0], camera[1] + 14)],
+              fill="#c1121f", width=1)
+    draw.text((camera[0] + 12, camera[1] + 8), "CAM (0,0)", fill="#c1121f")
+
+    # legend + title block on the right rail
+    rail = left + plot_w + 24
+    draw.text((rail, top), "OBJECT SCHEDULE", fill="#111111")
+    draw.line([(rail, top + 16), (W - 24, top + 16)], fill="#111111", width=2)
+    row = top + 26
+    for number, colour, obj in legend:
+        draw.rectangle([rail, row + 3, rail + 9, row + 12], fill=colour)
+        draw.text((rail + 16, row), f"{number}. {obj['label']}", fill="#111111")
+        draw.text((rail + 16, row + 14),
+                  f"H {obj['height_m']:.2f}  {obj['size_m']}  d {obj['camera_dist_m']:.2f}",
+                  fill="#5b5b5b")
+        row += 34
+    block_top = H - 150
+    draw.rectangle([rail, block_top, W - 24, H - 24], outline="#111111", width=2)
+    draw.line([(rail, block_top + 26), (W - 24, block_top + 26)], fill="#111111")
+    draw.text((rail + 8, block_top + 6), "MEASURED FLOOR PLAN", fill="#111111")
+    for offset, line in enumerate([
+        f"run      {run_id}",
+        f"objects  {len(objects)}   walls {len(walls)}",
+        "units    metres, floor frame",
+        "origin   camera position",
+        "source   photogrammetry, not a survey",
+    ]):
+        draw.text((rail + 8, block_top + 34 + offset * 17), line, fill="#333333")
+    bar_m = 1.0
+    bar = px((min_x + 0.4, min_y + 0.35))
+    draw.line([bar, (bar[0] + bar_m * scale, bar[1])], fill="#111111", width=5)
+    draw.text((bar[0], bar[1] + 8), "1 m", fill="#111111")
     image.save(path)
 
 
@@ -492,7 +574,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         + "\n"
     )
-    _render_plan(out_dir / "floor_plan.png", walls, plan_objects)
+    _render_plan(out_dir / "floor_plan.png", walls, plan_objects, args.run)
     _write_dxf(out_dir / "floor_plan.dxf", walls, plan_objects)
     _write_scene(out_dir / "scene.json", args.run, entries)
 
