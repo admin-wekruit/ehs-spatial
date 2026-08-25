@@ -1,10 +1,19 @@
+import json
+from datetime import datetime, timezone
 from functools import partial
 from typing import Any
 from uuid import uuid4
 
 import gradio as gr
+from pydantic import ValidationError
 
-from .contracts import Assessment, CaptureRun, GroundedAnswer, SceneMap
+from .contracts import (
+    Assessment,
+    CaptureRun,
+    GroundedAnswer,
+    ReviewDisposition,
+    SceneMap,
+)
 from .pipeline import EHSAssessmentPipeline
 from .providers.base import ProviderError
 
@@ -246,6 +255,161 @@ def answer_run_question(
     return updated_history, ""
 
 
+HISTORY_HEADERS = [
+    "run_id",
+    "created_at",
+    "operator",
+    "tier",
+    "status",
+    "distance_m",
+    "disposition",
+]
+OVERRIDE_STATUSES = ["PASS", "FAIL", "INSUFFICIENT_EVIDENCE"]
+
+
+def _load_policy_payload(
+    paths: Any,
+) -> tuple[list[dict] | None, dict[str, dict] | None]:
+    """Policy results + specs-by-id from policies.json for the history card.
+    Handles the current {"specs", "results"} envelope and older bare-list
+    files; anything unreadable degrades to (None, None) so a card still
+    renders without its policy section."""
+    try:
+        payload = json.loads(paths.policies_json.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None, None
+    if isinstance(payload, list):
+        return payload, {}
+    if isinstance(payload, dict):
+        specs = {
+            spec["policy_id"]: spec
+            for spec in payload.get("specs", [])
+            if isinstance(spec, dict) and "policy_id" in spec
+        }
+        results = payload.get("results")
+        return (results if isinstance(results, list) else None), specs
+    return None, None
+
+
+def _disposition_copy(review: ReviewDisposition | None) -> str:
+    if review is None:
+        return "_No disposition recorded for this run._"
+    if review.decision == "confirmed":
+        ruling = "**confirmed** the machine verdict"
+    else:
+        target = (
+            review.overridden_status.value if review.overridden_status else "?"
+        )
+        ruling = f"**overrode** the machine verdict to **{target}**"
+    reason = f" — {review.reason}" if review.reason else ""
+    return f"{review.reviewer} {ruling} at {review.created_at}{reason}."
+
+
+def _load_disposition(pipeline: Any, paths: Any) -> ReviewDisposition | None:
+    try:
+        return pipeline.store.load_json(paths.review_json, ReviewDisposition)
+    except Exception:
+        return None
+
+
+def list_history(pipeline: Any) -> list[list[object]]:
+    """Rows for the History table, straight from the artifact index."""
+    return [
+        [
+            run["run_id"],
+            run["created_at"],
+            run["operator"],
+            run["capture_tier"],
+            run["status"],
+            run["distance"],
+            run["disposition"],
+        ]
+        for run in pipeline.store.list_runs()
+    ]
+
+
+def load_history_run(
+    pipeline: Any,
+    rows: list[list[object]] | None,
+    evt: gr.SelectData,
+) -> tuple[object, ...]:
+    """Selecting a History row loads that run's verdict card, top-down
+    evidence and current disposition. Every artifact is optional: a partial
+    run renders whatever it has instead of erroring the whole tab."""
+    try:
+        run_id = str(rows[evt.index[0]][0] or "")
+    except (TypeError, IndexError, KeyError):
+        run_id = ""
+    if not run_id:
+        raise gr.Error("Select a run row from the history table.")
+    paths = pipeline.store.paths(run_id)
+    card = "### NO ASSESSMENT\n\nThis run has no readable assessment.json."
+    status_class = "status-idle"
+    try:
+        assessment = pipeline.store.load_json(paths.assessment_json, Assessment)
+    except Exception:
+        assessment = None
+    if assessment is not None:
+        try:
+            scene = pipeline.store.load_json(paths.scene_json, SceneMap)
+        except Exception:
+            scene = None
+        policy_results, policy_specs = _load_policy_payload(paths)
+        card = _status_copy(assessment, scene, policy_results, policy_specs)
+        status_class = (
+            f"status-{assessment.status.value.lower().replace('_', '-')}"
+        )
+    return (
+        run_id,
+        gr.update(
+            value=card,
+            elem_classes=["result-status", status_class],
+        ),
+        str(paths.topdown_png) if paths.topdown_png.is_file() else None,
+        gr.update(value=_disposition_copy(_load_disposition(pipeline, paths))),
+    )
+
+
+def save_disposition(
+    pipeline: Any,
+    run_id: str | None,
+    reviewer: str,
+    decision: str,
+    overridden_status: str | None,
+    reason: str,
+) -> object:
+    """Write the reviewer's ruling beside the machine verdict. The original
+    assessment.json is never rewritten: the disposition is a separate,
+    auditable layer in review.json."""
+    if not run_id:
+        raise gr.Error("Select a run in the History table before saving.")
+    reviewer = (reviewer or "").strip()
+    if not reviewer:
+        raise gr.Error("Enter the reviewer name.")
+    reason = (reason or "").strip()
+    if decision == "overridden" and not reason:
+        raise gr.Error("Overriding a machine verdict requires a reason.")
+    if decision == "overridden" and not overridden_status:
+        raise gr.Error("Pick the status the override asserts.")
+    try:
+        disposition = ReviewDisposition(
+            run_id=run_id,
+            reviewer=reviewer,
+            decision=decision,
+            overridden_status=(
+                overridden_status if decision == "overridden" else None
+            ),
+            reason=reason,
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+    except ValidationError as exc:
+        raise gr.Error(f"Disposition is invalid: {exc}") from None
+    pipeline.store.save_json(
+        pipeline.store.paths(run_id).review_json, disposition
+    )
+    return gr.update(value=_disposition_copy(disposition))
+
+
 def build_app(pipeline: Any | None = None) -> gr.Blocks:
     service = pipeline if pipeline is not None else EHSAssessmentPipeline()
     analyze = partial(analyze_run, service)
@@ -269,106 +433,164 @@ def build_app(pipeline: Any | None = None) -> gr.Blocks:
             elem_classes="rule-note",
         )
 
-        with gr.Row(elem_classes="workbench-layout"):
-            with gr.Column(scale=4, min_width=300, elem_classes="capture-rail"):
-                gr.Markdown("## Capture", elem_classes="section-heading")
-                uploads = [
-                    gr.Image(
-                        label=label,
-                        type="filepath",
-                        sources=["upload"],
-                        interactive=True,
-                        height=148,
-                        buttons=["fullscreen"],
-                    )
-                    for label in (
-                        "View 1 — workcell front (required)",
-                        "View 2 — workcell right (optional)",
-                        "View 3 — workcell rear (optional)",
-                        "View 4 — workcell left (optional)",
-                    )
-                ]
-                camera_height = gr.Number(
-                    value=1.5,
-                    label="Camera height (m)",
-                    info="Measured lens height above the factory floor.",
-                    minimum=0.1,
-                    step=0.1,
-                    precision=2,
-                )
-                analyze_button = gr.Button(
-                    "Analyze workcell",
-                    variant="primary",
-                    elem_classes="analyze-action",
-                )
+        with gr.Tabs():
+            with gr.Tab("Workbench"):
+                with gr.Row(elem_classes="workbench-layout"):
+                    with gr.Column(scale=4, min_width=300, elem_classes="capture-rail"):
+                        gr.Markdown("## Capture", elem_classes="section-heading")
+                        uploads = [
+                            gr.Image(
+                                label=label,
+                                type="filepath",
+                                sources=["upload"],
+                                interactive=True,
+                                height=148,
+                                buttons=["fullscreen"],
+                            )
+                            for label in (
+                                "View 1 — workcell front (required)",
+                                "View 2 — workcell right (optional)",
+                                "View 3 — workcell rear (optional)",
+                                "View 4 — workcell left (optional)",
+                            )
+                        ]
+                        camera_height = gr.Number(
+                            value=1.5,
+                            label="Camera height (m)",
+                            info="Measured lens height above the factory floor.",
+                            minimum=0.1,
+                            step=0.1,
+                            precision=2,
+                        )
+                        analyze_button = gr.Button(
+                            "Analyze workcell",
+                            variant="primary",
+                            elem_classes="analyze-action",
+                        )
 
-            with gr.Column(scale=7, min_width=420, elem_classes="evidence-canvas"):
-                gr.Markdown("## Evidence", elem_classes="section-heading")
-                status = gr.Markdown(
-                    "### Awaiting capture\n\nUpload 1-4 views to begin "
-                    "(more views = stronger evidence).",
-                    elem_classes=["result-status", "status-idle"],
-                )
-                with gr.Row(elem_classes="evidence-views"):
-                    point_cloud = gr.Model3D(
-                        label="3D point cloud",
-                        display_mode="point_cloud",
-                        interactive=False,
-                        height=420,
-                    )
-                    topdown = gr.Image(
-                        label="Top-down evidence",
-                        type="filepath",
-                        interactive=False,
-                        height=420,
-                        buttons=["fullscreen"],
-                    )
-                structured_result = gr.JSON(
-                    label="Assessment + SceneMap",
-                    open=False,
-                    height=320,
-                )
-                with gr.Accordion(
-                    "Reviewer evidence", open=False, elem_classes="evidence-extras"
-                ):
-                    overlay_gallery = gr.Gallery(
+                    with gr.Column(scale=7, min_width=420, elem_classes="evidence-canvas"):
+                        gr.Markdown("## Evidence", elem_classes="section-heading")
+                        status = gr.Markdown(
+                            "### Awaiting capture\n\nUpload 1-4 views to begin "
+                            "(more views = stronger evidence).",
+                            elem_classes=["result-status", "status-idle"],
+                        )
+                        with gr.Row(elem_classes="evidence-views"):
+                            point_cloud = gr.Model3D(
+                                label="3D point cloud",
+                                display_mode="point_cloud",
+                                interactive=False,
+                                height=420,
+                            )
+                            topdown = gr.Image(
+                                label="Top-down evidence",
+                                type="filepath",
+                                interactive=False,
+                                height=420,
+                                buttons=["fullscreen"],
+                            )
+                        structured_result = gr.JSON(
+                            label="Assessment + SceneMap",
+                            open=False,
+                            height=320,
+                        )
+                        with gr.Accordion(
+                            "Reviewer evidence", open=False, elem_classes="evidence-extras"
+                        ):
+                            overlay_gallery = gr.Gallery(
+                                value=[],
+                                label="Mask overlays on the captured views",
+                                columns=2,
+                                height=320,
+                                interactive=False,
+                            )
+                            viewer_file = gr.File(
+                                label=(
+                                    "Interactive 3D viewer — download viewer.html "
+                                    "and open it in a browser"
+                                ),
+                                interactive=False,
+                            )
+
+                with gr.Column(elem_classes="chat-zone"):
+                    gr.Markdown("## Ask about this run", elem_classes="section-heading")
+                    chatbot = gr.Chatbot(
                         value=[],
-                        label="Mask overlays on the captured views",
-                        columns=2,
-                        height=320,
-                        interactive=False,
+                        label="Grounded answers",
+                        height=260,
+                        buttons=["copy", "copy_all"],
+                        placeholder="Analysis enables questions grounded in SceneMap facts.",
                     )
-                    viewer_file = gr.File(
-                        label=(
-                            "Interactive 3D viewer — download viewer.html "
-                            "and open it in a browser"
-                        ),
-                        interactive=False,
-                    )
+                    with gr.Row(elem_classes="chat-controls"):
+                        question = gr.Textbox(
+                            label="Question",
+                            placeholder="Ask about a measured fact",
+                            interactive=False,
+                            scale=5,
+                        )
+                        ask_button = gr.Button(
+                            "Ask about this run",
+                            interactive=False,
+                            scale=1,
+                            elem_classes="ask-action",
+                        )
 
-        with gr.Column(elem_classes="chat-zone"):
-            gr.Markdown("## Ask about this run", elem_classes="section-heading")
-            chatbot = gr.Chatbot(
-                value=[],
-                label="Grounded answers",
-                height=260,
-                buttons=["copy", "copy_all"],
-                placeholder="Analysis enables questions grounded in SceneMap facts.",
-            )
-            with gr.Row(elem_classes="chat-controls"):
-                question = gr.Textbox(
-                    label="Question",
-                    placeholder="Ask about a measured fact",
-                    interactive=False,
-                    scale=5,
+            with gr.Tab("History"):
+                gr.Markdown("## Past runs", elem_classes="section-heading")
+                refresh_button = gr.Button(
+                    "Refresh history", elem_classes="analyze-action"
                 )
-                ask_button = gr.Button(
-                    "Ask about this run",
+                history_table = gr.Dataframe(
+                    headers=list(HISTORY_HEADERS),
+                    column_count=(len(HISTORY_HEADERS), "fixed"),
+                    type="array",
                     interactive=False,
-                    scale=1,
-                    elem_classes="ask-action",
+                    label="Cached runs — select a row to load it",
                 )
-
+                with gr.Row(elem_classes="workbench-layout"):
+                    with gr.Column(scale=6, min_width=320):
+                        selected_run = gr.Textbox(
+                            label="Selected run", interactive=False
+                        )
+                        history_status = gr.Markdown(
+                            "### No run selected\n\nRefresh the table and "
+                            "select a row to load its verdict.",
+                            elem_classes=["result-status", "status-idle"],
+                        )
+                        history_topdown = gr.Image(
+                            label="Top-down evidence (selected run)",
+                            type="filepath",
+                            interactive=False,
+                            height=320,
+                            buttons=["fullscreen"],
+                        )
+                    with gr.Column(scale=5, min_width=300):
+                        gr.Markdown(
+                            "## Review disposition",
+                            elem_classes="section-heading",
+                        )
+                        disposition_display = gr.Markdown(
+                            "_No disposition recorded for this run._"
+                        )
+                        reviewer_box = gr.Textbox(label="Reviewer")
+                        decision_radio = gr.Radio(
+                            choices=["confirmed", "overridden"],
+                            value="confirmed",
+                            label="Decision",
+                        )
+                        override_dropdown = gr.Dropdown(
+                            choices=list(OVERRIDE_STATUSES),
+                            label="Overridden status",
+                            info="Only applied when the decision is overridden.",
+                        )
+                        reason_box = gr.Textbox(
+                            label="Reason",
+                            lines=2,
+                            placeholder="Required when overriding.",
+                        )
+                        save_button = gr.Button(
+                            "Save disposition", variant="primary"
+                        )
         # Evidence follows the run id rather than extending the analyze
         # tuple: the 8-output analyze contract stays stable, and a failed
         # re-analysis (run_id -> None) clears the evidence section too.
@@ -416,6 +638,51 @@ def build_app(pipeline: Any | None = None) -> gr.Blocks:
             concurrency_limit=1,
         )
 
+
+        refresh_button.click(
+            partial(list_history, service),
+            outputs=[history_table],
+            api_name="list_history",
+            api_visibility="private",
+            concurrency_id=PIPELINE_CONCURRENCY_ID,
+            concurrency_limit=1,
+        )
+        # A closure rather than partial: gradio resolves the injected
+        # gr.SelectData parameter from the wired function's own signature.
+        def _on_history_select(
+            rows: list[list[object]] | None, evt: gr.SelectData
+        ) -> tuple[object, ...]:
+            return load_history_run(service, rows, evt)
+
+        history_table.select(
+            _on_history_select,
+            inputs=[history_table],
+            outputs=[
+                selected_run,
+                history_status,
+                history_topdown,
+                disposition_display,
+            ],
+            api_name="load_history_run",
+            api_visibility="private",
+            concurrency_id=PIPELINE_CONCURRENCY_ID,
+            concurrency_limit=1,
+        )
+        save_button.click(
+            partial(save_disposition, service),
+            inputs=[
+                selected_run,
+                reviewer_box,
+                decision_radio,
+                override_dropdown,
+                reason_box,
+            ],
+            outputs=[disposition_display],
+            api_name="save_disposition",
+            api_visibility="private",
+            concurrency_id=PIPELINE_CONCURRENCY_ID,
+            concurrency_limit=1,
+        )
     return demo.queue(api_open=False, default_concurrency_limit=1)
 
 
@@ -621,5 +888,8 @@ __all__ = [
     "analyze_run",
     "answer_run_question",
     "build_app",
+    "list_history",
+    "load_history_run",
     "load_run_evidence",
+    "save_disposition",
 ]

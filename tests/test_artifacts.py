@@ -127,3 +127,59 @@ def test_run_id_cannot_escape_artifact_root(tmp_path, run_id):
 
     with pytest.raises(ValueError, match="run_id"):
         store.paths(run_id)
+
+
+def test_list_runs_summarizes_complete_runs_and_degrades_corrupt_ones(tmp_path):
+    artifacts = importlib.import_module("ehs_spatial.artifacts")
+    store = artifacts.ArtifactStore(tmp_path / "runs")
+    complete = store.paths("run-complete")
+    complete.root.mkdir(parents=True)
+    complete.manifest_json.write_text(
+        json.dumps(
+            {
+                "run_id": "run-complete",
+                "created_at": "2026-08-25T10:00:00+00:00",
+                "operator": "inspector-a",
+                "capture_tier": "mono",
+            }
+        ),
+        encoding="utf-8",
+    )
+    complete.assessment_json.write_text(
+        json.dumps({"status": "NEEDS_REVIEW", "approximate_distance_m": 0.58}),
+        encoding="utf-8",
+    )
+    complete.review_json.write_text(
+        json.dumps({"decision": "confirmed"}), encoding="utf-8"
+    )
+    corrupt = store.paths("run-corrupt")
+    corrupt.root.mkdir(parents=True)
+    corrupt.manifest_json.write_text("{not json", encoding="utf-8")
+    (store.root / "stray-file.txt").write_text("not a run", encoding="utf-8")
+
+    assert store.list_runs() == [
+        {
+            "run_id": "run-complete",
+            "created_at": "2026-08-25T10:00:00+00:00",
+            "operator": "inspector-a",
+            "capture_tier": "mono",
+            "status": "NEEDS_REVIEW",
+            "distance": 0.58,
+            "disposition": "confirmed",
+        },
+        {
+            "run_id": "run-corrupt",
+            "created_at": None,
+            "operator": None,
+            "capture_tier": None,
+            "status": None,
+            "distance": None,
+            "disposition": None,
+        },
+    ]
+
+
+def test_list_runs_is_empty_for_a_store_that_never_wrote(tmp_path):
+    artifacts = importlib.import_module("ehs_spatial.artifacts")
+
+    assert artifacts.ArtifactStore(tmp_path / "never").list_runs() == []
