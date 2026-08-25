@@ -1,3 +1,8 @@
+import importlib.util
+import json
+import re
+from pathlib import Path
+
 from ehs_spatial.contracts import Entity3D, SceneMap
 from ehs_spatial.policy import (
     Predicate,
@@ -205,3 +210,289 @@ def test_evaluate_policies_keeps_order_and_independence():
 
     assert [r.policy_id for r in results] == ["a", "b"]
     assert [r.status.value for r in results] == ["FAIL", "PASS"]
+
+
+# --- OSHA 1910 compiler exam ------------------------------------------------
+# Real regulation text (tests/fixtures/oshacorpus, built by
+# scripts/oshacorpus.py) grades the compiler's refusal discipline. The live
+# compiler is Gemini-driven and is NOT called here: these tests pin the
+# deterministic layer - the corpus schema the orchestrator will replay with
+# --live, and the evaluation path's handling of hand-written PolicySpec
+# fixtures that represent correct compiler output.
+
+_OSHA_FIXTURES = Path(__file__).parent / "fixtures" / "oshacorpus"
+_OSHA_CORPUS = json.loads((_OSHA_FIXTURES / "corpus.json").read_text())
+_OSHA_BY_CITATION = {row["citation"]: row for row in _OSHA_CORPUS}
+_CITATION_RE = re.compile(r"^1910\.\d+(\([a-zA-Z0-9]{1,4}\))*$")
+
+
+def _osha_row(citation):
+    return _OSHA_BY_CITATION[citation]
+
+
+def _refusal_spec(citation, **kwargs):
+    """Hand-written stand-in for CORRECT compiler output on a refuse row:
+    plausible fields, unsupported_reason set from the corpus."""
+    row = _osha_row(citation)
+    assert row["expected"] == "refuse"
+    base = dict(
+        policy_id=f"exam-{citation}",
+        source_text=row["text"],
+        predicate=Predicate.MIN_SEPARATION,
+        subject_labels=["pallet"],
+        object_labels=["safety fence"],
+        threshold=1.0,
+        unsupported_reason=row["refuse_reason"],
+    )
+    base.update(kwargs)
+    return PolicySpec(**base)
+
+
+def _compile_spec(citation, subject_labels, object_labels):
+    """Spec built FROM the corpus row's expected columns, so the exam's
+    numbers are proven to run through the deterministic evaluator."""
+    row = _osha_row(citation)
+    assert row["expected"] == "compile"
+    return PolicySpec(
+        policy_id=f"exam-{citation}",
+        source_text=row["text"],
+        predicate=Predicate(row["expected_predicate"]),
+        subject_labels=subject_labels,
+        object_labels=object_labels,
+        threshold=row["expected_threshold"],
+        unit=row["expected_unit"],
+    )
+
+
+def test_osha_corpus_schema_and_coverage():
+    assert len(_OSHA_CORPUS) >= 400  # nine full sections, per-paragraph
+    counts = {"compile": 0, "refuse": 0, "skip": 0}
+    for row in _OSHA_CORPUS:
+        assert _CITATION_RE.match(row["citation"]), row["citation"]
+        assert row["text"].strip()
+        assert row["expected"] in counts
+        counts[row["expected"]] += 1
+        if row["expected"] == "compile":
+            assert row["expected_predicate"] in {p.value for p in Predicate}
+            assert row["expected_threshold"] > 0
+            assert row["expected_unit"] in {"m", "deg"}
+        if row["expected"] == "refuse":
+            assert row["refuse_reason"].strip()
+    assert counts["compile"] >= 3
+    assert counts["refuse"] >= 3
+
+
+def test_osha_corpus_rebuilds_offline_from_cached_fixtures():
+    script = Path(__file__).parents[1] / "scripts" / "oshacorpus.py"
+    spec = importlib.util.spec_from_file_location("oshacorpus", script)
+    oshacorpus = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(oshacorpus)
+
+    assert oshacorpus.build_corpus() == _OSHA_CORPUS
+
+
+def test_osha_exam_sheet_lists_every_curated_paragraph():
+    sheet = Path(__file__).parents[1] / "docs" / "policies" / "osha1910.md"
+    lines = [
+        line
+        for line in sheet.read_text().splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+    curated = [row for row in _OSHA_CORPUS if row["expected"] != "skip"]
+
+    # Exam line N is corpus curated row N: the orchestrator diffs the live
+    # compiler's pNN output against the expected columns by position.
+    assert len(lines) == len(curated)
+    for line, row in zip(lines, curated):
+        assert line.startswith(f"- [{row['citation']}]")
+
+
+def test_designed_refusal_aisle_clearance_has_no_number():
+    # 1910.176(a): "sufficient safe clearances" - no threshold to compile.
+    row = _osha_row("1910.176(a)")
+    assert row["expected"] == "refuse"
+    assert (
+        "sufficient safe clearances shall be allowed for aisles" in row["text"]
+    )
+
+    spec = _refusal_spec(
+        "1910.176(a)",
+        subject_labels=["pallet"],
+        object_labels=["aisle marking"],
+    )
+    # A scene that would plainly violate the rule if it were ever measured.
+    scene = _scene(
+        [
+            _entity("aisle", "aisle marking", _square(0, 0, 2.0)),
+            _entity("blocker", "pallet", _square(0.5, 0.5)),
+        ]
+    )
+
+    result = evaluate_policy(spec, scene)
+
+    assert result.status.value == "INSUFFICIENT_EVIDENCE"
+    assert "not evaluable" in result.warnings[0]
+    assert not result.facts and not result.violations
+
+
+def test_designed_refusal_voltage_table_approach_distance():
+    # 1910.333(c)(3)(ii): approach distance keyed to Table S-5 - a voltage
+    # lookup, conditional on a non-spatial variable the scene cannot see.
+    row = _osha_row("1910.333(c)(3)(ii)")
+    assert row["expected"] == "refuse"
+    assert "than shown in Table S-5" in row["text"]
+
+    spec = _refusal_spec(
+        "1910.333(c)(3)(ii)",
+        subject_labels=["person"],
+        object_labels=["overhead power line"],
+        threshold=3.05,
+    )
+    scene = _scene(
+        [
+            _entity("line", "overhead power line", _square(0, 0, 2.0)),
+            _entity("worker", "person", _square(2.5, 0.5)),
+        ]
+    )
+
+    result = evaluate_policy(spec, scene)
+
+    assert result.status.value == "INSUFFICIENT_EVIDENCE"
+    assert "not evaluable" in result.warnings[0]
+    assert not result.facts and not result.violations
+
+
+def test_designed_refusal_travel_distance_is_path_not_euclidean():
+    # 1910.157(d)(2): 75-foot TRAVEL distance - walking path length, which
+    # Euclidean max_separation would systematically understate.
+    row = _osha_row("1910.157(d)(2)")
+    assert row["expected"] == "refuse"
+    assert (
+        "travel distance for employees to any extinguisher is 75 feet"
+        in row["text"]
+    )
+
+    spec = _refusal_spec(
+        "1910.157(d)(2)",
+        predicate=Predicate.MAX_SEPARATION,
+        subject_labels=["fire extinguisher"],
+        object_labels=["control panel"],
+        threshold=22.9,
+    )
+    scene = _scene(
+        [
+            _entity("panel", "control panel", _square(0, 0)),
+            _entity("ext", "fire extinguisher", _square(30.0, 0)),
+        ]
+    )
+
+    result = evaluate_policy(spec, scene)
+
+    assert result.status.value == "INSUFFICIENT_EVIDENCE"
+    assert "not evaluable" in result.warnings[0]
+    assert not result.facts and not result.violations
+
+
+def test_osha_cylinder_combustible_separation_compiles_and_evaluates():
+    # 1910.253(b)(2)(ii): cylinders at least 20 feet (6.1 m) from highly
+    # combustible materials - plain floor-plan min_separation.
+    row = _osha_row("1910.253(b)(2)(ii)")
+    assert "at least 20 feet (6.1 m) from highly combustible" in row["text"]
+    spec = _compile_spec(
+        "1910.253(b)(2)(ii)", ["gas cylinder"], ["combustible material"]
+    )
+    assert spec.predicate is Predicate.MIN_SEPARATION
+    assert spec.threshold == 6.1 and spec.unit == "m"
+
+    pile = _entity("pile", "combustible material", _square(0, 0, 1.0))
+    close = evaluate_policy(
+        spec, _scene([pile, _entity("c1", "gas cylinder", _square(5.0, 0))])
+    )
+    clear = evaluate_policy(
+        spec, _scene([pile, _entity("c2", "gas cylinder", _square(7.5, 0))])
+    )
+
+    assert close.status.value == "FAIL"
+    assert abs(close.violations[0].measured - 4.0) < 1e-6
+    assert close.violations[0].threshold == 6.1
+    assert clear.status.value == "PASS" and not clear.violations
+
+
+def test_osha_portable_generator_clearance_compiles_and_evaluates():
+    # 1910.253(f)(5)(i)(B): portable generators not within 10 feet (3 m)
+    # of combustible material.
+    row = _osha_row("1910.253(f)(5)(i)(B)")
+    assert "within 10 feet (3 m) of combustible material" in row["text"]
+    spec = _compile_spec(
+        "1910.253(f)(5)(i)(B)",
+        ["acetylene generator"],
+        ["combustible material"],
+    )
+    assert spec.predicate is Predicate.MIN_SEPARATION
+    assert spec.threshold == 3.0 and spec.unit == "m"
+
+    pile = _entity("pile", "combustible material", _square(0, 0, 1.0))
+    close = evaluate_policy(
+        spec,
+        _scene([pile, _entity("g1", "acetylene generator", _square(3.0, 0))]),
+    )
+    clear = evaluate_policy(
+        spec,
+        _scene([pile, _entity("g2", "acetylene generator", _square(4.6, 0))]),
+    )
+
+    assert close.status.value == "FAIL"
+    assert abs(close.violations[0].measured - 2.0) < 1e-6
+    assert clear.status.value == "PASS" and not clear.violations
+
+
+def test_osha_electrical_workspace_keep_clear_compiles_and_evaluates():
+    # 1910.303(h)(3): minimum clear work space about over-600V equipment,
+    # 914 mm (3.0 ft) - a keep-clear band around the equipment.
+    row = _osha_row("1910.303(h)(3)")
+    assert "914 mm (3.0 ft) wide" in row["text"]
+    spec = _compile_spec("1910.303(h)(3)", ["pallet", "crate"], ["switchgear"])
+    assert spec.predicate is Predicate.KEEP_CLEAR
+    assert spec.threshold == 0.914 and spec.unit == "m"
+
+    gear = _entity("gear", "switchgear", _square(0, 0, 1.0))
+    blocked = evaluate_policy(
+        spec, _scene([gear, _entity("p1", "pallet", _square(1.5, 0))])
+    )
+    clear = evaluate_policy(
+        spec, _scene([gear, _entity("p2", "pallet", _square(2.2, 0))])
+    )
+
+    assert blocked.status.value == "FAIL"
+    assert abs(blocked.violations[0].measured - 0.5) < 1e-6
+    assert blocked.violations[0].threshold == 0.914
+    assert clear.status.value == "PASS" and not clear.violations
+
+
+def test_osha_mixed_batch_refuses_without_contaminating_compilables():
+    # One reviewed batch mixing compilable and refused specs: refusals
+    # abstain loudly, compilables still get their measurement.
+    pile = _entity("pile", "combustible material", _square(0, 0, 1.0))
+    cylinder = _entity("c1", "gas cylinder", _square(5.0, 0))
+    scene = _scene([pile, cylinder])
+    specs = [
+        _compile_spec(
+            "1910.253(b)(2)(ii)", ["gas cylinder"], ["combustible material"]
+        ),
+        _refusal_spec("1910.176(a)"),
+        _refusal_spec("1910.333(c)(3)(ii)"),
+        _refusal_spec("1910.157(d)(2)"),
+    ]
+
+    results = evaluate_policies(specs, scene)
+
+    assert [r.status.value for r in results] == [
+        "FAIL",
+        "INSUFFICIENT_EVIDENCE",
+        "INSUFFICIENT_EVIDENCE",
+        "INSUFFICIENT_EVIDENCE",
+    ]
+    assert results[0].facts
+    for refused in results[1:]:
+        assert "not evaluable" in refused.warnings[0]
+        assert not refused.facts
