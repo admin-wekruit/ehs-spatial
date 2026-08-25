@@ -505,6 +505,32 @@ def test_scale_chain_degrades_to_model_native_when_no_source_exists(tmp_path):
     assert any("native scale" in w for w in scale["warnings"])
 
 
+def test_scale_chain_discards_low_confidence_anchor_for_measured_height(tmp_path):
+    from ehs_spatial.pipeline import EHSAssessmentPipeline
+    from ehs_spatial.providers.moge import ScaleAnchor
+
+    pipeline = EHSAssessmentPipeline(
+        store=ArtifactStore(tmp_path / "runs"),
+        map_anything=FakeMapAnything(),
+        sam3=FakeSAM3(),
+        gemini=FakeGemini(),
+        moge=FakeMoGe(anchor=ScaleAnchor(2.5, 0.3, [2.5])),
+        scene_builder=FakeSceneBuilder(),
+    )
+
+    scale = pipeline._resolve_scale(_capture(tmp_path), [], tmp_path)
+
+    # A shaky anchor must not silently beat the operator's tape measure.
+    assert scale["source"] == "camera_height"
+    assert scale["override"] is None
+    assert any("discarded" in w for w in scale["warnings"])
+
+    # Without a measured height the shaky anchor is still the best gauge.
+    no_height = _capture(tmp_path).model_copy(update={"camera_height_m": None})
+    scale = pipeline._resolve_scale(no_height, [], tmp_path)
+    assert scale["source"] == "moge_anchor"
+
+
 def test_scale_chain_honours_explicit_camera_height_preference(tmp_path):
     from ehs_spatial.pipeline import EHSAssessmentPipeline
     from ehs_spatial.providers.moge import ScaleAnchor

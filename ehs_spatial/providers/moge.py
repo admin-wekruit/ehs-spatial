@@ -140,7 +140,12 @@ class MoGeAnchorAdapter:
         if not (np.isfinite(scale) and scale > 0):
             return None
         spread = float(np.median(np.abs(values - scale)))
-        confidence = float(np.clip(1.0 - spread / scale, 0.0, 1.0))
+        # One frame gives zero spread by construction, which says nothing
+        # about quality — cap, don't fabricate, certainty.
+        if len(ratios) < 2:
+            confidence = 0.5
+        else:
+            confidence = float(np.clip(1.0 - spread / scale, 0.0, 1.0))
         return ScaleAnchor(scale, confidence, [round(r, 4) for r in ratios])
 
 

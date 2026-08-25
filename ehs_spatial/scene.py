@@ -17,7 +17,7 @@ def build_scene_and_assess(
     run_id: str,
     frames: list[GeometryFrame],
     observations: list[Observation2D],
-    camera_height_m: float,
+    camera_height_m: float | None,
     criterion: Criterion,
     topdown_path: str | Path | None = None,
     plan_view_path: str | Path | None = None,
@@ -112,7 +112,26 @@ def build_scene_and_assess(
             observations,
             geometry.transform,
         )
-    return scene, rule.assessment
+    assessment = rule.assessment
+    if scale_source == "model_native" and assessment.status in (
+        AssessmentStatus.PASS,
+        AssessmentStatus.FAIL,
+    ):
+        # An unanchored gauge cannot honestly certify either side of the
+        # threshold; the distance may be off by a large factor.
+        assessment = assessment.model_copy(
+            update={"status": AssessmentStatus.NEEDS_REVIEW}
+        )
+        scene = scene.model_copy(
+            update={
+                "warnings": [
+                    *scene.warnings,
+                    "scale is model-native (unanchored); verdict demoted to "
+                    "review because the measurement gauge is unknown",
+                ]
+            }
+        )
+    return scene, assessment
 
 
 __all__ = ["build_scene_and_assess"]

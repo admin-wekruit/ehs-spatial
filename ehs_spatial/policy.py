@@ -13,10 +13,10 @@ measured scene.
 
 import numpy as np
 from shapely.geometry import Polygon
-from shapely.ops import unary_union
 
 # Models live in contracts.py (CaptureRun.policies needs PolicySpec);
 # re-exported here so existing importers keep working.
+from .rules import ERROR_BUDGET_MONO_M, ERROR_BUDGET_MULTIVIEW_M
 from .contracts import (
     AssessmentStatus,
     Entity3D,
@@ -94,7 +94,18 @@ def evaluate_policy(
                 ],
             )
 
-    violations: list[Violation] = []
+    # Metre-valued predicates inherit the clearance rule's error-band
+    # discipline: a measurement inside the tier band around the threshold
+    # cannot honestly pick a side and becomes NEEDS_REVIEW, never a razor-
+    # edge PASS/FAIL on reconstruction noise. Tilt (degrees) has no
+    # calibrated budget yet and keeps bare comparison.
+    band = (
+        ERROR_BUDGET_MULTIVIEW_M
+        if capture_frame_count >= 2
+        else ERROR_BUDGET_MONO_M
+    )
+    violations: list[tuple[float, Violation]] = []
+    review_notes: list[str] = []
     facts: list[SpatialFact] = []
     evidence: set[str] = set()
 
@@ -120,14 +131,21 @@ def evaluate_policy(
     if spec.predicate is Predicate.MAX_HEIGHT:
         for subject, _ in subjects:
             record(subject, None, subject.height_m)
-            if subject.height_m > spec.threshold:
-                violations.append(
+            if subject.height_m > spec.threshold + band:
+                violations.append((
+                    subject.height_m - spec.threshold,
                     Violation(
                         subject_id=subject.entity_id,
                         measured=round(subject.height_m, 4),
                         threshold=spec.threshold,
                         unit=spec.unit,
-                    )
+                    ),
+                ))
+            elif subject.height_m >= spec.threshold - band:
+                review_notes.append(
+                    f"{subject.entity_id} height "
+                    f"{subject.height_m:.2f} m is within ±{band:.2f} m of the "
+                    f"{spec.threshold} m limit; cannot honestly pick a side"
                 )
     elif spec.predicate is Predicate.MAX_TILT:
         measured_any = False
@@ -137,14 +155,15 @@ def evaluate_policy(
             measured_any = True
             record(subject, None, subject.tilt_deg)
             if subject.tilt_deg > spec.threshold:
-                violations.append(
+                violations.append((
+                    subject.tilt_deg - spec.threshold,
                     Violation(
                         subject_id=subject.entity_id,
                         measured=round(subject.tilt_deg, 4),
                         threshold=spec.threshold,
                         unit=spec.unit,
-                    )
-                )
+                    ),
+                ))
         if not measured_any:
             return PolicyResult(
                 policy_id=spec.policy_id,
@@ -154,39 +173,54 @@ def evaluate_policy(
     elif spec.predicate is Predicate.MAX_SEPARATION:
         # "must be within X of" — the nearest object decides, so a subject
         # far from every object is the violation.
-        merged = unary_union([polygon for _, polygon in objects])
         for subject, polygon in subjects:
-            nearest, gap = min(
-                ((obj, _gap(polygon, obj_poly)) for obj, obj_poly in objects),
-                key=lambda item: item[1],
-            )
+            # A subject is never its own reference object; with overlapping
+            # subject/object labels the self-match would always win the min
+            # at gap 0.0 and guarantee a false PASS.
+            candidates = [
+                (obj, _gap(polygon, obj_poly))
+                for obj, obj_poly in objects
+                if obj.entity_id != subject.entity_id
+            ]
+            if not candidates:
+                continue
+            nearest, gap = min(candidates, key=lambda item: item[1])
             record(subject, nearest, gap)
-            if gap > spec.threshold:
-                violations.append(
+            if gap > spec.threshold + band:
+                violations.append((
+                    gap - spec.threshold,
                     Violation(
                         subject_id=subject.entity_id,
                         object_id=nearest.entity_id,
                         measured=round(gap, 4),
                         threshold=spec.threshold,
                         unit=spec.unit,
-                    )
+                    ),
+                ))
+            elif gap >= spec.threshold - band:
+                review_notes.append(
+                    f"{subject.entity_id} to {nearest.entity_id} gap "
+                    f"{gap:.2f} m is within ±{band:.2f} m of the "
+                    f"{spec.threshold} m limit; cannot honestly pick a side"
                 )
-        _ = merged
     elif spec.predicate is Predicate.NOT_INSIDE:
         for subject, polygon in subjects:
             for obj, obj_poly in objects:
                 overlap = polygon.intersection(obj_poly).area
                 record(subject, obj, overlap)
                 if overlap > 0:
-                    violations.append(
+                    # Any overlap violates; the honest limit is zero area,
+                    # not the spec's metre-valued placement tolerance.
+                    violations.append((
+                        overlap,
                         Violation(
                             subject_id=subject.entity_id,
                             object_id=obj.entity_id,
                             measured=round(overlap, 4),
-                            threshold=spec.threshold,
+                            threshold=0.0,
                             unit="m2",
-                        )
-                    )
+                        ),
+                    ))
     else:
         # MIN_SEPARATION and KEEP_CLEAR share the arithmetic; they differ in
         # which side owns the zone, which only changes how it reads in a
@@ -197,15 +231,22 @@ def evaluate_policy(
                     continue
                 gap = _gap(polygon, obj_poly)
                 record(subject, obj, gap)
-                if gap < spec.threshold:
-                    violations.append(
+                if gap < spec.threshold - band or polygon.intersects(obj_poly):
+                    violations.append((
+                        spec.threshold - gap,
                         Violation(
                             subject_id=subject.entity_id,
                             object_id=obj.entity_id,
                             measured=round(gap, 4),
                             threshold=spec.threshold,
                             unit=spec.unit,
-                        )
+                        ),
+                    ))
+                elif gap <= spec.threshold + band:
+                    review_notes.append(
+                        f"{subject.entity_id} to {obj.entity_id} gap "
+                        f"{gap:.2f} m is within ±{band:.2f} m of the "
+                        f"{spec.threshold} m limit; cannot honestly pick a side"
                     )
 
     if not facts:
@@ -214,11 +255,19 @@ def evaluate_policy(
             status=AssessmentStatus.INSUFFICIENT_EVIDENCE,
             warnings=["policy matched entities but produced no measurement"],
         )
+    ordered = [v for _, v in sorted(violations, key=lambda item: -item[0])]
+    if ordered:
+        status = AssessmentStatus.FAIL
+    elif review_notes:
+        status = AssessmentStatus.NEEDS_REVIEW
+    else:
+        status = AssessmentStatus.PASS
     return PolicyResult(
         policy_id=spec.policy_id,
-        status=AssessmentStatus.FAIL if violations else AssessmentStatus.PASS,
-        violations=violations,
+        status=status,
+        violations=ordered,
         facts=facts,
+        warnings=review_notes,
         evidence_frame_ids=sorted(evidence),
     )
 
@@ -229,10 +278,26 @@ def evaluate_policies(
     *,
     capture_frame_count: int = 4,
 ) -> list[PolicyResult]:
-    return [
+    results = [
         evaluate_policy(spec, scene, capture_frame_count=capture_frame_count)
         for spec in specs
     ]
+    if scene.scale_source == "model_native":
+        # An unanchored gauge cannot honestly certify either side.
+        for index, result in enumerate(results):
+            if result.status in (AssessmentStatus.PASS, AssessmentStatus.FAIL):
+                results[index] = result.model_copy(
+                    update={
+                        "status": AssessmentStatus.NEEDS_REVIEW,
+                        "warnings": [
+                            *result.warnings,
+                            "scale is model-native (unanchored); the "
+                            "measurement gauge is unknown, verdict demoted "
+                            "to review",
+                        ],
+                    }
+                )
+    return results
 
 
 __all__ = [

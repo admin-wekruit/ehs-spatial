@@ -65,6 +65,17 @@ class EHSAssessmentPipeline:
         except Exception:
             anchor = None
         if anchor is not None:
+            if anchor.confidence < 0.5 and prepared.camera_height_m is not None:
+                return {
+                    "override": None,
+                    "source": "camera_height",
+                    "confidence": 0.9,
+                    "warnings": [
+                        "auto scale anchor discarded (confidence "
+                        f"{anchor.confidence:.2f} < 0.5); using the "
+                        "operator-supplied camera height instead"
+                    ],
+                }
             return {
                 "override": anchor.scale,
                 "source": "moge_anchor",

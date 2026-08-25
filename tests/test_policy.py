@@ -73,15 +73,26 @@ def test_min_separation_fails_below_threshold_and_passes_above():
     assert failing.evidence_frame_ids == ["f1", "f2"]
 
 
-def test_boundary_is_strict_less_than():
+def test_boundary_band_matches_the_clearance_rule():
+    # Same discipline as rules.py: multiview band ±0.20 m around the 0.60 m
+    # threshold — inside the band the measurement cannot honestly pick a
+    # side, so an exact-threshold gap is NEEDS_REVIEW, not a razor-edge PASS.
     fence = _entity("fence", "safety fence", _square(0, 0, 2.0))
-    exact = _entity("exact", "pallet", _square(2.6, 0.5))
-
-    result = evaluate_policy(_spec(), _scene([fence, exact]))
-
-    # 0.60 m gap against a 0.60 m minimum is compliant, matching the
-    # clearance rule's documented convention.
-    assert result.status.value == "PASS"
+    for offset, expected in (
+        (2.35, "FAIL"),          # gap 0.35 < 0.40
+        (2.6, "NEEDS_REVIEW"),   # gap 0.60, mid-band
+        (2.79, "NEEDS_REVIEW"),  # gap 0.79, upper band edge
+        (2.85, "PASS"),          # gap 0.85 > 0.80
+    ):
+        result = evaluate_policy(
+            _spec(), _scene([fence, _entity("p", "pallet", _square(offset, 0.5))])
+        )
+        assert result.status.value == expected, offset
+    review = evaluate_policy(
+        _spec(), _scene([fence, _entity("p", "pallet", _square(2.6, 0.5))])
+    )
+    assert "cannot honestly pick a side" in review.warnings[0]
+    assert not review.violations
 
 
 def test_missing_subject_or_object_abstains_with_a_reason():
@@ -110,7 +121,9 @@ def test_evidence_gate_rejects_single_frame_entity_on_a_four_view_capture():
 
 def test_evidence_gate_scales_down_for_single_photo_capture():
     fence = _entity("fence", "safety fence", _square(0, 0, 2.0), frames=("f1",))
-    thin = _entity("thin", "pallet", _square(2.3, 0.5), frames=("f1",))
+    # Mono band is ±0.35 m, so the violating gap must sit below 0.25 m
+    # for the verdict to stay an honest FAIL.
+    thin = _entity("thin", "pallet", _square(2.1, 0.5), frames=("f1",))
 
     result = evaluate_policy(
         _spec(), _scene([fence, thin]), capture_frame_count=1
@@ -203,13 +216,78 @@ def test_evaluate_policies_keeps_order_and_independence():
     scene = _scene([fence, near])
     specs = [
         _spec(policy_id="a", threshold=0.6),
-        _spec(policy_id="b", threshold=0.2),
+        _spec(policy_id="b", threshold=0.05),
     ]
 
     results = evaluate_policies(specs, scene)
 
     assert [r.policy_id for r in results] == ["a", "b"]
+    # gap 0.30: below a's 0.40 band floor (FAIL), above b's 0.25 band
+    # ceiling (PASS) — the two specs stay independent.
     assert [r.status.value for r in results] == ["FAIL", "PASS"]
+
+
+def test_max_separation_never_matches_the_subject_to_itself():
+    # Overlapping subject/object labels: the self-match at gap 0.0 must not
+    # win the min and grant a false PASS ("within X of each other" rules).
+    spec = _spec(
+        predicate="max_separation",
+        subject_labels=["fire extinguisher"],
+        object_labels=["fire extinguisher"],
+        threshold=15.0,
+    )
+    a = _entity("ext-a", "fire extinguisher", _square(0, 0))
+    b = _entity("ext-b", "fire extinguisher", _square(40.0, 0))
+
+    result = evaluate_policy(spec, _scene([a, b]))
+
+    assert result.status.value == "FAIL"
+    assert result.violations
+    assert all(v.subject_id != v.object_id for v in result.violations)
+
+    lonely = evaluate_policy(spec, _scene([a]))
+    assert lonely.status.value == "INSUFFICIENT_EVIDENCE"
+
+
+def test_violations_are_ordered_worst_first():
+    fence = _entity("fence", "safety fence", _square(0, 0, 2.0))
+    close = _entity("close", "pallet", _square(2.05, 1.5))   # gap 0.05
+    closer = _entity("closer", "pallet", _square(2.01, 0.0))  # gap 0.01
+
+    result = evaluate_policy(_spec(), _scene([fence, close, closer]))
+
+    assert result.status.value == "FAIL"
+    assert [v.subject_id for v in result.violations] == ["closer", "close"]
+
+
+def test_not_inside_reports_zero_area_limit_not_the_placement_tolerance():
+    spec = _spec(
+        predicate="not_inside",
+        subject_labels=["pallet"],
+        object_labels=["safety fence"],
+        threshold=0.01,
+    )
+    fence = _entity("fence", "safety fence", _square(0, 0, 2.0))
+    inside = _entity("inside", "pallet", _square(0.5, 0.5))
+
+    result = evaluate_policy(spec, _scene([fence, inside]))
+
+    assert result.status.value == "FAIL"
+    assert result.violations[0].threshold == 0.0
+    assert result.violations[0].unit == "m2"
+
+
+def test_model_native_scale_demotes_policy_verdicts_to_review():
+    fence = _entity("fence", "safety fence", _square(0, 0, 2.0))
+    near = _entity("near", "pallet", _square(2.1, 0.5))
+    scene = _scene([fence, near]).model_copy(
+        update={"scale_source": "model_native"}
+    )
+
+    [result] = evaluate_policies([_spec()], scene)
+
+    assert result.status.value == "NEEDS_REVIEW"
+    assert any("model-native" in w for w in result.warnings)
 
 
 # --- OSHA 1910 compiler exam ------------------------------------------------

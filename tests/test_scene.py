@@ -719,3 +719,33 @@ def test_scene_builder_renders_cloud_views_fail_soft(tmp_path):
         with Image.open(persp) as image:
             assert image.size == (1280, 860)
         assert top.exists()
+
+
+def test_model_native_scale_demotes_the_verdict_to_review(tmp_path):
+    """An unanchored gauge cannot honestly certify PASS or FAIL: the same
+    geometry that PASSes under an anchored scale is NEEDS_REVIEW when the
+    scale is model-native."""
+    from ehs_spatial.scene import build_scene_and_assess
+
+    frames, observations = _synthetic_scene(tmp_path, clearance_m=0.9)
+
+    _, anchored = build_scene_and_assess(
+        run_id="native-a",
+        frames=frames,
+        observations=observations,
+        camera_height_m=1.6,
+        criterion=Criterion(),
+        scale_source="moge_anchor",
+    )
+    native_scene, native = build_scene_and_assess(
+        run_id="native-b",
+        frames=frames,
+        observations=observations,
+        camera_height_m=1.6,
+        criterion=Criterion(),
+        scale_source="model_native",
+    )
+
+    assert anchored.status.value == "PASS"
+    assert native.status.value == "NEEDS_REVIEW"
+    assert any("model-native" in w for w in native_scene.warnings)
