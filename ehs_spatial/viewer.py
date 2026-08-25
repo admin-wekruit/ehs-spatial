@@ -171,7 +171,8 @@ def build_viewer_html(
     *,
     frames: list[GeometryFrame] | None = None,
     observations: list[Observation2D] | None = None,
-    camera_height_m: float = 1.5,
+    camera_height_m: float | None = 1.5,
+    scale_factor_override: float | None = None,
     exclude: frozenset[str] | set[str] = DEFAULT_EXCLUDE,
     out_path: str | Path | None = None,
 ) -> dict:
@@ -190,7 +191,21 @@ def build_viewer_html(
             Observation2D.model_validate(item)
             for item in json.loads((run / "observations.json").read_text())
         ]
-    transform = _build_geometry(frames, observations, camera_height_m).transform
+    # Mirror the assessed scene's scale: without this, a run whose scale
+    # came from the auto anchor (or any non-1.5 m camera) would rebuild
+    # geometry under a fabricated height and could fail its MAD gate.
+    if scale_factor_override is None:
+        scene_path = run / "scene.json"
+        if scene_path.exists():
+            scale_factor_override = json.loads(
+                scene_path.read_text(encoding="utf-8")
+            ).get("scale_factor")
+    transform = _build_geometry(
+        frames,
+        observations,
+        camera_height_m,
+        scale_factor_override=scale_factor_override,
+    ).transform
     if transform is None:
         raise ValueError("run has no floor transform")
 

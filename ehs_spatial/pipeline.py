@@ -245,7 +245,8 @@ class EHSAssessmentPipeline:
                 paths.root,
                 frames=frames,
                 observations=observations,
-                camera_height_m=prepared.camera_height_m or 1.5,
+                camera_height_m=prepared.camera_height_m,
+                scale_factor_override=scale["override"],
                 out_path=paths.viewer_html,
             )
         except Exception as error:

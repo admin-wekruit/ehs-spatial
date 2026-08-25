@@ -140,6 +140,36 @@ def test_build_viewer_html_accepts_in_memory_data_and_out_path(tmp_path):
     assert [obj["label"] for obj in summary["objects"]] == ["pallet"]
 
 
+def test_build_viewer_html_mirrors_the_assessed_scene_scale(tmp_path, monkeypatch):
+    """A run whose scale came from the auto anchor must rebuild the viewer
+    under that scale, not a fabricated camera height (regression: real
+    surveillance-camera run failed its MAD gate under the 1.5 m default)."""
+    import ehs_spatial.viewer as viewer_module
+
+    run, frames, observations = _synthetic_run(tmp_path)
+    (run / "scene.json").write_text(json.dumps({"scale_factor": 2.75}))
+    seen = {}
+    real_build = viewer_module._build_geometry
+
+    def spy(frames_arg, observations_arg, camera_height_m, **kwargs):
+        seen["camera_height_m"] = camera_height_m
+        seen["override"] = kwargs.get("scale_factor_override")
+        return real_build(
+            frames_arg, observations_arg, camera_height_m, **kwargs
+        )
+
+    monkeypatch.setattr(viewer_module, "_build_geometry", spy)
+
+    build_viewer_html(run, frames=frames, observations=observations,
+                      camera_height_m=None)
+    assert seen == {"camera_height_m": None, "override": 2.75}
+
+    # An explicit override wins over the scene.json fallback.
+    build_viewer_html(run, frames=frames, observations=observations,
+                      scale_factor_override=1.0)
+    assert seen["override"] == 1.0
+
+
 def test_build_viewer_html_raises_without_floor_transform(tmp_path):
     run = tmp_path / "runs" / "empty"
     run.mkdir(parents=True)
