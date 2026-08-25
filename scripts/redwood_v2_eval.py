@@ -270,6 +270,79 @@ def _fit_floor_no_gate(
     )
 
 
+MOGE_VERSION = (
+    "jasonod888/moge2:"
+    "daa7a9329b3d6bb513f3a20def9451b6e3cf234afe2bb60ba38f96ecd33c81f7"
+)
+
+
+def _moge_scale(pack: Path, frames: list[GeometryFrame], *, live: bool):
+    """Scale from a second metric model instead of the operator's tape.
+
+    Per frame: ratio of MoGe-2's median camera-frame range to MapAnything's
+    over the same view. The pack scale is the median across frames. Cached
+    per frame, so re-scoring is free."""
+    import base64
+    import tempfile
+    import time
+
+    cache_dir = pack / "moge_scale"
+    ratios = []
+    for frame in frames:
+        cache = cache_dir / f"{frame.frame_id}.json"
+        if cache.exists():
+            ratios.append(json.loads(cache.read_text())["ratio"])
+            continue
+        if not live:
+            return None, len(frames) - len(ratios)
+
+        data = _load_frame(frame)
+        finite = data.valid & np.isfinite(data.points).all(axis=2)
+        world = data.points[finite]
+        camera_to_world = np.asarray(frame.camera_to_world, dtype=float)
+        camera = (
+            np.linalg.inv(camera_to_world) @ np.c_[world, np.ones(len(world))].T
+        )[:3].T
+        native = float(np.median(np.linalg.norm(camera, axis=1)))
+        if not native:
+            continue
+
+        import open3d as o3d
+        import replicate
+
+        payload = "data:image/png;base64," + base64.b64encode(
+            Path(frame.canonical_image_path).read_bytes()
+        ).decode("ascii")
+        for attempt in range(5):
+            try:
+                output = replicate.run(
+                    MOGE_VERSION, input={"image": payload, "fp16": True}, wait=False
+                )
+                break
+            except Exception as exc:
+                if not any(
+                    code in str(exc)
+                    for code in ("429", "throttled", "500", "502", "503")
+                ):
+                    raise
+                time.sleep(10 * (attempt + 1))
+        else:
+            continue
+        with tempfile.NamedTemporaryFile(suffix=".ply") as handle:
+            handle.write(output["pointcloud_ply"].read())
+            handle.flush()
+            cloud = np.asarray(o3d.io.read_point_cloud(handle.name).points)
+        if not len(cloud):
+            continue
+        ratio = float(np.median(np.linalg.norm(cloud, axis=1))) / native
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps({"ratio": ratio, "native_m": native}) + "\n")
+        ratios.append(ratio)
+    if not ratios:
+        return None, 0
+    return float(np.median(ratios)), 0
+
+
 def _frames_from_disk(geometry_dir: Path) -> list[GeometryFrame]:
     frames = []
     for frame_dir in sorted((geometry_dir / "frames").iterdir()):
@@ -333,6 +406,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--pack", default="outputs/redwood_v2")
     parser.add_argument("--live", action="store_true")
     parser.add_argument("--reuse", action="store_true")
+    parser.add_argument(
+        "--moge-anchor",
+        action="store_true",
+        help="add a mode scaled by MoGe-2 instead of the known camera height",
+    )
     parser.add_argument(
         "--pipeline",
         action="store_true",
@@ -441,6 +519,33 @@ def main(argv: list[str] | None = None) -> int:
         ("camera_height", transform, frame_data),
         ("model_native", native, frame_data),
     ]
+    if args.moge_anchor:
+        moge_ratio, pending = _moge_scale(pack, frames, live=args.live)
+        if moge_ratio is None:
+            print(
+                f"moge anchor needs {pending} MoGe-2 call(s); pass --live",
+                file=sys.stderr,
+            )
+            return 2
+        report["moge_scale_factor"] = moge_ratio
+        report["camera_height_scale_factor"] = transform.scale_factor
+        print(
+            f"moge scale {moge_ratio:.4f} vs camera-height scale "
+            f"{transform.scale_factor:.4f} "
+            f"(ratio {moge_ratio / transform.scale_factor:.3f})"
+        )
+        modes.append(
+            (
+                "moge_anchor",
+                _FloorTransform(
+                    plane=transform.plane,
+                    scale_factor=moge_ratio,
+                    rotation=transform.rotation,
+                    origin=transform.origin,
+                ),
+                frame_data,
+            )
+        )
     if anchored_transform is not None:
         modes.append(("per_frame_anchor", anchored_transform, anchored))
     else:

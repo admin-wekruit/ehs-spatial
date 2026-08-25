@@ -49,12 +49,31 @@ benchmark's answers.
    still above 25% error track the images where the two models disagree
    most.
 
+## Real photos, laser ground truth — the gate is passed
+
+Same auto-anchor, same code path, run on the two V2 packs where ground
+truth is a laser scan and the imagery is real photographs
+(`scripts/redwood_v2_eval.py --moge-anchor`, 4 MoGe calls per pack):
+
+| Pack | operator anchor (camera height) | **MoGe auto-anchor** | model native |
+|---|---|---|---|
+| ETH3D office (DSLR, 2048 px) | 14.4 cm MAE | **14.7 cm** | 15.0 cm |
+| Redwood boardroom (VGA, dim) | 27.5 cm MAE | **22.9 cm** | 24.0 cm |
+
+- ETH3D: parity — 0.3 cm apart, and the two scale estimates agree to 1.4%
+  (MoGe 1.0006 vs camera-height 0.9868).
+- Redwood: **auto-anchor beats the operator anchor by 4.6 cm.** The two
+  scale estimates differ by 17% there (0.932 vs 1.126) and MoGe's is the
+  one closer to the laser truth — on that pack the measured camera height
+  is itself the weaker number.
+
+So the result holds on real imagery, not just renders: **no operator input,
+same or better accuracy.**
+
 ## Limits — do not over-claim
 
-- **Synthetic imagery only.** These are Omniverse renders. The identical
-  test on real photos with laser GT (ETH3D / Redwood V2 packs, already on
-  disk) has NOT been run, and is the next thing to do before this changes
-  any product requirement.
+- Two real packs, 7 pairs total, plus 105 synthetic questions. Decision-
+  grade, not publication-grade.
 - n=105 questions over 104 images, one benchmark, one model pair.
 - MoGe-2 adds a second inference per image (cost + latency). It is MIT and
   self-hostable, so this is an on-prem cost, not a licence problem.
