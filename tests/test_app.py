@@ -17,6 +17,7 @@ from ehs_spatial.contracts import (
     GroundedAnswer,
     PolicyResult,
     PolicySpec,
+    ReviewDisposition,
     SceneMap,
     SpatialFact,
     Violation,
@@ -772,6 +773,218 @@ def test_root_main_launches_built_app_with_css(monkeypatch):
     module.main()
 
     assert demo.launches == [{"css": module.APP_CSS, "footer_links": []}]
+
+
+def _write_history_run(
+    store: ArtifactStore,
+    run_id: str,
+    *,
+    status: str = "NEEDS_REVIEW",
+    distance: float = 0.58,
+) -> None:
+    paths = store.paths(run_id)
+    paths.root.mkdir(parents=True)
+    paths.manifest_json.write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "created_at": "2026-08-25T10:00:00+00:00",
+                "operator": "inspector-a",
+                "capture_tier": "mono",
+            }
+        ),
+        encoding="utf-8",
+    )
+    store.save_json(
+        paths.assessment_json,
+        Assessment(
+            status=status,
+            fact_ids=[],
+            evidence_frame_ids=[],
+            approximate_distance_m=distance,
+            distance_error_budget_m=0.05,
+        ),
+    )
+    Image.new("RGB", (16, 16), "white").save(paths.topdown_png)
+
+
+def test_list_history_rows_come_from_the_store_index(tmp_path):
+    from ehs_spatial.app import list_history
+
+    pipeline = FakePipeline(tmp_path / "runs")
+    _write_history_run(pipeline.store, "run-a")
+
+    assert list_history(pipeline) == [
+        [
+            "run-a",
+            "2026-08-25T10:00:00+00:00",
+            "inspector-a",
+            "mono",
+            "NEEDS_REVIEW",
+            0.58,
+            None,
+        ]
+    ]
+
+
+def test_load_history_run_loads_card_topdown_and_disposition(tmp_path):
+    from ehs_spatial.app import list_history, load_history_run
+
+    pipeline = FakePipeline(tmp_path / "runs")
+    _write_history_run(pipeline.store, "run-a")
+    paths = pipeline.store.paths("run-a")
+    pipeline.store.save_json(
+        paths.review_json,
+        ReviewDisposition(
+            run_id="run-a",
+            reviewer="casey",
+            decision="confirmed",
+            created_at="2026-08-25T11:00:00+00:00",
+        ),
+    )
+    rows = list_history(pipeline)
+    evt = gr.SelectData(None, {"index": (0, 0), "value": "run-a"})
+
+    run_id, card, topdown, disposition = load_history_run(pipeline, rows, evt)
+
+    assert run_id == "run-a"
+    assert "### NEEDS_REVIEW" in card["value"]
+    assert "0.58 m ± 0.05 m" in card["value"]
+    assert "status-needs-review" in card["elem_classes"]
+    assert topdown == str(paths.topdown_png)
+    assert "casey" in disposition["value"]
+    assert "confirmed" in disposition["value"]
+
+
+def test_load_history_run_degrades_when_artifacts_are_missing(tmp_path):
+    from ehs_spatial.app import load_history_run
+
+    pipeline = FakePipeline(tmp_path / "runs")
+    pipeline.store.paths("run-empty").root.mkdir(parents=True)
+    evt = gr.SelectData(None, {"index": (0, 0), "value": "run-empty"})
+
+    run_id, card, topdown, disposition = load_history_run(
+        pipeline, [["run-empty"]], evt
+    )
+
+    assert run_id == "run-empty"
+    assert "NO ASSESSMENT" in card["value"]
+    assert topdown is None
+    assert "No disposition recorded" in disposition["value"]
+
+    with pytest.raises(gr.Error, match="Select a run"):
+        load_history_run(
+            pipeline, [], gr.SelectData(None, {"index": (3, 0), "value": None})
+        )
+
+
+def test_save_disposition_confirm_writes_a_valid_review_layer(tmp_path):
+    from ehs_spatial.app import save_disposition
+
+    pipeline = FakePipeline(tmp_path / "runs")
+    _write_history_run(pipeline.store, "run-a")
+    paths = pipeline.store.paths("run-a")
+    assessment_before = paths.assessment_json.read_bytes()
+
+    save_disposition(pipeline, "run-a", "casey", "confirmed", None, "")
+
+    review = pipeline.store.load_json(paths.review_json, ReviewDisposition)
+    assert review.run_id == "run-a"
+    assert review.reviewer == "casey"
+    assert review.decision == "confirmed"
+    assert review.overridden_status is None
+    # created_at is real UTC ISO-8601.
+    from datetime import datetime, timezone
+
+    parsed = datetime.fromisoformat(review.created_at)
+    assert parsed.utcoffset() == timezone.utc.utcoffset(None)
+    # The machine verdict is never rewritten: disposition is a separate layer.
+    assert paths.assessment_json.read_bytes() == assessment_before
+
+
+def test_save_disposition_override_requires_reason_and_records_status(tmp_path):
+    from ehs_spatial.app import save_disposition
+
+    pipeline = FakePipeline(tmp_path / "runs")
+    _write_history_run(pipeline.store, "run-a")
+    paths = pipeline.store.paths("run-a")
+
+    with pytest.raises(gr.Error, match="requires a reason"):
+        save_disposition(pipeline, "run-a", "casey", "overridden", "PASS", "  ")
+    assert not paths.review_json.exists()
+
+    with pytest.raises(gr.Error, match="status the override asserts"):
+        save_disposition(pipeline, "run-a", "casey", "overridden", None, "why")
+
+    with pytest.raises(gr.Error, match="reviewer name"):
+        save_disposition(pipeline, "run-a", " ", "overridden", "PASS", "why")
+
+    with pytest.raises(gr.Error, match="Select a run"):
+        save_disposition(pipeline, None, "casey", "confirmed", None, "")
+
+    save_disposition(
+        pipeline, "run-a", "casey", "overridden", "PASS", "fence moved"
+    )
+
+    review = pipeline.store.load_json(paths.review_json, ReviewDisposition)
+    assert review.decision == "overridden"
+    assert review.overridden_status == AssessmentStatus.PASS
+    assert review.reason == "fence moved"
+
+
+def test_build_app_wires_history_tab_components_and_events(tmp_path):
+    from ehs_spatial.app import build_app
+
+    demo = build_app(FakePipeline(tmp_path / "runs"))
+    config = demo.get_config_file()
+    components = config["components"]
+
+    [table] = [
+        component for component in components if component["type"] == "dataframe"
+    ]
+    assert table["props"]["headers"] == [
+        "run_id",
+        "created_at",
+        "operator",
+        "tier",
+        "status",
+        "distance_m",
+        "disposition",
+    ]
+    [radio] = [
+        component for component in components if component["type"] == "radio"
+    ]
+    assert [list(choice) for choice in radio["props"]["choices"]] == [
+        ["confirmed", "confirmed"],
+        ["overridden", "overridden"],
+    ]
+    [dropdown] = [
+        component for component in components if component["type"] == "dropdown"
+    ]
+    assert [choice[0] for choice in dropdown["props"]["choices"]] == [
+        "PASS",
+        "FAIL",
+        "INSUFFICIENT_EVIDENCE",
+    ]
+    buttons = {
+        component["props"].get("value"): component["id"]
+        for component in components
+        if component["type"] == "button"
+    }
+    assert "Refresh history" in buttons
+    assert "Save disposition" in buttons
+    targets = {
+        tuple(target)
+        for dependency in config["dependencies"]
+        for target in dependency["targets"]
+    }
+    assert (buttons["Refresh history"], "click") in targets
+    assert (buttons["Save disposition"], "click") in targets
+    assert (table["id"], "select") in targets
+    # History events honour the single provider-pipeline queue lane.
+    assert {function.concurrency_id for function in demo.fns.values()} == {
+        "ehs-provider-pipeline"
+    }
 
 
 def test_readme_links_each_provider_credential_source():

@@ -13,6 +13,16 @@ from .path_safety import validate_safe_path_segment
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
 
+def _read_json_dict(path: Path) -> dict:
+    """Best-effort read of one run artifact. History browsing must survive a
+    missing or corrupt file, so anything unreadable degrades to {}."""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
 @dataclass(frozen=True)
 class RunPaths:
     root: Path
@@ -62,6 +72,42 @@ class ArtifactStore:
             evidence_dir=run_root / "evidence",
             viewer_html=run_root / "viewer.html",
         )
+
+    def list_runs(self) -> list[dict]:
+        """Summaries of every cached run, newest first, for history browsing.
+        Fields come from manifest.json, assessment.json and review.json when
+        present; a missing or corrupt file leaves its fields None rather than
+        raising, so one bad run never hides the rest."""
+        summaries: list[dict] = []
+        if not self.root.is_dir():
+            return summaries
+        for run_dir in self.root.iterdir():
+            if not run_dir.is_dir():
+                continue
+            try:
+                paths = self.paths(run_dir.name)
+            except ValueError:
+                # A name paths() refuses is not a run this store wrote.
+                continue
+            manifest = _read_json_dict(paths.manifest_json)
+            assessment = _read_json_dict(paths.assessment_json)
+            review = _read_json_dict(paths.review_json)
+            summaries.append(
+                {
+                    "run_id": run_dir.name,
+                    "created_at": manifest.get("created_at"),
+                    "operator": manifest.get("operator"),
+                    "capture_tier": manifest.get("capture_tier"),
+                    "status": assessment.get("status"),
+                    "distance": assessment.get("approximate_distance_m"),
+                    "disposition": review.get("decision"),
+                }
+            )
+        summaries.sort(
+            key=lambda summary: (summary["created_at"] or "", summary["run_id"]),
+            reverse=True,
+        )
+        return summaries
 
     def prepare_run(self, capture: CaptureRun) -> CaptureRun:
         paths = self.paths(capture.run_id)
