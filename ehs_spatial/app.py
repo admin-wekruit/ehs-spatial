@@ -46,23 +46,70 @@ def _analysis_error_outputs(error_copy: str) -> tuple[object, ...]:
     )
 
 
-def _status_copy(assessment: Assessment) -> str:
-    distance = (
-        f"{assessment.approximate_distance_m:.2f} m"
-        if assessment.approximate_distance_m is not None
-        else "unavailable from the evidence"
-    )
+_STATUS_ORDER = {
+    "FAIL": 0,
+    "NEEDS_REVIEW": 1,
+    "INSUFFICIENT_EVIDENCE": 2,
+    "PASS": 3,
+}
+
+
+def _status_copy(
+    assessment: Assessment,
+    scene: SceneMap | None = None,
+    policy_results: list[dict] | None = None,
+) -> str:
+    # Never print a bare decimal: the band is part of the measurement.
+    if assessment.approximate_distance_m is None:
+        distance = "unavailable from the evidence"
+    elif assessment.distance_error_budget_m is not None:
+        distance = (
+            f"{assessment.approximate_distance_m:.2f} m "
+            f"± {assessment.distance_error_budget_m:.2f} m"
+        )
+    else:
+        distance = f"{assessment.approximate_distance_m:.2f} m"
+    lines = [
+        f"### {assessment.status.value}",
+        f"Approximate boundary clearance: **{distance}**.",
+        f"**{DEMO_RULE_COPY}.**",
+    ]
+    if scene is not None and scene.scale_source:
+        confidence = (
+            f", confidence {scene.scale_confidence:.2f}"
+            if scene.scale_confidence is not None
+            else ""
+        )
+        lines.append(f"Scale source: `{scene.scale_source}`{confidence}.")
+    if policy_results:
+        ordered = sorted(
+            policy_results,
+            key=lambda r: _STATUS_ORDER.get(str(r.get("status")), 9),
+        )
+        lines.append("**Policies:**")
+        for result in ordered:
+            worst = result.get("violations") or []
+            detail = (
+                f" — worst {worst[0]['measured']}{worst[0]['unit']} "
+                f"(limit {worst[0]['threshold']}{worst[0]['unit']})"
+                if worst
+                else ""
+            )
+            lines.append(f"- `{result['status']}` {result['policy_id']}{detail}")
+    if scene is not None and scene.warnings:
+        shown = scene.warnings[:3]
+        extra = len(scene.warnings) - len(shown)
+        lines.append("**Warnings:**")
+        lines.extend(f"- {warning}" for warning in shown)
+        if extra > 0:
+            lines.append(f"- (+{extra} more in the structured output)")
     climb = assessment.climb_review
     climb_copy = "Climb: **REVIEW only**"
     if climb is not None:
         rationale = climb.rationale.removeprefix("REVIEW only: ")
         climb_copy += f" — {climb.verdict.upper()}. {rationale}"
-    return (
-        f"### {assessment.status.value}\n\n"
-        f"Approximate boundary clearance: **{distance}**.\n\n"
-        f"**{DEMO_RULE_COPY}.**\n\n"
-        f"{climb_copy}"
-    )
+    lines.append(climb_copy)
+    return "\n\n".join(lines)
 
 
 def analyze_run(
@@ -91,11 +138,18 @@ def analyze_run(
         assessment = pipeline.run_assessment(capture)
         paths = pipeline.store.paths(run_id)
         scene = pipeline.store.load_json(paths.scene_json, SceneMap)
+        policy_results = None
+        if paths.policies_json.exists():
+            import json as _json
+
+            policy_results = _json.loads(
+                paths.policies_json.read_text(encoding="utf-8")
+            )
         status_class = assessment.status.value.lower().replace("_", "-")
         return (
             run_id,
             gr.update(
-                value=_status_copy(assessment),
+                value=_status_copy(assessment, scene, policy_results),
                 elem_classes=["result-status", f"status-{status_class}"],
             ),
             str(paths.point_cloud_glb),
@@ -103,6 +157,7 @@ def analyze_run(
             {
                 "assessment": assessment.model_dump(mode="json"),
                 "scene_map": scene.model_dump(mode="json"),
+                "policy_results": policy_results,
             },
             [],
             gr.update(value="", interactive=True),
@@ -416,10 +471,11 @@ APP_CSS = """
   border-color: var(--ehs-fail) !important;
 }
 .status-fail h3 { color: var(--ehs-fail) !important; }
-.status-insufficient-evidence {
+.status-needs-review, .status-insufficient-evidence {
   background: var(--ehs-warn-bg) !important;
   border-color: var(--ehs-warn) !important;
 }
+.status-needs-review h3,
 .status-insufficient-evidence h3 { color: var(--ehs-warn) !important; }
 .status-error {
   background: var(--ehs-warn-bg) !important;

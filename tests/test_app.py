@@ -11,10 +11,13 @@ import pytest
 from ehs_spatial.artifacts import ArtifactStore
 from ehs_spatial.contracts import (
     Assessment,
+    AssessmentStatus,
     ClimbReview,
     GroundedAnswer,
+    PolicyResult,
     SceneMap,
     SpatialFact,
+    Violation,
 )
 from ehs_spatial.providers.base import ProviderError
 
@@ -210,6 +213,83 @@ def test_analysis_returns_real_artifacts_grounded_data_and_demo_copy(tmp_path):
         "__type__": "update",
     }
     assert ask_update == {"interactive": True, "__type__": "update"}
+
+
+def test_analysis_card_shows_band_warnings_and_ordered_policy_lines(tmp_path):
+    from ehs_spatial.app import APP_CSS, analyze_run
+
+    class PolicyPipeline(FakePipeline):
+        def run_assessment(self, capture):
+            assessment = super().run_assessment(capture)
+            paths = self.store.paths(capture.run_id)
+            scene = self.store.load_json(paths.scene_json, SceneMap)
+            self.store.save_json(
+                paths.scene_json,
+                scene.model_copy(
+                    update={
+                        "scale_source": "moge_anchor",
+                        "scale_confidence": 0.87,
+                        "warnings": [
+                            "warning one",
+                            "warning two",
+                            "warning three",
+                            "warning four",
+                        ],
+                    }
+                ),
+            )
+            self.store.save_json(
+                paths.policies_json,
+                [
+                    PolicyResult(policy_id="policy-pass", status="PASS"),
+                    PolicyResult(
+                        policy_id="policy-fail",
+                        status="FAIL",
+                        violations=[
+                            Violation(
+                                subject_id="pallet-1",
+                                object_id="exit-1",
+                                measured=0.4,
+                                threshold=0.9,
+                                unit="m",
+                            )
+                        ],
+                    ),
+                    PolicyResult(
+                        policy_id="policy-review", status="NEEDS_REVIEW"
+                    ),
+                ],
+            )
+            return assessment.model_copy(
+                update={
+                    "status": AssessmentStatus.NEEDS_REVIEW,
+                    "distance_error_budget_m": 0.2,
+                }
+            )
+
+    pipeline = PolicyPipeline(tmp_path / "runs")
+
+    result = analyze_run(pipeline, *_images(tmp_path), 1.5)
+    copy = result[1]["value"]
+
+    assert "### NEEDS_REVIEW" in copy
+    assert "**0.50 m ± 0.20 m**" in copy
+    assert "Scale source: `moge_anchor`, confidence 0.87." in copy
+    # Worst-first ordering: FAIL before NEEDS_REVIEW before PASS.
+    assert (
+        copy.index("`FAIL` policy-fail")
+        < copy.index("`NEEDS_REVIEW` policy-review")
+        < copy.index("`PASS` policy-pass")
+    )
+    assert "worst 0.4m (limit 0.9m)" in copy
+    assert "warning one" in copy
+    assert "warning three" in copy
+    assert "warning four" not in copy
+    assert "(+1 more in the structured output)" in copy
+    assert result[1]["elem_classes"] == ["result-status", "status-needs-review"]
+    assert result[4]["policy_results"][1]["policy_id"] == "policy-fail"
+    assert ".status-needs-review" in APP_CSS
+    assert ".status-needs-review h3" in APP_CSS
 
 
 def test_failed_reanalysis_returns_atomic_cleared_state_without_fallback(tmp_path):

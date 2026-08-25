@@ -185,6 +185,17 @@ class EHSAssessmentPipeline:
             scale_warnings=scale["warnings"],
         )
         self.store.save_json(paths.scene_json, scene)
+        if prepared.policies:
+            from .policy import evaluate_policies
+
+            self.store.save_json(
+                paths.policies_json,
+                evaluate_policies(
+                    prepared.policies,
+                    scene,
+                    capture_frame_count=len(frames),
+                ),
+            )
         climb_review, interaction_id = self.gemini.review_climb(
             scene, assessment, prepared.criterion, frames
         )
