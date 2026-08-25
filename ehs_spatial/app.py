@@ -58,6 +58,7 @@ def _status_copy(
     assessment: Assessment,
     scene: SceneMap | None = None,
     policy_results: list[dict] | None = None,
+    policy_specs: dict[str, dict] | None = None,
 ) -> str:
     # Never print a bare decimal: the band is part of the measurement.
     if assessment.approximate_distance_m is None:
@@ -88,6 +89,12 @@ def _status_copy(
         )
         lines.append("**Policies:**")
         for result in ordered:
+            spec = (policy_specs or {}).get(result["policy_id"], {})
+            rule = (
+                f" — {spec['predicate']} {spec['threshold']} {spec['unit']}"
+                if spec.get("predicate")
+                else ""
+            )
             worst = result.get("violations") or []
             detail = (
                 f" — worst {worst[0]['measured']}{worst[0]['unit']} "
@@ -95,7 +102,15 @@ def _status_copy(
                 if worst
                 else ""
             )
-            lines.append(f"- `{result['status']}` {result['policy_id']}{detail}")
+            source = ""
+            if spec.get("source_text"):
+                excerpt = spec["source_text"]
+                if len(excerpt) > 90:
+                    excerpt = excerpt[:87] + "..."
+                source = f' — "{excerpt}"'
+            lines.append(
+                f"- `{result['status']}` {result['policy_id']}{rule}{detail}{source}"
+            )
     if scene is not None and scene.warnings:
         shown = scene.warnings[:3]
         extra = len(scene.warnings) - len(shown)
@@ -139,17 +154,22 @@ def analyze_run(
         paths = pipeline.store.paths(run_id)
         scene = pipeline.store.load_json(paths.scene_json, SceneMap)
         policy_results = None
+        policy_specs = None
         if paths.policies_json.exists():
             import json as _json
 
-            policy_results = _json.loads(
+            payload = _json.loads(
                 paths.policies_json.read_text(encoding="utf-8")
             )
+            policy_results = payload["results"]
+            policy_specs = {
+                spec["policy_id"]: spec for spec in payload.get("specs", [])
+            }
         status_class = assessment.status.value.lower().replace("_", "-")
         return (
             run_id,
             gr.update(
-                value=_status_copy(assessment, scene, policy_results),
+                value=_status_copy(assessment, scene, policy_results, policy_specs),
                 elem_classes=["result-status", f"status-{status_class}"],
             ),
             str(paths.point_cloud_glb),
@@ -158,6 +178,7 @@ def analyze_run(
                 "assessment": assessment.model_dump(mode="json"),
                 "scene_map": scene.model_dump(mode="json"),
                 "policy_results": policy_results,
+                "policy_specs": policy_specs,
             },
             [],
             gr.update(value="", interactive=True),

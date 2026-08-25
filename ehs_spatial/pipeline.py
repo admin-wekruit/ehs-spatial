@@ -1,3 +1,4 @@
+import json
 import subprocess
 import warnings
 from collections.abc import Callable
@@ -197,13 +198,26 @@ class EHSAssessmentPipeline:
         if prepared.policies:
             from .policy import evaluate_policies
 
-            self.store.save_json(
-                paths.policies_json,
-                evaluate_policies(
-                    prepared.policies,
-                    scene,
-                    capture_frame_count=len(frames),
-                ),
+            results = evaluate_policies(
+                prepared.policies, scene, capture_frame_count=len(frames)
+            )
+            # Specs travel with results so the card can cite the compiled
+            # predicate and the prose it came from without re-reading input.
+            paths.policies_json.write_text(
+                json.dumps(
+                    {
+                        "specs": [
+                            spec.model_dump(mode="json")
+                            for spec in prepared.policies
+                        ],
+                        "results": [
+                            result.model_dump(mode="json") for result in results
+                        ],
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
             )
         climb_review, interaction_id = self.gemini.review_climb(
             scene, assessment, prepared.criterion, frames

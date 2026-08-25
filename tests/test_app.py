@@ -1,5 +1,6 @@
 import asyncio
 import importlib.util
+import json
 from pathlib import Path
 import re
 
@@ -15,6 +16,7 @@ from ehs_spatial.contracts import (
     ClimbReview,
     GroundedAnswer,
     PolicyResult,
+    PolicySpec,
     SceneMap,
     SpatialFact,
     Violation,
@@ -238,27 +240,43 @@ def test_analysis_card_shows_band_warnings_and_ordered_policy_lines(tmp_path):
                     }
                 ),
             )
-            self.store.save_json(
-                paths.policies_json,
-                [
-                    PolicyResult(policy_id="policy-pass", status="PASS"),
-                    PolicyResult(
-                        policy_id="policy-fail",
-                        status="FAIL",
-                        violations=[
-                            Violation(
-                                subject_id="pallet-1",
-                                object_id="exit-1",
-                                measured=0.4,
-                                threshold=0.9,
-                                unit="m",
-                            )
-                        ],
-                    ),
-                    PolicyResult(
-                        policy_id="policy-review", status="NEEDS_REVIEW"
-                    ),
-                ],
+            results = [
+                PolicyResult(policy_id="policy-pass", status="PASS"),
+                PolicyResult(
+                    policy_id="policy-fail",
+                    status="FAIL",
+                    violations=[
+                        Violation(
+                            subject_id="pallet-1",
+                            object_id="exit-1",
+                            measured=0.4,
+                            threshold=0.9,
+                            unit="m",
+                        )
+                    ],
+                ),
+                PolicyResult(policy_id="policy-review", status="NEEDS_REVIEW"),
+            ]
+            spec = PolicySpec(
+                policy_id="policy-fail",
+                source_text=(
+                    "Movable equipment must be kept at least 0.9 m clear of "
+                    "any marked exit route at all times so egress is never "
+                    "obstructed during an emergency."
+                ),
+                predicate="min_separation",
+                subject_labels=["pallet"],
+                object_labels=["exit route"],
+                threshold=0.9,
+            )
+            paths.policies_json.write_text(
+                json.dumps(
+                    {
+                        "specs": [spec.model_dump(mode="json")],
+                        "results": [r.model_dump(mode="json") for r in results],
+                    }
+                ),
+                encoding="utf-8",
             )
             return assessment.model_copy(
                 update={
@@ -282,12 +300,16 @@ def test_analysis_card_shows_band_warnings_and_ordered_policy_lines(tmp_path):
         < copy.index("`PASS` policy-pass")
     )
     assert "worst 0.4m (limit 0.9m)" in copy
+    assert "min_separation 0.9 m" in copy
+    assert '— "Movable equipment must be kept at least 0.9 m clear' in copy
+    assert "..." in copy  # 90-char source excerpt is truncated
     assert "warning one" in copy
     assert "warning three" in copy
     assert "warning four" not in copy
     assert "(+1 more in the structured output)" in copy
     assert result[1]["elem_classes"] == ["result-status", "status-needs-review"]
     assert result[4]["policy_results"][1]["policy_id"] == "policy-fail"
+    assert result[4]["policy_specs"]["policy-fail"]["predicate"] == "min_separation"
     assert ".status-needs-review" in APP_CSS
     assert ".status-needs-review h3" in APP_CSS
 
