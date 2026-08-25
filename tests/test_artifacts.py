@@ -146,7 +146,25 @@ def test_list_runs_summarizes_complete_runs_and_degrades_corrupt_ones(tmp_path):
         encoding="utf-8",
     )
     complete.assessment_json.write_text(
-        json.dumps({"status": "NEEDS_REVIEW", "approximate_distance_m": 0.58}),
+        json.dumps(
+            {
+                "status": "NEEDS_REVIEW",
+                "approximate_distance_m": 0.58,
+                "distance_error_budget_m": 0.05,
+            }
+        ),
+        encoding="utf-8",
+    )
+    complete.policies_json.write_text(
+        json.dumps(
+            {
+                "specs": [],
+                "results": [
+                    {"policy_id": "p-pass", "status": "PASS"},
+                    {"policy_id": "p-fail", "status": "FAIL"},
+                ],
+            }
+        ),
         encoding="utf-8",
     )
     complete.review_json.write_text(
@@ -164,7 +182,9 @@ def test_list_runs_summarizes_complete_runs_and_degrades_corrupt_ones(tmp_path):
             "operator": "inspector-a",
             "capture_tier": "mono",
             "status": "NEEDS_REVIEW",
+            "worst_policy": "FAIL",
             "distance": 0.58,
+            "distance_error_budget_m": 0.05,
             "disposition": "confirmed",
         },
         {
@@ -173,7 +193,9 @@ def test_list_runs_summarizes_complete_runs_and_degrades_corrupt_ones(tmp_path):
             "operator": None,
             "capture_tier": None,
             "status": None,
+            "worst_policy": None,
             "distance": None,
+            "distance_error_budget_m": None,
             "disposition": None,
         },
     ]
@@ -183,3 +205,74 @@ def test_list_runs_is_empty_for_a_store_that_never_wrote(tmp_path):
     artifacts = importlib.import_module("ehs_spatial.artifacts")
 
     assert artifacts.ArtifactStore(tmp_path / "never").list_runs() == []
+
+
+def test_list_runs_degrades_wrong_typed_manifest_fields_per_field(tmp_path):
+    """A manifest whose created_at is a number must not TypeError the sort
+    and hide every other run: the bad field degrades to None, the rest of
+    the row and the index survive."""
+    artifacts = importlib.import_module("ehs_spatial.artifacts")
+    store = artifacts.ArtifactStore(tmp_path / "runs")
+    good = store.paths("run-good")
+    good.root.mkdir(parents=True)
+    good.manifest_json.write_text(
+        json.dumps({"created_at": "2026-08-01T00:00:00+00:00"}),
+        encoding="utf-8",
+    )
+    bad = store.paths("run-bad")
+    bad.root.mkdir(parents=True)
+    bad.manifest_json.write_text(
+        json.dumps({"created_at": 123, "operator": ["not", "a", "string"]}),
+        encoding="utf-8",
+    )
+    bad.assessment_json.write_text(
+        json.dumps({"status": 7, "approximate_distance_m": "0.5"}),
+        encoding="utf-8",
+    )
+
+    runs = {run["run_id"]: run for run in store.list_runs()}
+
+    assert set(runs) == {"run-good", "run-bad"}
+    assert runs["run-good"]["created_at"] == "2026-08-01T00:00:00+00:00"
+    assert runs["run-bad"]["created_at"] is None
+    assert runs["run-bad"]["operator"] is None
+    assert runs["run-bad"]["status"] is None
+    assert runs["run-bad"]["distance"] is None
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        # Legacy bare-list file.
+        ([{"policy_id": "p", "status": "NEEDS_REVIEW"}], "NEEDS_REVIEW"),
+        # Current envelope; worst-first across mixed statuses.
+        (
+            {
+                "specs": [],
+                "results": [
+                    {"status": "PASS"},
+                    {"status": "INSUFFICIENT_EVIDENCE"},
+                ],
+            },
+            "INSUFFICIENT_EVIDENCE",
+        ),
+        # Malformed shapes degrade to None instead of raising.
+        ("{not json", None),
+        ({"results": "nope"}, None),
+        ({"results": ["not-a-dict"]}, None),
+        ({"results": []}, None),
+    ],
+)
+def test_list_runs_worst_policy_status_tolerates_all_shapes(
+    tmp_path, payload, expected
+):
+    artifacts = importlib.import_module("ehs_spatial.artifacts")
+    store = artifacts.ArtifactStore(tmp_path / "runs")
+    paths = store.paths("run-a")
+    paths.root.mkdir(parents=True)
+    text = payload if isinstance(payload, str) else json.dumps(payload)
+    paths.policies_json.write_text(text, encoding="utf-8")
+
+    [run] = store.list_runs()
+
+    assert run["worst_policy"] == expected

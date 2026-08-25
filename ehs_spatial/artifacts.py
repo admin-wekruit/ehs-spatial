@@ -23,6 +23,39 @@ def _read_json_dict(path: Path) -> dict:
     return payload if isinstance(payload, dict) else {}
 
 
+def _str_or_none(value: object) -> str | None:
+    """Per-field degradation: a wrong-typed field becomes None, never a crash."""
+    return value if isinstance(value, str) else None
+
+
+def _number_or_none(value: object) -> float | int | None:
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+# Worst first — mirrors the app's status ordering.
+_POLICY_STATUS_ORDER = ("FAIL", "NEEDS_REVIEW", "INSUFFICIENT_EVIDENCE", "PASS")
+
+
+def _worst_policy_status(path: Path) -> str | None:
+    """Worst status across policies.json results. Handles the current
+    {"specs", "results"} envelope and legacy bare-list files; anything
+    missing or malformed degrades to None."""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    results = payload.get("results") if isinstance(payload, dict) else payload
+    if not isinstance(results, list):
+        return None
+    statuses = {
+        result.get("status") for result in results if isinstance(result, dict)
+    }
+    for status in _POLICY_STATUS_ORDER:
+        if status in statuses:
+            return status
+    return None
+
+
 @dataclass(frozen=True)
 class RunPaths:
     root: Path
@@ -95,12 +128,18 @@ class ArtifactStore:
             summaries.append(
                 {
                     "run_id": run_dir.name,
-                    "created_at": manifest.get("created_at"),
-                    "operator": manifest.get("operator"),
-                    "capture_tier": manifest.get("capture_tier"),
-                    "status": assessment.get("status"),
-                    "distance": assessment.get("approximate_distance_m"),
-                    "disposition": review.get("decision"),
+                    "created_at": _str_or_none(manifest.get("created_at")),
+                    "operator": _str_or_none(manifest.get("operator")),
+                    "capture_tier": _str_or_none(manifest.get("capture_tier")),
+                    "status": _str_or_none(assessment.get("status")),
+                    "worst_policy": _worst_policy_status(paths.policies_json),
+                    "distance": _number_or_none(
+                        assessment.get("approximate_distance_m")
+                    ),
+                    "distance_error_budget_m": _number_or_none(
+                        assessment.get("distance_error_budget_m")
+                    ),
+                    "disposition": _str_or_none(review.get("decision")),
                 }
             )
         summaries.sort(
