@@ -190,7 +190,9 @@ def _ransac_floor_plane(
 def _fit_floor(
     frames: dict[str, GeometryFrame],
     frame_data: dict[str, _FrameData],
-    camera_height_m: float,
+    camera_height_m: float | None,
+    *,
+    scale_factor_override: float | None = None,
 ) -> tuple[_FloorTransform | None, list[str]]:
     # The floor is a geometric primitive (dominant horizontal plane below the
     # cameras), not a semantic class: it is fitted from the full reconstructed
@@ -251,10 +253,20 @@ def _fit_floor(
                 "camera-to-floor heights must all be finite and strictly positive"
             ]
         predicted_height = float(np.median(signed_heights))
-        scale_factor = camera_height_m / predicted_height
+        if scale_factor_override is not None:
+            # An external metric anchor (MoGe) supplies the raw->metres
+            # gauge; the fitted plane still provides orientation and origin.
+            scale_factor = scale_factor_override
+        elif camera_height_m is not None:
+            scale_factor = camera_height_m / predicted_height
+        else:
+            return None, [
+                "no scale source: neither an anchor override nor an "
+                "operator camera height is available"
+            ]
         if not np.isfinite(scale_factor) or scale_factor <= 0:
-            return None, ["camera-height scale is nonfinite or nonpositive"]
-        if fit_index == 1:
+            return None, ["resolved scale is nonfinite or nonpositive"]
+        if fit_index == 1 and scale_factor_override is None:
             scaled_heights = signed_heights * scale_factor
             scaled_mad = float(
                 np.median(np.abs(scaled_heights - np.median(scaled_heights)))
@@ -465,7 +477,9 @@ def _reconcile_entities(
 def _build_geometry(
     frames: list[GeometryFrame],
     observations: list[Observation2D],
-    camera_height_m: float,
+    camera_height_m: float | None,
+    *,
+    scale_factor_override: float | None = None,
 ) -> _GeometryResult:
     frames_by_id = {frame.frame_id: frame for frame in frames}
     if len(frames_by_id) != len(frames):
@@ -477,7 +491,12 @@ def _build_geometry(
         raise ValueError(f"observations reference unknown frames: {unknown_frames}")
 
     frame_data: dict[str, _FrameData] = {}
-    transform, warnings = _fit_floor(frames_by_id, frame_data, camera_height_m)
+    transform, warnings = _fit_floor(
+        frames_by_id,
+        frame_data,
+        camera_height_m,
+        scale_factor_override=scale_factor_override,
+    )
     if transform is None:
         return _GeometryResult(transform=None, entities=[], warnings=warnings)
     entities, entity_warnings = _reconcile_entities(

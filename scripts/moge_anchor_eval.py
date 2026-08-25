@@ -42,10 +42,7 @@ from nvwarehouse_eval import (  # noqa: E402
     _questions,
 )
 
-MOGE_VERSION = (
-    "jasonod888/moge2:"
-    "daa7a9329b3d6bb513f3a20def9451b6e3cf234afe2bb60ba38f96ecd33c81f7"
-)
+from ehs_spatial.providers.moge import MOGE_VERSION  # single source of truth
 WORK = Path("outputs/nvwarehouse_v1")
 CACHE = WORK / "moge_scale"
 

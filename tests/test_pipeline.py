@@ -113,6 +113,16 @@ class FakeGemini:
         )
 
 
+class FakeMoGe:
+    def __init__(self, anchor=None):
+        self.anchor = anchor
+        self.calls = 0
+
+    def anchor_scale(self, frames, geometry_dir):
+        self.calls += 1
+        return self.anchor
+
+
 class FakeSceneBuilder:
     def __init__(self):
         self.calls = []
@@ -128,6 +138,10 @@ class FakeSceneBuilder:
         plan_view_path=None,
         semantic_ply_path=None,
         cloud_views_paths=None,
+        scale_factor_override=None,
+        scale_source="camera_height",
+        scale_confidence=None,
+        scale_warnings=None,
     ):
         self.calls.append(
             (
@@ -190,6 +204,7 @@ def _pipeline(tmp_path, *, map_adapter=None, gemini=None):
         map_anything=map_adapter,
         sam3=sam,
         gemini=gemini,
+        moge=FakeMoGe(),
         scene_builder=scene_builder,
     )
     return pipeline, store, map_adapter, sam, gemini, scene_builder
@@ -440,3 +455,74 @@ def test_capture_run_rejects_zero_and_five_images(tmp_path):
         CaptureRun(run_id="run-1", image_paths=[])
     with pytest.raises(ValidationError):
         CaptureRun(run_id="run-1", image_paths=["a.png"] * 5)
+
+
+def test_scale_chain_prefers_auto_anchor_and_records_source(tmp_path):
+    from ehs_spatial.pipeline import EHSAssessmentPipeline
+    from ehs_spatial.providers.moge import ScaleAnchor
+
+    store = ArtifactStore(tmp_path / "runs")
+    scene_builder = FakeSceneBuilder()
+    pipeline = EHSAssessmentPipeline(
+        store=store,
+        map_anything=FakeMapAnything(),
+        sam3=FakeSAM3(),
+        gemini=FakeGemini(),
+        moge=FakeMoGe(anchor=ScaleAnchor(2.5, 0.92, [2.5])),
+        scene_builder=scene_builder,
+    )
+
+    pipeline.run_assessment(_capture(tmp_path))
+
+    scale = pipeline._resolve_scale(
+        _capture(tmp_path), [], tmp_path
+    )
+    assert scale["source"] == "moge_anchor"
+    assert scale["override"] == 2.5
+    assert scale["confidence"] == 0.92
+
+
+def test_scale_chain_falls_back_to_camera_height_with_a_warning(tmp_path):
+    pipeline, *_ = _pipeline(tmp_path)  # FakeMoGe returns None
+
+    scale = pipeline._resolve_scale(_capture(tmp_path), [], tmp_path)
+
+    assert scale["source"] == "camera_height"
+    assert scale["override"] is None
+    assert any("fell back" in w for w in scale["warnings"])
+
+
+def test_scale_chain_degrades_to_model_native_when_no_source_exists(tmp_path):
+    pipeline, *_ = _pipeline(tmp_path)
+    capture = _capture(tmp_path).model_copy(update={"camera_height_m": None})
+
+    scale = pipeline._resolve_scale(capture, [], tmp_path)
+
+    assert scale["source"] == "model_native"
+    assert scale["override"] == 1.0
+    assert scale["confidence"] == 0.2
+    assert any("native scale" in w for w in scale["warnings"])
+
+
+def test_scale_chain_honours_explicit_camera_height_preference(tmp_path):
+    from ehs_spatial.pipeline import EHSAssessmentPipeline
+    from ehs_spatial.providers.moge import ScaleAnchor
+
+    pipeline = EHSAssessmentPipeline(
+        store=ArtifactStore(tmp_path / "runs"),
+        map_anything=FakeMapAnything(),
+        sam3=FakeSAM3(),
+        gemini=FakeGemini(),
+        moge=FakeMoGe(anchor=ScaleAnchor(2.5, 0.92, [2.5])),
+        scene_builder=FakeSceneBuilder(),
+    )
+    capture = _capture(tmp_path).model_copy(
+        update={"scale_preference": "camera_height"}
+    )
+
+    scale = pipeline._resolve_scale(capture, [], tmp_path)
+
+    # The operator explicitly chose their tape measure: the anchor is not
+    # even consulted.
+    assert scale["source"] == "camera_height"
+    assert pipeline.moge.calls == 0

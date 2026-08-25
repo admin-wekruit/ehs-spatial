@@ -23,9 +23,18 @@ def build_scene_and_assess(
     plan_view_path: str | Path | None = None,
     semantic_ply_path: str | Path | None = None,
     cloud_views_paths: tuple[str | Path, str | Path] | None = None,
+    scale_factor_override: float | None = None,
+    scale_source: str = "camera_height",
+    scale_confidence: float | None = None,
+    scale_warnings: list[str] | None = None,
 ) -> tuple[SceneMap, Assessment]:
-    geometry = _build_geometry(frames, observations, camera_height_m)
-    capture_warnings = (
+    geometry = _build_geometry(
+        frames,
+        observations,
+        camera_height_m,
+        scale_factor_override=scale_factor_override,
+    )
+    capture_warnings = list(scale_warnings or []) + (
         [
             f"reduced capture ({len(frames)} view(s) instead of 4): evidence "
             "redundancy and cross-view confirmation are weaker"
@@ -39,6 +48,7 @@ def build_scene_and_assess(
             floor_plane=None,
             scale_source=None,
             scale_factor=None,
+            scale_confidence=None,
             fence_polygon=[],
             entities=[],
             facts=[],
@@ -60,8 +70,9 @@ def build_scene_and_assess(
     scene = SceneMap(
         run_id=run_id,
         floor_plane=geometry.transform.plane,
-        scale_source="camera_height",
+        scale_source=scale_source,
         scale_factor=geometry.transform.scale_factor,
+        scale_confidence=scale_confidence,
         fence_polygon=rule.fence_polygon,
         entities=geometry.entities,
         facts=rule.facts,

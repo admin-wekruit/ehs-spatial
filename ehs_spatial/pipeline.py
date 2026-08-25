@@ -6,6 +6,7 @@ from .contracts import Assessment, CaptureRun, ClimbReview, GroundedAnswer, Scen
 from .providers.base import ProviderError
 from .providers.gemini import GeminiAdapter
 from .providers.map_anything import MapAnythingAdapter
+from .providers.moge import MoGeAnchorAdapter
 from .geometry import FLOOR_LABEL
 from .providers.sam3 import LABEL_PROMPTS, PROMPT_VOCABULARY, SAM3Adapter
 from .scene import build_scene_and_assess
@@ -19,6 +20,7 @@ class EHSAssessmentPipeline:
         map_anything: Any | None = None,
         sam3: Any | None = None,
         gemini: Any | None = None,
+        moge: Any | None = None,
         scene_builder: Callable[..., tuple[SceneMap, Assessment]] | None = None,
     ) -> None:
         self.store = store if store is not None else ArtifactStore()
@@ -27,7 +29,55 @@ class EHSAssessmentPipeline:
         )
         self.sam3 = sam3 if sam3 is not None else SAM3Adapter()
         self.gemini = gemini if gemini is not None else GeminiAdapter()
+        self.moge = moge if moge is not None else MoGeAnchorAdapter()
         self.scene_builder = scene_builder or build_scene_and_assess
+
+    def _resolve_scale(self, prepared: CaptureRun, frames, geometry_dir) -> dict:
+        """Scale chain: auto anchor first, operator camera height as the
+        explicit preference or fallback, model-native scale as last resort.
+        Every path records its source, confidence and warnings — the run
+        never crashes for lack of a scale, it degrades and says so."""
+        if (
+            prepared.scale_preference == "camera_height"
+            and prepared.camera_height_m is not None
+        ):
+            return {
+                "override": None,
+                "source": "camera_height",
+                "confidence": 0.9,
+                "warnings": [],
+            }
+        anchor = None
+        try:
+            anchor = self.moge.anchor_scale(frames, geometry_dir)
+        except Exception:
+            anchor = None
+        if anchor is not None:
+            return {
+                "override": anchor.scale,
+                "source": "moge_anchor",
+                "confidence": anchor.confidence,
+                "warnings": [],
+            }
+        if prepared.camera_height_m is not None:
+            return {
+                "override": None,
+                "source": "camera_height",
+                "confidence": 0.9,
+                "warnings": [
+                    "auto scale anchor unavailable; fell back to the "
+                    "operator-supplied camera height"
+                ],
+            }
+        return {
+            "override": 1.0,
+            "source": "model_native",
+            "confidence": 0.2,
+            "warnings": [
+                "no scale anchor available; distances use the model's "
+                "native scale and may be off by a large factor"
+            ],
+        }
 
     def run_assessment(self, capture: CaptureRun) -> Assessment:
         prepared = self.store.prepare_run(capture)
@@ -74,6 +124,7 @@ class EHSAssessmentPipeline:
                         break
         self.store.save_json(paths.observations_json, observations)
 
+        scale = self._resolve_scale(prepared, frames, paths.geometry_dir)
         scene, assessment = self.scene_builder(
             prepared.run_id,
             frames,
@@ -87,6 +138,10 @@ class EHSAssessmentPipeline:
                 paths.cloud_perspective_png,
                 paths.cloud_topdown_png,
             ),
+            scale_factor_override=scale["override"],
+            scale_source=scale["source"],
+            scale_confidence=scale["confidence"],
+            scale_warnings=scale["warnings"],
         )
         self.store.save_json(paths.scene_json, scene)
         climb_review, interaction_id = self.gemini.review_climb(
