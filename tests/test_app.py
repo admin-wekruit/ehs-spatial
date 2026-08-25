@@ -315,6 +315,147 @@ def test_analysis_card_shows_band_warnings_and_ordered_policy_lines(tmp_path):
     assert ".status-needs-review h3" in APP_CSS
 
 
+def _write_compiled_spec(
+    directory: Path, policy_id: str, *, unsupported: str | None = None
+) -> PolicySpec:
+    spec = PolicySpec(
+        policy_id=policy_id,
+        source_text=(
+            "Movable equipment must be kept at least 0.6 m clear of any "
+            "machine guarding fence at all times."
+        ),
+        predicate="min_separation",
+        subject_labels=["pallet"],
+        object_labels=["safety fence"],
+        threshold=0.6,
+        unsupported_reason=unsupported,
+    )
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{policy_id}.json").write_text(
+        spec.model_dump_json(indent=2), encoding="utf-8"
+    )
+    return spec
+
+
+def test_load_policy_specs_reads_compiled_dir_and_skips_unreadable(tmp_path):
+    from ehs_spatial.app import load_policy_specs
+
+    compiled = tmp_path / "compiled"
+    _write_compiled_spec(compiled, "p02-later")
+    _write_compiled_spec(compiled, "p01-first")
+    (compiled / "broken.json").write_text("{", encoding="utf-8")
+
+    specs = load_policy_specs(compiled)
+
+    assert [spec.policy_id for spec in specs] == ["p01-first", "p02-later"]
+    assert load_policy_specs(tmp_path / "missing") == []
+
+
+def test_analyze_run_puts_selected_build_time_specs_into_capture_policies(
+    tmp_path,
+):
+    from ehs_spatial.app import analyze_run
+
+    pipeline = FakePipeline(tmp_path / "runs")
+    spec = _write_compiled_spec(tmp_path / "compiled", "p01-clearance")
+    available = {spec.policy_id: spec}
+
+    analyze_run(
+        pipeline, *_images(tmp_path), 1.5, ["p01-clearance", "ghost"], available
+    )
+    no_selection = analyze_run(pipeline, *_images(tmp_path), 1.5)
+
+    first, second = pipeline.assessment_calls
+    # Only reviewed build-time specs make it in; unknown ids degrade silently.
+    assert [policy.policy_id for policy in first.policies] == ["p01-clearance"]
+    assert first.policies[0] == spec
+    assert second.policies == []
+    assert no_selection[0] is not None
+
+
+def test_build_app_policy_accordion_offers_specs_and_shows_refusals(tmp_path):
+    from ehs_spatial.app import POLICY_REVIEW_COPY, build_app
+
+    compiled = tmp_path / "compiled"
+    supported = _write_compiled_spec(compiled, "p01-clearance")
+    refused = _write_compiled_spec(
+        compiled,
+        "p02-repaint",
+        unsupported="cannot verify paint colour or a two-year schedule",
+    )
+    (compiled / "broken.json").write_text("{", encoding="utf-8")
+    expected_label = f"{supported.policy_id} — {supported.source_text[:60]}"
+
+    demo = build_app(FakePipeline(tmp_path / "runs"), policies_dir=compiled)
+    config = demo.get_config_file()
+    components = config["components"]
+
+    [selector] = [
+        component
+        for component in components
+        if component["type"] == "checkboxgroup"
+    ]
+    assert [list(choice) for choice in selector["props"]["choices"]] == [
+        [expected_label, "p01-clearance"]
+    ]
+    assert selector["props"]["value"] == []
+    # The refusal is a feature: the unsupported spec appears as a disabled
+    # checkbox carrying the compiler's reason, never as a selectable option.
+    [refusal_box] = [
+        component
+        for component in components
+        if component["type"] == "checkbox"
+        and component["props"].get("label", "").startswith("p02-repaint")
+    ]
+    assert refusal_box["props"]["interactive"] is False
+    assert refused.unsupported_reason in refusal_box["props"]["info"]
+    assert "Compiler refusal" in refusal_box["props"]["info"]
+    # Reviewed-offline copy is stated in the UI.
+    assert any(
+        POLICY_REVIEW_COPY in (component["props"].get("value") or "")
+        for component in components
+        if component["type"] == "markdown"
+    )
+    # The selector feeds the analyze event.
+    [analyze_dependency] = [
+        dependency
+        for dependency in config["dependencies"]
+        if dependency.get("api_name") == "analyze_workcell"
+    ]
+    assert selector["id"] in analyze_dependency["inputs"]
+
+
+def test_app_event_carries_policy_selection_into_capture_run(tmp_path):
+    from ehs_spatial.app import build_app
+
+    pipeline = FakePipeline(tmp_path / "runs")
+    spec = _write_compiled_spec(tmp_path / "compiled", "p01-clearance")
+    demo = build_app(pipeline, policies_dir=tmp_path / "compiled")
+    state = SessionState(demo)
+    analyze = next(
+        function
+        for function in demo.fns.values()
+        if function.api_name == "analyze_workcell"
+    )
+    upload_data = [
+        {"path": path, "meta": {"_type": "gradio.FileData"}}
+        for path in _images(tmp_path)
+    ]
+
+    asyncio.run(
+        demo.process_api(
+            analyze,
+            [*upload_data, 1.5, ["p01-clearance"]],
+            state=state,
+            session_hash="policy-selection",
+        )
+    )
+
+    [capture] = pipeline.assessment_calls
+    assert [policy.policy_id for policy in capture.policies] == [spec.policy_id]
+    assert capture.policies[0].threshold == 0.6
+
+
 def test_failed_reanalysis_returns_atomic_cleared_state_without_fallback(tmp_path):
     from ehs_spatial.app import APP_CSS, analyze_run
 
@@ -535,14 +676,14 @@ def test_failed_reanalysis_clears_gradio_state_and_blocks_old_run_questions(
     async def exercise_events() -> None:
         await demo.process_api(
             analyze,
-            [*upload_data, 1.5],
+            [*upload_data, 1.5, []],
             state=state,
             session_hash="failed-reanalysis-regression",
         )
         previous_run = state[analyze.outputs[0]._id]
         assert previous_run is not None
 
-        replacement_inputs = [*upload_data, 1.5]
+        replacement_inputs = [*upload_data, 1.5, []]
         if failure_mode == "provider":
             pipeline.run_error = ProviderError(
                 "replicate",
