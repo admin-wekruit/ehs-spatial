@@ -20,6 +20,10 @@ from .providers.base import ProviderError
 
 DEMO_RULE_COPY = "0.6 m demo rule — not an official EHS standard"
 PIPELINE_CONCURRENCY_ID = "ehs-provider-pipeline"
+# History/disposition handlers only touch local run artifacts; their own lane
+# keeps them responsive while a multi-minute provider analysis holds the
+# provider lane.
+LOCAL_CONCURRENCY_ID = "ehs-local-ui"
 
 
 def _provider_error_copy(error: ProviderError) -> str:
@@ -261,7 +265,8 @@ HISTORY_HEADERS = [
     "operator",
     "tier",
     "status",
-    "distance_m",
+    "policies",
+    "distance",
     "disposition",
 ]
 OVERRIDE_STATUSES = ["PASS", "FAIL", "INSUFFICIENT_EVIDENCE"]
@@ -279,7 +284,7 @@ def _load_policy_payload(
     except (OSError, ValueError):
         return None, None
     if isinstance(payload, list):
-        return payload, {}
+        return _sanitize_policy_results(payload), {}
     if isinstance(payload, dict):
         specs = {
             spec["policy_id"]: spec
@@ -287,8 +292,23 @@ def _load_policy_payload(
             if isinstance(spec, dict) and "policy_id" in spec
         }
         results = payload.get("results")
-        return (results if isinstance(results, list) else None), specs
+        return (
+            _sanitize_policy_results(results)
+            if isinstance(results, list)
+            else None
+        ), specs
     return None, None
+
+
+def _sanitize_policy_results(results: list) -> list[dict]:
+    """Same tolerance as report.py's _policy_rows: skip non-dict rows and
+    default missing policy_id/status to '?' so the card renders instead of
+    crashing on a malformed policies.json."""
+    return [
+        {"policy_id": "?", "status": "?", **row}
+        for row in results
+        if isinstance(row, dict)
+    ]
 
 
 def _disposition_copy(review: ReviewDisposition | None) -> str:
@@ -312,6 +332,18 @@ def _load_disposition(pipeline: Any, paths: Any) -> ReviewDisposition | None:
         return None
 
 
+def _history_distance_copy(
+    distance: float | None, budget: float | None
+) -> str | None:
+    # Never print a bare decimal when a band exists: it is part of the
+    # measurement (same rule as the verdict card and report).
+    if distance is None:
+        return None
+    if budget is not None:
+        return f"{distance:.2f} ± {budget:.2f} m"
+    return f"{distance:.2f} m"
+
+
 def list_history(pipeline: Any) -> list[list[object]]:
     """Rows for the History table, straight from the artifact index."""
     return [
@@ -321,7 +353,10 @@ def list_history(pipeline: Any) -> list[list[object]]:
             run["operator"],
             run["capture_tier"],
             run["status"],
-            run["distance"],
+            run["worst_policy"],
+            _history_distance_copy(
+                run["distance"], run["distance_error_budget_m"]
+            ),
             run["disposition"],
         ]
         for run in pipeline.store.list_runs()
@@ -334,8 +369,10 @@ def load_history_run(
     evt: gr.SelectData,
 ) -> tuple[object, ...]:
     """Selecting a History row loads that run's verdict card, top-down
-    evidence and current disposition. Every artifact is optional: a partial
-    run renders whatever it has instead of erroring the whole tab."""
+    evidence and current disposition, and resets the disposition form so a
+    ruling composed against the previous run cannot be saved onto this one.
+    Every artifact is optional: a partial run renders whatever it has
+    instead of erroring the whole tab."""
     try:
         run_id = str(rows[evt.index[0]][0] or "")
     except (TypeError, IndexError, KeyError):
@@ -367,6 +404,10 @@ def load_history_run(
         ),
         str(paths.topdown_png) if paths.topdown_png.is_file() else None,
         gr.update(value=_disposition_copy(_load_disposition(pipeline, paths))),
+        gr.update(value=""),
+        gr.update(value="confirmed"),
+        gr.update(value=None),
+        gr.update(value=""),
     )
 
 
@@ -377,10 +418,11 @@ def save_disposition(
     decision: str,
     overridden_status: str | None,
     reason: str,
-) -> object:
+) -> tuple[object, list[list[object]]]:
     """Write the reviewer's ruling beside the machine verdict. The original
     assessment.json is never rewritten: the disposition is a separate,
-    auditable layer in review.json."""
+    auditable layer in review.json. Returns the disposition copy plus fresh
+    History rows so the table never shows a stale disposition column."""
     if not run_id:
         raise gr.Error("Select a run in the History table before saving.")
     reviewer = (reviewer or "").strip()
@@ -391,6 +433,24 @@ def save_disposition(
         raise gr.Error("Overriding a machine verdict requires a reason.")
     if decision == "overridden" and not overridden_status:
         raise gr.Error("Pick the status the override asserts.")
+    # A disposition rules on a machine verdict, so one must exist — this also
+    # stops a save from recreating a deleted run directory as a ghost run.
+    try:
+        assessment = pipeline.store.load_json(
+            pipeline.store.paths(run_id).assessment_json, Assessment
+        )
+    except Exception:
+        raise gr.Error(
+            "This run has no machine assessment to rule on."
+        ) from None
+    if (
+        decision == "overridden"
+        and overridden_status == assessment.status.value
+    ):
+        raise gr.Error(
+            "The override matches the machine verdict "
+            f"({assessment.status.value}); confirm it instead."
+        )
     try:
         disposition = ReviewDisposition(
             run_id=run_id,
@@ -407,7 +467,7 @@ def save_disposition(
     pipeline.store.save_json(
         pipeline.store.paths(run_id).review_json, disposition
     )
-    return gr.update(value=_disposition_copy(disposition))
+    return gr.update(value=_disposition_copy(disposition)), list_history(pipeline)
 
 
 def build_app(pipeline: Any | None = None) -> gr.Blocks:
@@ -600,7 +660,7 @@ def build_app(pipeline: Any | None = None) -> gr.Blocks:
             outputs=[overlay_gallery, viewer_file],
             api_name="load_run_evidence",
             api_visibility="private",
-            concurrency_id=PIPELINE_CONCURRENCY_ID,
+            concurrency_id=LOCAL_CONCURRENCY_ID,
             concurrency_limit=1,
         )
         analyze_button.click(
@@ -644,7 +704,17 @@ def build_app(pipeline: Any | None = None) -> gr.Blocks:
             outputs=[history_table],
             api_name="list_history",
             api_visibility="private",
-            concurrency_id=PIPELINE_CONCURRENCY_ID,
+            concurrency_id=LOCAL_CONCURRENCY_ID,
+            concurrency_limit=1,
+        )
+        # The History table is populated on page load, not only via the
+        # Refresh button.
+        demo.load(
+            partial(list_history, service),
+            outputs=[history_table],
+            api_name="list_history_on_load",
+            api_visibility="private",
+            concurrency_id=LOCAL_CONCURRENCY_ID,
             concurrency_limit=1,
         )
         # A closure rather than partial: gradio resolves the injected
@@ -662,10 +732,14 @@ def build_app(pipeline: Any | None = None) -> gr.Blocks:
                 history_status,
                 history_topdown,
                 disposition_display,
+                reviewer_box,
+                decision_radio,
+                override_dropdown,
+                reason_box,
             ],
             api_name="load_history_run",
             api_visibility="private",
-            concurrency_id=PIPELINE_CONCURRENCY_ID,
+            concurrency_id=LOCAL_CONCURRENCY_ID,
             concurrency_limit=1,
         )
         save_button.click(
@@ -677,10 +751,10 @@ def build_app(pipeline: Any | None = None) -> gr.Blocks:
                 override_dropdown,
                 reason_box,
             ],
-            outputs=[disposition_display],
+            outputs=[disposition_display, history_table],
             api_name="save_disposition",
             api_visibility="private",
-            concurrency_id=PIPELINE_CONCURRENCY_ID,
+            concurrency_id=LOCAL_CONCURRENCY_ID,
             concurrency_limit=1,
         )
     return demo.queue(api_open=False, default_concurrency_limit=1)

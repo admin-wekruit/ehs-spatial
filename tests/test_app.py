@@ -678,10 +678,22 @@ def test_build_app_has_required_gradio_620_components_events_and_serialization(t
     assert (question["id"], "submit") in targets
     assert demo.api_open is False
     assert demo._queue.default_concurrency_limit == 1
+    # Two deliberate lanes: one serializing provider spend, one keeping
+    # local History/disposition handlers responsive during an analysis.
     assert {function.concurrency_id for function in demo.fns.values()} == {
-        "ehs-provider-pipeline"
+        "ehs-provider-pipeline",
+        "ehs-local-ui",
     }
     assert {function.concurrency_limit for function in demo.fns.values()} == {1}
+    provider_lanes = {
+        function.api_name: function.concurrency_id
+        for function in demo.fns.values()
+        if function.api_name
+        in {"analyze_workcell", "ask_about_run", "ask_about_run_from_enter"}
+    }
+    # Every provider-touching handler shares exactly the one provider lane.
+    assert set(provider_lanes.values()) == {"ehs-provider-pipeline"}
+    assert len(provider_lanes) == 3
 
 
 def test_load_run_evidence_lists_overlays_and_viewer_download(tmp_path):
@@ -737,7 +749,8 @@ def test_build_app_wires_evidence_section_to_run_id_changes(tmp_path):
         for function in demo.fns.values()
         if function.api_name == "load_run_evidence"
     ]
-    assert evidence_fn.concurrency_id == "ehs-provider-pipeline"
+    # Local disk read: it must not queue behind a provider analysis.
+    assert evidence_fn.concurrency_id == "ehs-local-ui"
     assert evidence_fn.concurrency_limit == 1
     [state] = [component for component in components if component["type"] == "state"]
     targets = {
@@ -821,10 +834,51 @@ def test_list_history_rows_come_from_the_store_index(tmp_path):
             "inspector-a",
             "mono",
             "NEEDS_REVIEW",
-            0.58,
+            None,
+            "0.58 ± 0.05 m",
             None,
         ]
     ]
+
+
+def test_list_history_surfaces_worst_policy_and_banded_distance(tmp_path):
+    """A demo-rule PASS with a FAILing compiled policy must not scan as a
+    clean PASS row, and the distance column carries its error budget."""
+    from ehs_spatial.app import list_history
+
+    pipeline = FakePipeline(tmp_path / "runs")
+    _write_history_run(pipeline.store, "run-a", status="PASS")
+    pipeline.store.paths("run-a").policies_json.write_text(
+        json.dumps(
+            {
+                "specs": [],
+                "results": [
+                    {"policy_id": "p-pass", "status": "PASS"},
+                    {"policy_id": "p-fail", "status": "FAIL"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    _write_history_run(pipeline.store, "run-no-budget")
+    paths = pipeline.store.paths("run-no-budget")
+    pipeline.store.save_json(
+        paths.assessment_json,
+        Assessment(
+            status="NEEDS_REVIEW",
+            fact_ids=[],
+            evidence_frame_ids=[],
+            approximate_distance_m=0.58,
+        ),
+    )
+
+    rows = {row[0]: row for row in list_history(pipeline)}
+
+    assert rows["run-a"][4] == "PASS"
+    assert rows["run-a"][5] == "FAIL"
+    assert rows["run-a"][6] == "0.58 ± 0.05 m"
+    # Without a budget the distance still carries its unit, never a bare 0.58.
+    assert rows["run-no-budget"][6] == "0.58 m"
 
 
 def test_load_history_run_loads_card_topdown_and_disposition(tmp_path):
@@ -845,7 +899,16 @@ def test_load_history_run_loads_card_topdown_and_disposition(tmp_path):
     rows = list_history(pipeline)
     evt = gr.SelectData(None, {"index": (0, 0), "value": "run-a"})
 
-    run_id, card, topdown, disposition = load_history_run(pipeline, rows, evt)
+    (
+        run_id,
+        card,
+        topdown,
+        disposition,
+        reviewer_reset,
+        decision_reset,
+        override_reset,
+        reason_reset,
+    ) = load_history_run(pipeline, rows, evt)
 
     assert run_id == "run-a"
     assert "### NEEDS_REVIEW" in card["value"]
@@ -854,6 +917,12 @@ def test_load_history_run_loads_card_topdown_and_disposition(tmp_path):
     assert topdown == str(paths.topdown_png)
     assert "casey" in disposition["value"]
     assert "confirmed" in disposition["value"]
+    # Selecting a row resets the disposition form so a ruling composed
+    # against another run cannot be one-click saved onto this one.
+    assert reviewer_reset["value"] == ""
+    assert decision_reset["value"] == "confirmed"
+    assert override_reset["value"] is None
+    assert reason_reset["value"] == ""
 
 
 def test_load_history_run_degrades_when_artifacts_are_missing(tmp_path):
@@ -863,7 +932,7 @@ def test_load_history_run_degrades_when_artifacts_are_missing(tmp_path):
     pipeline.store.paths("run-empty").root.mkdir(parents=True)
     evt = gr.SelectData(None, {"index": (0, 0), "value": "run-empty"})
 
-    run_id, card, topdown, disposition = load_history_run(
+    run_id, card, topdown, disposition, *form_resets = load_history_run(
         pipeline, [["run-empty"]], evt
     )
 
@@ -871,11 +940,45 @@ def test_load_history_run_degrades_when_artifacts_are_missing(tmp_path):
     assert "NO ASSESSMENT" in card["value"]
     assert topdown is None
     assert "No disposition recorded" in disposition["value"]
+    assert len(form_resets) == 4
 
     with pytest.raises(gr.Error, match="Select a run"):
         load_history_run(
             pipeline, [], gr.SelectData(None, {"index": (3, 0), "value": None})
         )
+
+
+@pytest.mark.parametrize(
+    ("policies_payload", "expected_line"),
+    [
+        # Result row missing policy_id defaults to '?', like report.py.
+        ({"specs": [], "results": [{"status": "PASS"}]}, "`PASS` ?"),
+        # Legacy bare list: the non-dict entry is skipped, the rest renders.
+        (["oops", {"policy_id": "p-1", "status": "FAIL"}], "`FAIL` p-1"),
+    ],
+    ids=["missing-keys", "non-dict-row"],
+)
+def test_load_history_run_tolerates_malformed_policies_like_report(
+    tmp_path, policies_payload, expected_line
+):
+    """The card degrades on a malformed policies.json exactly where report.py
+    already does, instead of KeyError/AttributeError-ing the whole tab."""
+    from ehs_spatial.app import load_history_run
+
+    pipeline = FakePipeline(tmp_path / "runs")
+    _write_history_run(pipeline.store, "run-a")
+    pipeline.store.paths("run-a").policies_json.write_text(
+        json.dumps(policies_payload), encoding="utf-8"
+    )
+    evt = gr.SelectData(None, {"index": (0, 0), "value": "run-a"})
+
+    run_id, card, *_ = load_history_run(pipeline, [["run-a"]], evt)
+
+    assert run_id == "run-a"
+    assert "### NEEDS_REVIEW" in card["value"]
+    assert "**Policies:**" in card["value"]
+    assert expected_line in card["value"]
+    assert "oops" not in card["value"]
 
 
 def test_save_disposition_confirm_writes_a_valid_review_layer(tmp_path):
@@ -932,6 +1035,57 @@ def test_save_disposition_override_requires_reason_and_records_status(tmp_path):
     assert review.reason == "fence moved"
 
 
+def test_save_disposition_rejects_override_to_the_machine_status(tmp_path):
+    from ehs_spatial.app import save_disposition
+
+    pipeline = FakePipeline(tmp_path / "runs")
+    _write_history_run(pipeline.store, "run-a", status="NEEDS_REVIEW")
+    paths = pipeline.store.paths("run-a")
+
+    with pytest.raises(gr.Error, match="matches the machine verdict"):
+        save_disposition(
+            pipeline, "run-a", "casey", "overridden", "NEEDS_REVIEW", "why"
+        )
+    assert not paths.review_json.exists()
+
+
+def test_save_disposition_rejects_runs_without_an_assessment(tmp_path):
+    """No machine verdict means nothing to confirm or override — and a save
+    must not recreate a deleted run directory as a ghost run."""
+    from ehs_spatial.app import save_disposition
+
+    pipeline = FakePipeline(tmp_path / "runs")
+    paths = pipeline.store.paths("run-partial")
+    paths.root.mkdir(parents=True)
+
+    with pytest.raises(gr.Error, match="no machine assessment"):
+        save_disposition(pipeline, "run-partial", "casey", "confirmed", None, "")
+    assert not paths.review_json.exists()
+
+    ghost = pipeline.store.paths("run-deleted")
+    with pytest.raises(gr.Error, match="no machine assessment"):
+        save_disposition(
+            pipeline, "run-deleted", "casey", "overridden", "PASS", "why"
+        )
+    assert not ghost.root.exists()
+
+
+def test_save_disposition_returns_refreshed_history_rows(tmp_path):
+    from ehs_spatial.app import HISTORY_HEADERS, save_disposition
+
+    pipeline = FakePipeline(tmp_path / "runs")
+    _write_history_run(pipeline.store, "run-a")
+
+    disposition_update, rows = save_disposition(
+        pipeline, "run-a", "casey", "confirmed", None, ""
+    )
+
+    assert "casey" in disposition_update["value"]
+    [row] = rows
+    assert row[0] == "run-a"
+    assert row[HISTORY_HEADERS.index("disposition")] == "confirmed"
+
+
 def test_build_app_wires_history_tab_components_and_events(tmp_path):
     from ehs_spatial.app import build_app
 
@@ -948,7 +1102,8 @@ def test_build_app_wires_history_tab_components_and_events(tmp_path):
         "operator",
         "tier",
         "status",
-        "distance_m",
+        "policies",
+        "distance",
         "disposition",
     ]
     [radio] = [
@@ -981,10 +1136,42 @@ def test_build_app_wires_history_tab_components_and_events(tmp_path):
     assert (buttons["Refresh history"], "click") in targets
     assert (buttons["Save disposition"], "click") in targets
     assert (table["id"], "select") in targets
-    # History events honour the single provider-pipeline queue lane.
-    assert {function.concurrency_id for function in demo.fns.values()} == {
-        "ehs-provider-pipeline"
+
+    dependencies = {
+        dependency.get("api_name"): dependency
+        for dependency in config["dependencies"]
     }
+    # Local History/disposition handlers get their own lane so they stay
+    # responsive while a provider analysis holds the provider lane.
+    local_lanes = {
+        function.api_name: function.concurrency_id
+        for function in demo.fns.values()
+        if function.api_name
+        in {
+            "list_history",
+            "list_history_on_load",
+            "load_history_run",
+            "save_disposition",
+            "load_run_evidence",
+        }
+    }
+    assert set(local_lanes.values()) == {"ehs-local-ui"}
+    assert len(local_lanes) == 5
+    # The table is populated on page load, not only via the Refresh button.
+    load_dependency = dependencies["list_history_on_load"]
+    assert {target[1] for target in load_dependency["targets"]} == {"load"}
+    assert load_dependency["outputs"] == [table["id"]]
+    # Selecting a row also resets the whole disposition form.
+    form_ids = {
+        component["id"]
+        for component in components
+        if component["type"] in {"radio", "dropdown"}
+        or component["props"].get("label") in {"Reviewer", "Reason"}
+    }
+    select_outputs = set(dependencies["load_history_run"]["outputs"])
+    assert form_ids <= select_outputs
+    # Saving a disposition refreshes the table so its columns never go stale.
+    assert table["id"] in dependencies["save_disposition"]["outputs"]
 
 
 def test_readme_links_each_provider_credential_source():
