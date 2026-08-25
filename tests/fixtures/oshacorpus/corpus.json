@@ -1,0 +1,2549 @@
+[
+  {
+    "citation": "1910.36(a)",
+    "text": "(a) Basic requirements. Exit routes must meet the following design and construction requirements:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.36(a)(1)",
+    "text": "(1) An exit route must be permanent. Each exit route must be a permanent part of the workplace.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.36(a)(2)",
+    "text": "(2) An exit must be separated by fire resistant materials. Construction materials used to separate an exit from other parts of the workplace must have a one-hour fire resistance-rating if the exit connects three or fewer stories and a two-hour fire resistance-rating if the exit connects four or more stories.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.36(a)(3)",
+    "text": "(3) Openings into an exit must be limited. An exit is permitted to have only those openings necessary to allow access to the exit from occupied areas of the workplace, or to the exit discharge. An opening into an exit must be protected by a self-closing fire door that remains closed or automatically closes in an emergency upon the sounding of a fire alarm or employee alarm system. Each fire door, including its frame and hardware, must be listed or approved by a nationally recognized testing laboratory. Section 1910.155(c)(3)(iv)(A) of this part defines \u201clisted\u201d and \u00a7 1910.7 of this part defines a \u201cnationally recognized testing laboratory.\u201d",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.36(b)(1)",
+    "text": "(b) The number of exit routes must be adequate\u2014(1) Two exit routes. At least two exit routes must be available in a workplace to permit prompt evacuation of employees and other building occupants during an emergency, except as allowed in paragraph (b)(3) of this section. The exit routes must be located as far away as practical from each other so that if one exit route is blocked by fire or smoke, employees can evacuate using the second exit route.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.36(b)(2)",
+    "text": "(2) More than two exit routes. More than two exit routes must be available in a workplace if the number of employees, the size of the building, its occupancy, or the arrangement of the workplace is such that all employees would not be able to evacuate safely during an emergency.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.36(b)(3)",
+    "text": "(3) A single exit route. A single exit route is permitted where the number of employees, the size of the building, its occupancy, or the arrangement of the workplace is such that all employees would be able to evacuate safely during an emergency.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.36(c)(1)",
+    "text": "(c) Exit discharge. (1) Each exit discharge must lead directly outside or to a street, walkway, refuge area, public way, or open space with access to the outside.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.36(c)(2)",
+    "text": "(2) The street, walkway, refuge area, public way, or open space to which an exit discharge leads must be large enough to accommodate the building occupants likely to use the exit route.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.36(c)(3)",
+    "text": "(3) Exit stairs that continue beyond the level on which the exit discharge is located must be interrupted at that level by doors, partitions, or other effective means that clearly indicate the direction of travel leading to the exit discharge.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.36(d)(1)",
+    "text": "(d) An exit door must be unlocked. (1) Employees must be able to open an exit route door from the inside at all times without keys, tools, or special knowledge. A device such as a panic bar that locks only from the outside is permitted on exit discharge doors.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.36(d)(2)",
+    "text": "(2) Exit route doors must be free of any device or alarm that could restrict emergency use of the exit route if the device or alarm fails.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.36(d)(3)",
+    "text": "(3) An exit route door may be locked from the inside only in mental, penal, or correctional facilities and then only if supervisory personnel are continuously on duty and the employer has a plan to remove occupants from the facility during an emergency.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.36(e)(1)",
+    "text": "(e) A side-hinged exit door must be used. (1) A side-hinged door must be used to connect any room to an exit route.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.36(e)(2)",
+    "text": "(2) The door that connects any room to an exit route must swing out in the direction of exit travel if the room is designed to be occupied by more than 50 people or if the room is a high hazard area (i.e., contains contents that are likely to burn with extreme rapidity or explode).",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.36(f)(1)",
+    "text": "(f) The capacity of an exit route must be adequate. (1) Exit routes must support the maximum permitted occupant load for each floor served.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.36(f)(2)",
+    "text": "(2) The capacity of an exit route may not decrease in the direction of exit route travel to the exit discharge.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.36(g)(1)",
+    "text": "(g) An exit route must meet minimum height and width requirements. (1) The ceiling of an exit route must be at least seven feet six inches (2.3 m) high. Any projection from the ceiling must not reach a point less than six feet eight inches (2.0 m) from the floor.",
+    "expected": "refuse",
+    "refuse_reason": "minimum ceiling height 2.3 m: vocabulary has max_height only, no minimum-height/headroom predicate"
+  },
+  {
+    "citation": "1910.36(g)(2)",
+    "text": "(2) An exit access must be at least 28 inches (71.1 cm) wide at all points. Where there is only one exit access leading to an exit or exit discharge, the width of the exit and exit discharge must be at least equal to the width of the exit access.",
+    "expected": "refuse",
+    "refuse_reason": "28-inch minimum width of a passage is a property of free space between obstructions, not a labeled subject-object separation"
+  },
+  {
+    "citation": "1910.36(g)(3)",
+    "text": "(3) The width of an exit route must be sufficient to accommodate the maximum permitted occupant load of each floor served by the exit route.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.36(g)(4)",
+    "text": "(4) Objects that project into the exit route must not reduce the width of the exit route to less than the minimum width requirements for exit routes.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.36(h)",
+    "text": "(h) An outdoor exit route is permitted. Each outdoor exit route must meet the minimum height and width requirements for indoor exit routes and must also meet the following requirements:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.36(h)(1)",
+    "text": "(1) The outdoor exit route must have guardrails to protect unenclosed sides if a fall hazard exists;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.36(h)(2)",
+    "text": "(2) The outdoor exit route must be covered if snow or ice is likely to accumulate along the route, unless the employer can demonstrate that any snow or ice accumulation will be removed before it presents a slipping hazard;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.36(h)(3)",
+    "text": "(3) The outdoor exit route must be reasonably straight and have smooth, solid, substantially level walkways; and",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.36(h)(4)",
+    "text": "(4) The outdoor exit route must not have a dead-end that is longer than 20 feet (6.2 m).",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.37(a)(1)",
+    "text": "(a) The danger to employees must be minimized. (1) Exit routes must be kept free of explosive or highly flammable furnishings or other decorations.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.37(a)(2)",
+    "text": "(2) Exit routes must be arranged so that employees will not have to travel toward a high hazard area, unless the path of travel is effectively shielded from the high hazard area by suitable partitions or other physical barriers.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.37(a)(3)",
+    "text": "(3) Exit routes must be free and unobstructed. No materials or equipment may be placed, either permanently or temporarily, within the exit route. The exit access must not go through a room that can be locked, such as a bathroom, to reach an exit or exit discharge, nor may it lead into a dead-end corridor. Stairs or a ramp must be provided where the exit route is not substantially level.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.37(a)(4)",
+    "text": "(4) Safeguards designed to protect employees during an emergency (e.g., sprinkler systems, alarm systems, fire doors, exit lighting) must be in proper working order at all times.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.37(b)(1)",
+    "text": "(b) Lighting and marking must be adequate and appropriate. (1) Each exit route must be adequately lighted so that an employee with normal vision can see along the exit route.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.37(b)(2)",
+    "text": "(2) Each exit must be clearly visible and marked by a sign reading \u201cExit.\u201d",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.37(b)(3)",
+    "text": "(3) Each exit route door must be free of decorations or signs that obscure the visibility of the exit route door.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.37(b)(4)",
+    "text": "(4) If the direction of travel to the exit or exit discharge is not immediately apparent, signs must be posted along the exit access indicating the direction of travel to the nearest exit and exit discharge. Additionally, the line-of-sight to an exit sign must clearly be visible at all times.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.37(b)(5)",
+    "text": "(5) Each doorway or passage along an exit access that could be mistaken for an exit must be marked \u201cNot an Exit\u201d or similar designation, or be identified by a sign indicating its actual use (e.g., closet).",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.37(b)(6)",
+    "text": "(6) Each exit sign must be illuminated to a surface value of at least five foot-candles (54 lux) by a reliable light source and be distinctive in color. Self-luminous or electroluminescent signs that have a minimum luminance surface value of at least .06 footlamberts (0.21 cd/m 2) are permitted.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.37(b)(7)",
+    "text": "(7) Each exit sign must have the word \u201cExit\u201d in plainly legible letters not less than six inches (15.2 cm) high, with the principal strokes of the letters in the word \u201cExit\u201d not less than three-fourths of an inch (1.9 cm) wide.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.37(c)",
+    "text": "(c) The fire retardant properties of paints or solutions must be maintained. Fire retardant paints or solutions must be renewed as often as necessary to maintain their fire retardant properties.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.37(d)(1)",
+    "text": "(d) Exit routes must be maintained during construction, repairs, or alterations. (1) During new construction, employees must not occupy a workplace until the exit routes required by this subpart are completed and ready for employee use for the portion of the workplace they occupy.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.37(d)(2)",
+    "text": "(2) During repairs or alterations, employees must not occupy a workplace unless the exit routes required by this subpart are available and existing fire protections are maintained, or until alternate fire protection is furnished that provides an equivalent level of safety.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.37(d)(3)",
+    "text": "(3) Employees must not be exposed to hazards of flammable or explosive substances or equipment used during construction, repairs, or alterations, that are beyond the normal permissible conditions in the workplace, or that would impede exiting the workplace.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.37(e)",
+    "text": "(e) An employee alarm system must be operable. Employers must install and maintain an operable employee alarm system that has a distinctive signal to warn employees of fire or other emergencies, unless employees can promptly see or smell a fire or other hazard in time to provide adequate warning to them. The employee alarm system must comply with \u00a7 1910.165.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(a)",
+    "text": "(a) Scope and application. The requirements of this section apply to the placement, use, maintenance, and testing of portable fire extinguishers provided for the use of employees. Paragraph (d) of this section does not apply to extinguishers provided for employee use on the outside of workplace buildings or structures. Where extinguishers are provided but are not intended for employee use and the employer has an emergency action plan and a fire prevention plan that meet the requirements of 29 CFR 1910.38 and 29 CFR 1910.39 respectively, then only the requirements of paragraphs (e) and (f) of this section apply.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(b)(1)",
+    "text": "(b) Exemptions. (1) Where the employer has established and implemented a written fire safety policy which requires the immediate and total evacuation of employees from the workplace upon the sounding of a fire alarm signal and which includes an emergency action plan and a fire prevention plan which meet the requirements of 29 CFR 1910.38 and 29 CFR 1910.39 respectively, and when extinguishers are not available in the workplace, the employer is exempt from all requirements of this section unless a specific standard in part 1910 requires that a portable fire extinguisher be provided.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(b)(2)",
+    "text": "(2) Where the employer has an emergency action plan meeting the requirements of \u00a7 1910.38 which designates certain employees to be the only employees authorized to use the available portable fire extinguishers, and which requires all other employees in the fire area to immediately evacuate the affected work area upon the sounding of the fire alarm, the employer is exempt from the distribution requirements in paragraph (d) of this section.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(c)(1)",
+    "text": "(c) General requirements. (1) The employer shall provide portable fire extinguishers and shall mount, locate and identify them so that they are readily accessible to employees without subjecting the employees to possible injury.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(c)(2)",
+    "text": "(2) Only approved portable fire extinguishers shall be used to meet the requirements of this section.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(c)(3)",
+    "text": "(3) The employer shall not provide or make available in the workplace portable fire extinguishers using carbon tetrachloride or chlorobromomethane extinguishing agents.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(c)(4)",
+    "text": "(4) The employer shall assure that portable fire extinguishers are maintained in a fully charged and operable condition and kept in their designated places at all times except during use.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(c)(5)",
+    "text": "(5) The employer shall remove from service all soldered or riveted shell self-generating soda acid or self-generating foam or gas cartridge water type portable fire extinguishers which are operated by inverting the extinguisher to rupture the cartridge or to initiate an uncontrollable pressure generating chemical reaction to expel the agent.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(d)(1)",
+    "text": "(d) Selection and distribution. (1) Portable fire extinguishers shall be provided for employee use and selected and distributed based on the classes of anticipated workplace fires and on the size and degree of hazard which would affect their use.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(d)(2)",
+    "text": "(2) The employer shall distribute portable fire extinguishers for use by employees on Class A fires so that the travel distance for employees to any extinguisher is 75 feet (22.9 m) or less.",
+    "expected": "refuse",
+    "refuse_reason": "75-foot limit is walking travel distance along a path, not the Euclidean separation the predicates measure"
+  },
+  {
+    "citation": "1910.157(d)(3)",
+    "text": "(3) The employer may use uniformly spaced standpipe systems or hose stations connected to a sprinkler system installed for emergency use by employees instead of Class A portable fire extinguishers, provided that such systems meet the respective requirements of \u00a7 1910.158 or \u00a7 1910.159, that they provide total coverage of the area to be protected, and that employees are trained at least annually in their use.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(d)(4)",
+    "text": "(4) The employer shall distribute portable fire extinguishers for use by employees on Class B fires so that the travel distance from the Class B hazard area to any extinguisher is 50 feet (15.2 m) or less.",
+    "expected": "refuse",
+    "refuse_reason": "50-foot Class B limit is travel distance along a path, and conditional on fire class besides"
+  },
+  {
+    "citation": "1910.157(d)(5)",
+    "text": "(5) The employer shall distribute portable fire extinguishers used for Class C hazards on the basis of the appropriate pattern for the existing Class A or Class B hazards.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(d)(6)",
+    "text": "(6) The employer shall distribute portable fire extinguishers or other containers of Class D extinguishing agent for use by employees so that the travel distance from the combustible metal working area to any extinguishing agent is 75 feet (22.9 m) or less. Portable fire extinguishers for Class D hazards are required in those combustible metal working areas where combustible metal powders, flakes, shavings, or similarly sized products are generated at least once every two weeks.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(e)(1)",
+    "text": "(e) Inspection, maintenance and testing. (1) The employer shall be responsible for the inspection, maintenance and testing of all portable fire extinguishers in the workplace.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(e)(2)",
+    "text": "(2) Portable extinguishers or hose used in lieu thereof under paragraph (d)(3) of this section shall be visually inspected monthly.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(e)(3)",
+    "text": "(3) The employer shall assure that portable fire extinguishers are subjected to an annual maintenance check. Stored pressure extinguishers do not require an internal examination. The employer shall record the annual maintenance date and retain this record for one year after the last entry or the life of the shell, whichever is less. The record shall be available to the Assistant Secretary upon request.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(e)(4)",
+    "text": "(4) The employer shall assure that stored pressure dry chemical extinguishers that require a 12-year hydrostatic test are emptied and subjected to applicable maintenance procedures every 6 years. Dry chemical extinguishers having non-refillable disposable containers are exempt from this requirement. When recharging or hydrostatic testing is performed, the 6-year requirement begins from that date.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(e)(5)",
+    "text": "(5) The employer shall assure that alternate equivalent protection is provided when portable fire extinguishers are removed from service for maintenance and recharging.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(1)",
+    "text": "(f) Hydrostatic testing. (1) The employer shall assure that hydrostatic testing is performed by trained persons with suitable testing equipment and facilities.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(2)",
+    "text": "(2) The employer shall assure that portable extinguishers are hydrostatically tested at the intervals listed in Table L-1 of this section, except under any of the following conditions:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(2)(i)",
+    "text": "(i) When the unit has been repaired by soldering, welding, brazing, or use of patching compounds;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(2)(ii)",
+    "text": "(ii) When the cylinder or shell threads are damaged;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(2)(iii)",
+    "text": "(iii) When there is corrosion that has caused pitting, including corrosion under removable name plate assemblies;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(2)(iv)",
+    "text": "(iv) When the extinguisher has been burned in a fire; or",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(2)(v)",
+    "text": "(v) When a calcium chloride extinguishing agent has been used in a stainless steel shell.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(3)",
+    "text": "(3) In addition to an external visual examination, the employer shall assure that an internal examination of cylinders and shells to be tested is made prior to the hydrostatic tests.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(4)",
+    "text": "(4) The employer shall assure that portable fire extinguishers are hydrostatically tested whenever they show new evidence of corrosion or mechanical injury, except under the conditions listed in paragraphs (f)(2)(i)-(v) of this section.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(5)",
+    "text": "(5) The employer shall assure that hydrostatic tests are performed on extinguisher hose assemblies which are equipped with a shut-off nozzle at the discharge end of the hose. The test interval shall be the same as specified for the extinguisher on which the hose is installed.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(6)",
+    "text": "(6) The employer shall assure that carbon dioxide hose assemblies with a shut-off nozzle are hydrostatically tested at 1,250 psi (8,620 kPa).",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(7)",
+    "text": "(7) The employer shall assure that dry chemical and dry powder hose assemblies with a shut-off nozzle are hydrostatically tested at 300 psi (2,070 kPa).",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(8)",
+    "text": "(8) Hose assemblies passing a hydrostatic test do not require any type of recording or stamping.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(9)",
+    "text": "(9) The employer shall assure that hose assemblies for carbon dioxide extinguishers that require a hydrostatic test are tested within a protective cage device.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(10)",
+    "text": "(10) The employer shall assure that carbon dioxide extinguishers and nitrogen or carbon dioxide cylinders used with wheeled extinguishers are tested every 5 years at 5/3 of the service pressure as stamped into the cylinder. Nitrogen cylinders which comply with 49 CFR 173.34(e)(15) may be hydrostatically tested every 10 years.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(11)",
+    "text": "(11) The employer shall assure that all stored pressure and Halon 1211 types of extinguishers are hydrostatically tested at the factory test pressure not to exceed two times the service pressure.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(12)",
+    "text": "(12) The employer shall assure that acceptable self-generating type soda acid and foam extinguishers are tested at 350 psi (2,410 kPa).",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(13)",
+    "text": "(13) Air or gas pressure may not be used for hydrostatic testing.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(14)",
+    "text": "(14) Extinguisher shells, cylinders, or cartridges which fail a hydrostatic pressure test, or which are not fit for testing shall be removed from service and from the workplace.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(15)(i)",
+    "text": "(15)(i) The equipment for testing compressed gas type cylinders shall be of the water jacket type. The equipment shall be provided with an expansion indicator which operates with an accuracy within one percent of the total expansion or .1cc (.1mL) of liquid.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(15)(ii)",
+    "text": "(ii) The equipment for testing non-compressed gas type cylinders shall consist of the following:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(15)(ii)(A)",
+    "text": "(A) A hydrostatic test pump, hand or power operated, capable of producing not less than 150 percent of the test pressure, which shall include appropriate check valves and fittings;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(15)(ii)(B)",
+    "text": "(B) A flexible connection for attachment to fittings to test through the extinguisher nozzle, test bonnet, or hose outlet, as is applicable; and",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(15)(ii)(C)",
+    "text": "(C) A protective cage or barrier for personal protection of the tester, designed to provide visual observation of the extinguisher under test.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(f)(16)",
+    "text": "(16) The employer shall maintain and provide upon request to the Assistant Secretary evidence that the required hydrostatic testing of fire extinguishers has been performed at the time intervals shown in Table L-1. Such evidence shall be in the form of a certification record which includes the date of the test, the signature of the person who performed the test and the serial number, or other identifier, of the fire extinguisher that was tested. Such records shall be kept until the extinguisher is hydrostatically retested at the time interval specified in Table L-1 or until the extinguisher is taken out of service, whichever comes first.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(g)(1)",
+    "text": "(g) Training and education. (1) Where the employer has provided portable fire extinguishers for employee use in the workplace, the employer shall also provide an educational program to familiarize employees with the general principles of fire extinguisher use and the hazards involved with incipient stage fire fighting.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(g)(2)",
+    "text": "(2) The employer shall provide the education required in paragraph (g)(1) of this section upon initial employment and at least annually thereafter.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(g)(3)",
+    "text": "(3) The employer shall provide employees who have been designated to use fire fighting equipment as part of an emergency action plan with training in the use of the appropriate equipment.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.157(g)(4)",
+    "text": "(4) The employer shall provide the training required in paragraph (g)(3) of this section upon initial assignment to the designated group of employees and at least annually thereafter.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.159(a)(1)",
+    "text": "(a) Scope and application. (1) The requirements of this section apply to all automatic sprinkler systems installed to meet a particular OSHA standard.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.159(a)(2)",
+    "text": "(2) For automatic sprinkler systems used to meet OSHA requirements and installed prior to the effective date of this standard, compliance with the National Fire Protection Association (NFPA) or the National Board of Fire Underwriters (NBFU) standard in effect at the time of the system's installation will be acceptable as compliance with this section.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.159(b)",
+    "text": "(b) Exemptions. Automatic sprinkler systems installed in workplaces, but not required by OSHA, are exempt from the requirements of this section.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.159(c)(1)(i)",
+    "text": "(c) General requirements\u2014(1) Design. (i) All automatic sprinkler designs used to comply with this standard shall provide the necessary discharge patterns, densities, and water flow characteristics for complete coverage in a particular workplace or zoned subdivision of the workplace.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.159(c)(1)(ii)",
+    "text": "(ii) The employer shall assure that only approved equipment and devices are used in the design and installation of automatic sprinkler systems used to comply with this standard.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.159(c)(2)",
+    "text": "(2) Maintenance. The employer shall properly maintain an automatic sprinkler system installed to comply with this section. The employer shall assure that a main drain flow test is performed on each system annually. The inspector's test valve shall be opened at least every two years to assure that the sprinkler system operates properly.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.159(c)(3)",
+    "text": "(3) Acceptance tests. The employer shall conduct proper acceptance tests on sprinkler systems installed for employee protection after January 1, 1981, and record the dates of such tests. Proper acceptance tests include the following:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.159(c)(3)(i)",
+    "text": "(i) Flushing of underground connections;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.159(c)(3)(ii)",
+    "text": "(ii) Hydrostatic tests of piping in system;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.159(c)(3)(iii)",
+    "text": "(iii) Air tests in dry-pipe systems;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.159(c)(3)(iv)",
+    "text": "(iv) Dry-pipe valve operation; and",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.159(c)(3)(v)",
+    "text": "(v) Test of drainage facilities.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.159(c)(4)",
+    "text": "(4) Water supplies. The employer shall assure that every automatic sprinkler system is provided with at least one automatic water supply capable of providing design water flow for at least 30 minutes. An auxiliary water supply or equivalent protection shall be provided when the automatic water supply is out of service, except for systems of 20 or fewer sprinklers.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.159(c)(5)",
+    "text": "(5) Hose connections for fire fighting use. The employer may attach hose connections for fire fighting use to wet pipe sprinkler systems provided that the water supply satisfies the combined design demand for sprinklers and standpipes.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.159(c)(6)",
+    "text": "(6) Protection of piping. The employer shall assure that automatic sprinkler system piping is protected against freezing and exterior surface corrosion.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.159(c)(7)",
+    "text": "(7) Drainage. The employer shall assure that all dry sprinkler pipes and fittings are installed so that the system may be totally drained.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.159(c)(8)(i)",
+    "text": "(8) Sprinklers. (i) The employer shall assure that only approved sprinklers are used on systems.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.159(c)(8)(ii)",
+    "text": "(ii) The employer may not use older style sprinklers to replace standard sprinklers without a complete engineering review of the altered part of the system.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.159(c)(8)(iii)",
+    "text": "(iii) The employer shall assure that sprinklers are protected from mechanical damage.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.159(c)(9)",
+    "text": "(9) Sprinkler alarms. On all sprinkler systems having more than twenty (20) sprinklers, the employer shall assure that a local waterflow alarm is provided which sounds an audible signal on the premises upon water flow through the system equal to the flow from a single sprinkler.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.159(c)(10)",
+    "text": "(10) Sprinkler spacing. The employer shall assure that sprinklers are spaced to provide a maximum protection area per sprinkler, a minimum of interference to the discharge pattern by building or structural members or building contents and suitable sensitivity to possible fire hazards. The minimum vertical clearance between sprinklers and material below shall be 18 inches (45.7 cm).",
+    "expected": "refuse",
+    "refuse_reason": "18-inch sprinkler clearance is vertical, between a head above and material below; separation predicates measure plan-space (XY footprint) gaps"
+  },
+  {
+    "citation": "1910.159(c)(11)",
+    "text": "(11) Hydraulically designed systems. The employer shall assure that hydraulically designed automatic sprinkler systems or portions thereof are identified and that the location, number of sprinklers in the hydraulically designed section, and the basis of the design is indicated. Central records may be used in lieu of signs at sprinkler valves provided the records are available for inspection and copying by the Assistant Secretary.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.176(a)",
+    "text": "(a) Use of mechanical equipment. Where mechanical handling equipment is used, sufficient safe clearances shall be allowed for aisles, at loading docks, through doorways and wherever turns or passage must be made. Aisles and passageways shall be kept clear and in good repair, with no obstruction across or in aisles that could create a hazard. Permanent aisles and passageways shall be appropriately marked.",
+    "expected": "refuse",
+    "refuse_reason": "'sufficient safe clearances' carries no numeric threshold; nothing to compile without inventing a number"
+  },
+  {
+    "citation": "1910.176(b)",
+    "text": "(b) Secure storage. Storage of material shall not create a hazard. Bags, containers, bundles, etc., stored in tiers shall be stacked, blocked, interlocked and limited in height so that they are stable and secure against sliding or collapse.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.176(c)",
+    "text": "(c) Housekeeping. Storage areas shall be kept free from accumulation of materials that constitute hazards from tripping, fire, explosion, or pest harborage. Vegetation control will be exercised when necessary.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.176(d)",
+    "text": "(d) [Reserved]",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.176(e)",
+    "text": "(e) Clearance limits. Clearance signs to warn of clearance limits shall be provided.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.176(f)",
+    "text": "(f) Rolling railroad cars. Derail and/or bumper blocks shall be provided on spur railroad tracks where a rolling car could contact other cars being worked, enter a building, work or traffic area.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.176(g)",
+    "text": "(g) Guarding. Covers and/or guardrails shall be provided to protect personnel from the hazards of open pits, tanks, vats, ditches, etc.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.212(a)(1)",
+    "text": "(a) Machine guarding\u2014(1) Types of guarding. One or more methods of machine guarding shall be provided to protect the operator and other employees in the machine area from hazards such as those created by point of operation, ingoing nip points, rotating parts, flying chips and sparks. Examples of guarding methods are\u2014barrier guards, two-hand tripping devices, electronic safety devices, etc.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.212(a)(2)",
+    "text": "(2) General requirements for machine guards. Guards shall be affixed to the machine where possible and secured elsewhere if for any reason attachment to the machine is not possible. The guard shall be such that it does not offer an accident hazard in itself.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.212(a)(3)(i)",
+    "text": "(3) Point of operation guarding. (i) Point of operation is the area on a machine where work is actually performed upon the material being processed.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.212(a)(3)(ii)",
+    "text": "(ii) The point of operation of machines whose operation exposes an employee to injury, shall be guarded. The guarding device shall be in conformity with any appropriate standards therefor, or, in the absence of applicable specific standards, shall be so designed and constructed as to prevent the operator from having any part of his body in the danger zone during the operating cycle.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.212(a)(3)(iii)",
+    "text": "(iii) Special handtools for placing and removing material shall be such as to permit easy handling of material without the operator placing a hand in the danger zone. Such tools shall not be in lieu of other guarding required by this section, but can only be used to supplement protection provided.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.212(a)(3)(iv)",
+    "text": "(iv) The following are some of the machines which usually require point of operation guarding:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.212(a)(3)(iv)(a)",
+    "text": "(a) Guillotine cutters.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.212(a)(3)(iv)(b)",
+    "text": "(b) Shears.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.212(a)(3)(iv)(c)",
+    "text": "(c) Alligator shears.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.212(a)(3)(iv)(d)",
+    "text": "(d) Power presses.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.212(a)(3)(iv)(e)",
+    "text": "(e) Milling machines.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.212(a)(3)(iv)(f)",
+    "text": "(f) Power saws.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.212(a)(3)(iv)(g)",
+    "text": "(g) Jointers.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.212(a)(3)(iv)(h)",
+    "text": "(h) Portable power tools.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.212(a)(3)(iv)(i)",
+    "text": "(i) Forming rolls and calenders.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.212(a)(4)",
+    "text": "(4) Barrels, containers, and drums. Revolving drums, barrels, and containers shall be guarded by an enclosure which is interlocked with the drive mechanism, so that the barrel, drum, or container cannot revolve unless the guard enclosure is in place.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.212(a)(5)",
+    "text": "(5) Exposure of blades. When the periphery of the blades of a fan is less than seven (7) feet above the floor or working level, the blades shall be guarded. The guard shall have openings no larger than one-half ( 1/2) inch.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.212(b)",
+    "text": "(b) Anchoring fixed machinery. Machines designed for a fixed location shall be securely anchored to prevent walking or moving.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(a)(1)",
+    "text": "(a) General requirements\u2014(1) Flammable mixture. Mixtures of fuel gases and air or oxygen may be explosive and shall be guarded against. No device or attachment facilitating or permitting mixtures of air or oxygen with flammable gases prior to consumption, except at the burner or in a standard torch, shall be allowed unless approved for the purpose.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(a)(2)",
+    "text": "(2) Maximum pressure. Under no condition shall acetylene be generated, piped (except in approved cylinder manifolds) or utilized at a pressure in excess of 15 psig (103 kPa gauge pressure) or 30 psia (206 kPa absolute). The 30 psia (206 kPa absolute) limit is intended to prevent unsafe use of acetylene in pressurized chambers such as caissons, underground excavations or tunnel construction.) This requirement is not intended to apply to storage of acetylene dissolved in a suitable solvent in cylinders manufactured and maintained according to U.S. Department of Transportation requirements, or to acetylene for chemical use. The use of liquid acetylene shall be prohibited.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(a)(3)",
+    "text": "(3) Apparatus. Only approved apparatus such as torches, regulators or pressure-reducing valves, acetylene generators, and manifolds shall be used.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(a)(4)",
+    "text": "(4) Personnel. Workmen in charge of the oxygen or fuel-gas supply equipment, including generators, and oxygen or fuel-gas distribution piping systems shall be instructed and judged competent by their employers for this important work before being left in charge. Rules and instructions covering the operation and maintenance of oxygen or fuel-gas supply equipment including generators, and oxygen or fuel-gas distribution piping systems shall be readily available.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(1)(i)",
+    "text": "(b) Cylinders and containers\u2014(1) Approval and marking. (i) All portable cylinders used for the storage and shipment of compressed gases shall be constructed and maintained in accordance with the regulations of the U.S. Department of Transportation, 49 CFR parts 171-179.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(1)(ii)",
+    "text": "(ii) Compressed gas cylinders shall be legibly marked, for the purpose of identifying the gas content, with either the chemical or the trade name of the gas. Such marking shall be by means of stenciling, stamping, or labeling, and shall not be readily removable. Whenever practical, the marking shall be located on the shoulder of the cylinder.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(1)(iii)",
+    "text": "(iii) Compressed gas cylinders shall be equipped with connections complying with the American National Standard Compressed Gas Cylinder Valve Outlet and Inlet Connections, ANSI B57.1\u20141965, which is incorporated by reference as specified in \u00a7 1910.6.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(1)(iv)",
+    "text": "(iv) All cylinders with a water weight capacity of over 30 pounds (13.6 kg) shall be equipped with means of connecting a valve protection cap or with a collar or recess to protect the valve.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(2)(i)",
+    "text": "(2) Storage of cylinders\u2014general. (i) Cylinders shall be kept away from radiators and other sources of heat.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(2)(ii)",
+    "text": "(ii) Inside of buildings, cylinders shall be stored in a well-protected, well-ventilated, dry location, at least 20 feet (6.1 m) from highly combustible materials such as oil or excelsior. Cylinders should be stored in definitely assigned places away from elevators, stairs, or gangways. Assigned storage spaces shall be located where cylinders will not be knocked over or damaged by passing or falling objects, or subject to tampering by unauthorized persons. Cylinders shall not be kept in unventilated enclosures such as lockers and cupboards.",
+    "expected": "compile",
+    "expected_predicate": "min_separation",
+    "expected_threshold": 6.1,
+    "expected_unit": "m",
+    "note": "cylinders at least 20 feet (6.1 m) from highly combustible materials: plain Euclidean floor-plan separation"
+  },
+  {
+    "citation": "1910.253(b)(2)(iii)",
+    "text": "(iii) Empty cylinders shall have their valves closed.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(2)(iv)",
+    "text": "(iv) Valve protection caps, where cylinder is designed to accept a cap, shall always be in place, hand-tight, except when cylinders are in use or connected for use.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(3)",
+    "text": "(3) Fuel-gas cylinder storage. Inside a building, cylinders, except those in actual use or attached ready for use, shall be limited to a total gas capacity of 2,000 cubic feet (56 m 3) or 300 pounds (135.9 kg) of liquefied petroleum gas.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(3)(i)",
+    "text": "(i) For storage in excess of 2,000 cubic feet (56 m 3) total gas capacity of cylinders or 300 (135.9 kg) pounds of liquefied petroleum gas, a separate room or compartment conforming to the requirements specified in paragraphs (f)(6)(i)(H) and (f)(6)(i)(I) of this section shall be provided, or cylinders shall be kept outside or in a special building. Special buildings, rooms or compartments shall have no open flame for heating or lighting and shall be well ventilated. They may also be used for storage of calcium carbide in quantities not to exceed 600 (271.8 kg) pounds, when contained in metal containers complying with paragraphs (g)(1)(i) and (g)(1)(ii) of this section.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(3)(ii)",
+    "text": "(ii) Acetylene cylinders shall be stored valve end up.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(4)(i)",
+    "text": "(4) Oxygen storage. (i) Oxygen cylinders shall not be stored near highly combustible material, especially oil and grease; or near reserve stocks of carbide and acetylene or other fuel-gas cylinders, or near any other substance likely to cause or accelerate fire; or in an acetylene generator compartment.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(4)(ii)",
+    "text": "(ii) Oxygen cylinders stored in outside generator houses shall be separated from the generator or carbide storage rooms by a noncombustible partition having a fire-resistance rating of at least 1 hour. This partition shall be without openings and shall be gastight.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(4)(iii)",
+    "text": "(iii) Oxygen cylinders in storage shall be separated from fuel-gas cylinders or combustible materials (especially oil or grease), a minimum distance of 20 feet (6.1 m) or by a noncombustible barrier at least 5 feet (1.5 m) high having a fire-resistance rating of at least one-half hour.",
+    "expected": "refuse",
+    "refuse_reason": "20 ft separation OR a rated barrier: an alternative-compliance disjunction; compiling only the distance arm would raise false violations where a barrier exists"
+  },
+  {
+    "citation": "1910.253(b)(4)(iv)",
+    "text": "(iv) Where a liquid oxygen system is to be used to supply gaseous oxygen for welding or cutting and the system has a storage capacity of more than 13,000 cubic feet (364 m 3) of oxygen (measured at 14.7 psia (101 kPa) and 70 \u00b0F (21.1 \u00b0C)), connected in service or ready for service, or more than 25,000 cubic feet (700 m 3) of oxygen (measured at 14.7 psia (101 kPa) and 70 \u00b0F (21.1 \u00b0C)), including unconnected reserves on hand at the site, it shall comply with the provisions of the Standard for Bulk Oxygen Systems at Consumer Sites, NFPA No. 566\u20141965, which is incorporated by reference as specified in \u00a7 1910.6.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(i)",
+    "text": "(5) Operating procedures. (i) Cylinders, cylinder valves, couplings, regulators, hose, and apparatus shall be kept free from oily or greasy substances. Oxygen cylinders or apparatus shall not be handled with oily hands or gloves. A jet of oxygen must never be permitted to strike an oily surface, greasy clothes, or enter a fuel oil or other storage tank.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(ii)(A)",
+    "text": "(ii)(A) When transporting cylinders by a crane or derrick, a cradle, boat, or suitable platform shall be used. Slings or electric magnets shall not be used for this purpose. Valve-protection caps, where cylinder is designed to accept a cap, shall always be in place.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(ii)(B)",
+    "text": "(B) Cylinders shall not be dropped or struck or permitted to strike each other violently.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(ii)(C)",
+    "text": "(C) Valve-protection caps shall not be used for lifting cylinders from one vertical position to another. Bars shall not be used under valves or valve-protection caps to pry cylinders loose when frozen to the ground or otherwise fixed; the use of warm (not boiling) water is recommended. Valve-protection caps are designed to protect cylinder valves from damage.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(ii)(D)",
+    "text": "(D) Unless cylinders are secured on a special truck, regulators shall be removed and valve-protection caps, when provided for, shall be put in place before cylinders are moved.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(ii)(E)",
+    "text": "(E) Cylinders not having fixed hand wheels shall have keys, handles, or nonadjustable wrenches on valve stems while these cylinders are in service. In multiple cylinder installations only one key or handle is required for each manifold.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(ii)(F)",
+    "text": "(F) Cylinder valves shall be closed before moving cylinders.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(ii)(G)",
+    "text": "(G) Cylinder valves shall be closed when work is finished.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(ii)(H)",
+    "text": "(H) Valves of empty cylinders shall be closed.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(ii)(I)",
+    "text": "(I) Cylinders shall be kept far enough away from the actual welding or cutting operation so that sparks, hot slag, or flame will not reach them, or fire-resistant shields shall be provided.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(ii)(J)",
+    "text": "(J) Cylinders shall not be placed where they might become part of an electric circuit. Contacts with third rails, trolley wires, etc., shall be avoided. Cylinders shall be kept away from radiators, piping systems, layout tables, etc., that may be used for grounding electric circuits such as for arc welding machines. Any practice such as the tapping of an electrode against a cylinder to strike an arc shall be prohibited.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(ii)(K)",
+    "text": "(K) Cylinders shall never be used as rollers or supports, whether full or empty.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(ii)(L)",
+    "text": "(L) The numbers and markings stamped into cylinders shall not be tampered with.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(ii)(M)",
+    "text": "(M) No person, other than the gas supplier, shall attempt to mix gases in a cylinder. No one, except the owner of the cylinder or person authorized by him, shall refill a cylinder.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(ii)(N)",
+    "text": "(N) No one shall tamper with safety devices in cylinders or valves.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(ii)(O)",
+    "text": "(O) Cylinders shall not be dropped or otherwise roughly handled.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(ii)(P)",
+    "text": "(P) Unless connected to a manifold, oxygen from a cylinder shall not be used without first attaching an oxygen regulator to the cylinder valve. Before connecting the regulator to the cylinder valve, the valve shall be opened slightly for an instant and then closed. Always stand to one side of the outlet when opening the cylinder valve.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(ii)(Q)",
+    "text": "(Q) A hammer or wrench shall not be used to open cylinder valves. If valves cannot be opened by hand, the supplier shall be notified.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(ii)(R)(1)",
+    "text": "(R)(1) Cylinder valves shall not be tampered with nor should any attempt be made to repair them. If trouble is experienced, the supplier should be sent a report promptly indicating the character of the trouble and the cylinder's serial number. Supplier's instructions as to its disposition shall be followed.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(ii)(R)(2)",
+    "text": "(2) Complete removal of the stem from a diaphragm-type cylinder valve shall be avoided.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(iii)(A)",
+    "text": "(iii)(A) Fuel-gas cylinders shall be placed with valve end up whenever they are in use. Liquefied gases shall be stored and shipped with the valve end up.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(iii)(B)",
+    "text": "(B) Cylinders shall be handled carefully. Rough handling, knocks, or falls are liable to damage the cylinder, valve or safety devices and cause leakage.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(iii)(C)",
+    "text": "(C) Before connecting a regulator to a cylinder valve, the valve shall be opened slightly and closed immediately. The valve shall be opened while standing to one side of the outlet; never in front of it. Never crack a fuel-gas cylinder valve near other welding work or near sparks, flame, or other possible sources of ignition.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(iii)(D)",
+    "text": "(D) Before a regulator is removed from a cylinder valve, the cylinder valve shall be closed and the gas released from the regulator.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(iii)(E)",
+    "text": "(E) Nothing shall be placed on top of an acetylene cylinder when in use which may damage the safety device or interfere with the quick closing of the valve.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(iii)(F)",
+    "text": "(F) If cylinders are found to have leaky valves or fittings which cannot be stopped by closing of the valve, the cylinders shall be taken outdoors away from sources of ignition and slowly emptied.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(iii)(G)",
+    "text": "(G) A warning should be placed near cylinders having leaking fuse plugs or other leaking safety devices not to approach them with a lighted cigarette or other source of ignition. Such cylinders should be plainly tagged; the supplier should be promptly notified and his instructions followed as to their return.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(iii)(H)",
+    "text": "(H) Safety devices shall not be tampered with.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(iii)(I)",
+    "text": "(I) Fuel-gas shall never be used from cylinders through torches or other devices equipped with shutoff valves without reducing the pressure through a suitable regulator attached to the cylinder valve or manifold.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(iii)(J)",
+    "text": "(J) The cylinder valve shall always be opened slowly.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(iii)(K)",
+    "text": "(K) An acetylene cylinder valve shall not be opened more than one and one-half turns of the spindle, and preferably no more than three-fourths of a turn.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(b)(5)(iii)(L)",
+    "text": "(L) Where a special wrench is required it shall be left in position on the stem of the valve while the cylinder is in use so that the fuel-gas flow can be quickly turned off in case of emergency. In the case of manifolded or coupled cylinders at least one such wrench shall always be available for immediate use.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(1)(i)",
+    "text": "(c) Manifolding of cylinders\u2014(1) Fuel-gas manifolds. (i) Manifolds shall be approved either separately for each component part or as an assembled unit.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(1)(ii)",
+    "text": "(ii) Except as provided in paragraph (c)(1)(iii) of this section fuel-gas cylinders connected to one manifold inside a building shall be limited to a total capacity not exceeding 300 pounds (135.9 kg) of liquefied petroleum gas or 3,000 cubic feet (84 m 3) of other fuel-gas. More than one such manifold with connected cylinders may be located in the same room provided the manifolds are at least 50 feet (15 m) apart or separated by a noncombustible barrier at least 5 feet (1.5 m) high having a fire-resistance rating of at least one-half hour.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(1)(iii)",
+    "text": "(iii) Fuel-gas cylinders connected to one manifold having an aggregate capacity exceeding 300 pounds (135.9 kg) of liquefied petroleum gas or 3,000 cubic feet (84 m 3) of other fuel-gas shall be located outdoors, or in a separate building or room constructed in accordance with paragraphs (f)(6)(i)(H) and (f)(6)(i)(I) of this section.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(1)(iv)",
+    "text": "(iv) Separate manifold buildings or rooms may also be used for the storage of drums of calcium carbide and cylinders containing fuel gases as provided in paragraph (b)(3) of this section. Such buildings or rooms shall have no open flames for heating or lighting and shall be well-ventilated.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(1)(v)",
+    "text": "(v) High-pressure fuel-gas manifolds shall be provided with approved pressure regulating devices.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(2)",
+    "text": "(2) High-pressure oxygen manifolds (for use with cylinders having a Department of Transportation service pressure above 200 psig (1.36 MPa)). (i) Manifolds shall be approved either separately for each component part or as an assembled unit.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(2)(ii)",
+    "text": "(ii) Oxygen manifolds shall not be located in an acetylene generator room. Oxygen manifolds shall be separated from fuel-gas cylinders or combustible materials (especially oil or grease), a minimum distance of 20 feet (6.1 m) or by a noncombustible barrier at least 5 feet (1.5 m) high having a fire-resistance rating of at least one-half hour.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(2)(iii)",
+    "text": "(iii) Except as provided in paragraph (c)(2)(iv) of this section, oxygen cylinders connected to one manifold shall be limited to a total gas capacity of 6,000 cubic feet (168 m 3). More than one such manifold with connected cylinders may be located in the same room provided the manifolds are at least 50 feet (15 m) apart or separated by a noncombustible barrier at least 5 feet (1.5 m) high having a fire-resistance rating of at least one-half hour.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(2)(iv)",
+    "text": "(iv) An oxygen manifold, to which cylinders having an aggregate capacity of more than 6,000 cubic feet (168 m 3) of oxygen are connected, should be located outdoors or in a separate noncombustible building. Such a manifold, if located inside a building having other occupancy, shall be located in a separate room of noncombustible construction having a fire-resistance rating of at least one-half hour or in an area with no combustible material within 20 feet (6.1 m) of the manifold.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(2)(v)",
+    "text": "(v) An oxygen manifold or oxygen bulk supply system which has storage capacity of more than 13,000 cubic feet (364 m 3) of oxygen (measured at 14.7 psia (101 kPa) and 70 \u00b0F (21.1 \u00b0C)), connected in service or ready for service, or more than 25,000 cubic feet (700 m 3) of oxygen (measured at 14.7 psia (101 kPa) and 70 \u00b0F (21.1 \u00b0C)), including unconnected reserves on hand at the site, shall comply with the provisions of the Standard for Bulk Oxygen Systems at Consumer Sites, NFPA No. 566-1965.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(2)(vi)",
+    "text": "(vi) High-pressure oxygen manifolds shall be provided with approved pressure-regulating devices.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(3)",
+    "text": "(3) Low-pressure oxygen manifolds (for use with cylinders having a Department of Transportation service pressure not exceeding 200 psig (1.36 MPa)). (i) Manifolds shall be of substantial construction suitable for use with oxygen at a pressure of 250 psig (1.7 MPa). They shall have a minimum bursting pressure of 1,000 psig (6.8 MPa) and shall be protected by a safety relief device which will relieve at a maximum pressure of 500 psig (3.4 MPa). DOT-4L200 cylinders have safety devices which relieve at a maximum pressure of 250 psig (1.7 MPa) (or 235 psig (1.6 MPa) if vacuum insulation is used).",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(3)(ii)",
+    "text": "(ii) Hose and hose connections subject to cylinder pressure shall comply with paragraph (e)(5) of this section. Hose shall have a minimum bursting pressure of 1,000 psig (6.8 MPa).",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(3)(iii)",
+    "text": "(iii) The assembled manifold including leads shall be tested and proven gas-tight at a pressure of 300 psig (2.04 MPa). The fluid used for testing oxygen manifolds shall be oil-free and not combustible.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(3)(iv)",
+    "text": "(iv) The location of manifolds shall comply with paragraphs (c)(2)(ii), (c)(2)(iii), (c)(2)(iv), and (c)(2)(v) of this section.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(3)(v)",
+    "text": "(v) The following sign shall be conspicuously posted at each manifold:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(4)(i)",
+    "text": "(4) Portable outlet headers. (i) Portable outlet headers shall not be used indoors except for temporary service where the conditions preclude a direct supply from outlets located on the service piping system.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(4)(ii)",
+    "text": "(ii) Each outlet on the service piping from which oxygen or fuel-gas is withdrawn to supply a portable outlet header shall be equipped with a readily accessible shutoff valve.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(4)(iii)",
+    "text": "(iii) Hose and hose connections used for connecting the portable outlet header to the service piping shall comply with paragraph (e)(5) of this section.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(4)(iv)",
+    "text": "(iv) Master shutoff valves for both oxygen and fuel-gas shall be provided at the entry end of the portable outlet header.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(4)(v)",
+    "text": "(v) Portable outlet headers for fuel-gas service shall be provided with an approved hydraulic back-pressure valve installed at the inlet and preceding the service outlets, unless an approved pressure-reducing regulator, an approved back-flow check valve, or an approved hydraulic back-pressure valve is installed at each outlet. Outlets provided on headers for oxygen service may be fitted for use with pressure-reducing regulators or for direct hose connection.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(4)(vi)",
+    "text": "(vi) Each service outlet on portable outlet headers shall be provided with a valve assembly that includes a detachable outlet seal cap, chained or otherwise attached to the body of the valve.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(4)(vii)",
+    "text": "(vii) Materials and fabrication procedures for portable outlet headers shall comply with paragraphs (d)(1), (d)(2), and (d)(5) of this section.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(4)(viii)",
+    "text": "(viii) Portable outlet headers shall be provided with frames which will support the equipment securely in the correct operating position and protect them from damage during handling and operation.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(5)(i)",
+    "text": "(5) Manifold operation procedures. (i) Cylinder manifolds shall be installed under the supervision of someone familiar with the proper practices with reference to their construction and use.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(5)(ii)",
+    "text": "(ii) All manifolds and parts used in methods of manifolding shall be used only for the gas or gases for which they are approved.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(5)(iii)",
+    "text": "(iii) When acetylene cylinders are coupled, approved flash arresters shall be installed between each cylinder and the coupler block. For outdoor use only, and when the number of cylinders coupled does not exceed three, one flash arrester installed between the coupler block and regulator is acceptable.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(5)(iv)",
+    "text": "(iv) The aggregate capacity of fuel-gas cylinders connected to a portable manifold inside a building shall not exceed 3,000 cubic feet (84 m 3) of gas.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(5)(v)",
+    "text": "(v) Acetylene and liquefied fuel-gas cylinders shall be manifolded in a vertical position.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(c)(5)(vi)",
+    "text": "(vi) The pressure in the gas cylinders connected to and discharged simultaneously through a common manifold shall be approximately equal.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(1)(i)(A)",
+    "text": "(d) Service piping systems\u2014(1) Materials and design. (i)(A) Piping and fittings shall comply with section 2, Industrial Gas and Air Piping Systems, of the American National Standard Code for Pressure Piping ANSI B31.1, 1967, which is incorporated by reference as specified in \u00a7 1910.6, insofar as it does not conflict with paragraphs (d)(1)(i)(A)(1) and (d)(1)(i)(A)(2) of this section:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(1)(i)(A)(1)",
+    "text": "(1) Pipe shall be at least Schedule 40 and fittings shall be at least standard weight in sizes up to and including 6-inch nominal.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(1)(i)(A)(2)",
+    "text": "(2) Copper tubing shall be Types K or L in accordance with the Standard Specification for Seamless Copper Water Tube, ASTM B88-66a, which is incorporated by reference as specified in \u00a7 1910.6.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(1)(i)(B)",
+    "text": "(B) Piping shall be steel, wrought iron, brass or copper pipe, or seamless copper, brass or stainless steel tubing, except as provided in paragraphs (d)(1)(ii) and (d)(1)(iii) of this section.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(1)(ii)(A)",
+    "text": "(ii)(A) Oxygen piping and fittings at pressures in excess of 700 psi (4.8 MPa), shall be stainless steel or copper alloys.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(1)(ii)(B)",
+    "text": "(B) Hose connections and hose complying with paragraph (e)(5) of this section may be used to connect the outlet of a manifold pressure regulator to piping providing the working pressure of the piping is 250 psi (1.7 MPa) or less and the length of the hose does not exceed 5 feet (1.5 m). Hose shall have a minimum bursting pressure of 1,000 psig (6.8 MPa).",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(1)(ii)(C)",
+    "text": "(C) When oxygen is supplied to a service piping system from a low-pressure oxygen manifold without an intervening pressure regulating device, the piping system shall have a minimum design pressure of 250 psig (1.7 MPa). A pressure regulating device shall be used at each station outlet when the connected equipment is for use at pressures less than 250 psig (1.7 MPa).",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(1)(iii)(A)",
+    "text": "(iii)(A) Piping for acetylene or acetylenic compounds shall be steel or wrought iron.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(1)(iii)(B)",
+    "text": "(B) Unalloyed copper shall not be used for acetylene or acetylenic compounds except in listed equipment.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(2)(i)",
+    "text": "(2) Piping joints. (i) Joints in steel or wrought iron piping shall be welded, threaded or flanged. Fittings, such as ells, tees, couplings, and unions, may be rolled, forged or cast steel, malleable iron or nodular iron. Gray or white cast iron fittings are prohibited.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(2)(ii)",
+    "text": "(ii) Joints in brass or copper pipe shall be welded, brazed, threaded, or flanged. If of the socket type, they shall be brazed with silver-brazing alloy or similar high melting point (not less than 800 \u00b0F (427 \u00b0C)) filler metal.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(2)(iii)",
+    "text": "(iii) Joints in seamless copper, brass, or stainless steel tubing shall be approved gas tubing fittings or the joints shall be brazed. If of the socket type, they shall be brazed with silver-brazing alloy or similar high melting point (not less than 800 \u00b0F (427 \u00b0C)) filler metal.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(3)(i)",
+    "text": "(3) Installation. (i) Distribution lines shall be installed and maintained in a safe operating condition.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(3)(ii)",
+    "text": "(ii) All piping shall be run as directly as practicable, protected against physical damage, proper allowance being made for expansion and contraction, jarring and vibration. Pipe laid underground in earth shall be located below the frost line and protected against corrosion. After assembly, piping shall be thoroughly blown out with air, nitrogen, or carbon dioxide to remove foreign materials. For oxygen piping, only oil-free air, oil-free nitrogen, or oil-free carbon dioxide shall be used.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(3)(iii)",
+    "text": "(iii) Only piping which has been welded or brazed shall be installed in tunnels, trenches or ducts. Shutoff valves shall be located outside such conduits. Oxygen piping may be placed in the same tunnel, trench or duct with fuel-gas pipelines, provided there is good natural or forced ventilation.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(3)(iv)",
+    "text": "(iv) Low points in piping carrying moist gas shall be drained into drip pots constructed so as to permit pumping or draining out the condensate at necessary intervals. Drain valves shall be installed for this purpose having outlets normally closed with screw caps or plugs. No open end valves or petcocks shall be used, except that in drips located out of doors, underground, and not readily accessible, valves may be used at such points if they are equipped with means to secure them in the closed position. Pipes leading to the surface of the ground shall be cased or jacketed where necessary to prevent loosening or breaking.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(3)(v)",
+    "text": "(v) Gas cocks or valves shall be provided for all buildings at points where they will be readily accessible for shutting off the gas supply to these buildings in any emergency. There shall also be provided a shutoff valve in the discharge line from the generator, gas holder, manifold or other source of supply.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(3)(vi)",
+    "text": "(vi) Shutoff valves shall not be installed in safety relief lines in such a manner that the safety relief device can be rendered ineffective.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(3)(vii)",
+    "text": "(vii) Fittings and lengths of pipe shall be examined internally before assembly and, if necessary freed from scale or dirt. Oxygen piping and fittings shall be washed out with a suitable solution which will effectively remove grease and dirt but will not react with oxygen. Hot water solutions of caustic soda or trisodium phosphate are effective cleaning agents for this purpose.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(3)(viii)",
+    "text": "(viii) Piping shall be thoroughly blown out after assembly to remove foreign materials. For oxygen piping, oil-free air, oil-free nitrogen, or oil-free carbon dioxide shall be used. For other piping, air or inert gas may be used.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(3)(ix)",
+    "text": "(ix) When flammable gas lines or other parts of equipment are being purged of air or gas, open lights or other sources of ignition shall not be permitted near uncapped openings.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(3)(x)",
+    "text": "(x) No welding or cutting shall be performed on an acetylene or oxygen pipeline, including the attachment of hangers or supports, until the line has been purged. Only oil-free air, oil-free nitrogen, or oil-free carbon dioxide shall be used to purge oxygen lines.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(4)(i)",
+    "text": "(4) Painting and signs. (i) Underground pipe and tubing and outdoor ferrous pipe and tubing shall be covered or painted with a suitable material for protection against corrosion.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(4)(ii)",
+    "text": "(ii) Aboveground piping systems shall be marked in accordance with the American National Standard Scheme for the Identification of Piping Systems, ANSI A13.1\u22121956, which is incorporated by reference as specified in \u00a7 1910.6.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(4)(iii)",
+    "text": "(iii) Station outlets shall be marked to indicate the name of the gas.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(5)(i)",
+    "text": "(5) Testing. (i) Piping systems shall be tested and proved gastight at 1 1/2 times the maximum operating pressure, and shall be thoroughly purged of air before being placed in service. The material used for testing oxygen lines shall be oil free and noncombustible. Flames shall not be used to detect leaks.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(d)(5)(ii)",
+    "text": "(ii) When flammable gas lines or other parts of equipment are being purged of air or gas, sources of ignition shall not be permitted near uncapped openings.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(1)",
+    "text": "(e) Protective equipment, hose, and regulators\u2014(1) General. Equipment shall be installed and used only in the service for which it is approved and as recommended by the manufacturer.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(2)",
+    "text": "(2) Pressure relief devices. Service piping systems shall be protected by pressure relief devices set to function at not more than the design pressure of the systems and discharging upwards to a safe location.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(3)(i)",
+    "text": "(3) Piping protective equipment. (i) The fuel-gas and oxygen piping systems, including portable outlet headers shall incorporate the protective equipment shown in Figures Q-1, Q-2, and Q-3. When only a portion of a fuel-gas system is to be used with oxygen, only that portion need comply with this paragraph (e)(3)(i).",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(3)(ii)",
+    "text": "(ii) Approved protective equipment (designated PF in Figures Q-1, Q-2, and Q-3) shall be installed in fuel-gas piping to prevent:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(3)(ii)(A)",
+    "text": "(A) Backflow of oxygen into the fuel-gas supply system;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(3)(ii)(B)",
+    "text": "(B) Passage of a flash back into the fuel-gas supply system; and",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(3)(ii)(C)",
+    "text": "(C) Excessive back pressure of oxygen in the fuel-gas supply system. The three functions of the protective equipment may be combined in one device or may be provided by separate devices.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(3)(ii)(C)(1)",
+    "text": "(1) The protective equipment shall be located in the main supply line, as in Figure Q-1 or at the head of each branch line, as in Figure Q-2 or at each location where fuel-gas is withdrawn, as in Figure Q-3. Where branch lines are of 2-inch pipe size or larger or of substantial length, protective equipment (designated as PF) shall be located as shown in either Q-2 and Q-3.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(3)(ii)(C)(2)",
+    "text": "(2) Backflow protection shall be provided by an approved device that will prevent oxygen from flowing into the fuel-gas system or fuel from flowing into the oxygen system (see SF, Figures Q-1 and Q-2).",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(3)(ii)(C)(3)",
+    "text": "(3) Flash-back protection shall be provided by an approved device that will prevent flame from passing into the fuel-gas system.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(3)(ii)(C)(4)",
+    "text": "(4) Back-pressure protection shall be provided by an approved pressure-relief device set at a pressure not greater than the pressure rating of the backflow or the flashback protection device, whichever is lower. The pressure-relief device shall be located on the downstream side of the backflow and flashback protection devices. The vent from the pressure-relief device shall be at least as large as the relief device inlet and shall be installed without low points that may collect moisture. If low points are unavoidable, drip pots with drains closed with screw plugs or caps shall be installed at the low points. The vent terminus shall not endanger personnel or property through gas discharge; shall be located away from ignition sources; and shall terminate in a hood or bend.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(3)(iii)",
+    "text": "(iii) If pipeline protective equipment incorporates a liquid, the liquid level shall be maintained, and a suitable antifreeze may be used to prevent freezing.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(3)(iv)",
+    "text": "(iv) Fuel gas for use with equipment not requiring oxygen shall be withdrawn upstream of the piping protective devices.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(4)(i)",
+    "text": "(4) Station outlet protective equipment. (i) A check valve, pressure regulator, hydraulic seal, or combination of these devices shall be provided at each station outlet, including those on portable headers, to prevent backflow, as shown in Figures Q-1, Q-2, and Q-3 and designated as SF and SO.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(4)(ii)",
+    "text": "(ii) When approved pipeline protective equipment (designated PF) is located at the station outlet as in Figure Q-3, no additional check valve, pressure regulator, or hydraulic seal is required.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(4)(iii)",
+    "text": "(iii) A shutoff valve (designated VF and VO) shall be installed at each station outlet and shall be located on the upstream side of other station outlet equipment.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(4)(iv)",
+    "text": "(iv) If the station outlet is equipped with a detachable regulator, the outlet shall terminate in a union connection that complies with the Regulator Connection Standards, 1958, Compressed Gas Association, which is incorporated by reference as specified in \u00a7 1910.6.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(4)(v)",
+    "text": "(v) If the station outlet is connected directly to a hose, the outlet shall terminate in a union connection complying with the Standard Hose Connection Specifications, 1957, Compressed Gas Association, which is incorporated by reference as specified in \u00a7 1910.6.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(4)(vi)",
+    "text": "(vi) Station outlets may terminate in pipe threads to which permanent connections are to be made, such as to a machine.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(4)(vii)",
+    "text": "(vii) Station outlets shall be equipped with a detachable outlet seal cap secured in place. This cap shall be used to seal the outlet except when a hose, a regulator, or piping is attached.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(4)(viii)",
+    "text": "(viii) Where station outlets are equipped with approved backflow and flashback protective devices, as many as four torches may be supplied from one station outlet through rigid piping, provided each outlet from such piping is equipped with a shutoff valve and provided the fuel-gas capacity of any one torch does not exceed 15 cubic feet (0.42 m 3) per hour. This paragraph (e)(4)(viii) does not apply to machines.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(5)(i)",
+    "text": "(5) Hose and hose connections. (i) Hose for oxy-fuel gas service shall comply with the Specification for Rubber Welding Hose, 1958, Compressed Gas Association and Rubber Manufacturers Association, which is incorporated by reference as specified in \u00a7 1910.6.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(5)(ii)",
+    "text": "(ii) When parallel lengths of oxygen and acetylene hose are taped together for convenience and to prevent tangling, not more than 4 inches (10.2 cm) out of 12 inches (30.5 cm) shall be covered by tape.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(5)(iii)",
+    "text": "(iii) Hose connections shall comply with the Standard Hose Connection Specifications, 1957, Compressed Gas Association.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(5)(iv)",
+    "text": "(iv) Hose connections shall be clamped or otherwise securely fastened in a manner that will withstand, without leakage, twice the pressure to which they are normally subjected in service, but in no case less than a pressure of 300 psi (2.04 MPa). Oil-free air or an oil-free inert gas shall be used for the test.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(5)(v)",
+    "text": "(v) Hose showing leaks, burns, worn places, or other defects rendering it unfit for service shall be repaired or replaced.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(6)(i)",
+    "text": "(6) Pressure-reducing regulators. (i) Pressure-reducing regulators shall be used only for the gas and pressures for which they are intended. The regulator inlet connections shall comply with Regulator Connection Standards, 1958, Compressed Gas Association.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(6)(ii)",
+    "text": "(ii) When regulators or parts of regulators, including gages, need repair, the work shall be performed by skilled mechanics who have been properly instructed.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(6)(iii)",
+    "text": "(iii) Gages on oxygen regulators shall be marked \u201cUSE NO OIL.\u201d",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(e)(6)(iv)",
+    "text": "(iv) Union nuts and connections on regulators shall be inspected before use to detect faulty seats which may cause leakage of gas when the regulators are attached to the cylinder valves.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(1)(i)",
+    "text": "(f) Acetylene generators\u2014(1) Approval and marking. (i) Generators shall be of approved construction and shall be plainly marked with the maximum rate of acetylene in cubic feet per hour for which they are designed; the weight and size of carbide necessary for a single charge; the manufacturer's name and address; and the name or number of the type of generator.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(1)(ii)",
+    "text": "(ii) Carbide shall be of the size marked on the generator nameplate.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(2)(i)",
+    "text": "(2) Rating and pressure limitations. (i) The total hourly output of a generator shall not exceed the rate for which it is approved and marked. Unless specifically approved for higher ratings, carbide-feed generators shall be rated at 1 cubic foot (0.028 m 3) per hour per pound of carbide required for a single complete charge.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(2)(ii)",
+    "text": "(ii) Relief valves shall be regularly operated to insure proper functioning. Relief valves for generating chambers shall be set to open at a pressure not in excess of 15 psig (103 kPa gauge pressure). Relief valves for hydraulic back pressure valves shall be set to open at a pressure not in excess of 20 psig (137 kPa gauge pressure).",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(2)(iii)",
+    "text": "(iii) Nonautomatic generators shall not be used for generating acetylene at pressures exceeding l psig (7 kPa gauge pressure), and all water overflows shall be visible.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(3)",
+    "text": "(3) Location. The space around the generator shall be ample for free, unobstructed operation and maintenance and shall permit ready adjustment and charging.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(4)",
+    "text": "(4) Stationary acetylene generators (automatic and nonautomatic). (i)(A) The foundation shall be so arranged that the generator will be level and so that no excessive strain will be placed on the generator or its connections. Acetylene generators shall be grounded.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(4)",
+    "text": "(B) Generators shall be placed where water will not freeze. The use of common salt (sodium chloride) or other corrosive chemicals for protection against freezing is not permitted. (For heating systems see paragraph (f)(6)(iii) of this section.)",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(4)",
+    "text": "(C) Except when generators are prepared in accordance with paragraph (f)(7)(v) of this section, sources of ignition shall be prohibited in outside generator houses or inside generator rooms.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(4)",
+    "text": "(D) Water shall not be supplied through a continuous connection to the generator except when the generator is provided with an adequate open overflow or automatic water shutoff which will effectively prevent overfilling of the generator. Where a noncontinuous connection is used, the supply line shall terminate at a point not less than 2 inches (5 cm) above the regularly provided opening for filling so that the water can be observed as it enters the generator.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(4)",
+    "text": "(E) Unless otherwise specifically approved, generators shall not be fitted with continuous drain connections leading to sewers, but shall discharge through an open connection into a suitably vented outdoor receptacle or residue pit which may have such connections. An open connection for the sludge drawoff is desirable to enable the generator operator to observe leakage of generating water from the drain valve or sludge cock.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(4)(ii)(A)",
+    "text": "(ii)(A) Each generator shall be provided with a vent pipe.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(4)(ii)(B)",
+    "text": "(B) The escape or relief pipe shall be rigidly installed without traps and so that any condensation will drain back to the generator.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(4)(ii)(C)",
+    "text": "(C) The escape or relief pipe shall be carried full size to a suitable point outside the building. It shall terminate in a hood or bend located at least 12 feet (3.7 m) above the ground, preferably above the roof, and as far away as practicable from windows or other openings into buildings and as far away as practicable from sources of ignition such as flues or chimneys and tracks used by locomotives. Generating chamber relief pipes shall not be inter-connected but shall be separately led to the outside air. The hood or bend shall be so constructed that it will not be obstructed by rain, snow, ice, insects, or birds. The outlet shall be at least 3 feet (0.9 m) from combustible construction.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(4)(iii)(A)",
+    "text": "(iii)(A) Gas holders shall be constructed on the gasometer principle, the bell being suitably guided. The gas bell shall move freely without tendency to bind and shall have a clearance of at least 2 inches (5 cm) from the shell.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(4)(iii)(B)",
+    "text": "(B) The gas holder may be located in the generator room, in a separate room or out of doors. In order to prevent collapse of the gas bell or infiltration of air due to a vacuum caused by the compressor or booster pump or cooling of the gas, a compressor or booster cutoff shall be provided at a point 12 inches (0.3 m) or more above the landing point of the bell. When the gas holder is located indoors, the room shall be ventilated in accordance with paragraph (f)(6)(ii) of this section and heated and lighted in accordance with paragraphs (f)(6)(iii) and (f)(6)(iv) of this section.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(4)(iii)(C)",
+    "text": "(C) When the gas holder is not located within a heated building, gas holder seals shall be protected against freezing.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(4)(iii)(D)",
+    "text": "(D) Means shall be provided to stop the generator-feeding mechanism before the gas holder reaches the upper limit of its travel.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(4)(iii)(E)",
+    "text": "(E) When the gas holder is connected to only one generator, the gas capacity of the holder shall be not less than one-third of the hourly rating of the generator.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(4)(iii)(F)",
+    "text": "(F) If acetylene is used from the gas holder without increase in pressure at some points but with increase in pressure by a compressor or booster pump at other points, approved piping protective devices shall be installed in each supply line. The low-pressure protective device shall be located between the gas holder and the shop piping, and the medium-pressure protective device shall be located between the compressor or booster pump and the shop piping (see Figure Q-4). Approved protective equipment (designated PF) is used to prevent: Backflow of oxygen into the fuel-gas supply system; passage of a flashback into the fuel-gas supply system; and excessive back pressure of oxygen in the fuel-gas supply system. The three functions of the protective equipment may be combined in one device or may be provided by separate devices.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(4)(iv)(A)",
+    "text": "(iv)(A) The compressor or booster system shall be of an approved type.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(4)(iv)(B)",
+    "text": "(B) Wiring and electric equipment in compressor or booster pump rooms or enclosures shall conform to the provisions of subpart S of this part for Class I, Division 2 locations.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(4)(iv)(C)",
+    "text": "(C) Compressors and booster pump equipment shall be located in well-ventilated areas away from open flames, electrical or mechanical sparks, or other ignition sources.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(4)(iv)(D)",
+    "text": "(D) Compressor or booster pumps shall be provided with pressure relief valves which will relieve pressure exceeding 15 psig (103 kPa gauge pressure) to a safe outdoor location as provided in paragraph (f)(4)(ii) of this section, or by returning the gas to the inlet side or to the gas supply source.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(4)(iv)(E)",
+    "text": "(E) Compressor or booster pump discharge outlets shall be provided with approved protective equipment. (See paragraph (e) of this section.)",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(5)(i)(A)",
+    "text": "(5) Portable acetylene generators. (i)(A) All portable generators shall be of a type approved for portable use.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(5)(i)(B)",
+    "text": "(B) Portable generators shall not be used within 10 feet (3 m) of combustible material other than the floor.",
+    "expected": "compile",
+    "expected_predicate": "min_separation",
+    "expected_threshold": 3.0,
+    "expected_unit": "m",
+    "note": "portable generators not used within 10 feet (3 m) of combustible material"
+  },
+  {
+    "citation": "1910.253(f)(5)(i)(C)",
+    "text": "(C) Portable generators shall not be used in rooms of total volume less than 35 times the total gas-generating capacity per charge of all generators in the room. Generators shall not be used in rooms having a ceiling height of less than 10 feet (3 m). (To obtain the gas-generating capacity in cubic feet per charge, multiply the pounds of carbide per charge by 4.5.)",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(5)(i)(D)",
+    "text": "(D) Portable generators shall be protected against freezing. The use of salt or other corrosive chemical to prevent freezing is prohibited.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(5)(ii)(A)",
+    "text": "(ii)(A) Portable generators shall be cleaned and recharged and the air mixture blown off outside buildings.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(5)(ii)(B)",
+    "text": "(B) When charged with carbide, portable generators shall not be moved by crane or derrick.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(5)(ii)(C)",
+    "text": "(C) When not in use, portable generators shall not be stored in rooms in which open flames are used unless the generators contain no carbide and have been thoroughly purged of acetylene. Storage rooms shall be well ventilated.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(5)(ii)(D)",
+    "text": "(D) When portable acetylene generators are to be transported and operated on vehicles, they shall be securely anchored to the vehicles. If transported by truck, the motor shall be turned off during charging, cleaning, and generating periods.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(5)(ii)(E)",
+    "text": "(E) Portable generators shall be located at a safe distance from the welding position so that they will not be exposed to sparks, slag, or misdirection of the torch flame or overheating from hot materials or processes.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(6)(i)(A)",
+    "text": "(6) Outside generator houses and inside generator rooms for stationary acetylene generators. (i)(A) No opening in any outside generator house shall be located within 5 feet (1.5 m) of any opening in another building.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(6)(i)(B)",
+    "text": "(B) Walls, floors, and roofs of outside generator houses shall be of noncombustible construction.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(6)(i)(C)",
+    "text": "(C) When a part of the generator house is to be used for the storage or manifolding of oxygen cylinders, the space to be so occupied shall be separated from the generator or carbide storage section by partition walls continuous from floor to roof or ceiling, of the type of construction stated in paragraph (f)(6)(i)(H) of this section. Such separation walls shall be without openings and shall be joined to the floor, other walls and ceiling or roof in a manner to effect a permanent gas-tight joint.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(6)(i)(D)",
+    "text": "(D) Exit doors shall be located so as to be readily accessible in case of emergency.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(6)(i)(E)",
+    "text": "(E) Explosion venting for outside generator houses and inside generator rooms shall be provided in exterior walls or roofs. The venting areas shall be equal to not less than 1 square foot (0.09 m 2) per 50 cubic feet (1.4 m 3) of room volume and may consist of any one or any combination of the following: Walls of light, noncombustible material preferably single-thickness, single-strength glass; lightly fastened hatch covers; lightly fastened swinging doors in exterior walls opening outward; lightly fastened walls or roof designed to relieve at a maximum pressure of 25 pounds per square foot (0.001 MPa).",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(6)(i)(F)",
+    "text": "(F) The installation of acetylene generators within buildings shall be restricted to buildings not exceeding one story in height; provided, however, that this will not be construed as prohibiting such installations on the roof or top floor of a building exceeding such height.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(6)(i)(G)",
+    "text": "(G) Generators installed inside buildings shall be enclosed in a separate room.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(6)(i)(H)",
+    "text": "(H) The walls, partitions, floors, and ceilings of inside generator rooms shall be of noncombustible construction having a fire-resistance rating of at least 1 hour. The walls or partitions shall be continuous from floor to ceiling and shall be securely anchored. At least one wall of the room shall be an exterior wall.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(6)(i)(I)",
+    "text": "(I) Openings from an inside generator room to other parts of the building shall be protected by a swinging type, self-closing fire door for a Class B opening and having a rating of at least 1 hour. Windows in partitions shall be wired glass and approved metal frames with fixed sash. Installation shall be in accordance with the Standard for the Installation of Fire Doors and Windows, NFPA 80-1970, which is incorporated by reference as specified in \u00a7 1910.6.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(6)(ii)",
+    "text": "(ii) Inside generator rooms or outside generator houses shall be well ventilated with vents located at floor and ceiling levels.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(6)(iii)",
+    "text": "(iii) Heating shall be by steam, hot water, enclosed electrically heated elements or other indirect means. Heating by flames or fires shall be prohibited in outside generator houses or inside generator rooms, or in any enclosure communicating with them.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(6)(iv)(A)",
+    "text": "(iv)(A) Generator houses or rooms shall have natural light during daylight hours. Where artificial lighting is necessary it shall be restricted to electric lamps installed in a fixed position. Unless specifically approved for use in atmospheres containing acetylene, such lamps shall be provided with enclosures of glass or other noncombustible material so designed and constructed as to prevent gas vapors from reaching the lamp or socket and to resist breakage. Rigid conduit with threaded connections shall be used.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(6)(iv)(B)",
+    "text": "(B) Lamps installed outside of wired-glass panels set in gas-tight frames in the exterior walls or roof of the generator house or room are acceptable.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(6)(v)",
+    "text": "(v) Electric switches, telephones, and all other electrical apparatus which may cause a spark, unless specifically approved for use inside acetylene generator rooms, shall be located outside the generator house or in a room or space separated from the generator room by a gas-tight partition, except that where the generator system is designed so that no carbide fill opening or other part of the generator is open to the generator house or room during the operation of the generator, and so that residue is carried in closed piping from the residue discharge valve to a point outside the generator house or room, electrical equipment in the generator house or room shall conform to the provisions of subpart S of this part for Class I, Division 2 locations.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(7)(i)",
+    "text": "(7) Maintenance and operation. (i) Unauthorized persons shall not be permitted in outside generator houses or inside generator rooms.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(7)(i)(A)",
+    "text": "(A) Operating instructions shall be posted in a conspicuous place near the generator or kept in a suitable place available for ready reference.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(7)(i)(B)",
+    "text": "(B) When recharging generators the order of operations specified in the instructions supplied by the manufacturer shall be followed.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(7)(i)(C)",
+    "text": "(C) In the case of batch-type generators, when the charge of carbide is exhausted and before additional carbide is added, the generating chamber shall always be flushed out with water, renewing the water supply in accordance with the instruction card furnished by the manufacturer.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(7)(i)(D)",
+    "text": "(D) The water-carbide residue mixture drained from the generator shall not be discharged into sewer pipes or stored in areas near open flames. Clear water from residue settling pits may be discharged into sewer pipes.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(7)(ii)",
+    "text": "(ii) The carbide added each time the generator is recharged shall be sufficient to refill the space provided for carbide without ramming the charge. Steel or other ferrous tools shall not be used in distributing the charge.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(7)(iii)",
+    "text": "(iii) Generator water chambers shall be kept filled to proper level at all times except while draining during the recharging operation.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(7)(iv)",
+    "text": "(iv) Whenever repairs are to be made or the generator is to be charged or carbide is to be removed, the water chamber shall be filled to the proper level.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(7)(v)",
+    "text": "(v) Previous to making repairs involving welding, soldering, or other hot work or other operations which produce a source of ignition, the carbide charge and feed mechanism shall be completely removed. All acetylene shall be expelled by completely flooding the generator shell with water and the generator shall be disconnected from the piping system. The generator shall be kept filled with water, if possible, or positioned to hold as much water as possible.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(f)(7)(vi)",
+    "text": "(vi) Hot repairs shall not be made in a room where there are other generators unless all the generators and piping have been purged of acetylene.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(g)(1)(i)",
+    "text": "(g) Calcium carbide storage\u2014(1) Packaging. (i) Calcium carbide shall be contained in metal packages of sufficient strength to prevent rupture. The packages shall be provided with a screw top or equivalent. These packages shall be constructed water- and air-tight. Solder shall not be used in such a manner that the package would fail if exposed to fire.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(g)(1)(ii)",
+    "text": "(ii) Packages containing calcium carbide shall be conspicuously marked \u201cCalcium Carbide\u2014Dangerous If Not Kept Dry\u201d or with equivalent warning.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(g)(1)(iii)",
+    "text": "(iii) Caution: Metal tools, even the so-called spark resistant type may cause ignition of an acetylene and air mixture when opening carbide containers.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(g)(1)(iv)",
+    "text": "(iv) Sprinkler systems shall not be installed in carbide storage rooms.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(g)(2)(i)",
+    "text": "(2) Storage indoors. (i) Calcium carbide in quantities not to exceed 600 pounds (272.2 kg) may be stored indoors in dry, waterproof, and well-ventilated locations.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(g)(2)(i)(A)",
+    "text": "(A) Calcium carbide not exceeding 600 pounds (272.2 kg) may be stored indoors in the same room with fuel-gas cylinders.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(g)(2)(i)(B)",
+    "text": "(B) Packages of calcium carbide, except for one of each size, shall be kept sealed. The seals shall not be broken when there is carbide in excess of 1 pound (0.5 kg) in any other unsealed package of the same size of carbide in the room.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(g)(2)(ii)",
+    "text": "(ii) Calcium carbide exceeding 600 pounds (272.2 kg) but not exceeding 5,000 pounds (2,268 kg) shall be stored:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(g)(2)(ii)(A)",
+    "text": "(A) In accordance with paragraph (g)(2)(iii) of this section;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(g)(2)(ii)(B)",
+    "text": "(B) In an inside generator room or outside generator house; or",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(g)(2)(ii)(C)",
+    "text": "(C) In a separate room in a one-story building which may contain other occupancies, but without cellar or basement beneath the carbide storage section. Such rooms shall be constructed in accordance with paragraphs (f)(6)(i)(H) and (f)(6)(i)(I) of this section and ventilated in accordance with paragraph (f)(6)(ii) of this section. These rooms shall be used for no other purpose.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(g)(2)(iii)",
+    "text": "(iii) Calcium carbide in excess of 5,000 pounds (2,268 kg) shall be stored in one-story buildings without cellar or basement and used for no other purpose, or in outside generator houses. If the storage building is of noncombustible construction, it may adjoin other one-story buildings if separated therefrom by unpierced firewalls; if it is detached less than 10 feet (3 m) from such building or buildings, there shall be no opening in any of the mutually exposing sides of such buildings within 10 feet (3 m). If the storage building is of combustible construction, it shall be at least 20 feet (6.1 m) from any other one- or two-story building, and at least 30 feet (9.1 m) from any other building exceeding two stories.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(g)(3)(i)",
+    "text": "(3) Storage outdoors. (i) Calcium carbide in unopened metal containers may be stored outdoors.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(g)(3)(ii)",
+    "text": "(ii) Carbide containers to be stored outdoors shall be examined to make sure that they are in good condition. Periodic reexaminations shall be made for rusting or other damage to a container that might affect its water or air tightness.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(g)(3)(iii)",
+    "text": "(iii) The bottom tier of each row shall be placed on wooden planking or equivalent, so that the containers will not come in contact with the ground or ground water.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.253(g)(3)(iv)",
+    "text": "(iv) Containers of carbide which have been in storage the longest shall be used first.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(a)",
+    "text": "(a) Approval. The conductors and equipment required or permitted by this subpart shall be acceptable only if approved, as defined in \u00a7 1910.399.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(b)(1)",
+    "text": "(b) Examination, installation, and use of equipment\u2014(1) Examination. Electric equipment shall be free from recognized hazards that are likely to cause death or serious physical harm to employees. Safety of equipment shall be determined using the following considerations:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(b)(1)(i)",
+    "text": "(i) Suitability for installation and use in conformity with the provisions of this subpart;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(b)(1)(ii)",
+    "text": "(ii) Mechanical strength and durability, including, for parts designed to enclose and protect other equipment, the adequacy of the protection thus provided;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(b)(1)(iii)",
+    "text": "(iii) Wire-bending and connection space;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(b)(1)(iv)",
+    "text": "(iv) Electrical insulation;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(b)(1)(v)",
+    "text": "(v) Heating effects under all conditions of use;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(b)(1)(vi)",
+    "text": "(vi) Arcing effects;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(b)(1)(vii)",
+    "text": "(vii) Classification by type, size, voltage, current capacity, and specific use; and",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(b)(1)(viii)",
+    "text": "(viii) Other factors that contribute to the practical safeguarding of persons using or likely to come in contact with the equipment.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(b)(2)",
+    "text": "(2) Installation and use. Listed or labeled equipment shall be installed and used in accordance with any instructions included in the listing or labeling.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(b)(3)",
+    "text": "(3) Insulation integrity. Completed wiring installations shall be free from short circuits and from grounds other than those required or permitted by this subpart.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(b)(4)",
+    "text": "(4) Interrupting rating. Equipment intended to interrupt current at fault levels shall have an interrupting rating sufficient for the nominal circuit voltage and the current that is available at the line terminals of the equipment. Equipment intended to interrupt current at other than fault levels shall have an interrupting rating at nominal circuit voltage sufficient for the current that must be interrupted.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(b)(5)",
+    "text": "(5) Circuit impedance and other characteristics. The overcurrent protective devices, the total impedance, the component short-circuit current ratings, and other characteristics of the circuit to be protected shall be selected and coordinated to permit the circuit protective devices used to clear a fault to do so without the occurrence of extensive damage to the electrical components of the circuit. This fault shall be assumed to be either between two or more of the circuit conductors, or between any circuit conductor and the grounding conductor or enclosing metal raceway.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(b)(6)",
+    "text": "(6) Deteriorating agents. Unless identified for use in the operating environment, no conductors or equipment shall be located in damp or wet locations; where exposed to gases, fumes, vapors, liquids, or other agents that have a deteriorating effect on the conductors or equipment; or where exposed to excessive temperatures.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(b)(7)",
+    "text": "(7) Mechanical execution of work. Electric equipment shall be installed in a neat and workmanlike manner.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(b)(7)(i)",
+    "text": "(i) Unused openings in boxes, raceways, auxiliary gutters, cabinets, equipment cases, or housings shall be effectively closed to afford protection substantially equivalent to the wall of the equipment.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(b)(7)(ii)",
+    "text": "(ii) Conductors shall be racked to provide ready and safe access in underground and subsurface enclosures that persons enter for installation and maintenance.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(b)(7)(iii)",
+    "text": "(iii) Internal parts of electrical equipment, including busbars, wiring terminals, insulators, and other surfaces, may not be damaged or contaminated by foreign materials such as paint, plaster, cleaners, abrasives, or corrosive residues.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(b)(7)(iv)",
+    "text": "(iv) There shall be no damaged parts that may adversely affect safe operation or mechanical strength of the equipment, such as parts that are broken, bent, cut, or deteriorated by corrosion, chemical action, or overheating.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(b)(8)(i)",
+    "text": "(8) Mounting and cooling of equipment. (i) Electric equipment shall be firmly secured to the surface on which it is mounted.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(b)(8)(ii)",
+    "text": "(ii) Electric equipment that depends on the natural circulation of air and convection principles for cooling of exposed surfaces shall be installed so that room airflow over such surfaces is not prevented by walls or by adjacent installed equipment. For equipment designed for floor mounting, clearance between top surfaces and adjacent surfaces shall be provided to dissipate rising warm air.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(b)(8)(iii)",
+    "text": "(iii) Electric equipment provided with ventilating openings shall be installed so that walls or other obstructions do not prevent the free circulation of air through the equipment.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(c)(1)",
+    "text": "(c) Electrical connections\u2014(1) General. Because of different characteristics of dissimilar metals:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(c)(1)(i)",
+    "text": "(i) Devices such as pressure terminal or pressure splicing connectors and soldering lugs shall be identified for the material of the conductor and shall be properly installed and used;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(c)(1)(ii)",
+    "text": "(ii) Conductors of dissimilar metals may not be intermixed in a terminal or splicing connector where physical contact occurs between dissimilar conductors (such as copper and aluminum, copper and copper-clad aluminum, or aluminum and copper-clad aluminum) unless the device is identified for the purpose and conditions of use; and",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(c)(1)(iii)",
+    "text": "(iii) Materials such as solder, fluxes, inhibitors, and compounds, where employed, shall be suitable for the use and shall be of a type that will not adversely affect the conductors, installation, or equipment.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(c)(2)(i)",
+    "text": "(2) Terminals. (i) Connection of conductors to terminal parts shall ensure a good connection without damaging the conductors and shall be made by means of pressure connectors (including set-screw type), solder lugs, or splices to flexible leads. However, No. 10 or smaller conductors may be connected by means of wire binding screws or studs and nuts having upturned lugs or equivalent.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(c)(2)(ii)",
+    "text": "(ii) Terminals for more than one conductor and terminals used to connect aluminum shall be so identified.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(c)(3)(i)",
+    "text": "(3) Splices. (i) Conductors shall be spliced or joined with splicing devices identified for the use or by brazing, welding, or soldering with a fusible metal or alloy. Soldered splices shall first be spliced or joined to be mechanically and electrically secure without solder and then soldered. All splices and joints and the free ends of conductors shall be covered with an insulation equivalent to that of the conductors or with an insulating device identified for the purpose.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(c)(3)(ii)",
+    "text": "(ii) Wire connectors or splicing means installed on conductors for direct burial shall be listed for such use.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(d)",
+    "text": "(d) Arcing parts. Parts of electric equipment that in ordinary operation produce arcs, sparks, flames, or molten metal shall be enclosed or separated and isolated from all combustible material.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(e)(1)",
+    "text": "(e) Marking\u2014(1) Identification of manufacturer and ratings. Electric equipment may not be used unless the following markings have been placed on the equipment:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(e)(1)(i)",
+    "text": "(i) The manufacturer's name, trademark, or other descriptive marking by which the organization responsible for the product may be identified; and",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(e)(1)(ii)",
+    "text": "(ii) Other markings giving voltage, current, wattage, or other ratings as necessary.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(e)(2)",
+    "text": "(2) Durability. The marking shall be of sufficient durability to withstand the environment involved.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(f)(1)",
+    "text": "(f) Disconnecting means and circuits\u2014(1) Motors and appliances. Each disconnecting means required by this subpart for motors and appliances shall be legibly marked to indicate its purpose, unless located and arranged so the purpose is evident.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(f)(2)",
+    "text": "(2) Services, feeders, and branch circuits. Each service, feeder, and branch circuit, at its disconnecting means or overcurrent device, shall be legibly marked to indicate its purpose, unless located and arranged so the purpose is evident.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(f)(3)",
+    "text": "(3) Durability of markings. The markings required by paragraphs (f)(1) and (f)(2) of this section shall be of sufficient durability to withstand the environment involved.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(f)(4)",
+    "text": "(4) Capable of accepting a lock. Disconnecting means required by this subpart shall be capable of being locked in the open position.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(f)(5)(i)",
+    "text": "(5) Marking for series combination ratings. (i) Where circuit breakers or fuses are applied in compliance with the series combination ratings marked on the equipment by the manufacturer, the equipment enclosures shall be legibly marked in the field to indicate that the equipment has been applied with a series combination rating.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(f)(5)(ii)",
+    "text": "(ii) The marking required by paragraph (f)(5)(i) of this section shall be readily visible and shall state \u201cCaution\u2014Series Combination System Rated __ Amperes. Identified Replacement Component Required.\u201d",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)",
+    "text": "(g) 600 Volts, nominal, or less. This paragraph applies to electric equipment operating at 600 volts, nominal, or less to ground.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(1)",
+    "text": "(1) Space about electric equipment. Sufficient access and working space shall be provided and maintained about all electric equipment to permit ready and safe operation and maintenance of such equipment.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(1)(i)",
+    "text": "(i) Working space for equipment likely to require examination, adjustment, servicing, or maintenance while energized shall comply with the following dimensions, except as required or permitted elsewhere in this subpart:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(1)(i)(A)",
+    "text": "(A) The depth of the working space in the direction of access to live parts may not be less than indicated in Table S-1. Distances shall be measured from the live parts if they are exposed or from the enclosure front or opening if they are enclosed;",
+    "expected": "refuse",
+    "refuse_reason": "working-space depth comes from Table S-1, keyed to voltage class and opposing-surface condition"
+  },
+  {
+    "citation": "1910.303(g)(1)(i)(B)",
+    "text": "(B) The width of working space in front of the electric equipment shall be the width of the equipment or 762 mm (30 in.), whichever is greater. In all cases, the working space shall permit at least a 90-degree opening of equipment doors or hinged panels; and",
+    "expected": "refuse",
+    "refuse_reason": "width is 762 mm or equipment width, whichever is greater: threshold conditional on per-entity dimensions"
+  },
+  {
+    "citation": "1910.303(g)(1)(i)(C)",
+    "text": "(C) The work space shall be clear and extend from the grade, floor, or platform to the height required by paragraph (g)(1)(vi) of this section. However, other equipment associated with the electrical installation and located above or below the electric equipment may extend not more than 153 mm (6 in.) beyond the front of the electric equipment.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(1)(ii)",
+    "text": "(ii) Working space required by this standard may not be used for storage. When normally enclosed live parts are exposed for inspection or servicing, the working space, if in a passageway or general open space, shall be suitably guarded.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(1)(iii)",
+    "text": "(iii) At least one entrance of sufficient area shall be provided to give access to the working space about electric equipment.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(1)(iv)",
+    "text": "(iv) For equipment rated 1200 amperes or more and over 1.83 m (6.0 ft) wide, containing overcurrent devices, switching devices, or control devices, there shall be one entrance not less than 610 mm (24 in.) wide and 1.98 m (6.5 ft) high at each end of the working space, except that:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(1)(iv)(A)",
+    "text": "(A) Where the location permits a continuous and unobstructed way of exit travel, one means of exit is permitted; or",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(1)(iv)(B)",
+    "text": "(B) Where the working space required by paragraph (g)(1)(i) of this section is doubled, only one entrance to the working space is required; however, the entrance shall be located so that the edge of the entrance nearest the equipment is the minimum clear distance given in Table S-1 away from such equipment.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(1)(v)",
+    "text": "(v) Illumination shall be provided for all working spaces about service equipment, switchboards, panelboards, and motor control centers installed indoors. Additional lighting fixtures are not required where the working space is illuminated by an adjacent light source. In electric equipment rooms, the illumination may not be controlled by automatic means only.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(1)(vi)",
+    "text": "(vi) The minimum headroom of working spaces about service equipment, switchboards, panelboards, or motor control centers shall be as follows:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(1)(vi)(A)",
+    "text": "(A) For installations built before August 13, 2007, 1.91 m (6.25 ft); and",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(1)(vi)(B)",
+    "text": "(B) For installations built on or after August 13, 2007, 1.98 m (6.5 ft), except that where the electrical equipment exceeds 1.98 m (6.5 ft) in height, the minimum headroom may not be less than the height of the equipment.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(1)(vii)",
+    "text": "(vii) Switchboards, panelboards, and distribution boards installed for the control of light and power circuits, and motor control centers shall be located in dedicated spaces and protected from damage.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(1)(vii)(A)",
+    "text": "(A) For indoor installation, the dedicated space shall comply with the following:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(1)(vii)(A)(1)",
+    "text": "(1) The space equal to the width and depth of the equipment and extending from the floor to a height of 1.83 m (6.0 ft) above the equipment or to the structural ceiling, whichever is lower, shall be dedicated to the electrical installation. Unless isolated from equipment by height or physical enclosures or covers that will afford adequate mechanical protection from vehicular traffic or accidental contact by unauthorized personnel or that complies with paragraph (g)(1)(vii)(A)(2) of this section, piping, ducts, or equipment foreign to the electrical installation may not be located in this area;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(1)(vii)(A)(2)",
+    "text": "(2) The space equal to the width and depth of the equipment shall be kept clear of foreign systems unless protection is provided to avoid damage from condensation, leaks, or breaks in such foreign systems. This area shall extend from the top of the electric equipment to the structural ceiling;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(1)(vii)(A)(3)",
+    "text": "(3) Sprinkler protection is permitted for the dedicated space where the piping complies with this section; and",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(1)(vii)(A)(4)",
+    "text": "(4) Control equipment that by its very nature or because of other requirements in this subpart must be adjacent to or within sight of its operating machinery is permitted in the dedicated space.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(1)(vii)(B)",
+    "text": "(B) Outdoor electric equipment shall be installed in suitable enclosures and shall be protected from accidental contact by unauthorized personnel, or by vehicular traffic, or by accidental spillage or leakage from piping systems. No architectural appurtenance or other equipment may be located in the working space required by paragraph (g)(1)(i) of this section.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(2)(i)",
+    "text": "(2) Guarding of live parts. (i) Except as elsewhere required or permitted by this standard, live parts of electric equipment operating at 50 volts or more shall be guarded against accidental contact by use of approved cabinets or other forms of approved enclosures or by any of the following means:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(2)(i)(A)",
+    "text": "(A) By location in a room, vault, or similar enclosure that is accessible only to qualified persons;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(2)(i)(B)",
+    "text": "(B) By suitable permanent, substantial partitions or screens so arranged so that only qualified persons will have access to the space within reach of the live parts. Any openings in such partitions or screens shall be so sized and located that persons are not likely to come into accidental contact with the live parts or to bring conducting objects into contact with them;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(2)(i)(C)",
+    "text": "(C) By placement on a suitable balcony, gallery, or platform so elevated and otherwise located as to prevent access by unqualified persons; or",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(2)(i)(D)",
+    "text": "(D) By elevation of 2.44 m (8.0 ft) or more above the floor or other working surface.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(2)(ii)",
+    "text": "(ii) In locations where electric equipment is likely to be exposed to physical damage, enclosures or guards shall be so arranged and of such strength as to prevent such damage.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(g)(2)(iii)",
+    "text": "(iii) Entrances to rooms and other guarded locations containing exposed live parts shall be marked with conspicuous warning signs forbidding unqualified persons to enter.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(1)",
+    "text": "(h) Over 600 volts, nominal\u2014(1) General. Conductors and equipment used on circuits exceeding 600 volts, nominal, shall comply with all applicable provisions of the paragraphs (a) through (g) of this section and with the following provisions, which supplement or modify the preceding requirements. However, paragraphs (h)(2), (h)(3), and (h)(4) of this section do not apply to the equipment on the supply side of the service point.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(2)(i)",
+    "text": "(2) Enclosure for electrical installations. (i) Electrical installations in a vault, room, or closet or in an area surrounded by a wall, screen, or fence, access to which is controlled by lock and key or other approved means, are considered to be accessible to qualified persons only. The type of enclosure used in a given case shall be designed and constructed according to the hazards associated with the installation.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(2)(ii)",
+    "text": "(ii) For installations other than equipment described in paragraph (h)(2)(v) of this section, a wall, screen, or fence shall be used to enclose an outdoor electrical installation to deter access by persons who are not qualified. A fence may not be less than 2.13 m (7.0 ft) in height or a combination of 1.80 m (6.0 ft) or more of fence fabric and a 305-mm (1-ft) or more extension utilizing three or more strands of barbed wire or equivalent.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(2)(iii)",
+    "text": "(iii) The following requirements apply to indoor installations that are accessible to other than qualified persons:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(2)(iii)(A)",
+    "text": "(A) The installations shall be made with metal-enclosed equipment or shall be enclosed in a vault or in an area to which access is controlled by a lock;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(2)(iii)(B)",
+    "text": "(B) Metal-enclosed switchgear, unit substations, transformers, pull boxes, connection boxes, and other similar associated equipment shall be marked with appropriate caution signs; and",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(2)(iii)(C)",
+    "text": "(C) Openings in ventilated dry-type transformers and similar openings in other equipment shall be designed so that foreign objects inserted through these openings will be deflected from energized parts.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(2)(iv)",
+    "text": "(iv) Outdoor electrical installations having exposed live parts shall be accessible to qualified persons only.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(2)(v)",
+    "text": "(v) The following requirements apply to outdoor enclosed equipment accessible to unqualified employees:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(2)(v)(A)",
+    "text": "(A) Ventilating or similar openings in equipment shall be so designed that foreign objects inserted through these openings will be deflected from energized parts;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(2)(v)(B)",
+    "text": "(B) Where exposed to physical damage from vehicular traffic, suitable guards shall be provided;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(2)(v)(C)",
+    "text": "(C) Nonmetallic or metal-enclosed equipment located outdoors and accessible to the general public shall be designed so that exposed nuts or bolts cannot be readily removed, permitting access to live parts;",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(2)(v)(D)",
+    "text": "(D) Where nonmetallic or metal-enclosed equipment is accessible to the general public and the bottom of the enclosure is less than 2.44 m (8.0 ft) above the floor or grade level, the enclosure door or hinged cover shall be kept locked; and",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(2)(v)(E)",
+    "text": "(E) Except for underground box covers that weigh over 45.4 kg (100 lb), doors and covers of enclosures used solely as pull boxes, splice boxes, or junction boxes shall be locked, bolted, or screwed on.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(3)",
+    "text": "(3) Work space about equipment. Sufficient space shall be provided and maintained about electric equipment to permit ready and safe operation and maintenance of such equipment. Where energized parts are exposed, the minimum clear work space may not be less than 1.98 m (6.5 ft) high (measured vertically from the floor or platform) or less than 914 mm (3.0 ft) wide (measured parallel to the equipment). The depth shall be as required in paragraph (h)(5)(i) of this section. In all cases, the work space shall be adequate to permit at least a 90-degree opening of doors or hinged panels.",
+    "expected": "compile",
+    "expected_predicate": "keep_clear",
+    "expected_threshold": 0.914,
+    "expected_unit": "m",
+    "note": "minimum clear work space 914 mm (3.0 ft) wide about over-600V equipment; the 6.5 ft vertical band rides along but the enforceable plan-space core is the 3 ft clearance"
+  },
+  {
+    "citation": "1910.303(h)(4)(i)",
+    "text": "(4) Entrance and access to work space. (i) At least one entrance not less than 610 mm (24 in.) wide and 1.98 m (6.5 ft) high shall be provided to give access to the working space about electric equipment.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(4)(i)(A)",
+    "text": "(A) On switchboard and control panels exceeding 1.83 m (6.0 ft) in width, there shall be one entrance at each end of such boards unless the location of the switchboards and control panels permits a continuous and unobstructed way of exit travel, or unless the work space required in paragraph (h)(5)(i) of this section is doubled.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(4)(i)(B)",
+    "text": "(B) Where one entrance to the working space is permitted under the conditions described in paragraph (h)(4)(i)(A) of this section, the entrance shall be located so that the edge of the entrance nearest the switchboards and control panels is at least the minimum clear distance given in Table S-2 away from such equipment.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(4)(i)(C)",
+    "text": "(C) Where bare energized parts at any voltage or insulated energized parts above 600 volts, nominal, to ground are located adjacent to such entrance, they shall be suitably guarded.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(4)(ii)",
+    "text": "(ii) Permanent ladders or stairways shall be provided to give safe access to the working space around electric equipment installed on platforms, balconies, mezzanine floors, or in attic or roof rooms or spaces.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(5)(i)",
+    "text": "(5) Working space and guarding. (i) Except as elsewhere required or permitted in this subpart, the minimum clear working space in the direction of access to live parts of electric equipment may not be less than specified in Table S-2. Distances shall be measured from the live parts, if they are exposed, or from the enclosure front or opening, if they are enclosed.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(5)(ii)",
+    "text": "(ii) If switches, cutouts, or other equipment operating at 600 volts, nominal, or less, are installed in a room or enclosure where there are exposed live parts or exposed wiring operating at over 600 volts, nominal, the high-voltage equipment shall be effectively separated from the space occupied by the low-voltage equipment by a suitable partition, fence, or screen. However, switches or other equipment operating at 600 volts, nominal, or less, and serving only equipment within the high-voltage vault, room, or enclosure may be installed in the high-voltage enclosure, room, or vault if accessible to qualified persons only.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(5)(iii)",
+    "text": "(iii) The following requirements apply to the entrances to all buildings, rooms, or enclosures containing exposed live parts or exposed conductors operating at over 600 volts, nominal:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(5)(iii)(A)",
+    "text": "(A) The entrances shall be kept locked unless they are under the observation of a qualified person at all times; and",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(5)(iii)(B)",
+    "text": "(B) Permanent and conspicuous warning signs shall be provided, reading substantially as follows:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(5)(iv)",
+    "text": "(iv) Illumination shall be provided for all working spaces about electric equipment.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(5)(iv)(A)",
+    "text": "(A) The lighting outlets shall be arranged so that persons changing lamps or making repairs on the lighting system will not be endangered by live parts or other equipment.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(5)(iv)(B)",
+    "text": "(B) The points of control shall be located so that persons are prevented from contacting any live part or moving part of the equipment while turning on the lights.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(5)(v)",
+    "text": "(v) Unguarded live parts above working space shall be maintained at elevations not less than specified in Table S-3.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.303(h)(5)(vi)",
+    "text": "(vi) Pipes or ducts that are foreign to the electrical installation and that require periodic maintenance or whose malfunction would endanger the operation of the electrical system may not be located in the vicinity of service equipment, metal-enclosed power switchgear, or industrial control assemblies. Protection shall be provided where necessary to avoid damage from condensation leaks and breaks in such foreign systems.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(a)",
+    "text": "(a) General. Safety-related work practices shall be employed to prevent electric shock or other injuries resulting from either direct or indirect electrical contacts, when work is performed near or on equipment or circuits which are or may be energized. The specific safety-related work practices shall be consistent with the nature and extent of the associated electrical hazards.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(a)(1)",
+    "text": "(1) Deenergized parts. Live parts to which an employee may be exposed shall be deenergized before the employee works on or near them, unless the employer can demonstrate that deenergizing introduces additional or increased hazards or is infeasible due to equipment design or operational limitations. Live parts that operate at less than 50 volts to ground need not be deenergized if there will be no increased exposure to electrical burns or to explosion due to electric arcs.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(a)(2)",
+    "text": "(2) Energized parts. If the exposed live parts are not deenergized (i.e., for reasons of increased or additional hazards or infeasibility), other safety-related work practices shall be used to protect employees who may be exposed to the electrical hazards involved. Such work practices shall protect employees against contact with energized circuit parts directly with any part of their body or indirectly through some other conductive object. The work practices that are used shall be suitable for the conditions under which the work is to be performed and for the voltage level of the exposed electric conductors or circuit parts. Specific work practice requirements are detailed in paragraph (c) of this section.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(1)",
+    "text": "(b) Working on or near exposed deenergized parts\u2014(1) Application. This paragraph applies to work on exposed deenergized parts or near enough to them to expose the employee to any electrical hazard they present. Conductors and parts of electric equipment that have been deenergized but have not been locked out or tagged in accordance with paragraph (b) of this section shall be treated as energized parts, and paragraph (c) of this section applies to work on or near them.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(2)",
+    "text": "(2) Lockout and tagging. While any employee is exposed to contact with parts of fixed electric equipment or circuits which have been deenergized, the circuits energizing the parts shall be locked out or tagged or both in accordance with the requirements of this paragraph. The requirements shall be followed in the order in which they are presented (i.e., paragraph (b)(2)(i) first, then paragraph (b)(2)(ii), etc.).",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(2)(i)",
+    "text": "(i) Procedures. The employer shall maintain a written copy of the procedures outlined in paragraph (b)(2) and shall make it available for inspection by employees and by the Assistant Secretary of Labor and his or her authorized representatives.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(2)(ii)(A)",
+    "text": "(ii) Deenergizing equipment. (A) Safe procedures for deenergizing circuits and equipment shall be determined before circuits or equipment are deenergized.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(2)(ii)(B)",
+    "text": "(B) The circuits and equipment to be worked on shall be disconnected from all electric energy sources. Control circuit devices, such as push buttons, selector switches, and interlocks, may not be used as the sole means for deenergizing circuits or equipment. Interlocks for electric equipment may not be used as a substitute for lockout and tagging procedures.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(2)(ii)(C)",
+    "text": "(C) Stored electric energy which might endanger personnel shall be released. Capacitors shall be discharged and high capacitance elements shall be short-circuited and grounded, if the stored electric energy might endanger personnel.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(2)(ii)(D)",
+    "text": "(D) Stored non-electrical energy in devices that could reenergize electric circuit parts shall be blocked or relieved to the extent that the circuit parts could not be accidentally energized by the device.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(2)(iii)(A)",
+    "text": "(iii) Application of locks and tags. (A) A lock and a tag shall be placed on each disconnecting means used to deenergize circuits and equipment on which work is to be performed, except as provided in paragraphs (b)(2)(iii)(C) and (b)(2)(iii)(E) of this section. The lock shall be attached so as to prevent persons from operating the disconnecting means unless they resort to undue force or the use of tools.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(2)(iii)(B)",
+    "text": "(B) Each tag shall contain a statement prohibiting unauthorized operation of the disconnecting means and removal of the tag.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(2)(iii)(C)",
+    "text": "(C) If a lock cannot be applied, or if the employer can demonstrate that tagging procedures will provide a level of safety equivalent to that obtained by the use of a lock, a tag may be used without a lock.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(2)(iii)(D)",
+    "text": "(D) A tag used without a lock, as permitted by paragraph (b)(2)(iii)(C) of this section, shall be supplemented by at least one additional safety measure that provides a level of safety equivalent to that obtained by the use of a lock. Examples of additional safety measures include the removal of an isolating circuit element, blocking of a controlling switch, or opening of an extra disconnecting device.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(2)(iii)(E)",
+    "text": "(E) A lock may be placed without a tag only under the following conditions:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(2)(iii)(E)(1)",
+    "text": "(1) Only one circuit or piece of equipment is deenergized, and",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(2)(iii)(E)(2)",
+    "text": "(2) The lockout period does not extend beyond the work shift, and",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(2)(iii)(E)(3)",
+    "text": "(3) Employees exposed to the hazards associated with reenergizing the circuit or equipment are familiar with this procedure.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(2)(iv)",
+    "text": "(iv) Verification of deenergized condition. The requirements of this paragraph shall be met before any circuits or equipment can be considered and worked as deenergized.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(2)(iv)(A)",
+    "text": "(A) A qualified person shall operate the equipment operating controls or otherwise verify that the equipment cannot be restarted.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(2)(iv)(B)",
+    "text": "(B) A qualified person shall use test equipment to test the circuit elements and electrical parts of equipment to which employees will be exposed and shall verify that the circuit elements and equipment parts are deenergized. The test shall also determine if any energized condition exists as a result of inadvertently induced voltage or unrelated voltage backfeed even though specific parts of the circuit have been deenergized and presumed to be safe. If the circuit to be tested is over 600 volts, nominal, the test equipment shall be checked for proper operation immediately before and immediately after this test.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(2)(v)",
+    "text": "(v) Reenergizing equipment. These requirements shall be met, in the order given, before circuits or equipment are reenergized, even temporarily.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(2)(v)(A)",
+    "text": "(A) A qualified person shall conduct tests and visual inspections, as necessary, to verify that all tools, electrical jumpers, shorts, grounds, and other such devices have been removed, so that the circuits and equipment can be safely energized.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(2)(v)(B)",
+    "text": "(B) Employees exposed to the hazards associated with reenergizing the circuit or equipment shall be warned to stay clear of circuits and equipment.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(2)(v)(C)",
+    "text": "(C) Each lock and tag shall be removed by the employee who applied it or under his or her direct supervision. However, if this employee is absent from the workplace, then the lock or tag may be removed by a qualified person designated to perform this task provided that:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(2)(v)(C)(1)",
+    "text": "(1) The employer ensures that the employee who applied the lock or tag is not available at the workplace, and",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(2)(v)(C)(2)",
+    "text": "(2) The employer ensures that the employee is aware that the lock or tag has been removed before he or she resumes work at that workplace.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(b)(2)(v)(D)",
+    "text": "(D) There shall be a visual determination that all employees are clear of the circuits and equipment.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(1)",
+    "text": "(c) Working on or near exposed energized parts\u2014(1) Application. This paragraph applies to work performed on exposed live parts (involving either direct contact or contact by means of tools or materials) or near enough to them for employees to be exposed to any hazard they present.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(2)",
+    "text": "(2) Work on energized equipment. Only qualified persons may work on electric circuit parts or equipment that have not been deenergized under the procedures of paragraph (b) of this section. Such persons shall be capable of working safely on energized circuits and shall be familiar with the proper use of special precautionary techniques, personal protective equipment, insulating and shielding materials, and insulated tools.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(3)",
+    "text": "(3) Overhead lines. If work is to be performed near overhead lines, the lines shall be deenergized and grounded, or other protective measures shall be provided before work is started. If the lines are to be deenergized, arrangements shall be made with the person or organization that operates or controls the electric circuits involved to deenergize and ground them. If protective measures, such as guarding, isolating, or insulating are provided, these precautions shall prevent employees from contacting such lines directly with any part of their body or indirectly through conductive materials, tools, or equipment.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(3)(i)(A)",
+    "text": "(i) Unqualified persons. (A) When an unqualified person is working in an elevated position near overhead lines, the location shall be such that the person and the longest conductive object he or she may contact cannot come closer to any unguarded, energized overhead line than the following distances:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(3)(i)(A)(1)",
+    "text": "(1) For voltages to ground 50kV or below\u201410 ft. (305 cm);",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(3)(i)(A)(2)",
+    "text": "(2) For voltages to ground over 50kV\u201410 ft. (305 cm) plus 4 in. (10 cm) for every 10kV over 50kV.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(3)(i)(B)",
+    "text": "(B) When an unqualified person is working on the ground in the vicinity of overhead lines, the person may not bring any conductive object closer to unguarded, energized overhead lines than the distances given in paragraph (c)(3)(i)(A) of this section.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(3)(ii)",
+    "text": "(ii) Qualified persons. When a qualified person is working in the vicinity of overhead lines, whether in an elevated position or on the ground, the person may not approach or take any conductive object without an approved insulating handle closer to exposed energized parts than shown in Table S-5 unless:",
+    "expected": "refuse",
+    "refuse_reason": "approach distance comes from Table S-5, keyed to circuit voltage: a non-spatial variable the scene cannot measure"
+  },
+  {
+    "citation": "1910.333(c)(3)(ii)(A)",
+    "text": "(A) The person is insulated from the energized part (gloves, with sleeves if necessary, rated for the voltage involved are considered to be insulation of the person from the energized part on which work is performed), or",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(3)(ii)(B)",
+    "text": "(B) The energized part is insulated both from all other conductive objects at a different potential and from the person, or",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(3)(ii)(C)",
+    "text": "(C) The person is insulated from all conductive objects at a potential different from that of the energized part.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(3)(iii)(A)",
+    "text": "(iii) Vehicular and mechanical equipment. (A) Any vehicle or mechanical equipment capable of having parts of its structure elevated near energized overhead lines shall be operated so that a clearance of 10 ft. (305 cm) is maintained. If the voltage is higher than 50kV, the clearance shall be increased 4 in. (10 cm) for every 10kV over that voltage. However, under any of the following conditions, the clearance may be reduced:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(3)(iii)(A)(1)",
+    "text": "(1) If the vehicle is in transit with its structure lowered, the clearance may be reduced to 4 ft. (122 cm). If the voltage is higher than 50kV, the clearance shall be increased 4 in. (10 cm) for every 10kV over that voltage.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(3)(iii)(A)(2)",
+    "text": "(2) If insulating barriers are installed to prevent contact with the lines, and if the barriers are rated for the voltage of the line being guarded and are not a part of or an attachment to the vehicle or its raised structure, the clearance may be reduced to a distance within the designed working dimensions of the insulating barrier.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(3)(iii)(A)(3)",
+    "text": "(3) If the equipment is an aerial lift insulated for the voltage involved, and if the work is performed by a qualified person, the clearance (between the uninsulated portion of the aerial lift and the power line) may be reduced to the distance given in Table S-5.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(3)(iii)(B)",
+    "text": "(B) Employees standing on the ground may not contact the vehicle or mechanical equipment or any of its attachments, unless:",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(3)(iii)(B)(1)",
+    "text": "(1) The employee is using protective equipment rated for the voltage; or",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(3)(iii)(B)(2)",
+    "text": "(2) The equipment is located so that no uninsulated part of its structure (that portion of the structure that provides a conductive path to employees on the ground) can come closer to the line than permitted in paragraph (c)(3)(iii) of this section.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(3)(iii)(C)",
+    "text": "(C) If any vehicle or mechanical equipment capable of having parts of its structure elevated near energized overhead lines is intentionally grounded, employees working on the ground near the point of grounding may not stand at the grounding location whenever there is a possibility of overhead line contact. Additional precautions, such as the use of barricades or insulation, shall be taken to protect employees from hazardous ground potentials, depending on earth resistivity and fault currents, which can develop within the first few feet or more outward from the grounding point.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(4)(i)",
+    "text": "(4) Illumination. (i) Employees may not enter spaces containing exposed energized parts, unless illumination is provided that enables the employees to perform the work safely.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(4)(ii)",
+    "text": "(ii) Where lack of illumination or an obstruction precludes observation of the work to be performed, employees may not perform tasks near exposed energized parts. Employees may not reach blindly into areas which may contain energized parts.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(5)",
+    "text": "(5) Confined or enclosed work spaces. When an employee works in a confined or enclosed space (such as a manhole or vault) that contains exposed energized parts, the employer shall provide, and the employee shall use, protective shields, protective barriers, or insulating materials as necessary to avoid inadvertent contact with these parts. Doors, hinged panels, and the like shall be secured to prevent their swinging into an employee and causing the employee to contact exposed energized parts.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(6)",
+    "text": "(6) Conductive materials and equipment. Conductive materials and equipment that are in contact with any part of an employee's body shall be handled in a manner that will prevent them from contacting exposed energized conductors or circuit parts. If an employee must handle long dimensional conductive objects (such as ducts and pipes) in areas with exposed live parts, the employer shall institute work practices (such as the use of insulation, guarding, and material handling techniques) which will minimize the hazard.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(7)",
+    "text": "(7) Portable ladders. Portable ladders shall have nonconductive siderails if they are used where the employee or the ladder could contact exposed energized parts.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(8)",
+    "text": "(8) Conductive apparel. Conductive articles of jewelry and clothing (such as watch bands, bracelets, rings, key chains, necklaces, metalized aprons, cloth with conductive thread, or metal headgear) may not be worn if they might contact exposed energized parts. However, such articles may be worn if they are rendered nonconductive by covering, wrapping, or other insulating means.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(9)",
+    "text": "(9) Housekeeping duties. Where live parts present an electrical contact hazard, employees may not perform housekeeping duties at such close distances to the parts that there is a possibility of contact, unless adequate safeguards (such as insulating equipment or barriers) are provided. Electrically conductive cleaning materials (including conductive solids such as steel wool, metalized cloth, and silicon carbide, as well as conductive liquid solutions) may not be used in proximity to energized parts unless procedures are followed which will prevent electrical contact.",
+    "expected": "skip"
+  },
+  {
+    "citation": "1910.333(c)(10)",
+    "text": "(10) Interlocks. Only a qualified person following the requirements of paragraph (c) of this section may defeat an electrical safety interlock, and then only temporarily while he or she is working on the equipment. The interlock system shall be returned to its operable condition when this work is completed.",
+    "expected": "skip"
+  }
+]
