@@ -65,7 +65,7 @@ def test_discarded_fence_fragments_surface_a_warning_instead_of_vanishing():
     movable = _entity(
         "pallet",
         "pallet",
-        [(2.7, 0.8), (2.9, 0.8), (2.9, 1.0), (2.7, 1.0)],
+        [(2.9, 0.8), (3.1, 0.8), (3.1, 1.0), (2.9, 1.0)],
         ["frame-1", "frame-2"],
     )
 
@@ -85,7 +85,7 @@ def test_single_clean_fence_produces_no_fragment_warning():
     movable = _entity(
         "pallet",
         "pallet",
-        [(2.7, 0.8), (2.9, 0.8), (2.9, 1.0), (2.7, 1.0)],
+        [(2.9, 0.8), (3.1, 0.8), (3.1, 1.0), (2.9, 1.0)],
         ["frame-1", "frame-2"],
     )
 
@@ -96,6 +96,7 @@ def test_single_clean_fence_produces_no_fragment_warning():
 
 _BASE_FACT_IDS = [
     "fact-inside-or-intersects",
+    "fact-clearance-error-budget",
     "fact-minimum-boundary-clearance",
     "fact-object-height",
 ]
@@ -221,15 +222,16 @@ def test_multiple_valid_fences_merge_into_one_boundary_hull():
     movable = _entity(
         "movable",
         "pallet",
-        [(2.9, 0.8), (3.1, 0.8), (3.1, 1.0), (2.9, 1.0)],
+        [(3.1, 0.8), (3.3, 0.8), (3.3, 1.0), (3.1, 1.0)],
         ["frame-1", "frame-2"],
     )
 
     result = _assess_clearance([big, small, movable], Criterion())
 
-    # Merged hull spans x in [0, 2.2]; the pallet sits 0.7 m off its edge.
+    # Merged hull spans x in [0, 2.2]; the pallet sits 0.9 m off its edge —
+    # outside the ±0.20 m band, so the verdict is a definite PASS.
     assert result.assessment.status.value == "PASS"
-    assert abs(result.assessment.approximate_distance_m - 0.7) < 1e-9
+    assert abs(result.assessment.approximate_distance_m - 0.9) < 1e-9
     assert any(
         "2 safety fence segments merged into a single boundary hull" in warning
         for warning in result.warnings

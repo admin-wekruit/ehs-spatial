@@ -13,6 +13,14 @@ from .contracts import (
 
 
 FENCE_LABEL = "safety fence"
+
+# Measured accuracy of the two capture tiers, from real laser-GT evals:
+# multi-view real-photo MAE 14-18 cm (docs/reviews/2026-07-21-mvp-boundary-map.md),
+# mono ~30-46 cm (docs/reviews/2026-08-24-moge-auto-anchor.md). A distance
+# inside the budget around the threshold cannot honestly pick a side, so
+# the verdict says NEEDS_REVIEW instead of flipping on noise.
+ERROR_BUDGET_MULTIVIEW_M = 0.20
+ERROR_BUDGET_MONO_M = 0.35
 MOVABLE_LABELS = {
     "material cart",
     "pallet",
@@ -148,11 +156,25 @@ def _assess_clearance(
         if inside_or_intersects
         else float(movable_polygon.distance(fence_polygon.boundary))
     )
-    status = (
-        AssessmentStatus.FAIL
-        if inside_or_intersects or distance < criterion.minimum_clearance_m
-        else AssessmentStatus.PASS
+    error_budget = (
+        ERROR_BUDGET_MULTIVIEW_M
+        if capture_frame_count >= 2
+        else ERROR_BUDGET_MONO_M
     )
+    threshold = criterion.minimum_clearance_m
+    if inside_or_intersects or distance < threshold - error_budget:
+        status = AssessmentStatus.FAIL
+    elif distance > threshold + error_budget:
+        status = AssessmentStatus.PASS
+    else:
+        status = AssessmentStatus.NEEDS_REVIEW
+        fence_warnings = [
+            *fence_warnings,
+            f"measured clearance {distance:.2f} m is within the "
+            f"±{error_budget:.2f} m error budget of the "
+            f"{threshold:.2f} m threshold; the geometry cannot honestly "
+            "pick a side",
+        ]
     combined_evidence = sorted(
         fence_evidence | set(movable.evidence_frame_ids)
     )
@@ -164,6 +186,15 @@ def _assess_clearance(
             object_id=fence.entity_id,
             value=float(inside_or_intersects),
             unit="boolean",
+            evidence_frame_ids=combined_evidence,
+        ),
+        SpatialFact(
+            fact_id="fact-clearance-error-budget",
+            predicate="clearance_error_budget",
+            subject_id=movable.entity_id,
+            object_id=fence.entity_id,
+            value=error_budget,
+            unit="m",
             evidence_frame_ids=combined_evidence,
         ),
         SpatialFact(
@@ -212,6 +243,7 @@ def _assess_clearance(
             fact_ids=[fact.fact_id for fact in facts],
             evidence_frame_ids=combined_evidence,
             approximate_distance_m=distance,
+            distance_error_budget_m=error_budget,
         ),
         warnings=fence_warnings,
         selected_entity_id=movable.entity_id,

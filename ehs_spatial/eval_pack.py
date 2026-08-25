@@ -359,8 +359,12 @@ def generate_eval_pack(output_root: str | Path):
     root = Path(output_root)
     root.mkdir(parents=True, exist_ok=True)
     case_specs = {
-        "ladder_050": ("FAIL", 0.5, "step ladder", _normal_cameras()),
-        "ladder_070": ("PASS", 0.7, "step ladder", _normal_cameras()),
+        # 0.5 and 0.7 both sit inside the ±0.20 m multi-view error band
+        # around the 0.6 m threshold, so the production verdict for BOTH is
+        # NEEDS_REVIEW; the expected-distance gate still checks each case
+        # lands on its own side of the threshold numerically.
+        "ladder_050": ("NEEDS_REVIEW", 0.5, "step ladder", _normal_cameras()),
+        "ladder_070": ("NEEDS_REVIEW", 0.7, "step ladder", _normal_cameras()),
         "platform_inside": (
             "FAIL",
             0.0,

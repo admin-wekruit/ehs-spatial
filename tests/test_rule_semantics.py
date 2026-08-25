@@ -81,20 +81,36 @@ def _rotated_rect(
 
 
 @pytest.mark.parametrize(
-    ("gap", "expected"),
+    ("gap", "frames", "expected"),
     [
-        (0.58, AssessmentStatus.FAIL),
-        # Exact-0.6 PASS is the documented current semantics: the rule fails
-        # only on distance strictly below minimum_clearance_m, pending owner
-        # review of the <= convention.
-        (0.60, AssessmentStatus.PASS),
-        (0.62, AssessmentStatus.PASS),
+        # Multi-view band is ±0.20 m around the 0.6 m threshold: anything
+        # inside [0.40, 0.80] is within the measured noise floor and must
+        # say NEEDS_REVIEW rather than flip a verdict on noise.
+        (0.39, 4, AssessmentStatus.FAIL),
+        (0.58, 4, AssessmentStatus.NEEDS_REVIEW),
+        (0.60, 4, AssessmentStatus.NEEDS_REVIEW),
+        (0.62, 4, AssessmentStatus.NEEDS_REVIEW),
+        (0.81, 4, AssessmentStatus.PASS),
+        # Mono band is ±0.35 m: wider, because single-view accuracy is worse.
+        (0.24, 1, AssessmentStatus.FAIL),
+        (0.81, 1, AssessmentStatus.NEEDS_REVIEW),
+        (0.96, 1, AssessmentStatus.PASS),
     ],
 )
-def test_boundary_triplet_around_minimum_clearance(gap, expected):
-    result = _assess_clearance([_fence(), _movable(_square(gap))], Criterion())
+def test_boundary_bands_around_minimum_clearance(gap, frames, expected):
+    fence = _fence()
+    movable = _movable(_square(gap))
+    if frames == 1:
+        fence = fence.model_copy(update={"evidence_frame_ids": ["frame-1"]})
+        movable = movable.model_copy(update={"evidence_frame_ids": ["frame-1"]})
+    result = _assess_clearance(
+        [fence, movable], Criterion(), capture_frame_count=frames
+    )
     assert result.assessment.status == expected
     assert result.assessment.approximate_distance_m == pytest.approx(gap)
+    assert result.assessment.distance_error_budget_m == (
+        0.20 if frames >= 2 else 0.35
+    )
 
 
 def test_straddling_movable_fails_with_zero_distance():
@@ -108,7 +124,7 @@ def test_rotated_movable_judged_by_nearest_corner_not_centroid():
     # 1.6 x 0.2 m box rotated 45 deg: nearest corner 0.45 m from the x=2
     # fence edge, centroid 0.45 + 0.9*sqrt(2)/2 ~= 1.086 m away. Centroid
     # semantics would PASS; nearest-point semantics must FAIL.
-    corner_gap = 0.45
+    corner_gap = 0.30
     center_x = 2.0 + corner_gap + 0.9 * np.sqrt(2.0) / 2.0
     ladder = _movable(
         _rotated_rect((center_x, 1.0), 0.8, 0.1, 45.0),
@@ -143,16 +159,16 @@ def test_nearest_movable_governs_over_rotated_distractor_centroid():
 
 def test_overhang_toward_fence_is_fact_only_and_does_not_fail_verdict():
     # Recorded semantic gap awaiting owner decision: the base polygon clears
-    # the fence by 0.8 m, but a 0.5 m overhang toward the fence leaves only
-    # ~0.3 m of true clearance. The owner has NOT approved overhang affecting
+    # the fence by 0.9 m, but a 0.5 m overhang toward the fence leaves only
+    # ~0.4 m of true clearance. The owner has NOT approved overhang affecting
     # verdicts, so the current semantics is PASS on base-footprint distance.
     overhanging = _movable(
-        [(2.8, 0.9), (3.0, 0.9), (3.0, 1.1), (2.8, 1.1)],
+        [(2.9, 0.9), (3.1, 0.9), (3.1, 1.1), (2.9, 1.1)],
         overhang_m=0.5,
     )
     result = _assess_clearance([_fence(), overhanging], Criterion())
     assert result.assessment.status == AssessmentStatus.PASS
-    assert result.assessment.approximate_distance_m == pytest.approx(0.8)
+    assert result.assessment.approximate_distance_m == pytest.approx(0.9)
 
 
 # --- E3: spatial-state accuracy on analytic clusters ----------------------

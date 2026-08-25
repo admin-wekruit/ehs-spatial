@@ -206,7 +206,7 @@ def _synthetic_scene(
     return frames, observations
 
 
-def test_external_clearance_below_minimum_fails(tmp_path):
+def test_external_clearance_inside_band_needs_review(tmp_path):
     from ehs_spatial.scene import build_scene_and_assess
 
     frames, observations = _synthetic_scene(tmp_path, clearance_m=0.5)
@@ -219,8 +219,11 @@ def test_external_clearance_below_minimum_fails(tmp_path):
         criterion=Criterion(),
     )
 
-    assert assessment.status.value == "FAIL"
+    # 0.5 m sits inside the ±0.20 m multi-view band around 0.6 m: the
+    # honest verdict is NEEDS_REVIEW, not a confident FAIL.
+    assert assessment.status.value == "NEEDS_REVIEW"
     assert assessment.approximate_distance_m == pytest.approx(0.5, abs=0.03)
+    assert assessment.distance_error_budget_m == pytest.approx(0.20)
     assert scene.scale_source == "camera_height"
     assert scene.scale_factor == pytest.approx(0.8, abs=0.01)
 
@@ -228,10 +231,10 @@ def test_external_clearance_below_minimum_fails(tmp_path):
 def test_external_clearance_above_minimum_passes(tmp_path):
     from ehs_spatial.scene import build_scene_and_assess
 
-    frames, observations = _synthetic_scene(tmp_path, clearance_m=0.7)
+    frames, observations = _synthetic_scene(tmp_path, clearance_m=0.9)
 
     _, assessment = build_scene_and_assess(
-        run_id="clearance-070",
+        run_id="clearance-090",
         frames=frames,
         observations=observations,
         camera_height_m=1.6,
@@ -239,10 +242,10 @@ def test_external_clearance_above_minimum_passes(tmp_path):
     )
 
     assert assessment.status.value == "PASS"
-    assert assessment.approximate_distance_m == pytest.approx(0.7, abs=0.03)
+    assert assessment.approximate_distance_m == pytest.approx(0.9, abs=0.03)
 
 
-def test_external_clearance_equal_to_minimum_passes(tmp_path):
+def test_external_clearance_equal_to_minimum_needs_review(tmp_path):
     from ehs_spatial.scene import build_scene_and_assess
 
     frames, observations = _synthetic_scene(tmp_path, clearance_m=0.6)
@@ -255,7 +258,9 @@ def test_external_clearance_equal_to_minimum_passes(tmp_path):
         criterion=Criterion(),
     )
 
-    assert assessment.status.value == "PASS"
+    # Exactly at the threshold is the centre of the error band; under band
+    # semantics this is the canonical NEEDS_REVIEW case.
+    assert assessment.status.value == "NEEDS_REVIEW"
     assert assessment.approximate_distance_m == pytest.approx(0.6, abs=1e-12)
 
 
@@ -433,7 +438,7 @@ def test_floor_ransac_final_tolerance_is_three_centimeters_at_any_raw_scale(
         )
 
         assert scene.scale_factor == pytest.approx(raw_to_meters, rel=0.002)
-        assert assessment.status.value == "FAIL"
+        assert assessment.status.value == "NEEDS_REVIEW"
         assert assessment.approximate_distance_m == pytest.approx(0.5, abs=0.01)
 
 
@@ -490,7 +495,7 @@ def test_top_surface_only_object_height_is_measured_above_floor(tmp_path):
 
     pallet = next(entity for entity in scene.entities if entity.label == "pallet")
     assert pallet.height_m == pytest.approx(0.15, abs=0.01)
-    assert assessment.status.value == "FAIL"
+    assert assessment.status.value == "NEEDS_REVIEW"
 
 
 def test_geometry_in_only_one_frame_is_insufficient_without_fake_plane(tmp_path):
