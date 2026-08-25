@@ -21,6 +21,9 @@ class RunPaths:
     observations_json: Path
     scene_json: Path
     assessment_json: Path
+    manifest_json: Path
+    policies_json: Path
+    review_json: Path
     topdown_png: Path
     plan_view_png: Path
     cloud_perspective_png: Path
@@ -44,6 +47,9 @@ class ArtifactStore:
             observations_json=run_root / "observations.json",
             scene_json=run_root / "scene.json",
             assessment_json=run_root / "assessment.json",
+            manifest_json=run_root / "manifest.json",
+            policies_json=run_root / "policies.json",
+            review_json=run_root / "review.json",
             topdown_png=run_root / "topdown.png",
             plan_view_png=run_root / "plan_view.png",
             cloud_perspective_png=run_root / "cloud_perspective.png",

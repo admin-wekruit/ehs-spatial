@@ -526,3 +526,35 @@ def test_scale_chain_honours_explicit_camera_height_preference(tmp_path):
     # even consulted.
     assert scale["source"] == "camera_height"
     assert pipeline.moge.calls == 0
+
+
+def test_run_assessment_writes_a_provenance_manifest(tmp_path):
+    from ehs_spatial.contracts import RunManifest
+
+    pipeline, store, *_ = _pipeline(tmp_path)
+
+    pipeline.run_assessment(_capture(tmp_path))
+
+    manifest = store.load_json(store.paths("run-1").manifest_json, RunManifest)
+    assert manifest.run_id == "run-1"
+    assert manifest.capture_tier == "multiview"
+    assert manifest.operator == "unknown"
+    assert manifest.created_at.endswith("+00:00")
+    assert manifest.providers.mapanything_model_id.startswith("vufinder/")
+    assert manifest.providers.moge_version.startswith("jasonod888/")
+
+
+def test_mono_capture_manifest_records_mono_tier(tmp_path):
+    from ehs_spatial.contracts import RunManifest
+
+    pipeline, store, *_ = _pipeline(tmp_path)
+    path = tmp_path / "upload-1.png"
+    Image.new("RGB", (2, 2), (1, 1, 1)).save(path)
+
+    pipeline.run_assessment(
+        CaptureRun(run_id="run-1", image_paths=[str(path)], operator="adam")
+    )
+
+    manifest = store.load_json(store.paths("run-1").manifest_json, RunManifest)
+    assert manifest.capture_tier == "mono"
+    assert manifest.operator == "adam"

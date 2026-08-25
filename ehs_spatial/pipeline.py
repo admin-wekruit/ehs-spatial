@@ -1,8 +1,18 @@
+import subprocess
 from collections.abc import Callable
+from datetime import datetime, timezone
 from typing import Any
 
 from .artifacts import ArtifactStore
-from .contracts import Assessment, CaptureRun, ClimbReview, GroundedAnswer, SceneMap
+from .contracts import (
+    Assessment,
+    CaptureRun,
+    ClimbReview,
+    GroundedAnswer,
+    ProviderManifest,
+    RunManifest,
+    SceneMap,
+)
 from .providers.base import ProviderError
 from .providers.gemini import GeminiAdapter
 from .providers.map_anything import MapAnythingAdapter
@@ -79,9 +89,40 @@ class EHSAssessmentPipeline:
             ],
         }
 
+    def _write_manifest(self, prepared: CaptureRun, paths) -> None:
+        from .providers.gemini import GEMINI_MODEL_ID
+        from .providers.map_anything import MAP_ANYTHING_MODEL_ID
+        from .providers.moge import MOGE_VERSION
+        from .providers.sam3 import SAM3_ENDPOINT
+
+        try:
+            code_version = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).stdout.strip() or "unknown"
+        except Exception:
+            code_version = "unknown"
+        manifest = RunManifest(
+            run_id=prepared.run_id,
+            created_at=datetime.now(timezone.utc).isoformat(),
+            operator=prepared.operator,
+            capture_tier="multiview" if len(prepared.image_paths) >= 2 else "mono",
+            providers=ProviderManifest(
+                mapanything_model_id=MAP_ANYTHING_MODEL_ID,
+                sam_endpoint=SAM3_ENDPOINT,
+                gemini_model=GEMINI_MODEL_ID,
+                moge_version=MOGE_VERSION,
+                code_version=code_version,
+            ),
+        )
+        self.store.save_json(paths.manifest_json, manifest)
+
     def run_assessment(self, capture: CaptureRun) -> Assessment:
         prepared = self.store.prepare_run(capture)
         paths = self.store.paths(prepared.run_id)
+        self._write_manifest(prepared, paths)
         frames, point_cloud_path = self.map_anything.run(
             prepared.image_paths, paths.geometry_dir
         )
