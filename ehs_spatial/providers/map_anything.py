@@ -101,30 +101,49 @@ def _json_safe(value: object) -> object:
     return str(value)
 
 
-def _read_provider_bytes(location: object) -> bytes:
+# Hosts a replicate prediction may legitimately point us at. Anything else
+# in a provider response is treated as hostile (review finding O3): a
+# malicious response must not be able to direct reads of local files or
+# arbitrary origins into run artifacts.
+_ALLOWED_URL_SUFFIXES = (".replicate.delivery", ".replicate.com")
+
+
+def _read_provider_bytes(location: object, *, allow_local: bool = False) -> bytes:
     if not isinstance(location, (str, Path)) and hasattr(location, "read"):
         content = location.read()
         return content if isinstance(content, bytes) else bytes(content)
     value = str(getattr(location, "url", location))
-    local_path = Path(value)
-    if local_path.is_file():
-        return local_path.read_bytes()
-    if urlparse(value).scheme in {"http", "https", "file"}:
+    parsed = urlparse(value)
+    if parsed.scheme in {"http", "https"}:
+        hostname = parsed.hostname or ""
+        if not hostname.endswith(_ALLOWED_URL_SUFFIXES):
+            raise ValueError(f"provider URL host not allowed: {hostname}")
         with urlopen(value, timeout=60) as response:
             return response.read()
+    if allow_local:
+        # Test/replay seam only: replaying a saved response with local paths.
+        local_path = Path(parsed.path if parsed.scheme == "file" else value)
+        if local_path.is_file():
+            return local_path.read_bytes()
     raise ValueError(f"unsupported provider file location: {value}")
 
 
-def _download_provider_bytes(location: object) -> bytes:
+def _download_provider_bytes(location: object, *, allow_local: bool = False) -> bytes:
     try:
-        return _read_provider_bytes(location)
+        return _read_provider_bytes(location, allow_local=allow_local)
     except Exception as exc:
         raise ProviderError("replicate", "map_anything.download", str(exc)) from exc
 
 
 class MapAnythingAdapter:
-    def __init__(self, runner: Callable[..., object] | None = None) -> None:
+    def __init__(
+        self,
+        runner: Callable[..., object] | None = None,
+        *,
+        allow_local: bool = False,
+    ) -> None:
         self.runner = runner or _default_runner
+        self.allow_local = allow_local
 
     def run(
         self,
@@ -203,9 +222,13 @@ class MapAnythingAdapter:
         point_cloud_path = output_dir / "point_cloud.glb"
         for index, location in enumerate(data, start=1):
             raw_json_path = provider_dir / f"frame_{index:04d}.json"
-            raw_json_path.write_bytes(_download_provider_bytes(location))
+            raw_json_path.write_bytes(
+                _download_provider_bytes(location, allow_local=self.allow_local)
+            )
             raw_json_paths.append(raw_json_path)
-        point_cloud_path.write_bytes(_download_provider_bytes(point_cloud_location))
+        point_cloud_path.write_bytes(
+            _download_provider_bytes(point_cloud_location, allow_local=self.allow_local)
+        )
 
         frames = []
         for index, raw_json_path in enumerate(raw_json_paths, start=1):

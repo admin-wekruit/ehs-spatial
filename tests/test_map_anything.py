@@ -137,7 +137,9 @@ def test_adapter_persists_complete_provider_output_and_returns_geometry_frames(t
         return provider_response
 
     geometry_dir = tmp_path / "run" / "geometry"
-    frames, saved_point_cloud = map_anything.MapAnythingAdapter(runner=runner).run(
+    frames, saved_point_cloud = map_anything.MapAnythingAdapter(
+        runner=runner, allow_local=True
+    ).run(
         image_paths,
         geometry_dir,
     )
@@ -317,7 +319,7 @@ def test_adapter_persists_all_raw_outputs_before_parsing_frames(tmp_path):
 
     with pytest.raises(map_anything.ProviderError) as caught:
         map_anything.MapAnythingAdapter(
-            runner=lambda model_identifier, *, input: response
+            runner=lambda model_identifier, *, input: response, allow_local=True
         ).run(images, geometry_dir)
 
     assert caught.value.provider == "replicate"
@@ -349,3 +351,24 @@ def test_default_runner_uses_polling_instead_of_blocking_wait(monkeypatch):
 
     assert result == {"ok": True}
     assert seen == {"model": "m/x:abc", "input": {"k": 1}, "wait": False}
+
+
+def test_provider_bytes_rejects_local_paths_and_foreign_hosts_by_default(tmp_path):
+    map_anything = importlib.import_module("ehs_spatial.providers.map_anything")
+    secret = tmp_path / "secret.txt"
+    secret.write_bytes(b"leak")
+
+    # O3: a hostile provider response must not read local files ...
+    with pytest.raises(ValueError, match="unsupported provider file location"):
+        map_anything._read_provider_bytes(str(secret))
+    with pytest.raises(ValueError, match="unsupported provider file location"):
+        map_anything._read_provider_bytes(f"file://{secret}")
+    # ... nor fetch from arbitrary origins.
+    with pytest.raises(ValueError, match="host not allowed"):
+        map_anything._read_provider_bytes("https://evil.example.com/x.bin")
+    # The explicit replay seam still works.
+    assert map_anything._read_provider_bytes(str(secret), allow_local=True) == b"leak"
+    assert (
+        map_anything._read_provider_bytes(f"file://{secret}", allow_local=True)
+        == b"leak"
+    )

@@ -26,10 +26,57 @@ class Criterion(BaseModel):
     minimum_clearance_m: float = Field(default=0.6, gt=0)
 
 
+class Predicate(str, Enum):
+    """Closed vocabulary for compiled policies. A compiler that cannot
+    express a policy must say so rather than approximate it, so unsupported
+    rules fail loudly at compile time instead of quietly at verdict time."""
+
+    MIN_SEPARATION = "min_separation"
+    MAX_SEPARATION = "max_separation"
+    KEEP_CLEAR = "keep_clear"
+    NOT_INSIDE = "not_inside"
+    MAX_HEIGHT = "max_height"
+    MAX_TILT = "max_tilt"
+
+
+class Severity(str, Enum):
+    CRITICAL = "critical"
+    MAJOR = "major"
+    MINOR = "minor"
+    ADVISORY = "advisory"
+
+
+class PolicySpec(BaseModel):
+    """One measurable requirement, compiled from prose and reviewable."""
+
+    policy_id: str
+    source_text: str
+    predicate: Predicate
+    subject_labels: list[str] = Field(min_length=1)
+    # Empty for self-referential predicates (MAX_HEIGHT, MAX_TILT).
+    object_labels: list[str] = Field(default_factory=list)
+    threshold: float = Field(gt=0)
+    unit: Literal["m", "deg"] = "m"
+    severity: Severity = Severity.MAJOR
+    rationale: str = ""
+    # Set by the compiler when the prose carries a requirement this
+    # vocabulary cannot express; such specs are never evaluated.
+    unsupported_reason: str | None = None
+
+    def requires_labels(self) -> set[str]:
+        return set(self.subject_labels) | set(self.object_labels)
+
+
 class CaptureRun(BaseModel):
     run_id: str
     image_paths: list[str] = Field(min_length=1, max_length=4)
-    camera_height_m: float = Field(default=1.5, gt=0)
+    # None = the operator supplied no height; the scale chain then relies on
+    # the auto anchor and, failing that, the model's native scale.
+    camera_height_m: float | None = Field(default=1.5, gt=0)
+    scale_preference: Literal["auto", "camera_height"] = "auto"
+    operator: str = "unknown"
+    # Empty keeps the legacy Criterion demo-rule path exactly as before.
+    policies: list[PolicySpec] = Field(default_factory=list)
     criterion: Criterion = Field(default_factory=Criterion)
 
 
@@ -93,8 +140,10 @@ class SpatialFact(BaseModel):
 class SceneMap(BaseModel):
     run_id: str
     floor_plane: tuple[float, float, float, float] | None
+    # "moge_anchor" | "camera_height" | "model_native"
     scale_source: str | None
     scale_factor: float | None = Field(gt=0)
+    scale_confidence: float | None = Field(default=None, ge=0, le=1)
     fence_polygon: list[Point2]
     entities: list[Entity3D]
     facts: list[SpatialFact]
@@ -104,6 +153,9 @@ class SceneMap(BaseModel):
 class AssessmentStatus(str, Enum):
     PASS = "PASS"
     FAIL = "FAIL"
+    # The measured distance sits inside the capture tier's error budget
+    # around the threshold: the geometry cannot honestly pick a side.
+    NEEDS_REVIEW = "NEEDS_REVIEW"
     INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
 
 
@@ -118,7 +170,59 @@ class Assessment(BaseModel):
     fact_ids: list[str]
     evidence_frame_ids: list[str]
     approximate_distance_m: float | None = Field(default=None, ge=0)
+    # The +/- band the verdict honoured, from the capture tier's measured
+    # accuracy — display distances as "d ± budget", never as bare decimals.
+    distance_error_budget_m: float | None = Field(default=None, ge=0)
     climb_review: ClimbReview | None = None
+
+
+class Violation(BaseModel):
+    subject_id: str
+    object_id: str | None = None
+    measured: float
+    threshold: float
+    unit: str
+
+
+class PolicyResult(BaseModel):
+    policy_id: str
+    status: AssessmentStatus
+    violations: list[Violation] = Field(default_factory=list)
+    facts: list[SpatialFact] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    evidence_frame_ids: list[str] = Field(default_factory=list)
+
+
+class ProviderManifest(BaseModel):
+    mapanything_model_id: str
+    sam_endpoint: str
+    gemini_model: str
+    moge_version: str
+    code_version: str = "unknown"
+
+
+class RunManifest(BaseModel):
+    """Operational provenance for one run. Kept out of Assessment on
+    purpose: the verdict contract feeds prompts and pack fixtures, while
+    provenance changes at deployment cadence."""
+
+    run_id: str
+    created_at: str  # UTC ISO-8601
+    operator: str = "unknown"
+    capture_tier: Literal["mono", "multiview"]
+    providers: ProviderManifest
+
+
+class ReviewDisposition(BaseModel):
+    """A human's ruling on a machine verdict. The machine verdict is never
+    edited; the disposition sits beside it."""
+
+    run_id: str
+    reviewer: str
+    decision: Literal["confirmed", "overridden"]
+    overridden_status: AssessmentStatus | None = None
+    reason: str = ""
+    created_at: str  # UTC ISO-8601
 
 
 class GroundedAnswer(BaseModel):

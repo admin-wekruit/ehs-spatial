@@ -11,73 +11,23 @@ verdicts never depend on model weights, only on the reviewed spec plus the
 measured scene.
 """
 
-from enum import Enum
-from typing import Literal
-
 import numpy as np
-from pydantic import BaseModel, Field
 from shapely.geometry import Polygon
 from shapely.ops import unary_union
 
-from .contracts import AssessmentStatus, Entity3D, SceneMap, SpatialFact
-
-
-class Predicate(str, Enum):
-    """Closed vocabulary. A compiler that cannot express a policy must say
-    so rather than approximate it, so unsupported rules fail loudly at
-    compile time instead of quietly at verdict time."""
-
-    MIN_SEPARATION = "min_separation"
-    MAX_SEPARATION = "max_separation"
-    KEEP_CLEAR = "keep_clear"
-    NOT_INSIDE = "not_inside"
-    MAX_HEIGHT = "max_height"
-    MAX_TILT = "max_tilt"
-
-
-class Severity(str, Enum):
-    CRITICAL = "critical"
-    MAJOR = "major"
-    MINOR = "minor"
-    ADVISORY = "advisory"
-
-
-class PolicySpec(BaseModel):
-    """One measurable requirement, compiled from prose and reviewable."""
-
-    policy_id: str
-    source_text: str
-    predicate: Predicate
-    subject_labels: list[str] = Field(min_length=1)
-    # Empty for self-referential predicates (MAX_HEIGHT, MAX_TILT).
-    object_labels: list[str] = Field(default_factory=list)
-    threshold: float = Field(gt=0)
-    unit: Literal["m", "deg"] = "m"
-    severity: Severity = Severity.MAJOR
-    rationale: str = ""
-    # Set by the compiler when the prose carries a requirement this
-    # vocabulary cannot express; such specs are never evaluated.
-    unsupported_reason: str | None = None
-
-    def requires_labels(self) -> set[str]:
-        return set(self.subject_labels) | set(self.object_labels)
-
-
-class Violation(BaseModel):
-    subject_id: str
-    object_id: str | None = None
-    measured: float
-    threshold: float
-    unit: str
-
-
-class PolicyResult(BaseModel):
-    policy_id: str
-    status: AssessmentStatus
-    violations: list[Violation] = Field(default_factory=list)
-    facts: list[SpatialFact] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    evidence_frame_ids: list[str] = Field(default_factory=list)
+# Models live in contracts.py (CaptureRun.policies needs PolicySpec);
+# re-exported here so existing importers keep working.
+from .contracts import (
+    AssessmentStatus,
+    Entity3D,
+    PolicyResult,
+    PolicySpec,
+    Predicate,
+    SceneMap,
+    Severity,
+    SpatialFact,
+    Violation,
+)
 
 
 _SELF_PREDICATES = {Predicate.MAX_HEIGHT, Predicate.MAX_TILT}
