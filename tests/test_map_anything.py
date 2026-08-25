@@ -1,5 +1,7 @@
 import base64
+import email.message
 import importlib
+import io
 import json
 from pathlib import Path
 
@@ -372,3 +374,30 @@ def test_provider_bytes_rejects_local_paths_and_foreign_hosts_by_default(tmp_pat
         map_anything._read_provider_bytes(f"file://{secret}", allow_local=True)
         == b"leak"
     )
+
+
+def test_provider_bytes_refuses_redirects_from_allowed_hosts(monkeypatch):
+    map_anything = importlib.import_module("ehs_spatial.providers.map_anything")
+    from urllib.request import HTTPSHandler
+    from urllib.response import addinfourl
+
+    class FakeTransport(HTTPSHandler):
+        """Answers every https request with a 302 to a foreign origin, so the
+        test exercises the real opener stack without touching the network."""
+
+        def https_open(self, req):
+            headers = email.message.Message()
+            headers["Location"] = "http://169.254.169.254/latest/meta-data/"
+            response = addinfourl(io.BytesIO(b""), headers, req.full_url, code=302)
+            response.msg = "Found"
+            return response
+
+    monkeypatch.setattr(
+        map_anything,
+        "_OPENER",
+        map_anything._redirect_refusing_opener(FakeTransport()),
+    )
+
+    # The initial host passes the allow-list; the redirect must still die.
+    with pytest.raises(ValueError, match="redirect refused"):
+        map_anything._read_provider_bytes("https://x.replicate.delivery/pc.glb")
