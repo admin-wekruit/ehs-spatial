@@ -31,6 +31,8 @@ class RunPaths:
     chat_jsonl: Path
     point_cloud_glb: Path
     semantic_ply: Path
+    evidence_dir: Path
+    viewer_html: Path
 
 
 class ArtifactStore:
@@ -57,6 +59,8 @@ class ArtifactStore:
             chat_jsonl=run_root / "chat.jsonl",
             point_cloud_glb=run_root / "geometry" / "point_cloud.glb",
             semantic_ply=run_root / "geometry" / "semantic_cloud.ply",
+            evidence_dir=run_root / "evidence",
+            viewer_html=run_root / "viewer.html",
         )
 
     def prepare_run(self, capture: CaptureRun) -> CaptureRun:

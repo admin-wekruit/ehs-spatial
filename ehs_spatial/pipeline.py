@@ -1,4 +1,5 @@
 import subprocess
+import warnings
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
@@ -164,6 +165,14 @@ class EHSAssessmentPipeline:
                         observations.extend(label_observations)
                         break
         self.store.save_json(paths.observations_json, observations)
+        # Reviewer evidence is fail-soft like the plan-view renders: a broken
+        # overlay must never fail an otherwise sound assessment.
+        try:
+            from .viewer import render_frame_overlays
+
+            render_frame_overlays(frames, observations, paths.evidence_dir)
+        except Exception as error:
+            warnings.warn(f"evidence overlays failed ({error}); run continues")
 
         scale = self._resolve_scale(prepared, frames, paths.geometry_dir)
         scene, assessment = self.scene_builder(
@@ -215,6 +224,18 @@ class EHSAssessmentPipeline:
             prepared.run_id,
             {"type": "gemini_cursor", "interaction_id": interaction_id},
         )
+        try:
+            from .viewer import build_viewer_html
+
+            build_viewer_html(
+                paths.root,
+                frames=frames,
+                observations=observations,
+                camera_height_m=prepared.camera_height_m or 1.5,
+                out_path=paths.viewer_html,
+            )
+        except Exception as error:
+            warnings.warn(f"3D viewer build failed ({error}); run continues")
         return final_assessment
 
     def answer_question(self, run_id: str, question: str) -> GroundedAnswer:

@@ -172,6 +172,25 @@ def analyze_run(
         )
 
 
+def load_run_evidence(
+    pipeline: Any,
+    run_id: str | None,
+) -> tuple[list[tuple[str, str]], str | None]:
+    """Reviewer evidence for the current run: mask-overlay gallery items and
+    the viewer.html download. Reads only files the pipeline already wrote;
+    both artifacts are fail-soft in the pipeline, so either may be absent —
+    and a cleared run (run_id None) empties the section."""
+    if not run_id:
+        return [], None
+    paths = pipeline.store.paths(run_id)
+    overlays = [
+        (str(path), path.stem.removesuffix("_overlay"))
+        for path in sorted(paths.evidence_dir.glob("*_overlay.png"))
+    ]
+    viewer = str(paths.viewer_html) if paths.viewer_html.is_file() else None
+    return overlays, viewer
+
+
 def answer_run_question(
     pipeline: Any,
     question: str,
@@ -288,6 +307,23 @@ def build_app(pipeline: Any | None = None) -> gr.Blocks:
                     open=False,
                     height=320,
                 )
+                with gr.Accordion(
+                    "Reviewer evidence", open=False, elem_classes="evidence-extras"
+                ):
+                    overlay_gallery = gr.Gallery(
+                        value=[],
+                        label="Mask overlays on the captured views",
+                        columns=2,
+                        height=320,
+                        interactive=False,
+                    )
+                    viewer_file = gr.File(
+                        label=(
+                            "Interactive 3D viewer — download viewer.html "
+                            "and open it in a browser"
+                        ),
+                        interactive=False,
+                    )
 
         with gr.Column(elem_classes="chat-zone"):
             gr.Markdown("## Ask about this run", elem_classes="section-heading")
@@ -312,6 +348,18 @@ def build_app(pipeline: Any | None = None) -> gr.Blocks:
                     elem_classes="ask-action",
                 )
 
+        # Evidence follows the run id rather than extending the analyze
+        # tuple: the 8-output analyze contract stays stable, and a failed
+        # re-analysis (run_id -> None) clears the evidence section too.
+        run_id.change(
+            partial(load_run_evidence, service),
+            inputs=[run_id],
+            outputs=[overlay_gallery, viewer_file],
+            api_name="load_run_evidence",
+            api_visibility="private",
+            concurrency_id=PIPELINE_CONCURRENCY_ID,
+            concurrency_limit=1,
+        )
         analyze_button.click(
             analyze,
             inputs=[*uploads, camera_height],
@@ -547,4 +595,10 @@ textarea:focus-visible,
 """
 
 
-__all__ = ["APP_CSS", "analyze_run", "answer_run_question", "build_app"]
+__all__ = [
+    "APP_CSS",
+    "analyze_run",
+    "answer_run_question",
+    "build_app",
+    "load_run_evidence",
+]

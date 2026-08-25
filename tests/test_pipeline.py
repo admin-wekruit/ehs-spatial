@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import numpy as np
 from PIL import Image
 import pytest
 from pydantic import ValidationError
@@ -542,6 +543,98 @@ def test_run_assessment_writes_a_provenance_manifest(tmp_path):
     assert manifest.created_at.endswith("+00:00")
     assert manifest.providers.mapanything_model_id.startswith("vufinder/")
     assert manifest.providers.moge_version.startswith("jasonod888/")
+
+
+def test_run_assessment_emits_reviewer_evidence_artifacts(tmp_path):
+    """Every run gets its visual evidence from the standard pipeline: mask
+    overlays per frame plus the interactive viewer.html."""
+    from test_viewer import write_box_mask, write_synthetic_frame
+
+    from ehs_spatial.pipeline import EHSAssessmentPipeline
+
+    class EvidenceFakeMapAnything:
+        def run(self, image_paths, geometry_dir):
+            geometry_dir = Path(geometry_dir)
+            geometry_dir.mkdir(parents=True, exist_ok=True)
+            glb_path = geometry_dir / "point_cloud.glb"
+            glb_path.write_bytes(b"glb")
+            frames = [
+                write_synthetic_frame(
+                    geometry_dir / "frames" / f"frame_{index:04d}",
+                    f"frame_{index:04d}",
+                )
+                for index in range(1, len(image_paths) + 1)
+            ]
+            return frames, glb_path
+
+    class MaskWritingFakeSAM3(FakeSAM3):
+        def segment(self, image_path, *, prompt, frame_id, output_dir, label=None):
+            if label != "pallet":
+                return []
+            mask_path = Path(output_dir) / f"{frame_id}_pallet.png"
+            write_box_mask(mask_path)
+            [observation] = super().segment(
+                image_path,
+                prompt=prompt,
+                frame_id=frame_id,
+                output_dir=output_dir,
+                label=label,
+            )
+            return [
+                observation.model_copy(
+                    update={"mask_path": str(mask_path), "mask_reference": None}
+                )
+            ]
+
+    store = ArtifactStore(tmp_path / "runs")
+    pipeline = EHSAssessmentPipeline(
+        store=store,
+        map_anything=EvidenceFakeMapAnything(),
+        sam3=MaskWritingFakeSAM3(),
+        gemini=FakeGemini(),
+        moge=FakeMoGe(),
+        scene_builder=FakeSceneBuilder(),
+    )
+
+    pipeline.run_assessment(_capture(tmp_path))
+
+    paths = store.paths("run-1")
+    overlays = sorted(path.name for path in paths.evidence_dir.glob("*_overlay.png"))
+    assert overlays == [f"frame_{index:04d}_overlay.png" for index in range(1, 5)]
+    with Image.open(paths.evidence_dir / "frame_0001_overlay.png") as overlay_image:
+        overlay = np.asarray(overlay_image.convert("RGB"))
+    with Image.open(paths.geometry_dir / "frames" / "frame_0001" / "canonical.png") as base_image:
+        base = np.asarray(base_image.convert("RGB"))
+    assert not np.array_equal(overlay, base)
+    assert paths.viewer_html.is_file()
+    assert '"label":"pallet"' in paths.viewer_html.read_text(encoding="utf-8")
+
+
+def test_evidence_failures_warn_but_never_fail_the_run(tmp_path, monkeypatch):
+    """Fail-soft: a broken overlay renderer and an unbuildable viewer both
+    reduce to warnings; the assessment itself is untouched."""
+    import ehs_spatial.viewer as viewer_module
+
+    pipeline, store, *_ = _pipeline(tmp_path)
+
+    def broken_overlays(*args, **kwargs):
+        raise RuntimeError("overlay renderer exploded")
+
+    monkeypatch.setattr(viewer_module, "render_frame_overlays", broken_overlays)
+
+    with pytest.warns(UserWarning) as caught:
+        result = pipeline.run_assessment(_capture(tmp_path))
+
+    messages = [str(warning.message) for warning in caught]
+    assert any("evidence overlays failed" in message for message in messages)
+    # The standard fakes have no reconstructed geometry on disk, so the
+    # viewer build also degrades to a warning here.
+    assert any("3D viewer build failed" in message for message in messages)
+    assert result.status.value == "FAIL"
+    paths = store.paths("run-1")
+    assert paths.assessment_json.is_file()
+    assert not paths.evidence_dir.exists()
+    assert not paths.viewer_html.exists()
 
 
 def test_mono_capture_manifest_records_mono_tier(tmp_path):

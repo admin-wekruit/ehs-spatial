@@ -661,6 +661,70 @@ def test_build_app_has_required_gradio_620_components_events_and_serialization(t
     assert {function.concurrency_limit for function in demo.fns.values()} == {1}
 
 
+def test_load_run_evidence_lists_overlays_and_viewer_download(tmp_path):
+    from ehs_spatial.app import load_run_evidence
+
+    pipeline = FakePipeline(tmp_path / "runs")
+    paths = pipeline.store.paths("run-9")
+    paths.evidence_dir.mkdir(parents=True)
+    for name in ("frame_0002_overlay.png", "frame_0001_overlay.png"):
+        Image.new("RGB", (4, 4), "white").save(paths.evidence_dir / name)
+    (paths.evidence_dir / "notes.txt").write_text("not an overlay")
+    paths.viewer_html.write_text("<!doctype html>")
+
+    overlays, viewer = load_run_evidence(pipeline, "run-9")
+
+    assert overlays == [
+        (str(paths.evidence_dir / "frame_0001_overlay.png"), "frame_0001"),
+        (str(paths.evidence_dir / "frame_0002_overlay.png"), "frame_0002"),
+    ]
+    assert viewer == str(paths.viewer_html)
+
+
+def test_load_run_evidence_is_empty_without_run_or_artifacts(tmp_path):
+    from ehs_spatial.app import load_run_evidence
+
+    pipeline = FakePipeline(tmp_path / "runs")
+
+    # Cleared run id (failed re-analysis) and a run whose fail-soft evidence
+    # was never written both leave the section empty, not broken.
+    assert load_run_evidence(pipeline, None) == ([], None)
+    assert load_run_evidence(pipeline, "never-ran") == ([], None)
+
+
+def test_build_app_wires_evidence_section_to_run_id_changes(tmp_path):
+    from ehs_spatial.app import build_app
+
+    demo = build_app(FakePipeline(tmp_path / "runs"))
+    config = demo.get_config_file()
+    components = config["components"]
+
+    assert any(
+        component["type"] == "gallery"
+        and component["props"].get("label") == "Mask overlays on the captured views"
+        for component in components
+    )
+    assert any(
+        component["type"] == "file"
+        and "viewer.html" in (component["props"].get("label") or "")
+        for component in components
+    )
+    [evidence_fn] = [
+        function
+        for function in demo.fns.values()
+        if function.api_name == "load_run_evidence"
+    ]
+    assert evidence_fn.concurrency_id == "ehs-provider-pipeline"
+    assert evidence_fn.concurrency_limit == 1
+    [state] = [component for component in components if component["type"] == "state"]
+    targets = {
+        tuple(target)
+        for dependency in config["dependencies"]
+        for target in dependency["targets"]
+    }
+    assert (state["id"], "change") in targets
+
+
 def test_root_app_import_does_not_launch(monkeypatch):
     launches = []
     monkeypatch.setattr(gr.Blocks, "launch", lambda self, **kwargs: launches.append(kwargs))
