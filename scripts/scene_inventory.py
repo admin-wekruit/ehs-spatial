@@ -318,6 +318,46 @@ def _render_plan(path: Path, walls: list[dict], objects: list[dict]) -> None:
     image.save(path)
 
 
+def _write_scene(path: Path, run_id: str, entries: list[dict]) -> None:
+    """A SceneMap over the whole inventory, so compiled policies can be
+    evaluated against every enumerated class rather than only the production
+    vocabulary."""
+    from ehs_spatial.contracts import Entity3D, SceneMap
+
+    entities = []
+    for index, entry in enumerate(entries, start=1):
+        if entry["height_m"] <= 0:
+            continue
+        entities.append(
+            Entity3D(
+                entity_id=f"inv-{index:03d}",
+                label=entry["label"],
+                observation_ids=[f"inv-obs-{index:03d}"],
+                centroid_xyz=(
+                    float(entry["centroid_xy"][0]),
+                    float(entry["centroid_xy"][1]),
+                    float(entry["height_m"]) / 2,
+                ),
+                footprint_xy=[(float(x), float(y)) for x, y in entry["footprint"]],
+                height_m=float(entry["height_m"]),
+                evidence_frame_ids=[entry["frame"]],
+                orientation_deg=entry.get("orientation_deg"),
+                tilt_deg=entry.get("tilt_deg"),
+            )
+        )
+    scene = SceneMap(
+        run_id=f"{run_id}-inventory",
+        floor_plane=(0.0, 0.0, 1.0, 0.0),
+        scale_source="camera_height",
+        scale_factor=1.0,
+        fence_polygon=[],
+        entities=entities,
+        facts=[],
+        warnings=["inventory scene: exploration vocabulary, not the production path"],
+    )
+    path.write_text(scene.model_dump_json(indent=2) + "\n")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run", required=True)
@@ -454,6 +494,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     _render_plan(out_dir / "floor_plan.png", walls, plan_objects)
     _write_dxf(out_dir / "floor_plan.dxf", walls, plan_objects)
+    _write_scene(out_dir / "scene.json", args.run, entries)
 
     print(f"\n{len(entries)} instances | {len(plan_objects)} on the plan | "
           f"{len(off_plan)} rejected | {len(walls)} wall plane(s)")
