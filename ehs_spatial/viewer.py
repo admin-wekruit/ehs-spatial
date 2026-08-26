@@ -158,6 +158,47 @@ def _masks_for_frame(
                     decode_coco_rle(rle, height=height, width=width).astype(bool),
                 )
 
+    # Human box-prompt refinements (scripts/refine_region.py) are reviewer
+    # ground truth for classes the text prompts miss — include them.
+    refine_log = run / "refinements.json"
+    if refine_log.exists():
+        for item in json.loads(refine_log.read_text()):
+            slug = (
+                f"{item['label'].replace(' ', '_')}_"
+                + "_".join(str(b) for b in item["box"])
+            )
+            cache = run / "refinements" / f"{slug}.json"
+            if not cache.is_file():
+                continue
+            response = json.loads(cache.read_text())
+            rles = response.get("rle") or []
+            if isinstance(rles, str):
+                rles = [rles]
+            scores = response.get("scores") or [1.0] * len(rles)
+            if rles:
+                best = int(np.argmax(scores))
+                # refinements segment the full-resolution input, not the
+                # canonical frame: decode at native size, then resize.
+                # Box-prompt responses omit width/height — read the input.
+                native_h = response.get("height")
+                native_w = response.get("width")
+                if not native_h or not native_w:
+                    inputs = sorted((run / "input").glob("image_*"))
+                    with Image.open(inputs[0]) as native:
+                        native_w, native_h = native.size
+                native_h, native_w = int(native_h), int(native_w)
+                mask = decode_coco_rle(
+                    rles[best], height=native_h, width=native_w
+                ).astype(np.uint8)
+                if (native_h, native_w) != (height, width):
+                    mask = (
+                        np.asarray(
+                            Image.fromarray(mask * 255).resize((width, height))
+                        )
+                        > 127
+                    ).astype(np.uint8)
+                add(item["label"], mask.astype(bool))
+
     for observation in observations:
         if observation.frame_id != frame.frame_id or not observation.mask_path:
             continue
@@ -250,9 +291,26 @@ def build_viewer_html(
         object_index = np.flatnonzero(ids > 0)
         scene_index = np.flatnonzero(ids == 0)
         if len(object_index) > point_budget * 0.8:
-            object_index = rng.choice(
-                object_index, int(point_budget * 0.8), replace=False
-            )
+            # Stratified: every object keeps at least MIN_KEEP points so
+            # small objects (e-stops, fence segments) survive compact embeds
+            # instead of falling under MIN_OBJECT_POINTS and vanishing.
+            MIN_KEEP = 160
+            per_object = [np.flatnonzero(ids == i) for i in range(1, ids.max() + 1)]
+            per_object = [m for m in per_object if len(m)]
+            floor_total = sum(min(len(m), MIN_KEEP) for m in per_object)
+            spare = max(0, int(point_budget * 0.8) - floor_total)
+            big_total = sum(max(0, len(m) - MIN_KEEP) for m in per_object) or 1
+            kept = []
+            for member in per_object:
+                quota = min(len(member), MIN_KEEP) + int(
+                    spare * max(0, len(member) - MIN_KEEP) / big_total
+                )
+                kept.append(
+                    member
+                    if len(member) <= quota
+                    else rng.choice(member, quota, replace=False)
+                )
+            object_index = np.concatenate(kept)
         budget = max(0, point_budget - len(object_index))
         if budget < len(scene_index):
             scene_index = rng.choice(scene_index, budget, replace=False)
