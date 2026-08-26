@@ -21,6 +21,10 @@ PROMPT_VOCABULARY = (
     "crate",
     "step ladder",
     "portable work platform",
+    "safety sensor",
+    "emergency stop button",
+    "warning sign",
+    "safety light",
 )
 
 # Ordered prompt candidates per canonical label, canonical phrase first. SAM 3 is
@@ -35,6 +39,19 @@ LABEL_PROMPTS: dict[str, tuple[str, ...]] = {
     "crate": ("crate",),
     "step ladder": ("step ladder", "ladder"),
     "portable work platform": ("portable work platform", "work platform"),
+    "safety sensor": (
+        "safety sensor",
+        "light curtain",
+        "photoelectric sensor",
+        "safety scanner",
+    ),
+    "emergency stop button": (
+        "emergency stop button",
+        "e-stop button",
+        "red emergency button",
+    ),
+    "warning sign": ("warning sign", "safety sign", "hazard sign"),
+    "safety light": ("safety light", "stack light", "signal tower", "andon light"),
 }
 
 

@@ -9,6 +9,11 @@ rule already uses, with the same evidence gates and the same abstention path.
 The split is the whole point. Translation is reviewable before it ever runs;
 verdicts never depend on model weights, only on the reviewed spec plus the
 measured scene.
+
+MIN_HEIGHT closes the 1910.36(g)(1)-class vertical-clearance gap called out
+in docs/reviews/2026-08-25-osha-compiler-exam.md: rules that demand a
+minimum height (guarding fences, exit-route headroom) were previously
+inexpressible because the vocabulary only bounded height from above.
 """
 
 import numpy as np
@@ -30,7 +35,7 @@ from .contracts import (
 )
 
 
-_SELF_PREDICATES = {Predicate.MAX_HEIGHT, Predicate.MAX_TILT}
+_SELF_PREDICATES = {Predicate.MAX_HEIGHT, Predicate.MIN_HEIGHT, Predicate.MAX_TILT}
 # Same discipline as the clearance rule: a footprint too small or seen in too
 # few frames is not evidence, it is noise.
 MIN_EVIDENCE_FRAMES = 2
@@ -142,6 +147,27 @@ def evaluate_policy(
                     ),
                 ))
             elif subject.height_m >= spec.threshold - band:
+                review_notes.append(
+                    f"{subject.entity_id} height "
+                    f"{subject.height_m:.2f} m is within ±{band:.2f} m of the "
+                    f"{spec.threshold} m limit; cannot honestly pick a side"
+                )
+    elif spec.predicate is Predicate.MIN_HEIGHT:
+        # MAX_HEIGHT with the band discipline inverted: too short fails,
+        # a height inside the tier band around the threshold abstains.
+        for subject, _ in subjects:
+            record(subject, None, subject.height_m)
+            if subject.height_m < spec.threshold - band:
+                violations.append((
+                    spec.threshold - subject.height_m,
+                    Violation(
+                        subject_id=subject.entity_id,
+                        measured=round(subject.height_m, 4),
+                        threshold=spec.threshold,
+                        unit=spec.unit,
+                    ),
+                ))
+            elif subject.height_m <= spec.threshold + band:
                 review_notes.append(
                     f"{subject.entity_id} height "
                     f"{subject.height_m:.2f} m is within ±{band:.2f} m of the "

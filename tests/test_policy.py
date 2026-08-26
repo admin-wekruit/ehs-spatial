@@ -182,6 +182,71 @@ def test_self_predicates_need_no_object_label():
     assert [v.subject_id for v in result.violations] == ["tall"]
 
 
+def test_min_height_banded_triplet_matches_the_inverted_band_discipline():
+    # Multiview band ±0.20 m around a 1.8 m minimum: below the band fails,
+    # inside it abstains, above it passes — MAX_HEIGHT's discipline inverted.
+    spec = _spec(
+        predicate=Predicate.MIN_HEIGHT,
+        subject_labels=["safety fence"],
+        object_labels=[],
+        threshold=1.8,
+    )
+    for height, expected in (
+        (1.5, "FAIL"),           # 1.5 < 1.60 band floor
+        (1.7, "NEEDS_REVIEW"),   # inside 1.60..2.00
+        (2.0, "NEEDS_REVIEW"),   # upper band edge
+        (2.1, "PASS"),           # 2.1 > 2.00
+    ):
+        result = evaluate_policy(
+            spec,
+            _scene([_entity("f", "safety fence", _square(0, 0), height=height)]),
+        )
+        assert result.status.value == expected, height
+        assert result.facts, height
+    review = evaluate_policy(
+        spec, _scene([_entity("f", "safety fence", _square(0, 0), height=1.7)])
+    )
+    assert "cannot honestly pick a side" in review.warnings[0]
+    assert not review.violations
+
+
+def test_min_height_violations_are_ordered_worst_first():
+    spec = _spec(
+        predicate=Predicate.MIN_HEIGHT,
+        subject_labels=["safety fence"],
+        object_labels=[],
+        threshold=1.8,
+    )
+    short = _entity("short", "safety fence", _square(0, 0), height=1.4)
+    shortest = _entity("shortest", "safety fence", _square(2, 0), height=0.9)
+
+    result = evaluate_policy(spec, _scene([short, shortest]))
+
+    assert result.status.value == "FAIL"
+    assert [v.subject_id for v in result.violations] == ["shortest", "short"]
+    assert result.violations[0].measured == 0.9
+    assert result.violations[0].threshold == 1.8
+
+
+def test_min_height_is_a_self_predicate_needing_no_object_label():
+    # No object labels, no object entities: the subject measures itself,
+    # and the recorded fact points back at the subject.
+    spec = _spec(
+        predicate=Predicate.MIN_HEIGHT,
+        subject_labels=["safety fence"],
+        object_labels=[],
+        threshold=1.8,
+    )
+    tall = _entity("tall", "safety fence", _square(0, 0), height=2.4)
+
+    result = evaluate_policy(spec, _scene([tall]))
+
+    assert result.status.value == "PASS"
+    assert result.facts[0].subject_id == "tall"
+    assert result.facts[0].object_id == "tall"
+    assert result.facts[0].value == 2.4
+
+
 def test_max_tilt_abstains_when_no_subject_has_a_tilt():
     spec = _spec(
         predicate=Predicate.MAX_TILT,

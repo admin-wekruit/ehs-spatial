@@ -211,7 +211,7 @@ def _pipeline(tmp_path, *, map_adapter=None, gemini=None):
     return pipeline, store, map_adapter, sam, gemini, scene_builder
 
 
-def test_run_assessment_executes_one_map_call_and_stable_28_sam_calls(tmp_path):
+def test_run_assessment_executes_one_map_call_and_stable_44_sam_calls(tmp_path):
     pipeline, store, map_adapter, sam, gemini, scene_builder = _pipeline(tmp_path)
 
     result = pipeline.run_assessment(_capture(tmp_path))
@@ -223,7 +223,7 @@ def test_run_assessment_executes_one_map_call_and_stable_28_sam_calls(tmp_path):
         "image_03.png",
         "image_04.png",
     ]
-    # "factory floor" is fitted geometrically, never segmented: 7 labels x 4 frames.
+    # "factory floor" is fitted geometrically, never segmented: 11 labels x 4 frames.
     assert [(call[2], call[1]) for call in sam.calls] == [
         (f"frame-{frame}", prompt)
         for frame in range(1, 5)
@@ -233,7 +233,7 @@ def test_run_assessment_executes_one_map_call_and_stable_28_sam_calls(tmp_path):
     assert len(scene_builder.calls) == 1
     scene_call = scene_builder.calls[0]
     assert len(scene_call[1]) == 4
-    assert len(scene_call[2]) == 28
+    assert len(scene_call[2]) == 44
     assert scene_call[3] == 1.5
     assert result.model_dump(exclude={"climb_review"}) == Assessment(
         status="FAIL",
@@ -261,7 +261,7 @@ def test_run_assessment_executes_one_map_call_and_stable_28_sam_calls(tmp_path):
             paths.chat_jsonl,
         ]
     )
-    assert len(json.loads(paths.observations_json.read_text(encoding="utf-8"))) == 28
+    assert len(json.loads(paths.observations_json.read_text(encoding="utf-8"))) == 44
     assert json.loads(paths.assessment_json.read_text(encoding="utf-8"))[
         "status"
     ] == "FAIL"
@@ -517,8 +517,8 @@ def test_run_assessment_accepts_a_single_image_capture(tmp_path):
 
     assert len(map_adapter.calls) == 1
     assert len(map_adapter.calls[0][0]) == 1
-    # 7 segmented labels x 1 frame (floor is fitted geometrically).
-    assert len(sam.calls) == 7
+    # 11 segmented labels x 1 frame (floor is fitted geometrically).
+    assert len(sam.calls) == 11
     assert len(scene_builder.calls[0][1]) == 1
 
 
