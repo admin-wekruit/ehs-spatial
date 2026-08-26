@@ -392,3 +392,50 @@ def test_adapter_rejects_prompt_not_registered_for_label(tmp_path):
             frame_id="frame_0001",
             output_dir=tmp_path / "masks",
         )
+
+
+def test_adapter_retries_transient_billing_lock(tmp_path, monkeypatch):
+    """fal's billing gate flaps: 'User is locked' must be retried, not fatal."""
+    sam3 = importlib.import_module("ehs_spatial.providers.sam3")
+    monkeypatch.setattr(sam3.time, "sleep", lambda _s: None)
+    canonical_path = tmp_path / "canonical.png"
+    Image.new("RGB", (2, 2)).save(canonical_path)
+
+    calls = {"n": 0}
+
+    def flapping_subscriber(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            raise RuntimeError("User is locked. Reason: TOP_UP.")
+        return {"rle": [], "scores": [], "boxes": []}
+
+    observations = sam3.SAM3Adapter(subscriber=flapping_subscriber).segment(
+        canonical_path,
+        prompt="pallet",
+        frame_id="frame_0001",
+        output_dir=tmp_path / "masks",
+    )
+    assert observations == []
+    assert calls["n"] == 3
+
+
+def test_adapter_does_not_retry_non_transient_failure(tmp_path, monkeypatch):
+    sam3 = importlib.import_module("ehs_spatial.providers.sam3")
+    monkeypatch.setattr(sam3.time, "sleep", lambda _s: None)
+    canonical_path = tmp_path / "canonical.png"
+    Image.new("RGB", (2, 2)).save(canonical_path)
+
+    calls = {"n": 0}
+
+    def failing_subscriber(*args, **kwargs):
+        calls["n"] += 1
+        raise RuntimeError("queue unavailable")
+
+    with pytest.raises(sam3.ProviderError):
+        sam3.SAM3Adapter(subscriber=failing_subscriber).segment(
+            canonical_path,
+            prompt="pallet",
+            frame_id="frame_0001",
+            output_dir=tmp_path / "masks",
+        )
+    assert calls["n"] == 1

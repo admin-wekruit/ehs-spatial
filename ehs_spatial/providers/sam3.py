@@ -1,4 +1,5 @@
 import base64
+import time
 from collections.abc import Callable, Mapping
 import json
 from pathlib import Path
@@ -200,10 +201,27 @@ class SAM3Adapter:
             "include_scores": True,
             "include_boxes": True,
         }
-        try:
-            response = self.subscriber(SAM3_ENDPOINT, arguments=request)
-        except Exception as exc:
-            raise ProviderError("fal", "sam3.subscribe", str(exc)) from exc
+        # fal's billing gate flaps under burst usage: a positive-balance
+        # account can return "User is locked. Reason: TOP_UP" for seconds at
+        # a time (single probes succeed minutes apart). Treat lock/429/5xx
+        # as transient with bounded backoff, like video._subscribe_with_backoff.
+        # ponytail: fixed 5 tries / linear sleep; make configurable if a
+        # provider ever needs a different budget.
+        last_exc: Exception | None = None
+        for attempt in range(5):
+            try:
+                response = self.subscriber(SAM3_ENDPOINT, arguments=request)
+                break
+            except Exception as exc:
+                message = str(exc)
+                transient = any(
+                    marker in message
+                    for marker in ("locked", "429", "502", "503", "timeout")
+                )
+                if not transient or attempt == 4:
+                    raise ProviderError("fal", "sam3.subscribe", message) from exc
+                last_exc = exc
+                time.sleep(15 * (attempt + 1))
         try:
             if not isinstance(response, Mapping):
                 raise ValueError("SAM 3 response must be an object")
