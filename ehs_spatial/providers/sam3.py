@@ -33,7 +33,18 @@ PROMPT_VOCABULARY = (
 # on the eval pack: "safety fence" -> 0 detections, "barrier" -> 0.97 recall.
 LABEL_PROMPTS: dict[str, tuple[str, ...]] = {
     "factory floor": ("factory floor", "floor", "ground"),
-    "safety fence": ("safety fence", "fence", "barrier", "guardrail"),
+    # "clear panel"/"polycarbonate panel" added 2026-08-26: aluminium-frame
+    # clear-panel guarding (owner's real workcells + generated test set)
+    # scored 0 on every earlier synonym; A/B on both image families found
+    # "clear panel" hits both (8 masks, score 0.82 real / 0.66 generated).
+    "safety fence": (
+        "safety fence",
+        "fence",
+        "barrier",
+        "guardrail",
+        "clear panel",
+        "polycarbonate panel",
+    ),
     "industrial robot arm": ("industrial robot arm", "robot arm", "robot"),
     "material cart": ("material cart", "cart"),
     "pallet": ("pallet",),
