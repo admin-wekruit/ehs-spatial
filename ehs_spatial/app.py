@@ -18,6 +18,13 @@ from .contracts import (
 )
 from .pipeline import EHSAssessmentPipeline
 from .providers.base import ProviderError
+from .video import (
+    BAND_M,
+    COST_PER_SAM_CALL_USD,
+    RULE_NAMES,
+    run_video_assessment,
+    video_paths,
+)
 
 
 DEMO_RULE_COPY = "0.6 m demo rule — not an official EHS standard"
@@ -506,6 +513,234 @@ def save_disposition(
     return gr.update(value=_disposition_copy(disposition)), list_history(pipeline)
 
 
+VIDEO_MAX_FRAMES = 60
+VIDEO_SAMPLE_RATES = [("0.5 fps", 0.5), ("1 fps", 1.0), ("2 fps", 2.0)]
+VIDEO_DEFAULT_LABELS = "person, forklift"
+_VIDEO_RULE_COPY = {
+    "R1_zone": "R1 keep-clear zone",
+    "R2_min_distance": "R2 person-to-vehicle ≥ 2.0 m",
+    "R3_speed": "R3 person speed ≤ 1.5 m/s",
+}
+_VIDEO_STATUS_CLASS = {
+    "FAIL": "status-fail",
+    "NEEDS_REVIEW": "status-needs-review",
+    "PASS": "status-pass",
+    "NO_DATA": "status-insufficient-evidence",
+}
+_VIDEO_STATUS_COUNT_ORDER = ("FAIL", "NEEDS_REVIEW", "PASS", "NO_DATA")
+
+
+def _parse_video_labels(labels_text: str) -> tuple[str, ...]:
+    return tuple(
+        label.strip() for label in (labels_text or "").split(",") if label.strip()
+    )
+
+
+def video_cost_copy(sample_fps: float, labels_text: str) -> str:
+    """The explicit spend line: SAM is a paid call per sampled frame per
+    label, capped by the frame budget."""
+    n_labels = max(1, len(_parse_video_labels(labels_text)))
+    calls = VIDEO_MAX_FRAMES * n_labels
+    seconds = VIDEO_MAX_FRAMES / float(sample_fps)
+    return (
+        f"~{calls} SAM calls ≈ ${calls * COST_PER_SAM_CALL_USD:.2f} — live "
+        f"provider spend (≤{VIDEO_MAX_FRAMES} frames × {n_labels} label(s), "
+        f"plus 3 MoGe keyframe calls). At {sample_fps:g} fps that covers the "
+        f"first {seconds:.0f} s of footage."
+    )
+
+
+def _video_status_copy(report: dict) -> tuple[str, str]:
+    """(card markdown, status css class) for a video report. Abstention is a
+    first-class outcome: when the floor fit or masks fail there is no
+    verdict and no fallback."""
+    tier = report.get("tier", {})
+    tier_line = (
+        f"Uncalibrated video-mono tier (±{tier.get('band_m', BAND_M)} m band); "
+        f"{tier.get('calibrated_reference', '')}"
+    )
+    abstained = report.get("abstained")
+    if abstained:
+        return (
+            "### NO VERDICT\n\n"
+            f"{abstained}. States and trajectories require a metric floor "
+            "and detected objects; no fallback result was generated.\n\n"
+            f"{tier_line}",
+            "status-insufficient-evidence",
+        )
+    verdicts = report.get("verdicts", {})
+    overall = verdicts.get("overall", "NO_DATA")
+    timelines = report.get("timelines", {})
+    lines = [
+        f"### {overall}",
+        f"Worst state across {len(report.get('sampled_frame_ids', []))} "
+        f"sampled frames ({report.get('step_seconds', '?')} s step).",
+    ]
+    for rule in RULE_NAMES:
+        counts = {status: 0 for status in _VIDEO_STATUS_COUNT_ORDER}
+        for status in timelines.get(rule, {}).values():
+            counts[status] = counts.get(status, 0) + 1
+        detail = ", ".join(
+            f"{count} {status}"
+            for status, count in counts.items()
+            if count
+        )
+        lines.append(
+            f"- `{verdicts.get(rule, 'NO_DATA')}` {_VIDEO_RULE_COPY[rule]} — "
+            f"{detail or 'no frames'}"
+        )
+    floor = report.get("floor", {})
+    if floor.get("fitted"):
+        spread = floor.get("height_spread_m")
+        spread_copy = (
+            f", height spread {spread} m across keyframes"
+            if spread is not None
+            else ""
+        )
+        lines.append(
+            f"Floor: fitted from MoGe keyframes — camera height "
+            f"{floor.get('camera_height_m')} m, inlier fraction "
+            f"{floor.get('inlier_fraction')}{spread_copy}."
+        )
+    spend = report.get("spend", {})
+    lines.append(
+        f"Spend: {spend.get('sam_calls', 0)} SAM calls ≈ "
+        f"${spend.get('sam_cost_usd', 0):.2f} + "
+        f"{spend.get('moge_keyframes', 0)} MoGe keyframes "
+        "(cached rerun/replay is free)."
+    )
+    lines.append(tier_line)
+    return "\n\n".join(lines), _VIDEO_STATUS_CLASS.get(overall, "status-idle")
+
+
+def list_video_runs(pipeline: Any) -> list[tuple[str, str]]:
+    """(label, run_id) choices for the replay dropdown: every cached run
+    with a video_report.json, newest first. Same degradation contract as
+    list_runs: a missing or corrupt manifest never hides the run."""
+    choices: list[tuple[str, str, str]] = []
+    root = pipeline.store.root
+    if not root.is_dir():
+        return []
+    for run_dir in root.iterdir():
+        if not run_dir.is_dir():
+            continue
+        try:
+            paths = video_paths(pipeline.store, run_dir.name)
+        except ValueError:
+            continue
+        if not paths.report_json.is_file():
+            continue
+        created = ""
+        try:
+            manifest = json.loads(
+                paths.manifest_json.read_text(encoding="utf-8")
+            )
+            if isinstance(manifest.get("created_at"), str):
+                created = manifest["created_at"]
+        except (OSError, ValueError):
+            pass
+        label = f"{run_dir.name} — {created[:19]}" if created else run_dir.name
+        choices.append((created, label, run_dir.name))
+    choices.sort(key=lambda entry: (entry[0], entry[2]), reverse=True)
+    return [(label, run_id) for _, label, run_id in choices]
+
+
+def _video_error_outputs(error_copy: str) -> tuple[object, ...]:
+    return (
+        gr.update(
+            value=(
+                "### RUN ERROR\n\n"
+                "Video analysis failed. No assessment was produced.\n\n"
+                f"{error_copy}\n\n"
+                "No fallback result was generated."
+            ),
+            elem_classes=["result-status", "status-error"],
+        ),
+        None,
+        None,
+        {"status": "RUN_ERROR", "error": error_copy, "report": None},
+        gr.update(),
+    )
+
+
+def analyze_video(
+    pipeline: Any,
+    video_path: str | None,
+    sample_fps: float,
+    labels_text: str,
+    zone_wkt: str,
+) -> tuple[object, ...]:
+    """Run a paid video assessment and render its artifacts. Mirrors
+    analyze_run's error discipline: provider failures surface as a RUN
+    ERROR card, never a fallback result."""
+    if not video_path:
+        return _video_error_outputs("Upload a video before analysis.")
+    labels = _parse_video_labels(labels_text)
+    if not labels:
+        return _video_error_outputs("Enter at least one object label.")
+    try:
+        run_id = uuid4().hex
+        report = run_video_assessment(
+            video_path,
+            store=pipeline.store,
+            run_id=run_id,
+            sample_fps=float(sample_fps),
+            max_frames=VIDEO_MAX_FRAMES,
+            labels=labels,
+            zone_wkt=(zone_wkt or "").strip() or None,
+        )
+    except ProviderError as exc:
+        return _video_error_outputs(_provider_error_copy(exc))
+    except Exception as exc:
+        return _video_error_outputs(
+            f"Video processing failed ({type(exc).__name__}: {exc}). Check "
+            "the uploaded file and settings, then retry."
+        )
+    paths = video_paths(pipeline.store, run_id)
+    card, status_class = _video_status_copy(report)
+    return (
+        gr.update(value=card, elem_classes=["result-status", status_class]),
+        str(paths.overlay_gif) if paths.overlay_gif.is_file() else None,
+        str(paths.topdown_png) if paths.topdown_png.is_file() else None,
+        report,
+        gr.update(choices=list_video_runs(pipeline), value=run_id),
+    )
+
+
+def load_video_run(pipeline: Any, run_id: str | None) -> tuple[object, ...]:
+    """Replay a processed video run from its cached artifacts — no provider
+    spend. Every artifact is optional: a partial run renders what it has."""
+    if not run_id:
+        return (
+            gr.update(
+                value=(
+                    "### No run selected\n\nPick a processed video run to "
+                    "replay its artifacts without provider spend."
+                ),
+                elem_classes=["result-status", "status-idle"],
+            ),
+            None,
+            None,
+            None,
+        )
+    paths = video_paths(pipeline.store, run_id)
+    try:
+        report = json.loads(paths.report_json.read_text(encoding="utf-8"))
+        card, status_class = _video_status_copy(report)
+    except (OSError, ValueError):
+        report = None
+        card = (
+            "### NO REPORT\n\nThis run has no readable video_report.json."
+        )
+        status_class = "status-idle"
+    return (
+        gr.update(value=card, elem_classes=["result-status", status_class]),
+        str(paths.overlay_gif) if paths.overlay_gif.is_file() else None,
+        str(paths.topdown_png) if paths.topdown_png.is_file() else None,
+        report,
+    )
+
+
 def build_app(
     pipeline: Any | None = None,
     policies_dir: str | Path = POLICIES_DIR,
@@ -669,6 +904,88 @@ def build_app(
                             elem_classes="ask-action",
                         )
 
+            with gr.Tab("Video"):
+                with gr.Row(elem_classes="workbench-layout"):
+                    with gr.Column(scale=4, min_width=300, elem_classes="capture-rail"):
+                        gr.Markdown("## Video capture", elem_classes="section-heading")
+                        video_input = gr.Video(
+                            label="Fixed-camera video",
+                            sources=["upload"],
+                            interactive=True,
+                        )
+                        video_sample_rate = gr.Dropdown(
+                            choices=list(VIDEO_SAMPLE_RATES),
+                            value=1.0,
+                            label="Sample rate (fps)",
+                            info="Sampled frames drive SAM spend and the speed band.",
+                        )
+                        video_labels = gr.Textbox(
+                            value=VIDEO_DEFAULT_LABELS,
+                            label="Object labels",
+                            info=(
+                                "Comma-separated SAM prompts. Rules are "
+                                "person-centric: 'person' plus the machinery "
+                                "to keep apart from."
+                            ),
+                        )
+                        video_zone = gr.Textbox(
+                            value="",
+                            label="Keep-clear zone WKT (optional)",
+                            placeholder="POLYGON ((x y, ...)) in floor-plane metres",
+                            info=(
+                                "Author it from a previous run's top-down "
+                                "plot; leave empty to skip the zone rule."
+                            ),
+                        )
+                        video_cost_line = gr.Markdown(
+                            video_cost_copy(1.0, VIDEO_DEFAULT_LABELS),
+                            elem_classes="rule-note",
+                        )
+                        video_analyze_button = gr.Button(
+                            "Analyze video",
+                            variant="primary",
+                            elem_classes="analyze-action",
+                        )
+                        gr.Markdown(
+                            "## Processed runs", elem_classes="section-heading"
+                        )
+                        video_runs_dropdown = gr.Dropdown(
+                            choices=list_video_runs(service),
+                            value=None,
+                            label="Replay a processed video run",
+                            info="Loads cached artifacts — no provider spend.",
+                        )
+                        video_refresh_button = gr.Button(
+                            "Refresh processed runs"
+                        )
+                    with gr.Column(scale=7, min_width=420, elem_classes="evidence-canvas"):
+                        gr.Markdown("## Video evidence", elem_classes="section-heading")
+                        video_status = gr.Markdown(
+                            "### Awaiting video\n\nUpload a fixed-camera clip "
+                            "or replay a processed run.",
+                            elem_classes=["result-status", "status-idle"],
+                        )
+                        with gr.Row(elem_classes="evidence-views"):
+                            video_overlay = gr.Image(
+                                label="Overlay (masks, tracks, per-frame verdicts)",
+                                type="filepath",
+                                interactive=False,
+                                height=420,
+                                buttons=["fullscreen"],
+                            )
+                            video_topdown = gr.Image(
+                                label="Top-down trajectories",
+                                type="filepath",
+                                interactive=False,
+                                height=420,
+                                buttons=["fullscreen"],
+                            )
+                        video_report = gr.JSON(
+                            label="Video report",
+                            open=False,
+                            height=320,
+                        )
+
             with gr.Tab("History"):
                 gr.Markdown("## Past runs", elem_classes="section-heading")
                 refresh_button = gr.Button(
@@ -772,6 +1089,51 @@ def build_app(
             concurrency_limit=1,
         )
 
+
+        # Video tab: analysis is paid, so it shares the provider lane;
+        # cost-copy updates and cached-run replay are local-only.
+        video_analyze_button.click(
+            partial(analyze_video, service),
+            inputs=[video_input, video_sample_rate, video_labels, video_zone],
+            outputs=[
+                video_status,
+                video_overlay,
+                video_topdown,
+                video_report,
+                video_runs_dropdown,
+            ],
+            api_name="analyze_video",
+            concurrency_id=PIPELINE_CONCURRENCY_ID,
+            concurrency_limit=1,
+        )
+        for cost_trigger in (video_sample_rate.change, video_labels.change):
+            cost_trigger(
+                video_cost_copy,
+                inputs=[video_sample_rate, video_labels],
+                outputs=[video_cost_line],
+                api_visibility="private",
+                concurrency_id=LOCAL_CONCURRENCY_ID,
+                concurrency_limit=1,
+            )
+        video_refresh_button.click(
+            lambda: gr.update(choices=list_video_runs(service)),
+            outputs=[video_runs_dropdown],
+            api_name="list_video_runs",
+            api_visibility="private",
+            concurrency_id=LOCAL_CONCURRENCY_ID,
+            concurrency_limit=1,
+        )
+        # .input, not .change: replay only on user selection, so the
+        # post-analysis dropdown refresh does not immediately reload.
+        video_runs_dropdown.input(
+            partial(load_video_run, service),
+            inputs=[video_runs_dropdown],
+            outputs=[video_status, video_overlay, video_topdown, video_report],
+            api_name="load_video_run",
+            api_visibility="private",
+            concurrency_id=LOCAL_CONCURRENCY_ID,
+            concurrency_limit=1,
+        )
 
         refresh_button.click(
             partial(list_history, service),
@@ -1034,11 +1396,15 @@ textarea:focus-visible,
 __all__ = [
     "APP_CSS",
     "analyze_run",
+    "analyze_video",
     "answer_run_question",
     "build_app",
     "list_history",
+    "list_video_runs",
     "load_history_run",
     "load_policy_specs",
     "load_run_evidence",
+    "load_video_run",
     "save_disposition",
+    "video_cost_copy",
 ]
