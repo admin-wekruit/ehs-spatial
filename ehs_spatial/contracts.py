@@ -209,7 +209,9 @@ class RunManifest(BaseModel):
     run_id: str
     created_at: str  # UTC ISO-8601
     operator: str = "unknown"
-    capture_tier: Literal["mono", "multiview"]
+    # "video-mono" is the uncalibrated fixed-camera video tier (ehs_spatial/
+    # video.py): floor plane and intrinsics recovered from MoGe-2 mono depth.
+    capture_tier: Literal["mono", "multiview", "video-mono"]
     providers: ProviderManifest
 
 

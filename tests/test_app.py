@@ -1254,8 +1254,12 @@ def test_build_app_wires_history_tab_components_and_events(tmp_path):
         ["confirmed", "confirmed"],
         ["overridden", "overridden"],
     ]
+    # The Video tab adds its own dropdowns; select the override one by label.
     [dropdown] = [
-        component for component in components if component["type"] == "dropdown"
+        component
+        for component in components
+        if component["type"] == "dropdown"
+        and component["props"].get("label") == "Overridden status"
     ]
     assert [choice[0] for choice in dropdown["props"]["choices"]] == [
         "PASS",
@@ -1303,11 +1307,14 @@ def test_build_app_wires_history_tab_components_and_events(tmp_path):
     assert {target[1] for target in load_dependency["targets"]} == {"load"}
     assert load_dependency["outputs"] == [table["id"]]
     # Selecting a row also resets the whole disposition form.
+    # Scope to the disposition form's own components — the Video tab has
+    # unrelated dropdowns.
     form_ids = {
         component["id"]
         for component in components
-        if component["type"] in {"radio", "dropdown"}
-        or component["props"].get("label") in {"Reviewer", "Reason"}
+        if component["type"] == "radio"
+        or component["props"].get("label")
+        in {"Reviewer", "Reason", "Overridden status"}
     }
     select_outputs = set(dependencies["load_history_run"]["outputs"])
     assert form_ids <= select_outputs
@@ -1328,3 +1335,287 @@ def test_readme_links_each_provider_credential_source():
             rf"(?m)^- `{variable}`: \[[^]]+\]\({re.escape(url)}\)$",
             readme,
         )
+
+
+# --------------------------------------------------------------- Video tab
+def _video_report(run_id: str, *, abstained: str | None = None) -> dict:
+    frames = [0, 30, 60]
+    timeline = (
+        {str(f): "NO_DATA" for f in frames}
+        if abstained
+        else {"0": "PASS", "30": "FAIL", "60": "NEEDS_REVIEW"}
+    )
+    return {
+        "run_id": run_id,
+        "video": "clip.avi",
+        "sampled_frame_ids": frames,
+        "step_seconds": 1.0,
+        "tier": {
+            "capture_tier": "video-mono",
+            "band_m": 0.35,
+            "calibrated_reference": "calibrated fixed-camera tier reference",
+        },
+        "floor": (
+            {"fitted": False, "reason": "no keyframe produced a floor fit"}
+            if abstained
+            else {
+                "fitted": True,
+                "camera_height_m": 5.2,
+                "inlier_fraction": 0.61,
+                "height_spread_m": 0.3,
+            }
+        ),
+        "abstained": abstained,
+        "spend": {"sam_calls": 6, "sam_cost_usd": 0.06, "moge_keyframes": 3},
+        "timelines": {
+            "R1_zone": timeline,
+            "R2_min_distance": timeline,
+            "R3_speed": timeline,
+        },
+        "verdicts": {
+            "R1_zone": "NO_DATA" if abstained else "FAIL",
+            "R2_min_distance": "NO_DATA" if abstained else "FAIL",
+            "R3_speed": "NO_DATA" if abstained else "NEEDS_REVIEW",
+            "overall": "NO_DATA" if abstained else "FAIL",
+        },
+    }
+
+
+def _write_video_run(
+    store: ArtifactStore, run_id: str, created_at: str, report: dict | None = None
+) -> None:
+    from ehs_spatial.video import video_paths
+
+    paths = video_paths(store, run_id)
+    paths.root.mkdir(parents=True, exist_ok=True)
+    paths.report_json.write_text(
+        json.dumps(report or _video_report(run_id)), encoding="utf-8"
+    )
+    paths.manifest_json.write_text(
+        json.dumps({"created_at": created_at, "capture_tier": "video-mono"}),
+        encoding="utf-8",
+    )
+    Image.new("RGB", (16, 16), "gray").save(paths.topdown_png)
+    Image.new("RGB", (16, 16), "gray").save(paths.overlay_gif, format="GIF")
+
+
+def test_video_cost_copy_is_explicit_about_live_spend():
+    from ehs_spatial.app import video_cost_copy
+
+    copy = video_cost_copy(1.0, "person, forklift")
+    assert "~120 SAM calls" in copy
+    assert "$1.20" in copy
+    assert "live provider spend" in copy
+    # Fewer labels and slower sampling change the estimate honestly.
+    assert "~60 SAM calls" in video_cost_copy(0.5, "person")
+    assert "120 s" in video_cost_copy(0.5, "person")
+
+
+def test_analyze_video_requires_upload_and_labels(tmp_path):
+    from ehs_spatial.app import analyze_video
+
+    pipeline = FakePipeline(tmp_path / "runs")
+    status, gif, topdown, payload, _ = analyze_video(
+        pipeline, None, 1.0, "person", ""
+    )
+    assert "RUN ERROR" in status["value"]
+    assert "Upload a video" in status["value"]
+    assert gif is None and topdown is None
+    assert payload["status"] == "RUN_ERROR"
+    status, *_ = analyze_video(pipeline, "clip.avi", 1.0, " , ", "")
+    assert "at least one object label" in status["value"]
+
+
+def test_analyze_video_provider_error_card_without_fallback(
+    tmp_path, monkeypatch
+):
+    import ehs_spatial.app as app_module
+    from ehs_spatial.app import analyze_video
+
+    def broken(*args, **kwargs):
+        raise ProviderError("fal", "sam3.video", "quota exhausted")
+
+    monkeypatch.setattr(app_module, "run_video_assessment", broken)
+    pipeline = FakePipeline(tmp_path / "runs")
+    status, gif, topdown, payload, dropdown = analyze_video(
+        pipeline, str(tmp_path / "clip.avi"), 1.0, "person, forklift", ""
+    )
+    assert "RUN ERROR" in status["value"]
+    assert "fal sam3.video failed" in status["value"]
+    assert "No fallback result was generated" in status["value"]
+    assert "quota exhausted" not in status["value"]  # raw provider text hidden
+    assert gif is None and topdown is None
+    assert payload["report"] is None
+
+
+def test_analyze_video_success_renders_report_and_refreshes_replay(
+    tmp_path, monkeypatch
+):
+    import ehs_spatial.app as app_module
+    from ehs_spatial.app import analyze_video
+
+    pipeline = FakePipeline(tmp_path / "runs")
+    captured = {}
+
+    def fake_runner(video_path, *, store, run_id, **kwargs):
+        captured.update({"video_path": video_path, "run_id": run_id, **kwargs})
+        report = _video_report(run_id)
+        _write_video_run(store, run_id, "2026-08-25T10:00:00+00:00", report)
+        return report
+
+    monkeypatch.setattr(app_module, "run_video_assessment", fake_runner)
+    status, gif, topdown, payload, dropdown = analyze_video(
+        pipeline,
+        str(tmp_path / "clip.avi"),
+        0.5,
+        "person, forklift",
+        "POLYGON ((0 0, 1 0, 1 1, 0 1, 0 0))",
+    )
+    assert captured["sample_fps"] == 0.5
+    assert captured["labels"] == ("person", "forklift")
+    assert captured["zone_wkt"].startswith("POLYGON")
+    assert "### FAIL" in status["value"]
+    assert "R2 person-to-vehicle" in status["value"]
+    assert "camera height 5.2 m" in status["value"]
+    assert "video-mono" in status["value"]
+    assert "status-fail" in status["elem_classes"]
+    assert gif is not None and Path(gif).is_file()
+    assert topdown is not None and Path(topdown).is_file()
+    assert payload["verdicts"]["overall"] == "FAIL"
+    run_id = captured["run_id"]
+    assert dropdown["value"] == run_id
+    assert any(choice[1] == run_id for choice in dropdown["choices"])
+
+
+def test_video_abstention_card_is_honest_not_a_fallback(tmp_path):
+    from ehs_spatial.app import _video_status_copy
+
+    card, status_class = _video_status_copy(
+        _video_report(
+            "run-1",
+            abstained="floor fit failed: no keyframe produced a floor fit",
+        )
+    )
+    assert "NO VERDICT" in card
+    assert "floor fit failed" in card
+    assert "no fallback result was generated" in card.lower()
+    assert status_class == "status-insufficient-evidence"
+
+
+def test_list_video_runs_newest_first_and_degrades(tmp_path):
+    from ehs_spatial.app import list_video_runs
+    from ehs_spatial.video import video_paths
+
+    pipeline = FakePipeline(tmp_path / "runs")
+    _write_video_run(pipeline.store, "older", "2026-08-24T10:00:00+00:00")
+    _write_video_run(pipeline.store, "newer", "2026-08-25T10:00:00+00:00")
+    # Corrupt manifest: still listed, label degrades to the bare run id.
+    corrupt = video_paths(pipeline.store, "corrupt-manifest")
+    corrupt.root.mkdir(parents=True, exist_ok=True)
+    corrupt.report_json.write_text("{}", encoding="utf-8")
+    corrupt.manifest_json.write_text("not json", encoding="utf-8")
+    # A photo run (no video_report.json) is not offered for video replay.
+    photo = pipeline.store.paths("photo-run")
+    photo.root.mkdir(parents=True, exist_ok=True)
+    photo.manifest_json.write_text("{}", encoding="utf-8")
+
+    choices = list_video_runs(pipeline)
+    assert [run_id for _, run_id in choices] == [
+        "newer",
+        "older",
+        "corrupt-manifest",
+    ]
+    assert choices[0][0].startswith("newer — 2026-08-25")
+    assert choices[2][0] == "corrupt-manifest"
+
+
+def test_load_video_run_replays_cached_artifacts_without_spend(tmp_path):
+    from ehs_spatial.app import load_video_run
+
+    pipeline = FakePipeline(tmp_path / "runs")
+    _write_video_run(pipeline.store, "cached", "2026-08-25T10:00:00+00:00")
+    status, gif, topdown, payload = load_video_run(pipeline, "cached")
+    assert "### FAIL" in status["value"]
+    assert gif is not None and topdown is not None
+    assert payload["run_id"] == "cached"
+    assert not pipeline.assessment_calls  # replay never triggers providers
+
+    status, gif, topdown, payload = load_video_run(pipeline, None)
+    assert "No run selected" in status["value"]
+    assert gif is None and payload is None
+
+    broken = pipeline.store.paths("broken").root
+    broken.mkdir(parents=True, exist_ok=True)
+    (broken / "video_report.json").write_text("not json", encoding="utf-8")
+    status, gif, topdown, payload = load_video_run(pipeline, "broken")
+    assert "NO REPORT" in status["value"]
+    assert payload is None
+
+
+def test_build_app_wires_video_tab_components_and_lanes(tmp_path):
+    from ehs_spatial.app import build_app
+
+    demo = build_app(FakePipeline(tmp_path / "runs"))
+    config = demo.get_config_file()
+    components = config["components"]
+
+    [video] = [c for c in components if c["type"] == "video"]
+    assert video["props"].get("sources") == ["upload"]
+    [rate] = [
+        c
+        for c in components
+        if c["type"] == "dropdown"
+        and c["props"].get("label") == "Sample rate (fps)"
+    ]
+    assert [choice[1] for choice in rate["props"]["choices"]] == [0.5, 1.0, 2.0]
+    assert rate["props"]["value"] == 1.0
+    [labels] = [
+        c
+        for c in components
+        if c["type"] == "textbox"
+        and c["props"].get("label") == "Object labels"
+    ]
+    assert labels["props"]["value"] == "person, forklift"
+    assert any(
+        c["type"] == "textbox"
+        and c["props"].get("label") == "Keep-clear zone WKT (optional)"
+        for c in components
+    )
+    [replay] = [
+        c
+        for c in components
+        if c["type"] == "dropdown"
+        and c["props"].get("label") == "Replay a processed video run"
+    ]
+    assert any(
+        c["type"] == "markdown"
+        and "live provider spend" in str(c["props"].get("value", ""))
+        for c in components
+    )
+    buttons = {
+        c["props"].get("value"): c["id"]
+        for c in components
+        if c["type"] == "button"
+    }
+    assert "Analyze video" in buttons
+    assert "Refresh processed runs" in buttons
+    targets = {
+        tuple(target)
+        for dependency in config["dependencies"]
+        for target in dependency["targets"]
+    }
+    assert (buttons["Analyze video"], "click") in targets
+    assert (buttons["Refresh processed runs"], "click") in targets
+    assert (replay["id"], "input") in targets
+
+    lanes = {
+        function.api_name: function.concurrency_id
+        for function in demo.fns.values()
+        if function.api_name
+        in {"analyze_video", "list_video_runs", "load_video_run"}
+    }
+    # Paid analysis shares the provider lane; replay stays local and
+    # responsive while an analysis holds that lane.
+    assert lanes["analyze_video"] == "ehs-provider-pipeline"
+    assert lanes["list_video_runs"] == "ehs-local-ui"
+    assert lanes["load_video_run"] == "ehs-local-ui"
