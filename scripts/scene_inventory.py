@@ -52,6 +52,90 @@ def _is_flat_zone(label: str) -> bool:
     return any(keyword in label for keyword in FLAT_ZONE_KEYWORDS)
 
 
+CONTACT_FAMILY = ("fence", "guard", "barrier", "rail", "curtain", "partition", "panel")
+
+
+def _contact_edge_rect(
+    mask: np.ndarray,
+    points3d: np.ndarray,
+    frame,
+    transform,
+    theta: float | None,
+) -> list | None:
+    """Perspective-correct footprint for floor-standing thin structures
+    (research approach 2): back-project the mask's ground-contact edge
+    through the camera onto the floor plane. Per-pixel depth never enters
+    the footprint — only the robust floor fit does — so the along-ray
+    smear cannot tilt or stretch it. Columns whose bottom pixel is not
+    actually near the ground (occluded base) are rejected by comparing
+    measured depth with the ray/floor intersection."""
+    intrinsics = np.asarray(frame.intrinsics, dtype=float)
+    k_inv = np.linalg.inv(intrinsics)
+    camera_to_world = np.asarray(frame.camera_to_world, dtype=float)
+    rotation_c = camera_to_world[:3, :3]
+    origin_c = camera_to_world[:3, 3]
+    r_z = transform.rotation[2]
+    numerator = (transform.origin - origin_c) @ r_z
+
+    columns = np.flatnonzero(mask.any(axis=0))
+    if len(columns) < 8:
+        return None
+    ground_points = []
+    for u in columns:
+        v = int(mask[:, u].nonzero()[0].max())
+        ray_cam = k_inv @ np.array([u + 0.5, v + 0.5, 1.0])
+        ray_world = rotation_c @ ray_cam
+        denominator = ray_world @ r_z
+        if abs(denominator) < 1e-9:
+            continue
+        t = numerator / denominator
+        if t <= 0:
+            continue
+        measured = points3d[v, u]
+        if not np.isfinite(measured).all() or np.abs(measured).sum() < 1e-6:
+            continue
+        z_measured = (rotation_c.T @ (measured - origin_c))[2]
+        z_ground = t * ray_cam[2]
+        if z_measured <= 0 or abs(z_measured - z_ground) > 0.15 * max(z_ground, 1.0):
+            continue
+        world = origin_c + t * ray_world
+        ground_points.append(transform.apply(world[None, :])[0][:2])
+    if len(ground_points) < max(8, 0.3 * len(columns)):
+        return None
+
+    grid = np.asarray(ground_points)
+    centre = grid.mean(axis=0)
+    _, _, vt = np.linalg.svd(grid - centre, full_matrices=False)
+    direction = vt[0]
+    residual = np.abs((grid - centre) @ np.array([-direction[1], direction[0]]))
+    keep = residual < max(0.15, 3 * np.median(residual) + 1e-6)
+    if keep.sum() >= 8:
+        grid = grid[keep]
+        centre = grid.mean(axis=0)
+        _, _, vt = np.linalg.svd(grid - centre, full_matrices=False)
+        direction = vt[0]
+    phi = float(np.arctan2(direction[1], direction[0]))
+    if theta is not None:
+        for candidate in (theta, theta + np.pi / 2):
+            if abs(((phi - candidate + np.pi / 2) % np.pi) - np.pi / 2) < np.radians(10):
+                phi = float(candidate)
+                break
+    axis = np.array([np.cos(phi), np.sin(phi)])
+    normal = np.array([-np.sin(phi), np.cos(phi)])
+    along = (grid - centre) @ axis
+    low, high = np.percentile(along, 2), np.percentile(along, 98)
+    thickness = float(
+        np.clip(2 * np.percentile(np.abs((grid - centre) @ normal), 80), 0.10, 0.50)
+    )
+    corners = [
+        centre + low * axis + thickness / 2 * normal,
+        centre + high * axis + thickness / 2 * normal,
+        centre + high * axis - thickness / 2 * normal,
+        centre + low * axis - thickness / 2 * normal,
+    ]
+    return [[round(float(x), 3), round(float(y), 3)] for x, y in corners]
+
+
 def _manhattan_theta(walls: list[dict]) -> float | None:
     """Scene principal axis from fitted wall segments: length-weighted
     circular mean over the 90°-periodic angle (closed-form, no search)."""
@@ -769,6 +853,36 @@ def main(argv: list[str] | None = None) -> int:
         snapped = _snap_rect(entry["footprint"], theta)
         if snapped is not None:
             entry["rect_snapped"] = snapped
+
+    # Contact-edge pass for floor-standing thin structures: re-decode the
+    # RAW mask (the de-smear erosion moves the bottom edge) and project its
+    # ground-contact edge through the camera onto the floor plane.
+    for frame in frames:
+        points3d = np.load(frame.pts3d_path)
+        valid = np.load(frame.valid_mask_path).astype(bool)
+        height, width = valid.shape
+        for entry in entries:
+            if entry["frame"] != frame.frame_id:
+                continue
+            if not any(k in entry["label"] for k in CONTACT_FAMILY):
+                continue
+            slug = re.sub(r"[^a-z0-9]+", "_", entry["label"]).strip("_")
+            cache = run / "inventory" / "sam" / f"{frame.frame_id}__{slug}.json"
+            if not cache.exists():
+                continue
+            response = json.loads(cache.read_text())
+            rles = response.get("rle") or []
+            if isinstance(rles, str):
+                rles = [rles]
+            if entry["instance"] >= len(rles):
+                continue
+            raw_mask = decode_coco_rle(
+                rles[entry["instance"]], height=height, width=width
+            ).astype(bool)
+            rect = _contact_edge_rect(raw_mask, points3d, frame, transform, theta)
+            if rect is not None:
+                entry["rect_snapped"] = rect
+                entry["footprint_method"] = "contact-edge"
 
     out_dir = run / "inventory"
     out_dir.mkdir(parents=True, exist_ok=True)
