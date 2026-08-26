@@ -97,29 +97,49 @@ def _enumerate_objects(run: Path, frame: GeometryFrame, *, live: bool):
     return phrases
 
 
+def _prompt_candidates(phrase: str) -> tuple[str, ...]:
+    """Ensemble prompts for a phrase: the pipeline's measured synonym lists
+    when the phrase is (or maps into) the production vocabulary, else the
+    bare phrase. SAM 3 misses compound noun phrases the short synonym hits
+    ('safety fence' -> 0 masks, 'fence' -> hit, measured on real imagery)."""
+    from ehs_spatial.providers.sam3 import LABEL_PROMPTS
+
+    if phrase in LABEL_PROMPTS:
+        return LABEL_PROMPTS[phrase]
+    for label, prompts in LABEL_PROMPTS.items():
+        if phrase in prompts:
+            return prompts
+    return (phrase,)
+
+
 def _segment(run: Path, frame: GeometryFrame, phrase: str, *, live: bool):
     slug = re.sub(r"[^a-z0-9]+", "_", phrase).strip("_")
     cache = run / "inventory" / "sam" / f"{frame.frame_id}__{slug}.json"
-    if cache.exists():
-        return json.loads(cache.read_text())
+    cached = json.loads(cache.read_text()) if cache.exists() else None
+    if cached is not None and (cached.get("rle") or not live):
+        return cached
     if not live:
         return None
     import fal_client
 
-    response = fal_client.subscribe(
-        SAM3_ENDPOINT,
-        arguments={
-            "image_url": "data:image/png;base64,"
-            + base64.b64encode(
-                Path(frame.canonical_image_path).read_bytes()
-            ).decode("ascii"),
-            "prompt": phrase,
-            "return_multiple_masks": True,
-            "include_scores": True,
-            "include_boxes": True,
-            "max_masks": 12,
-        },
-    )
+    response = cached
+    for prompt in _prompt_candidates(phrase):
+        response = fal_client.subscribe(
+            SAM3_ENDPOINT,
+            arguments={
+                "image_url": "data:image/png;base64,"
+                + base64.b64encode(
+                    Path(frame.canonical_image_path).read_bytes()
+                ).decode("ascii"),
+                "prompt": prompt,
+                "return_multiple_masks": True,
+                "include_scores": True,
+                "include_boxes": True,
+                "max_masks": 12,
+            },
+        )
+        if response.get("rle"):
+            break
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(json.dumps(response) + "\n")
     return response
@@ -241,10 +261,17 @@ def _clip_segment(start, end, min_x, min_y, max_x, max_y):
     )
 
 
-def _render_plan(path: Path, walls: list[dict], objects: list[dict], run_id: str) -> None:
+def _render_plan(
+    path: Path,
+    walls: list[dict],
+    objects: list[dict],
+    run_id: str,
+    off_plan: list[dict] | None = None,
+) -> None:
     """A drawing, not a scatter plot: title block, coordinate grid, oriented
-    object rectangles with dimension strings, dimensioned clearances between
-    the closest pairs, and hatched walls."""
+    object rectangles with height/tilt labels, camera-to-subject distance,
+    dimensioned clearances, contact callouts (d=0.00), hatched walls, and an
+    honest exclusion strip for entries the quality gates rejected."""
     from shapely.geometry import LineString
     from shapely.ops import nearest_points as _nearest
 
@@ -328,6 +355,7 @@ def _render_plan(path: Path, walls: list[dict], objects: list[dict], run_id: str
     palette = ["#c1121f", "#1d4ed8", "#047857", "#b45309", "#6d28d9",
                "#0e7490", "#9d174d", "#4d7c0f", "#7c2d12", "#334155"]
     legend = []
+    tag_boxes: list[tuple[float, float]] = []
     for index, obj in enumerate(objects):
         colour = palette[index % len(palette)]
         box = Polygon(obj["footprint"]).minimum_rotated_rectangle
@@ -337,6 +365,21 @@ def _render_plan(path: Path, walls: list[dict], objects: list[dict], run_id: str
                   fill=colour, width=1)
         cx, cy = obj["centroid_xy"]
         draw.text(px((cx, cy)), f"{index + 1}", fill=colour, anchor="mm")
+        # measured state next to the symbol, like the probe plot the owner
+        # signed off on: label, height, tilt when the fit produced one.
+        # Tags nudge downward until they stop overlapping earlier ones.
+        tag = f"{obj['label']}  H {obj['height_m']:.2f} m"
+        if obj.get("tilt_deg") is not None:
+            tag += f", tilt {obj['tilt_deg']:.0f}°"
+        anchor_pt = list(px((cx, cy + 0.35)))
+        anchor_pt[1] -= 14
+        while any(
+            abs(anchor_pt[0] - x) < 110 and abs(anchor_pt[1] - y) < 16
+            for x, y in tag_boxes
+        ):
+            anchor_pt[1] += 16
+        tag_boxes.append(tuple(anchor_pt))
+        draw.text(tuple(anchor_pt), tag, fill=colour, anchor="mm")
         # dimension the two sides of the oriented box
         for i in (0, 1):
             p0, p1 = np.asarray(ring[i]), np.asarray(ring[i + 1])
@@ -344,6 +387,44 @@ def _render_plan(path: Path, walls: list[dict], objects: list[dict], run_id: str
             if side * scale > 46:
                 dimension(p0, p1, f"{side:.2f}", colour, offset=0.14)
         legend.append((index + 1, colour, obj))
+
+    # camera -> subject distance, the headline number a reviewer asks first.
+    # Subject = the worker when present, else the nearest tall object.
+    subject = next(
+        (o for o in objects if o["label"] == "worker"),
+        min(
+            (o for o in objects if o["height_m"] > 1.0),
+            key=lambda o: o["camera_dist_m"],
+            default=None,
+        ),
+    )
+    if subject is not None:
+        sx, sy = subject["centroid_xy"]
+        dimension(
+            (0.0, 0.0),
+            (sx, sy),
+            f"{subject['camera_dist_m']:.2f} m",
+            "#c1121f",
+        )
+
+    # contact callouts: object sitting ON a line/marking/fence reads as
+    # d = 0.00, which is exactly what a zone rule wants stated out loud.
+    flat_labels = ("marking", "line", "fence")
+    for a in objects:
+        pa = Polygon(a["footprint"])
+        for b in objects:
+            if a is b or not any(k in b["label"] for k in flat_labels):
+                continue
+            pb = Polygon(b["footprint"])
+            if pa.intersects(pb) or pa.distance(pb) < 0.05:
+                cx, cy = a["centroid_xy"]
+                point = px((cx, cy - 0.55))
+                draw.text(
+                    point,
+                    f"{a['label']} on {b['label']} (d=0.00)",
+                    fill="#6d28d9",
+                    anchor="mm",
+                )
 
     # clearance dimensions for the closest object pairs — what a rule reads
     pairs = []
@@ -359,7 +440,12 @@ def _render_plan(path: Path, walls: list[dict], objects: list[dict], run_id: str
     pairs.sort(key=lambda item: item[0])
     for gap, a, b, pa, pb in pairs[:3]:
         p1, p2 = _nearest(pa, pb)
-        dimension((p1.x, p1.y), (p2.x, p2.y), f"{gap:.2f} m", "#047857")
+        dimension(
+            (p1.x, p1.y),
+            (p2.x, p2.y),
+            f"{a['label']}↔{b['label']}  {gap:.2f} m",
+            "#047857",
+        )
     camera = px((0.0, 0.0))
     draw.ellipse([camera[0] - 7, camera[1] - 7, camera[0] + 7, camera[1] + 7],
                  fill="#c1121f")
@@ -393,6 +479,20 @@ def _render_plan(path: Path, walls: list[dict], objects: list[dict], run_id: str
         "source   photogrammetry, not a survey",
     ]):
         draw.text((rail + 8, block_top + 34 + offset * 17), line, fill="#333333")
+    # honest exclusion strip: what the quality gates refused, and why —
+    # stated on the sheet so an empty-looking area never reads as "checked
+    # and clear".
+    if off_plan:
+        row = block_top - 20 - 15 * min(len(off_plan), 4)
+        draw.text((rail, row - 16), "EXCLUDED BY QUALITY GATE", fill="#b91c1c")
+        for entry in off_plan[:4]:
+            draw.text(
+                (rail, row),
+                f"{entry['label']} @{entry['camera_dist_m']:.0f} m — "
+                f"{entry['off_plan_reason']}",
+                fill="#7f1d1d",
+            )
+            row += 15
     bar_m = 1.0
     bar = px((min_x + 0.4, min_y + 0.35))
     draw.line([bar, (bar[0] + bar_m * scale, bar[1])], fill="#111111", width=5)
@@ -574,7 +674,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         + "\n"
     )
-    _render_plan(out_dir / "floor_plan.png", walls, plan_objects, args.run)
+    _render_plan(
+        out_dir / "floor_plan.png", walls, plan_objects, args.run, off_plan=off_plan
+    )
     _write_dxf(out_dir / "floor_plan.dxf", walls, plan_objects)
     _write_scene(out_dir / "scene.json", args.run, entries)
 
