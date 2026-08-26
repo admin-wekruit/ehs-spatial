@@ -538,6 +538,23 @@ document.getElementById('scene').onclick = () => { sceneOn = sceneOn ? 0 : 1; dr
 document.getElementById('reset').onclick = () => { yaw = -0.6; pitch = 0.5; dist = radius*2.1;
   panX = 0; panY = 0; sel = 0; draw(); };
 document.getElementById('hud').textContent = `${DATA.objects.length} objects · ${N.toLocaleString()} points`;
+// Embedding pages (the test-set report's interactive floor plan) drive the
+// same focus routine over postMessage: {type:'ehs-select', label}.
+addEventListener('message', e => {
+  const m = e.data;
+  if (!m || m.type !== 'ehs-select') return;
+  const tokens = s => String(s || '').toLowerCase().split(/[^a-z]+/).filter(t => t.length >= 4);
+  const wantT = tokens(m.label);
+  // Stem-prefix overlap so 'robotic arm' finds 'industrial robot arm'.
+  const overlap = (a, b) => a.some(x => b.some(y => x.startsWith(y) || y.startsWith(x)));
+  const o = DATA.objects.find(x => x.label === m.label)
+    || DATA.objects.find(x => overlap(tokens(x.label), wantT));
+  if (!o) return;
+  sel = o.id;
+  document.getElementById('hud').textContent =
+    `${o.label} · 高 ${o.height_m} m · ${o.size} · 距相机 ${o.camera_dist_m} m`;
+  draw();
+});
 addEventListener('resize', draw);
 draw();
 </script></body></html>
