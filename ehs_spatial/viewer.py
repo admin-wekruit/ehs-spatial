@@ -175,6 +175,7 @@ def build_viewer_html(
     scale_factor_override: float | None = None,
     exclude: frozenset[str] | set[str] = DEFAULT_EXCLUDE,
     out_path: str | Path | None = None,
+    max_points: int | None = None,
 ) -> dict:
     """Write the run's self-contained interactive viewer HTML.
 
@@ -241,12 +242,18 @@ def build_viewer_html(
 
     keep = np.isfinite(xyz).all(axis=1) & (np.abs(xyz) < 60).all(axis=1)
     xyz, rgb, ids = xyz[keep], rgb[keep], ids[keep]
-    if len(xyz) > MAX_POINTS:
+    point_budget = max_points or MAX_POINTS
+    if len(xyz) > point_budget:
         rng = np.random.default_rng(0)
-        # Keep every object point; thin only the unclassified scene.
+        # Prefer object points; thin the unclassified scene first, and only
+        # when objects alone blow the budget (compact embeds) thin them too.
         object_index = np.flatnonzero(ids > 0)
         scene_index = np.flatnonzero(ids == 0)
-        budget = max(0, MAX_POINTS - len(object_index))
+        if len(object_index) > point_budget * 0.8:
+            object_index = rng.choice(
+                object_index, int(point_budget * 0.8), replace=False
+            )
+        budget = max(0, point_budget - len(object_index))
         if budget < len(scene_index):
             scene_index = rng.choice(scene_index, budget, replace=False)
         order = np.sort(np.concatenate([object_index, scene_index]))
