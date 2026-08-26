@@ -124,6 +124,10 @@ def test_adapter_normalizes_complete_fal_response_and_resizes_masks_nearest(tmp_
         "crate",
         "step ladder",
         "portable work platform",
+        "safety sensor",
+        "emergency stop button",
+        "warning sign",
+        "safety light",
     }
 
 

@@ -36,6 +36,7 @@ class Predicate(str, Enum):
     KEEP_CLEAR = "keep_clear"
     NOT_INSIDE = "not_inside"
     MAX_HEIGHT = "max_height"
+    MIN_HEIGHT = "min_height"
     MAX_TILT = "max_tilt"
 
 

@@ -1,0 +1,14 @@
+{
+  "policy_id": "p01-guarding-fence-min-height",
+  "source_text": "Guarding fences must be at least 1.8 m tall.",
+  "predicate": "min_height",
+  "subject_labels": [
+    "safety fence"
+  ],
+  "object_labels": [],
+  "threshold": 1.8,
+  "unit": "m",
+  "severity": "major",
+  "rationale": "Guarding fences shorter than 1.8 m can be reached over, defeating the machine guarding they provide.",
+  "unsupported_reason": null
+}

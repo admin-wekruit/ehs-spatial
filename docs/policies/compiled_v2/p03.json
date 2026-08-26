@@ -1,0 +1,16 @@
+{
+  "policy_id": "p03-safety-sensor-at-cell-opening",
+  "source_text": "A safety sensor must be present within 2 m of the cell opening.",
+  "predicate": "max_separation",
+  "subject_labels": [
+    "safety sensor"
+  ],
+  "object_labels": [
+    "cell opening"
+  ],
+  "threshold": 2.0,
+  "unit": "m",
+  "severity": "critical",
+  "rationale": "An unguarded cell opening lets a person enter the robot envelope without tripping a protective stop.",
+  "unsupported_reason": "Presence-required semantics: when no safety sensor is detected the engine abstains with INSUFFICIENT_EVIDENCE, which silently converts the violation this rule exists to catch (no sensor at all) into a non-verdict; max_separation only grades sensors already found. 'cell opening' is also not a perception class, so the reference object cannot be located."
+}

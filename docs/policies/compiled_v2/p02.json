@@ -1,0 +1,16 @@
+{
+  "policy_id": "p02-estop-within-reach-of-robot",
+  "source_text": "The emergency stop button must be within 3 m of the robot work area.",
+  "predicate": "max_separation",
+  "subject_labels": [
+    "emergency stop button"
+  ],
+  "object_labels": [
+    "industrial robot arm"
+  ],
+  "threshold": 3.0,
+  "unit": "m",
+  "severity": "critical",
+  "rationale": "An emergency stop farther than 3 m from the robot cannot be reached fast enough to interrupt a hazardous motion.",
+  "unsupported_reason": null
+}
