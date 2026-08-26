@@ -607,6 +607,10 @@ DATA.objects.forEach(o => {
     document.getElementById('hud').textContent = sel
       ? `${o.label} · 高 ${o.height_m} m · ${o.size} · 距相机 ${o.camera_dist_m} m`
       : `${DATA.objects.length} objects · ${N.toLocaleString()} points`;
+    // reverse sync: tell an embedding page (the report's floor plan)
+    try { if (window.parent !== window)
+      window.parent.postMessage({type:'ehs-picked', label: sel ? o.label : null}, '*');
+    } catch (e) {}
     draw(); };
   el.addEventListener('click', e => (e.altKey ? toggle() : focus()));
   el.addEventListener('keydown', e => { if (e.key === 'Enter') focus();

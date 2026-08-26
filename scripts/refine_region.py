@@ -67,6 +67,14 @@ def measure(run: Path, mask: np.ndarray, camera_height: float, scale: float | No
     top = float(np.percentile(cloud[:, 2], 98))
     base = float(np.percentile(cloud[:, 2], 2))
     xy = cloud[:, :2]
+    from shapely.geometry import MultiPoint
+
+    hull = MultiPoint([tuple(p) for p in xy]).convex_hull
+    footprint = (
+        [[round(float(x), 3), round(float(y), 3)] for x, y in hull.exterior.coords[:-1]]
+        if hull.geom_type == "Polygon"
+        else [[round(float(x), 3), round(float(y), 3)] for x, y in xy[:3]]
+    )
     return {
         "points": int(len(cloud)),
         "height_m": round(top, 2),
@@ -74,6 +82,7 @@ def measure(run: Path, mask: np.ndarray, camera_height: float, scale: float | No
         "extent_m": f"{np.ptp(xy[:, 0]):.2f}x{np.ptp(xy[:, 1]):.2f}",
         "centroid_xy": [round(float(v), 2) for v in xy.mean(axis=0)],
         "camera_dist_m": round(float(np.linalg.norm(xy.mean(axis=0))), 2),
+        "footprint_xy": footprint,
     }
 
 
@@ -83,6 +92,12 @@ def main(argv=None):
     parser.add_argument("--label", required=True)
     parser.add_argument("--box", required=True, help="x1,y1,x2,y2 pixels")
     parser.add_argument("--camera-height", type=float, default=1.5)
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="feed the correction back: add the measured object to the "
+        "run's scene.json and re-evaluate its policies",
+    )
     args = parser.parse_args(argv)
 
     run = Path("runs") / args.run
@@ -149,6 +164,58 @@ def main(argv=None):
     log_path.write_text(json.dumps(log, indent=2) + "\n")
     print(json.dumps(result, indent=2, ensure_ascii=False))
     print(f"overlay: {out_dir / f'{slug}.png'}")
+
+    if args.apply:
+        # Feedback loop core: the human correction becomes a scene entity
+        # and the run's policies are re-evaluated against it.
+        from ehs_spatial.contracts import Entity3D, PolicySpec, SceneMap
+        from ehs_spatial.policy import evaluate_policies
+
+        scene = SceneMap.model_validate(
+            json.loads((run / "scene.json").read_text())
+        )
+        observation_id = f"refine:{slug}"
+        if any(observation_id in e.observation_ids for e in scene.entities):
+            print("\ncorrection already applied to this scene; skipping re-add")
+            return 0
+        refine_index = sum(
+            1 for e in scene.entities if e.entity_id.startswith("refine-")
+        ) + 1
+        scene.entities.append(
+            Entity3D(
+                entity_id=f"refine-{refine_index:02d}",
+                label=args.label,
+                observation_ids=[observation_id],
+                centroid_xyz=(
+                    float(result["centroid_xy"][0]),
+                    float(result["centroid_xy"][1]),
+                    max(0.0, (result["base_m"] + result["height_m"]) / 2),
+                ),
+                footprint_xy=[(float(x), float(y)) for x, y in result["footprint_xy"]],
+                height_m=max(0.01, float(result["height_m"])),
+                evidence_frame_ids=["frame_0001"],
+            )
+        )
+        (run / "scene.json").write_text(scene.model_dump_json(indent=2) + "\n")
+        policies_path = run / "policies.json"
+        if policies_path.exists():
+            envelope = json.loads(policies_path.read_text())
+            specs = [PolicySpec.model_validate(s) for s in envelope.get("specs", [])]
+            before = {
+                r["policy_id"]: r["status"] for r in envelope.get("results", [])
+            }
+            results = evaluate_policies(specs, scene, capture_frame_count=1)
+            envelope["results"] = [r.model_dump(mode="json") for r in results]
+            policies_path.write_text(json.dumps(envelope, indent=2) + "\n")
+            print("\npolicy re-evaluation with the correction applied:")
+            for r in results:
+                status = getattr(r.status, "value", str(r.status))
+                delta = (
+                    ""
+                    if before.get(r.policy_id) == status
+                    else f"  (was {before.get(r.policy_id)})"
+                )
+                print(f"  {r.policy_id}: {status}{delta}")
     return 0
 
 
