@@ -43,6 +43,72 @@ PLAN_MAX_RANGE_M = 12.0
 # Structure is drawn as structure, not as furniture.
 STRUCTURE_LABELS = {"floor", "ceiling", "wall", "window", "ground", "roof"}
 
+# Painted / laid-flat classes whose correct height IS ~0; the non-positive-
+# height gate must not read that as depth collapse.
+FLAT_ZONE_KEYWORDS = ("marking", "line", "zone", "mat", "stripe", "tape")
+
+
+def _is_flat_zone(label: str) -> bool:
+    return any(keyword in label for keyword in FLAT_ZONE_KEYWORDS)
+
+
+def _manhattan_theta(walls: list[dict]) -> float | None:
+    """Scene principal axis from fitted wall segments: length-weighted
+    circular mean over the 90°-periodic angle (closed-form, no search)."""
+    if not walls:
+        return None
+    s = c = 0.0
+    for wall in walls:
+        dx = wall["end"][0] - wall["start"][0]
+        dy = wall["end"][1] - wall["start"][1]
+        length = float(np.hypot(dx, dy))
+        if length < 0.5:
+            continue
+        angle = np.arctan2(dy, dx)
+        s += length * np.sin(4 * angle)
+        c += length * np.cos(4 * angle)
+    if s == 0 and c == 0:
+        return None
+    return 0.25 * float(np.arctan2(s, c))
+
+
+def _snap_rect(footprint: list, theta: float | None) -> list | None:
+    """Axis-snapped robust rectangle for a footprint (research approach 1):
+    express the points in the Manhattan frame, take the p2–p98 box, rotate
+    back. Escape hatch: a genuinely oblique object (free rectangle >15° off
+    both axes AND markedly tighter) keeps its free orientation."""
+    pts = np.asarray(footprint, dtype=float)
+    if theta is None or len(pts) < 3:
+        return None
+    rot = np.array(
+        [[np.cos(-theta), -np.sin(-theta)], [np.sin(-theta), np.cos(-theta)]]
+    )
+    q = pts @ rot.T
+    x0, x1 = np.percentile(q[:, 0], 2), np.percentile(q[:, 0], 98)
+    y0, y1 = np.percentile(q[:, 1], 2), np.percentile(q[:, 1], 98)
+    corners = np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]])
+    snapped = corners @ np.array(
+        [[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]]
+    ).T
+    try:
+        free = Polygon(footprint).minimum_rotated_rectangle
+        coords = np.asarray(free.exterior.coords)[:-1]
+        edge = coords[1] - coords[0]
+        free_angle = float(np.arctan2(edge[1], edge[0]))
+        offset = abs(
+            ((free_angle - theta + np.pi / 4) % (np.pi / 2)) - np.pi / 4
+        )
+        snapped_area = (x1 - x0) * (y1 - y0)
+        if (
+            offset > np.radians(15)
+            and np.isfinite(free.area)
+            and free.area < 0.7 * snapped_area
+        ):
+            return [[round(float(x), 3), round(float(y), 3)] for x, y in coords]
+    except Exception:
+        pass
+    return [[round(float(x), 3), round(float(y), 3)] for x, y in snapped]
+
 
 def _frames(run: Path) -> list[GeometryFrame]:
     out = []
@@ -358,8 +424,12 @@ def _render_plan(
     tag_boxes: list[tuple[float, float]] = []
     for index, obj in enumerate(objects):
         colour = palette[index % len(palette)]
-        box = Polygon(obj["footprint"]).minimum_rotated_rectangle
-        ring = list(box.exterior.coords)
+        if obj.get("rect_snapped"):
+            ring = [tuple(p) for p in obj["rect_snapped"]]
+            ring.append(ring[0])
+        else:
+            box = Polygon(obj["footprint"]).minimum_rotated_rectangle
+            ring = list(box.exterior.coords)
         draw.polygon([px(p) for p in ring], outline=colour, width=3)
         draw.line([px(p) for p in obj["footprint"] + [obj["footprint"][0]]],
                   fill=colour, width=1)
@@ -509,7 +579,9 @@ def _write_scene(path: Path, run_id: str, entries: list[dict]) -> None:
     entities = []
     for index, entry in enumerate(entries, start=1):
         if entry["height_m"] <= 0:
-            continue
+            if not (_is_flat_zone(entry["label"]) and entry["height_m"] > -0.20):
+                continue
+            entry = {**entry, "height_m": 0.0}
         entities.append(
             Entity3D(
                 entity_id=f"inv-{index:03d}",
@@ -523,7 +595,10 @@ def _write_scene(path: Path, run_id: str, entries: list[dict]) -> None:
                 footprint_xy=[(float(x), float(y)) for x, y in entry["footprint"]],
                 height_m=float(entry["height_m"]),
                 evidence_frame_ids=[entry["frame"]],
-                orientation_deg=entry.get("orientation_deg"),
+                # Entity3D wants [0,180); a rounded 180.0 is the same axis as 0
+                orientation_deg=None
+                if entry.get("orientation_deg") is None
+                else float(entry["orientation_deg"]) % 180.0,
                 tilt_deg=entry.get("tilt_deg"),
             )
         )
@@ -582,7 +657,25 @@ def main(argv: list[str] | None = None) -> int:
                 mask = decode_coco_rle(rle, height=height, width=width).astype(bool)
                 if int(mask.sum()) < MIN_MASK_PIXELS:
                     continue
-                cloud = _clean(transform.apply(points3d[mask & finite]))
+                # De-smear (research approach 3): flying pixels concentrate
+                # on the silhouette boundary — erode 2 px unless the object
+                # is thinner than the erosion; then trim the along-ray depth
+                # tail to its inter-percentile core.
+                from scipy import ndimage
+
+                core = ndimage.binary_erosion(mask, iterations=2)
+                if core.sum() >= 0.3 * mask.sum():
+                    mask = core
+                selected = mask & finite
+                depth_map = points3d[..., 2]
+                depths = depth_map[selected]
+                if len(depths) >= 50:
+                    low, high = np.percentile(depths, 15), np.percentile(depths, 85)
+                    margin = 0.25 * (high - low) + 0.05
+                    selected &= (depth_map >= low - margin) & (
+                        depth_map <= high + margin
+                    )
+                cloud = _clean(transform.apply(points3d[selected]))
                 if cloud is None:
                     continue
                 hull = MultiPoint([(x, y) for x, y in cloud[:, :2]]).convex_hull
@@ -635,13 +728,18 @@ def main(argv: list[str] | None = None) -> int:
     for entry in entries:
         if entry["label"] in STRUCTURE_LABELS:
             continue
-        if entry["camera_dist_m"] > PLAN_MAX_RANGE_M or entry["height_m"] <= 0.0:
-            entry["off_plan_reason"] = (
-                "beyond reliable single-view range"
-                if entry["camera_dist_m"] > PLAN_MAX_RANGE_M
-                else "non-positive height (depth collapse)"
-            )
+        if entry["camera_dist_m"] > PLAN_MAX_RANGE_M:
+            entry["off_plan_reason"] = "beyond reliable single-view range"
             continue
+        if entry["height_m"] <= 0.0:
+            # Painted zones/markings/mats LIVE at height 0 — mono noise puts
+            # them a few cm negative, which is a correct measurement of a
+            # flat object, not depth collapse. Keep them, clamped to 0.
+            if _is_flat_zone(entry["label"]) and entry["height_m"] > -0.20:
+                entry["height_m"] = 0.0
+            else:
+                entry["off_plan_reason"] = "non-positive height (depth collapse)"
+                continue
         current = best_per_label.get(entry["label"])
         if current is None or entry["camera_dist_m"] < current["camera_dist_m"]:
             best_per_label[entry["label"]] = entry
@@ -666,11 +764,25 @@ def main(argv: list[str] | None = None) -> int:
         < PLAN_MAX_RANGE_M
     ]
 
+    theta = _manhattan_theta(walls)
+    for entry in entries:
+        snapped = _snap_rect(entry["footprint"], theta)
+        if snapped is not None:
+            entry["rect_snapped"] = snapped
+
     out_dir = run / "inventory"
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "inventory.json").write_text(
         json.dumps(
-            {"phrases": phrases, "objects": entries, "walls": walls}, indent=2
+            {
+                "phrases": phrases,
+                "objects": entries,
+                "walls": walls,
+                "manhattan_theta_deg": None
+                if theta is None
+                else round(float(np.degrees(theta)), 1),
+            },
+            indent=2,
         )
         + "\n"
     )
