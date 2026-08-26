@@ -487,11 +487,65 @@ def _moge_cloud(image_path: Path, cache_ply: Path, runner) -> np.ndarray | None:
             return None
         cache_ply.parent.mkdir(parents=True, exist_ok=True)
         cache_ply.write_bytes(data)
+        try:
+            # MoGe's own normalized 3x3 intrinsics — required downstream when
+            # the cloud dropped invalid pixels and is no longer a full grid.
+            intr_source = output["intrinsics_json"]
+            _intrinsics_path(cache_ply).write_bytes(
+                intr_source.read()
+                if hasattr(intr_source, "read")
+                else Path(str(intr_source)).read_bytes()
+            )
+        except Exception:
+            pass
     try:
         points = np.asarray(o3d.io.read_point_cloud(str(cache_ply)).points)
     except Exception:
         return None
-    return points if len(points) else None
+    if not len(points):
+        return None
+    finite = points[np.isfinite(points).all(axis=1)]
+    if len(finite) and np.median(finite[:, 2]) < 0:
+        # MoGe exports its cloud for GL viewers (y up, z back); flip to
+        # OpenCV convention (x right, y down, z forward) — same auto-detect
+        # as scripts/arm_poc.py cloud_to_depth.
+        points = points * np.array([1.0, -1.0, -1.0])
+    return points
+
+
+def _intrinsics_path(cache_ply: Path) -> Path:
+    return cache_ply.with_suffix(".intrinsics.json")
+
+
+def _moge_pixel_intrinsics(
+    cache_ply: Path, image_size: tuple[int, int]
+) -> dict | None:
+    """MoGe's cached normalized intrinsics, scaled to full-frame pixels."""
+    path = _intrinsics_path(cache_ply)
+    if not path.is_file():
+        return None
+    try:
+        matrix = json.loads(path.read_text())["intrinsics"]
+    except Exception:
+        return None
+    width, height = image_size
+    return {
+        "fx": float(matrix[0][0]) * width,
+        "cx": float(matrix[0][2]) * width,
+        "fy": float(matrix[1][1]) * height,
+        "cy": float(matrix[1][2]) * height,
+    }
+
+
+def _lower_image_points(
+    points: np.ndarray, intrinsics: dict, image_size: tuple[int, int]
+) -> np.ndarray:
+    """Points that project into the lower part of the image (where floors
+    live), for clouds that lost their pixel-grid ordering."""
+    finite = np.isfinite(points).all(axis=1) & (points[:, 2] > 1e-6)
+    points = points[finite]
+    v = intrinsics["fy"] * points[:, 1] / points[:, 2] + intrinsics["cy"]
+    return points[v > image_size[1] * 0.55]
 
 
 def fit_floor_from_keyframes(
@@ -521,24 +575,36 @@ def fit_floor_from_keyframes(
             entry["error"] = "MoGe call or point cloud read failed"
             continue
         grid = _organize_cloud(points, image_size)
-        if grid is None:
-            entry["error"] = "point cloud is not an organized pixel grid"
-            continue
-        intrinsics = fit_pinhole_from_grid(grid)
-        if intrinsics is None:
-            entry["error"] = "pinhole fit failed"
-            continue
-        grid_height, grid_width = grid.shape[:2]
-        # Rescale grid-pixel intrinsics to full-frame pixels.
-        scale = grid_width / image_size[0]
-        intrinsics = {
-            "fx": intrinsics["fx"] / scale,
-            "cx": intrinsics["cx"] / scale,
-            "fy": intrinsics["fy"] / (grid_height / image_size[1]),
-            "cy": intrinsics["cy"] / (grid_height / image_size[1]),
-        }
-        # Floor candidates: lower part of the image, where floors live.
-        candidates = grid[int(grid_height * 0.55) :].reshape(-1, 3)
+        if grid is not None:
+            intrinsics = fit_pinhole_from_grid(grid)
+            if intrinsics is None:
+                entry["error"] = "pinhole fit failed"
+                continue
+            grid_height, grid_width = grid.shape[:2]
+            # Rescale grid-pixel intrinsics to full-frame pixels.
+            scale = grid_width / image_size[0]
+            intrinsics = {
+                "fx": intrinsics["fx"] / scale,
+                "cx": intrinsics["cx"] / scale,
+                "fy": intrinsics["fy"] / (grid_height / image_size[1]),
+                "cy": intrinsics["cy"] / (grid_height / image_size[1]),
+            }
+            # Floor candidates: lower part of the image, where floors live.
+            candidates = grid[int(grid_height * 0.55) :].reshape(-1, 3)
+        else:
+            # Real MoGe clouds drop invalid pixels (sky, no-depth) and are
+            # rarely full grids: fall back to the model's own intrinsics and
+            # project points to select the lower-image floor candidates.
+            intrinsics = _moge_pixel_intrinsics(
+                moge_dir / f"f{frame_id:06d}.ply", image_size
+            )
+            if intrinsics is None:
+                entry["error"] = (
+                    "point cloud is not an organized pixel grid and no "
+                    "MoGe intrinsics are cached"
+                )
+                continue
+            candidates = _lower_image_points(points, intrinsics, image_size)
         plane = ransac_plane(candidates)
         if plane is None:
             entry["error"] = "no dominant plane in the lower image"

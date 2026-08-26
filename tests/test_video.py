@@ -18,6 +18,7 @@ from ehs_spatial import video as video_module
 from ehs_spatial.video import (
     FloorCamera,
     banded_verdict,
+    fit_floor_from_keyframes,
     fit_pinhole_from_grid,
     judge,
     lift_tracks,
@@ -98,6 +99,51 @@ def test_ransac_plane_finds_floor_among_outliers():
 
 def test_ransac_plane_needs_enough_points():
     assert ransac_plane(np.zeros((10, 3))) is None
+
+
+def test_floor_fit_falls_back_to_moge_intrinsics_on_non_grid_cloud(tmp_path):
+    """Real MoGe clouds drop invalid pixels: the grid path must fail and the
+    cached-intrinsics fallback must still recover the floor."""
+    import json as json_module
+
+    frames_dir = tmp_path / "frames"
+    frames_dir.mkdir()
+    moge_dir = tmp_path / "moge"
+    moge_dir.mkdir()
+    Image.new("RGB", (_W, _H)).save(frames_dir / "f000000.jpg")
+
+    grid = _synthetic_grid()
+    points = grid.reshape(-1, 3)
+    points = np.delete(points, np.arange(0, 37), axis=0)  # 37 is prime: no grid
+
+    def runner(model_identifier, *, input):
+        import open3d as o3d
+
+        cloud = o3d.geometry.PointCloud()
+        cloud.points = o3d.utility.Vector3dVector(points)
+        ply_path = tmp_path / "nongrid.ply"
+        o3d.io.write_point_cloud(str(ply_path), cloud, write_ascii=True)
+        intr_path = tmp_path / "nongrid_intrinsics.json"
+        intr_path.write_text(
+            json_module.dumps(
+                {
+                    "intrinsics": [
+                        [_FX / _W, 0.0, _CX / _W],
+                        [0.0, _FY / _H, _CY / _H],
+                        [0.0, 0.0, 1.0],
+                    ]
+                }
+            )
+        )
+        return {
+            "pointcloud_ply": str(ply_path),
+            "intrinsics_json": str(intr_path),
+        }
+
+    camera, summary = fit_floor_from_keyframes(frames_dir, moge_dir, [0], runner)
+    assert summary["fitted"] is True
+    assert camera is not None
+    assert camera.camera_height_m == pytest.approx(1.5, abs=0.05)
 
 
 def _camera(height: float = 2.0) -> FloorCamera:
