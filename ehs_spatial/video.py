@@ -459,9 +459,11 @@ class FloorCamera:
 
 
 def _default_moge_runner(model_identifier: str, *, input: dict) -> object:
-    import replicate
+    # Shares the photo chain's backend switch (MoGe-3 on Modal by default,
+    # MOGE_BACKEND=replicate for the pinned MoGe-2).
+    from .providers.moge import _default_runner
 
-    return replicate.run(model_identifier, input=input, wait=False)
+    return _default_runner(model_identifier, input=input)
 
 
 def _moge_cloud(image_path: Path, cache_ply: Path, runner) -> np.ndarray | None:
