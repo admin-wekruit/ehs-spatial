@@ -23,7 +23,8 @@ def main(image_path: str) -> None:
     payload = f"data:image/{suffix};base64," + base64.b64encode(
         path.read_bytes()
     ).decode("ascii")
-    output = replicate.run(MOGE_VERSION, input={"image": payload, "fp16": True})
+    # wait=False -> poll instead of holding one long HTTP read (avoids ReadTimeout)
+    output = replicate.run(MOGE_VERSION, input={"image": payload, "fp16": True}, wait=False)
 
     meta = {}
     items = output.items() if isinstance(output, dict) else enumerate(output)
