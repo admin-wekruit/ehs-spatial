@@ -133,15 +133,27 @@ def _masks_for_frame(
     shape: tuple[int, int],
     observations: list[Observation2D],
 ) -> dict[str, np.ndarray]:
-    """Union of every mask this run has for each label, on this frame."""
+    """Per-INSTANCE masks for this frame, in stable discovery order.
+
+    One entry per SAM RLE (instance), not one union per label — the floor
+    plan draws instances, and the 3D viewer must bind one-to-one with it.
+    Near-duplicate masks across sources (observation masks repeating the
+    inventory's SAM instances) are dropped by IoU.
+    """
     height, width = shape
-    by_label: dict[str, np.ndarray] = {}
+    by_label: dict[str, list[np.ndarray]] = {}
 
     def add(label: str, mask: np.ndarray) -> None:
         if int(mask.sum()) < MIN_MASK_PIXELS:
             return
-        current = by_label.get(label)
-        by_label[label] = mask if current is None else (current | mask)
+        peers = by_label.setdefault(label, [])
+        area = mask.sum()
+        for existing in peers:
+            inter = int((existing & mask).sum())
+            union = int(existing.sum()) + int(area) - inter
+            if union and inter / union > 0.85:
+                return  # same physical instance seen through another source
+        peers.append(mask)
 
     for source in ("inventory/sam", "semantic_layers/sam"):
         directory = run / source
@@ -204,7 +216,13 @@ def _masks_for_frame(
             continue
         with Image.open(observation.mask_path) as image:
             add(observation.label, np.asarray(image).astype(bool))
-    return by_label
+
+    flat: list[tuple[str, np.ndarray]] = []
+    for label, peers in by_label.items():
+        for position, mask in enumerate(peers):
+            display = f"{label} #{position + 1}" if len(peers) > 1 else label
+            flat.append((display, mask))
+    return flat
 
 
 def build_viewer_html(
@@ -267,7 +285,7 @@ def build_viewer_html(
         masks = _masks_for_frame(run, frame, valid.shape, observations)
         # Smaller masks paint last so a specific object wins over the big
         # container it sits inside.
-        for label, mask in sorted(masks.items(), key=lambda kv: -int(kv[1].sum())):
+        for label, mask in sorted(masks, key=lambda kv: -int(kv[1].sum())):
             if label in exclude:
                 continue
             if label not in labels:
@@ -329,10 +347,18 @@ def build_viewer_html(
         # connected blob in plan view.
         cloud = xyz[member]
         radius = np.linalg.norm(cloud[:, :2], axis=1)
+        # Order matters (mirrors scene_inventory._clean): drop the degenerate
+        # near-origin reconstruction pixels FIRST, then take median/MAD on
+        # the survivors. Computing the median on the raw cloud let tens of
+        # thousands of collapsed points set centre=0 and erase whole labels.
+        member = member[radius > 0.15]
+        radius = radius[radius > 0.15]
+        if len(member) < MIN_OBJECT_POINTS:
+            ids[np.flatnonzero(ids == index)] = 0
+            continue
         centre = np.median(radius)
         spread = np.median(np.abs(radius - centre)) + 1e-6
-        inlier = (np.abs(radius - centre) < 2.5 * spread) & (radius > 0.15)
-        member = member[inlier]
+        member = member[np.abs(radius - centre) < 2.5 * spread]
         if len(member) < MIN_OBJECT_POINTS:
             ids[np.flatnonzero(ids == index)] = 0
             continue
