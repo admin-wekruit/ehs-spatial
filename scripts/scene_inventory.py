@@ -587,12 +587,16 @@ def _align_guard_lines(
             x0, y0, x1, y1 = e["image_bbox"]
             gap = x0 - px1
             y_overlap = min(py1, y1) - max(py0, y0)
-            h_prev = max(prev["height_m"], 0.01)
-            h_here = max(e["height_m"], 0.01)
+            # section compatibility by IMAGE evidence: measured 3D heights
+            # are noise-polluted (a 0.3 m reading on a 1.5 m section broke
+            # a gate chain); side-by-side sections of one line have similar
+            # pixel heights, and that survives every depth failure mode
+            ih_prev = max(1, py1 - py0)
+            ih_here = max(1, y1 - y0)
             if (
                 gap < 0.15 * image_width
-                and y_overlap > 0.3 * min(py1 - py0, y1 - y0)
-                and max(h_prev, h_here) / min(h_prev, h_here) < 1.8
+                and y_overlap > 0.3 * min(ih_prev, ih_here)
+                and max(ih_prev, ih_here) / min(ih_prev, ih_here) < 1.8
             ):
                 current.append(e)
                 continue
@@ -1123,6 +1127,23 @@ def _ingest_refinements(
             split = _normal_split(mask, *moge_maps)
             if split is not None:
                 mask = split
+                # the raw box-prompt mask bleeds over whatever stands in
+                # front of / behind the glass; persist the cleaned framed
+                # quad so the interaction layer inherits it (same
+                # treatment inventory instances get)
+                cache = run / "refinements" / f"{slug}.json"
+                try:
+                    response = json.loads(cache.read_text())
+                    rles = response.get("rle") or []
+                    if isinstance(rles, str):
+                        rles = [rles]
+                    scores = response.get("scores") or [1.0] * len(rles)
+                    best = int(np.argmax(scores))
+                    rles[best] = encode_coco_rle(_hull_fill(split))
+                    response["rle"] = rles
+                    cache.write_text(json.dumps(response) + "\n")
+                except Exception:
+                    pass
         selected = mask & finite
         depth_map = points3d[..., 2]
         if selected.sum() < MIN_MASK_PIXELS:
