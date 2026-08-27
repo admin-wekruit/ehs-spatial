@@ -952,6 +952,68 @@ def _ingest_refinements(
     Refinements duplicating an existing fence instance (IoU>0.5) are
     skipped — the inventory version already went through the pipeline."""
     log_path = run / "refinements.json"
+    # the detection layer's fence-family results flow in through the same
+    # door: persist them in refinement format (same SAM response schema),
+    # and every downstream consumer — this ingest, the report's photo
+    # pick, reprojection — inherits them with zero special cases
+    det_path = run / "detection" / "detections.json"
+    if det_path.exists():
+        log = json.loads(log_path.read_text()) if log_path.exists() else []
+        known = {
+            item["label"].replace(" ", "_")
+            + "_"
+            + "_".join(str(v) for v in item["box"])
+            for item in log
+        }
+        added = False
+        for det in json.loads(det_path.read_text()).get("detections", []):
+            if "rle" not in det:
+                continue
+            if not any(k in det.get("label", "") for k in CONTACT_FAMILY):
+                continue
+            slug = (
+                det["label"].replace(" ", "_")
+                + "_"
+                + "_".join(str(v) for v in det["box"])
+            )
+            if slug in known:
+                continue
+            destination = run / "refinements" / f"{slug}.json"
+            destination.parent.mkdir(exist_ok=True)
+            if not destination.exists():
+                source = (
+                    run
+                    / "detection"
+                    / "sam"
+                    / (
+                        f"{det['item_id']}_"
+                        + "_".join(str(v) for v in det["box"])
+                        + ".json"
+                    )
+                )
+                destination.write_text(
+                    source.read_text()
+                    if source.exists()
+                    else json.dumps(
+                        {
+                            "rle": [det["rle"]],
+                            "scores": [det.get("sam_score", 1.0)],
+                        }
+                    )
+                    + "\n"
+                )
+            log.append(
+                {
+                    "label": det["label"],
+                    "box": list(det["box"]),
+                    "sam_score": det.get("sam_score"),
+                    "source": "detection",
+                }
+            )
+            known.add(slug)
+            added = True
+        if added:
+            log_path.write_text(json.dumps(log, indent=2) + "\n")
     if not log_path.exists():
         return
     points3d = np.load(frame.pts3d_path)
@@ -1014,7 +1076,9 @@ def _ingest_refinements(
         if cloud is None:
             continue
         hull = MultiPoint([(x, y) for x, y in cloud[:, :2]]).convex_hull
-        if not isinstance(hull, Polygon) or hull.area < 0.01:
+        # a thin section seen edge-on legitimately has a tiny footprint;
+        # the point-count gates already killed the noise cases
+        if not isinstance(hull, Polygon) or hull.area < 0.004:
             continue
         top = float(np.quantile(cloud[:, 2], 0.95))
         ys, xs = np.nonzero(mask)
