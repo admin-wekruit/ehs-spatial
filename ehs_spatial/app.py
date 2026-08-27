@@ -986,6 +986,98 @@ def build_app(
                             height=320,
                         )
 
+            with gr.Tab("补测 Refine"):
+                gr.Markdown(
+                    "## 框选补测\n"
+                    "词表漏检的物体（透明护板、光幕柱、掠射角侧板…）："
+                    "选 run → 在照片上**点两下**（左上角、右下角）画框 → "
+                    "起标签 → SAM 分割并用该 run 自己的几何量尺寸；勾选回灌则"
+                    "写入 scene 并重评该 run 的全部 policy。",
+                    elem_classes="section-heading",
+                )
+                with gr.Row():
+                    refine_run = gr.Dropdown(
+                        label="Run", choices=[], allow_custom_value=True
+                    )
+                    refine_refresh = gr.Button("刷新 run 列表")
+                refine_image = gr.Image(
+                    label="点两下画框（左上 → 右下）", type="filepath",
+                    interactive=False,
+                )
+                with gr.Row():
+                    refine_x1 = gr.Number(label="x1", precision=0)
+                    refine_y1 = gr.Number(label="y1", precision=0)
+                    refine_x2 = gr.Number(label="x2", precision=0)
+                    refine_y2 = gr.Number(label="y2", precision=0)
+                with gr.Row():
+                    refine_label = gr.Textbox(
+                        label="标签（英文，如 safety fence / safety sensor）",
+                        value="safety fence",
+                    )
+                    refine_apply = gr.Checkbox(
+                        label="回灌判定（写入 scene + 重评 policies）", value=True
+                    )
+                    refine_go = gr.Button("SAM 补测", variant="primary")
+                refine_result = gr.JSON(label="测量结果")
+                refine_overlay = gr.Image(label="mask 证据", interactive=False)
+                refine_corner = gr.State(0)
+
+                def _refine_runs() -> gr.Dropdown:
+                    names = [r.get("run_id") for r in service.store.list_runs()]
+                    return gr.Dropdown(choices=[n for n in names if n])
+
+                def _refine_pick_image(name: str | None):
+                    if not name:
+                        return None
+                    run_dir = service.store.paths(name).root
+                    images = sorted((run_dir / "input").glob("image_*"))
+                    return str(images[0]) if images else None
+
+                def _refine_click(corner, x1, y1, x2, y2,
+                                  evt: gr.SelectData):
+                    x, y = evt.index
+                    if corner == 0:
+                        return 1, x, y, x2, y2
+                    return 0, x1, y1, x, y
+
+                def _refine_go(name, label, x1, y1, x2, y2, apply_it):
+                    from .refine import RefineError, refine_region
+
+                    if not name:
+                        raise gr.Error("先选一个 run")
+                    if not all(v is not None for v in (x1, y1, x2, y2)):
+                        raise gr.Error("先在照片上点两下画框")
+                    try:
+                        result = refine_region(
+                            str(name), str(label),
+                            (int(x1), int(y1), int(x2), int(y2)),
+                            runs_root=service.store.root,
+                            apply=bool(apply_it),
+                        )
+                    except RefineError as exc:
+                        raise gr.Error(str(exc)) from exc
+                    overlay = result.pop("overlay_path", None)
+                    return result, overlay
+
+                refine_refresh.click(_refine_runs, outputs=[refine_run])
+                refine_run.change(
+                    _refine_pick_image, inputs=[refine_run],
+                    outputs=[refine_image],
+                )
+                refine_image.select(
+                    _refine_click,
+                    inputs=[refine_corner, refine_x1, refine_y1,
+                            refine_x2, refine_y2],
+                    outputs=[refine_corner, refine_x1, refine_y1,
+                             refine_x2, refine_y2],
+                )
+                refine_go.click(
+                    _refine_go,
+                    inputs=[refine_run, refine_label, refine_x1, refine_y1,
+                            refine_x2, refine_y2, refine_apply],
+                    outputs=[refine_result, refine_overlay],
+                )
+
             with gr.Tab("History"):
                 gr.Markdown("## Past runs", elem_classes="section-heading")
                 refresh_button = gr.Button(

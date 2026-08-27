@@ -156,7 +156,7 @@ def _manhattan_theta(walls: list[dict]) -> float | None:
     return 0.25 * float(np.arctan2(s, c))
 
 
-def _snap_rect(footprint: list, theta: float | None) -> list | None:
+def _snap_rect(footprint: list, theta: float | None, allow_free: bool = True) -> list | None:
     """Axis-snapped robust rectangle for a footprint (research approach 1):
     express the points in the Manhattan frame, take the p2–p98 box, rotate
     back. Escape hatch: a genuinely oblique object (free rectangle >15° off
@@ -184,7 +184,8 @@ def _snap_rect(footprint: list, theta: float | None) -> list | None:
         )
         snapped_area = (x1 - x0) * (y1 - y0)
         if (
-            offset > np.radians(15)
+            allow_free
+            and offset > np.radians(15)
             and np.isfinite(free.area)
             and free.area < 0.7 * snapped_area
         ):
@@ -846,7 +847,13 @@ def main(argv: list[str] | None = None) -> int:
 
     theta = _manhattan_theta(walls)
     for entry in entries:
-        snapped = _snap_rect(entry["footprint"], theta)
+        # Thin wall-following structures and painted zones have no honest
+        # oblique reading: a "tighter" free rectangle on them IS the smear.
+        oblique_ok = not (
+            any(k in entry["label"] for k in CONTACT_FAMILY)
+            or _is_flat_zone(entry["label"])
+        )
+        snapped = _snap_rect(entry["footprint"], theta, allow_free=oblique_ok)
         if snapped is not None:
             entry["rect_snapped"] = snapped
 
