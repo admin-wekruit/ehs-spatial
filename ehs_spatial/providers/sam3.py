@@ -133,6 +133,25 @@ def _mask_from_fal_pairs(value: str, height: int, width: int) -> np.ndarray:
     return flat.reshape((height, width))
 
 
+def encode_coco_rle(mask: np.ndarray) -> str:
+    """Inverse of decode_coco_rle's object form: column-major runs starting
+    with the zero run, wrapped as {"size": [H, W], "counts": [...]}."""
+    mask = np.asarray(mask).astype(bool)
+    flat = mask.flatten(order="F").astype(np.int8)
+    boundaries = np.concatenate(
+        ([0], np.flatnonzero(np.diff(flat)) + 1, [flat.size])
+    )
+    counts = np.diff(boundaries).tolist()
+    if flat.size and flat[0] == 1:
+        counts = [0, *counts]
+    return json.dumps(
+        {
+            "size": [int(mask.shape[0]), int(mask.shape[1])],
+            "counts": [int(count) for count in counts],
+        }
+    )
+
+
 def decode_coco_rle(
     rle: str,
     *,

@@ -38,12 +38,23 @@ class LocatedObject(BaseModel):
     rationale: str
 
 
+# Field lessons the reviewer taught us. Every locate turn carries them so
+# the agent does not repeat a mistake the reviewer already corrected once.
+AGENT_LESSONS = (
+    "框要紧贴目标本体：绝不把相邻的红色斜坡挡板/踢脚板包进围栏框——斜坡是独立对象，单独一框。",
+    "透明板/围栏后面会透出别的东西：框仍按板框边界画，不要为了包住透出的背景把框放大。",
+    "并排的护栏/板段是多个独立对象，一段一框；只有同一块板被横向切成上下几条时才是一个对象。",
+    "斜坡下沿贴地的传感器横杆、立柱上的小装置（指示灯、门联锁、急停）最容易漏，别跳过。",
+)
+
 _LOCATE_PROMPT = (
     "You are helping audit an industrial workcell photo. The reviewer says "
     "an object was missed by automatic segmentation and describes it below "
     "(possibly in Chinese). Locate that object in the photo.\n"
     "Reviewer: {instruction}\n"
-    "Return found=false if you cannot see a matching object. box_2d MUST be "
+    "Field rules (learned from past reviewer corrections):\n"
+    + "".join(f"- {lesson}\n" for lesson in AGENT_LESSONS)
+    + "Return found=false if you cannot see a matching object. box_2d MUST be "
     "[ymin, xmin, ymax, xmax] in 0-1000 normalized coordinates, tight "
     "around the described object only."
 )
@@ -183,6 +194,9 @@ STANDARD_SWEEP: list[tuple[str, str]] = [
     ("信号灯塔（红黄绿堆叠指示灯）", "safety light"),
     ("最靠近入口的一段安全围栏/透明护板", "safety fence"),
     ("警示/安全标识牌", "warning sign"),
+    ("斜坡挡板下沿贴地的黄黑色传感器横杆", "safety sensor"),
+    ("立柱上的圆顶指示灯", "indicator light"),
+    ("立柱上的门联锁开关/把手", "door interlock switch"),
 ]
 
 

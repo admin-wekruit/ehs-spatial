@@ -29,7 +29,11 @@ from shapely.geometry import MultiPoint, Point, Polygon
 
 from ehs_spatial.contracts import GeometryFrame, Observation2D
 from ehs_spatial.geometry import _build_geometry, _spatial_state
-from ehs_spatial.providers.sam3 import SAM3_ENDPOINT, decode_coco_rle
+from ehs_spatial.providers.sam3 import (
+    SAM3_ENDPOINT,
+    decode_coco_rle,
+    encode_coco_rle,
+)
 
 MAX_PHRASES = 26
 MIN_MASK_PIXELS = 50
@@ -89,7 +93,10 @@ def _merge_vertical_stacks(
             bx0, bx1, by0, by1 = boxes[j]
             overlap = min(ax1, bx1) - max(ax0, bx0)
             narrower = min(ax1 - ax0, bx1 - bx0)
-            if narrower <= 0 or overlap < 0.6 * narrower:
+            wider = max(ax1 - ax0, bx1 - bx0)
+            # both gates: a narrow mask fully inside a wide run must not
+            # bridge two structures into one union-find chain
+            if narrower <= 0 or overlap < 0.6 * narrower or overlap < 0.3 * wider:
                 continue
             if max(ay0, by0) - min(ay1, by1) > gap:
                 continue
@@ -315,37 +322,169 @@ def _prompt_candidates(phrase: str) -> tuple[str, ...]:
     return (phrase,)
 
 
+def _sam_call(frame: GeometryFrame, prompt: str) -> dict:
+    import fal_client
+
+    return fal_client.subscribe(
+        SAM3_ENDPOINT,
+        arguments={
+            "image_url": "data:image/png;base64,"
+            + base64.b64encode(
+                Path(frame.canonical_image_path).read_bytes()
+            ).decode("ascii"),
+            "prompt": prompt,
+            "return_multiple_masks": True,
+            "include_scores": True,
+            "include_boxes": True,
+            "max_masks": 12,
+        },
+    )
+
+
+def _union_responses(
+    responses: list[tuple[str, dict]], frame: GeometryFrame
+) -> dict:
+    """Cross-phrase instance union with IoU>0.5 dedupe (higher score wins).
+    First-hit ensembles miss instances one phrase sees and another doesn't;
+    the union keeps every distinct instance any phrase found."""
+    valid = np.load(frame.valid_mask_path)
+    height, width = valid.shape
+    pool: list[tuple[float, str, str, np.ndarray]] = []
+    for prompt, response in responses:
+        rles = response.get("rle") or []
+        if isinstance(rles, str):
+            rles = [rles]
+        scores = response.get("scores") or [1.0] * len(rles)
+        for i, rle in enumerate(rles):
+            try:
+                mask = decode_coco_rle(rle, height=height, width=width).astype(bool)
+            except Exception:
+                continue
+            if not mask.any():
+                continue
+            score = float(scores[i]) if i < len(scores) else 1.0
+            pool.append((score, prompt, rle, mask))
+    pool.sort(key=lambda item: -item[0])
+    kept: list[tuple[float, str, str, np.ndarray]] = []
+    for score, prompt, rle, mask in pool:
+        area = mask.sum()
+        duplicate = False
+        for _, _, _, seen in kept:
+            inter = int((mask & seen).sum())
+            if inter / (area + int(seen.sum()) - inter) > 0.5:
+                duplicate = True
+                break
+        if not duplicate:
+            kept.append((score, prompt, rle, mask))
+    return {
+        "rle": [item[2] for item in kept],
+        "scores": [round(item[0], 3) for item in kept],
+        "prompts": [item[1] for item in kept],
+    }
+
+
 def _segment(run: Path, frame: GeometryFrame, phrase: str, *, live: bool):
     slug = re.sub(r"[^a-z0-9]+", "_", phrase).strip("_")
     cache = run / "inventory" / "sam" / f"{frame.frame_id}__{slug}.json"
     cached = json.loads(cache.read_text()) if cache.exists() else None
+    prompts = _prompt_candidates(phrase)
+    union_wanted = any(k in phrase for k in CONTACT_FAMILY) and len(prompts) > 1
+    if union_wanted:
+        # fence-family phrases take the multi-prompt union: first-hit misses
+        # whole panels ("clear panel" sees what "fence" doesn't)
+        if cached is not None and (cached.get("union") or not live):
+            return cached if cached.get("rle") or not live else cached
+        if not live:
+            return None
+        responses: list[tuple[str, dict]] = []
+        if cached and cached.get("rle"):
+            responses.append(("legacy", cached))
+        for prompt in prompts:
+            pslug = re.sub(r"[^a-z0-9]+", "_", prompt).strip("_")
+            pcache = cache.with_name(f"{frame.frame_id}__{slug}__p_{pslug}.json")
+            if pcache.exists():
+                response = json.loads(pcache.read_text())
+            else:
+                response = _sam_call(frame, prompt)
+                pcache.parent.mkdir(parents=True, exist_ok=True)
+                pcache.write_text(json.dumps(response) + "\n")
+            if response.get("rle"):
+                responses.append((prompt, response))
+        union = _union_responses(responses, frame)
+        union["union"] = True
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps(union) + "\n")
+        return union
     if cached is not None and (cached.get("rle") or not live):
         return cached
     if not live:
         return None
-    import fal_client
-
     response = cached
-    for prompt in _prompt_candidates(phrase):
-        response = fal_client.subscribe(
-            SAM3_ENDPOINT,
-            arguments={
-                "image_url": "data:image/png;base64,"
-                + base64.b64encode(
-                    Path(frame.canonical_image_path).read_bytes()
-                ).decode("ascii"),
-                "prompt": prompt,
-                "return_multiple_masks": True,
-                "include_scores": True,
-                "include_boxes": True,
-                "max_masks": 12,
-            },
-        )
+    for prompt in prompts:
+        response = _sam_call(frame, prompt)
         if response.get("rle"):
             break
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(json.dumps(response) + "\n")
     return response
+
+
+def _moge3_normals(run: Path, frame: GeometryFrame) -> np.ndarray | None:
+    """Per-pixel camera-frame normals from the MoGe-3 Modal deployment,
+    resized to the geometry grid. Cached per run; returns None (and says
+    why) when Modal is unreachable so the pipeline degrades gracefully."""
+    valid = np.load(frame.valid_mask_path)
+    height, width = valid.shape
+    cache = run / "geometry" / "moge3_normals.npz"
+    if not cache.exists():
+        try:
+            import modal
+
+            handle = modal.Cls.from_name("moge3-inference", "MoGe3")
+            result = handle().infer.remote(
+                Path(frame.canonical_image_path).read_bytes()
+            )
+            cache.write_bytes(result["normals_npz"])
+        except Exception as error:
+            print(f"  [normals] MoGe-3 unavailable ({error}); no normal split")
+            return None
+    normal = np.load(cache)["normal"]
+    from PIL import Image as PILImage
+
+    channels = [
+        np.asarray(
+            PILImage.fromarray(normal[..., c]).resize(
+                (width, height), PILImage.BILINEAR
+            )
+        )
+        for c in range(3)
+    ]
+    resized = np.stack(channels, axis=-1)
+    norm = np.linalg.norm(resized, axis=-1, keepdims=True)
+    return resized / np.maximum(norm, 1e-6)
+
+
+def _normal_split(mask: np.ndarray, normals: np.ndarray) -> np.ndarray | None:
+    """Keep the mask's dominant vertical-plane normal cluster. Pixels seen
+    THROUGH a clear panel carry the background's scattered normals; the
+    panel frame agrees on one near-horizontal normal direction. Returns the
+    filtered mask, or None when no dominant vertical plane exists."""
+    sample = normals[mask]
+    sample = sample[np.isfinite(sample).all(axis=1)]
+    if len(sample) < 200:
+        return None
+    horizontal = np.abs(sample[:, 1]) < 0.5
+    if horizontal.sum() < 0.2 * len(sample):
+        return None
+    azimuth = np.arctan2(sample[horizontal, 2], sample[horizontal, 0])
+    bins = np.histogram(azimuth, bins=36, range=(-np.pi, np.pi))[0]
+    dominant = (np.argmax(bins) + 0.5) / 36 * 2 * np.pi - np.pi
+    full_azimuth = np.arctan2(normals[..., 2], normals[..., 0])
+    angular = np.abs(((full_azimuth - dominant + np.pi) % (2 * np.pi)) - np.pi)
+    kept = mask & (np.abs(normals[..., 1]) < 0.6) & (angular < np.radians(30))
+    if kept.sum() < max(200, 0.15 * mask.sum()):
+        return None
+    return kept
 
 
 def _clean(points: np.ndarray) -> np.ndarray | None:
@@ -777,11 +916,13 @@ def main(argv: list[str] | None = None) -> int:
     print(f"VLM listed {len(phrases)} objects: {', '.join(phrases)}")
 
     entries: list[dict] = []
+    cleaned_masks: dict[tuple[str, str], dict[int, np.ndarray]] = {}
     for frame in frames:
         points3d = np.load(frame.pts3d_path)
         valid = np.load(frame.valid_mask_path).astype(bool)
         finite = valid & np.isfinite(points3d).all(axis=2)
         height, width = valid.shape
+        normals_geom = _moge3_normals(run, frame)
         for phrase in phrases:
             response = _segment(run, frame, phrase, live=args.live)
             if response is None:
@@ -805,6 +946,21 @@ def main(argv: list[str] | None = None) -> int:
                         mask = mask | decoded[member]
                 if int(mask.sum()) < MIN_MASK_PIXELS:
                     continue
+                # MoGe-3 normal split: pixels seen THROUGH a clear panel
+                # carry the background's normals; keep the panel's dominant
+                # vertical-plane cluster, and persist the cleaned mask so
+                # every downstream consumer (report photo-pick included)
+                # stops highlighting what is behind the glass.
+                split = None
+                if normals_geom is not None and any(
+                    k in phrase for k in CONTACT_FAMILY
+                ):
+                    split = _normal_split(mask, normals_geom)
+                if split is not None:
+                    mask = split
+                    cleaned_masks.setdefault(
+                        (frame.frame_id, phrase), {}
+                    )[index] = mask
                 # De-smear (research approach 3): flying pixels concentrate
                 # on the silhouette boundary — erode 2 px unless the object
                 # is thinner than the erosion; then trim the along-ray depth
@@ -845,10 +1001,14 @@ def main(argv: list[str] | None = None) -> int:
                         "label": phrase,
                         "instance": index,
                         **(
+                            # a normal-split mask is written back to the
+                            # cache at the primary index already unioned;
+                            # members would re-add the uncleaned bands
                             {"merged_instances": members}
-                            if len(members) > 1
+                            if len(members) > 1 and split is None
                             else {}
                         ),
+                        **({"normal_split": True} if split is not None else {}),
                         "frame": frame.frame_id,
                         "score": round(
                             float(scores[index]) if index < len(scores) else 1.0, 3
@@ -874,6 +1034,19 @@ def main(argv: list[str] | None = None) -> int:
                         ],
                     }
                 )
+
+    for (frame_id, phrase), masks in cleaned_masks.items():
+        slug = re.sub(r"[^a-z0-9]+", "_", phrase).strip("_")
+        cache = run / "inventory" / "sam" / f"{frame_id}__{slug}.json"
+        response = json.loads(cache.read_text())
+        rles = response.get("rle") or []
+        if isinstance(rles, str):
+            rles = [rles]
+        for idx, mask in masks.items():
+            if idx < len(rles):
+                rles[idx] = encode_coco_rle(mask)
+        response["rle"] = rles
+        cache.write_text(json.dumps(response) + "\n")
 
     # Every reliable instance goes on the sheet (the interactive report
     # plan draws instances; the static CAD sheet must match it 1:1).
