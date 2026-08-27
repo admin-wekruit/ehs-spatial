@@ -500,21 +500,54 @@ def _normal_split(
     if kept.sum() < max(200, 0.15 * mask.sum()):
         return None
     if points is not None:
-        # plane-consistency gate: objects behind the glass that happen to be
-        # PARALLEL to the panel pass the normal test, but they sit offset
-        # along the plane normal. A structure receding in depth stays in its
-        # own plane, so this cannot truncate a long fence run.
+        # plane-consistency gate. Through clean glass BOTH depth models
+        # reconstruct the background, so most mask pixels lie on it — a
+        # median-anchored plane locks onto the background, not the panel.
+        # Anchor on the NEAREST depth cluster instead: that is the opaque
+        # metal frame. The panel's plane passes through the frame; a
+        # structure receding in depth stays in its own plane, so long
+        # fence runs are not truncated, while parallel objects behind the
+        # glass sit offset along the normal and drop out.
         offset = points[..., 0] * np.cos(dominant) + points[..., 2] * np.sin(
             dominant
         )
-        finite = np.isfinite(offset)
-        in_kept = offset[kept & finite]
-        if len(in_kept) >= 200:
-            centre = float(np.median(in_kept))
-            plane = kept & finite & (np.abs(offset - centre) < 0.35)
-            if plane.sum() >= max(200, 0.3 * kept.sum()):
-                kept = plane
+        depth = points[..., 2]
+        finite = np.isfinite(offset) & np.isfinite(depth)
+        if (kept & finite).sum() >= 150:
+            near = float(np.percentile(depth[kept & finite], 10))
+            seed = kept & finite & (depth <= near + max(0.25, 0.12 * near))
+            if seed.sum() >= 150:
+                centre = float(np.median(offset[seed]))
+                plane = kept & finite & (np.abs(offset - centre) < 0.35)
+                if plane.sum() >= 150:
+                    kept = plane
     return kept
+
+
+def _hull_fill(mask: np.ndarray) -> np.ndarray:
+    """Convex hull of the mask's significant connected components,
+    rasterized. Stray specks (<1% of the mask) are dropped first so they
+    cannot drag the hull past the structure's frame."""
+    from PIL import Image as PILImage
+    from PIL import ImageDraw
+    from scipy import ndimage
+
+    labels, count = ndimage.label(mask)
+    if count == 0:
+        return mask
+    sizes = ndimage.sum_labels(mask, labels, range(1, count + 1))
+    significant = np.isin(labels, 1 + np.flatnonzero(sizes >= 0.01 * mask.sum()))
+    ys, xs = np.nonzero(significant)
+    if len(xs) < 3:
+        return mask
+    hull = MultiPoint(list(zip(xs.tolist(), ys.tolist()))).convex_hull
+    if hull.geom_type != "Polygon":
+        return mask
+    canvas = PILImage.new("1", (mask.shape[1], mask.shape[0]))
+    ImageDraw.Draw(canvas).polygon(
+        [(float(x), float(y)) for x, y in hull.exterior.coords], fill=1
+    )
+    return np.asarray(canvas, dtype=bool)
 
 
 def _clean(points: np.ndarray) -> np.ndarray | None:
@@ -987,19 +1020,16 @@ def main(argv: list[str] | None = None) -> int:
                 ):
                     split = _normal_split(mask, *moge_maps)
                 if split is not None:
-                    from scipy import ndimage
-
                     mask = split
-                    # the cleaned mask is a skeleton (frame rails + patches);
-                    # clicking the glass must still select the panel, so the
-                    # DISPLAY mask closes small gaps and fills the interior —
-                    # measurement keeps using the unfilled skeleton
-                    display = ndimage.binary_fill_holes(
-                        ndimage.binary_closing(split, structure=np.ones((7, 7)))
-                    )
+                    # the cleaned mask is the frame skeleton; the panel FACE
+                    # is the quad the frame encloses. Display = convex hull
+                    # of the skeleton's significant components, so clicking
+                    # the glass selects the panel and the highlight is the
+                    # framed quad — not the silhouette of whatever stands
+                    # behind the glass. Measurement keeps the skeleton.
                     cleaned_masks.setdefault(
                         (frame.frame_id, phrase), {}
-                    )[index] = display
+                    )[index] = _hull_fill(split)
                 # De-smear (research approach 3): flying pixels concentrate
                 # on the silhouette boundary — erode 2 px unless the object
                 # is thinner than the erosion; then trim the along-ray depth
