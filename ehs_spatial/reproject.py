@@ -120,17 +120,34 @@ def verify_reprojection(run_id: str, *, runs_root: str | Path = "runs") -> dict:
                 }
             )
             continue
-        slug = re.sub(r"[^a-z0-9]+", "_", obj["label"]).strip("_")
-        cache = run / "inventory" / "sam" / f"frame_0001__{slug}.json"
-        rles = json.loads(cache.read_text()).get("rle") or []
-        if isinstance(rles, str):
-            rles = [rles]
-        mask = np.zeros((height, width), bool)
-        for member in obj.get("merged_instances") or [obj["instance"]]:
-            if member < len(rles):
-                mask |= decode_coco_rle(
-                    rles[member], height=height, width=width
-                ).astype(bool)
+        if obj.get("refine_slug"):
+            cache = run / "refinements" / f"{obj['refine_slug']}.json"
+            response = json.loads(cache.read_text())
+            rles = response.get("rle") or []
+            if isinstance(rles, str):
+                rles = [rles]
+            scores_r = response.get("scores") or [1.0] * len(rles)
+            raw = decode_coco_rle(
+                rles[int(np.argmax(scores_r))], height=3024, width=4032
+            ).astype(np.uint8)
+            mask = (
+                np.asarray(
+                    Image.fromarray(raw * 255).resize((width, height))
+                )
+                > 127
+            )
+        else:
+            slug = re.sub(r"[^a-z0-9]+", "_", obj["label"]).strip("_")
+            cache = run / "inventory" / "sam" / f"frame_0001__{slug}.json"
+            rles = json.loads(cache.read_text()).get("rle") or []
+            if isinstance(rles, str):
+                rles = [rles]
+            mask = np.zeros((height, width), bool)
+            for member in obj.get("merged_instances") or [obj["instance"]]:
+                if member < len(rles):
+                    mask |= decode_coco_rle(
+                        rles[member], height=height, width=width
+                    ).astype(bool)
         profile = _mask_bottom_profile(mask)
         deltas = [
             abs(v - profile[u]) for u, v in pixels if u in profile

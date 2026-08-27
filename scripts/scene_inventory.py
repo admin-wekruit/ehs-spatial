@@ -553,6 +553,8 @@ def _align_guard_lines(
     image_width = width
 
     def _member_mask(e: dict) -> np.ndarray | None:
+        if e.get("refine_slug"):
+            return _refine_mask(run, e["refine_slug"], height, width)
         slug = re.sub(r"[^a-z0-9]+", "_", e["label"]).strip("_")
         cache = run / "inventory" / "sam" / f"{frame.frame_id}__{slug}.json"
         if not cache.exists():
@@ -575,7 +577,7 @@ def _align_guard_lines(
         and e.get("rect_snapped")
         and e.get("image_bbox")
     ]
-    guards.sort(key=lambda e: e["image_bbox"][0])
+    guards.sort(key=lambda e: (e["image_bbox"][0] + e["image_bbox"][2]) / 2)
     chains: list[list[dict]] = []
     current: list[dict] = []
     for e in guards:
@@ -647,9 +649,11 @@ def _align_guard_lines(
     if s != 0 or c != 0:
         theta = 0.25 * float(np.arctan2(s, c))
 
-    for chain, rect in zip(chains, chain_rects):
+    for chain_index, (chain, rect) in enumerate(zip(chains, chain_rects)):
         if len(chain) < 2:
             continue
+        for e in chain:
+            e["guard_chain"] = chain_index
         cents = np.array([e["centroid_xy"] for e in chain], float)
         lengths = [_rect_sides(e["rect_snapped"])[0] for e in chain]
         centre = direction = None
@@ -666,6 +670,7 @@ def _align_guard_lines(
             # snap the free direction onto the JOINT Manhattan axis it
             # helped estimate — orthogonality between structures becomes
             # exact, not approximate
+            axis_snapped = False
             if theta is not None:
                 angle = float(np.arctan2(direction[1], direction[0]))
                 for axis in (theta, theta + np.pi / 2):
@@ -675,6 +680,7 @@ def _align_guard_lines(
                         direction = np.array(
                             [np.cos(snapped), np.sin(snapped)]
                         )
+                        axis_snapped = True
                         break
         if direction is None:
             # fallback: centroid-pair line scored by physical structure —
@@ -709,10 +715,12 @@ def _align_guard_lines(
             _, anchor, direction = best
             centre = cents[anchor]
             angle = float(np.arctan2(direction[1], direction[0]))
+            axis_snapped = False
             if theta is not None:
                 for axis in (theta, theta + np.pi / 2):
                     if abs(((angle - axis + np.pi / 2) % np.pi) - np.pi / 2) < np.radians(20):
                         direction = np.array([np.cos(axis), np.sin(axis)])
+                        axis_snapped = True
                         break
             thickness = float(
                 np.median([_rect_sides(e["rect_snapped"])[1] for e in chain])
@@ -741,15 +749,72 @@ def _align_guard_lines(
         if vote < 0:
             direction, normal = -direction, -normal
         span = rect_long if rect_long is not None else sum(lengths)
-        for e in chain:
-            c = np.asarray(e["centroid_xy"], float)
-            if abs(float((c - centre) @ normal)) <= 0.5:
-                along = float((c - centre) @ direction)
-            else:
-                # corrupted centroid: seat by the section's image position
-                along = (image_fraction(e) - 0.5) * span
+        # image adjacency welds PARALLEL planes seen edge-on (a gate panel
+        # in front of a mesh wall) into one chain; split by perpendicular
+        # offset clusters and keep the line for the majority cluster only
+        perps = [
+            float((np.asarray(e["centroid_xy"], float) - centre) @ normal)
+            for e in chain
+        ]
+        order = np.argsort(perps)
+        clusters = [[int(order[0])]]
+        for a, b in zip(order[:-1], order[1:]):
+            if perps[int(b)] - perps[int(a)] > 0.30:
+                clusters.append([])
+            clusters[-1].append(int(b))
+        keep_cluster = max(
+            clusters, key=lambda c: (len(c), -abs(np.mean([perps[i] for i in c])))
+        )
+        kept_index = sorted(keep_cluster)
+        # a far-off member is EITHER a different parallel structure (its
+        # image box nests inside the kept sections — a mesh wall behind a
+        # rail) OR the same line with a corrupted centroid (its image box
+        # sits BESIDE the kept sections). Rescue the side-by-side ones —
+        # image-fraction seating exists precisely for them.
+        for i in range(len(chain)):
+            if i in kept_index:
+                continue
+            x0, _, x1, _ = chain[i]["image_bbox"]
+            width_i = max(1, x1 - x0)
+            worst = 0.0
+            for j in kept_index:
+                kx0, _, kx1, _ = chain[j]["image_bbox"]
+                overlap = max(0, min(x1, kx1) - max(x0, kx0))
+                worst = max(worst, overlap / width_i)
+            if worst < 0.5:
+                kept_index.append(i)
+        kept_index = sorted(kept_index)
+        if len(kept_index) < 2:
+            for e in chain:
+                e.pop("guard_chain", None)
+            continue
+        dropped = [i for i in range(len(chain)) if i not in kept_index]
+        for i in dropped:
+            chain[i].pop("guard_chain", None)
+        chain = [chain[i] for i in kept_index]
+        lengths = [lengths[i] for i in kept_index]
+        if rect_long is not None:
+            # seat purely by each section's position in the IMAGE mapped
+            # onto the ray-cast union line — monotonic by construction,
+            # immune to every flavour of centroid corruption
+            alongs = [(image_fraction(e) - 0.5) * span for e in chain]
+        else:
+            raw = []
+            for e in chain:
+                c = np.asarray(e["centroid_xy"], float)
+                if abs(float((c - centre) @ normal)) <= 0.5:
+                    raw.append(float((c - centre) @ direction))
+                else:
+                    raw.append((image_fraction(e) - 0.5) * span)
+            # chain is image-ordered; the projections must be too
+            alongs = sorted(raw)
+        thickness = float(min(thickness, 0.25))
+        for e, along in zip(chain, alongs):
             seat = centre + along * direction
             length = _rect_sides(e["rect_snapped"])[0]
+            # the seat rect's long axis IS the line: never let the line
+            # thickness exceed the section length and flip the axis
+            length = max(length, thickness * 1.05)
             corners = [
                 seat + length / 2 * direction + thickness / 2 * normal,
                 seat + length / 2 * direction - thickness / 2 * normal,
@@ -761,6 +826,7 @@ def _align_guard_lines(
             ]
             e["centroid_xy"] = [round(float(seat[0]), 2), round(float(seat[1]), 2)]
             e["footprint_method"] = "guard-line"
+            e["guard_axis_snapped"] = axis_snapped
         # reprojection feedback: cast the seated line back into the photo
         # and slide it along its normal until it sits on the union mask's
         # ground contact — contact-edge ray-casting inherits a few pixels
@@ -845,6 +911,154 @@ def _reprojection_offset(
     if best is None or abs(best[1]) > 25:
         return None
     return best[0]
+
+
+def _refine_mask(run: Path, slug: str, height: int, width: int) -> np.ndarray | None:
+    """Best-score SAM mask of a box refinement, resized to the geometry
+    grid — so refinements ride the SAME geometry pipeline as everything
+    else instead of their own (prior-free) measurement path."""
+    from PIL import Image as PILImage
+
+    cache = run / "refinements" / f"{slug}.json"
+    if not cache.exists():
+        return None
+    response = json.loads(cache.read_text())
+    rles = response.get("rle") or []
+    if isinstance(rles, str):
+        rles = [rles]
+    if not rles:
+        return None
+    scores = response.get("scores") or [1.0] * len(rles)
+    mask = decode_coco_rle(
+        rles[int(np.argmax(scores))], height=3024, width=4032
+    ).astype(np.uint8)
+    return (
+        np.asarray(PILImage.fromarray(mask * 255).resize((width, height)))
+        > 127
+    )
+
+
+def _ingest_refinements(
+    run: Path,
+    frame: GeometryFrame,
+    transform,
+    moge_maps,
+    entries: list[dict],
+) -> None:
+    """Fence-family box refinements become first-class geometry entries:
+    normal split, nearest-cluster lift, and (downstream) contact edge,
+    guard-line chaining, and reprojection feedback — one process for every
+    photo, whether SAM found the object itself or a reviewer boxed it.
+    Refinements duplicating an existing fence instance (IoU>0.5) are
+    skipped — the inventory version already went through the pipeline."""
+    log_path = run / "refinements.json"
+    if not log_path.exists():
+        return
+    points3d = np.load(frame.pts3d_path)
+    valid = np.load(frame.valid_mask_path).astype(bool)
+    height, width = valid.shape
+    finite = (
+        valid
+        & np.isfinite(points3d).all(axis=2)
+        & (np.abs(points3d).sum(axis=2) > 1e-6)
+    )
+    existing_fence_masks = []
+    for entry in entries:
+        if "fence" not in entry["label"]:
+            continue
+        slug = re.sub(r"[^a-z0-9]+", "_", entry["label"]).strip("_")
+        cache = run / "inventory" / "sam" / f"{frame.frame_id}__{slug}.json"
+        if not cache.exists():
+            continue
+        rles = json.loads(cache.read_text()).get("rle") or []
+        if isinstance(rles, str):
+            rles = [rles]
+        mask = np.zeros((height, width), bool)
+        for member in entry.get("merged_instances") or [entry["instance"]]:
+            if member < len(rles):
+                mask |= decode_coco_rle(
+                    rles[member], height=height, width=width
+                ).astype(bool)
+        existing_fence_masks.append(mask)
+    for item in json.loads(log_path.read_text()):
+        if not any(k in item["label"] for k in CONTACT_FAMILY):
+            continue
+        slug = (
+            item["label"].replace(" ", "_")
+            + "_"
+            + "_".join(str(v) for v in item["box"])
+        )
+        mask = _refine_mask(run, slug, height, width)
+        if mask is None or mask.sum() < MIN_MASK_PIXELS:
+            continue
+        duplicate = False
+        for seen in existing_fence_masks:
+            inter = int((mask & seen).sum())
+            union_px = int((mask | seen).sum())
+            if union_px and inter / union_px > 0.5:
+                duplicate = True
+                break
+        if duplicate:
+            continue
+        if moge_maps is not None:
+            split = _normal_split(mask, *moge_maps)
+            if split is not None:
+                mask = split
+        selected = mask & finite
+        depth_map = points3d[..., 2]
+        if selected.sum() < MIN_MASK_PIXELS:
+            continue
+        near = np.percentile(depth_map[selected], 10)
+        selected &= depth_map <= near + max(0.25, 0.12 * near)
+        cloud = _clean(transform.apply(points3d[selected]))
+        if cloud is None:
+            continue
+        hull = MultiPoint([(x, y) for x, y in cloud[:, :2]]).convex_hull
+        if not isinstance(hull, Polygon) or hull.area < 0.01:
+            continue
+        top = float(np.quantile(cloud[:, 2], 0.95))
+        ys, xs = np.nonzero(mask)
+        box = hull.minimum_rotated_rectangle
+        corners = list(box.exterior.coords)[:4]
+        sides = sorted(
+            np.hypot(
+                corners[i][0] - corners[i - 1][0],
+                corners[i][1] - corners[i - 1][1],
+            )
+            for i in range(1, 3)
+        )
+        entries.append(
+            {
+                "label": item["label"],
+                "instance": None,
+                "refine_slug": slug,
+                "frame": frame.frame_id,
+                "score": item.get("sam_score", 1.0),
+                "points": int(len(cloud)),
+                "height_m": round(top, 2),
+                "size_m": f"{sides[1]:.2f}x{sides[0]:.2f}",
+                "footprint_area_m2": round(float(hull.area), 2),
+                "centroid_xy": [
+                    round(float(hull.centroid.x), 2),
+                    round(float(hull.centroid.y), 2),
+                ],
+                "camera_dist_m": round(
+                    float(Point(0.0, 0.0).distance(hull)), 2
+                ),
+                "orientation_deg": None,
+                "tilt_deg": None,
+                "image_bbox": [
+                    int(xs.min()),
+                    int(ys.min()),
+                    int(xs.max()),
+                    int(ys.max()),
+                ],
+                "footprint": [
+                    (round(float(x), 3), round(float(y), 3))
+                    for x, y in list(hull.exterior.coords)[:-1]
+                ],
+            }
+        )
 
 
 def _hull_fill(mask: np.ndarray) -> np.ndarray:
@@ -1448,6 +1662,8 @@ def main(argv: list[str] | None = None) -> int:
         response["rle"] = rles
         cache.write_text(json.dumps(response) + "\n")
 
+    _ingest_refinements(run, frames[0], transform, moge_maps, entries)
+
     # Every reliable instance goes on the sheet (the interactive report
     # plan draws instances; the static CAD sheet must match it 1:1).
     plan_entries: list[dict] = []
@@ -1510,21 +1726,28 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             if not any(k in entry["label"] for k in CONTACT_FAMILY):
                 continue
-            slug = re.sub(r"[^a-z0-9]+", "_", entry["label"]).strip("_")
-            cache = run / "inventory" / "sam" / f"{frame.frame_id}__{slug}.json"
-            if not cache.exists():
-                continue
-            response = json.loads(cache.read_text())
-            rles = response.get("rle") or []
-            if isinstance(rles, str):
-                rles = [rles]
-            if entry["instance"] >= len(rles):
-                continue
-            raw_mask = np.zeros((height, width), bool)
-            for member in entry.get("merged_instances") or [entry["instance"]]:
-                raw_mask |= decode_coco_rle(
-                    rles[member], height=height, width=width
-                ).astype(bool)
+            if entry.get("refine_slug"):
+                raw_mask = _refine_mask(run, entry["refine_slug"], height, width)
+                if raw_mask is None:
+                    continue
+            else:
+                slug = re.sub(r"[^a-z0-9]+", "_", entry["label"]).strip("_")
+                cache = (
+                    run / "inventory" / "sam" / f"{frame.frame_id}__{slug}.json"
+                )
+                if not cache.exists():
+                    continue
+                response = json.loads(cache.read_text())
+                rles = response.get("rle") or []
+                if isinstance(rles, str):
+                    rles = [rles]
+                if entry["instance"] >= len(rles):
+                    continue
+                raw_mask = np.zeros((height, width), bool)
+                for member in entry.get("merged_instances") or [entry["instance"]]:
+                    raw_mask |= decode_coco_rle(
+                        rles[member], height=height, width=width
+                    ).astype(bool)
             rect = _contact_edge_rect(raw_mask, points3d, frame, transform, theta)
             if rect is not None:
                 entry["rect_snapped"] = rect

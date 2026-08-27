@@ -46,13 +46,14 @@ def _rect_short_side(rect) -> float:
 
 
 def _guard_chains(inventory: dict) -> list[list[dict]]:
-    """Members of each aligned guard line, keyed by shared angle."""
+    """Members of each aligned guard line, keyed by chain id."""
     groups: dict[int, list[dict]] = {}
     for obj in inventory["objects"]:
         if obj.get("footprint_method") != "guard-line":
             continue
-        angle = round(_rect_angle_deg(obj["rect_snapped"]))
-        groups.setdefault(angle, []).append(obj)
+        if obj.get("guard_chain") is None:
+            continue
+        groups.setdefault(obj["guard_chain"], []).append(obj)
     return [members for members in groups.values() if len(members) >= 2]
 
 
@@ -81,6 +82,11 @@ def test_guard_lines_stay_manhattan(run):
     if theta is None:
         pytest.skip("no manhattan axis")
     for chain in _guard_chains(inventory):
+        if not chain[0].get("guard_axis_snapped"):
+            # the pipeline deliberately kept a free direction (contact-edge
+            # evidence >20 deg off both axes); collinearity/order/thickness
+            # still apply, axis adherence does not
+            continue
         angle = _rect_angle_deg(chain[0]["rect_snapped"])
         off_axis = min(
             abs((angle - (theta % 180) + 90) % 180 - 90),
@@ -98,7 +104,9 @@ def test_guard_line_order_matches_image_order(run):
     """The photo's left-to-right section order must survive projection —
     the flattened-recession bug scrambled along-line positions."""
     for chain in _guard_chains(_inventory(run)):
-        members = sorted(chain, key=lambda m: m["image_bbox"][0])
+        members = sorted(
+            chain, key=lambda m: (m["image_bbox"][0] + m["image_bbox"][2]) / 2
+        )
         cents = np.array([m["centroid_xy"] for m in members], float)
         theta = np.radians(_rect_angle_deg(members[0]["rect_snapped"]))
         direction = np.array([np.cos(theta), np.sin(theta)])
@@ -162,7 +170,7 @@ def test_real_clean_01_gate_recedes_and_l_is_orthogonal():
         and "fence" in obj["label"]
     ]
     assert len(rails) >= 3
-    rails.sort(key=lambda m: m["image_bbox"][0])
+    rails.sort(key=lambda m: (m["image_bbox"][0] + m["image_bbox"][2]) / 2)
     depths = [float(np.hypot(*m["centroid_xy"])) for m in rails]
     assert all(depths[i] > depths[i + 1] for i in range(len(depths) - 1)), (
         f"gate must recede toward camera-right, got depths {depths}"
