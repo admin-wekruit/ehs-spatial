@@ -429,14 +429,34 @@ def _segment(run: Path, frame: GeometryFrame, phrase: str, *, live: bool):
     return response
 
 
-def _moge3_normals(run: Path, frame: GeometryFrame) -> np.ndarray | None:
-    """Per-pixel camera-frame normals from the MoGe-3 Modal deployment,
-    resized to the geometry grid. Cached per run; returns None (and says
+def _resize_map(array: np.ndarray, width: int, height: int) -> np.ndarray:
+    from PIL import Image as PILImage
+
+    return np.stack(
+        [
+            np.asarray(
+                PILImage.fromarray(array[..., c]).resize(
+                    (width, height), PILImage.BILINEAR
+                )
+            )
+            for c in range(array.shape[-1])
+        ],
+        axis=-1,
+    )
+
+
+def _moge3_maps(
+    run: Path, frame: GeometryFrame
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """Per-pixel camera-frame normals AND points from the MoGe-3 Modal
+    deployment, resized to the geometry grid. Both come from one inference
+    (same frame, same metric scale), cached per run. Returns None (and says
     why) when Modal is unreachable so the pipeline degrades gracefully."""
     valid = np.load(frame.valid_mask_path)
     height, width = valid.shape
-    cache = run / "geometry" / "moge3_normals.npz"
-    if not cache.exists():
+    normals_cache = run / "geometry" / "moge3_normals.npz"
+    points_cache = run / "geometry" / "moge3_points.npz"
+    if not (normals_cache.exists() and points_cache.exists()):
         try:
             import modal
 
@@ -444,27 +464,22 @@ def _moge3_normals(run: Path, frame: GeometryFrame) -> np.ndarray | None:
             result = handle().infer.remote(
                 Path(frame.canonical_image_path).read_bytes()
             )
-            cache.write_bytes(result["normals_npz"])
+            normals_cache.write_bytes(result["normals_npz"])
+            points_cache.write_bytes(result["points_npz"])
         except Exception as error:
             print(f"  [normals] MoGe-3 unavailable ({error}); no normal split")
             return None
-    normal = np.load(cache)["normal"]
-    from PIL import Image as PILImage
-
-    channels = [
-        np.asarray(
-            PILImage.fromarray(normal[..., c]).resize(
-                (width, height), PILImage.BILINEAR
-            )
-        )
-        for c in range(3)
-    ]
-    resized = np.stack(channels, axis=-1)
-    norm = np.linalg.norm(resized, axis=-1, keepdims=True)
-    return resized / np.maximum(norm, 1e-6)
+    normal = _resize_map(np.load(normals_cache)["normal"], width, height)
+    norm = np.linalg.norm(normal, axis=-1, keepdims=True)
+    points = _resize_map(
+        np.load(points_cache)["points"].astype(np.float32), width, height
+    )
+    return normal / np.maximum(norm, 1e-6), points
 
 
-def _normal_split(mask: np.ndarray, normals: np.ndarray) -> np.ndarray | None:
+def _normal_split(
+    mask: np.ndarray, normals: np.ndarray, points: np.ndarray | None = None
+) -> np.ndarray | None:
     """Keep the mask's dominant vertical-plane normal cluster. Pixels seen
     THROUGH a clear panel carry the background's scattered normals; the
     panel frame agrees on one near-horizontal normal direction. Returns the
@@ -484,6 +499,21 @@ def _normal_split(mask: np.ndarray, normals: np.ndarray) -> np.ndarray | None:
     kept = mask & (np.abs(normals[..., 1]) < 0.6) & (angular < np.radians(30))
     if kept.sum() < max(200, 0.15 * mask.sum()):
         return None
+    if points is not None:
+        # plane-consistency gate: objects behind the glass that happen to be
+        # PARALLEL to the panel pass the normal test, but they sit offset
+        # along the plane normal. A structure receding in depth stays in its
+        # own plane, so this cannot truncate a long fence run.
+        offset = points[..., 0] * np.cos(dominant) + points[..., 2] * np.sin(
+            dominant
+        )
+        finite = np.isfinite(offset)
+        in_kept = offset[kept & finite]
+        if len(in_kept) >= 200:
+            centre = float(np.median(in_kept))
+            plane = kept & finite & (np.abs(offset - centre) < 0.35)
+            if plane.sum() >= max(200, 0.3 * kept.sum()):
+                kept = plane
     return kept
 
 
@@ -922,7 +952,7 @@ def main(argv: list[str] | None = None) -> int:
         valid = np.load(frame.valid_mask_path).astype(bool)
         finite = valid & np.isfinite(points3d).all(axis=2)
         height, width = valid.shape
-        normals_geom = _moge3_normals(run, frame)
+        moge_maps = _moge3_maps(run, frame)
         for phrase in phrases:
             response = _segment(run, frame, phrase, live=args.live)
             if response is None:
@@ -952,10 +982,10 @@ def main(argv: list[str] | None = None) -> int:
                 # every downstream consumer (report photo-pick included)
                 # stops highlighting what is behind the glass.
                 split = None
-                if normals_geom is not None and any(
+                if moge_maps is not None and any(
                     k in phrase for k in CONTACT_FAMILY
                 ):
-                    split = _normal_split(mask, normals_geom)
+                    split = _normal_split(mask, *moge_maps)
                 if split is not None:
                     mask = split
                     cleaned_masks.setdefault(
