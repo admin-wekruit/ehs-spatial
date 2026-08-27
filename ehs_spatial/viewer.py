@@ -544,7 +544,7 @@ gl.uniform1i(gl.getUniformLocation(prog, 'vis'), 0);
 gl.uniform1f(gl.getUniformLocation(prog, 'nObj'), nObj);
 
 let yaw = -0.6, pitch = 0.5, dist = radius * 2.1, panX = 0, panY = 0;
-let sel = 0, sceneOn = 1, semantic = 1;
+let sel = 0, sceneOn = 1, semantic = 0;  // photo colours read best
 function mat(){
   const a = cv.width / cv.height, f = 1 / Math.tan(0.5), near = 0.02, far = radius * 40;
   const P = [f/a,0,0,0, 0,f,0,0, 0,0,(far+near)/(near-far),-1, 0,0,2*far*near/(near-far),0];
@@ -573,7 +573,7 @@ function draw(){
   gl.uniform1f(gl.getUniformLocation(prog,'sel'), sel);
   gl.uniform1f(gl.getUniformLocation(prog,'sceneOn'), sceneOn);
   gl.uniform1f(gl.getUniformLocation(prog,'semantic'), semantic);
-  gl.uniform1f(gl.getUniformLocation(prog,'psize'), Math.max(1.4, 2.6 * dpr * (radius*2.1/dist)));
+  gl.uniform1f(gl.getUniformLocation(prog,'psize'), Math.max(2.2, 4.2 * dpr * (radius*2.1/dist)));
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, visTex);
   gl.drawArrays(gl.POINTS, 0, N);
 }
