@@ -987,10 +987,19 @@ def main(argv: list[str] | None = None) -> int:
                 ):
                     split = _normal_split(mask, *moge_maps)
                 if split is not None:
+                    from scipy import ndimage
+
                     mask = split
+                    # the cleaned mask is a skeleton (frame rails + patches);
+                    # clicking the glass must still select the panel, so the
+                    # DISPLAY mask closes small gaps and fills the interior —
+                    # measurement keeps using the unfilled skeleton
+                    display = ndimage.binary_fill_holes(
+                        ndimage.binary_closing(split, structure=np.ones((7, 7)))
+                    )
                     cleaned_masks.setdefault(
                         (frame.frame_id, phrase), {}
-                    )[index] = mask
+                    )[index] = display
                 # De-smear (research approach 3): flying pixels concentrate
                 # on the silhouette boundary — erode 2 px unless the object
                 # is thinner than the erosion; then trim the along-ray depth
