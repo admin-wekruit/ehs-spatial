@@ -532,15 +532,41 @@ def _rect_sides(rect) -> tuple[float, float]:
 
 
 def _align_guard_lines(
-    entries: list[dict], theta: float | None, image_width: int
+    entries: list[dict],
+    theta: float | None,
+    run: Path,
+    frame: GeometryFrame,
+    transform,
 ) -> None:
     """Collinear guard-line prior: fence sections that sit side by side in
     the IMAGE form one straight physical guard line, so their plan rects
-    must share one line — per-section 3D noise (an occluded contact edge
-    lands a metre off, a thin skeleton rotates a rect) must not scatter
-    them. Chain sections by image adjacency + similar height, RANSAC a
-    line through their centroids, snap it to the Manhattan axis when
-    close, and re-seat every member (outliers included) on that line."""
+    must share one line. The line's DIRECTION comes from the contact-edge
+    projection of the chain's UNION mask (ray-cast to the floor — immune
+    to the depth pollution that corrupts per-section centroids and once
+    flattened a receding gate into a constant-depth line); members are
+    then seated along it. Falls back to a spacing-scored centroid line
+    when the union has no honest contact edge."""
+    points3d = np.load(frame.pts3d_path)
+    valid = np.load(frame.valid_mask_path).astype(bool)
+    height, width = valid.shape
+    image_width = width
+
+    def _member_mask(e: dict) -> np.ndarray | None:
+        slug = re.sub(r"[^a-z0-9]+", "_", e["label"]).strip("_")
+        cache = run / "inventory" / "sam" / f"{frame.frame_id}__{slug}.json"
+        if not cache.exists():
+            return None
+        rles = json.loads(cache.read_text()).get("rle") or []
+        if isinstance(rles, str):
+            rles = [rles]
+        mask = np.zeros((height, width), bool)
+        for member in e.get("merged_instances") or [e["instance"]]:
+            if member >= len(rles):
+                return None
+            mask |= decode_coco_rle(
+                rles[member], height=height, width=width
+            ).astype(bool)
+        return mask
     guards = [
         e
         for e in entries
@@ -576,49 +602,99 @@ def _align_guard_lines(
             continue
         cents = np.array([e["centroid_xy"] for e in chain], float)
         lengths = [_rect_sides(e["rect_snapped"])[0] for e in chain]
-        # candidate line = each centroid pair; score by physical structure:
-        # adjacent sections nearly touch, so along-line gaps must match the
-        # sections' own lengths, and along-line order must match the
-        # image's left-to-right order (chain is image-sorted). A corrupted
-        # centroid (occluded contact edge landing on the background) fails
-        # both and cannot win the line.
-        best = None
-        for i in range(len(chain)):
-            for j in range(i + 1, len(chain)):
-                span = cents[j] - cents[i]
-                norm = float(np.linalg.norm(span))
-                if norm < 0.3:
-                    continue
-                direction = span / norm
-                along = (cents - cents[i]) @ direction
-                if not all(along[k] < along[k + 1] for k in range(len(chain) - 1)):
-                    continue
-                score = sum(
-                    abs(
-                        (along[k + 1] - along[k])
-                        - (lengths[k] + lengths[k + 1]) / 2
+        centre = direction = None
+        rect_long = thickness = None
+        # primary anchor: contact-edge projection of the chain's UNION mask
+        union = None
+        for e in chain:
+            member_mask = _member_mask(e)
+            if member_mask is None:
+                union = None
+                break
+            union = member_mask if union is None else (union | member_mask)
+        if union is not None:
+            rect = _contact_edge_rect(union, points3d, frame, transform, theta)
+            if rect is not None:
+                r = np.asarray(rect, float)
+                edge1, edge2 = r[1] - r[0], r[2] - r[1]
+                if np.linalg.norm(edge1) < np.linalg.norm(edge2):
+                    edge1, edge2 = edge2, edge1
+                rect_long = float(np.linalg.norm(edge1))
+                direction = edge1 / max(float(np.linalg.norm(edge1)), 1e-9)
+                thickness = float(np.linalg.norm(edge2))
+                centre = r.mean(axis=0)
+        if direction is None:
+            # fallback: centroid-pair line scored by physical structure —
+            # adjacent sections nearly touch, so along-line gaps must match
+            # the sections' own lengths, and along-line order must match
+            # the image's left-to-right order. A corrupted centroid fails
+            # both and cannot win the line.
+            best = None
+            for i in range(len(chain)):
+                for j in range(i + 1, len(chain)):
+                    span = cents[j] - cents[i]
+                    norm = float(np.linalg.norm(span))
+                    if norm < 0.3:
+                        continue
+                    cand = span / norm
+                    along = (cents - cents[i]) @ cand
+                    if not all(
+                        along[k] < along[k + 1] for k in range(len(chain) - 1)
+                    ):
+                        continue
+                    score = sum(
+                        abs(
+                            (along[k + 1] - along[k])
+                            - (lengths[k] + lengths[k + 1]) / 2
+                        )
+                        for k in range(len(chain) - 1)
                     )
-                    for k in range(len(chain) - 1)
-                )
-                if best is None or score < best[0]:
-                    best = (score, i, direction)
-        if best is None:
-            continue
-        _, anchor, direction = best
-        centre = cents[anchor]
-        angle = float(np.arctan2(direction[1], direction[0]))
-        if theta is not None:
-            for axis in (theta, theta + np.pi / 2):
-                if abs(((angle - axis + np.pi / 2) % np.pi) - np.pi / 2) < np.radians(20):
-                    direction = np.array([np.cos(axis), np.sin(axis)])
-                    break
+                    if best is None or score < best[0]:
+                        best = (score, i, cand)
+            if best is None:
+                continue
+            _, anchor, direction = best
+            centre = cents[anchor]
+            angle = float(np.arctan2(direction[1], direction[0]))
+            if theta is not None:
+                for axis in (theta, theta + np.pi / 2):
+                    if abs(((angle - axis + np.pi / 2) % np.pi) - np.pi / 2) < np.radians(20):
+                        direction = np.array([np.cos(axis), np.sin(axis)])
+                        break
+            thickness = float(
+                np.median([_rect_sides(e["rect_snapped"])[1] for e in chain])
+            )
         normal = np.array([-direction[1], direction[0]])
-        thickness = float(
-            np.median([_rect_sides(e["rect_snapped"])[1] for e in chain])
+        # orient the line so along-position increases with image x, judged
+        # by the members closest to the line (outliers get no vote)
+        chain_x0 = min(e["image_bbox"][0] for e in chain)
+        chain_x1 = max(e["image_bbox"][2] for e in chain)
+
+        def image_fraction(e: dict) -> float:
+            b = e["image_bbox"]
+            return ((b[0] + b[2]) / 2 - chain_x0) / max(1, chain_x1 - chain_x0)
+
+        ranked = sorted(
+            chain,
+            key=lambda e: abs(
+                float((np.asarray(e["centroid_xy"], float) - centre) @ normal)
+            ),
         )
+        vote = sum(
+            (image_fraction(e) - 0.5)
+            * float((np.asarray(e["centroid_xy"], float) - centre) @ direction)
+            for e in ranked[:2]
+        )
+        if vote < 0:
+            direction, normal = -direction, -normal
+        span = rect_long if rect_long is not None else sum(lengths)
         for e in chain:
             c = np.asarray(e["centroid_xy"], float)
-            along = float((c - centre) @ direction)
+            if abs(float((c - centre) @ normal)) <= 0.5:
+                along = float((c - centre) @ direction)
+            else:
+                # corrupted centroid: seat by the section's image position
+                along = (image_fraction(e) - 0.5) * span
             seat = centre + along * direction
             length = _rect_sides(e["rect_snapped"])[0]
             corners = [
@@ -1362,9 +1438,7 @@ def main(argv: list[str] | None = None) -> int:
             if snapped is not None:
                 entry["rect_snapped"] = snapped
 
-    _align_guard_lines(
-        entries, theta, np.load(frames[0].valid_mask_path).shape[1]
-    )
+    _align_guard_lines(entries, theta, run, frames[0], transform)
 
     out_dir = run / "inventory"
     out_dir.mkdir(parents=True, exist_ok=True)
