@@ -833,10 +833,12 @@ def _align_guard_lines(
         # of mask shadow bleed, which lands the whole line ~0.5 m toward
         # the camera. The loop that verifies is the loop that corrects.
         if union is not None:
-            shift = _reprojection_offset(
-                chain, union, direction, normal, points3d, valid, transform
-            )
-            if shift is not None:
+            for _pass in range(3):
+                shift = _reprojection_offset(
+                    chain, union, direction, normal, points3d, valid, transform
+                )
+                if shift is None or abs(shift) < 0.05:
+                    break
                 for e in chain:
                     e["rect_snapped"] = [
                         [
@@ -849,7 +851,51 @@ def _align_guard_lines(
                         round(float(e["centroid_xy"][0] + shift * normal[0]), 2),
                         round(float(e["centroid_xy"][1] + shift * normal[1]), 2),
                     ]
+    # the same measure-and-correct loop, for every fence structure that is
+    # NOT part of a chain: reproject its own base line and slide it onto
+    # its own mask's ground contact. This is what took the first run's
+    # gate from raw placement to <7% reprojection error — generalized.
+    for e in entries:
+        if e.get("guard_chain") is not None:
+            continue
+        if not any(k in e["label"] for k in CONTACT_FAMILY):
+            continue
+        if not e.get("rect_snapped") or not e.get("image_bbox"):
+            continue
+        mask = _member_mask(e)
+        if mask is None:
+            continue
+        r = np.asarray(e["rect_snapped"], float)
+        edge1, edge2 = r[1] - r[0], r[2] - r[1]
+        if np.linalg.norm(edge1) < np.linalg.norm(edge2):
+            edge1 = edge2
+        norm1 = float(np.linalg.norm(edge1))
+        if norm1 < 1e-6:
+            continue
+        direction = edge1 / norm1
+        normal = np.array([-direction[1], direction[0]])
+        for _pass in range(3):
+            shift = _reprojection_offset(
+                [e], mask, direction, normal, points3d, valid, transform
+            )
+            if shift is None or abs(shift) < 0.02:
+                break
+            _apply_shift(e, shift, normal)
     return theta
+
+
+def _apply_shift(entry: dict, shift: float, normal) -> None:
+    entry["rect_snapped"] = [
+        [
+            round(float(x + shift * normal[0]), 3),
+            round(float(y + shift * normal[1]), 3),
+        ]
+        for x, y in entry["rect_snapped"]
+    ]
+    entry["centroid_xy"] = [
+        round(float(entry["centroid_xy"][0] + shift * normal[0]), 2),
+        round(float(entry["centroid_xy"][1] + shift * normal[1]), 2),
+    ]
 
 
 def _reprojection_offset(
@@ -871,11 +917,22 @@ def _reprojection_offset(
         return None
     tree = cKDTree(floor_pts[on_floor][:, :2])
     u_floor, v_floor = us[on_floor], vs[on_floor]
+    zmap = np.full(valid.shape, np.nan, np.float32)
+    zmap[vs, us] = floor_pts[:, 2]
     profile: dict[int, int] = {}
     pvs, pus = np.nonzero(union_mask)
     for u, v in zip(pus, pvs):
         if u not in profile or v > profile[u]:
             profile[u] = v
+    # correction target = VERIFIED ground contact only: a bottom pixel a
+    # metre off the floor is an occlusion boundary, not a contact line
+    profile = {
+        u: v
+        for u, v in profile.items()
+        if np.isfinite(zmap[v, u]) and zmap[v, u] < 0.35
+    }
+    if len(profile) < 8:
+        return None
     base = np.array(
         [corner for e in chain for corner in e["rect_snapped"]], float
     )

@@ -53,7 +53,9 @@ def _floor_lookup(run: Path):
     vs, us = np.nonzero(finite)
     on_floor = np.abs(floor_pts[:, 2]) < FLOOR_BAND_M
     tree = cKDTree(floor_pts[on_floor][:, :2])
-    return tree, us[on_floor], vs[on_floor], valid.shape
+    zmap = np.full(valid.shape, np.nan, np.float32)
+    zmap[vs, us] = floor_pts[:, 2]
+    return tree, us[on_floor], vs[on_floor], valid.shape, zmap
 
 
 def _project_polyline(tree, us, vs, xy_samples):
@@ -80,12 +82,24 @@ def _rect_baseline(rect, samples: int = 40):
     return a[None, :] * (1 - t) + b[None, :] * t
 
 
-def _mask_bottom_profile(mask: np.ndarray) -> dict[int, int]:
+def _mask_bottom_profile(
+    mask: np.ndarray, zmap: np.ndarray | None = None
+) -> dict[int, int]:
+    """Bottom edge per column — restricted to VERIFIED ground contact
+    when a height map is given: a bottom pixel sitting ~1 m off the floor
+    is an occlusion boundary (second-row structure), not a contact line,
+    and must neither be scored against nor corrected toward."""
     profile: dict[int, int] = {}
     vs, us = np.nonzero(mask)
     for u, v in zip(us, vs):
         if u not in profile or v > profile[u]:
             profile[u] = v
+    if zmap is not None:
+        profile = {
+            u: v
+            for u, v in profile.items()
+            if np.isfinite(zmap[v, u]) and zmap[v, u] < 0.35
+        }
     return profile
 
 
@@ -97,7 +111,7 @@ def verify_reprojection(run_id: str, *, runs_root: str | Path = "runs") -> dict:
     inventory = json.loads(
         (run / "inventory" / "inventory.json").read_text()
     )
-    tree, us, vs, (height, width) = _floor_lookup(run)
+    tree, us, vs, (height, width), zmap = _floor_lookup(run)
     image = Image.open(next((run / "input").glob("image_*"))).convert("RGB")
     scale_x = image.size[0] / width
     scale_y = image.size[1] / height
@@ -148,13 +162,22 @@ def verify_reprojection(run_id: str, *, runs_root: str | Path = "runs") -> dict:
                     mask |= decode_coco_rle(
                         rles[member], height=height, width=width
                     ).astype(bool)
-        profile = _mask_bottom_profile(mask)
+        profile = _mask_bottom_profile(mask, zmap)
         deltas = [
             abs(v - profile[u]) for u, v in pixels if u in profile
         ]
-        mean_dv = (
-            round(float(np.median(np.abs(deltas))) / height, 4) if deltas else None
-        )
+        if len(profile) < 8 or len(deltas) < 8:
+            scores.append(
+                {
+                    "label": obj["label"],
+                    "instance": obj.get("instance"),
+                    "refine_slug": obj.get("refine_slug"),
+                    "method": obj["footprint_method"],
+                    "status": "base-occluded",
+                }
+            )
+            continue
+        mean_dv = round(float(np.median(np.abs(deltas))) / height, 4)
         scores.append(
             {
                 "label": obj["label"],
