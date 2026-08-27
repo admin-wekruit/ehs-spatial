@@ -55,6 +55,56 @@ def _is_flat_zone(label: str) -> bool:
 CONTACT_FAMILY = ("fence", "guard", "barrier", "rail", "curtain", "partition", "panel")
 
 
+def _merge_vertical_stacks(
+    masks: list[np.ndarray], image_height: int
+) -> list[tuple[int, list[int]]]:
+    """SAM splits one tall panel into stacked horizontal bands. Same-phrase
+    masks whose x-ranges strongly overlap and that touch vertically are one
+    physical structure; side-by-side sections keep disjoint x-ranges and
+    stay separate. Returns (primary_index, member_indices) per group."""
+    boxes: list[tuple[int, int, int, int] | None] = []
+    for mask in masks:
+        ys, xs = np.nonzero(mask)
+        boxes.append(
+            None
+            if len(xs) == 0
+            else (int(xs.min()), int(xs.max()), int(ys.min()), int(ys.max()))
+        )
+    parent = list(range(len(masks)))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    gap = 0.03 * image_height
+    for i in range(len(masks)):
+        if boxes[i] is None:
+            continue
+        for j in range(i + 1, len(masks)):
+            if boxes[j] is None:
+                continue
+            ax0, ax1, ay0, ay1 = boxes[i]
+            bx0, bx1, by0, by1 = boxes[j]
+            overlap = min(ax1, bx1) - max(ax0, bx0)
+            narrower = min(ax1 - ax0, bx1 - bx0)
+            if narrower <= 0 or overlap < 0.6 * narrower:
+                continue
+            if max(ay0, by0) - min(ay1, by1) > gap:
+                continue
+            parent[find(i)] = find(j)
+    groups: dict[int, list[int]] = {}
+    for i in range(len(masks)):
+        if boxes[i] is None:
+            continue
+        groups.setdefault(find(i), []).append(i)
+    return sorted(
+        ((min(members), sorted(members)) for members in groups.values()),
+        key=lambda item: item[0],
+    )
+
+
 def _contact_edge_rect(
     mask: np.ndarray,
     points3d: np.ndarray,
@@ -124,8 +174,10 @@ def _contact_edge_rect(
     normal = np.array([-np.sin(phi), np.cos(phi)])
     along = (grid - centre) @ axis
     low, high = np.percentile(along, 2), np.percentile(along, 98)
+    # fence-family structures are boards/rails: anything past ~25 cm of
+    # measured "thickness" is depth smear, not the object
     thickness = float(
-        np.clip(2 * np.percentile(np.abs((grid - centre) @ normal), 80), 0.10, 0.50)
+        np.clip(2 * np.percentile(np.abs((grid - centre) @ normal), 80), 0.05, 0.25)
     )
     corners = [
         centre + low * axis + thickness / 2 * normal,
@@ -738,8 +790,19 @@ def main(argv: list[str] | None = None) -> int:
             if isinstance(rles, str):
                 rles = [rles]
             scores = response.get("scores") or [1.0] * len(rles)
-            for index, rle in enumerate(rles):
-                mask = decode_coco_rle(rle, height=height, width=width).astype(bool)
+            decoded = [
+                decode_coco_rle(rle, height=height, width=width).astype(bool)
+                for rle in rles
+            ]
+            if any(k in phrase for k in CONTACT_FAMILY):
+                groups = _merge_vertical_stacks(decoded, height)
+            else:
+                groups = [(i, [i]) for i in range(len(decoded))]
+            for index, members in groups:
+                mask = decoded[index]
+                for member in members:
+                    if member != index:
+                        mask = mask | decoded[member]
                 if int(mask.sum()) < MIN_MASK_PIXELS:
                     continue
                 # De-smear (research approach 3): flying pixels concentrate
@@ -781,6 +844,11 @@ def main(argv: list[str] | None = None) -> int:
                     {
                         "label": phrase,
                         "instance": index,
+                        **(
+                            {"merged_instances": members}
+                            if len(members) > 1
+                            else {}
+                        ),
                         "frame": frame.frame_id,
                         "score": round(
                             float(scores[index]) if index < len(scores) else 1.0, 3
@@ -879,13 +947,60 @@ def main(argv: list[str] | None = None) -> int:
                 rles = [rles]
             if entry["instance"] >= len(rles):
                 continue
-            raw_mask = decode_coco_rle(
-                rles[entry["instance"]], height=height, width=width
-            ).astype(bool)
+            raw_mask = np.zeros((height, width), bool)
+            for member in entry.get("merged_instances") or [entry["instance"]]:
+                raw_mask |= decode_coco_rle(
+                    rles[member], height=height, width=width
+                ).astype(bool)
             rect = _contact_edge_rect(raw_mask, points3d, frame, transform, theta)
             if rect is not None:
                 entry["rect_snapped"] = rect
                 entry["footprint_method"] = "contact-edge"
+                continue
+            # Occluded base: no honest contact edge. The hull of a
+            # see-through structure mixes the frame with background seen
+            # through it; keep the nearest depth cluster instead (same
+            # rule as refine.measure) when that visibly deflates the hull.
+            finite = (
+                valid
+                & np.isfinite(points3d).all(axis=2)
+                & (np.abs(points3d).sum(axis=2) > 1e-6)
+            )
+            selected = raw_mask & finite
+            depth_map = points3d[..., 2]
+            if selected.sum() < 50:
+                continue
+            near = np.percentile(depth_map[selected], 10)
+            # machinery often hugs a guard rail from behind; the keep-band
+            # must stay tighter than that gap, scaled with range
+            selected &= depth_map <= near + max(0.25, 0.12 * near)
+            cloud = _clean(transform.apply(points3d[selected]))
+            if cloud is None:
+                continue
+            hull = MultiPoint([(x, y) for x, y in cloud[:, :2]]).convex_hull
+            if (
+                not isinstance(hull, Polygon)
+                or hull.area < 0.01
+                or hull.area > 0.8 * entry["footprint_area_m2"]
+            ):
+                continue
+            top = float(np.quantile(cloud[:, 2], 0.95))
+            if top > 0.0:
+                entry["height_m"] = round(top, 2)
+            entry["footprint"] = [
+                (round(float(x), 3), round(float(y), 3))
+                for x, y in list(hull.exterior.coords)[:-1]
+            ]
+            entry["footprint_area_m2"] = round(float(hull.area), 2)
+            entry["centroid_xy"] = [
+                round(float(hull.centroid.x), 2),
+                round(float(hull.centroid.y), 2),
+            ]
+            entry["camera_dist_m"] = round(float(Point(0.0, 0.0).distance(hull)), 2)
+            entry["footprint_method"] = "near-cluster"
+            snapped = _snap_rect(entry["footprint"], theta, allow_free=False)
+            if snapped is not None:
+                entry["rect_snapped"] = snapped
 
     out_dir = run / "inventory"
     out_dir.mkdir(parents=True, exist_ok=True)
