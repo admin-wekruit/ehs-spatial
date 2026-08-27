@@ -806,9 +806,9 @@ def main(argv: list[str] | None = None) -> int:
                     }
                 )
 
-    # One symbol per label: nearest reliable instance, not the biggest —
-    # the biggest is usually a far-field smear.
-    best_per_label: dict[str, dict] = {}
+    # Every reliable instance goes on the sheet (the interactive report
+    # plan draws instances; the static CAD sheet must match it 1:1).
+    plan_entries: list[dict] = []
     for entry in entries:
         if entry["label"] in STRUCTURE_LABELS:
             continue
@@ -824,12 +824,8 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 entry["off_plan_reason"] = "non-positive height (depth collapse)"
                 continue
-        current = best_per_label.get(entry["label"])
-        if current is None or entry["camera_dist_m"] < current["camera_dist_m"]:
-            best_per_label[entry["label"]] = entry
-    plan_objects = sorted(
-        best_per_label.values(), key=lambda e: -e["footprint_area_m2"]
-    )
+        plan_entries.append(entry)
+    plan_objects = sorted(plan_entries, key=lambda e: -e["footprint_area_m2"])
     off_plan = [e for e in entries if e.get("off_plan_reason")]
 
     scene_cloud = []
