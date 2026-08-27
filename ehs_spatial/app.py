@@ -1020,6 +1020,12 @@ def build_app(
                     refine_go = gr.Button("SAM 补测", variant="primary")
                 refine_result = gr.JSON(label="测量结果")
                 refine_overlay = gr.Image(label="mask 证据", interactive=False)
+                with gr.Row():
+                    agent_say = gr.Textbox(
+                        label="对话补测：一句话描述漏检物体（中文可）",
+                        placeholder="例：入口右侧红色的斜坡挡板",
+                    )
+                    agent_go = gr.Button("让 agent 定位并补测")
 
                 def _refine_runs() -> gr.Dropdown:
                     names = [r.get("run_id") for r in service.store.list_runs()]
@@ -1081,6 +1087,33 @@ def build_app(
                     _refine_go,
                     inputs=[refine_run, refine_label, refine_x1, refine_y1,
                             refine_x2, refine_y2, refine_apply],
+                    outputs=[refine_result, refine_overlay],
+                    concurrency_id=PIPELINE_CONCURRENCY_ID,
+                    concurrency_limit=1,
+                )
+
+                def _agent_go(name, instruction, apply_it):
+                    from .agent import agent_refine
+                    from .refine import RefineError
+
+                    if not name:
+                        raise gr.Error("先选一个 run")
+                    if not (instruction or "").strip():
+                        raise gr.Error("先描述要补测的物体")
+                    try:
+                        result = agent_refine(
+                            str(name), instruction.strip(),
+                            runs_root=service.store.root,
+                            apply=bool(apply_it),
+                        )
+                    except (RefineError, ProviderError) as exc:
+                        raise gr.Error(str(exc)) from exc
+                    overlay = result.pop("overlay_path", None)
+                    return result, overlay
+
+                agent_go.click(
+                    _agent_go,
+                    inputs=[refine_run, agent_say, refine_apply],
                     outputs=[refine_result, refine_overlay],
                     concurrency_id=PIPELINE_CONCURRENCY_ID,
                     concurrency_limit=1,
