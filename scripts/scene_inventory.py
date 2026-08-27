@@ -551,6 +551,13 @@ def _align_guard_lines(
     valid = np.load(frame.valid_mask_path).astype(bool)
     height, width = valid.shape
     image_width = width
+    finite_all = (
+        valid
+        & np.isfinite(points3d).all(axis=2)
+        & (np.abs(points3d).sum(axis=2) > 1e-6)
+    )
+    floor_xyz = np.full((height, width, 3), np.nan, np.float32)
+    floor_xyz[finite_all] = transform.apply(points3d[finite_all])
 
     def _member_mask(e: dict) -> np.ndarray | None:
         if e.get("refine_slug"):
@@ -662,7 +669,36 @@ def _align_guard_lines(
         lengths = [_rect_sides(e["rect_snapped"])[0] for e in chain]
         centre = direction = None
         rect_long = thickness = None
-        if rect is not None:
+        union_line = None
+        if len(chain) >= 2:
+            union = None
+            for e in chain:
+                member_mask = _member_mask(e)
+                if member_mask is None:
+                    union = None
+                    break
+                union = member_mask if union is None else (union | member_mask)
+            if union is not None:
+                union_line = _verified_contact_line(union, floor_xyz)
+        if union_line is not None:
+            centre, direction, rect_long = union_line
+            thickness = 0.15
+            if rect is not None:
+                r0 = np.asarray(rect, float)
+                side_a = float(np.linalg.norm(r0[1] - r0[0]))
+                side_b = float(np.linalg.norm(r0[2] - r0[1]))
+                thickness = max(0.05, min(side_a, side_b, 0.25))
+            axis_snapped = False
+            if theta is not None:
+                angle = float(np.arctan2(direction[1], direction[0]))
+                for axis in (theta, theta + np.pi / 2):
+                    delta = ((angle - axis + np.pi / 2) % np.pi) - np.pi / 2
+                    if abs(delta) < np.radians(20):
+                        snapped = angle - delta
+                        direction = np.array([np.cos(snapped), np.sin(snapped)])
+                        axis_snapped = True
+                        break
+        elif rect is not None:
             r = np.asarray(rect, float)
             edge1, edge2 = r[1] - r[0], r[2] - r[1]
             if np.linalg.norm(edge1) < np.linalg.norm(edge2):
@@ -752,6 +788,17 @@ def _align_guard_lines(
         )
         if vote < 0:
             direction, normal = -direction, -normal
+        chain_snapshot = [
+            (list(map(list, e["rect_snapped"])), list(e["centroid_xy"]))
+            for e in chain
+        ]
+        res_before = None
+        if union is not None and direction is not None:
+            res_before = _reprojection_offset(
+                chain, union, direction,
+                np.array([-direction[1], direction[0]]),
+                points3d, valid, transform, probe_only=True,
+            )
         span = rect_long if rect_long is not None else sum(lengths)
         # image adjacency welds PARALLEL planes seen edge-on (a gate panel
         # in front of a mesh wall) into one chain; split by perpendicular
@@ -855,6 +902,17 @@ def _align_guard_lines(
                         round(float(e["centroid_xy"][0] + shift * normal[0]), 2),
                         round(float(e["centroid_xy"][1] + shift * normal[1]), 2),
                     ]
+        if union is not None and direction is not None:
+            res_after = _reprojection_offset(
+                chain, union, direction, normal,
+                points3d, valid, transform, probe_only=True,
+            )
+            if res_before is not None and (
+                res_after is None or res_after > res_before + 1.0
+            ):
+                for e, (rect_old, cent_old) in zip(chain, chain_snapshot):
+                    e["rect_snapped"] = rect_old
+                    e["centroid_xy"] = cent_old
     # the same measure-and-correct loop, for every fence structure that is
     # NOT part of a chain: reproject its own base line and slide it onto
     # its own mask's ground contact. This is what took the first run's
@@ -872,12 +930,77 @@ def _align_guard_lines(
         r = np.asarray(e["rect_snapped"], float)
         edge1, edge2 = r[1] - r[0], r[2] - r[1]
         if np.linalg.norm(edge1) < np.linalg.norm(edge2):
-            edge1 = edge2
+            edge1, edge2 = edge2, edge1
         norm1 = float(np.linalg.norm(edge1))
         if norm1 < 1e-6:
             continue
         direction = edge1 / norm1
         normal = np.array([-direction[1], direction[0]])
+        res_before = _reprojection_offset(
+            [e], mask, direction, normal, points3d, valid, transform,
+            probe_only=True,
+        )
+        single_snapshot = (
+            list(map(list, e["rect_snapped"])), list(e["centroid_xy"])
+        )
+        line = _verified_contact_line(mask, floor_xyz)
+        if line is not None:
+            # evidence read straight off the contact pixels — but position
+            # evidence must not overrule orientation: if the fitted line
+            # disagrees with the rect's established direction by >25°, take
+            # only the line's perpendicular POSITION (translate, don't
+            # rotate) — a contact line caught on a corner or an occluder
+            # must not spin the panel
+            centre_l, direction_l, extent_l = line
+            gap = abs((
+                (np.arctan2(direction_l[1], direction_l[0])
+                 - np.arctan2(direction[1], direction[0]) + np.pi / 2)
+                % np.pi) - np.pi / 2)
+            if gap > np.radians(25):
+                shift = float((centre_l - np.asarray(e["centroid_xy"], float)) @ normal)
+                _apply_shift(e, shift, normal)
+                res_after = _reprojection_offset(
+                    [e], mask, direction, normal, points3d, valid,
+                    transform, probe_only=True,
+                )
+                if res_before is not None and (
+                    res_after is None or res_after > res_before + 1.0
+                ):
+                    e["rect_snapped"], e["centroid_xy"] = single_snapshot
+                continue
+            normal_l = np.array([-direction_l[1], direction_l[0]])
+            length = min(norm1, extent_l)
+            thickness = max(
+                0.05, min(float(np.linalg.norm(edge2)), 0.25)
+            )
+            c_old = np.asarray(e["centroid_xy"], float)
+            along = float(np.clip(
+                (c_old - centre_l) @ direction_l,
+                -extent_l / 2 + length / 2,
+                extent_l / 2 - length / 2,
+            )) if extent_l > length else 0.0
+            seat = centre_l + along * direction_l
+            corners = [
+                seat + length / 2 * direction_l + thickness / 2 * normal_l,
+                seat + length / 2 * direction_l - thickness / 2 * normal_l,
+                seat - length / 2 * direction_l - thickness / 2 * normal_l,
+                seat - length / 2 * direction_l + thickness / 2 * normal_l,
+            ]
+            e["rect_snapped"] = [
+                [round(float(x), 3), round(float(y), 3)] for x, y in corners
+            ]
+            e["centroid_xy"] = [
+                round(float(seat[0]), 2), round(float(seat[1]), 2)
+            ]
+            res_after = _reprojection_offset(
+                [e], mask, direction_l, normal_l, points3d, valid,
+                transform, probe_only=True,
+            )
+            if res_before is not None and (
+                res_after is None or res_after > res_before + 1.0
+            ):
+                e["rect_snapped"], e["centroid_xy"] = single_snapshot
+            continue
         for _pass in range(3):
             shift = _reprojection_offset(
                 [e], mask, direction, normal, points3d, valid, transform
@@ -886,6 +1009,45 @@ def _align_guard_lines(
                 break
             _apply_shift(e, shift, normal)
     return theta
+
+
+def _verified_contact_line(mask, floor_xyz, min_points=12):
+    """Fit a guard line DIRECTLY from verified ground-contact pixels: the
+    mask's bottom-edge pixels that sit within 0.35 m of the floor are 3D
+    points ON the structure's base line — opaque metal, reliable depth.
+    Evidence read straight off, no sliding search. Returns (centre,
+    direction, along_extent) or None."""
+    profile: dict[int, int] = {}
+    pvs, pus = np.nonzero(mask)
+    for u, v in zip(pus, pvs):
+        if u not in profile or v > profile[u]:
+            profile[u] = v
+    pts = []
+    for u, v in profile.items():
+        xyz = floor_xyz[v, u]
+        if np.isfinite(xyz).all() and xyz[2] < 0.35:
+            pts.append(xyz[:2])
+    if len(pts) < min_points:
+        return None
+    pts = np.asarray(pts, float)
+    for _ in range(2):
+        centre = np.median(pts, axis=0)
+        _, _, vt = np.linalg.svd(pts - centre)
+        direction = vt[0]
+        normal = np.array([-direction[1], direction[0]])
+        residual = np.abs((pts - centre) @ normal)
+        keep = residual < 0.4
+        if keep.sum() < min_points:
+            return None
+        pts = pts[keep]
+    centre = pts.mean(axis=0)
+    _, _, vt = np.linalg.svd(pts - centre)
+    direction = vt[0]
+    along = (pts - centre) @ direction
+    extent = float(along.max() - along.min())
+    if extent < 0.5:
+        return None
+    return centre, direction, extent
 
 
 def _apply_shift(entry: dict, shift: float, normal) -> None:
@@ -903,7 +1065,8 @@ def _apply_shift(entry: dict, shift: float, normal) -> None:
 
 
 def _reprojection_offset(
-    chain, union_mask, direction, normal, points3d, valid, transform
+    chain, union_mask, direction, normal, points3d, valid, transform,
+    probe_only: bool = False,
 ) -> float | None:
     """Signed normal offset that lands the chain's base line on the union
     mask's bottom edge when reprojected through the dense floor geometry."""
@@ -962,6 +1125,9 @@ def _reprojection_offset(
             return None, len(deltas)
         return float(np.median(deltas)), len(deltas)
 
+    if probe_only:
+        dv, matched = mean_signed_dv(0.0)
+        return None if dv is None else abs(dv)
     best = None
     for offset in np.linspace(-0.7, 0.7, 29):
         dv, matched = mean_signed_dv(float(offset))
