@@ -1020,7 +1020,6 @@ def build_app(
                     refine_go = gr.Button("SAM 补测", variant="primary")
                 refine_result = gr.JSON(label="测量结果")
                 refine_overlay = gr.Image(label="mask 证据", interactive=False)
-                refine_corner = gr.State(0)
 
                 def _refine_runs() -> gr.Dropdown:
                     names = [r.get("run_id") for r in service.store.list_runs()]
@@ -1033,12 +1032,13 @@ def build_app(
                     images = sorted((run_dir / "input").glob("image_*"))
                     return str(images[0]) if images else None
 
-                def _refine_click(corner, x1, y1, x2, y2,
-                                  evt: gr.SelectData):
+                def _refine_click(x1, y1, x2, y2, evt: gr.SelectData):
+                    # Corner parity without extra state: an incomplete box
+                    # (x2 empty) means this click is the second corner.
                     x, y = evt.index
-                    if corner == 0:
-                        return 1, x, y, x2, y2
-                    return 0, x1, y1, x, y
+                    if x1 is None or x2 is not None:
+                        return x, y, None, None
+                    return x1, y1, x, y
 
                 def _refine_go(name, label, x1, y1, x2, y2, apply_it):
                     from .refine import RefineError, refine_region
@@ -1059,23 +1059,31 @@ def build_app(
                     overlay = result.pop("overlay_path", None)
                     return result, overlay
 
-                refine_refresh.click(_refine_runs, outputs=[refine_run])
+                refine_refresh.click(
+                    _refine_runs, outputs=[refine_run],
+                    concurrency_id=LOCAL_CONCURRENCY_ID,
+                    concurrency_limit=1,
+                )
                 refine_run.change(
                     _refine_pick_image, inputs=[refine_run],
                     outputs=[refine_image],
+                    concurrency_id=LOCAL_CONCURRENCY_ID,
+                    concurrency_limit=1,
                 )
                 refine_image.select(
                     _refine_click,
-                    inputs=[refine_corner, refine_x1, refine_y1,
-                            refine_x2, refine_y2],
-                    outputs=[refine_corner, refine_x1, refine_y1,
-                             refine_x2, refine_y2],
+                    inputs=[refine_x1, refine_y1, refine_x2, refine_y2],
+                    outputs=[refine_x1, refine_y1, refine_x2, refine_y2],
+                    concurrency_id=LOCAL_CONCURRENCY_ID,
+                    concurrency_limit=1,
                 )
                 refine_go.click(
                     _refine_go,
                     inputs=[refine_run, refine_label, refine_x1, refine_y1,
                             refine_x2, refine_y2, refine_apply],
                     outputs=[refine_result, refine_overlay],
+                    concurrency_id=PIPELINE_CONCURRENCY_ID,
+                    concurrency_limit=1,
                 )
 
             with gr.Tab("History"):
