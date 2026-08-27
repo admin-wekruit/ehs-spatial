@@ -47,6 +47,51 @@ class TaxonomySweep(BaseModel):
     )
 
 
+class ExtraSweep(BaseModel):
+    boxes: list[DetectedBox]
+
+
+_MORE_PROMPT = (
+    "You are auditing an industrial robot-cell photo for machine-safety "
+    "devices. The instances below are ALREADY detected. Find visible "
+    "instances of checklist items NOT covered by any existing box — "
+    "especially additional side-by-side guard/panel sections next to an "
+    "already-boxed one, extra buttons, extra signs. Boxes MUST be box_2d "
+    "[ymin, xmin, ymax, xmax] in 0-1000 normalized coordinates, tight "
+    "around one device each. Return an empty list when nothing is left.\n"
+    "Checklist:\n{checklist}\nAlready detected:\n{found}"
+)
+
+
+class SectionSplit(BaseModel):
+    boxes: list[tuple[int, int, int, int]] = Field(
+        description="one tight box_2d [ymin, xmin, ymax, xmax] (0-1000, "
+        "within THIS crop) per individual section"
+    )
+
+
+_SPLIT_PROMPT = (
+    "This crop shows industrial machine guarding. If it contains MULTIPLE "
+    "side-by-side guard/fence/panel sections separated by vertical posts, "
+    "return one tight box per individual section. If it is a single "
+    "section, return exactly one box covering it. Boxes are box_2d "
+    "[ymin, xmin, ymax, xmax] in 0-1000 normalized coordinates of THIS "
+    "crop."
+)
+
+
+def _box_iou(a, b) -> float:
+    ix = max(0, min(a[2], b[2]) - max(a[0], b[0]))
+    iy = max(0, min(a[3], b[3]) - max(a[1], b[1]))
+    inter = ix * iy
+    union = (
+        (a[2] - a[0]) * (a[3] - a[1])
+        + (b[2] - b[0]) * (b[3] - b[1])
+        - inter
+    )
+    return inter / union if union else 0.0
+
+
 _SWEEP_PROMPT = (
     "You are auditing an industrial robot-cell photo for machine-safety "
     "devices. Walk the checklist below and return ONE box per visible "
@@ -196,6 +241,162 @@ def detect_devices(
                 "note": "retry:" + located.rationale[:80],
             }
         )
+
+    # completeness rounds: a 'multi' item with ONE hit never re-asked was
+    # how three side-by-side gate sections came back as one — feed the
+    # found boxes back and ask ONLY for what they do not cover, until a
+    # round adds nothing
+    checklist = "\n".join(
+        f"- {t.item_id} [{t.expect}]: {t.en}" for t in TAXONOMY
+    )
+    for _ in range(2):
+        found_lines = "\n".join(
+            f"- {d['item_id']}: box_2d ["
+            f"{int(d['box'][1] / height * 1000)}, "
+            f"{int(d['box'][0] / width * 1000)}, "
+            f"{int(d['box'][3] / height * 1000)}, "
+            f"{int(d['box'][2] / width * 1000)}]"
+            for d in detections
+        )
+        response = adapter._create(
+            "detect.more",
+            model=GEMINI_MODEL_ID,
+            input=[
+                _text_block(
+                    _MORE_PROMPT.format(
+                        checklist=checklist, found=found_lines or "(none)"
+                    )
+                ),
+                _image_block(str(image_path)),
+            ],
+            response_format=_response_format(ExtraSweep),
+        )
+        extra, _ = adapter._parse(response, ExtraSweep, "detect.more")
+        added = 0
+        for det in extra.boxes:
+            spec = by_id.get(det.item_id)
+            if spec is None:
+                continue
+            y1, x1, y2, x2 = det.box_2d
+            if max(det.box_2d) > 1000 or not (y1 < y2 and x1 < x2):
+                continue
+            box = (
+                max(0, int(x1 / 1000 * width)),
+                max(0, int(y1 / 1000 * height)),
+                min(width, int(x2 / 1000 * width)),
+                min(height, int(y2 / 1000 * height)),
+            )
+            if any(_box_iou(box, d["box"]) > 0.5 for d in detections):
+                continue
+            import tempfile
+
+            with Image.open(image_path) as image:
+                crop = image.crop(box)
+                with tempfile.NamedTemporaryFile(
+                    suffix=".png", delete=False
+                ) as f:
+                    crop.save(f.name)
+                    check = verifier(f.name, spec.en)
+            if not check.matches:
+                rejected.append(
+                    {
+                        "item_id": det.item_id,
+                        "reason": f"more-round crop check: {check.reason}",
+                    }
+                )
+                continue
+            detections.append(
+                {"item_id": det.item_id, "box": list(box), "note": "more"}
+            )
+            added += 1
+        if added == 0:
+            break
+
+    # granularity: a guard box much wider than tall usually spans SEVERAL
+    # side-by-side sections (one bulk box over a three-section gate) —
+    # crop it and have the VLM enumerate the individual sections
+    split_result: list[dict] = []
+    for det in detections:
+        spec = by_id[det["item_id"]]
+        x1, y1, x2, y2 = det["box"]
+        wide = (x2 - x1) > 1.6 * max(1, y2 - y1)
+        if spec.category != "C" or spec.expect != "multi" or not wide:
+            split_result.append(det)
+            continue
+        import tempfile
+
+        with Image.open(image_path) as image:
+            crop = image.crop((x1, y1, x2, y2))
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+                crop.save(f.name)
+                response = adapter._create(
+                    "detect.split",
+                    model=GEMINI_MODEL_ID,
+                    input=[
+                        _text_block(_SPLIT_PROMPT),
+                        _image_block(f.name),
+                    ],
+                    response_format=_response_format(SectionSplit),
+                )
+        try:
+            split, _ = adapter._parse(response, SectionSplit, "detect.split")
+        except Exception:
+            split_result.append(det)
+            continue
+        good = [
+            b
+            for b in split.boxes
+            if max(b) <= 1000 and b[0] < b[2] and b[1] < b[3]
+        ]
+        if len(good) < 2:
+            split_result.append(det)
+            continue
+        for cy1, cx1, cy2, cx2 in good:
+            split_result.append(
+                {
+                    "item_id": det["item_id"],
+                    "box": [
+                        x1 + int(cx1 / 1000 * (x2 - x1)),
+                        y1 + int(cy1 / 1000 * (y2 - y1)),
+                        x1 + int(cx2 / 1000 * (x2 - x1)),
+                        y1 + int(cy2 / 1000 * (y2 - y1)),
+                    ],
+                    "note": "split",
+                }
+            )
+    detections = split_result
+
+    # one physical device, one detection: drop any box that near-duplicates
+    # an earlier one, whatever checklist item claimed it (the same panel
+    # answering both 'clear guard' and 'low rail' is a relabel, not a
+    # second device)
+    deduped: list[dict] = []
+    for det in detections:
+        if any(_box_iou(det["box"], d["box"]) > 0.6 for d in deduped):
+            continue
+        deduped.append(det)
+    detections = deduped
+
+    # detection is monotonic across rounds: a crop-verified device from a
+    # previous round survives a weaker re-detect (VLM rounds vary; a bad
+    # round must add nothing, never subtract)
+    previous = out_dir / "detections.prev.json"
+    if previous.exists():
+        for old in json.loads(previous.read_text()).get("detections", []):
+            if "rle" not in old:
+                continue
+            if any(
+                _box_iou(old["box"], d["box"]) > 0.5 for d in detections
+            ):
+                continue
+            detections.append(
+                {
+                    "item_id": old["item_id"],
+                    "box": old["box"],
+                    "note": "carried",
+                }
+            )
+        previous.unlink()
 
     # SAM with detection context: every verified box becomes a box prompt
     for index, det in enumerate(detections):

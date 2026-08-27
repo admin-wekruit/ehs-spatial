@@ -28,6 +28,14 @@ class FakeAdapter:
     def _parse(self, response, model, op):
         if op == "detect.sweep":
             return self.sweep, None
+        if op == "detect.more":
+            from ehs_spatial.detect import ExtraSweep
+
+            return ExtraSweep(boxes=[]), None
+        if op == "detect.split":
+            from ehs_spatial.detect import SectionSplit
+
+            return SectionSplit(boxes=[]), None
         from ehs_spatial.agent import LocatedObject
 
         return (

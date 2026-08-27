@@ -20,7 +20,9 @@ def main(argv=None):
     if args.fresh:
         cache = Path("runs") / args.run / "detection" / "detections.json"
         if cache.exists():
-            cache.unlink()
+            # archive, don't discard: the new round merges every verified
+            # detection from this file so re-detects are monotonic
+            cache.rename(cache.with_name("detections.prev.json"))
     envelope = detect_devices(args.run)
     found = [d for d in envelope["detections"] if "rle" in d]
     print(f"{len(found)} devices masked, {len(envelope['missing'])} missing, "
