@@ -524,6 +524,116 @@ def _normal_split(
     return kept
 
 
+def _rect_sides(rect) -> tuple[float, float]:
+    r = np.asarray(rect, float)
+    a = float(np.linalg.norm(r[1] - r[0]))
+    b = float(np.linalg.norm(r[2] - r[1]))
+    return max(a, b), min(a, b)
+
+
+def _align_guard_lines(
+    entries: list[dict], theta: float | None, image_width: int
+) -> None:
+    """Collinear guard-line prior: fence sections that sit side by side in
+    the IMAGE form one straight physical guard line, so their plan rects
+    must share one line — per-section 3D noise (an occluded contact edge
+    lands a metre off, a thin skeleton rotates a rect) must not scatter
+    them. Chain sections by image adjacency + similar height, RANSAC a
+    line through their centroids, snap it to the Manhattan axis when
+    close, and re-seat every member (outliers included) on that line."""
+    guards = [
+        e
+        for e in entries
+        if any(k in e["label"] for k in CONTACT_FAMILY)
+        and e.get("rect_snapped")
+        and e.get("image_bbox")
+    ]
+    guards.sort(key=lambda e: e["image_bbox"][0])
+    chains: list[list[dict]] = []
+    current: list[dict] = []
+    for e in guards:
+        if current:
+            prev = current[-1]
+            px0, py0, px1, py1 = prev["image_bbox"]
+            x0, y0, x1, y1 = e["image_bbox"]
+            gap = x0 - px1
+            y_overlap = min(py1, y1) - max(py0, y0)
+            h_prev = max(prev["height_m"], 0.01)
+            h_here = max(e["height_m"], 0.01)
+            if (
+                gap < 0.15 * image_width
+                and y_overlap > 0.3 * min(py1 - py0, y1 - y0)
+                and max(h_prev, h_here) / min(h_prev, h_here) < 1.8
+            ):
+                current.append(e)
+                continue
+            chains.append(current)
+        current = [e]
+    if current:
+        chains.append(current)
+    for chain in chains:
+        if len(chain) < 2:
+            continue
+        cents = np.array([e["centroid_xy"] for e in chain], float)
+        lengths = [_rect_sides(e["rect_snapped"])[0] for e in chain]
+        # candidate line = each centroid pair; score by physical structure:
+        # adjacent sections nearly touch, so along-line gaps must match the
+        # sections' own lengths, and along-line order must match the
+        # image's left-to-right order (chain is image-sorted). A corrupted
+        # centroid (occluded contact edge landing on the background) fails
+        # both and cannot win the line.
+        best = None
+        for i in range(len(chain)):
+            for j in range(i + 1, len(chain)):
+                span = cents[j] - cents[i]
+                norm = float(np.linalg.norm(span))
+                if norm < 0.3:
+                    continue
+                direction = span / norm
+                along = (cents - cents[i]) @ direction
+                if not all(along[k] < along[k + 1] for k in range(len(chain) - 1)):
+                    continue
+                score = sum(
+                    abs(
+                        (along[k + 1] - along[k])
+                        - (lengths[k] + lengths[k + 1]) / 2
+                    )
+                    for k in range(len(chain) - 1)
+                )
+                if best is None or score < best[0]:
+                    best = (score, i, direction)
+        if best is None:
+            continue
+        _, anchor, direction = best
+        centre = cents[anchor]
+        angle = float(np.arctan2(direction[1], direction[0]))
+        if theta is not None:
+            for axis in (theta, theta + np.pi / 2):
+                if abs(((angle - axis + np.pi / 2) % np.pi) - np.pi / 2) < np.radians(20):
+                    direction = np.array([np.cos(axis), np.sin(axis)])
+                    break
+        normal = np.array([-direction[1], direction[0]])
+        thickness = float(
+            np.median([_rect_sides(e["rect_snapped"])[1] for e in chain])
+        )
+        for e in chain:
+            c = np.asarray(e["centroid_xy"], float)
+            along = float((c - centre) @ direction)
+            seat = centre + along * direction
+            length = _rect_sides(e["rect_snapped"])[0]
+            corners = [
+                seat + length / 2 * direction + thickness / 2 * normal,
+                seat + length / 2 * direction - thickness / 2 * normal,
+                seat - length / 2 * direction - thickness / 2 * normal,
+                seat - length / 2 * direction + thickness / 2 * normal,
+            ]
+            e["rect_snapped"] = [
+                [round(float(x), 3), round(float(y), 3)] for x, y in corners
+            ]
+            e["centroid_xy"] = [round(float(seat[0]), 2), round(float(seat[1]), 2)]
+            e["footprint_method"] = "guard-line"
+
+
 def _hull_fill(mask: np.ndarray) -> np.ndarray:
     """Convex hull of the mask's significant connected components,
     rasterized. Stray specks (<1% of the mask) are dropped first so they
@@ -1078,6 +1188,14 @@ def main(argv: list[str] | None = None) -> int:
                             else {}
                         ),
                         **({"normal_split": True} if split is not None else {}),
+                        "image_bbox": [
+                            int(v)
+                            for pair in (
+                                (np.nonzero(mask)[1].min(), np.nonzero(mask)[0].min()),
+                                (np.nonzero(mask)[1].max(), np.nonzero(mask)[0].max()),
+                            )
+                            for v in pair
+                        ],
                         "frame": frame.frame_id,
                         "score": round(
                             float(scores[index]) if index < len(scores) else 1.0, 3
@@ -1243,6 +1361,10 @@ def main(argv: list[str] | None = None) -> int:
             snapped = _snap_rect(entry["footprint"], theta, allow_free=False)
             if snapped is not None:
                 entry["rect_snapped"] = snapped
+
+    _align_guard_lines(
+        entries, theta, np.load(frames[0].valid_mask_path).shape[1]
+    )
 
     out_dir = run / "inventory"
     out_dir.mkdir(parents=True, exist_ok=True)
