@@ -128,6 +128,28 @@ def test_thin_structures_stay_thin(run):
 
 
 @runs_present
+def test_reprojection_scores_recorded():
+    """The reprojection loop must run and score every run; real-clean-01's
+    aligned gate is pinned under 8% of image height (its verified state).
+    02/03 placements are known-off — their scores are recorded, not yet
+    gated; tightening those thresholds IS the outstanding work list."""
+    for run in RUNS:
+        path = run / "inventory" / "reprojection.json"
+        assert path.exists(), f"{run.name}: reprojection not run"
+    scores = json.loads(
+        (RUNS[0] / "inventory" / "reprojection.json").read_text()
+    )["scores"]
+    guard = [
+        s
+        for s in scores
+        if s.get("method") == "guard-line" and s.get("mean_dv_frac") is not None
+    ]
+    assert guard, "real-clean-01 guard lines unscored"
+    worst = max(s["mean_dv_frac"] for s in guard)
+    assert worst < 0.08, f"real-clean-01 guard-line reprojection {worst}"
+
+
+@runs_present
 def test_real_clean_01_gate_recedes_and_l_is_orthogonal():
     """Pinned facts about real-clean-01 the owner verified in the photo:
     the gate line recedes toward camera-right (right section nearest), and

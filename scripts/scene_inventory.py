@@ -534,10 +534,11 @@ def _rect_sides(rect) -> tuple[float, float]:
 def _align_guard_lines(
     entries: list[dict],
     theta: float | None,
+    walls_evidence: list[dict],
     run: Path,
     frame: GeometryFrame,
     transform,
-) -> None:
+) -> float | None:
     """Collinear guard-line prior: fence sections that sit side by side in
     the IMAGE form one straight physical guard line, so their plan rects
     must share one line. The line's DIRECTION comes from the contact-edge
@@ -597,32 +598,84 @@ def _align_guard_lines(
         current = [e]
     if current:
         chains.append(current)
+
+    # pass 1: UNSNAPPED contact-edge evidence per chain — each guard line's
+    # free direction, weighted by its physical length, votes on the scene
+    # axis together with the walls (joint Manhattan estimate) instead of
+    # merely inheriting the walls' answer.
+    chain_rects: list = []
     for chain in chains:
+        rect = None
+        if len(chain) >= 2:
+            union = None
+            for e in chain:
+                member_mask = _member_mask(e)
+                if member_mask is None:
+                    union = None
+                    break
+                union = (
+                    member_mask if union is None else (union | member_mask)
+                )
+            if union is not None:
+                rect = _contact_edge_rect(
+                    union, points3d, frame, transform, None
+                )
+        chain_rects.append(rect)
+    s = c = 0.0
+    if theta is not None:
+        # walls' aggregated vote re-enters at its established strength
+        for wall in walls_evidence or []:
+            dx = wall["end"][0] - wall["start"][0]
+            dy = wall["end"][1] - wall["start"][1]
+            length = float(np.hypot(dx, dy))
+            if length < 0.5:
+                continue
+            angle = np.arctan2(dy, dx)
+            s += length * np.sin(4 * angle)
+            c += length * np.cos(4 * angle)
+    for rect in chain_rects:
+        if rect is None:
+            continue
+        r = np.asarray(rect, float)
+        edge = r[1] - r[0]
+        if np.linalg.norm(edge) < np.linalg.norm(r[2] - r[1]):
+            edge = r[2] - r[1]
+        length = float(np.linalg.norm(edge))
+        angle = float(np.arctan2(edge[1], edge[0]))
+        s += length * np.sin(4 * angle)
+        c += length * np.cos(4 * angle)
+    if s != 0 or c != 0:
+        theta = 0.25 * float(np.arctan2(s, c))
+
+    for chain, rect in zip(chains, chain_rects):
         if len(chain) < 2:
             continue
         cents = np.array([e["centroid_xy"] for e in chain], float)
         lengths = [_rect_sides(e["rect_snapped"])[0] for e in chain]
         centre = direction = None
         rect_long = thickness = None
-        # primary anchor: contact-edge projection of the chain's UNION mask
-        union = None
-        for e in chain:
-            member_mask = _member_mask(e)
-            if member_mask is None:
-                union = None
-                break
-            union = member_mask if union is None else (union | member_mask)
-        if union is not None:
-            rect = _contact_edge_rect(union, points3d, frame, transform, theta)
-            if rect is not None:
-                r = np.asarray(rect, float)
-                edge1, edge2 = r[1] - r[0], r[2] - r[1]
-                if np.linalg.norm(edge1) < np.linalg.norm(edge2):
-                    edge1, edge2 = edge2, edge1
-                rect_long = float(np.linalg.norm(edge1))
-                direction = edge1 / max(float(np.linalg.norm(edge1)), 1e-9)
-                thickness = float(np.linalg.norm(edge2))
-                centre = r.mean(axis=0)
+        if rect is not None:
+            r = np.asarray(rect, float)
+            edge1, edge2 = r[1] - r[0], r[2] - r[1]
+            if np.linalg.norm(edge1) < np.linalg.norm(edge2):
+                edge1, edge2 = edge2, edge1
+            rect_long = float(np.linalg.norm(edge1))
+            direction = edge1 / max(float(np.linalg.norm(edge1)), 1e-9)
+            thickness = float(np.linalg.norm(edge2))
+            centre = r.mean(axis=0)
+            # snap the free direction onto the JOINT Manhattan axis it
+            # helped estimate — orthogonality between structures becomes
+            # exact, not approximate
+            if theta is not None:
+                angle = float(np.arctan2(direction[1], direction[0]))
+                for axis in (theta, theta + np.pi / 2):
+                    delta = ((angle - axis + np.pi / 2) % np.pi) - np.pi / 2
+                    if abs(delta) < np.radians(20):
+                        snapped = angle - delta
+                        direction = np.array(
+                            [np.cos(snapped), np.sin(snapped)]
+                        )
+                        break
         if direction is None:
             # fallback: centroid-pair line scored by physical structure —
             # adjacent sections nearly touch, so along-line gaps must match
@@ -708,6 +761,90 @@ def _align_guard_lines(
             ]
             e["centroid_xy"] = [round(float(seat[0]), 2), round(float(seat[1]), 2)]
             e["footprint_method"] = "guard-line"
+        # reprojection feedback: cast the seated line back into the photo
+        # and slide it along its normal until it sits on the union mask's
+        # ground contact — contact-edge ray-casting inherits a few pixels
+        # of mask shadow bleed, which lands the whole line ~0.5 m toward
+        # the camera. The loop that verifies is the loop that corrects.
+        if union is not None:
+            shift = _reprojection_offset(
+                chain, union, direction, normal, points3d, valid, transform
+            )
+            if shift is not None:
+                for e in chain:
+                    e["rect_snapped"] = [
+                        [
+                            round(float(x + shift * normal[0]), 3),
+                            round(float(y + shift * normal[1]), 3),
+                        ]
+                        for x, y in e["rect_snapped"]
+                    ]
+                    e["centroid_xy"] = [
+                        round(float(e["centroid_xy"][0] + shift * normal[0]), 2),
+                        round(float(e["centroid_xy"][1] + shift * normal[1]), 2),
+                    ]
+    return theta
+
+
+def _reprojection_offset(
+    chain, union_mask, direction, normal, points3d, valid, transform
+) -> float | None:
+    """Signed normal offset that lands the chain's base line on the union
+    mask's bottom edge when reprojected through the dense floor geometry."""
+    from scipy.spatial import cKDTree
+
+    finite = (
+        valid
+        & np.isfinite(points3d).all(axis=2)
+        & (np.abs(points3d).sum(axis=2) > 1e-6)
+    )
+    floor_pts = transform.apply(points3d[finite])
+    vs, us = np.nonzero(finite)
+    on_floor = np.abs(floor_pts[:, 2]) < 0.10
+    if on_floor.sum() < 500:
+        return None
+    tree = cKDTree(floor_pts[on_floor][:, :2])
+    u_floor, v_floor = us[on_floor], vs[on_floor]
+    profile: dict[int, int] = {}
+    pvs, pus = np.nonzero(union_mask)
+    for u, v in zip(pus, pvs):
+        if u not in profile or v > profile[u]:
+            profile[u] = v
+    base = np.array(
+        [corner for e in chain for corner in e["rect_snapped"]], float
+    )
+    along = base @ direction
+    centre_line = base.mean(axis=0)
+    lo, hi = float(along.min()), float(along.max())
+    t = np.linspace(lo, hi, 40)
+    line = centre_line[None, :] + (
+        (t - float(centre_line @ direction))[:, None] * direction[None, :]
+    )
+
+    def mean_signed_dv(offset: float) -> tuple[float | None, int]:
+        pts = line + offset * normal[None, :]
+        dists, idx = tree.query(pts)
+        deltas = []
+        for d, i in zip(dists, idx):
+            if d > 0.20:
+                continue
+            u, v = int(u_floor[i]), int(v_floor[i])
+            if u in profile:
+                deltas.append(v - profile[u])
+        if len(deltas) < 10:
+            return None, len(deltas)
+        return float(np.median(deltas)), len(deltas)
+
+    best = None
+    for offset in np.linspace(-0.7, 0.7, 29):
+        dv, matched = mean_signed_dv(float(offset))
+        if dv is None:
+            continue
+        if best is None or abs(dv) < abs(best[1]):
+            best = (float(offset), dv)
+    if best is None or abs(best[1]) > 25:
+        return None
+    return best[0]
 
 
 def _hull_fill(mask: np.ndarray) -> np.ndarray:
@@ -1438,7 +1575,7 @@ def main(argv: list[str] | None = None) -> int:
             if snapped is not None:
                 entry["rect_snapped"] = snapped
 
-    _align_guard_lines(entries, theta, run, frames[0], transform)
+    theta = _align_guard_lines(entries, theta, walls, run, frames[0], transform)
 
     out_dir = run / "inventory"
     out_dir.mkdir(parents=True, exist_ok=True)
