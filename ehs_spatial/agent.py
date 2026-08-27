@@ -29,9 +29,11 @@ class LocatedObject(BaseModel):
         description="short English noun phrase for the object, e.g. "
         "'safety fence', 'sloped surface', 'safety sensor'"
     )
-    box_1000: tuple[int, int, int, int] = Field(
-        description="tight bounding box as (xmin, ymin, xmax, ymax) in "
-        "0-1000 normalized image coordinates"
+    # Gemini's native grounding convention: [ymin, xmin, ymax, xmax],
+    # 0-1000 normalized. Anything else drifts between runs.
+    box_2d: tuple[int, int, int, int] = Field(
+        description="tight bounding box as [ymin, xmin, ymax, xmax] in "
+        "0-1000 normalized coordinates (the standard box_2d convention)"
     )
     rationale: str
 
@@ -41,8 +43,9 @@ _LOCATE_PROMPT = (
     "an object was missed by automatic segmentation and describes it below "
     "(possibly in Chinese). Locate that object in the photo.\n"
     "Reviewer: {instruction}\n"
-    "Return found=false if you cannot see a matching object. Box must be "
-    "tight around the described object only."
+    "Return found=false if you cannot see a matching object. box_2d MUST be "
+    "[ymin, xmin, ymax, xmax] in 0-1000 normalized coordinates, tight "
+    "around the described object only."
 )
 
 
@@ -60,6 +63,33 @@ def _gemini_locator(image_path: str, instruction: str, adapter: GeminiAdapter):
     return located
 
 
+class CropCheck(BaseModel):
+    matches: bool
+    reason: str
+
+
+_VERIFY_PROMPT = (
+    "This crop was auto-located for the description below. Does the crop "
+    "actually show that object (fully or mostly)?\n"
+    "Description: {instruction}\n"
+    "Answer matches=false if the crop shows something else."
+)
+
+
+def _gemini_verify(crop_path: str, instruction: str, adapter: GeminiAdapter):
+    response = adapter._create(
+        "agent.verify",
+        model=GEMINI_MODEL_ID,
+        input=[
+            _text_block(_VERIFY_PROMPT.format(instruction=instruction)),
+            _image_block(crop_path),
+        ],
+        response_format=_response_format(CropCheck),
+    )
+    check, _ = adapter._parse(response, CropCheck, "agent.verify")
+    return check
+
+
 def agent_refine(
     run_id: str,
     instruction: str,
@@ -68,9 +98,11 @@ def agent_refine(
     apply: bool = True,
     locator=None,
     subscriber=None,
+    verifier=None,
 ) -> dict:
     """One conversational correction turn. Raises RefineError/ProviderError
-    on failure — never fabricates a measurement."""
+    on failure — never fabricates a measurement. The located crop is shown
+    back to the VLM before segmentation; a mismatch aborts the turn."""
     from PIL import Image
 
     run = Path(runs_root) / run_id
@@ -86,13 +118,42 @@ def agent_refine(
         raise RefineError(f"VLM could not locate the object: {located.rationale}")
     with Image.open(image_path) as image:
         width, height = image.size
-    x_min, y_min, x_max, y_max = located.box_1000
+    y_min, x_min, y_max, x_max = located.box_2d
+    if max(located.box_2d) > 1000:
+        raise RefineError(
+            f"locator returned non-normalized coordinates {located.box_2d}; "
+            "refusing to guess the convention"
+        )
+    if not (y_min < y_max and x_min < x_max):
+        raise RefineError(f"degenerate located box {located.box_2d}")
     box = (
         max(0, int(x_min / 1000 * width)),
         max(0, int(y_min / 1000 * height)),
         min(width, int(x_max / 1000 * width)),
         min(height, int(y_max / 1000 * height)),
     )
+    if verifier is None and locator is not None:
+        verifier = False  # injected test locator: skip the live verify hop
+    if verifier is not False:
+        import tempfile
+
+        if verifier is None:
+            adapter_v = GeminiAdapter()
+
+            def verifier(path, text):  # noqa: F811
+                return _gemini_verify(path, text, adapter_v)
+
+        with Image.open(image_path) as image:
+            crop = image.crop(box)
+            with tempfile.NamedTemporaryFile(
+                suffix=".png", delete=False
+            ) as handle:
+                crop.save(handle.name)
+                check = verifier(handle.name, instruction)
+        if not check.matches:
+            raise RefineError(
+                f"located crop rejected by self-check: {check.reason}"
+            )
     result = refine_region(
         run_id,
         located.label_en,
@@ -133,6 +194,7 @@ def agent_sweep(
     apply: bool = True,
     locator=None,
     subscriber=None,
+    verifier=None,
 ) -> list[dict]:
     """Run the standard reviewer sweep over one photo: locate each checklist
     item, refine what is found, skip what is not — every outcome reported."""
@@ -168,6 +230,7 @@ def agent_sweep(
                 apply=apply,
                 locator=locator,
                 subscriber=subscriber,
+                verifier=verifier,
             )
             if overlaps(result["box"]):
                 outcomes.append(

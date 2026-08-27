@@ -25,7 +25,7 @@ def test_agent_refine_locates_and_measures(tmp_path):
         assert "透明" in instruction
         return LocatedObject(
             found=True, label_en="safety fence",
-            box_1000=(280, 160, 500, 880), rationale="the glazed panel",
+            box_2d=(160, 280, 880, 500), rationale="the glazed panel",
         )
 
     def subscriber(endpoint, *, arguments):
@@ -47,7 +47,7 @@ def test_agent_refine_honest_when_not_found(tmp_path):
 
     def locator(image_path, instruction):
         return LocatedObject(
-            found=False, label_en="", box_1000=(0, 0, 0, 0),
+            found=False, label_en="", box_2d=(0, 0, 1, 1),
             rationale="nothing matches",
         )
 
