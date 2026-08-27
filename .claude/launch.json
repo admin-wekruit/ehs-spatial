@@ -13,6 +13,18 @@
         "from ehs_spatial.app import build_app; build_app().launch(server_name='127.0.0.1', server_port=7860)"
       ],
       "port": 7860
+    },
+    {
+      "name": "report-static",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8973",
+        "--directory",
+        "/private/tmp/claude-501/-Users-adam-Desktop-Tesla-ehs-spatial/028f6911-3c12-41b3-af2d-087750481b10/scratchpad"
+      ],
+      "port": 8973
     }
   ]
 }
