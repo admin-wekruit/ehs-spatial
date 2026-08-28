@@ -40,6 +40,9 @@ PIPELINE_CONCURRENCY_ID = "ehs-provider-pipeline"
 # keeps them responsive while a multi-minute provider analysis holds the
 # provider lane.
 LOCAL_CONCURRENCY_ID = "ehs-local-ui"
+# Report rendering is read-only and must appear instantly on page load; its
+# own lane keeps it from queueing behind the History table's full-runs scan.
+REPORT_CONCURRENCY_ID = "ehs-report-ui"
 
 
 def load_policy_specs(policies_dir: str | Path = POLICIES_DIR) -> list[PolicySpec]:
@@ -1174,20 +1177,20 @@ def build_app(
                 report_refresh.click(
                     _report_runs,
                     outputs=[report_run],
-                    concurrency_id=LOCAL_CONCURRENCY_ID,
+                    concurrency_id=REPORT_CONCURRENCY_ID,
                     concurrency_limit=1,
                 )
                 report_go.click(
                     _report_go,
                     inputs=[report_run],
                     outputs=[report_file, report_view],
-                    concurrency_id=LOCAL_CONCURRENCY_ID,
+                    concurrency_id=REPORT_CONCURRENCY_ID,
                     concurrency_limit=1,
                 )
                 demo.load(
                     _report_runs,
                     outputs=[report_run],
-                    concurrency_id=LOCAL_CONCURRENCY_ID,
+                    concurrency_id=REPORT_CONCURRENCY_ID,
                     concurrency_limit=1,
                 )
 

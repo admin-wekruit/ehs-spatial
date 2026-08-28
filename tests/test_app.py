@@ -819,11 +819,14 @@ def test_build_app_has_required_gradio_620_components_events_and_serialization(t
     assert (question["id"], "submit") in targets
     assert demo.api_open is False
     assert demo._queue.default_concurrency_limit == 1
-    # Two deliberate lanes: one serializing provider spend, one keeping
-    # local History/disposition handlers responsive during an analysis.
+    # Three deliberate lanes: one serializing provider spend, one keeping
+    # local History/disposition handlers responsive during an analysis, and
+    # one for the read-only report view so it never queues behind the
+    # History table's full-runs scan on page load.
     assert {function.concurrency_id for function in demo.fns.values()} == {
         "ehs-provider-pipeline",
         "ehs-local-ui",
+        "ehs-report-ui",
     }
     assert {function.concurrency_limit for function in demo.fns.values()} == {1}
     provider_lanes = {
