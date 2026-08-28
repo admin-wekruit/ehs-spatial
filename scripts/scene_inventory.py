@@ -1390,6 +1390,37 @@ def _ingest_refinements(
             continue
         decoded_items.append((item, slug, mask))
     decoded_items.sort(key=lambda t: int(t[2].sum()))
+    # same-label high-overlap pairs are the SAME object seen twice (a
+    # manual refinement and a detection of one panel): keep one, drop the
+    # other outright — carving is only for DISTINCT objects
+    kept_items: list[tuple[dict, str, np.ndarray]] = []
+    for item, slug, mask in sorted(
+        decoded_items, key=lambda t: -int(t[2].sum())
+    ):
+        duplicate = False
+        bx = item["box"]
+        area_box = max(1, (bx[2] - bx[0]) * (bx[3] - bx[1]))
+        for item_k, _, _mask_k in kept_items:
+            if item_k["label"] != item["label"]:
+                continue
+            kx = item_k["box"]
+            iw = max(0, min(bx[2], kx[2]) - max(bx[0], kx[0]))
+            ih = max(0, min(bx[3], kx[3]) - max(bx[1], kx[1]))
+            inter = iw * ih
+            union_box = (
+                area_box
+                + max(1, (kx[2] - kx[0]) * (kx[3] - kx[1]))
+                - inter
+            )
+            # boxes are the processing-independent evidence: two same-label
+            # boxes on one spot are one object however their masks were
+            # later cleaned or filled
+            if inter / union_box > 0.5:
+                duplicate = True
+                break
+        if not duplicate:
+            kept_items.append((item, slug, mask))
+    decoded_items = sorted(kept_items, key=lambda t: int(t[2].sum()))
     for i, (item_i, slug_i, mask_i) in enumerate(decoded_items):
         small_area = int(mask_i.sum())
         if not small_area:
