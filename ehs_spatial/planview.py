@@ -205,6 +205,15 @@ def _render_cloud_views(
     points, rgb = _semantic_cloud_arrays(frames, observations, transform)
     if not len(points):
         return False
+    # evidence renders need shape, not every pixel: a multi-view capture
+    # carries millions of points and the offscreen renderer chews minutes
+    # on them (95% CPU for the whole "last mile"); 400k sampled points are
+    # visually identical at 1280x860
+    if len(points) > 400_000:
+        keep = np.random.default_rng(0).choice(
+            len(points), 400_000, replace=False
+        )
+        points, rgb = points[keep], rgb[keep]
     try:
         import open3d as o3d
 
