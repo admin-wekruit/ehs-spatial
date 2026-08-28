@@ -1134,7 +1134,7 @@ def build_app(
                 report_file = gr.File(label="下载", interactive=False)
                 report_view = gr.HTML()
 
-                def _report_runs() -> gr.Dropdown:
+                def _report_run_names() -> list[str]:
                     # newest first; any run with a manifest can render a
                     # (possibly partial) report — partial evidence is still
                     # evidence
@@ -1144,11 +1144,21 @@ def build_app(
                         or (p / "scene.json").exists()
                     ]
                     candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-                    return gr.Dropdown(choices=[p.name for p in candidates])
+                    return [p.name for p in candidates]
+
+                def _report_runs() -> gr.Dropdown:
+                    names = _report_run_names()
+                    return gr.Dropdown(
+                        choices=names, value=names[0] if names else None
+                    )
 
                 def _report_go(name):
                     if not name:
-                        return None, "<p>先选一个 run。</p>"
+                        # zero-friction default: newest run
+                        names = _report_run_names()
+                        if not names:
+                            return None, "<p>还没有任何 run。</p>"
+                        name = names[0]
                     from .report import build_run_report
 
                     path = build_run_report(name)
@@ -1171,6 +1181,12 @@ def build_app(
                     _report_go,
                     inputs=[report_run],
                     outputs=[report_file, report_view],
+                    concurrency_id=LOCAL_CONCURRENCY_ID,
+                    concurrency_limit=1,
+                )
+                demo.load(
+                    _report_runs,
+                    outputs=[report_run],
                     concurrency_id=LOCAL_CONCURRENCY_ID,
                     concurrency_limit=1,
                 )
