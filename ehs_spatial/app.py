@@ -1119,6 +1119,57 @@ def build_app(
                     concurrency_limit=1,
                 )
 
+            with gr.Tab("报告 Report"):
+                gr.Markdown(
+                    "## 单 run 报告\n选 run → 生成自包含 HTML（判定+检测清单+"
+                    "测量+回投+补测证据），页面内直接看，也可下载转发。",
+                    elem_classes="section-heading",
+                )
+                with gr.Row():
+                    report_run = gr.Dropdown(
+                        label="Run", choices=[], allow_custom_value=True
+                    )
+                    report_refresh = gr.Button("刷新 run 列表")
+                    report_go = gr.Button("生成/查看报告", variant="primary")
+                report_file = gr.File(label="下载", interactive=False)
+                report_view = gr.HTML()
+
+                def _report_runs() -> gr.Dropdown:
+                    names = sorted(
+                        p.name for p in Path("runs").glob("*")
+                        if (p / "scene.json").exists()
+                    )
+                    return gr.Dropdown(choices=names)
+
+                def _report_go(name):
+                    if not name:
+                        return None, "<p>先选一个 run。</p>"
+                    from .report import build_run_report
+
+                    path = build_run_report(name)
+                    html = path.read_text(encoding="utf-8")
+                    framed = (
+                        '<iframe style="width:100%;height:900px;border:1px '
+                        'solid #ccc;border-radius:6px" srcdoc="'
+                        + html.replace("&", "&amp;").replace('"', "&quot;")
+                        + '"></iframe>'
+                    )
+                    return str(path), framed
+
+                report_refresh.click(
+                    _report_runs,
+                    outputs=[report_run],
+                    concurrency_id=LOCAL_CONCURRENCY_ID,
+                    concurrency_limit=1,
+                )
+                report_go.click(
+                    _report_go,
+                    inputs=[report_run],
+                    outputs=[report_file, report_view],
+                    concurrency_id=LOCAL_CONCURRENCY_ID,
+                    concurrency_limit=1,
+                )
+
             with gr.Tab("History"):
                 gr.Markdown("## Past runs", elem_classes="section-heading")
                 refresh_button = gr.Button(
