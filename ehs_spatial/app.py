@@ -1128,26 +1128,31 @@ def build_app(
                     "测量+回投+补测证据），页面内直接看，也可下载转发。",
                     elem_classes="section-heading",
                 )
+                def _initial_report_runs() -> list[str]:
+                    candidates = [
+                        p for p in Path("runs").glob("*")
+                        if (p / "manifest.json").exists()
+                        or (p / "scene.json").exists()
+                    ]
+                    candidates.sort(
+                        key=lambda p: p.stat().st_mtime, reverse=True
+                    )
+                    return [p.name for p in candidates]
+
+                _seed_runs = _initial_report_runs()
                 with gr.Row():
                     report_run = gr.Dropdown(
-                        label="Run", choices=[], allow_custom_value=True
+                        label="Run",
+                        choices=_seed_runs,
+                        value=_seed_runs[0] if _seed_runs else None,
+                        allow_custom_value=True,
                     )
                     report_refresh = gr.Button("刷新 run 列表")
                     report_go = gr.Button("生成/查看报告", variant="primary")
                 report_file = gr.File(label="下载", interactive=False)
                 report_view = gr.HTML()
 
-                def _report_run_names() -> list[str]:
-                    # newest first; any run with a manifest can render a
-                    # (possibly partial) report — partial evidence is still
-                    # evidence
-                    candidates = [
-                        p for p in Path("runs").glob("*")
-                        if (p / "manifest.json").exists()
-                        or (p / "scene.json").exists()
-                    ]
-                    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-                    return [p.name for p in candidates]
+                _report_run_names = _initial_report_runs
 
                 def _report_runs() -> gr.Dropdown:
                     names = _report_run_names()
@@ -1184,12 +1189,6 @@ def build_app(
                     _report_go,
                     inputs=[report_run],
                     outputs=[report_file, report_view],
-                    concurrency_id=REPORT_CONCURRENCY_ID,
-                    concurrency_limit=1,
-                )
-                demo.load(
-                    _report_runs,
-                    outputs=[report_run],
                     concurrency_id=REPORT_CONCURRENCY_ID,
                     concurrency_limit=1,
                 )
