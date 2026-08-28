@@ -307,6 +307,40 @@ def build_run_report(run_id: str, *, runs_root: str | Path = "runs") -> Path:
         )
         parts.append(_section("输入照片", f'<div class="row">{figs}</div>'))
 
+    assessment_path = run / "assessment.json"
+    if assessment_path.exists():
+        try:
+            assessment = json.loads(assessment_path.read_text())
+        except ValueError:
+            assessment = {}
+        status = str(assessment.get("status", "")).split(".")[-1]
+        colour, zh = STATUS_META.get(status, ("#8f8f8f", status or "?"))
+        distance = assessment.get("approximate_distance_m")
+        budget = assessment.get("distance_error_budget_m")
+        line = ""
+        if distance is not None:
+            line = f"边界间距约 {distance:.2f} m"
+            if budget is not None:
+                line += f" ± {budget:.2f} m"
+        parts.append(
+            _section(
+                "总判定",
+                f'<p><span class="pill" style="background:{colour};'
+                f'font-size:15px">{zh}</span> {line}</p>',
+            )
+        )
+
+    evidence_dir = run / "evidence"
+    if evidence_dir.exists():
+        figs = "".join(
+            f'<figure><img src="{_jpeg_uri(p, 700, 70)}"></figure>'
+            for p in sorted(evidence_dir.glob("*_overlay.png"))[:4]
+        )
+        if figs:
+            parts.append(
+                _section("检出证据叠加", f'<div class="row">{figs}</div>')
+            )
+
     policies_path = run / "policies.json"
     if policies_path.exists():
         rows = []

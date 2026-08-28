@@ -1135,11 +1135,16 @@ def build_app(
                 report_view = gr.HTML()
 
                 def _report_runs() -> gr.Dropdown:
-                    names = sorted(
-                        p.name for p in Path("runs").glob("*")
-                        if (p / "scene.json").exists()
-                    )
-                    return gr.Dropdown(choices=names)
+                    # newest first; any run with a manifest can render a
+                    # (possibly partial) report — partial evidence is still
+                    # evidence
+                    candidates = [
+                        p for p in Path("runs").glob("*")
+                        if (p / "manifest.json").exists()
+                        or (p / "scene.json").exists()
+                    ]
+                    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                    return gr.Dropdown(choices=[p.name for p in candidates])
 
                 def _report_go(name):
                     if not name:
