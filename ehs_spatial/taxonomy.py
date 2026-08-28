@@ -31,6 +31,7 @@ CATEGORIES = {
     "C": ("防护罩/围护 GUARDS", "#4ad07a"),
     "D": ("阻挡与引导 IMPEDING", "#e8b93c"),
     "E": ("信息标识 INFORMATION", "#c9a0ff"),
+    "F": ("物料/载具 PAYLOAD", "#ff8fa3"),
 }
 
 
@@ -56,6 +57,10 @@ TAXONOMY: tuple[DeviceType, ...] = (
     DeviceType("e2", "E", "作业指导/警示牌", "work instruction placard or warning sign on a guard panel", "warning sign", "ISO 3864 / ISO 7010", "multi"),
     DeviceType("e3", "E", "地面警示胶带", "yellow/black hazard tape line on the floor", "floor marking", "ISO 3864", "multi"),
     DeviceType("e4", "E", "信号灯", "signal tower light or dome indicator light", "safety light", "ISO 12100", "multi"),
+    # F — the movable payload that clearance policies measure against
+    DeviceType("f1", "F", "物料容器", "large metal shipping container / pallet bin holding parts (often white with racks and branding), the main payload in the cell", "material cart", "", "multi"),
+    DeviceType("f2", "F", "运载小车", "wheeled docking cart, AGV carrier or tug frame under/with the container (may have a red tow bar)", "material cart", "", "multi"),
+    DeviceType("f3", "F", "导向挡板", "angled yellow/black striped guide or deflector plates funneling the carrier into the dock", "sloped surface", "ISO 12100", "multi"),
 )
 
 

@@ -1156,8 +1156,12 @@ def _refine_mask(run: Path, slug: str, height: int, width: int) -> np.ndarray | 
     if not rles:
         return None
     scores = response.get("scores") or [1.0] * len(rles)
+    # full-resolution dims come from the run's own input image — a
+    # hardcoded landscape assumption garbled every portrait capture
+    with PILImage.open(next((run / "input").glob("image_*"))) as full:
+        full_width, full_height = full.size
     mask = decode_coco_rle(
-        rles[int(np.argmax(scores))], height=3024, width=4032
+        rles[int(np.argmax(scores))], height=full_height, width=full_width
     ).astype(np.uint8)
     return (
         np.asarray(PILImage.fromarray(mask * 255).resize((width, height)))
@@ -1195,8 +1199,6 @@ def _ingest_refinements(
         added = False
         for det in json.loads(det_path.read_text()).get("detections", []):
             if "rle" not in det:
-                continue
-            if not any(k in det.get("label", "") for k in CONTACT_FAMILY):
                 continue
             slug = (
                 det["label"].replace(" ", "_")
@@ -1253,7 +1255,7 @@ def _ingest_refinements(
     )
     existing_fence_masks = []
     for entry in entries:
-        if "fence" not in entry["label"]:
+        if entry.get("refine_slug"):
             continue
         slug = re.sub(r"[^a-z0-9]+", "_", entry["label"]).strip("_")
         cache = run / "inventory" / "sam" / f"{frame.frame_id}__{slug}.json"
@@ -1270,8 +1272,6 @@ def _ingest_refinements(
                 ).astype(bool)
         existing_fence_masks.append(mask)
     for item in json.loads(log_path.read_text()):
-        if not any(k in item["label"] for k in CONTACT_FAMILY):
-            continue
         slug = (
             item["label"].replace(" ", "_")
             + "_"
@@ -1289,9 +1289,12 @@ def _ingest_refinements(
                 break
         if duplicate:
             continue
-        if moge_maps is not None:
+        is_contact = any(k in item["label"] for k in CONTACT_FAMILY)
+        split = None
+        if moge_maps is not None and is_contact:
             split = _normal_split(mask, *moge_maps)
-            if split is not None:
+        if split is not None:
+            if True:
                 mask = split
                 # the raw box-prompt mask bleeds over whatever stands in
                 # front of / behind the glass; persist the cleaned framed
@@ -1445,6 +1448,72 @@ def _enforce_row_order(entries: list[dict], theta: float | None) -> None:
             if snapped is not None:
                 e["rect_snapped"] = snapped
             e["row_clipped"] = True
+
+
+POLICY_SUBJECT_LABELS = (
+    "material cart", "pallet", "crate", "portable work platform",
+    "step ladder",
+)
+
+
+def _apply_payload_entities(run: Path, entries: list[dict]) -> None:
+    """Ingested payload detections (the container a clearance rule
+    measures) become scene entities so policies evaluate against them —
+    detection closes the loop into the verdict, idempotent per slug."""
+    scene_path = run / "scene.json"
+    if not scene_path.exists():
+        return
+    payload = [
+        e for e in entries
+        if e.get("refine_slug")
+        and any(k in e["label"] for k in POLICY_SUBJECT_LABELS)
+        and e.get("footprint")
+    ]
+    if not payload:
+        return
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from ehs_spatial.contracts import Entity3D, PolicySpec, SceneMap
+    from ehs_spatial.policy import evaluate_policies
+
+    scene = SceneMap.model_validate(json.loads(scene_path.read_text()))
+    changed = False
+    for e in payload:
+        observation_id = f"refine:{e['refine_slug']}"
+        if any(observation_id in ent.observation_ids for ent in scene.entities):
+            continue
+        index = sum(
+            1 for ent in scene.entities if ent.entity_id.startswith("refine-")
+        ) + 1
+        scene.entities.append(
+            Entity3D(
+                entity_id=f"refine-{index:02d}",
+                label=e["label"],
+                observation_ids=[observation_id],
+                centroid_xyz=(
+                    float(e["centroid_xy"][0]),
+                    float(e["centroid_xy"][1]),
+                    max(0.0, float(e["height_m"]) / 2),
+                ),
+                footprint_xy=[(float(x), float(y)) for x, y in e["footprint"]],
+                height_m=max(0.01, float(e["height_m"])),
+                evidence_frame_ids=[e.get("frame", "frame_0001")],
+            )
+        )
+        changed = True
+    if not changed:
+        return
+    scene_path.write_text(scene.model_dump_json(indent=2) + "\n")
+    policies_path = run / "policies.json"
+    if policies_path.exists():
+        envelope = json.loads(policies_path.read_text())
+        specs = [PolicySpec.model_validate(x) for x in envelope.get("specs", [])]
+        results = evaluate_policies(specs, scene, capture_frame_count=1)
+        envelope["results"] = [r.model_dump(mode="json") for r in results]
+        policies_path.write_text(json.dumps(envelope, indent=2) + "\n")
+        print("payload entities applied; policies re-evaluated:")
+        for r in results:
+            print("  ", r.policy_id, getattr(r.status, "value", r.status))
 
 
 def _hull_fill(mask: np.ndarray) -> np.ndarray:
@@ -2200,6 +2269,7 @@ def main(argv: list[str] | None = None) -> int:
 
     theta = _align_guard_lines(entries, theta, walls, run, frames[0], transform)
     _enforce_row_order(entries, theta)
+    _apply_payload_entities(run, entries)
 
     out_dir = run / "inventory"
     out_dir.mkdir(parents=True, exist_ok=True)
