@@ -156,27 +156,46 @@ class EHSAssessmentPipeline:
                 "point cloud was not saved at the run artifact path",
             )
 
+        # Segmentation dominates wall-clock: frames x labels independent
+        # provider calls that used to run one after another (30+ serial
+        # round-trips on a 3-view capture). Each (frame, label) unit keeps
+        # its first-hit synonym fallback sequential — that IS the ensemble
+        # semantics — but units run concurrently, bounded so fal's burst
+        # billing gate is not tripped (its lock flaps under bursts; the
+        # adapter's transient retry is the backstop, not the plan).
+        import os
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _segment_unit(frame, label):
+            for prompt in LABEL_PROMPTS[label]:
+                label_observations = self.sam3.segment(
+                    frame.canonical_image_path,
+                    prompt=prompt,
+                    label=label,
+                    frame_id=frame.frame_id,
+                    output_dir=paths.geometry_dir / "masks" / frame.frame_id,
+                )
+                if label_observations:
+                    return label_observations
+            return []
+
+        units = [
+            (frame, label)
+            for frame in frames
+            for label in PROMPT_VOCABULARY
+            # The floor is fitted geometrically from the full point cloud;
+            # segmenting it would spend provider calls on a class SAM does
+            # not need to recognise.
+            if label != FLOOR_LABEL
+        ]
+        workers = max(1, int(os.environ.get("EHS_SAM_CONCURRENCY", "4")))
         observations = []
-        for frame in frames:
-            for label in PROMPT_VOCABULARY:
-                # The floor is fitted geometrically from the full point cloud;
-                # segmenting it would spend provider calls on a class SAM does
-                # not need to recognise.
-                if label == FLOOR_LABEL:
-                    continue
-                # First-hit synonym fallback: extra provider calls happen only
-                # when the canonical phrase returns nothing.
-                for prompt in LABEL_PROMPTS[label]:
-                    label_observations = self.sam3.segment(
-                        frame.canonical_image_path,
-                        prompt=prompt,
-                        label=label,
-                        frame_id=frame.frame_id,
-                        output_dir=paths.geometry_dir / "masks" / frame.frame_id,
-                    )
-                    if label_observations:
-                        observations.extend(label_observations)
-                        break
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            # map() preserves unit order, so artifacts stay deterministic
+            for unit_observations in pool.map(
+                lambda unit: _segment_unit(*unit), units
+            ):
+                observations.extend(unit_observations)
         self.store.save_json(paths.observations_json, observations)
         # Reviewer evidence is fail-soft like the plan-view renders: a broken
         # overlay must never fail an otherwise sound assessment.

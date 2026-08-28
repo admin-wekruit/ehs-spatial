@@ -155,18 +155,25 @@ class MoGeAnchorAdapter:
         """One scalar for the whole capture: median of per-frame ratios.
         Returns None on any failure — callers fall back, never crash."""
         cache_dir = Path(geometry_dir) / "moge"
-        ratios: list[float] = []
-        for frame in frames:
+
+        def _frame_ratio(frame: GeometryFrame) -> float | None:
             native = _mapanything_median_range(frame)
             if native is None:
-                continue
+                return None
             moge = self._moge_median_range(
                 frame.canonical_image_path,
                 cache_dir / f"{frame.frame_id}.json",
             )
             if moge is None:
-                continue
-            ratios.append(moge / native)
+                return None
+            return moge / native
+
+        # per-frame inferences are independent remote calls; run them
+        # concurrently (a 3-view capture spent ~1 serial minute here)
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=min(4, len(frames) or 1)) as pool:
+            ratios = [r for r in pool.map(_frame_ratio, frames) if r is not None]
         if not ratios:
             return None
         values = np.asarray(ratios)
