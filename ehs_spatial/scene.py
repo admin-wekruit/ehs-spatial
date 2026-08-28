@@ -42,6 +42,24 @@ def build_scene_and_assess(
         if len(frames) < 4
         else []
     )
+    # gravity sanity: in an upright photo the fitted floor normal points
+    # roughly along the camera's down axis (+y). A sideways normal means
+    # the capture is rotated (e.g. an unapplied EXIF orientation) and every
+    # measurement downstream would be nonsense — say so loudly.
+    if geometry.transform is not None:
+        import numpy as _np
+
+        a, b, c, _ = geometry.transform.plane
+        normal = _np.array([a, b, c], float)
+        normal /= max(float(_np.linalg.norm(normal)), 1e-9)
+        if abs(normal[1]) < 0.7:
+            capture_warnings.append(
+                "capture orientation suspect: fitted floor normal is "
+                f"{_np.degrees(_np.arccos(abs(normal[1]))):.0f}° off the "
+                "camera's vertical — the photo may be rotated (check EXIF "
+                "orientation); measurements are unreliable until re-captured "
+                "upright"
+            )
     if geometry.transform is None:
         scene = SceneMap(
             run_id=run_id,

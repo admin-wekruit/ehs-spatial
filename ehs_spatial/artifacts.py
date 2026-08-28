@@ -157,8 +157,28 @@ class ArtifactStore:
             source = Path(source_value)
             destination = paths.input_dir / f"image_{index:02d}{source.suffix.lower()}"
             copy2(source, destination)
+            self._normalize_orientation(destination)
             copied.append(str(destination))
         return capture.model_copy(update={"image_paths": copied})
+
+    @staticmethod
+    def _normalize_orientation(path: Path) -> None:
+        """Bake the EXIF orientation into the pixels at ingest. A portrait
+        phone photo stores landscape pixels plus a rotation tag; every
+        downstream consumer (geometry provider, SAM, renders) reads pixels
+        only, so an unapplied tag rotates the entire reconstruction 90°.
+        One deterministic fix at the single entry point."""
+        try:
+            from PIL import Image, ImageOps
+
+            with Image.open(path) as image:
+                if image.getexif().get(274, 1) == 1:
+                    return
+                upright = ImageOps.exif_transpose(image)
+                upright.save(path, quality=95)
+        except Exception:
+            # never block an ingest on a malformed EXIF block
+            return
 
     def save_json(
         self, path: str | Path, model: BaseModel | list[BaseModel]
