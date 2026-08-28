@@ -1372,6 +1372,13 @@ def _ingest_refinements(
                     rles[member], height=height, width=width
                 ).astype(bool)
         existing_fence_masks.append(mask)
+    # decode every refinement mask first, then carve sibling overlaps:
+    # when the detector says two objects are distinct, their pixels must
+    # be too — a box prompt around a container drags in the deflector
+    # wing that intrudes into its box, while the wing has its own
+    # detection. The smaller mask owns the intersection; the carved mask
+    # is written back so display, index and measurement all agree.
+    decoded_items: list[tuple[dict, str, np.ndarray]] = []
     for item in json.loads(log_path.read_text()):
         slug = (
             item["label"].replace(" ", "_")
@@ -1380,6 +1387,47 @@ def _ingest_refinements(
         )
         mask = _refine_mask(run, slug, height, width)
         if mask is None or mask.sum() < MIN_MASK_PIXELS:
+            continue
+        decoded_items.append((item, slug, mask))
+    decoded_items.sort(key=lambda t: int(t[2].sum()))
+    for i, (item_i, slug_i, mask_i) in enumerate(decoded_items):
+        small_area = int(mask_i.sum())
+        if not small_area:
+            continue
+        for j in range(i + 1, len(decoded_items)):
+            item_j, slug_j, mask_j = decoded_items[j]
+            inter = int((mask_i & mask_j).sum())
+            if inter > 0.6 * small_area:
+                mask_j &= ~mask_i
+                cache_j = run / "refinements" / f"{slug_j}.json"
+                try:
+                    response = json.loads(cache_j.read_text())
+                    rles = response.get("rle") or []
+                    if isinstance(rles, str):
+                        rles = [rles]
+                    scores = response.get("scores") or [1.0] * len(rles)
+                    best = int(np.argmax(scores))
+                    from PIL import Image as PILImage
+
+                    with PILImage.open(
+                        next((run / "input").glob("image_*"))
+                    ) as full:
+                        fw, fh = full.size
+                    upscaled = (
+                        np.asarray(
+                            PILImage.fromarray(
+                                mask_j.astype(np.uint8) * 255
+                            ).resize((fw, fh))
+                        )
+                        > 127
+                    )
+                    rles[best] = encode_coco_rle(upscaled)
+                    response["rle"] = rles
+                    cache_j.write_text(json.dumps(response) + "\n")
+                except Exception:
+                    pass
+    for item, slug, mask in decoded_items:
+        if mask.sum() < MIN_MASK_PIXELS:
             continue
         duplicate = False
         for seen in existing_fence_masks:
