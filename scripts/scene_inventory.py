@@ -1169,6 +1169,107 @@ def _refine_mask(run: Path, slug: str, height: int, width: int) -> np.ndarray | 
     )
 
 
+def _reconcile_enumeration(
+    run: Path, frame: GeometryFrame, entries: list[dict],
+    phrases: list[str], *, live: bool,
+) -> list[dict]:
+    """The guarantee the enumeration owes the user: anything the VLM says
+    exists either ends up with a measured instance or is EXPLICITLY
+    recorded as unresolved — never silently dropped. Text-prompt SAM has
+    a long tail of zero-hits on domain-specific appearances (a branded
+    parts container scored six straight zeros); the fallback localizes by
+    VLM box and segments by box prompt, which bypasses the text prior."""
+    covered = {e["label"] for e in entries}
+    missing = [ph for ph in phrases if ph not in covered]
+    unresolved: list[dict] = []
+    if missing and live:
+        import sys as _sys
+        _sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from ehs_spatial.agent import _gemini_locator
+        from ehs_spatial.providers.gemini import GeminiAdapter
+        from PIL import Image as PILImage
+
+        adapter = GeminiAdapter()
+        with PILImage.open(next((run / "input").glob("image_*"))) as im:
+            width, height = im.size
+        log_path = run / "refinements.json"
+        log = json.loads(log_path.read_text()) if log_path.exists() else []
+        known = {
+            item["label"].replace(" ", "_")
+            + "_" + "_".join(str(v) for v in item["box"])
+            for item in log
+        }
+        added = False
+        for phrase in missing:
+            try:
+                located = _gemini_locator(
+                    str(next((run / "input").glob("image_*"))), phrase, adapter
+                )
+            except Exception as error:
+                unresolved.append({"phrase": phrase, "reason": str(error)[:100]})
+                continue
+            if not located.found or max(located.box_2d) > 1000:
+                unresolved.append(
+                    {"phrase": phrase, "reason": located.rationale[:100]}
+                )
+                continue
+            y1, x1, y2, x2 = located.box_2d
+            if not (y1 < y2 and x1 < x2):
+                unresolved.append({"phrase": phrase, "reason": "degenerate box"})
+                continue
+            box = [
+                max(0, int(x1 / 1000 * width)),
+                max(0, int(y1 / 1000 * height)),
+                min(width, int(x2 / 1000 * width)),
+                min(height, int(y2 / 1000 * height)),
+            ]
+            slug = phrase.replace(" ", "_") + "_" + "_".join(str(v) for v in box)
+            if slug in known:
+                continue
+            destination = run / "refinements" / f"{slug}.json"
+            destination.parent.mkdir(exist_ok=True)
+            if not destination.exists():
+                try:
+                    import fal_client
+                    import base64 as _b64
+
+                    response = fal_client.subscribe(
+                        "fal-ai/sam-3-1/image-rle",
+                        arguments={
+                            "image_url": "data:image/png;base64,"
+                            + _b64.b64encode(
+                                next((run / "input").glob("image_*")).read_bytes()
+                            ).decode(),
+                            "box_prompts": [
+                                {
+                                    "x_min": box[0], "y_min": box[1],
+                                    "x_max": box[2], "y_max": box[3],
+                                }
+                            ],
+                            "return_multiple_masks": True,
+                            "include_scores": True,
+                            "max_masks": 3,
+                        },
+                    )
+                except Exception as error:
+                    unresolved.append(
+                        {"phrase": phrase, "reason": str(error)[:100]}
+                    )
+                    continue
+                destination.write_text(json.dumps(response) + "\n")
+            log.append(
+                {
+                    "label": phrase, "box": box,
+                    "source": "enumeration-reconcile",
+                }
+            )
+            known.add(slug)
+            added = True
+        if added:
+            log_path.write_text(json.dumps(log, indent=2) + "\n")
+    return unresolved
+
+
 def _ingest_refinements(
     run: Path,
     frame: GeometryFrame,
@@ -2131,7 +2232,27 @@ def main(argv: list[str] | None = None) -> int:
         response["rle"] = rles
         cache.write_text(json.dumps(response) + "\n")
 
+    unresolved = _reconcile_enumeration(
+        run, frames[0], entries, phrases, live=args.live
+    )
     _ingest_refinements(run, frames[0], transform, moge_maps, entries)
+    # the guarantee, settled AFTER measurement: every enumerated phrase
+    # either has a measured instance or an explicit unresolved record
+    covered_after = {e["label"] for e in entries}
+    noted = {u["phrase"] for u in unresolved}
+    for phrase in phrases:
+        if phrase not in covered_after and phrase not in noted:
+            unresolved.append(
+                {
+                    "phrase": phrase,
+                    "reason": "localized but failed measurement evidence "
+                    "gates (too few valid 3D points / degenerate footprint)",
+                }
+            )
+    (run / "inventory").mkdir(exist_ok=True)
+    (run / "inventory" / "unresolved.json").write_text(
+        json.dumps(unresolved, ensure_ascii=False, indent=2) + "\n"
+    )
 
     # Every reliable instance goes on the sheet (the interactive report
     # plan draws instances; the static CAD sheet must match it 1:1).

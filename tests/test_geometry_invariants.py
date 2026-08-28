@@ -194,3 +194,30 @@ def test_real_clean_01_gate_recedes_and_l_is_orthogonal():
     assert min(angle_gap, 180 - angle_gap) > 84.0, (
         f"L-shaped guard arms must be orthogonal, gap {angle_gap:.1f}°"
     )
+
+
+@runs_present
+@pytest.mark.parametrize("run", RUNS, ids=lambda run: run.name)
+def test_enumeration_never_silently_drops(run):
+    """The vocabulary guarantee: every phrase the VLM enumerated either
+    has a measured inventory instance or an explicit unresolved record —
+    a branded parts container once vanished between enumeration and
+    segmentation with no trace."""
+    phrases_path = run / "inventory" / "phrases.json"
+    if not phrases_path.exists():
+        pytest.skip("no enumeration for this run")
+    phrases = json.loads(phrases_path.read_text())
+    labels = {o["label"] for o in _inventory(run)["objects"]}
+    unresolved_path = run / "inventory" / "unresolved.json"
+    noted = (
+        {u["phrase"] for u in json.loads(unresolved_path.read_text())}
+        if unresolved_path.exists()
+        else set()
+    )
+    silently_dropped = [
+        ph for ph in phrases if ph not in labels and ph not in noted
+    ]
+    assert not silently_dropped, (
+        f"{run.name}: enumerated but neither measured nor recorded "
+        f"unresolved: {silently_dropped}"
+    )
