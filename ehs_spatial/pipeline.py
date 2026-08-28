@@ -135,6 +135,13 @@ class EHSAssessmentPipeline:
 
     def run_assessment(self, capture: CaptureRun) -> Assessment:
         prepared = self.store.prepare_run(capture)
+        # three-layer orientation defense: EXIF was baked at ingest
+        # (deterministic); this VLM pass recovers rotation on tag-stripped
+        # images (semantic — any image, any source); the floor-normal
+        # gravity check in scene build is the physical tripwire behind both
+        from .orientation import ensure_upright
+
+        ensure_upright(prepared.image_paths, self.gemini)
         paths = self.store.paths(prepared.run_id)
         self._write_manifest(prepared, paths)
         frames, point_cloud_path = self.map_anything.run(
