@@ -1890,7 +1890,21 @@ def main(argv: list[str] | None = None) -> int:
         Observation2D.model_validate(item)
         for item in json.loads((run / "observations.json").read_text())
     ]
-    transform = _build_geometry(frames, observations, args.camera_height).transform
+    scale_override = None
+    scene_path = run / "scene.json"
+    if scene_path.exists():
+        try:
+            scale_override = json.loads(scene_path.read_text()).get(
+                "scale_factor"
+            )
+        except ValueError:
+            scale_override = None
+    transform = _build_geometry(
+        frames,
+        observations,
+        args.camera_height,
+        scale_factor_override=scale_override,
+    ).transform
     if transform is None:
         print("run has no floor transform", file=sys.stderr)
         return 1

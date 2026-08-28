@@ -1128,11 +1128,19 @@ def build_app(
                     "测量+回投+补测证据），页面内直接看，也可下载转发。",
                     elem_classes="section-heading",
                 )
+                _EXCLUDED_RUN_PREFIXES = (
+                    "gen-", "real-anno-", "demo-", "poc-", "video-", "phase",
+                )
+
                 def _initial_report_runs() -> list[str]:
+                    # operator submissions + the real-photo test set only
                     candidates = [
                         p for p in Path("runs").glob("*")
-                        if (p / "manifest.json").exists()
-                        or (p / "scene.json").exists()
+                        if (
+                            (p / "manifest.json").exists()
+                            or (p / "scene.json").exists()
+                        )
+                        and not p.name.startswith(_EXCLUDED_RUN_PREFIXES)
                     ]
                     candidates.sort(
                         key=lambda p: p.stat().st_mtime, reverse=True
@@ -1167,9 +1175,19 @@ def build_app(
                         if not names:
                             return None, "<p>还没有任何 run。</p>"
                         name = names[0]
-                    from .report import build_run_report
+                    # full interactive report (photo pick / plan sync /
+                    # distance matrix) whenever the run's inventory layer
+                    # exists; the static summary is only the fallback
+                    if (Path("runs") / name / "inventory" / "inventory.json").exists():
+                        from .interactive_report import (
+                            build_interactive_run_report,
+                        )
 
-                    path = build_run_report(name)
+                        path = build_interactive_run_report(name)
+                    else:
+                        from .report import build_run_report
+
+                        path = build_run_report(name)
                     html = path.read_text(encoding="utf-8")
                     framed = (
                         '<iframe style="width:100%;height:900px;border:1px '
