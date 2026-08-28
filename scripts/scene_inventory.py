@@ -1369,6 +1369,84 @@ def _ingest_refinements(
         )
 
 
+def _enforce_row_order(entries: list[dict], theta: float | None) -> None:
+    """A guard line is a BOUNDARY: an entity whose centroid sits behind it
+    cannot have footprint spilling in front of it — the spill is pixels
+    seen THROUGH the guarding plus overhang projection, not floor
+    occupancy. Clip such footprints at the line (the reviewer's rule:
+    first the fence, then the machine's territory)."""
+    from shapely.geometry import Polygon as ShapelyPolygon
+
+    chains: dict[int, list[dict]] = {}
+    for e in entries:
+        if e.get("guard_chain") is not None and e.get("rect_snapped"):
+            chains.setdefault(e["guard_chain"], []).append(e)
+    lines = []
+    for members in chains.values():
+        if len(members) < 2:
+            continue
+        corners = np.array(
+            [c for m in members for c in m["rect_snapped"]], float
+        )
+        centre = corners.mean(axis=0)
+        _, _, vt = np.linalg.svd(corners - centre)
+        direction = vt[0]
+        normal = np.array([-direction[1], direction[0]])
+        # orient the normal toward the camera (origin)
+        if (np.zeros(2) - centre) @ normal < 0:
+            normal = -normal
+        along = (corners - centre) @ direction
+        lines.append((centre, direction, normal, float(along.min()), float(along.max())))
+    if not lines:
+        return
+    for e in entries:
+        if any(k in e["label"] for k in CONTACT_FAMILY):
+            continue
+        if _is_flat_zone(e["label"]) or not e.get("footprint"):
+            continue
+        c = np.asarray(e["centroid_xy"], float)
+        for centre, direction, normal, lo, hi in lines:
+            if (c - centre) @ normal > -0.05:
+                continue  # centroid on the camera side: front-row, untouched
+            fp = np.asarray(e["footprint"], float)
+            along_fp = (fp - centre) @ direction
+            overlap = min(hi, float(along_fp.max())) - max(lo, float(along_fp.min()))
+            span = max(1e-6, float(along_fp.max() - along_fp.min()))
+            if overlap < 0.3 * span:
+                continue  # barely faces this line laterally
+            offsets = (fp - centre) @ normal
+            if float(offsets.max()) <= 0.02:
+                continue  # already fully behind
+            # clip: keep the half-plane behind the line (+2 cm tolerance)
+            far = 100.0
+            half = ShapelyPolygon(
+                [
+                    centre + lo * direction - far * direction + 0.02 * normal,
+                    centre + hi * direction + far * direction + 0.02 * normal,
+                    centre + hi * direction + far * direction - far * normal,
+                    centre + lo * direction - far * direction - far * normal,
+                ]
+            )
+            clipped = ShapelyPolygon(fp).intersection(half)
+            if clipped.is_empty or clipped.geom_type != "Polygon":
+                continue
+            if clipped.area < 0.05:
+                continue
+            e["footprint"] = [
+                (round(float(x), 3), round(float(y), 3))
+                for x, y in list(clipped.exterior.coords)[:-1]
+            ]
+            e["footprint_area_m2"] = round(float(clipped.area), 2)
+            e["centroid_xy"] = [
+                round(float(clipped.centroid.x), 2),
+                round(float(clipped.centroid.y), 2),
+            ]
+            snapped = _snap_rect(e["footprint"], theta, allow_free=True)
+            if snapped is not None:
+                e["rect_snapped"] = snapped
+            e["row_clipped"] = True
+
+
 def _hull_fill(mask: np.ndarray) -> np.ndarray:
     """Convex hull of the mask's significant connected components,
     rasterized. Stray specks (<1% of the mask) are dropped first so they
@@ -2107,6 +2185,7 @@ def main(argv: list[str] | None = None) -> int:
                 entry["rect_snapped"] = snapped
 
     theta = _align_guard_lines(entries, theta, walls, run, frames[0], transform)
+    _enforce_row_order(entries, theta)
 
     out_dir = run / "inventory"
     out_dir.mkdir(parents=True, exist_ok=True)
