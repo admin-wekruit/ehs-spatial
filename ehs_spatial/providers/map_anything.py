@@ -82,6 +82,22 @@ def parse_frame_json(
 
 
 def _default_runner(model_identifier: str, *, input: dict[str, object]) -> object:
+    from ..backends import http_json, service_backend
+
+    backend = service_backend("GEOMETRY_BACKEND", "replicate")
+    if backend == "http":
+        import os
+
+        # internal GPU serving: same payload, same response schema —
+        # see ehs_spatial.backends for the contract
+        return http_json(os.environ["GEOMETRY_HTTP_URL"], dict(input))
+    if backend == "modal":
+        import modal
+
+        MapAnything = modal.Cls.from_name(
+            "mapanything-inference", "MapAnything"
+        )
+        return MapAnything().run.remote(dict(input))
     import replicate
 
     # wait=False polls with short requests instead of holding one blocking read;

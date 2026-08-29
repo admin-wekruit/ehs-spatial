@@ -190,30 +190,45 @@ def decode_coco_rle(
 
 
 def sam_subscribe(endpoint: str, *, arguments: dict[str, object]) -> object:
-    """Backend-routed SAM call, fal request/response schema either way.
-    SAM3_BACKEND=modal serves prompts from our own warm L4 (no per-call
-    API pricing, no burst billing gate); default stays fal."""
-    import os
+    """Backend-routed SAM call, fal request/response schema on every
+    backend: fal (vendor API), modal (our warm L4), http (internal GPU
+    serving speaking the contract in ehs_spatial.backends)."""
+    from ..backends import http_json, service_backend
 
-    if os.environ.get("SAM3_BACKEND", "fal") != "modal":
+    backend = service_backend("SAM3_BACKEND", "fal")
+    if backend == "fal":
         import fal_client
 
         return fal_client.subscribe(endpoint, arguments=arguments)
     import base64 as _b64
-
-    import modal
+    import os
 
     data_url = str(arguments["image_url"])
-    image_bytes = _b64.b64decode(data_url.split(",", 1)[1])
+    image_b64 = data_url.split(",", 1)[1]
     if arguments.get("box_prompts"):
-        box = arguments["box_prompts"][0]
-        prompt = {
-            "box": [box["x_min"], box["y_min"], box["x_max"], box["y_max"]]
-        }
+        box_prompt = arguments["box_prompts"][0]
+        box = [
+            box_prompt["x_min"], box_prompt["y_min"],
+            box_prompt["x_max"], box_prompt["y_max"],
+        ]
+        prompt = {"box": box}
     else:
         prompt = {"text": str(arguments.get("prompt", ""))}
-    Sam3 = modal.Cls.from_name("sam3-inference", "Sam3")
-    return Sam3().segment.remote(image_bytes, [prompt])[0]
+    if backend == "http":
+        body = (
+            {"box": prompt["box"]}
+            if "box" in prompt
+            else {"prompt": prompt["text"]}
+        )
+        return http_json(
+            os.environ["SAM3_HTTP_URL"], {"image_b64": image_b64, **body}
+        )
+    if backend == "modal":
+        import modal
+
+        Sam3 = modal.Cls.from_name("sam3-inference", "Sam3")
+        return Sam3().segment.remote(_b64.b64decode(image_b64), [prompt])[0]
+    raise ValueError(f"unknown SAM3_BACKEND {backend!r}")
 
 
 def _default_subscriber(endpoint: str, *, arguments: dict[str, object]) -> object:

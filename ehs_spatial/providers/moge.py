@@ -64,12 +64,30 @@ def _modal_runner(model_identifier: str, *, input: dict[str, object]) -> object:
 
 
 def _default_runner(model_identifier: str, *, input: dict[str, object]) -> object:
-    """Backend switch: MoGe-3 on Modal by default; MOGE_BACKEND=replicate
-    reverts to the pinned MoGe-2 Replicate model."""
-    import os
+    from ..backends import http_json, service_backend
 
-    if os.environ.get("MOGE_BACKEND", "modal") == "replicate":
+    backend = service_backend("MOGE_BACKEND", "modal")
+    if backend == "replicate":
         return _replicate_runner(model_identifier, input=input)
+    if backend == "http":
+        import io
+        import os
+
+        payload = str(input.get("image", ""))
+        prefix, _, encoded = payload.partition(",")
+        response = http_json(
+            os.environ["MOGE_HTTP_URL"],
+            {"image_b64": encoded if _ else prefix},
+        )
+        return {
+            "pointcloud_ply": io.BytesIO(
+                base64.b64decode(response["ply_b64"])
+            ),
+            "intrinsics_json": io.BytesIO(
+                json.dumps({"intrinsics": response["intrinsics"]}).encode()
+            ),
+            "fov_x_deg": response.get("fov_x_deg"),
+        }
     return _modal_runner(model_identifier, input=input)
 
 
