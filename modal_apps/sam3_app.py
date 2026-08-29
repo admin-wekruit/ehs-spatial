@@ -59,7 +59,16 @@ def _encode_coco_rle(mask) -> str:
     )
 
 
-@app.cls(image=image, gpu="L4", volumes={"/cache": volume}, timeout=600)
+# facebook/sam3 is a gated repo: the HF account behind the `huggingface`
+# Modal secret must have accepted the license at
+# https://huggingface.co/facebook/sam3 or load() 401s.
+@app.cls(
+    image=image,
+    gpu="L4",
+    volumes={"/cache": volume},
+    secrets=[modal.Secret.from_name("huggingface")],
+    timeout=600,
+)
 class Sam3:
     @modal.enter()
     def load(self):

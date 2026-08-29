@@ -22,7 +22,7 @@
         "http.server",
         "8973",
         "--directory",
-        "/private/tmp/claude-501/-Users-adam-Desktop-Tesla-ehs-spatial/028f6911-3c12-41b3-af2d-087750481b10/scratchpad"
+        "/Users/adam/Desktop/Tesla/ehs-spatial"
       ],
       "port": 8973
     }

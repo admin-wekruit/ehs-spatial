@@ -232,12 +232,12 @@ def build_case(rid):
         vio=''.join(f'<div class="reason vio"><b>违规：测得 {v.get("measured")} m，阈值 {v.get("threshold")} m</b><div class="mono raw">{v.get("subject_id")} ↔ {v.get("object_id")}</div></div>' for v in (r.get('violations') or [])[:3])
         pol_rows+=f'<div class="policy"><span class="pill {pcls}">{pzh}</span> <span class="pname">{POLICY_ZH.get(r["policy_id"],r["policy_id"])}</span>{vio}{reasons}</div>'
     depth_chips=' '.join(f'<span class="iplegend" data-i="{i}" style="cursor:pointer;font-size:11.5px"><span style="display:inline-block;width:8px;height:8px;background:{PALETTE[i%len(PALETTE)]};border-radius:2px;margin-right:3px"></span>{i+1}</span>' for i in range(nobj))
-    figs=f'<div class="figs"><figure><img src="{uri(ov)}" loading="lazy"><figcaption><b>evidence overlay</b>（判定链 mask）</figcaption></figure>'
-    if dr.exists(): figs+=f'<figure><img src="{uri(dr)}" loading="lazy"><figcaption><b>深度渲染</b> · 点编号选中<br>{depth_chips}</figcaption></figure>'
-    if fp.exists(): figs+=f'<figure><img src="{uri(fp)}" loading="lazy"><figcaption><b>测量平面图（CAD 版，全实例）</b></figcaption></figure>'
+    figs=f'<div class="figs"><figure><img src="{uri(ov)}"><figcaption><b>evidence overlay</b>（判定链 mask）</figcaption></figure>'
+    if dr.exists(): figs+=f'<figure><img src="{uri(dr)}"><figcaption><b>深度渲染</b> · 点编号选中<br>{depth_chips}</figcaption></figure>'
+    if fp.exists(): figs+=f'<figure><img src="{uri(fp)}"><figcaption><b>测量平面图（CAD 版，全实例）</b></figcaption></figure>'
     figs+='</div>'
     vs=run/'viewer_small.html'
-    viewer=f'<h4>交互 3D（照片色 · 按实例）</h4><iframe class="v3d" srcdoc="{srcdoc(vs)}" style="width:100%;height:460px;border:1px solid var(--line);border-radius:4px;display:block;background:#0d1114" loading="lazy" title="{rid} 3D"></iframe>' if vs.exists() else ''
+    viewer=f'<h4>交互 3D（照片色 · 按实例）</h4><iframe class="v3d" srcdoc="{srcdoc(vs)}" style="width:100%;height:460px;border:1px solid var(--line);border-radius:4px;display:block;background:#0d1114" title="{rid} 3D"></iframe>' if vs.exists() else ''
     refine_html=''
     det_html=''
     det_path=run/'detection'/'detections.json'
@@ -265,7 +265,7 @@ def build_case(rid):
         missing=env.get('missing',[])
         miss_html=('<div style="margin:6px 0;font-size:12.5px;color:var(--fail)"><b>未见/需现场核实：</b>'+ '、'.join(m['zh'] for m in missing)+'</div>') if missing else '<div style="margin:6px 0;font-size:12.5px;color:var(--pass)"><b>清单全部检出</b>（缺失清单为空）</div>'
         det_html=(f'<h4>装置检测清单（taxonomy 检测层 · VLM 出框+裁剪自检 → SAM box-prompt）</h4>'
-                  f'<figure><img src="{ov_uri}" loading="lazy" style="max-width:100%"><figcaption>{n_found} 项检出 · 编号=下方图例</figcaption></figure>'
+                  f'<figure><img src="{ov_uri}" style="max-width:100%"><figcaption>{n_found} 项检出 · 编号=下方图例</figcaption></figure>'
                   f'{legend_html}{miss_html}')
     reproj_html=''
     rp=run/'inventory'/'reprojection.json'
@@ -281,7 +281,7 @@ def build_case(rid):
             return '—' if v is None else f'{round(v*100,1)}%'
         rows=' · '.join(f"#{s.get('instance')} {_dv(s)}" for s in rj['scores'])
         reproj_html=(f'<h4>回投验证（平面矩形基线投回照片 · 红点应压在结构接地线上 · 偏差=图高占比）</h4>'
-                     f'<figure><img src="data:image/jpeg;base64,{base64.b64encode(b2.getvalue()).decode()}" loading="lazy" style="max-width:100%"><figcaption>围栏族偏差：{rows}</figcaption></figure>')
+                     f'<figure><img src="data:image/jpeg;base64,{base64.b64encode(b2.getvalue()).decode()}" style="max-width:100%"><figcaption>围栏族偏差：{rows}</figcaption></figure>')
     rf=run/'refinements.json'
     if rf.exists():
         items=json.loads(rf.read_text()); refine_html='<h4>人工框选补测（--apply 回灌判定 · 工作台"补测"tab 可自助）</h4><div class="figs">'
@@ -291,7 +291,7 @@ def build_case(rid):
             if slug in seen: continue
             seen.add(slug)
             if 'height_m' not in it or not (run/'refinements'/(slug+'.png')).exists(): continue
-            refine_html+=f'<figure><img src="{uri(run/"refinements"/(slug+".png"))}" loading="lazy"><figcaption><b>{LBL.get(it["label"],it["label"])}</b> · SAM {it["sam_score"]} · 高 {it["height_m"]} m · {it["extent_m"]} m · 距相机 {it["camera_dist_m"]} m</figcaption></figure>'
+            refine_html+=f'<figure><img src="{uri(run/"refinements"/(slug+".png"))}"><figcaption><b>{LBL.get(it["label"],it["label"])}</b> · SAM {it["sam_score"]} · 高 {it["height_m"]} m · {it["extent_m"]} m · 距相机 {it["camera_dist_m"]} m</figcaption></figure>'
         refine_html+='</div>'
     return (f'''<details class="case"><summary><img src="{thumb(inp)}"><span class="cid mono">{rid}</span>
     <span class="pill {cls}">{zh}</span><span class="cmeta mono">scale {round(s.get("scale_factor",0),2)} · {len(s.get("entities",[]))} 实体</span></summary>
