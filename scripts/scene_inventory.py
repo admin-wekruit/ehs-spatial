@@ -1787,6 +1787,356 @@ def _fit_walls(points: np.ndarray) -> list[dict]:
     return walls
 
 
+CELL_SNAP_BAND = 0.45      # boundary structure counts as "on" a side, m
+CELL_MIN_SIDE = 1.5        # opposing sides of a real cell sit farther apart, m
+CELL_OUTSIDE_MARGIN = 2.0  # an aisle separates cells; closer overshoot is this cell's own outer structure, m
+_CELL_AXIS_TOL_DEG = 15.0
+# the hazard the cell rectangle encloses — anchors which side of the
+# boundary evidence is "inside"
+_CELL_MACHINE_KEYWORDS = ("robot", "machine", "gantry", "press", "arm")
+CELL_MAX_REACH = 7.0       # a boundary farther than this from the machine
+                           # belongs to another cell, m
+CELL_GAP_MAX = 2.5         # an aisle-sized jump between boundary clusters
+                           # means the far one is the neighbour cell, m
+# CONTACT_FAMILY matches "panel"; a control panel is equipment, not a
+# guard structure
+_CELL_BOUNDARY_EXCLUDE = ("control", "button", "sign")
+
+
+def _cell_frame(theta: float):
+    cos_t, sin_t = float(np.cos(theta)), float(np.sin(theta))
+
+    def to_uv(xy):
+        x, y = float(xy[0]), float(xy[1])
+        return (x * cos_t + y * sin_t, -x * sin_t + y * cos_t)
+
+    def to_xy(uv):
+        u, v = float(uv[0]), float(uv[1])
+        return (u * cos_t - v * sin_t, u * sin_t + v * cos_t)
+
+    return to_uv, to_xy
+
+
+def _boundary_evidence(
+    walls: list[dict], entries: list[dict], theta: float
+) -> list[dict]:
+    """Every wall plane and fence-family footprint reduced to an
+    axis-aligned line vote in the Manhattan frame: which axis it runs
+    along, its perpendicular offset, its along-axis extent, and a weight
+    (its length — long structures know the boundary better)."""
+    to_uv, _ = _cell_frame(theta)
+    votes = []
+
+    def _vote(p1, p2, source):
+        u1, v1 = to_uv(p1)
+        u2, v2 = to_uv(p2)
+        du, dv = u2 - u1, v2 - v1
+        length = float(np.hypot(du, dv))
+        if length < 0.8:
+            return
+        angle = np.degrees(np.arctan2(dv, du)) % 180.0
+        if min(angle, 180.0 - angle) < _CELL_AXIS_TOL_DEG:
+            # runs along u -> evidence for a v = const side
+            votes.append({
+                "family": "v", "offset": (v1 + v2) / 2.0,
+                "extent": (min(u1, u2), max(u1, u2)),
+                "weight": length, "source": source,
+            })
+        elif abs(angle - 90.0) < _CELL_AXIS_TOL_DEG:
+            votes.append({
+                "family": "u", "offset": (u1 + u2) / 2.0,
+                "extent": (min(v1, v2), max(v1, v2)),
+                "weight": length, "source": source,
+            })
+
+    for wall in walls:
+        _vote(wall["start"], wall["end"], "wall")
+    for entry in entries:
+        if not any(k in entry["label"] for k in CONTACT_FAMILY):
+            continue
+        if any(k in entry["label"] for k in _CELL_BOUNDARY_EXCLUDE):
+            continue
+        rect = entry.get("rect_snapped") or entry.get("footprint")
+        if not rect or len(rect) < 3:
+            continue
+        ring = [tuple(p) for p in rect]
+        best = max(
+            zip(ring, ring[1:] + ring[:1]),
+            key=lambda pair: float(np.hypot(
+                pair[1][0] - pair[0][0], pair[1][1] - pair[0][1]
+            )),
+        )
+        _vote(best[0], best[1], "fence")
+    return votes
+
+
+def _cluster_side_votes(votes: list[dict]) -> list[dict]:
+    """1D gap clustering of perpendicular offsets; each cluster is one
+    candidate cell side with pooled support and extent."""
+    if not votes:
+        return []
+    ordered = sorted(votes, key=lambda vote: vote["offset"])
+    clusters, current = [], [ordered[0]]
+    for vote in ordered[1:]:
+        if vote["offset"] - current[-1]["offset"] > 0.6:
+            clusters.append(current)
+            current = []
+        current.append(vote)
+    clusters.append(current)
+
+    # single-linkage chains: interior guards spaced along the whole cell
+    # can bridge the two real walls into one cluster — a physical cell
+    # side is thin, so recursively split any chain wider than 1.5 m at
+    # its largest internal gap
+    def _split_wide(members: list[dict]) -> list[list[dict]]:
+        if len(members) < 2 or (
+            members[-1]["offset"] - members[0]["offset"] <= 1.5
+        ):
+            return [members]
+        gaps = [
+            members[i + 1]["offset"] - members[i]["offset"]
+            for i in range(len(members) - 1)
+        ]
+        cut = int(np.argmax(gaps)) + 1
+        return _split_wide(members[:cut]) + _split_wide(members[cut:])
+
+    clusters = [part for chain in clusters for part in _split_wide(chain)]
+    sides = []
+    for members in clusters:
+        weights = np.array([m["weight"] for m in members])
+        offsets = np.array([m["offset"] for m in members])
+        sides.append({
+            "offset": float(np.average(offsets, weights=weights)),
+            "support_m": round(float(weights.sum()), 2),
+            "extent": (
+                min(m["extent"][0] for m in members),
+                max(m["extent"][1] for m in members),
+            ),
+            "sources": sorted({m["source"] for m in members}),
+        })
+    return sides
+
+
+def _pick_side_pair(
+    sides: list[dict], interior: float = 0.0, trusted: bool = False
+) -> tuple[dict | None, dict | None]:
+    """The cell rectangle ENCLOSES the hazard. Per direction (below /
+    above the interior reference) the boundary is the OUTERMOST cluster
+    that is still credible: support at least half the direction's
+    strongest (a lone far fence next to a 6 m wall line is the neighbour
+    cell), within physical reach of the machine (a structure 10 m out is
+    another cell no matter how straight), and not across an aisle-sized
+    gap from the nearer boundary evidence (a strong wall 4 m beyond our
+    fence line is the neighbour's wall). Inner rows become interior
+    dividers, never the far boundary."""
+    # A FALLBACK interior estimate that lands on or beyond the boundary
+    # evidence (camera standing at the front fence; clutter seen through
+    # panels dragging the median out) would empty one bucket — pull it
+    # just inside the evidence span. A machine-anchored interior is
+    # trusted as-is: the machine legitimately sits beyond a side that
+    # simply has no far evidence yet.
+    if not trusted and len(sides) >= 2:
+        lo = min(s["offset"] for s in sides)
+        hi = max(s["offset"] for s in sides)
+        if hi - lo > 0.6:
+            interior = min(max(interior, lo + 0.3), hi - 0.3)
+
+    def _outermost(candidates: list[dict], sign: float) -> dict | None:
+        candidates = [
+            s for s in candidates
+            if abs(s["offset"] - interior) <= CELL_MAX_REACH
+        ]
+        if not candidates:
+            return None
+        strongest = max(s["support_m"] for s in candidates)
+        credible = sorted(
+            (s for s in candidates if s["support_m"] >= 0.5 * strongest),
+            key=lambda s: sign * s["offset"],
+        )
+        pick = credible[0]
+        for candidate in credible[1:]:
+            if (
+                sign * candidate["offset"] - sign * pick["offset"]
+                > CELL_GAP_MAX
+            ):
+                break
+            pick = candidate
+        return pick
+
+    low = _outermost([s for s in sides if s["offset"] < interior], -1.0)
+    high = _outermost([s for s in sides if s["offset"] >= interior], 1.0)
+    if low and high and high["offset"] - low["offset"] < CELL_MIN_SIDE:
+        # sliver: both clusters hug the interior — trust the stronger one
+        if low["support_m"] >= high["support_m"]:
+            high = None
+        else:
+            low = None
+    return low, high
+
+
+def _fit_cell_rectangle(
+    walls: list[dict], entries: list[dict], theta: float | None
+) -> dict | None:
+    """The cell premise: walls and guard structures of one workcell form a
+    closed rectangle in the Manhattan frame. Fit its sides from pooled
+    boundary evidence; sides with no evidence stay open (None) rather
+    than invented."""
+    if theta is None:
+        return None
+    votes = _boundary_evidence(walls, entries, theta)
+    to_uv, _ = _cell_frame(theta)
+    # Interior reference: the hazard the cell encloses. Prefer the
+    # machine family; fall back to non-boundary content; last resort the
+    # camera origin (the operator stands at the cell).
+    machine = [
+        to_uv(e["centroid_xy"]) for e in entries
+        if e.get("centroid_xy")
+        and any(k in e["label"] for k in _CELL_MACHINE_KEYWORDS)
+        # "robot safety fence" / "machine guard" are boundary, not hazard
+        and not any(k in e["label"] for k in CONTACT_FAMILY)
+    ]
+    content = machine or [
+        to_uv(e["centroid_xy"]) for e in entries
+        if e.get("centroid_xy")
+        and not any(k in e["label"] for k in CONTACT_FAMILY)
+    ]
+    interior_u = float(np.median([c[0] for c in content])) if content else 0.0
+    interior_v = float(np.median([c[1] for c in content])) if content else 0.0
+    u_low, u_high = _pick_side_pair(
+        _cluster_side_votes([v for v in votes if v["family"] == "u"]),
+        interior_u,
+        trusted=bool(machine),
+    )
+    v_low, v_high = _pick_side_pair(
+        _cluster_side_votes([v for v in votes if v["family"] == "v"]),
+        interior_v,
+        trusted=bool(machine),
+    )
+    sides = {"u_min": u_low, "u_max": u_high, "v_min": v_low, "v_max": v_high}
+    # A cell side is a wall-scale structure. A short interior fence
+    # segment that happens to be the only vote in its direction must not
+    # become a boundary — gate on absolute support relative to the
+    # strongest side this scene produced.
+    strongest = max(
+        (s["support_m"] for s in sides.values() if s), default=0.0
+    )
+    floor_support = max(2.0, 0.15 * strongest)
+    sides = {
+        key: side if side and side["support_m"] >= floor_support else None
+        for key, side in sides.items()
+    }
+    u_low, u_high = sides["u_min"], sides["u_max"]
+    v_low, v_high = sides["v_min"], sides["v_max"]
+    if sum(1 for s in sides.values() if s) < 2:
+        return None
+    _, to_xy = _cell_frame(theta)
+    corners = None
+    if all(sides.values()):
+        u0, u1 = u_low["offset"], u_high["offset"]
+        v0, v1 = v_low["offset"], v_high["offset"]
+        corners = [
+            [round(c, 3) for c in to_xy(uv)]
+            for uv in ((u0, v0), (u1, v0), (u1, v1), (u0, v1))
+        ]
+    return {
+        "theta_deg": round(float(np.degrees(theta)), 1),
+        "sides": {
+            key: None if side is None else {
+                "offset": round(side["offset"], 3),
+                "support_m": side["support_m"],
+                "extent": [round(side["extent"][0], 3),
+                           round(side["extent"][1], 3)],
+                "sources": side["sources"],
+            }
+            for key, side in sides.items()
+        },
+        "corners": corners,
+        "size_m": None if corners is None else [
+            round(u_high["offset"] - u_low["offset"], 2),
+            round(v_high["offset"] - v_low["offset"], 2),
+        ],
+    }
+
+
+def _apply_cell_rectangle(
+    cell: dict, walls: list[dict], entries: list[dict], theta: float
+) -> None:
+    """Constrain, don't invent: walls near a fitted side are re-seated
+    exactly on it (kills the RANSAC fan); fence-family entries far outside
+    the rectangle are tagged outside_cell (another cell's structure, kept
+    but excluded from this cell's boundary). Entries are never moved —
+    guard chains carry stronger, reprojection-verified evidence."""
+    to_uv, to_xy = _cell_frame(theta)
+    axis_of = {"u_min": "u", "u_max": "u", "v_min": "v", "v_max": "v"}
+
+    def _nearest_side(family: str, offset: float):
+        best_key, best_d = None, None
+        for key, side in cell["sides"].items():
+            if side is None or axis_of[key] != family:
+                continue
+            d = abs(offset - side["offset"])
+            if best_d is None or d < best_d:
+                best_key, best_d = key, d
+        return best_key, best_d
+
+    for wall in walls:
+        (u1, v1), (u2, v2) = to_uv(wall["start"]), to_uv(wall["end"])
+        du, dv = u2 - u1, v2 - v1
+        angle = np.degrees(np.arctan2(dv, du)) % 180.0
+        if min(angle, 180.0 - angle) < _CELL_AXIS_TOL_DEG:
+            family, offset = "v", (v1 + v2) / 2.0
+        elif abs(angle - 90.0) < _CELL_AXIS_TOL_DEG:
+            family, offset = "u", (u1 + u2) / 2.0
+        else:
+            continue
+        key, distance = _nearest_side(family, offset)
+        if key is None or distance > CELL_SNAP_BAND:
+            continue
+        side_offset = cell["sides"][key]["offset"]
+        if family == "v":
+            start = to_xy((min(u1, u2), side_offset))
+            end = to_xy((max(u1, u2), side_offset))
+        else:
+            start = to_xy((side_offset, min(v1, v2)))
+            end = to_xy((side_offset, max(v1, v2)))
+        wall["start"] = [round(start[0], 3), round(start[1], 3)]
+        wall["end"] = [round(end[0], 3), round(end[1], 3)]
+        wall["length_m"] = round(
+            float(np.hypot(end[0] - start[0], end[1] - start[1])), 2
+        )
+        wall["cell_side"] = key
+
+    bounds = {
+        key: None if side is None else side["offset"]
+        for key, side in cell["sides"].items()
+    }
+    for entry in entries:
+        if not any(k in entry["label"] for k in CONTACT_FAMILY):
+            continue
+        if any(k in entry["label"] for k in _CELL_BOUNDARY_EXCLUDE):
+            continue
+        cx, cy = entry.get("centroid_xy") or (None, None)
+        if cx is None:
+            continue
+        u, v = to_uv((cx, cy))
+        overshoot = max(
+            bounds["u_min"] - u if bounds["u_min"] is not None else 0.0,
+            u - bounds["u_max"] if bounds["u_max"] is not None else 0.0,
+            bounds["v_min"] - v if bounds["v_min"] is not None else 0.0,
+            v - bounds["v_max"] if bounds["v_max"] is not None else 0.0,
+        )
+        if overshoot > CELL_OUTSIDE_MARGIN:
+            entry["outside_cell"] = True
+            continue
+        for family, offset in (("u", u), ("v", v)):
+            key, distance = _nearest_side(family, offset)
+            if key is not None and distance is not None and (
+                distance <= CELL_SNAP_BAND
+            ):
+                entry["cell_side"] = key
+                break
+
+
 def _write_dxf(path: Path, walls: list[dict], objects: list[dict]) -> None:
     """Minimal but valid DXF R12: walls on WALLS, footprints on OBJECTS,
     labels on TEXT. Opens in AutoCAD/LibreCAD/QCAD. Units are metres."""
@@ -1848,6 +2198,7 @@ def _render_plan(
     objects: list[dict],
     run_id: str,
     off_plan: list[dict] | None = None,
+    cell: dict | None = None,
 ) -> None:
     """A drawing, not a scatter plot: title block, coordinate grid, oriented
     object rectangles with height/tilt labels, camera-to-subject distance,
@@ -1890,6 +2241,60 @@ def _render_plan(
         a, b = px((min_x, gy)), px((max_x, gy))
         draw.line([a, b], fill="#e8e8e8")
         draw.text((left - 26, a[1] - 6), f"{gy:.0f}", fill="#9a9a9a")
+
+    # fitted cell rectangle: dashed, behind everything — the premise the
+    # boundary structures were constrained against
+    if cell is not None:
+        theta_r = np.radians(cell["theta_deg"])
+        cos_t, sin_t = float(np.cos(theta_r)), float(np.sin(theta_r))
+
+        def _uv_xy(u, v):
+            return (u * cos_t - v * sin_t, u * sin_t + v * cos_t)
+
+        def _dashed(p1, p2):
+            clipped = _clip_segment(p1, p2, min_x, min_y, max_x, max_y)
+            if clipped is None:
+                return
+            a, b = np.asarray(clipped[0], float), np.asarray(clipped[1], float)
+            length = float(np.hypot(*(b - a)))
+            if length < 1e-6:
+                return
+            unit = (b - a) / length
+            pos = 0.0
+            while pos < length:
+                seg_end = min(pos + 0.35, length)
+                draw.line(
+                    [px(a + unit * pos), px(a + unit * seg_end)],
+                    fill="#b8860b", width=3,
+                )
+                pos = seg_end + 0.25
+
+        sides = cell["sides"]
+        axis_bounds = {
+            "u": (sides["u_min"], sides["u_max"]),
+            "v": (sides["v_min"], sides["v_max"]),
+        }
+        for key, side in sides.items():
+            if side is None:
+                continue
+            family = key[0]
+            other_low, other_high = axis_bounds["v" if family == "u" else "u"]
+            lo = other_low["offset"] if other_low else side["extent"][0]
+            hi = other_high["offset"] if other_high else side["extent"][1]
+            if family == "u":
+                _dashed(_uv_xy(side["offset"], lo), _uv_xy(side["offset"], hi))
+            else:
+                _dashed(_uv_xy(lo, side["offset"]), _uv_xy(hi, side["offset"]))
+        if cell.get("size_m"):
+            corner = px(tuple(cell["corners"][3]))
+            draw.text(
+                (
+                    min(max(corner[0], left + 4), left + plot_w - 160),
+                    min(max(corner[1] - 16, top + 4), top + plot_h - 16),
+                ),
+                f"CELL {cell['size_m'][0]:.2f} x {cell['size_m'][1]:.2f} m",
+                fill="#b8860b",
+            )
 
     # walls: thick line plus hatch ticks on the occupied side
     for wall in walls:
@@ -1939,6 +2344,10 @@ def _render_plan(
     tag_boxes: list[tuple[float, float]] = []
     for index, obj in enumerate(objects):
         colour = palette[index % len(palette)]
+        # another cell's structure: keep it on the sheet (it exists) but
+        # visually out of this cell's story
+        if obj.get("outside_cell"):
+            colour = "#b9b9b9"
         if obj.get("rect_snapped"):
             ring = [tuple(p) for p in obj["rect_snapped"]]
             ring.append(ring[0])
@@ -1956,6 +2365,8 @@ def _render_plan(
         tag = f"{obj['label']}  H {obj['height_m']:.2f} m"
         if obj.get("tilt_deg") is not None:
             tag += f", tilt {obj['tilt_deg']:.0f}°"
+        if obj.get("outside_cell"):
+            tag += "  [outside cell]"
         anchor_pt = list(px((cx, cy + 0.35)))
         anchor_pt[1] -= 14
         while any(
@@ -2473,6 +2884,9 @@ def main(argv: list[str] | None = None) -> int:
 
     theta = _align_guard_lines(entries, theta, walls, run, frames[0], transform)
     _enforce_row_order(entries, theta)
+    cell = _fit_cell_rectangle(walls, entries, theta)
+    if cell is not None:
+        _apply_cell_rectangle(cell, walls, entries, theta)
     _apply_payload_entities(run, entries)
 
     out_dir = run / "inventory"
@@ -2486,13 +2900,15 @@ def main(argv: list[str] | None = None) -> int:
                 "manhattan_theta_deg": None
                 if theta is None
                 else round(float(np.degrees(theta)), 1),
+                "cell_rect": cell,
             },
             indent=2,
         )
         + "\n"
     )
     _render_plan(
-        out_dir / "floor_plan.png", walls, plan_objects, args.run, off_plan=off_plan
+        out_dir / "floor_plan.png", walls, plan_objects, args.run,
+        off_plan=off_plan, cell=cell,
     )
     _write_dxf(out_dir / "floor_plan.dxf", walls, plan_objects)
     _write_scene(out_dir / "scene.json", args.run, entries)
