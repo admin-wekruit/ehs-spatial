@@ -1631,8 +1631,11 @@ def _enforce_row_order(entries: list[dict], theta: float | None) -> None:
             e["row_clipped"] = True
 
 
+# substring match — "cart" covers "material cart" / "docking cart" / the
+# bare VLM enumeration phrase, so the payload loop closes regardless of
+# which layer named the object
 POLICY_SUBJECT_LABELS = (
-    "material cart", "pallet", "crate", "portable work platform",
+    "cart", "pallet", "crate", "container", "portable work platform",
     "step ladder",
 )
 
