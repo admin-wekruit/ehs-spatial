@@ -323,9 +323,9 @@ def _prompt_candidates(phrase: str) -> tuple[str, ...]:
 
 
 def _sam_call(frame: GeometryFrame, prompt: str) -> dict:
-    import fal_client
+    from ehs_spatial.providers.sam3 import sam_subscribe
 
-    return fal_client.subscribe(
+    return sam_subscribe(
         SAM3_ENDPOINT,
         arguments={
             "image_url": "data:image/png;base64,"
@@ -1230,10 +1230,11 @@ def _reconcile_enumeration(
             destination.parent.mkdir(exist_ok=True)
             if not destination.exists():
                 try:
-                    import fal_client
                     import base64 as _b64
 
-                    response = fal_client.subscribe(
+                    from ehs_spatial.providers.sam3 import sam_subscribe
+
+                    response = sam_subscribe(
                         "fal-ai/sam-3-1/image-rle",
                         arguments={
                             "image_url": "data:image/png;base64,"

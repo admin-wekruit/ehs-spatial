@@ -27,9 +27,9 @@ class RefineError(RuntimeError):
 
 
 def _default_subscriber(endpoint: str, *, arguments: dict) -> dict:
-    import fal_client
+    from .providers.sam3 import sam_subscribe
 
-    return fal_client.subscribe(endpoint, arguments=arguments)
+    return sam_subscribe(endpoint, arguments=arguments)
 
 
 def measure(

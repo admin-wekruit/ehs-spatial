@@ -189,10 +189,35 @@ def decode_coco_rle(
     return _mask_from_counts(decoded_counts, rle_height, rle_width)
 
 
-def _default_subscriber(endpoint: str, *, arguments: dict[str, object]) -> object:
-    import fal_client
+def sam_subscribe(endpoint: str, *, arguments: dict[str, object]) -> object:
+    """Backend-routed SAM call, fal request/response schema either way.
+    SAM3_BACKEND=modal serves prompts from our own warm L4 (no per-call
+    API pricing, no burst billing gate); default stays fal."""
+    import os
 
-    return fal_client.subscribe(endpoint, arguments=arguments)
+    if os.environ.get("SAM3_BACKEND", "fal") != "modal":
+        import fal_client
+
+        return fal_client.subscribe(endpoint, arguments=arguments)
+    import base64 as _b64
+
+    import modal
+
+    data_url = str(arguments["image_url"])
+    image_bytes = _b64.b64decode(data_url.split(",", 1)[1])
+    if arguments.get("box_prompts"):
+        box = arguments["box_prompts"][0]
+        prompt = {
+            "box": [box["x_min"], box["y_min"], box["x_max"], box["y_max"]]
+        }
+    else:
+        prompt = {"text": str(arguments.get("prompt", ""))}
+    Sam3 = modal.Cls.from_name("sam3-inference", "Sam3")
+    return Sam3().segment.remote(image_bytes, [prompt])[0]
+
+
+def _default_subscriber(endpoint: str, *, arguments: dict[str, object]) -> object:
+    return sam_subscribe(endpoint, arguments=arguments)
 
 
 class SAM3Adapter:

@@ -129,9 +129,9 @@ def _sam_box(run: Path, image_path: Path, box, slug: str, subscriber) -> dict:
     if cache.exists():
         return json.loads(cache.read_text())
     if subscriber is None:
-        import fal_client
+        from .providers.sam3 import sam_subscribe
 
-        subscriber = fal_client.subscribe
+        subscriber = sam_subscribe
     x1, y1, x2, y2 = box
     response = subscriber(
         "fal-ai/sam-3-1/image-rle",
