@@ -282,7 +282,7 @@ def analyze_run(
             run_id,
             gr.update(
                 value=_status_copy(assessment, scene, policy_results, policy_specs)
-                + "\n\n⏳ **完整交互报告后台生成中（约 2–4 分钟）** — "
+                + "\n\n⏳ **完整交互报告后台生成中（实测约 5–8 分钟）** — "
                 "到 报告 tab 点「生成/查看报告」，好了会自动显示完整版。",
                 elem_classes=["result-status", f"status-{status_class}"],
             ),
@@ -1215,7 +1215,7 @@ def build_app(
                 _seed_runs = _report_run_choices()
                 gr.Markdown(
                     "提交后：快速判定约 1 分钟（单图）/ 3-4 分钟（4 图）；"
-                    "完整交互报告随后自动生成，再等约 2-4 分钟。"
+                    "完整交互报告随后自动生成，再等约 5-8 分钟。"
                     "列表按提交时间排序，就是全部历史。"
                 )
                 with gr.Row():
@@ -1269,7 +1269,7 @@ def build_app(
                                 "<p style='padding:8px 12px;background:#fff3cd;"
                                 "border:1px solid #ffe08a;border-radius:6px'>"
                                 "⏳ 深度报告生成中（检测清单 / 精修测量 / 交互标注，"
-                                f"当前阶段: {state}）— 约 2-4 分钟后重新点击"
+                                f"当前阶段: {state}）— 实测约 5-8 分钟，期间可重新点击"
                                 "「生成/查看报告」即为完整版。下面先显示快速摘要。</p>"
                             )
                         elif state == "failed":
