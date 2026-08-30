@@ -199,50 +199,56 @@ def _render_cloud_views(
     observations: list[Observation2D],
     transform: _FloorTransform,
 ) -> bool:
-    """Open3D offscreen renders (perspective + top-down) of the semantic
-    cloud. Fail-soft: rendering must never kill an assessment — returns
-    False on any renderer failure (e.g. headless hosts without GLFW)."""
+    """Pure-numpy splat renders (perspective + top-down) of the semantic
+    cloud. Deliberately no open3d Visualizer here: its GLFW window needs
+    the process MAIN thread on macOS, and inside a server worker thread
+    it spins forever at full CPU — that hang froze whole app runs twice.
+    Fail-soft: rendering must never kill an assessment."""
     points, rgb = _semantic_cloud_arrays(frames, observations, transform)
     if not len(points):
         return False
-    # evidence renders need shape, not every pixel: a multi-view capture
-    # carries millions of points and the offscreen renderer chews minutes
-    # on them (95% CPU for the whole "last mile"); 400k sampled points are
-    # visually identical at 1280x860
+    # evidence renders need shape, not every pixel; 400k sampled points
+    # are visually identical at 1280x860
     if len(points) > 400_000:
         keep = np.random.default_rng(0).choice(
             len(points), 400_000, replace=False
         )
         points, rgb = points[keep], rgb[keep]
     try:
-        import open3d as o3d
-
-        cloud = o3d.geometry.PointCloud(
-            o3d.utility.Vector3dVector(points.astype(np.float64))
-        )
-        cloud.colors = o3d.utility.Vector3dVector(rgb.astype(np.float64) / 255.0)
-        for path, front, up, zoom in (
-            (perspective_path, (0.25, -0.72, 0.65), (0.0, 0.0, 1.0), 0.55),
-            (topdown_path, (0.0, -0.02, 1.0), (0.0, 1.0, 0.0), 0.62),
+        width, height = 1280, 860
+        center = np.median(points, axis=0)
+        for path, front, up in (
+            (perspective_path, (0.25, -0.72, 0.65), (0.0, 0.0, 1.0)),
+            (topdown_path, (0.0, -0.02, 1.0), (0.0, 1.0, 0.0)),
         ):
-            visualizer = o3d.visualization.Visualizer()
-            if not visualizer.create_window(width=1280, height=860, visible=False):
-                return False
-            visualizer.add_geometry(cloud)
-            options = visualizer.get_render_option()
-            options.background_color = np.array([0.98, 0.98, 0.97])
-            options.point_size = 2.4
-            control = visualizer.get_view_control()
-            control.set_front(list(front))
-            control.set_lookat(cloud.get_center())
-            control.set_up(list(up))
-            control.set_zoom(zoom)
-            visualizer.poll_events()
-            visualizer.update_renderer()
+            forward = np.asarray(front, dtype=float)
+            forward /= np.linalg.norm(forward)
+            right = np.cross(np.asarray(up, dtype=float), forward)
+            right /= np.linalg.norm(right)
+            vertical = np.cross(forward, right)
+            local = points - center
+            view = np.column_stack(
+                (local @ right, local @ vertical, local @ forward)
+            )
+            span = max(
+                float(np.percentile(np.abs(view[:, 0]), 99)),
+                float(np.percentile(np.abs(view[:, 1]), 99)),
+                1e-6,
+            )
+            scale = 0.46 * min(width, height) / span
+            xs = (width / 2 + view[:, 0] * scale).astype(np.int32)
+            ys = (height / 2 - view[:, 1] * scale).astype(np.int32)
+            inside = (xs >= 0) & (xs < width - 1) & (ys >= 0) & (ys < height - 1)
+            # painter's order: far first, near points overwrite
+            order = np.argsort(-view[inside, 2])
+            xi, yi, ci = xs[inside][order], ys[inside][order], rgb[inside][order]
+            canvas = np.full((height, width, 3), (250, 250, 247), dtype=np.uint8)
+            for dy in (0, 1):
+                for dx in (0, 1):
+                    canvas[yi + dy, xi + dx] = ci
             destination = Path(path)
             destination.parent.mkdir(parents=True, exist_ok=True)
-            visualizer.capture_screen_image(str(destination), do_render=True)
-            visualizer.destroy_window()
+            Image.fromarray(canvas).save(destination)
         return True
     except Exception:
         return False
