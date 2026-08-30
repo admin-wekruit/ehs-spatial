@@ -1,0 +1,15 @@
+# on-prem model serving — one GPU box, three services
+# torch: install the wheel matching the box's CUDA first, e.g.
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+fastapi
+uvicorn[standard]
+pydantic
+numpy
+pillow
+trimesh
+huggingface_hub
+opencv-python-headless
+transformers>=4.57
+accelerate
+git+https://github.com/microsoft/MoGe.git
+git+https://github.com/facebookresearch/map-anything.git
