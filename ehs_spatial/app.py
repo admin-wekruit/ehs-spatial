@@ -177,6 +177,55 @@ def _status_copy(
     return "\n\n".join(lines)
 
 
+def _run_deep_report_chain(run_id: str) -> None:
+    """Device detection -> inventory refinement (order matters: the
+    inventory's detection-sync reads detections.json) -> interactive
+    report. Fail-soft stage by stage; status file keeps the 报告 tab
+    honest while this grinds."""
+    import sys as _sys
+    import traceback
+
+    status_path = Path("runs") / run_id / "deep_report.status"
+
+    def _mark(state: str) -> None:
+        try:
+            status_path.write_text(state, encoding="utf-8")
+        except Exception:
+            pass
+
+    scripts_dir = str(Path(__file__).resolve().parents[1] / "scripts")
+    if scripts_dir not in _sys.path:
+        _sys.path.insert(0, scripts_dir)
+    try:
+        _mark("detect")
+        import detect_devices as _detect
+
+        _detect.main(["--run", run_id])
+    except Exception:
+        traceback.print_exc()
+    try:
+        _mark("inventory")
+        import scene_inventory as _inventory
+
+        _inventory.main(["--run", run_id, "--live"])
+        _mark("report")
+        from .interactive_report import build_interactive_run_report
+
+        build_interactive_run_report(run_id)
+        _mark("done")
+    except Exception:
+        traceback.print_exc()
+        _mark("failed")
+
+
+def _start_deep_report_chain(run_id: str) -> None:
+    import threading
+
+    threading.Thread(
+        target=_run_deep_report_chain, args=(run_id,), daemon=True
+    ).start()
+
+
 def analyze_run(
     pipeline: Any,
     image_1: str | None,
@@ -210,6 +259,10 @@ def analyze_run(
             ],
         )
         assessment = pipeline.run_assessment(capture)
+        # the quick verdict returns now; the deep chain (device detection
+        # -> inventory refinement -> interactive report) runs behind it so
+        # the 报告 tab upgrades from summary to full dossier on its own
+        _start_deep_report_chain(run_id)
         paths = pipeline.store.paths(run_id)
         scene = pipeline.store.load_json(paths.scene_json, SceneMap)
         policy_results = None
@@ -1184,11 +1237,36 @@ def build_app(
                         )
 
                         path = build_interactive_run_report(name)
+                        banner = ""
                     else:
                         from .report import build_run_report
 
                         path = build_run_report(name)
+                        status_path = Path("runs") / name / "deep_report.status"
+                        state = (
+                            status_path.read_text(encoding="utf-8").strip()
+                            if status_path.exists()
+                            else ""
+                        )
+                        if state in {"detect", "inventory", "report"}:
+                            banner = (
+                                "<p style='padding:8px 12px;background:#fff3cd;"
+                                "border:1px solid #ffe08a;border-radius:6px'>"
+                                "⏳ 深度报告生成中（检测清单 / 精修测量 / 交互标注，"
+                                f"当前阶段: {state}）— 约 2-4 分钟后重新点击"
+                                "「生成/查看报告」即为完整版。下面先显示快速摘要。</p>"
+                            )
+                        elif state == "failed":
+                            banner = (
+                                "<p style='padding:8px 12px;background:#f8d7da;"
+                                "border:1px solid #f1aeb5;border-radius:6px'>"
+                                "深度报告链失败，以下为快速摘要（服务器日志有 traceback）。</p>"
+                            )
+                        else:
+                            banner = ""
                     html = path.read_text(encoding="utf-8")
+                    if banner:
+                        html = banner + html
                     framed = (
                         '<iframe style="width:100%;height:900px;border:1px '
                         'solid #ccc;border-radius:6px" srcdoc="'
