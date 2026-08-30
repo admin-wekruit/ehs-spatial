@@ -99,12 +99,16 @@ class MapAnything:
                 paths.append(str(path))
             views = load_images(paths)
             with torch.inference_mode():
+                # apply_mask=False: zeroing masked points would blank the
+                # returned mask and leave 0,0,0 landmines in pts3d — the
+                # pipeline filters by valid_mask, so keep points intact and
+                # the model's own non_ambiguous_mask authoritative
                 predictions = self.model.infer(
                     views,
                     memory_efficient_inference=False,
                     use_amp=True,
                     amp_dtype="bf16",
-                    apply_mask=bool(input.get("apply_mask", True)),
+                    apply_mask=False,
                     mask_edges=True,
                 )
 
@@ -118,6 +122,15 @@ class MapAnything:
             pts3d = _np(prediction["pts3d"]).astype(np.float32)
             conf = _np(prediction["conf"]).astype(np.float32)
             mask = _np(prediction["non_ambiguous_mask"]).astype(bool)
+            # the model's mask carries no edge trim; depth-discontinuity
+            # pixels are flying-point noise for downstream plane fits —
+            # cut them the way the reference wrapper does
+            depth = _np(prediction["depth_z"]).astype(np.float32)
+            if depth.ndim == 3:
+                depth = depth[..., 0]
+            grad_y, grad_x = np.gradient(depth)
+            relative = np.hypot(grad_x, grad_y) / np.maximum(depth, 1e-6)
+            mask &= relative < 0.08
             pose = _np(prediction["camera_poses"]).astype(np.float32)
             intrinsics = _np(prediction["intrinsics"]).astype(np.float32)
             frames.append(

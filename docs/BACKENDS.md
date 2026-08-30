@@ -21,9 +21,13 @@ Reference implementation of the switch: `ehs_spatial/backends.py`
 
 - SAM 3: `("sam3-inference", "Sam3")` — deployed (`modal_apps/sam3_app.py`)
 - MoGe-3: `("moge3-inference", "MoGe3")` — deployed
-- MapAnything: `("mapanything-inference", "MapAnything")` — scaffold only
-  (`modal_apps/mapanything_app.py`); `replicate` stays default until it is
-  smoke-tested.
+- MapAnything: `("mapanything-inference", "MapAnything")` — deployed and
+  adapter-validated (masks 96-98% after depth-edge trim, matching the
+  replicate wrapper; frames decode through parse_frame_json; GLB written).
+  `replicate` stays default until a full-pipeline A/B signs off; flip with
+  `GEOMETRY_BACKEND=modal`. Note: Modal serving keeps the source aspect
+  (518x392 on 3:4 captures) where replicate squares to 518x518, and raw
+  metric scale differs ~1.4x — the MoGe anchor re-gauges either way.
 
 ## HTTP contract (internal GPU case)
 
