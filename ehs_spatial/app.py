@@ -281,7 +281,9 @@ def analyze_run(
         return (
             run_id,
             gr.update(
-                value=_status_copy(assessment, scene, policy_results, policy_specs),
+                value=_status_copy(assessment, scene, policy_results, policy_specs)
+                + "\n\n⏳ **完整交互报告后台生成中（约 2–4 分钟）** — "
+                "到 报告 tab 点「生成/查看报告」，好了会自动显示完整版。",
                 elem_classes=["result-status", f"status-{status_class}"],
             ),
             str(paths.point_cloud_glb),
@@ -1185,8 +1187,12 @@ def build_app(
                     "gen-", "real-anno-", "demo-", "poc-", "video-", "phase",
                 )
 
-                def _initial_report_runs() -> list[str]:
-                    # operator submissions + the real-photo test set only
+                def _report_run_choices() -> list[tuple[str, str]]:
+                    # operator submissions + the real-photo test set only,
+                    # newest first, submission time in the label — this
+                    # list IS the run history
+                    from datetime import datetime
+
                     candidates = [
                         p for p in Path("runs").glob("*")
                         if (
@@ -1198,14 +1204,25 @@ def build_app(
                     candidates.sort(
                         key=lambda p: p.stat().st_mtime, reverse=True
                     )
-                    return [p.name for p in candidates]
+                    choices = []
+                    for path in candidates:
+                        stamp = datetime.fromtimestamp(
+                            path.stat().st_mtime
+                        ).strftime("%m-%d %H:%M")
+                        choices.append((f"{stamp}  ·  {path.name}", path.name))
+                    return choices
 
-                _seed_runs = _initial_report_runs()
+                _seed_runs = _report_run_choices()
+                gr.Markdown(
+                    "提交后：快速判定约 1 分钟（单图）/ 3-4 分钟（4 图）；"
+                    "完整交互报告随后自动生成，再等约 2-4 分钟。"
+                    "列表按提交时间排序，就是全部历史。"
+                )
                 with gr.Row():
                     report_run = gr.Dropdown(
-                        label="Run",
+                        label="Run（按时间倒序 = 历史）",
                         choices=_seed_runs,
-                        value=_seed_runs[0] if _seed_runs else None,
+                        value=_seed_runs[0][1] if _seed_runs else None,
                         allow_custom_value=True,
                     )
                     report_refresh = gr.Button("刷新 run 列表")
@@ -1213,21 +1230,20 @@ def build_app(
                 report_file = gr.File(label="下载", interactive=False)
                 report_view = gr.HTML()
 
-                _report_run_names = _initial_report_runs
-
                 def _report_runs() -> gr.Dropdown:
-                    names = _report_run_names()
+                    choices = _report_run_choices()
                     return gr.Dropdown(
-                        choices=names, value=names[0] if names else None
+                        choices=choices,
+                        value=choices[0][1] if choices else None,
                     )
 
                 def _report_go(name):
                     if not name:
                         # zero-friction default: newest run
-                        names = _report_run_names()
-                        if not names:
+                        choices = _report_run_choices()
+                        if not choices:
                             return None, "<p>还没有任何 run。</p>"
-                        name = names[0]
+                        name = choices[0][1]
                     # full interactive report (photo pick / plan sync /
                     # distance matrix) whenever the run's inventory layer
                     # exists; the static summary is only the fallback
@@ -1289,62 +1305,6 @@ def build_app(
                     concurrency_limit=1,
                 )
 
-            with gr.Tab("History"):
-                gr.Markdown("## Past runs", elem_classes="section-heading")
-                refresh_button = gr.Button(
-                    "Refresh history", elem_classes="analyze-action"
-                )
-                history_table = gr.Dataframe(
-                    headers=list(HISTORY_HEADERS),
-                    column_count=(len(HISTORY_HEADERS), "fixed"),
-                    type="array",
-                    interactive=False,
-                    label="Cached runs — select a row to load it",
-                )
-                with gr.Row(elem_classes="workbench-layout"):
-                    with gr.Column(scale=6, min_width=320):
-                        selected_run = gr.Textbox(
-                            label="Selected run", interactive=False
-                        )
-                        history_status = gr.Markdown(
-                            "### No run selected\n\nRefresh the table and "
-                            "select a row to load its verdict.",
-                            elem_classes=["result-status", "status-idle"],
-                        )
-                        history_topdown = gr.Image(
-                            label="Top-down evidence (selected run)",
-                            type="filepath",
-                            interactive=False,
-                            height=320,
-                            buttons=["fullscreen"],
-                        )
-                    with gr.Column(scale=5, min_width=300):
-                        gr.Markdown(
-                            "## Review disposition",
-                            elem_classes="section-heading",
-                        )
-                        disposition_display = gr.Markdown(
-                            "_No disposition recorded for this run._"
-                        )
-                        reviewer_box = gr.Textbox(label="Reviewer")
-                        decision_radio = gr.Radio(
-                            choices=["confirmed", "overridden"],
-                            value="confirmed",
-                            label="Decision",
-                        )
-                        override_dropdown = gr.Dropdown(
-                            choices=list(OVERRIDE_STATUSES),
-                            label="Overridden status",
-                            info="Only applied when the decision is overridden.",
-                        )
-                        reason_box = gr.Textbox(
-                            label="Reason",
-                            lines=2,
-                            placeholder="Required when overriding.",
-                        )
-                        save_button = gr.Button(
-                            "Save disposition", variant="primary"
-                        )
         # Evidence follows the run id rather than extending the analyze
         # tuple: the 8-output analyze contract stays stable, and a failed
         # re-analysis (run_id -> None) clears the evidence section too.
@@ -1438,64 +1398,6 @@ def build_app(
             concurrency_limit=1,
         )
 
-        refresh_button.click(
-            partial(list_history, service),
-            outputs=[history_table],
-            api_name="list_history",
-            api_visibility="private",
-            concurrency_id=LOCAL_CONCURRENCY_ID,
-            concurrency_limit=1,
-        )
-        # The History table is populated on page load, not only via the
-        # Refresh button.
-        demo.load(
-            partial(list_history, service),
-            outputs=[history_table],
-            api_name="list_history_on_load",
-            api_visibility="private",
-            concurrency_id=LOCAL_CONCURRENCY_ID,
-            concurrency_limit=1,
-        )
-        # A closure rather than partial: gradio resolves the injected
-        # gr.SelectData parameter from the wired function's own signature.
-        def _on_history_select(
-            rows: list[list[object]] | None, evt: gr.SelectData
-        ) -> tuple[object, ...]:
-            return load_history_run(service, rows, evt)
-
-        history_table.select(
-            _on_history_select,
-            inputs=[history_table],
-            outputs=[
-                selected_run,
-                history_status,
-                history_topdown,
-                disposition_display,
-                reviewer_box,
-                decision_radio,
-                override_dropdown,
-                reason_box,
-            ],
-            api_name="load_history_run",
-            api_visibility="private",
-            concurrency_id=LOCAL_CONCURRENCY_ID,
-            concurrency_limit=1,
-        )
-        save_button.click(
-            partial(save_disposition, service),
-            inputs=[
-                selected_run,
-                reviewer_box,
-                decision_radio,
-                override_dropdown,
-                reason_box,
-            ],
-            outputs=[disposition_display, history_table],
-            api_name="save_disposition",
-            api_visibility="private",
-            concurrency_id=LOCAL_CONCURRENCY_ID,
-            concurrency_limit=1,
-        )
     return demo.queue(api_open=False, default_concurrency_limit=1)
 
 

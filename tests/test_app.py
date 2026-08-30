@@ -1230,100 +1230,41 @@ def test_save_disposition_returns_refreshed_history_rows(tmp_path):
     assert row[HISTORY_HEADERS.index("disposition")] == "confirmed"
 
 
-def test_build_app_wires_history_tab_components_and_events(tmp_path):
+def test_build_app_report_is_the_history(tmp_path):
+    """Product decision: the History tab is gone — the report tab's
+    time-sorted dropdown IS the run history."""
     from ehs_spatial.app import build_app
 
     demo = build_app(FakePipeline(tmp_path / "runs"))
     config = demo.get_config_file()
     components = config["components"]
 
-    [table] = [
-        component for component in components if component["type"] == "dataframe"
-    ]
-    assert table["props"]["headers"] == [
-        "run_id",
-        "created_at",
-        "operator",
-        "tier",
-        "status",
-        "policies",
-        "distance",
-        "disposition",
-    ]
-    [radio] = [
-        component for component in components if component["type"] == "radio"
-    ]
-    assert [list(choice) for choice in radio["props"]["choices"]] == [
-        ["confirmed", "confirmed"],
-        ["overridden", "overridden"],
-    ]
-    # The Video tab adds its own dropdowns; select the override one by label.
-    [dropdown] = [
-        component
-        for component in components
-        if component["type"] == "dropdown"
-        and component["props"].get("label") == "Overridden status"
-    ]
-    assert [choice[0] for choice in dropdown["props"]["choices"]] == [
-        "PASS",
-        "FAIL",
-        "INSUFFICIENT_EVIDENCE",
-    ]
+    # no History surface remains
+    assert not [c for c in components if c["type"] == "dataframe"]
     buttons = {
-        component["props"].get("value"): component["id"]
-        for component in components
-        if component["type"] == "button"
+        c["props"].get("value") for c in components if c["type"] == "button"
     }
-    assert "Refresh history" in buttons
-    assert "Save disposition" in buttons
-    targets = {
-        tuple(target)
-        for dependency in config["dependencies"]
-        for target in dependency["targets"]
+    assert "Refresh history" not in buttons
+    assert "Save disposition" not in buttons
+    api_names = {
+        fn.api_name for fn in demo.fns.values() if fn.api_name
     }
-    assert (buttons["Refresh history"], "click") in targets
-    assert (buttons["Save disposition"], "click") in targets
-    assert (table["id"], "select") in targets
+    assert "list_history" not in api_names
+    assert "save_disposition" not in api_names
 
-    dependencies = {
-        dependency.get("api_name"): dependency
-        for dependency in config["dependencies"]
-    }
-    # Local History/disposition handlers get their own lane so they stay
-    # responsive while a provider analysis holds the provider lane.
+    # report dropdown exists and evidence loading keeps its local lane
+    [report_dropdown] = [
+        c for c in components
+        if c["type"] == "dropdown"
+        and "历史" in str(c["props"].get("label"))
+    ]
+    assert report_dropdown["props"].get("allow_custom_value") is True
     local_lanes = {
-        function.api_name: function.concurrency_id
-        for function in demo.fns.values()
-        if function.api_name
-        in {
-            "list_history",
-            "list_history_on_load",
-            "load_history_run",
-            "save_disposition",
-            "load_run_evidence",
-        }
+        fn.api_name: fn.concurrency_id
+        for fn in demo.fns.values()
+        if fn.api_name == "load_run_evidence"
     }
     assert set(local_lanes.values()) == {"ehs-local-ui"}
-    assert len(local_lanes) == 5
-    # The table is populated on page load, not only via the Refresh button.
-    load_dependency = dependencies["list_history_on_load"]
-    assert {target[1] for target in load_dependency["targets"]} == {"load"}
-    assert load_dependency["outputs"] == [table["id"]]
-    # Selecting a row also resets the whole disposition form.
-    # Scope to the disposition form's own components — the Video tab has
-    # unrelated dropdowns.
-    form_ids = {
-        component["id"]
-        for component in components
-        if component["type"] == "radio"
-        or component["props"].get("label")
-        in {"Reviewer", "Reason", "Overridden status"}
-    }
-    select_outputs = set(dependencies["load_history_run"]["outputs"])
-    assert form_ids <= select_outputs
-    # Saving a disposition refreshes the table so its columns never go stale.
-    assert table["id"] in dependencies["save_disposition"]["outputs"]
-
 
 def test_readme_links_each_provider_credential_source():
     readme = (Path(__file__).parents[1] / "README.md").read_text()
