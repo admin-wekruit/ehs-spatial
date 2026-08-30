@@ -84,6 +84,10 @@ class GeminiAdapter:
                 # Remove the sentinel when the SDK honors attempts correctly.
                 self._client = genai.Client(
                     http_options={
+                        # a dead socket (laptop sleep mid-call) must fail,
+                        # not hang the pipeline lane forever — the adapter's
+                        # caller-side retries handle the recovery
+                        "timeout": 180_000,
                         "retry_options": {
                             "attempts": 1,
                             "http_status_codes": [0],

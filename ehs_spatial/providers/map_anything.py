@@ -108,6 +108,8 @@ def _default_runner(model_identifier: str, *, input: dict[str, object]) -> objec
 def _json_safe(value: object) -> object:
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
+    if isinstance(value, (bytes, bytearray)):
+        return f"<{len(value)} bytes>"
     if isinstance(value, Path):
         return str(value)
     if isinstance(value, Mapping):
@@ -141,6 +143,11 @@ _OPENER = _redirect_refusing_opener()
 
 
 def _read_provider_bytes(location: object, *, allow_local: bool = False) -> bytes:
+    # self-hosted backends (Modal, internal http) hand bytes straight back
+    if isinstance(location, (bytes, bytearray)):
+        return bytes(location)
+    if isinstance(location, str) and location.startswith("data:"):
+        return base64.b64decode(location.split(",", 1)[1])
     if not isinstance(location, (str, Path)) and hasattr(location, "read"):
         content = location.read()
         return content if isinstance(content, bytes) else bytes(content)
