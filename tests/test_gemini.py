@@ -576,7 +576,8 @@ def test_default_gemini_client_uses_minimum_public_sdk_retry_setting(
     assert created_with == [
         {
             "http_options": {
-                "retry_options": {"attempts": 1, "http_status_codes": [0]}
+                "timeout": 180_000,
+                "retry_options": {"attempts": 1, "http_status_codes": [0]},
             }
         }
     ]
