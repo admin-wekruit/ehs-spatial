@@ -25,6 +25,11 @@ from ehs_spatial.contracts import (
 from ehs_spatial.providers.base import ProviderError
 
 
+@pytest.fixture(autouse=True)
+def _disable_live_deep_report_chain(monkeypatch):
+    monkeypatch.setattr("ehs_spatial.app._start_deep_report_chain", lambda run_id: None)
+
+
 class FakePipeline:
     def __init__(
         self,
@@ -46,7 +51,7 @@ class FakePipeline:
         paths = self.store.paths(capture.run_id)
         paths.geometry_dir.mkdir(parents=True, exist_ok=True)
         paths.point_cloud_glb.write_bytes(b"real-glb-artifact")
-        Image.new("RGB", (32, 32), "white").save(paths.topdown_png)
+        Image.new("RGB", (32, 32), "white").save(paths.cloud_topdown_png)
         fact = SpatialFact(
             fact_id="fact-clearance",
             predicate="minimum_boundary_clearance",
@@ -196,7 +201,7 @@ def test_analysis_returns_real_artifacts_grounded_data_and_demo_copy(tmp_path):
     assert capture.criterion.minimum_clearance_m == 0.6
     paths = pipeline.store.paths(run_id)
     assert point_cloud_path == str(paths.point_cloud_glb)
-    assert topdown_path == str(paths.topdown_png)
+    assert topdown_path == str(paths.cloud_topdown_png)
     assert Path(point_cloud_path).is_file()
     assert Path(point_cloud_path).suffix == ".glb"
     assert Path(topdown_path).is_file()
@@ -967,7 +972,29 @@ def _write_history_run(
             distance_error_budget_m=0.05,
         ),
     )
-    Image.new("RGB", (16, 16), "white").save(paths.topdown_png)
+    Image.new("RGB", (16, 16), "white").save(paths.cloud_topdown_png)
+
+
+@pytest.mark.parametrize("video", [False, True])
+def test_topdown_prefers_same_run_cad_then_cloud_and_never_legacy(tmp_path, video):
+    from ehs_spatial.app import _topdown_for
+    from ehs_spatial.video import video_paths
+
+    store = ArtifactStore(tmp_path / "runs")
+    paths = video_paths(store, "run-a") if video else store.paths("run-a")
+    paths.root.mkdir(parents=True)
+    for name in ("topdown.png", "plan_view.png", "trajectories_topdown.png"):
+        Image.new("RGB", (8, 8)).save(paths.root / name)
+    assert _topdown_for(paths) is None
+
+    cloud = store.paths("run-a").cloud_topdown_png
+    Image.new("RGB", (8, 8)).save(cloud)
+    assert _topdown_for(paths) == str(cloud)
+
+    cad = paths.root / "inventory" / "floor_plan.png"
+    cad.parent.mkdir()
+    Image.new("RGB", (8, 8)).save(cad)
+    assert _topdown_for(paths) == str(cad)
 
 
 def test_list_history_rows_come_from_the_store_index(tmp_path):
@@ -1063,7 +1090,7 @@ def test_load_history_run_loads_card_topdown_and_disposition(tmp_path):
     assert "### NEEDS_REVIEW" in card["value"]
     assert "0.58 m ± 0.05 m" in card["value"]
     assert "status-needs-review" in card["elem_classes"]
-    assert topdown == str(paths.topdown_png)
+    assert topdown == str(paths.cloud_topdown_png)
     assert "casey" in disposition["value"]
     assert "confirmed" in disposition["value"]
     # Selecting a row resets the disposition form so a ruling composed
@@ -1429,7 +1456,7 @@ def test_analyze_video_success_renders_report_and_refreshes_replay(
     assert "video-mono" in status["value"]
     assert "status-fail" in status["elem_classes"]
     assert gif is not None and Path(gif).is_file()
-    assert topdown is not None and Path(topdown).is_file()
+    assert topdown is None  # A trajectory plot is not a workcell CAD/cloud view.
     assert payload["verdicts"]["overall"] == "FAIL"
     run_id = captured["run_id"]
     assert dropdown["value"] == run_id
@@ -1485,7 +1512,7 @@ def test_load_video_run_replays_cached_artifacts_without_spend(tmp_path):
     _write_video_run(pipeline.store, "cached", "2026-08-25T10:00:00+00:00")
     status, gif, topdown, payload = load_video_run(pipeline, "cached")
     assert "### FAIL" in status["value"]
-    assert gif is not None and topdown is not None
+    assert gif is not None and topdown is None
     assert payload["run_id"] == "cached"
     assert not pipeline.assessment_calls  # replay never triggers providers
 

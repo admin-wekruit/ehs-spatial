@@ -12,7 +12,7 @@ from ehs_spatial.interactive_report import build_interactive_run_report
 
 REPO = Path(__file__).parents[1]
 SECTIONS = [
-    "header", "verdicts", "phrases", "detections", "photo", "plan", "viewer",
+    "header", "photo", "viewer", "plan", "verdicts", "phrases", "detections",
     "measurements", "reprojection", "gallery", "refinements", "chat", "review",
     "appendix",
 ]

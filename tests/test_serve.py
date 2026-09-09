@@ -68,3 +68,32 @@ def test_workbench_still_mounted(client):
     response = client.get("/")
     assert response.status_code == 200
     assert "gradio" in response.text.lower()
+
+
+def test_report_serves_the_same_full_viewer_by_url(client, tmp_path, monkeypatch):
+    from ehs_spatial import serve
+
+    run = tmp_path / "linked-run"
+    run.mkdir()
+    viewer = '<!doctype html><p>600000 points; panoptes:ready</p>'
+    (run / "viewer.html").write_text(viewer)
+    report = run / "report.html"
+    report.write_text(
+        '<style></style><details class="case"><iframe id="v3d" class="v3d" '
+        'title="linked 3D" srcdoc="&lt;p&gt;embedded viewer&lt;/p&gt;"></iframe></details>'
+    )
+    monkeypatch.setattr(serve, "RUNS", tmp_path)
+    monkeypatch.setattr(serve, "_ensure_report", lambda run_id: report)
+
+    page = client.get("/report/linked-run")
+    assert page.status_code == 200
+    assert 'src="/report/linked-run/viewer"' in page.text
+    assert "srcdoc=" not in page.text and "embedded viewer" not in page.text
+    rendered = client.get("/report/linked-run/viewer")
+    assert rendered.status_code == 200 and rendered.text == viewer
+    assert rendered.headers["content-type"].startswith("text/html")
+    assert "srcdoc=" in client.get("/report/linked-run/file").text
+
+    (run / "viewer.html").unlink()
+    missing = client.get("/report/linked-run/viewer")
+    assert missing.status_code == 404 and "工作台" in missing.text

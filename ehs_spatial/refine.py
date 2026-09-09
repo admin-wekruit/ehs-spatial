@@ -16,6 +16,7 @@ import numpy as np
 from PIL import Image
 
 from .geometry import _build_geometry
+from .providers.map_anything import input_mask_to_canonical
 from .providers.sam3 import decode_coco_rle
 from .viewer import _frames
 
@@ -44,15 +45,7 @@ def measure(
         raise RefineError("run has no floor transform")
     points3d = np.load(frame.pts3d_path)
     valid = np.load(frame.valid_mask_path).astype(bool)
-    if mask.shape != valid.shape:
-        mask = (
-            np.asarray(
-                Image.fromarray(mask.astype(np.uint8) * 255).resize(
-                    (valid.shape[1], valid.shape[0])
-                )
-            )
-            > 127
-        )
+    mask = input_mask_to_canonical(mask, run, frame.frame_id, valid.shape)
     chosen = (
         mask
         & valid
@@ -143,6 +136,8 @@ def refine_region(
     scores = response.get("scores") or [1.0] * len(rles)
     best = int(np.argmax(scores))
     mask = decode_coco_rle(rles[best], height=height, width=width).astype(bool)
+    if mask.shape != (height, width):
+        raise RefineError(f"SAM mask {mask.shape} does not match input image {(height, width)}")
 
     scene_path = run / "scene.json"
     scale = None

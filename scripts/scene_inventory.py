@@ -18,6 +18,7 @@ Usage:
 
 import argparse
 import base64
+import hashlib
 import json
 import re
 import sys
@@ -29,6 +30,8 @@ from shapely.geometry import MultiPoint, Point, Polygon
 
 from ehs_spatial.contracts import GeometryFrame, Observation2D
 from ehs_spatial.geometry import _build_geometry, _spatial_state
+from ehs_spatial.providers.map_anything import input_mask_to_canonical
+from ehs_spatial.viewer import inventory_plan_objects
 from ehs_spatial.providers.sam3 import (
     SAM3_ENDPOINT,
     decode_coco_rle,
@@ -52,6 +55,33 @@ WALL_MAX_COUNT = 6
 PLAN_MAX_RANGE_M = 12.0
 # Structure is drawn as structure, not as furniture.
 STRUCTURE_LABELS = {"floor", "ceiling", "wall", "window", "ground", "roof"}
+
+
+def ensure_floor_plan(run: Path) -> None:
+    """Rebuild stale PNG/hit areas from persisted inventory only; never infer again."""
+    source = run / "inventory" / "inventory.json"
+    if not source.exists():
+        return
+    png = source.with_name("floor_plan.png")
+    sidecar = source.with_name("floor_plan_map.json")
+    signature = hashlib.sha256(source.read_bytes()).hexdigest()
+    try:
+        saved = json.loads(sidecar.read_text())
+    except (OSError, ValueError):
+        saved = {}
+    if (png.exists() and saved.get("inventory_sha256") == signature
+            and saved.get("renderer_version") == "linked-inventory-v1"
+            and saved.get("image_sha256") == hashlib.sha256(png.read_bytes()).hexdigest()):
+        return
+    inventory = json.loads(source.read_text())
+    objects = sorted(inventory_plan_objects(inventory), key=lambda obj: -obj["footprint_area_m2"])
+    _render_plan(png, inventory.get("walls", []), objects, run.name,
+                 off_plan=[obj for obj in inventory.get("objects", []) if obj.get("off_plan_reason")],
+                 cell=inventory.get("cell_rect"))
+    saved = json.loads(sidecar.read_text())
+    saved.update(inventory_sha256=signature, renderer_version="linked-inventory-v1",
+                 image_sha256=hashlib.sha256(png.read_bytes()).hexdigest())
+    sidecar.write_text(json.dumps(saved) + "\n")
 
 # Painted / laid-flat classes whose correct height IS ~0; the non-positive-
 # height gate must not read that as depth collapse.
@@ -452,17 +482,23 @@ def _resize_map(array: np.ndarray, width: int, height: int) -> np.ndarray:
 
 
 def _moge3_maps(
-    run: Path, frame: GeometryFrame
+    run: Path, frame: GeometryFrame, *, live: bool = False
 ) -> tuple[np.ndarray, np.ndarray] | None:
     """Per-pixel camera-frame normals AND points from the MoGe-3 Modal
-    deployment, resized to the geometry grid. Both come from one inference
-    (same frame, same metric scale), cached per run. Returns None (and says
-    why) when Modal is unreachable so the pipeline degrades gracefully."""
+    deployment, resized to the geometry grid. The legacy run-level cache
+    belongs to frame_0001; it must not supply normals for another view.
+    Missing data is reported, and offline runs never call Modal."""
+    if frame.frame_id != "frame_0001":
+        print(f"  [normals] {frame.frame_id}: no matching per-frame MoGe cache; not using frame_0001 data")
+        return None
     valid = np.load(frame.valid_mask_path)
     height, width = valid.shape
     normals_cache = run / "geometry" / "moge3_normals.npz"
     points_cache = run / "geometry" / "moge3_points.npz"
     if not (normals_cache.exists() and points_cache.exists()):
+        if not live:
+            print("  [normals] no cached MoGe maps; offline run makes no provider call")
+            return None
         try:
             import modal
 
@@ -566,8 +602,10 @@ def _align_guard_lines(
     floor_xyz[finite_all] = transform.apply(points3d[finite_all])
 
     def _member_mask(e: dict) -> np.ndarray | None:
+        if e.get("frame", "frame_0001") != frame.frame_id:
+            return None
         if e.get("refine_slug"):
-            return _refine_mask(run, e["refine_slug"], height, width)
+            return _refine_mask(run, e["refine_slug"], height, width, frame.frame_id, expected_sha256=e.get("refine_mask_sha256"))
         slug = re.sub(r"[^a-z0-9]+", "_", e["label"]).strip("_")
         cache = run / "inventory" / "sam" / f"{frame.frame_id}__{slug}.json"
         if not cache.exists():
@@ -1146,33 +1184,62 @@ def _reprojection_offset(
     return best[0]
 
 
-def _refine_mask(run: Path, slug: str, height: int, width: int) -> np.ndarray | None:
-    """Best-score SAM mask of a box refinement, resized to the geometry
-    grid — so refinements ride the SAME geometry pipeline as everything
-    else instead of their own (prior-free) measurement path."""
-    from PIL import Image as PILImage
-
-    cache = run / "refinements" / f"{slug}.json"
-    if not cache.exists():
-        return None
+def _refine_mask(run: Path, slug: str, height: int, width: int,
+                 frame_id: str = 'frame_0001', *, use_derived: bool = True,
+                 expected_sha256: str | None = None) -> np.ndarray | None:
+    """One canonical refinement mask shared by inventory, photo and 3D."""
+    derived = run/'inventory'/'refinement_masks'/f'{frame_id}__{slug}.npy'
+    if use_derived and derived.exists() and expected_sha256 is not None:
+        provenance = json.loads(derived.with_suffix('.json').read_text())
+        source = run/'refinements'/f'{slug}.json'
+        if (provenance.get('frame_id') != frame_id
+                or provenance.get('source_sha256') != hashlib.sha256(source.read_bytes()).hexdigest()
+                or provenance.get('mask_sha256') != expected_sha256
+                or hashlib.sha256(derived.read_bytes()).hexdigest() != expected_sha256):
+            raise ValueError(f'Refinement mask does not match the accepted inventory/source: {derived}')
+        mask = np.load(derived, allow_pickle=False)
+        if mask.shape != (height, width):
+            raise ValueError(f'Canonical refinement shape mismatch: {derived}')
+        return mask.astype(bool)
+    cache = run/'refinements'/f'{slug}.json'
+    if not cache.exists(): return None
     response = json.loads(cache.read_text())
-    rles = response.get("rle") or []
-    if isinstance(rles, str):
-        rles = [rles]
-    if not rles:
-        return None
-    scores = response.get("scores") or [1.0] * len(rles)
-    # full-resolution dims come from the run's own input image — a
-    # hardcoded landscape assumption garbled every portrait capture
-    with PILImage.open(next((run / "input").glob("image_*"))) as full:
-        full_width, full_height = full.size
-    mask = decode_coco_rle(
-        rles[int(np.argmax(scores))], height=full_height, width=full_width
-    ).astype(np.uint8)
-    return (
-        np.asarray(PILImage.fromarray(mask * 255).resize((width, height)))
-        > 127
-    )
+    rles = response.get('rle') or []
+    if isinstance(rles, str): rles = [rles]
+    if not rles: return None
+    source = sorted((run/'input').glob('image_*'))[int(frame_id.rsplit('_', 1)[1])-1]
+    with Image.open(source) as image:
+        full_width, full_height = image.size
+    # The refinement endpoint receives the original photo; resized legacy RLE is not source evidence.
+    mask = decode_coco_rle(rles[int(np.argmax(response.get('scores') or [1.0]*len(rles)))],
+                           height=full_height, width=full_width)
+    if mask.shape != (full_height, full_width):
+        raise ValueError(f'Legacy resized refinement RLE has no trustworthy canonical provenance: {slug}')
+    return input_mask_to_canonical(mask, run, frame_id, (height, width))
+
+
+def _save_refinement_mask(run: Path, frame_id: str, slug: str, mask: np.ndarray) -> str:
+    path = run/'inventory'/'refinement_masks'/f'{frame_id}__{slug}.npy'
+    path.parent.mkdir(exist_ok=True)
+    temporary = path.with_suffix('.tmp.npy')
+    np.save(temporary, mask.astype(bool), allow_pickle=False)
+    temporary.replace(path)
+    mask_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+    source = run/'refinements'/f'{slug}.json'
+    response = json.loads(source.read_text())
+    rles = response.get('rle') or []
+    if isinstance(rles, str): rles = [rles]
+    raw = rles[int(np.argmax(response.get('scores') or [1.0]*len(rles)))]
+    try: explicit_size = json.loads(raw).get('size')
+    except (ValueError, AttributeError): explicit_size = None
+    path.with_suffix('.json').write_text(json.dumps({
+        'frame_id':frame_id, 'shape':list(mask.shape), 'coordinate_space':'canonical', 'mask_sha256':mask_sha256,
+        'source_path':str(source), 'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),
+        'source_explicit_rle_size':explicit_size,
+        'source_grid':'explicit COCO size' if explicit_size else 'original input image dimensions for fal pairs',
+        'processing':'sibling overlap carving; normal split and hull fill when supported',
+    })+'\n')
+    return mask_sha256
 
 
 def _reconcile_enumeration(
@@ -1283,6 +1350,7 @@ def _ingest_refinements(
     transform,
     moge_maps,
     entries: list[dict],
+    unresolved: list[dict] | None = None,
 ) -> None:
     """Fence-family box refinements become first-class geometry entries:
     normal split, nearest-cluster lift, and (downstream) contact edge,
@@ -1363,7 +1431,7 @@ def _ingest_refinements(
     )
     existing_fence_masks = []
     for entry in entries:
-        if entry.get("refine_slug"):
+        if entry.get("refine_slug") or entry.get("frame", "frame_0001") != frame.frame_id:
             continue
         slug = re.sub(r"[^a-z0-9]+", "_", entry["label"]).strip("_")
         cache = run / "inventory" / "sam" / f"{frame.frame_id}__{slug}.json"
@@ -1392,7 +1460,12 @@ def _ingest_refinements(
             + "_"
             + "_".join(str(v) for v in item["box"])
         )
-        mask = _refine_mask(run, slug, height, width)
+        try:
+            mask = _refine_mask(run, slug, height, width, frame.frame_id, use_derived=False)
+        except ValueError as error:
+            print(f"  [refinement] {slug}: {error}")
+            if unresolved is not None: unresolved.append({"phrase":item["label"], "refine_slug":slug, "reason":str(error)})
+            continue
         if mask is None or mask.sum() < MIN_MASK_PIXELS:
             continue
         decoded_items.append((item, slug, mask))
@@ -1437,33 +1510,6 @@ def _ingest_refinements(
             inter = int((mask_i & mask_j).sum())
             if inter > 0.6 * small_area:
                 mask_j &= ~mask_i
-                cache_j = run / "refinements" / f"{slug_j}.json"
-                try:
-                    response = json.loads(cache_j.read_text())
-                    rles = response.get("rle") or []
-                    if isinstance(rles, str):
-                        rles = [rles]
-                    scores = response.get("scores") or [1.0] * len(rles)
-                    best = int(np.argmax(scores))
-                    from PIL import Image as PILImage
-
-                    with PILImage.open(
-                        next((run / "input").glob("image_*"))
-                    ) as full:
-                        fw, fh = full.size
-                    upscaled = (
-                        np.asarray(
-                            PILImage.fromarray(
-                                mask_j.astype(np.uint8) * 255
-                            ).resize((fw, fh))
-                        )
-                        > 127
-                    )
-                    rles[best] = encode_coco_rle(upscaled)
-                    response["rle"] = rles
-                    cache_j.write_text(json.dumps(response) + "\n")
-                except Exception:
-                    pass
     for item, slug, mask in decoded_items:
         if mask.sum() < MIN_MASK_PIXELS:
             continue
@@ -1481,25 +1527,7 @@ def _ingest_refinements(
         if moge_maps is not None and is_contact:
             split = _normal_split(mask, *moge_maps)
         if split is not None:
-            if True:
-                mask = split
-                # the raw box-prompt mask bleeds over whatever stands in
-                # front of / behind the glass; persist the cleaned framed
-                # quad so the interaction layer inherits it (same
-                # treatment inventory instances get)
-                cache = run / "refinements" / f"{slug}.json"
-                try:
-                    response = json.loads(cache.read_text())
-                    rles = response.get("rle") or []
-                    if isinstance(rles, str):
-                        rles = [rles]
-                    scores = response.get("scores") or [1.0] * len(rles)
-                    best = int(np.argmax(scores))
-                    rles[best] = encode_coco_rle(_hull_fill(split))
-                    response["rle"] = rles
-                    cache.write_text(json.dumps(response) + "\n")
-                except Exception:
-                    pass
+            mask = _hull_fill(split)
         selected = mask & finite
         depth_map = points3d[..., 2]
         if selected.sum() < MIN_MASK_PIXELS:
@@ -1530,6 +1558,7 @@ def _ingest_refinements(
                 "label": item["label"],
                 "instance": None,
                 "refine_slug": slug,
+                "refine_mask_sha256": _save_refinement_mask(run, frame.frame_id, slug, mask),
                 "frame": frame.frame_id,
                 "score": item.get("sam_score", 1.0),
                 "points": int(len(cloud)),
@@ -2347,6 +2376,7 @@ def _render_plan(
     palette = ["#c1121f", "#1d4ed8", "#047857", "#b45309", "#6d28d9",
                "#0e7490", "#9d174d", "#4d7c0f", "#7c2d12", "#334155"]
     legend = []
+    plan_map = []  # hit-areas for the report's CAD overlay, image pixel coords
     tag_boxes: list[tuple[float, float]] = []
     for index, obj in enumerate(objects):
         colour = palette[index % len(palette)]
@@ -2364,6 +2394,14 @@ def _render_plan(
         draw.line([px(p) for p in obj["footprint"] + [obj["footprint"][0]]],
                   fill=colour, width=1)
         cx, cy = obj["centroid_xy"]
+        ring_px = [[round(x, 1), round(y, 1)] for x, y in (px(p) for p in ring)]
+        if ring_px[0] == ring_px[-1]:
+            ring_px.pop()
+        plan_map.append({
+            "legend": index + 1, "inv": obj.get("inv"), "label": obj["label"],
+            "polygon": ring_px,
+            "centroid": [round(v, 1) for v in px((cx, cy))],
+        })
         draw.text(px((cx, cy)), f"{index + 1}", fill=colour, anchor="mm")
         # measured state next to the symbol, like the probe plot the owner
         # signed off on: label, height, tilt when the fit produced one.
@@ -2500,6 +2538,9 @@ def _render_plan(
     draw.line([bar, (bar[0] + bar_m * scale, bar[1])], fill="#111111", width=5)
     draw.text((bar[0], bar[1] + 8), "1 m", fill="#111111")
     image.save(path)
+    Path(path).with_name("floor_plan_map.json").write_text(
+        json.dumps({"width": W, "height": H, "objects": plan_map}) + "\n"
+    )
 
 
 def _write_scene(path: Path, run_id: str, entries: list[dict]) -> None:
@@ -2587,12 +2628,14 @@ def main(argv: list[str] | None = None) -> int:
 
     entries: list[dict] = []
     cleaned_masks: dict[tuple[str, str], dict[int, np.ndarray]] = {}
+    first_frame_moge = None
     for frame in frames:
         points3d = np.load(frame.pts3d_path)
         valid = np.load(frame.valid_mask_path).astype(bool)
-        finite = valid & np.isfinite(points3d).all(axis=2)
+        finite = valid & np.isfinite(points3d).all(axis=2) & (np.abs(points3d).sum(axis=2) > 1e-6)
         height, width = valid.shape
-        moge_maps = _moge3_maps(run, frame)
+        moge_maps = _moge3_maps(run, frame, live=args.live)
+        if frame == frames[0]: first_frame_moge = moge_maps
         for phrase in phrases:
             response = _segment(run, frame, phrase, live=args.live)
             if response is None:
@@ -2735,7 +2778,7 @@ def main(argv: list[str] | None = None) -> int:
     unresolved = _reconcile_enumeration(
         run, frames[0], entries, phrases, live=args.live
     )
-    _ingest_refinements(run, frames[0], transform, moge_maps, entries)
+    _ingest_refinements(run, frames[0], transform, first_frame_moge, entries, unresolved)
     # the guarantee, settled AFTER measurement: every enumerated phrase
     # either has a measured instance or an explicit unresolved record
     covered_after = {e["label"] for e in entries}
@@ -2754,6 +2797,9 @@ def main(argv: list[str] | None = None) -> int:
         json.dumps(unresolved, ensure_ascii=False, indent=2) + "\n"
     )
 
+    # shared selection key across report / CAD / 3D: position in inventory.json["objects"]
+    for i, entry in enumerate(entries):
+        entry["inv"] = i
     # Every reliable instance goes on the sheet (the interactive report
     # plan draws instances; the static CAD sheet must match it 1:1).
     plan_entries: list[dict] = []
@@ -2780,7 +2826,7 @@ def main(argv: list[str] | None = None) -> int:
     for frame in frames:
         points3d = np.load(frame.pts3d_path)
         valid = np.load(frame.valid_mask_path).astype(bool)
-        finite = valid & np.isfinite(points3d).all(axis=2)
+        finite = valid & np.isfinite(points3d).all(axis=2) & (np.abs(points3d).sum(axis=2) > 1e-6)
         scene_cloud.append(transform.apply(points3d[finite]))
     cloud = np.vstack(scene_cloud)
     walls = [
@@ -2817,7 +2863,7 @@ def main(argv: list[str] | None = None) -> int:
             if not any(k in entry["label"] for k in CONTACT_FAMILY):
                 continue
             if entry.get("refine_slug"):
-                raw_mask = _refine_mask(run, entry["refine_slug"], height, width)
+                raw_mask = _refine_mask(run, entry["refine_slug"], height, width, frame.frame_id, expected_sha256=entry.get("refine_mask_sha256"))
                 if raw_mask is None:
                     continue
             else:

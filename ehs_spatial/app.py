@@ -177,6 +177,18 @@ def _status_copy(
     return "\n\n".join(lines)
 
 
+def _topdown_for(paths) -> str | None:
+    """Show this run's complete CAD, then its real point-cloud top view.
+
+    Both RunPaths and VideoRunPaths have a run root; VideoRunPaths has no
+    cloud field and its topdown_png is a trajectory plot, not a CAD view.
+    """
+    for candidate in (paths.root / "inventory" / "floor_plan.png", paths.root / "cloud_topdown.png"):
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
 def _scripts_on_path() -> None:
     import sys as _sys
 
@@ -442,7 +454,7 @@ def analyze_run(
                 elem_classes=["result-status", f"status-{status_class}"],
             ),
             str(paths.point_cloud_glb),
-            str(paths.topdown_png),
+            _topdown_for(paths),
             {
                 "assessment": assessment.model_dump(mode="json"),
                 "scene_map": scene.model_dump(mode="json"),
@@ -658,7 +670,7 @@ def load_history_run(
             value=card,
             elem_classes=["result-status", status_class],
         ),
-        str(paths.topdown_png) if paths.topdown_png.is_file() else None,
+        _topdown_for(paths),
         gr.update(value=_disposition_copy(_load_disposition(pipeline, paths))),
         gr.update(value=""),
         gr.update(value="confirmed"),
@@ -914,7 +926,7 @@ def analyze_video(
     return (
         gr.update(value=card, elem_classes=["result-status", status_class]),
         str(paths.overlay_gif) if paths.overlay_gif.is_file() else None,
-        str(paths.topdown_png) if paths.topdown_png.is_file() else None,
+        _topdown_for(paths),
         report,
         gr.update(choices=list_video_runs(pipeline), value=run_id),
     )
@@ -949,7 +961,7 @@ def load_video_run(pipeline: Any, run_id: str | None) -> tuple[object, ...]:
     return (
         gr.update(value=card, elem_classes=["result-status", status_class]),
         str(paths.overlay_gif) if paths.overlay_gif.is_file() else None,
-        str(paths.topdown_png) if paths.topdown_png.is_file() else None,
+        _topdown_for(paths),
         report,
     )
 

@@ -6,7 +6,7 @@ gallery. The 3D viewer iframe embeds lazily only when the run has a
 compact viewer; everything else is self-contained data URIs, so the file
 opens offline anywhere."""
 
-import base64, html, io, json, re
+import base64, html, io, json, re, sys
 from pathlib import Path
 
 import numpy as np
@@ -14,9 +14,28 @@ from PIL import Image
 from shapely.geometry import Polygon
 
 from .providers.sam3 import decode_coco_rle
+
+# Reuse the same inventory renderer as the app; no model calls during report builds.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from scene_inventory import inventory_plan_objects, ensure_floor_plan, _refine_mask
 from .taxonomy import TAXONOMY
 
 _CSS = '\n:root{--paper:#F5F7F6;--surface:#FFF;--ink:#1B2327;--muted:#5A676F;--line:#DAE0DE;--accent:#0E7490;--accent-ink:#0A5B71;\n--pass:#178A50;--pass-bg:#E4F3EA;--warn:#A9740E;--warn-bg:#F7EEDC;--fail:#C13B3B;--fail-bg:#F9E7E5;--insuff:#5D6B76;--insuff-bg:#E9EDEF;--card:#FCFDFC}\n@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--paper:#101619;--surface:#161D21;--ink:#E7ECEC;--muted:#9AA7AC;--line:#263136;--accent:#41BBD3;--accent-ink:#6ED0E3;\n--pass:#41BE7E;--pass-bg:#12301F;--warn:#DFA83D;--warn-bg:#33280F;--fail:#E4706A;--fail-bg:#3A1B18;--insuff:#93A2AC;--insuff-bg:#232D33;--card:#141B1F}}\n:root[data-theme="dark"]{--paper:#101619;--surface:#161D21;--ink:#E7ECEC;--muted:#9AA7AC;--line:#263136;--accent:#41BBD3;--accent-ink:#6ED0E3;\n--pass:#41BE7E;--pass-bg:#12301F;--warn:#DFA83D;--warn-bg:#33280F;--fail:#E4706A;--fail-bg:#3A1B18;--insuff:#93A2AC;--insuff-bg:#232D33;--card:#141B1F}\n*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.7 \'Noto Sans SC\',\'IBM Plex Sans\',sans-serif}\n.wrap{max-width:1020px;margin:0 auto;padding:44px 22px 90px}\nh1{font-family:\'IBM Plex Sans\',\'Noto Sans SC\',sans-serif;font-size:clamp(24px,4vw,34px);margin:0 0 6px;text-wrap:balance}\nh4{font-family:\'IBM Plex Sans\',sans-serif;margin:20px 0 8px}\n.eyebrow{font-family:\'IBM Plex Mono\',monospace;font-size:11.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}\n.eyebrow b{color:var(--accent-ink)}\n.lede{color:var(--muted);max-width:47em;margin:0 0 6px}\n.mono{font-family:\'IBM Plex Mono\',monospace;font-variant-numeric:tabular-nums}\n.pill{display:inline-block;padding:1px 9px;border-radius:3px;font-size:12.5px;font-weight:600;white-space:nowrap}\n.pill.fail{background:var(--fail-bg);color:var(--fail)}.pill.warn{background:var(--warn-bg);color:var(--warn)}\n.pill.insuff{background:var(--insuff-bg);color:var(--insuff)}.pill.pass{background:var(--pass-bg);color:var(--pass)}\n.legend{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:14px 18px;margin:20px 0}\n.legend div{margin:4px 0}\ndetails.case{background:var(--surface);border:1px solid var(--line);border-radius:5px;margin:12px 0;overflow:hidden}\ndetails.case summary{display:flex;align-items:center;gap:14px;padding:10px 16px;cursor:pointer;list-style:none}\ndetails.case summary::-webkit-details-marker{display:none}\ndetails.case summary img{width:96px;height:64px;object-fit:cover;border-radius:3px;border:1px solid var(--line)}\ndetails.case[open] summary{border-bottom:1px solid var(--line)}\n.cid{font-weight:600}\n.cmeta{margin-left:auto;color:var(--muted);font-size:12.5px}\n.body{padding:16px 18px}\n.figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin:10px 0}\nfigure{margin:0;background:var(--card);border:1px solid var(--line);border-radius:4px;overflow:hidden}\nfigure img{max-width:100%;display:block;cursor:zoom-in}\nfigcaption{padding:8px 12px;font-size:12.5px;color:var(--muted)}\nfigcaption b{color:var(--ink)}\n.policy{border:1px solid var(--line);border-radius:4px;padding:10px 12px;margin:8px 0;background:var(--card)}\n.pname{font-weight:600;margin-left:6px}\n.reason{margin:6px 0 0;padding-left:10px;border-left:3px solid var(--line);font-size:13.5px}\n.reason.vio{border-left-color:var(--fail)}\n.reason .raw{color:var(--muted);font-size:11.5px;overflow-x:auto}\n.tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:4px}\ntable{border-collapse:collapse;width:100%;font-size:13.5px;background:var(--surface)}\nth,td{padding:7px 11px;border-bottom:1px solid var(--line);text-align:left}\nth{font-family:\'IBM Plex Mono\',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}\n.hint{font-size:11.5px;color:var(--muted);margin-top:14px;overflow-x:auto}\n.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:20px 0}\n.tile{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:12px 14px}\n.tile .v{font-family:\'IBM Plex Mono\',monospace;font-size:22px;font-weight:600}\n.tile .l{font-size:12px;color:var(--muted)}\n#lb{position:fixed;inset:0;background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center;z-index:50;cursor:zoom-out}\n#lb[hidden]{display:none}\n#lb img{max-width:96vw;max-height:94vh}\na{color:var(--accent-ink)}\n'
+# 2×2 linked-selection block: photo | 3D / CAD | plan
+_CSS += '''
+.lbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12.5px;margin:6px 0 10px}
+.lbar .lnames span{display:inline-block;padding:1px 8px;border-radius:3px;background:var(--accent);color:#fff;cursor:pointer;margin:2px 4px 2px 0}
+.linked{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:999px){.linked{grid-template-columns:1fr}}
+.lcell{min-width:0}.lcell h4{margin:0 0 6px;font-size:13.5px}
+.icad{position:relative;border:1px solid var(--line);border-radius:4px;overflow:hidden;background:#fff}
+.icad img{display:block;width:100%}
+.icad svg{position:absolute;inset:0;width:100%;height:100%}
+.icad polygon{fill:transparent;stroke:none;cursor:pointer}
+.icad polygon:hover{fill:rgba(14,116,144,.18)}
+.icad polygon.on{fill:rgba(14,116,144,.3);stroke:#0E7490;stroke-width:6}
+.linked polygon[role="button"]:focus{outline:none;stroke:#0E7490;stroke-width:4;stroke-dasharray:5,3}
+'''
 
 
 def uri(path, maxw=760, q=68):
@@ -62,96 +81,66 @@ CASE_NOTES = {
  'gen-01': '<div class="reason" style="margin:10px 0"><b>补测已回灌</b>：光幕柱×2 + 左右侧板×3。围栏族矩形强制贴车间主轴（直角回归）。</div>',
 }
 
-def snap_rect(footprint, theta_deg):
-    if theta_deg is None: return None
-    pts=np.asarray(footprint,float)
-    if len(pts)<3: return None
-    t=np.radians(theta_deg)
-    rot=np.array([[np.cos(-t),-np.sin(-t)],[np.sin(-t),np.cos(-t)]])
-    q=pts@rot.T
-    x0,x1=np.percentile(q[:,0],2),np.percentile(q[:,0],98)
-    y0,y1=np.percentile(q[:,1],2),np.percentile(q[:,1],98)
-    c=np.array([[x0,y0],[x1,y0],[x1,y1],[x0,y1]])
-    back=c@np.array([[np.cos(t),-np.sin(t)],[np.sin(t),np.cos(t)]]).T
-    return [[round(float(x),3),round(float(y),3)] for x,y in back]
-
 def case_objects(rid):
-    run = Path('runs')/rid
-    inv = _json(run/'inventory'/'inventory.json', {})
-    objs=[dict(o) for o in inv.get('objects',[]) if not o.get('off_plan_reason') and o['label'] not in ('floor','factory floor','ceiling','concrete floor','ceiling structure')]
-    theta=inv.get('manhattan_theta_deg')
-    rf = run/'refinements.json'
-    if rf.exists():
-        seen={o['refine_slug'] for o in objs if o.get('refine_slug')}
-        for item in json.loads(rf.read_text()):
-            slug=f"{item['label'].replace(' ','_')}_{'_'.join(str(b) for b in item['box'])}"
-            if slug in seen: continue
-            seen.add(slug)
-            if 'footprint_xy' not in item: continue
-            objs.append({'label':item['label'],'instance':1000+len(seen),'height_m':item['height_m'],
-                         'size_m':item.get('extent_m','0x0'),'camera_dist_m':item['camera_dist_m'],
-                         'centroid_xy':item['centroid_xy'],'footprint':item['footprint_xy'],
-                         'footprint_method':'refine','tilt_deg':None,'_slug':slug,
-                         'rect_snapped':snap_rect(item['footprint_xy'], theta),
-                         'footprint_area_m2':1.0})
-    return inv, objs
+    inventory = _json(Path('runs')/rid/'inventory'/'inventory.json', {})
+    return inventory, inventory_plan_objects(inventory)
 
-def mask_index_png(rid, objs):
+
+def mask_index_png(rid, objs, frame_id='frame_0001'):
+    """Native canonical grid; RGB encodes inventory index + 1, independent of list order."""
     run = Path('runs')/rid
-    frame_dir = sorted((run/'geometry'/'frames').iterdir())[0]
-    valid = np.load(frame_dir/'valid_mask.npy')
-    H, W = valid.shape
-    with Image.open(next((run/'input').glob('image_*'))) as full: FW,FH = full.size
-    # decode every mask first, then paint largest-first so the smallest mask
-    # wins every overlapping pixel (a big fence refinement must not swallow
-    # the slope's click region)
-    layers = []
-    for i, o in enumerate(objs):
-        try:
-            if o.get('footprint_method') == 'refine':
-                cache = run/'refinements'/f"{o['_slug']}.json"
-                if not cache.exists(): continue
-                r = json.loads(cache.read_text()); rles = r.get('rle') or []
-                if isinstance(rles, str): rles = [rles]
-                if not rles: continue
-                best = int(np.argmax(r.get('scores') or [1.0]*len(rles)))
-                m = decode_coco_rle(rles[best], height=FH, width=FW).astype(np.uint8)
-                m = np.asarray(Image.fromarray(m*255).resize((W, H))) > 127
-            elif o.get('refine_slug'):
-                cache = run/'refinements'/f"{o['refine_slug']}.json"
-                if not cache.exists(): continue
-                r = json.loads(cache.read_text()); rles = r.get('rle') or []
-                if isinstance(rles, str): rles = [rles]
-                if not rles: continue
-                best = int(np.argmax(r.get('scores') or [1.0]*len(rles)))
-                m = decode_coco_rle(rles[best], height=FH, width=FW).astype(np.uint8)
-                m = np.asarray(Image.fromarray(m*255).resize((W, H))) > 127
-            else:
-                slug = re.sub(r'[^a-z0-9]+','_',o['label']).strip('_')
-                cache = run/'inventory'/'sam'/f"frame_0001__{slug}.json"
-                if not cache.exists(): continue
-                r = json.loads(cache.read_text()); rles = r.get('rle') or []
-                if isinstance(rles, str): rles = [rles]
-                if o['instance'] >= len(rles): continue
-                m = np.zeros((H, W), bool)
-                for member in o.get('merged_instances') or [o['instance']]:
-                    m |= decode_coco_rle(rles[member], height=H, width=W).astype(bool)
-        except Exception:
+    with Image.open(run/'geometry'/'frames'/frame_id/'canonical.png') as image:
+        width, height = image.size
+    layers, issues = [], []
+    for obj in objs:
+        if obj.get('frame', 'frame_0001') != frame_id:
             continue
-        if m.any(): layers.append((int(m.sum()), i, m))
-    idx = np.zeros((H, W), np.uint8)
-    # perspective-aware ownership: paint FAR structures first so the NEAR
-    # one wins every overlapping pixel (a panel behind a rail must not
-    # claim the rail's face); equal-distance ties: bigger first so the
-    # smaller object stays clickable
-    def order_key(t):
-        px_count, i, _ = t
-        d = objs[i].get('camera_dist_m') or 0
-        return (-d, -px_count)
-    for _, i, m in sorted(layers, key=order_key):
-        idx[m] = i+1
-    b = io.BytesIO(); Image.fromarray(idx, mode='L').save(b,'PNG',optimize=True)
-    return 'data:image/png;base64,'+base64.b64encode(b.getvalue()).decode(), W, H
+        try:
+            if obj.get('refine_slug'):
+                mask = _refine_mask(run, obj["refine_slug"], height, width, frame_id, expected_sha256=obj.get("refine_mask_sha256"))
+                if mask is None: raise ValueError("缺少该对象的源掩码")
+            else:
+                slug = re.sub(r'[^a-z0-9]+', '_', obj['label']).strip('_')
+                response = _json(run/'inventory'/'sam'/f'{frame_id}__{slug}.json', {})
+                rles = response.get('rle') or []
+                if isinstance(rles, str): rles = [rles]
+                mask = np.zeros((height, width), bool)
+                for member in obj.get('merged_instances') or [obj['instance']]:
+                    mask |= decode_coco_rle(rles[member], height=height, width=width).astype(bool)
+            if mask.any(): layers.append((obj, mask))
+        except (ValueError, TypeError, KeyError, IndexError, OSError) as error:
+            issues.append({'inv': obj['inv'], 'reason': str(error) or '缺少该机位掩码'})
+    index = np.zeros((height, width), np.uint32)
+    # Farther masks paint first; smaller masks win equal-depth overlaps.
+    for obj, mask in sorted(layers, key=lambda pair: (-(pair[0].get('camera_dist_m') or 0), -int(pair[1].sum()))):
+        if not 0 <= obj['inv'] < 16777215: raise ValueError('Invalid inventory index')
+        index[mask] = obj['inv']+1
+    rgb = np.stack([index & 255, (index >> 8) & 255, (index >> 16) & 255], -1).astype('uint8')
+    buffer = io.BytesIO(); Image.fromarray(rgb).save(buffer, 'PNG', optimize=True)
+    visible = [int(value)-1 for value in np.unique(index) if value]
+    masks = {}
+    for obj, mask in layers:
+        encoded = io.BytesIO(); Image.fromarray(mask.astype('uint8')*255).save(encoded, 'PNG', optimize=True)
+        masks[obj['inv']] = 'data:image/png;base64,'+base64.b64encode(encoded.getvalue()).decode()
+    return 'data:image/png;base64,'+base64.b64encode(buffer.getvalue()).decode(), width, height, visible, issues, masks
+
+
+def photo_fragment(rid, objs):
+    frames = sorted((Path('runs')/rid/'geometry'/'frames').glob('frame_*/canonical.png'))
+    if not frames: return '<p class="hint">无（无可点选实体或缺少几何帧）</p>'
+    options, panels = [], []
+    for number, canonical in enumerate(frames, 1):
+        frame_id = canonical.parent.name
+        index_uri, width, height, visible, issues, masks = mask_index_png(rid, objs, frame_id)
+        options.append(f'<option value="{frame_id}">机位 {number} · {frame_id}</option>')
+        attrs = html.escape(json.dumps({'clickable_inv': visible, 'mask_inv': list(masks), 'issues': issues}), quote=True)
+        panels.append(f'<div class="iphoto" data-frame="{frame_id}" data-mw="{width}" data-mh="{height}" data-photo="{attrs}"'+(' hidden' if number>1 else '')+'>'
+                      f'<canvas style="width:100%;display:block;border:1px solid var(--line);border-radius:4px;cursor:crosshair"></canvas>'
+                      f'<img class="ipbase" src="data:image/png;base64,{base64.b64encode(canonical.read_bytes()).decode()}" hidden>'
+                      f'<img class="ipidx" src="{index_uri}" hidden>'+''.join(f'<img class="ipmask" data-mask-inv="{inv}" src="{mask_uri}" hidden>' for inv, mask_uri in masks.items())+'</div>')
+    return ('<label>照片机位 <select class="photo-frame">'+''.join(options)+'</select></label>'
+            '<p class="photo-status hint" role="status"></p>'+''.join(panels))
+
 
 def disp_names(objs):
     counts={}
@@ -182,7 +171,7 @@ def plan_fragment(rid, inv, objs):
         for j in range(i+1,n):
             g=round(polys[i].distance(polys[j]),2); gaps[i][j]=gaps[j][i]=g
     disp=disp_names(objs)
-    meta=[{"label":f"{o['label']} #{i+1}","zh":disp[i],"h":o['height_m'],"tilt":o.get('tilt_deg'),
+    meta=[{"inv":o['inv'],"frame":o.get("frame", "frame_0001"),"label":f"{o['label']} #{i+1}","zh":disp[i],"h":o['height_m'],"tilt":o.get('tilt_deg'),
            "size":o['size_m'],"d":o['camera_dist_m'],"method":o.get('footprint_method','hull'),"ns":1 if o.get('normal_split') else 0,
            "cx":px(tuple(o['centroid_xy']))[0],"cy":px(tuple(o['centroid_xy']))[1]} for i,o in enumerate(objs)]
     svg=[f'<svg viewBox="0 0 {W} {H}" style="width:100%;background:var(--card);border:1px solid var(--line);border-radius:4px">']
@@ -211,16 +200,37 @@ def plan_fragment(rid, inv, objs):
         if o.get('footprint_method')=='refine': dash=' stroke-dasharray="2,3"'
         if not o.get('footprint_method'):
             svg.append(f'<polygon points="{hpts}" fill="none" stroke="{c}" stroke-width="0.8" opacity="0.5"/>')
-        svg.append(f'<polygon class="ip" data-i="{i}" points="{bpts}" fill="{c}" fill-opacity="0.22" stroke="{c}" stroke-width="2"{dash} style="cursor:pointer"/>')
+        label = html.escape(f'交互平面：{disp[i]} · {o.get("frame", "frame_0001")} · inv {o["inv"]}', quote=True)
+        svg.append(f'<polygon class="ip" data-inv="{o["inv"]}" role="button" tabindex="0" aria-label="{label}" aria-pressed="false" points="{bpts}" fill="{c}" fill-opacity="0.22" stroke="{c}" stroke-width="2"{dash} style="cursor:pointer"/>')
         svg.append(f'<text x="{cx}" y="{cy}" font-size="11" fill="{c}" text-anchor="middle" style="pointer-events:none;font-family:IBM Plex Mono,monospace">{i+1}</text>')
     cam=px((0,0)); svg.append(f'<circle cx="{cam[0]}" cy="{cam[1]}" r="6" fill="#c1121f"/><text x="{cam[0]+9}" y="{cam[1]+4}" font-size="10" fill="#c1121f" style="font-family:IBM Plex Mono,monospace">CAM</text>')
     svg.append('</svg>')
-    legend=' '.join(f'<span class="iplegend" data-i="{i}" style="cursor:pointer"><span style="display:inline-block;width:9px;height:9px;background:{PALETTE[i%len(PALETTE)]};border-radius:2px;margin-right:4px"></span>{i+1}.{disp[i]}</span>' for i,o in enumerate(objs))
+    legend=' '.join(f'<span class="iplegend" data-inv="{o["inv"]}" style="cursor:pointer"><span style="display:inline-block;width:9px;height:9px;background:{PALETTE[i%len(PALETTE)]};border-radius:2px;margin-right:4px"></span>{i+1}.{disp[i]}</span>' for i,o in enumerate(objs))
     payload=json.dumps({"meta":meta,"gaps":gaps},ensure_ascii=False).replace('&','&amp;').replace('"','&quot;')
     theta_note = f' · 主轴 {theta}°' if theta is not None else ''
     return (f'<div class="iplan" data-run="{rid}" data-pack="{payload}">'+''.join(svg)+
-            f'<div style="margin:6px 0;font-size:12.5px">{legend} <button class="ipclear">清空选择</button><span style="color:var(--muted)">{theta_note} · 长虚线=接触边投影 · 点虚线=近簇裁剪 · 疏长虚线=共线对齐 · 短虚线=人工补测 · 灰粗线=墙面走向(主轴输入)</span></div>'
-            f'<div class="ipinfo" style="border:1px solid var(--line);border-radius:4px;padding:8px 12px;font-size:13.5px;color:var(--muted)">点<b>原图</b>、平面图或 3D 三向联动；连点多个出间距矩阵+连线</div></div>')
+            f'<div style="margin:6px 0;font-size:12.5px">{legend} <span style="color:var(--muted)">{theta_note} · 长虚线=接触边投影 · 点虚线=近簇裁剪 · 疏长虚线=共线对齐 · 短虚线=人工补测 · 灰粗线=墙面走向(主轴输入)</span></div>'
+            f'<div class="ipinfo" style="border:1px solid var(--line);border-radius:4px;padding:8px 12px;font-size:13.5px;color:var(--muted)">{_IDLE}</div></div>')
+
+_IDLE = '点<b>原图</b>、3D、CAD 或平面图任一格，四格联动；连点多个出间距矩阵+连线'
+
+def cad_fragment(run):
+    """floor_plan.png with a transparent SVG hit-area per object (from the
+    renderer's floor_plan_map.json sidecar), rebuilt from inventory when stale."""
+    ensure_floor_plan(run)
+    fp = run/'inventory'/'floor_plan.png'
+    if not fp.exists(): return '<p class="hint">无（inventory/floor_plan.png 缺失）</p>'
+    m = _json(run/'inventory'/'floor_plan_map.json', None)
+    overlay = ''
+    if isinstance(m, dict) and m.get('objects'):
+        polygons = []
+        for obj in m['objects']:
+            if obj.get('inv') is None or len(obj.get('polygon') or []) < 3: continue
+            label = html.escape(f'CAD 平面图：{obj["label"]} · inv {obj["inv"]}', quote=True)
+            points = ' '.join(f'{x},{y}' for x,y in obj['polygon'])
+            polygons.append(f'<polygon data-inv="{obj["inv"]}" role="button" tabindex="0" aria-label="{label}" aria-pressed="false" points="{points}"><title>{obj["legend"]}. {esc(obj["label"])}</title></polygon>')
+        overlay = f'<svg viewBox="0 0 {m["width"]} {m["height"]}" preserveAspectRatio="xMidYMid meet">{"".join(polygons)}</svg>'
+    return f'<div class="icad"><img src="{uri(fp, 1600, 80)}" alt="CAD floor plan">{overlay}</div>'
 
 
 def _disp_line(d):
@@ -284,18 +294,10 @@ def build_case(rid):
     header=(f'<div class="legend" data-section="header"><div><b>Run</b> <span class="mono">{rid}</span> <span class="pill {cls}">{zh}</span>'
             f' · 采集层 {esc(man.get("capture_tier") or "—")} · 操作员 {esc(man.get("operator") or "—")}</div>'
             f'<div><b>审核结论</b> {_disp_line(disp)}</div>'
-            f'<div><b>分析版本</b> <span class="mono">{esc(inv.get("analysis_version") or "—")}</span> · <b>创建时间</b> <span class="mono">{esc(man.get("created_at") or "—")}</span></div></div>')
-    # 5. 原图点选
-    photo=''
-    if objs and inp is not None:
-        try:
-            idx_uri, mw, mh = mask_index_png(rid, objs)
-            photo=(f'<h4 data-section="photo">原图点选 · 点照片里的物体直接高亮（含人工补测）</h4>'
-                   f'<div class="iphoto" data-mw="{mw}" data-mh="{mh}">'
-                   f'<canvas style="width:100%;display:block;border:1px solid var(--line);border-radius:4px;cursor:crosshair"></canvas>'
-                   f'<img class="ipbase" src="{uri(inp, 1100, 76)}" hidden><img class="ipidx" src="{idx_uri}" hidden></div>')
-        except Exception: photo=''
-    photo = photo or _empty('photo','原图点选','无（无可点选实体或缺少几何帧）')
+            f'<div><b>分析版本</b> <span class="mono">{esc(inv.get("analysis_version") or "—")}</span> · <b>创建时间</b> <span class="mono">{esc(man.get("created_at") or "—")}</span></div>'
+            f'<div class="hint">四联动使用当前库存测量；判定明细沿用已保存的分析结果，重建视图不会重新评定规则。</div></div>')
+    # Photo and hit map use the exact same canonical pixels for each evidence frame.
+    photo = photo_fragment(rid, objs)
     # 8. 实体测量 + 尺度来源
     ents={}
     for e in s.get('entities',[]): ents.setdefault(e['label'],[]).append(e.get('height_m'))
@@ -334,19 +336,16 @@ def build_case(rid):
               + (f'<div class="tblwrap"><table><tr><th>VLM 短语</th><th>中文</th><th>去向</th></tr>{ph_rows}</table></div>' if ph_rows else '<p class="hint">无（缺少 inventory/phrases.json）</p>')
               + f'<p class="hint">枚举必有交代：每个 VLM 枚举短语要么落地为实例，要么在 unresolved 中记录原因。当前 {len(phrases)} 短语 · {len(unres)} 条 unresolved。</p>')
     # 10. 证据图集
-    depth_chips=' '.join(f'<span class="iplegend" data-i="{i}" style="cursor:pointer;font-size:11.5px"><span style="display:inline-block;width:8px;height:8px;background:{PALETTE[i%len(PALETTE)]};border-radius:2px;margin-right:3px"></span>{i+1}</span>' for i in range(nobj))
+    depth_chips=' '.join(f'<span class="iplegend" data-inv="{o["inv"]}" style="cursor:pointer;font-size:11.5px"><span style="display:inline-block;width:8px;height:8px;background:{PALETTE[i%len(PALETTE)]};border-radius:2px;margin-right:3px"></span>{i+1}</span>' for i,o in enumerate(objs))
     gal=''.join(_fig(f, f'<b>{f.stem}</b> evidence overlay（判定链 mask）') for f in (sorted((run/'evidence').glob('*.png')) if (run/'evidence').exists() else []))
     if dr.exists(): gal+=_fig(dr, f'<b>深度渲染</b> · 点编号选中<br>{depth_chips}')
-    for f_,cap in ((run/'cloud_perspective.png','<b>点云透视</b>'),(run/'cloud_topdown.png','<b>点云顶视</b>'),(run/'plan_view.png','<b>平面视图</b>'),(fp,'<b>测量平面图（CAD 版，全实例）</b>')):
+    # plan_view.png (fence-only hull, camera at origin) is a pipeline intermediate, not a product view
+    for f_,cap in ((run/'cloud_perspective.png','<b>点云透视</b>'),(run/'cloud_topdown.png','<b>点云顶视</b>'),(fp,'<b>测量平面图（CAD 版，全实例）</b>')):
         if f_.exists(): gal+=_fig(f_, cap)
     figs='<h4 data-section="gallery">证据图集（每帧 evidence overlay · 深度渲染 · 点云透视/顶视 · 平面图）</h4>' + (f'<div class="figs">{gal}</div>' if gal else '<p class="hint">无</p>')
     # 7. 交互 3D
-    vs=run/'viewer_small.html'
-    if not vs.exists():
-        # app runs ship the pipeline's full self-contained viewer instead
-        # of the test-set slim build — same three.js scene, embed it
-        vs=run/'viewer.html'
-    viewer=f'<h4 data-section="viewer">交互 3D（照片色 · 按实例）</h4><iframe class="v3d" srcdoc="{srcdoc(vs)}" style="width:100%;height:460px;border:1px solid var(--line);border-radius:4px;display:block;background:#0d1114" title="{rid} 3D"></iframe>' if vs.exists() else _empty('viewer','交互 3D','无（viewer.html 缺失）')
+    vs=run/'viewer.html'
+    viewer=f'<iframe id="v3d" class="v3d" srcdoc="{srcdoc(vs)}" style="width:100%;height:460px;border:1px solid var(--line);border-radius:4px;display:block;background:#0d1114" title="{rid} 3D"></iframe>' if vs.exists() else '<p class="hint">无（viewer.html 缺失）</p>'
     # 4. 装置检测清单
     refine_html=''
     det_html=''
@@ -433,14 +432,22 @@ def build_case(rid):
               f'<div class="legend"><b>run 参数</b><div>相机高度：<span class="mono">{f"{cam_h} m" if cam_h is not None else "—（未持久化）"}</span></div>'
               f'<div>policy 集：<ul style="margin:4px 0 0 18px;padding:0">{spec_li}</ul></div>'
               f'<div>后端来源：<div class="tblwrap" style="margin-top:4px"><table>{prov_rows}</table></div></div></div>')
-    plan_html=(f'<h4 data-section="plan">CAD 平面图 + 交互平面（点选出距离矩阵 · cell 矩形约束）</h4>{cell_rect_html(inv)}'
-               + (plan or '<p class="hint">无平面对象</p>'))
+    # 5–7. 2×2 linked block: photo | 3D / CAD | plan — one selection bus, key = inv.
+    # Wrapper is data-section-group (not data-section): the 14 section markers stay 14.
+    linked=(f'<h4>物体联动 · 原图 / 交互 3D / CAD 平面图 / 交互平面 — 点一个物体，四格同时选中（多选出间距矩阵）</h4>'
+            f'<div class="lbar"><button class="lall">全选</button><button class="lclear">全不选</button><span class="lcount">已选 0 个</span><span class="lnames"></span></div>'
+            f'<div class="linked" data-section-group="linked">'
+            f'<div class="lcell" data-section="photo"><h4>原图点选（按机位）</h4>{photo}</div>'
+            f'<div class="lcell" data-section="viewer"><h4>交互 3D（照片色 · 按实例）</h4>{viewer}</div>'
+            f'<div class="lcell" data-subsection="cad"><h4>CAD 平面图（全实例 · 悬停看名称）</h4>{cad_fragment(run)}</div>'
+            f'<div class="lcell" data-section="plan"><h4>交互平面（点选出距离矩阵）</h4>{plan or "<p class=hint>无平面对象</p>"}</div>'
+            f'</div>{cell_rect_html(inv)}')
     sf_txt=round(sf,2) if isinstance(sf,(int,float)) else '—'
     return (f'''<details class="case"><summary>{f'<img src="{thumb(inp)}">' if inp is not None else ''}<span class="cid mono">{rid}</span>
-    <span class="pill {cls}">{zh}</span><span class="cmeta mono">scale {sf_txt} · {len(s.get("entities",[]))} 实体</span></summary>
-      <div class="body">{header}{CASE_NOTES.get(rid,'')}
+    <span class="pill {cls}">{zh}</span><span class="cmeta mono">scale {sf_txt} · {nobj} 联动物体 · {len(s.get("entities",[]))} 判定实体</span></summary>
+      <div class="body">{header}{linked}{CASE_NOTES.get(rid,'')}
     <h4 data-section="verdicts">判定明细</h4>{pol_rows}
-    {phr_html}{det_html}{photo}{plan_html}{viewer}
+    {phr_html}{det_html}
     <h4 data-section="measurements">实体测量（物体 / 数量 / 高 / 尺寸 / 距相机 / 足迹方法）</h4>{scale_html}
     <div class="tblwrap"><table><tr><th>物体</th><th>数量</th><th>高度</th></tr>{ent_rows}</table></div>{obj_tbl}
     {reproj_html}{figs}{refine_html}{chat_html(run)}{rev_html}{appendix}
@@ -448,12 +455,166 @@ def build_case(rid):
       </div></details>''')
 
 
-_TAIL_JS = '\n</div>\n<div id="lb" hidden><img alt=""></div>\n<script>\n(function(){\nvar lb=document.getElementById(\'lb\'),im=lb.querySelector(\'img\');\ndocument.querySelectorAll(\'figure img\').forEach(function(el){el.addEventListener(\'click\',function(){im.src=el.src;lb.hidden=false})});\nlb.addEventListener(\'click\',function(){lb.hidden=true;im.src=\'\'});\ndocument.addEventListener(\'keydown\',function(e){if(e.key===\'Escape\')lb.hidden=true});\nvar PAL=["#c1121f","#1d4ed8","#047857","#b45309","#6d28d9","#0e7490","#9d174d","#4d7c0f","#7c2d12","#334155"];\nfunction hex2rgb(hx){return [parseInt(hx.slice(1,3),16),parseInt(hx.slice(3,5),16),parseInt(hx.slice(5,7),16)];}\nvar plans=[];\ndocument.querySelectorAll(\'.iplan\').forEach(function(w){\n  var pack=JSON.parse(w.getAttribute(\'data-pack\')),meta=pack.meta,gaps=pack.gaps;\n  var info=w.querySelector(\'.ipinfo\'),linesG=w.querySelector(\'.iplines\');\n  var body=w.closest(\'.body\'),frame=body?body.querySelector(\'iframe.v3d\'):null;\n  var photo=body?body.querySelector(\'.iphoto\'):null;\n  var selected=[];\n  var P={w:w,meta:meta,frame:frame,selected:selected};\n  var idxData=null,pcv=null,pbase=null,mw=0,mh=0;\n  if(photo){\n    pcv=photo.querySelector(\'canvas\');pbase=photo.querySelector(\'.ipbase\');\n    var pidx=photo.querySelector(\'.ipidx\');\n    mw=+photo.dataset.mw;mh=+photo.dataset.mh;\n    var ready=function(){\n      try{\n        var oc=document.createElement(\'canvas\');oc.width=mw;oc.height=mh;\n        var octx=oc.getContext(\'2d\');octx.drawImage(pidx,0,0);\n        idxData=octx.getImageData(0,0,mw,mh).data;\n        pcv.width=pbase.naturalWidth;pcv.height=pbase.naturalHeight;\n        photoDraw();\n      }catch(err){}\n    };\n    var pending=0;\n    [pbase,pidx].forEach(function(el){if(!el.complete)pending++;});\n    if(pending===0)ready();\n    else [pbase,pidx].forEach(function(el){\n      if(!el.complete)el.addEventListener(\'load\',function(){if(--pending===0)ready();});\n    });\n  }\n  P.photoClick=function(e){\n    if(!idxData||!pcv)return;\n    var r=pcv.getBoundingClientRect();\n    var x=Math.floor((e.clientX-r.left)/r.width*mw);\n    var y=Math.floor((e.clientY-r.top)/r.height*mh);\n    var v=idxData[(y*mw+x)*4];\n    if(v>0)pick(v-1);\n  };\n  P.pcv=pcv;\n  function photoDraw(){\n    if(!pcv||!idxData)return;\n    var ctx=pcv.getContext(\'2d\');\n    ctx.clearRect(0,0,pcv.width,pcv.height);\n    ctx.drawImage(pbase,0,0,pcv.width,pcv.height);\n    if(!selected.length)return;\n    var oc=document.createElement(\'canvas\');oc.width=mw;oc.height=mh;\n    var octx=oc.getContext(\'2d\');var imd=octx.createImageData(mw,mh);\n    for(var p=0;p<mw*mh;p++){var v=idxData[p*4];\n      if(v>0&&selected.indexOf(v-1)>=0){var c=hex2rgb(PAL[(v-1)%PAL.length]);\n        imd.data[p*4]=c[0];imd.data[p*4+1]=c[1];imd.data[p*4+2]=c[2];imd.data[p*4+3]=150;}}\n    octx.putImageData(imd,0,0);\n    ctx.drawImage(oc,0,0,pcv.width,pcv.height);\n  }\n  function fmt(i){var m=meta[i];\n    var t=(m.tilt!==null&&m.tilt!==undefined)?(\'，倾角 \'+Math.round(m.tilt)+\'°\'):\'\';\n    var mm=m.method===\'contact-edge\'?\' · 接触边投影\':(m.method===\'refine\'?\' · 人工补测\':(m.method===\'near-cluster\'?\' · 近簇裁剪\':(m.method===\'guard-line\'?\' · 共线对齐\':\'\')));\n    if(m.ns)mm+=\' · 法线分割\';\n    return \'<b>\'+m.zh+\'</b> · 高 \'+m.h.toFixed(2)+\' m\'+t+\' · \'+m.size+\' m · 距相机 \'+m.d.toFixed(2)+\' m\'+mm;}\n  function render(notify){\n    w.querySelectorAll(\'polygon.ip\').forEach(function(pg){var on=selected.indexOf(+pg.dataset.i)>=0;\n      pg.setAttribute(\'fill-opacity\',on?\'0.55\':\'0.12\');pg.setAttribute(\'stroke-width\',on?\'3.5\':\'1.2\');});\n    while(linesG.firstChild)linesG.removeChild(linesG.firstChild);\n    if(selected.length===0){info.innerHTML=\'点<b>原图</b>、平面图或 3D 三向联动；连点多个出间距矩阵+连线\';info.style.color=\'var(--muted)\';photoDraw();return;}\n    var html=selected.map(fmt).join(\'<br>\');\n    if(selected.length>1){\n      html+=\'<table style="margin-top:6px;border-collapse:collapse;font-size:12.5px"><tr><th></th>\'+selected.map(function(i){return \'<th style="padding:2px 8px">\'+meta[i].zh+\'</th>\'}).join(\'\')+\'</tr>\';\n      selected.forEach(function(i){html+=\'<tr><th style="padding:2px 8px;text-align:left">\'+meta[i].zh+\'</th>\'+selected.map(function(j){return \'<td style="padding:2px 8px;text-align:center" class="mono">\'+(i===j?\'—\':gaps[i][j].toFixed(2)+\' m\')+\'</td>\'}).join(\'\')+\'</tr>\';});\n      html+=\'</table>\';\n      for(var a=0;a<selected.length;a++)for(var b=a+1;b<selected.length;b++){\n        var i=selected[a],j=selected[b];\n        var ln=document.createElementNS(\'http://www.w3.org/2000/svg\',\'line\');\n        ln.setAttribute(\'x1\',meta[i].cx);ln.setAttribute(\'y1\',meta[i].cy);ln.setAttribute(\'x2\',meta[j].cx);ln.setAttribute(\'y2\',meta[j].cy);\n        ln.setAttribute(\'stroke\',\'#047857\');ln.setAttribute(\'stroke-width\',\'2\');ln.setAttribute(\'stroke-dasharray\',\'5,4\');linesG.appendChild(ln);\n        var tx=document.createElementNS(\'http://www.w3.org/2000/svg\',\'text\');\n        tx.setAttribute(\'x\',(meta[i].cx+meta[j].cx)/2);tx.setAttribute(\'y\',(meta[i].cy+meta[j].cy)/2-4);\n        tx.setAttribute(\'font-size\',\'11\');tx.setAttribute(\'fill\',\'#047857\');tx.setAttribute(\'text-anchor\',\'middle\');\n        tx.style.fontFamily=\'IBM Plex Mono,monospace\';tx.textContent=gaps[i][j].toFixed(2)+\' m\';linesG.appendChild(tx);}\n    }\n    info.innerHTML=html;info.style.color=\'var(--ink)\';\n    photoDraw();\n    if(notify!==false&&selected.length){var last=selected[selected.length-1];\n      if(frame&&frame.contentWindow)frame.contentWindow.postMessage({type:\'ehs-select\',label:meta[last].label},\'*\');}\n  }\n  function pick(i,notify){var k=selected.indexOf(i);\n    if(k>=0)selected.splice(k,1);else selected.push(i);\n    if(selected.length>4)selected.shift();render(notify);}\n  P.pick=pick;P.render=render;\n  w.querySelectorAll(\'polygon.ip\').forEach(function(pg){pg.addEventListener(\'click\',function(){pick(+pg.dataset.i)})});\n  document.querySelectorAll(\'.iplegend\').forEach(function(){});\n  (body||w).querySelectorAll(\'.iplegend\').forEach(function(l){l.addEventListener(\'click\',function(){pick(+l.dataset.i)})});\n  var clr=w.querySelector(\'.ipclear\');\n  if(clr)clr.addEventListener(\'click\',function(){selected.length=0;render(false);});\n  plans.push(P);\n});\ndocument.addEventListener(\'click\',function(e){\n  var t=e.target;\n  if(!(t&&t.tagName===\'CANVAS\'))return;\n  plans.forEach(function(pl){if(pl.pcv===t&&pl.photoClick)pl.photoClick(e);});\n},true);\naddEventListener(\'message\',function(e){\n  var m=e.data;if(!m||m.type!==\'ehs-picked\')return;\n  plans.forEach(function(pl){\n    if(!pl.frame||pl.frame.contentWindow!==e.source)return;\n    if(m.label===null){pl.selected.length=0;pl.render(false);return;}\n    var idx=-1;\n    pl.meta.forEach(function(mt,i){if(idx<0&&(mt.label===m.label||mt.label.indexOf(m.label)>=0||m.label.indexOf(mt.label)>=0))idx=i;});\n    if(idx>=0){pl.selected.length=0;pl.pick(idx,false);}\n  });\n});\n})();\n</script>'
+_TAIL_JS = '\n' + '''</div>
+<div id="lb" hidden><img alt=""></div>
+<script>
+(function(){
+var lb=document.getElementById('lb'),im=lb.querySelector('img');
+document.querySelectorAll('figure img').forEach(function(el){el.addEventListener('click',function(){im.src=el.src;lb.hidden=false})});
+lb.addEventListener('click',function(){lb.hidden=true;im.src=''});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')lb.hidden=true});
+var PAL=["#c1121f","#1d4ed8","#047857","#b45309","#6d28d9","#0e7490","#9d174d","#4d7c0f","#7c2d12","#334155"];
+function hex2rgb(hx){return [parseInt(hx.slice(1,3),16),parseInt(hx.slice(3,5),16),parseInt(hx.slice(5,7),16)];}
+var IDLE='__IDLE__';
+// one selection bus per linked block; key = inv (index in inventory.json objects)
+document.querySelectorAll('.linked').forEach(function(L){
+  var ip=L.querySelector('.iplan');if(!ip)return;
+  var body=L.closest('.body')||L;
+  var pack=JSON.parse(ip.getAttribute('data-pack')),meta=pack.meta,gaps=pack.gaps;
+  var pos={};meta.forEach(function(m,i){pos[m.inv]=i;});
+  var bus={sel:new Set(),cbs:[],
+    select:function(inv,o){o=o||{};if(!(inv in pos))return;
+      if(this.sel.has(inv)){if(o.toggle!==false)this.sel.delete(inv);}
+      else{this.sel.add(inv);}
+      this.emit(o.source);},
+    set:function(list,o){this.sel=new Set(list.filter(function(v){return Number.isInteger(v)&&v in pos;}));this.emit((o||{}).source);},
+    on:function(cb){this.cbs.push(cb);},
+    emit:function(src){var arr=Array.from(this.sel);this.cbs.forEach(function(cb){cb(arr,src);});}};
+  L.bus=bus;
+  // anything carrying data-inv inside this card toggles: plan polygons, legend chips, CAD hit-areas, toolbar chips, depth chips
+  body.addEventListener('click',function(e){var t=e.target.closest?e.target.closest('[data-inv]'):null;if(t)bus.select(+t.getAttribute('data-inv'));});
+  body.addEventListener('keydown',function(e){var t=e.target.closest?e.target.closest('polygon[data-inv][role="button"]'):null;
+    if(t&&(e.key==='Enter'||e.key===' ')){e.preventDefault();bus.select(+t.getAttribute('data-inv'));}});
+  bus.on(function(sel){L.querySelectorAll('polygon[data-inv][role="button"]').forEach(function(pg){
+    pg.setAttribute('aria-pressed',sel.indexOf(+pg.getAttribute('data-inv'))>=0?'true':'false');});});
+  // toolbar
+  var bar=body.querySelector('.lbar');
+  if(bar){bar.querySelector('.lall').addEventListener('click',function(){bus.set(meta.map(function(m){return m.inv;}));});
+    bar.querySelector('.lclear').addEventListener('click',function(){bus.set([]);});
+    bus.on(function(sel){bar.querySelector('.lcount').textContent='已选 '+sel.length+' 个';
+      bar.querySelector('.lnames').innerHTML=sel.map(function(v){return '<span data-inv="'+v+'" title="点击取消">'+meta[pos[v]].zh+' ×</span>';}).join('');});}
+  // CAD overlay
+  bus.on(function(sel){L.querySelectorAll('.icad polygon').forEach(function(pg){pg.classList.toggle('on',sel.indexOf(+pg.getAttribute('data-inv'))>=0);});});
+  // Each photo and mask use its own canonical grid and inventory IDs.
+  var photos=Array.from(L.querySelectorAll('.iphoto')),framePicker=L.querySelector('.photo-frame');
+  var activePhoto=photos[0],previousSelection=new Set();
+  function pixelInv(data,p){return data[p*4]+(data[p*4+1]<<8)+(data[p*4+2]<<16)-1;}
+  function photoDraw(){
+    if(!activePhoto)return;
+    var item=activePhoto,cv=item.querySelector('canvas'),base=item.querySelector('.ipbase');
+    var data=item.indexData,w=+item.dataset.mw,h=+item.dataset.mh;
+    if(!data||!base.naturalWidth)return;
+    var ctx=cv.getContext('2d');ctx.clearRect(0,0,w,h);ctx.drawImage(base,0,0,w,h);
+    if(bus.sel.size){
+      var oc=document.createElement('canvas');oc.width=w;oc.height=h;
+      var octx=oc.getContext('2d'),overlay=octx.createImageData(w,h);
+      bus.sel.forEach(function(inv){var mask=(item.masks||{})[inv];if(!mask)return;
+        var c=hex2rgb(PAL[pos[inv]%PAL.length]);
+        for(var p=0;p<w*h;p++)if(mask[p*4]){
+          overlay.data[p*4]=c[0];overlay.data[p*4+1]=c[1];overlay.data[p*4+2]=c[2];overlay.data[p*4+3]=150;}
+      });
+      octx.putImageData(overlay,0,0);ctx.drawImage(oc,0,0);
+    }
+  }
+  function photoStatus(){
+    if(!activePhoto)return;
+    var evidence=JSON.parse(activePhoto.dataset.photo),sel=Array.from(bus.sel);
+    var missing=sel.filter(function(inv){return evidence.mask_inv.indexOf(inv)<0;});
+    var text=sel.length?'当前机位可见 '+(sel.length-missing.length)+' / '+sel.length+' 个已选对象':'此机位可点选 '+evidence.clickable_inv.length+' 个对象';
+    if(missing.length)text+='；当前不可见：'+missing.map(function(inv){return meta[pos[inv]].zh+'（'+meta[pos[inv]].frame+'）';}).join('、');
+    if(evidence.issues.length)text+='；'+evidence.issues.length+' 个对象的掩码不可用';
+    L.querySelector('.photo-status').textContent=text;
+  }
+  function showPhoto(item){
+    if(!item)return;
+    activePhoto=item;photos.forEach(function(p){p.hidden=p!==item;});
+    if(framePicker)framePicker.value=item.dataset.frame;
+    photoDraw();photoStatus();
+  }
+  photos.forEach(function(item){
+    var cv=item.querySelector('canvas'),base=item.querySelector('.ipbase'),index=item.querySelector('.ipidx');
+    var w=+item.dataset.mw,h=+item.dataset.mh;cv.width=w;cv.height=h;
+    function ready(){
+      if(!base.complete||!base.naturalWidth||!index.complete||!index.naturalWidth)return;
+      var oc=document.createElement('canvas');oc.width=w;oc.height=h;
+      var ctx=oc.getContext('2d');ctx.drawImage(index,0,0);item.indexData=ctx.getImageData(0,0,w,h).data;
+      if(item===activePhoto)photoDraw();
+    }
+    base.addEventListener('load',ready);index.addEventListener('load',ready);ready();
+    item.masks={};item.querySelectorAll('.ipmask').forEach(function(image){
+      function maskReady(){if(!image.complete||!image.naturalWidth)return;
+        var oc=document.createElement('canvas');oc.width=w;oc.height=h;var ctx=oc.getContext('2d');ctx.drawImage(image,0,0);
+        item.masks[+image.dataset.maskInv]=ctx.getImageData(0,0,w,h).data;if(item===activePhoto)photoDraw();}
+      image.addEventListener('load',maskReady);maskReady();
+    });
+    cv.addEventListener('click',function(e){
+      if(!item.indexData)return;
+      var rect=cv.getBoundingClientRect(),x=Math.floor((e.clientX-rect.left)/rect.width*w),y=Math.floor((e.clientY-rect.top)/rect.height*h);
+      if(x<0||x>=w||y<0||y>=h)return;
+      var inv=pixelInv(item.indexData,y*w+x);if(inv>=0)bus.select(inv,{source:'photo'});
+    });
+  });
+  if(framePicker)framePicker.addEventListener('change',function(){showPhoto(photos.find(function(p){return p.dataset.frame===framePicker.value;}));});
+  bus.on(function(sel){
+    var added=sel.filter(function(inv){return !previousSelection.has(inv);});
+    if(added.length){var focus=added[added.length-1],frameId=meta[pos[focus]].frame;
+      showPhoto(photos.find(function(p){return p.dataset.frame===frameId;}));}
+    previousSelection=new Set(sel);photoDraw();photoStatus();
+  });
+  // interactive plan + distance matrix
+  var info=ip.querySelector('.ipinfo'),linesG=ip.querySelector('.iplines');
+  function fmt(i){var m=meta[i];
+    var t=(m.tilt!==null&&m.tilt!==undefined)?('，倾角 '+Math.round(m.tilt)+'°'):'';
+    var mm=m.method==='contact-edge'?' · 接触边投影':(m.method==='refine'?' · 人工补测':(m.method==='near-cluster'?' · 近簇裁剪':(m.method==='guard-line'?' · 共线对齐':'')));
+    if(m.ns)mm+=' · 法线分割';
+    return '<b>'+m.zh+'</b> · 高 '+m.h.toFixed(2)+' m'+t+' · '+m.size+' m · 距相机 '+m.d.toFixed(2)+' m'+mm;}
+  bus.on(function(sel){
+    var selected=sel.map(function(v){return pos[v];});
+    ip.querySelectorAll('polygon.ip').forEach(function(pg){var on=sel.indexOf(+pg.getAttribute('data-inv'))>=0;
+      pg.setAttribute('fill-opacity',on?'0.55':'0.12');pg.setAttribute('stroke-width',on?'3.5':'1.2');});
+    while(linesG.firstChild)linesG.removeChild(linesG.firstChild);
+    if(selected.length===0){info.innerHTML=IDLE;info.style.color='var(--muted)';return;}
+    var html=selected.map(fmt).join('<br>');
+    if(selected.length>1){
+      html+='<table style="margin-top:6px;border-collapse:collapse;font-size:12.5px"><tr><th></th>'+selected.map(function(i){return '<th style="padding:2px 8px">'+meta[i].zh+'</th>'}).join('')+'</tr>';
+      selected.forEach(function(i){html+='<tr><th style="padding:2px 8px;text-align:left">'+meta[i].zh+'</th>'+selected.map(function(j){return '<td style="padding:2px 8px;text-align:center" class="mono">'+(i===j?'—':gaps[i][j].toFixed(2)+' m')+'</td>'}).join('')+'</tr>';});
+      html+='</table>';
+      for(var a=0;a<selected.length;a++)for(var b=a+1;b<selected.length;b++){
+        var i=selected[a],j=selected[b];
+        var ln=document.createElementNS('http://www.w3.org/2000/svg','line');
+        ln.setAttribute('x1',meta[i].cx);ln.setAttribute('y1',meta[i].cy);ln.setAttribute('x2',meta[j].cx);ln.setAttribute('y2',meta[j].cy);
+        ln.setAttribute('stroke','#047857');ln.setAttribute('stroke-width','2');ln.setAttribute('stroke-dasharray','5,4');linesG.appendChild(ln);
+        var tx=document.createElementNS('http://www.w3.org/2000/svg','text');
+        tx.setAttribute('x',(meta[i].cx+meta[j].cx)/2);tx.setAttribute('y',(meta[i].cy+meta[j].cy)/2-4);
+        tx.setAttribute('font-size','11');tx.setAttribute('fill','#047857');tx.setAttribute('text-anchor','middle');
+        tx.style.fontFamily='IBM Plex Mono,monospace';tx.textContent=gaps[i][j].toFixed(2)+' m';linesG.appendChild(tx);}
+    }
+    info.innerHTML=html;info.style.color='var(--ink)';
+  });
+  // A ready/load handshake replays selections made before the embedded viewer loaded.
+  var frame=L.querySelector('iframe.v3d');
+  if(frame){
+    var expectedOrigin=window.origin||window.location.origin,targetOrigin=expectedOrigin==='null'?'*':expectedOrigin;
+    function sendSelection(){if(frame.contentWindow)frame.contentWindow.postMessage({type:'panoptes:select',inv:Array.from(bus.sel),exclusive:true},targetOrigin);}
+    bus.on(function(sel,src){if(src!=='viewer')sendSelection();});
+    frame.addEventListener('load',sendSelection);
+    addEventListener('message',function(e){var m=e.data;
+      if(e.source!==frame.contentWindow||e.origin!==expectedOrigin||!m)return;
+      if(m.type==='panoptes:ready'){sendSelection();return;}
+      if(m.type==='panoptes:selected'&&Array.isArray(m.inv))bus.set(m.inv,{source:'viewer'});
+    });
+  }
+  bus.emit();
+});
+})();
+</script>
+'''.replace('__IDLE__', _IDLE)
 
 
 
 def build_interactive_report(run_ids, out_path=None, title="Panoptes"):
     cards = [build_case(rid) for rid in run_ids]
+    if len(cards) == 1: cards[0] = cards[0].replace('<details class="case">', '<details class="case" open>', 1)
     head = (
         '<meta charset="utf-8"><title>' + title + '</title>'
         '<style>' + _CSS + '</style><body><div class="wrap">'

@@ -74,6 +74,75 @@ def test_decode_encoded_array_rejects_byte_count_shape_mismatch():
         map_anything.decode_encoded_array(payload)
 
 
+def _mask_mapping_payload():
+    alpha = np.zeros((8, 8), dtype=np.float32)
+    alpha[:, 1:7] = 1
+    return {"original_image": {"width": 12, "height": 16},
+            "image": {"shape": [8, 8, 3]}, "alpha_mask": encoded_array(alpha)}
+
+
+def test_input_mask_mapping_keeps_padding_and_native_point_locations(tmp_path):
+    from ehs_spatial.providers.map_anything import input_mask_to_canonical
+
+    path = tmp_path / "geometry" / "provider" / "frame_0001.json"
+    path.parent.mkdir(parents=True)
+    payload = _mask_mapping_payload()
+    path.write_text(json.dumps(payload))
+    mask = np.zeros((16, 12), dtype=bool)
+    mask[4:8, 2:4] = True
+    mapped = input_mask_to_canonical(mask, tmp_path, "frame_0001", (8, 8))
+    y, x = np.indices((8, 8))
+    native_points = np.stack((x, y, np.full_like(x, 10)), axis=-1)
+    np.testing.assert_array_equal(native_points[mapped], [[2, 2, 10], [2, 3, 10]])
+    assert not mapped[:, [0, 7]].any()
+    np.testing.assert_array_equal(input_mask_to_canonical(mask, tmp_path, "frame_0001", (8, 8)), mapped)
+
+    # Updating evidence invalidates the small metadata cache, even at the same size.
+    alpha = np.zeros((8, 8), dtype=np.float32)
+    alpha[:, 2:8] = 1
+    payload["alpha_mask"] = encoded_array(alpha)
+    path.write_text(json.dumps(payload))
+    shifted = input_mask_to_canonical(mask, tmp_path, "frame_0001", (8, 8))
+    np.testing.assert_array_equal(native_points[shifted], [[3, 2, 10], [3, 3, 10]])
+
+
+def test_input_mask_mapping_requires_evidence_only_across_resolutions(tmp_path):
+    from ehs_spatial.providers.map_anything import input_mask_to_canonical
+
+    canonical = np.eye(8, dtype=np.uint8) * 255
+    np.testing.assert_array_equal(
+        input_mask_to_canonical(canonical, tmp_path, "frame_0001", (8, 8)), canonical.astype(bool)
+    )
+    with pytest.raises(ValueError, match="Missing input-mask transform evidence"):
+        input_mask_to_canonical(np.ones((16, 12), bool), tmp_path, "frame_0001", (8, 8))
+
+
+@pytest.mark.parametrize("bad", ["missing_alpha", "image_grid", "source_grid", "target_grid", "alpha_hole", "alpha_fraction"])
+def test_input_mask_mapping_rejects_unproven_grid_or_rectangle(tmp_path, bad):
+    from ehs_spatial.providers.map_anything import input_mask_to_canonical
+
+    payload = _mask_mapping_payload()
+    shape = (8, 8)
+    if bad == "missing_alpha":
+        del payload["alpha_mask"]
+    elif bad == "image_grid":
+        payload["image"]["shape"] = [8, 9, 3]
+    elif bad == "source_grid":
+        payload["original_image"]["width"] = 10
+    elif bad == "target_grid":
+        shape = (7, 8)
+    else:
+        alpha = np.zeros((8, 8), np.float32)
+        alpha[:, 1:7] = 1
+        alpha[3, 3] = 0 if bad == "alpha_hole" else .5
+        payload["alpha_mask"] = encoded_array(alpha)
+    path = tmp_path / "geometry" / "provider" / "frame_0001.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError):
+        input_mask_to_canonical(np.ones((16, 12), bool), tmp_path, "frame_0001", shape)
+
+
 def test_parse_provider_frame_persists_pixel_aligned_geometry_without_rescaling(tmp_path):
     map_anything = importlib.import_module("ehs_spatial.providers.map_anything")
     payload = provider_frame_payload()

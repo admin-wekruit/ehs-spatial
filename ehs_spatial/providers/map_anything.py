@@ -1,5 +1,6 @@
 import base64
 from collections.abc import Callable, Mapping
+from functools import lru_cache
 import json
 import math
 from pathlib import Path
@@ -10,6 +11,7 @@ import numpy as np
 from PIL import Image
 
 from ..contracts import GeometryFrame
+from ..path_safety import validate_safe_path_segment
 from .base import ProviderError
 
 
@@ -30,6 +32,67 @@ def decode_encoded_array(payload: dict[str, object]) -> np.ndarray:
             f"encoded array byte count mismatch: expected {expected_bytes}, got {len(raw)}"
         )
     return np.frombuffer(raw, dtype=dtype).reshape(shape).copy()
+
+
+@lru_cache(maxsize=32)
+def _input_mask_mapping(path: Path, mtime_ns: int, size: int) -> tuple:
+    # Cache only dimensions/rectangle, never the provider's large point arrays.
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        original = payload["original_image"]
+        source_shape = (original["height"], original["width"])
+        image_shape = tuple(payload["image"]["shape"])
+        alpha = decode_encoded_array(payload["alpha_mask"])
+    except (OSError, KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"Input-mask transform requires original_image and alpha_mask evidence: {path}") from exc
+    if not all(type(n) is int and n > 0 for n in source_shape):
+        raise ValueError(f"Invalid original_image dimensions: {path}")
+    if alpha.ndim != 2 or image_shape != (*alpha.shape, 3):
+        raise ValueError(f"Provider image and alpha_mask grids disagree: {path}")
+    if not np.isin(alpha, [0, 1]).all() or not alpha.any():
+        raise ValueError(f"alpha_mask must contain a nonempty binary content rectangle: {path}")
+    y, x = np.nonzero(alpha)
+    rect = (int(x.min()), int(y.min()), int(x.max()) + 1, int(y.max()) + 1)
+    if np.count_nonzero(alpha) != (rect[2] - rect[0]) * (rect[3] - rect[1]):
+        raise ValueError(f"alpha_mask content is not a solid rectangle: {path}")
+    return source_shape, alpha.shape, rect
+
+
+def input_mask_to_canonical(
+    mask: np.ndarray, run: Path, frame_id: str, shape: tuple[int, int]
+) -> np.ndarray:
+    """Map an input-image mask through the recorded resize/padding transform.
+
+    Canonical masks already index native pts3d directly. Other resolutions
+    require the exact provider source dimensions and rectangular alpha mask;
+    no aspect-ratio inference, stretching across padding, or geometry refit.
+    """
+    mask = np.asarray(mask)
+    if mask.ndim != 2 or len(shape) != 2 or not all(isinstance(n, (int, np.integer)) and n > 0 for n in shape):
+        raise ValueError("Input mask and canonical shape must be positive two-dimensional grids")
+    if not np.isfinite(mask).all():
+        raise ValueError("Input mask must contain finite values")
+    mask = mask.astype(bool)
+    if mask.shape == tuple(shape):
+        return mask
+    validate_safe_path_segment(frame_id, "frame_id")
+    path = (Path(run) / "geometry" / "provider" / f"{frame_id}.json").resolve()
+    try:
+        stat = path.stat()
+    except OSError as exc:
+        raise ValueError(f"Missing input-mask transform evidence: {path}") from exc
+    source_shape, canonical_shape, rect = _input_mask_mapping(path, stat.st_mtime_ns, stat.st_size)
+    if mask.shape != source_shape or tuple(shape) != canonical_shape:
+        raise ValueError(
+            f"Input-mask transform grid mismatch: mask={mask.shape}, original={source_shape}, "
+            f"canonical={tuple(shape)}, provider={canonical_shape}: {path}"
+        )
+    left, top, right, bottom = rect
+    mapped = np.zeros(shape, dtype=bool)
+    mapped[top:bottom, left:right] = np.asarray(
+        Image.fromarray(mask).resize((right - left, bottom - top), Image.Resampling.NEAREST)
+    )
+    return mapped
 
 
 def parse_frame_json(

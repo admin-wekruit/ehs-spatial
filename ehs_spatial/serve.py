@@ -16,6 +16,7 @@ Routes
 
 import html
 import json
+import re
 from pathlib import Path
 
 import gradio as gr
@@ -183,7 +184,7 @@ def create_server() -> FastAPI:
         )
         # one product: the report page carries the app's navigation
         nav = (
-            '<nav style="position:sticky;top:0;z-index:40;display:flex;gap:18px;'
+            '<nav style="position:sticky;top:0;z-index:40;display:flex;flex-wrap:wrap;gap:10px 18px;'
             'align-items:center;padding:10px 22px;background:var(--surface,#fff);'
             'border-bottom:1px solid var(--line,#DAE0DE);font:14px/1.4 \'Noto Sans SC\','
             '\'IBM Plex Sans\',sans-serif">'
@@ -202,8 +203,25 @@ def create_server() -> FastAPI:
             page = nav + page
         # a single-run page shows its report open, not behind a summary row
         page = page.replace('<details class="case"', '<details class="case" open', 1)
+        # served page: load the 3D viewer by URL (full point budget, page
+        # stays light); the downloadable file keeps the inline srcdoc copy
+        if (RUNS / run_id / "viewer.html").exists():
+            page = re.sub(
+                r'(<iframe[^>]*class="v3d"[^>]*?)srcdoc="[^"]*"',
+                lambda m: m.group(1) + f'src="/report/{run_id}/viewer"',
+                page,
+                count=1,
+            )
         panel = panel.replace("_未审核_", "未审核")
         return HTMLResponse(page + panel)
+
+    @api.get("/report/{run_id}/viewer")
+    def report_viewer(run_id: str) -> FileResponse:
+        run_dir = _run_dir(run_id.strip().rstrip("*）)。，,.;:"))
+        viewer = run_dir / "viewer.html"
+        if not viewer.exists():
+            raise HTTPException(404, "viewer not built yet")
+        return FileResponse(str(viewer), media_type="text/html")
 
     @api.get("/report/{run_id}/file")
     def report_file(run_id: str) -> FileResponse:

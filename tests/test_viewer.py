@@ -4,15 +4,19 @@ cached provider data — a flat floor 1.5 m below an identity camera (OpenCV
 measurements and the overlays are all checkable by construction."""
 
 import importlib.util
+import base64
+import hashlib
 import json
 from pathlib import Path
+import re
+import subprocess
 
 import numpy as np
 import pytest
 from PIL import Image
 
 from ehs_spatial.contracts import GeometryFrame, Observation2D
-from ehs_spatial.viewer import build_viewer_html, render_frame_overlays
+from ehs_spatial.viewer import build_viewer_html, render_frame_overlays, inventory_lookup
 
 SIDE = 48
 OBJECT_ROWS = slice(8, 24)
@@ -227,3 +231,130 @@ def test_cli_shell_builds_viewer_for_a_cached_run(tmp_path, monkeypatch, capsys)
     printed = capsys.readouterr().out
     assert "pallet" in printed
     assert "1 selectable objects" in printed
+
+
+def test_inventory_identity_uses_frame_instance_and_explicit_merges():
+    by_instance, by_slug = inventory_lookup([
+        {"label":"safety fence", "frame":"frame_0001", "instance":0, "merged_instances":[0,2]},
+        {"label":"safety fence", "frame":"frame_0002", "instance":0},
+        {"label":"safety fence", "refine_slug":"actual_box"},
+        {"label":"safety fence", "frame":"frame_0002", "refine_slug":"actual_box"},
+    ])
+    assert by_instance == {("frame_0001","safety_fence",0):0,
+                           ("frame_0001","safety_fence",2):0,
+                           ("frame_0002","safety_fence",0):1}
+    assert by_slug == {("frame_0001","actual_box"):2, ("frame_0002","actual_box"):3}
+
+
+def test_viewer_masks_merge_only_explicit_inventory_members(tmp_path, monkeypatch):
+    import ehs_spatial.viewer as viewer
+    run, frames, _ = _synthetic_run(tmp_path)
+    sam = run / "inventory" / "sam"
+    sam.mkdir(parents=True)
+    (sam.parent / "inventory.json").write_text(json.dumps({"objects":[
+        {"label":"bollard", "frame":"frame_0001", "instance":0, "merged_instances":[0,2]}]}))
+    (sam / "frame_0001__bollard.json").write_text(json.dumps({"rle":["first","rejected","last"]}))
+    masks = {}
+    for i, name in enumerate(["first","rejected","last"]):
+        masks[name] = np.zeros((SIDE,SIDE),bool)
+        masks[name][i*10:i*10+8,:8] = True
+    monkeypatch.setattr(viewer,"decode_coco_rle",lambda rle,**_:masks[rle].copy())
+    [(label, mask, inv)] = viewer._masks_for_frame(run,frames[0],(SIDE,SIDE),[])
+    assert label == "bollard" and inv == 0
+    assert np.array_equal(mask,masks["first"] | masks["last"])
+    (sam.parent / "inventory.json").write_text('{"objects":[]}')
+    assert viewer._masks_for_frame(run,frames[0],(SIDE,SIDE),[]) == []
+
+
+def test_filtered_object_ids_are_dense_and_inventory_ids_remain_exact(tmp_path, monkeypatch):
+    import ehs_spatial.viewer as viewer
+    run, frames, _ = _synthetic_run(tmp_path)
+    removed = np.zeros((SIDE,SIDE),bool); removed[24:44,:16] = True
+    kept = np.zeros((SIDE,SIDE),bool); kept[OBJECT_ROWS,OBJECT_COLS] = True
+    valid = np.ones((SIDE,SIDE),bool); valid[removed] = False
+    np.save(frames[0].valid_mask_path, valid)
+    (run / "inventory").mkdir()
+    measured = {"label":"kept", "height_m":4.321,"size_m":"7.89 x 0.12","camera_dist_m":9.87,"tilt_deg":23}
+    (run / "inventory" / "inventory.json").write_text(json.dumps({"objects":[measured]*13}))
+    monkeypatch.setattr(viewer,"_masks_for_frame",lambda *args:[("removed",removed,8),("kept",kept,12)])
+    summary = build_viewer_html(run)
+    assert [o["id"] for o in summary["objects"]] == [1]
+    assert summary["supported_inv"] == [12]
+    assert summary["objects"][0]["height_m"] == 4.321
+    assert summary["objects"][0]["size"] == "7.89 x 0.12 m"
+    assert summary["objects"][0]["camera_dist_m"] == 9.87
+    assert summary["objects"][0]["measurement_source"] == "inventory"
+    payload = json.loads(re.search(r'const DATA = (.*);',summary["path"].read_text())[1])
+    ids = np.frombuffer(base64.b64decode(payload["ids"]),dtype='<u2')
+    assert set(ids) == {0,1}
+
+
+def test_generated_viewer_javascript_executes_selection_protocol(tmp_path):
+    from ehs_spatial.viewer import _VIEWER_TEMPLATE
+    objects = [{"id":i+1,"inv":inv,"frame":"frame_0001","label":"same label",
+                "height_m":1,"size":"1 x 1 m","camera_dist_m":2,"points":100,
+                "tilt_deg":0,"color":[100,150,200]} for i,inv in enumerate([0,1,0,None])]
+    payload = {"objects":objects,"supported_inv":[0,1],"inventory_count":3,
+               "interactive_inv":[0,1,2],
+               "unavailable":[{"inv":2,"label":"not observed","frame":"frame_0001","reason":"no points"}],
+               "count":4,"origin":[0,0,0],"span":4,"run":"linked-check",
+               "xyz":base64.b64encode(np.arange(12,dtype='<u2').tobytes()).decode(),
+               "rgb":base64.b64encode(bytes([100]*12)).decode(),
+               "ids":base64.b64encode(np.arange(1,5,dtype='<u2').tobytes()).decode()}
+    path = tmp_path / "viewer.html"
+    path.write_text(_VIEWER_TEMPLATE.replace("__PAYLOAD__",json.dumps(payload)).replace("__ANCHORS__","[]"))
+    result = subprocess.run(["node",str(Path(__file__).with_name("test_viewer_js.mjs")),str(path)],
+                            capture_output=True,text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout)["status"] == "passed"
+
+
+def test_zero_sentinels_and_recorded_padding_never_enter_viewer_payload(tmp_path):
+    run, frames, _ = _synthetic_run(tmp_path)
+    frame = frames[0]
+    points = np.load(frame.pts3d_path)
+    points[40:48,40:48] = 0
+    np.save(frame.pts3d_path, points)
+    alpha = np.ones((SIDE,SIDE),np.uint8); alpha[:,:2] = 0
+    provider = run / "geometry" / "provider"; provider.mkdir()
+    (provider / "frame_0001.json").write_text(json.dumps({"alpha_mask":{
+        "dtype":"uint8","shape":list(alpha.shape),"data":base64.b64encode(alpha.tobytes()).decode()}}))
+    summary = build_viewer_html(run)
+    assert summary["points"] == SIDE*SIDE - 8*8 - SIDE*2
+    assert summary["objects"][0]["label"] == "pallet"
+
+
+def test_derived_refinement_is_bound_to_inventory_frame_and_source_hash(tmp_path):
+    import ehs_spatial.viewer as viewer
+    run, frames, _ = _synthetic_run(tmp_path)
+    directory = run / "inventory" / "refinement_masks"; directory.mkdir(parents=True)
+    (run / "refinements").mkdir()
+    source = run / "refinements" / "box.json"; source.write_text('{}')
+    mask = np.zeros((SIDE,SIDE),bool); mask[8:16,8:16] = True
+    path = directory / "frame_0001__box.npy"; np.save(path,mask)
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    item = {"label":"bollard","frame":"frame_0001","refine_slug":"box","refine_mask_sha256":digest}
+    (run / "inventory" / "inventory.json").write_text(json.dumps({"objects":[item]}))
+    path.with_suffix('.json').write_text(json.dumps({"frame_id":"frame_0001","coordinate_space":"canonical",
+        "mask_sha256":digest,"source_sha256":hashlib.sha256(source.read_bytes()).hexdigest()}))
+    result = viewer._masks_for_frame(run,frames[0],(SIDE,SIDE),[])
+    assert result[0][2] == 0 and np.array_equal(result[0][1],mask)
+    source.write_text('{"changed":true}')
+    with pytest.raises(ValueError,match="accepted inventory/source"):
+        viewer._masks_for_frame(run,frames[0],(SIDE,SIDE),[])
+
+
+def test_accepted_thin_inventory_object_survives_viewer_sampling(tmp_path, monkeypatch):
+    import ehs_spatial.viewer as viewer
+    run, frames, _ = _synthetic_run(tmp_path)
+    sam = run / "inventory" / "sam"; sam.mkdir(parents=True)
+    item = {"label":"bolt","instance":0,"frame":"frame_0001","height_m":0.02,
+            "size_m":"0.01x0.01","camera_dist_m":2.4}
+    (sam.parent / "inventory.json").write_text(json.dumps({"objects":[item]}))
+    (sam / "frame_0001__bolt.json").write_text('{"rle":["tiny"]}')
+    tiny = np.zeros((SIDE,SIDE),bool); tiny[10,24] = True
+    monkeypatch.setattr(viewer,"decode_coco_rle",lambda *args,**kwargs:tiny.copy())
+    summary = build_viewer_html(run,max_points=80)
+    assert summary["points"] == 80 and summary["supported_inv"] == [0]
+    assert summary["objects"][0]["points"] == 1
+    assert summary["objects"][0]["height_m"] == item["height_m"]
