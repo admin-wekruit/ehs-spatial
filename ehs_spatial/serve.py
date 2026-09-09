@@ -182,6 +182,9 @@ def create_server() -> FastAPI:
             page = page[:head_end] + nav + page[head_end:]
         else:
             page = nav + page
+        # a single-run page shows its report open, not behind a summary row
+        page = page.replace('<details class="case"', '<details class="case" open', 1)
+        panel = panel.replace("_未审核_", "未审核")
         return HTMLResponse(page + panel)
 
     @api.get("/report/{run_id}/file")
