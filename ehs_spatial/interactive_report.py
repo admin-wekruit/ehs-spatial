@@ -6,7 +6,7 @@ gallery. The 3D viewer iframe embeds lazily only when the run has a
 compact viewer; everything else is self-contained data URIs, so the file
 opens offline anywhere."""
 
-import base64, io, json, re
+import base64, html, io, json, re
 from pathlib import Path
 
 import numpy as np
@@ -14,6 +14,7 @@ from PIL import Image
 from shapely.geometry import Polygon
 
 from .providers.sam3 import decode_coco_rle
+from .taxonomy import TAXONOMY
 
 _CSS = '\n:root{--paper:#F5F7F6;--surface:#FFF;--ink:#1B2327;--muted:#5A676F;--line:#DAE0DE;--accent:#0E7490;--accent-ink:#0A5B71;\n--pass:#178A50;--pass-bg:#E4F3EA;--warn:#A9740E;--warn-bg:#F7EEDC;--fail:#C13B3B;--fail-bg:#F9E7E5;--insuff:#5D6B76;--insuff-bg:#E9EDEF;--card:#FCFDFC}\n@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--paper:#101619;--surface:#161D21;--ink:#E7ECEC;--muted:#9AA7AC;--line:#263136;--accent:#41BBD3;--accent-ink:#6ED0E3;\n--pass:#41BE7E;--pass-bg:#12301F;--warn:#DFA83D;--warn-bg:#33280F;--fail:#E4706A;--fail-bg:#3A1B18;--insuff:#93A2AC;--insuff-bg:#232D33;--card:#141B1F}}\n:root[data-theme="dark"]{--paper:#101619;--surface:#161D21;--ink:#E7ECEC;--muted:#9AA7AC;--line:#263136;--accent:#41BBD3;--accent-ink:#6ED0E3;\n--pass:#41BE7E;--pass-bg:#12301F;--warn:#DFA83D;--warn-bg:#33280F;--fail:#E4706A;--fail-bg:#3A1B18;--insuff:#93A2AC;--insuff-bg:#232D33;--card:#141B1F}\n*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.7 \'Noto Sans SC\',\'IBM Plex Sans\',sans-serif}\n.wrap{max-width:1020px;margin:0 auto;padding:44px 22px 90px}\nh1{font-family:\'IBM Plex Sans\',\'Noto Sans SC\',sans-serif;font-size:clamp(24px,4vw,34px);margin:0 0 6px;text-wrap:balance}\nh4{font-family:\'IBM Plex Sans\',sans-serif;margin:20px 0 8px}\n.eyebrow{font-family:\'IBM Plex Mono\',monospace;font-size:11.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}\n.eyebrow b{color:var(--accent-ink)}\n.lede{color:var(--muted);max-width:47em;margin:0 0 6px}\n.mono{font-family:\'IBM Plex Mono\',monospace;font-variant-numeric:tabular-nums}\n.pill{display:inline-block;padding:1px 9px;border-radius:3px;font-size:12.5px;font-weight:600;white-space:nowrap}\n.pill.fail{background:var(--fail-bg);color:var(--fail)}.pill.warn{background:var(--warn-bg);color:var(--warn)}\n.pill.insuff{background:var(--insuff-bg);color:var(--insuff)}.pill.pass{background:var(--pass-bg);color:var(--pass)}\n.legend{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:14px 18px;margin:20px 0}\n.legend div{margin:4px 0}\ndetails.case{background:var(--surface);border:1px solid var(--line);border-radius:5px;margin:12px 0;overflow:hidden}\ndetails.case summary{display:flex;align-items:center;gap:14px;padding:10px 16px;cursor:pointer;list-style:none}\ndetails.case summary::-webkit-details-marker{display:none}\ndetails.case summary img{width:96px;height:64px;object-fit:cover;border-radius:3px;border:1px solid var(--line)}\ndetails.case[open] summary{border-bottom:1px solid var(--line)}\n.cid{font-weight:600}\n.cmeta{margin-left:auto;color:var(--muted);font-size:12.5px}\n.body{padding:16px 18px}\n.figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin:10px 0}\nfigure{margin:0;background:var(--card);border:1px solid var(--line);border-radius:4px;overflow:hidden}\nfigure img{max-width:100%;display:block;cursor:zoom-in}\nfigcaption{padding:8px 12px;font-size:12.5px;color:var(--muted)}\nfigcaption b{color:var(--ink)}\n.policy{border:1px solid var(--line);border-radius:4px;padding:10px 12px;margin:8px 0;background:var(--card)}\n.pname{font-weight:600;margin-left:6px}\n.reason{margin:6px 0 0;padding-left:10px;border-left:3px solid var(--line);font-size:13.5px}\n.reason.vio{border-left-color:var(--fail)}\n.reason .raw{color:var(--muted);font-size:11.5px;overflow-x:auto}\n.tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:4px}\ntable{border-collapse:collapse;width:100%;font-size:13.5px;background:var(--surface)}\nth,td{padding:7px 11px;border-bottom:1px solid var(--line);text-align:left}\nth{font-family:\'IBM Plex Mono\',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}\n.hint{font-size:11.5px;color:var(--muted);margin-top:14px;overflow-x:auto}\n.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:20px 0}\n.tile{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:12px 14px}\n.tile .v{font-family:\'IBM Plex Mono\',monospace;font-size:22px;font-weight:600}\n.tile .l{font-size:12px;color:var(--muted)}\n#lb{position:fixed;inset:0;background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center;z-index:50;cursor:zoom-out}\n#lb[hidden]{display:none}\n#lb img{max-width:96vw;max-height:94vh}\na{color:var(--accent-ink)}\n'
 
@@ -25,6 +26,19 @@ def uri(path, maxw=760, q=68):
     return 'data:image/jpeg;base64,'+base64.b64encode(b.getvalue()).decode()
 def thumb(p): return uri(p,340,66)
 def srcdoc(p): return open(p,encoding='utf-8').read().replace('&','&amp;').replace('"','&quot;')
+def esc(x): return html.escape('' if x is None else str(x), quote=False)
+def _json(path, default):
+    try: return json.loads(Path(path).read_text(encoding='utf-8'))
+    except Exception: return default
+def _empty(section, title, msg='无'):
+    return f'<h4 data-section="{section}">{title}</h4><p class="hint">{msg}</p>'
+def _fig(path, cap, maxw=1000):
+    try: return f'<figure><img src="{uri(path, maxw, 70)}"><figcaption>{cap}</figcaption></figure>'
+    except Exception: return ''
+TAX_ZH = {t.item_id: t.zh for t in TAXONOMY}
+METHOD_ZH = {'contact-edge':'接触边投影','near-cluster':'近簇裁剪','guard-line':'共线对齐','refine':'人工补测'}
+SIDE_ZH = {'u_min':'u− 边','u_max':'u+ 边','v_min':'v− 边','v_max':'v+ 边'}
+DECISION_ZH = {'confirmed':'确认机器判定','overridden':'推翻机器判定'}
 PALETTE = ["#c1121f","#1d4ed8","#047857","#b45309","#6d28d9","#0e7490","#9d174d","#4d7c0f","#7c2d12","#334155"]
 ZH = {'FAIL':('fail','FAIL 违规'),'NEEDS_REVIEW':('warn','NEEDS REVIEW 待复核'),'INSUFFICIENT_EVIDENCE':('insuff','证据不足'),'PASS':('pass','PASS')}
 LBL = {'industrial robot arm':'机械臂','robotic arm':'机械臂','emergency stop button':'急停按钮','safety fence':'安全围栏',
@@ -63,8 +77,8 @@ def snap_rect(footprint, theta_deg):
 
 def case_objects(rid):
     run = Path('runs')/rid
-    inv = json.loads((run/'inventory'/'inventory.json').read_text())
-    objs=[dict(o) for o in inv['objects'] if not o.get('off_plan_reason') and o['label'] not in ('floor','factory floor','ceiling','concrete floor','ceiling structure')]
+    inv = _json(run/'inventory'/'inventory.json', {})
+    objs=[dict(o) for o in inv.get('objects',[]) if not o.get('off_plan_reason') and o['label'] not in ('floor','factory floor','ceiling','concrete floor','ceiling structure')]
     theta=inv.get('manhattan_theta_deg')
     rf = run/'refinements.json'
     if rf.exists():
@@ -139,6 +153,18 @@ def mask_index_png(rid, objs):
     b = io.BytesIO(); Image.fromarray(idx, mode='L').save(b,'PNG',optimize=True)
     return 'data:image/png;base64,'+base64.b64encode(b.getvalue()).decode(), W, H
 
+def disp_names(objs):
+    counts={}
+    for o in objs: counts[o['label']]=counts.get(o['label'],0)+1
+    per={}; disp=[]
+    for o in objs:
+        per[o['label']]=per.get(o['label'],0)+1
+        base=LBL.get(o['label'],o['label'])
+        name=(f"{base} #{per[o['label']]}" if counts[o['label']]>1 else base)
+        if o.get('footprint_method')=='refine' or o.get('refine_slug'): name='补测·'+name
+        disp.append(name)
+    return disp
+
 def plan_fragment(rid, inv, objs):
     theta = inv.get('manhattan_theta_deg')
     if not objs: return None
@@ -155,15 +181,7 @@ def plan_fragment(rid, inv, objs):
     for i in range(n):
         for j in range(i+1,n):
             g=round(polys[i].distance(polys[j]),2); gaps[i][j]=gaps[j][i]=g
-    counts={}
-    for o in objs: counts[o['label']]=counts.get(o['label'],0)+1
-    per={}; disp=[]
-    for o in objs:
-        per[o['label']]=per.get(o['label'],0)+1
-        base=LBL.get(o['label'],o['label'])
-        name=(f"{base} #{per[o['label']]}" if counts[o['label']]>1 else base)
-        if o.get('footprint_method')=='refine' or o.get('refine_slug'): name='补测·'+name
-        disp.append(name)
+    disp=disp_names(objs)
     meta=[{"label":f"{o['label']} #{i+1}","zh":disp[i],"h":o['height_m'],"tilt":o.get('tilt_deg'),
            "size":o['size_m'],"d":o['camera_dist_m'],"method":o.get('footprint_method','hull'),"ns":1 if o.get('normal_split') else 0,
            "cx":px(tuple(o['centroid_xy']))[0],"cy":px(tuple(o['centroid_xy']))[1]} for i,o in enumerate(objs)]
@@ -205,62 +223,152 @@ def plan_fragment(rid, inv, objs):
             f'<div class="ipinfo" style="border:1px solid var(--line);border-radius:4px;padding:8px 12px;font-size:13.5px;color:var(--muted)">点<b>原图</b>、平面图或 3D 三向联动；连点多个出间距矩阵+连线</div></div>')
 
 
+def _disp_line(d):
+    if not d: return '无（尚未审核）'
+    dec = DECISION_ZH.get(d.get('decision'), d.get('decision') or '—')
+    if d.get('overridden_status'): dec += f' → {esc(d["overridden_status"])}'
+    return (f'<b>{esc(d.get("reviewer") or "—")}</b> · {dec} · {esc(d.get("reason") or "无理由")} · '
+            f'<span class="mono">{esc(d.get("created_at") or d.get("time") or "—")}</span>')
+
+def cell_rect_html(inv):
+    cr = inv.get('cell_rect')
+    nb = [o for o in inv.get('objects', []) if o.get('outside_cell')]
+    nb_html = ('<div style="margin-top:6px"><b>邻 cell 结构</b>（在矩形外，不参与本 cell 判定）：' +
+               '、'.join(f'{LBL.get(o["label"],o["label"])} #{o.get("instance")}（{esc(o.get("frame") or "—")} · 距相机 {o.get("camera_dist_m")} m）' for o in nb) + '</div>') if nb else '<div style="margin-top:6px"><b>邻 cell 结构</b>：无</div>'
+    if not cr: return f'<div class="legend"><b>cell 矩形约束</b>：无（inventory 未产出 cell_rect）{nb_html}</div>'
+    rows = ''
+    for k in ('u_min', 'u_max', 'v_min', 'v_max'):
+        sd = (cr.get('sides') or {}).get(k)
+        if sd: rows += f'<tr><td>{SIDE_ZH[k]}</td><td class="mono">{sd.get("offset")} m</td><td class="mono">{sd.get("support_m")} m</td><td>{esc(", ".join(sd.get("sources") or []))}</td></tr>'
+        else: rows += f'<tr><td>{SIDE_ZH[k]}</td><td colspan=3><span class="pill insuff">开口</span></td></tr>'
+    size = cr.get('size_m')
+    size_txt = f'{size[0]} × {size[1]} m（闭合）' if isinstance(size, (list, tuple)) and len(size) == 2 else '未闭合（存在开口边）'
+    return (f'<div class="legend"><b>cell 矩形约束</b> · Manhattan 角度 <span class="mono">{cr.get("theta_deg")}°</span> · {size_txt}'
+            f'<div class="tblwrap" style="margin-top:6px"><table><tr><th>边</th><th>偏移</th><th>支撑长度</th><th>来源</th></tr>{rows}</table></div>{nb_html}</div>')
+
+def _chat_text(v):
+    if isinstance(v, dict): return v.get('content') or v.get('text') or ''
+    return '' if v is None else str(v)
+
+def chat_html(run):
+    cp = run / 'chat.jsonl'
+    rows = ''
+    for line in (cp.read_text(encoding='utf-8').splitlines() if cp.exists() else []):
+        try: e = json.loads(line)
+        except Exception: continue
+        kind = e.get('type')
+        if kind not in ('chat_turn', 'agent_turn'): continue
+        t = esc(e.get('ts') or e.get('created_at') or e.get('time') or '—')
+        tag = f'<span class="pill insuff">{esc(e.get("intent"))}</span> ' if kind == 'agent_turn' else '<span class="pill insuff">ask</span> '
+        chg = ' <span class="pill warn">已改动 run</span>' if e.get('changed') else ''
+        q = _chat_text(e.get('question') or e.get('user')); a_ = e.get('answer') or e.get('assistant')
+        facts = (a_.get('fact_ids') if isinstance(a_, dict) else None) or e.get('fact_ids') or []
+        rows += (f'<div class="policy"><div><b>用户</b> {tag}<span class="mono" style="color:var(--muted);font-size:12px">{t}</span>{chg}</div>'
+                 f'<div style="white-space:pre-wrap">{esc(q)}</div>'
+                 f'<div class="reason"><b>Agent</b><div style="white-space:pre-wrap">{esc(_chat_text(a_))}</div>'
+                 + (f'<div class="mono raw">facts: {esc(", ".join(map(str, facts)))}</div>' if facts else '') + '</div></div>')
+    return '<h4 data-section="chat">Agent 对话记录（本 run 上的问答 / 纠错 / 阈值调整，附时间）</h4>' + (rows or '<p class="hint">无对话记录</p>')
+
+
 def build_case(rid):
     run=Path('runs')/rid
-    a=json.loads((run/'assessment.json').read_text()); s=json.loads((run/'scene.json').read_text()); p=json.loads((run/'policies.json').read_text())
-    status=a.get('status'); cls,zh=ZH[status]
-    inp=next((run/'input').glob('image_*')); ov=run/'evidence'/'frame_0001_overlay.png'; fp=run/'inventory'/'floor_plan.png'; dr=run/'depth_render.png'
+    a=_json(run/'assessment.json',{}); s=_json(run/'scene.json',{}); p=_json(run/'policies.json',{}); man=_json(run/'manifest.json',{})
+    status=a.get('status'); cls,zh=ZH.get(status,('insuff','无判定'))
+    inp=next((run/'input').glob('image_*'),None) if (run/'input').exists() else None
+    ov=run/'evidence'/'frame_0001_overlay.png'; fp=run/'inventory'/'floor_plan.png'; dr=run/'depth_render.png'
     inv, objs = case_objects(rid)
     plan = plan_fragment(rid, inv, objs) or ''
     nobj = len(objs)
-    base_uri = uri(inp, 1100, 76)
+    # 1. 头部 —— review.json is the ReviewDisposition the app writes; disposition.json kept as fallback name
+    disp=_json(run/'review.json',None) or _json(run/'disposition.json',None)
+    header=(f'<div class="legend" data-section="header"><div><b>Run</b> <span class="mono">{rid}</span> <span class="pill {cls}">{zh}</span>'
+            f' · 采集层 {esc(man.get("capture_tier") or "—")} · 操作员 {esc(man.get("operator") or "—")}</div>'
+            f'<div><b>审核结论</b> {_disp_line(disp)}</div>'
+            f'<div><b>分析版本</b> <span class="mono">{esc(inv.get("analysis_version") or "—")}</span> · <b>创建时间</b> <span class="mono">{esc(man.get("created_at") or "—")}</span></div></div>')
+    # 5. 原图点选
     photo=''
-    if objs:
-        idx_uri, mw, mh = mask_index_png(rid, objs)
-        photo=(f'<h4>原图点选 · 点照片里的物体直接高亮（含人工补测）</h4>'
-               f'<div class="iphoto" data-mw="{mw}" data-mh="{mh}">'
-               f'<canvas style="width:100%;display:block;border:1px solid var(--line);border-radius:4px;cursor:crosshair"></canvas>'
-               f'<img class="ipbase" src="{base_uri}" hidden><img class="ipidx" src="{idx_uri}" hidden></div>')
+    if objs and inp is not None:
+        try:
+            idx_uri, mw, mh = mask_index_png(rid, objs)
+            photo=(f'<h4 data-section="photo">原图点选 · 点照片里的物体直接高亮（含人工补测）</h4>'
+                   f'<div class="iphoto" data-mw="{mw}" data-mh="{mh}">'
+                   f'<canvas style="width:100%;display:block;border:1px solid var(--line);border-radius:4px;cursor:crosshair"></canvas>'
+                   f'<img class="ipbase" src="{uri(inp, 1100, 76)}" hidden><img class="ipidx" src="{idx_uri}" hidden></div>')
+        except Exception: photo=''
+    photo = photo or _empty('photo','原图点选','无（无可点选实体或缺少几何帧）')
+    # 8. 实体测量 + 尺度来源
     ents={}
     for e in s.get('entities',[]): ents.setdefault(e['label'],[]).append(e.get('height_m'))
     ent_rows=''.join(f'<tr><td>{LBL.get(k,k)}</td><td class="mono">×{len(v)}</td><td class="mono">{", ".join(f"{h:.2f}" for h in v if h is not None)} m</td></tr>' for k,v in ents.items()) or '<tr><td colspan=3>无词表实体过证据门</td></tr>'
+    conf=s.get('scale_confidence'); sf=s.get('scale_factor')
+    scale_html=(f'<div class="legend"><b>尺度来源与置信</b>：<span class="mono">{esc(s.get("scale_source") or "—")}</span>'
+                f' · 置信 <span class="mono">{f"{conf:.2f}" if isinstance(conf,(int,float)) else "—"}</span>'
+                f' · 尺度因子 <span class="mono">{f"{sf:.3f}" if isinstance(sf,(int,float)) else "—"}</span></div>')
+    names=disp_names(objs)
+    obj_rows=''.join(f'<tr><td>{i+1}. {names[i]}</td><td class="mono">{o.get("height_m")}</td><td class="mono">{o.get("size_m")}</td><td class="mono">{o.get("camera_dist_m")}</td><td>{METHOD_ZH.get(o.get("footprint_method"), o.get("footprint_method") or "hull")}</td></tr>' for i,o in enumerate(objs))
+    obj_tbl=(f'<div class="tblwrap" style="margin-top:10px"><table><tr><th>物体（平面编号）</th><th>高 m</th><th>尺寸 m</th><th>距相机 m</th><th>足迹方法</th></tr>{obj_rows}</table></div>') if obj_rows else ''
+    # 2. 判定明细
     pol_rows=''
+    adjusted={sp.get('policy_id') for sp in (p.get('specs') or []) if sp.get('adjusted_for_run')}
     for r in p.get('results',[]):
         st=r['status'] if isinstance(r['status'],str) else str(r['status'])
         pcls,pzh=ZH.get(st,('insuff',st))
         reasons=''.join(f'<div class="reason"><b>{gloss(w) or "备注"}</b><div class="mono raw">{w}</div></div>' for w in (r.get('warnings') or [])[:3])
         vio=''.join(f'<div class="reason vio"><b>违规：测得 {v.get("measured")} m，阈值 {v.get("threshold")} m</b><div class="mono raw">{v.get("subject_id")} ↔ {v.get("object_id")}</div></div>' for v in (r.get('violations') or [])[:3])
-        pol_rows+=f'<div class="policy"><span class="pill {pcls}">{pzh}</span> <span class="pname">{POLICY_ZH.get(r["policy_id"],r["policy_id"])}</span>{vio}{reasons}</div>'
+        adj=' <span class="pill warn">阈值已按本 run 调整</span>' if r.get('policy_id') in adjusted else ''
+        pol_rows+=f'<div class="policy"><span class="pill {pcls}">{pzh}</span> <span class="pname">{POLICY_ZH.get(r["policy_id"],r["policy_id"])}</span>{adj}{vio}{reasons}</div>'
+    pol_rows = pol_rows or '<p class="hint">无判定结果</p>'
+    # 3. VLM 枚举与去向
+    phrases=_json(run/'inventory'/'phrases.json',None)
+    if not isinstance(phrases,list): phrases=inv.get('phrases') or []
+    unres=_json(run/'inventory'/'unresolved.json',[]) or []
+    reason_by={u.get('phrase'):u.get('reason') for u in unres if isinstance(u,dict)}
+    counts_all={}
+    for o in inv.get('objects',[]): counts_all[o['label']]=counts_all.get(o['label'],0)+1
+    ph_rows=''
+    for ph in phrases:
+        n=counts_all.get(ph,0)
+        fate=f'<span class="pill pass">{n} 实例</span>' if n else f'<span class="pill insuff">0 实例</span> {esc(reason_by.get(ph) or "未落地：unresolved 无记录")}'
+        ph_rows+=f'<tr><td>{esc(ph)}</td><td>{LBL.get(ph,"")}</td><td>{fate}</td></tr>'
+    phr_html=('<h4 data-section="phrases">VLM 枚举与去向（短语 → 实例数 / unresolved 原因）</h4>'
+              + (f'<div class="tblwrap"><table><tr><th>VLM 短语</th><th>中文</th><th>去向</th></tr>{ph_rows}</table></div>' if ph_rows else '<p class="hint">无（缺少 inventory/phrases.json）</p>')
+              + f'<p class="hint">枚举必有交代：每个 VLM 枚举短语要么落地为实例，要么在 unresolved 中记录原因。当前 {len(phrases)} 短语 · {len(unres)} 条 unresolved。</p>')
+    # 10. 证据图集
     depth_chips=' '.join(f'<span class="iplegend" data-i="{i}" style="cursor:pointer;font-size:11.5px"><span style="display:inline-block;width:8px;height:8px;background:{PALETTE[i%len(PALETTE)]};border-radius:2px;margin-right:3px"></span>{i+1}</span>' for i in range(nobj))
-    figs=f'<div class="figs"><figure><img src="{uri(ov)}"><figcaption><b>evidence overlay</b>（判定链 mask）</figcaption></figure>'
-    if dr.exists(): figs+=f'<figure><img src="{uri(dr)}"><figcaption><b>深度渲染</b> · 点编号选中<br>{depth_chips}</figcaption></figure>'
-    if fp.exists(): figs+=f'<figure><img src="{uri(fp)}"><figcaption><b>测量平面图（CAD 版，全实例）</b></figcaption></figure>'
-    figs+='</div>'
+    gal=''.join(_fig(f, f'<b>{f.stem}</b> evidence overlay（判定链 mask）') for f in (sorted((run/'evidence').glob('*.png')) if (run/'evidence').exists() else []))
+    if dr.exists(): gal+=_fig(dr, f'<b>深度渲染</b> · 点编号选中<br>{depth_chips}')
+    for f_,cap in ((run/'cloud_perspective.png','<b>点云透视</b>'),(run/'cloud_topdown.png','<b>点云顶视</b>'),(run/'plan_view.png','<b>平面视图</b>'),(fp,'<b>测量平面图（CAD 版，全实例）</b>')):
+        if f_.exists(): gal+=_fig(f_, cap)
+    figs='<h4 data-section="gallery">证据图集（每帧 evidence overlay · 深度渲染 · 点云透视/顶视 · 平面图）</h4>' + (f'<div class="figs">{gal}</div>' if gal else '<p class="hint">无</p>')
+    # 7. 交互 3D
     vs=run/'viewer_small.html'
     if not vs.exists():
         # app runs ship the pipeline's full self-contained viewer instead
         # of the test-set slim build — same three.js scene, embed it
         vs=run/'viewer.html'
-    viewer=f'<h4>交互 3D（照片色 · 按实例）</h4><iframe class="v3d" srcdoc="{srcdoc(vs)}" style="width:100%;height:460px;border:1px solid var(--line);border-radius:4px;display:block;background:#0d1114" title="{rid} 3D"></iframe>' if vs.exists() else ''
+    viewer=f'<h4 data-section="viewer">交互 3D（照片色 · 按实例）</h4><iframe class="v3d" srcdoc="{srcdoc(vs)}" style="width:100%;height:460px;border:1px solid var(--line);border-radius:4px;display:block;background:#0d1114" title="{rid} 3D"></iframe>' if vs.exists() else _empty('viewer','交互 3D','无（viewer.html 缺失）')
+    # 4. 装置检测清单
     refine_html=''
     det_html=''
     det_path=run/'detection'/'detections.json'
     if det_path.exists():
         env=json.loads(det_path.read_text())
-        CAT_META={'A':('感知防护 SENSING/AOPD','#39c5cf'),'B':('控制防护 CONTROL','#f25c8a'),'C':('防护罩/围护 GUARDS','#4ad07a'),'D':('阻挡与引导 IMPEDING','#e8b93c'),'E':('信息标识 INFO','#c9a0ff')}
+        CAT_META={'A':('感知防护 SENSING/AOPD','#39c5cf'),'B':('控制防护 CONTROL','#f25c8a'),'C':('防护罩/围护 GUARDS','#4ad07a'),'D':('阻挡与引导 IMPEDING','#e8b93c'),'E':('信息标识 INFO','#c9a0ff'),'F':('物料/载具 PAYLOAD','#f0a35e')}
         ov=run/'detection'/'overlay.png'
         from PIL import Image as PImage
         import io as io_mod
-        with PImage.open(ov) as im_:
-            im_=im_.convert('RGB'); im_.thumbnail((1150,1150))
-            b=io_mod.BytesIO(); im_.save(b,'JPEG',quality=82)
-        ov_uri='data:image/jpeg;base64,'+base64.b64encode(b.getvalue()).decode()
+        ov_fig=''
+        if ov.exists():
+            with PImage.open(ov) as im_:
+                im_=im_.convert('RGB'); im_.thumbnail((1150,1150))
+                b=io_mod.BytesIO(); im_.save(b,'JPEG',quality=82)
+            ov_fig='data:image/jpeg;base64,'+base64.b64encode(b.getvalue()).decode()
         groups={}
-        for d in env['detections']:
+        for d in env.get('detections',[]):
             if 'rle' not in d: continue
             groups.setdefault(d['category'],[]).append(d)
         legend_html=''
-        for cat in 'ABCDE':
+        for cat in 'ABCDEF':
             if cat not in groups: continue
             name,color=CAT_META[cat]
             rows=' '.join(f'<span style="display:inline-block;margin:2px 10px 2px 0;font-size:12.5px"><b style="color:{color}">#{d["number"]}</b> {d["zh"]} <span style="color:var(--muted)">· SAM {d["sam_score"]}{(" · "+d["iso"]) if d.get("iso") else ""}</span></span>' for d in groups[cat])
@@ -268,9 +376,15 @@ def build_case(rid):
         n_found=sum(len(v) for v in groups.values())
         missing=env.get('missing',[])
         miss_html=('<div style="margin:6px 0;font-size:12.5px;color:var(--fail)"><b>未见/需现场核实：</b>'+ '、'.join(m['zh'] for m in missing)+'</div>') if missing else '<div style="margin:6px 0;font-size:12.5px;color:var(--pass)"><b>清单全部检出</b>（缺失清单为空）</div>'
-        det_html=(f'<h4>装置检测清单（taxonomy 检测层 · VLM 出框+裁剪自检 → SAM box-prompt）</h4>'
-                  f'<figure><img src="{ov_uri}" style="max-width:100%"><figcaption>{n_found} 项检出 · 编号=下方图例</figcaption></figure>'
-                  f'{legend_html}{miss_html}')
+        rej=env.get('rejected') or []
+        rej_html=('<div style="margin:6px 0;font-size:12.5px"><b style="color:var(--warn)">拒绝项（VLM 出框但裁剪自检未通过，不计入检出）：</b><ul style="margin:4px 0 0 18px;padding:0">'
+                  + ''.join(f'<li><b>{esc(r.get("zh") or TAX_ZH.get(r.get("item_id"), r.get("item_id")))}</b> <span class="mono" style="color:var(--muted)">{esc(r.get("item_id"))}</span> — {esc(r.get("reason"))}</li>' for r in rej)
+                  + '</ul></div>') if rej else '<div style="margin:6px 0;font-size:12.5px;color:var(--muted)"><b>拒绝项：</b>无</div>'
+        det_html=(f'<h4 data-section="detections">装置检测清单（taxonomy 检测层 · VLM 出框+裁剪自检 → SAM box-prompt）</h4>'
+                  + (f'<figure><img src="{ov_fig}" style="max-width:100%"><figcaption>{n_found} 项检出 · 编号=下方图例</figcaption></figure>' if ov_fig else '')
+                  + f'{legend_html}{miss_html}{rej_html}')
+    det_html = det_html or _empty('detections','装置检测清单','无（detection/detections.json 缺失）')
+    # 9. 回投验证
     reproj_html=''
     rp=run/'inventory'/'reprojection.json'
     if rp.exists() and (run/'inventory'/'reprojection.png').exists():
@@ -284,11 +398,13 @@ def build_case(rid):
             v=s.get('mean_dv_frac')
             return '—' if v is None else f'{round(v*100,1)}%'
         rows=' · '.join(f"#{s.get('instance')} {_dv(s)}" for s in rj['scores'])
-        reproj_html=(f'<h4>回投验证（平面矩形基线投回照片 · 红点应压在结构接地线上 · 偏差=图高占比）</h4>'
+        reproj_html=(f'<h4 data-section="reprojection">回投验证（平面矩形基线投回照片 · 红点应压在结构接地线上 · 偏差=图高占比）</h4>'
                      f'<figure><img src="data:image/jpeg;base64,{base64.b64encode(b2.getvalue()).decode()}" style="max-width:100%"><figcaption>围栏族偏差：{rows}</figcaption></figure>')
+    reproj_html = reproj_html or _empty('reprojection','回投验证','无（inventory/reprojection.* 缺失）')
+    # 11. 人工框选补测
     rf=run/'refinements.json'
     if rf.exists():
-        items=json.loads(rf.read_text()); refine_html='<h4>人工框选补测（--apply 回灌判定 · 工作台"补测"tab 可自助）</h4><div class="figs">'
+        items=json.loads(rf.read_text()); refine_html='<h4 data-section="refinements">人工框选补测（--apply 回灌判定 · 工作台"补测"tab 可自助）</h4><div class="figs">'
         seen=set()
         for it in items:
             slug=f"{it['label'].replace(' ','_')}_{'_'.join(str(b) for b in it['box'])}"
@@ -297,13 +413,37 @@ def build_case(rid):
             if 'height_m' not in it or not (run/'refinements'/(slug+'.png')).exists(): continue
             refine_html+=f'<figure><img src="{uri(run/"refinements"/(slug+".png"))}"><figcaption><b>{LBL.get(it["label"],it["label"])}</b> · SAM {it["sam_score"]} · 高 {it["height_m"]} m · {it["extent_m"]} m · 距相机 {it["camera_dist_m"]} m</figcaption></figure>'
         refine_html+='</div>'
-    return (f'''<details class="case"><summary><img src="{thumb(inp)}"><span class="cid mono">{rid}</span>
-    <span class="pill {cls}">{zh}</span><span class="cmeta mono">scale {round(s.get("scale_factor",0),2)} · {len(s.get("entities",[]))} 实体</span></summary>
-      <div class="body">{CASE_NOTES.get(rid,'')}{det_html}{photo}{plan}{viewer}{figs}
-    <h4>判定明细</h4>{pol_rows}
-    <h4>实体测量</h4>
-    <div class="tblwrap"><table><tr><th>物体</th><th>数量</th><th>高度</th></tr>{ent_rows}</table></div>
-    {reproj_html}{refine_html}
+    refine_html = refine_html or _empty('refinements','人工框选补测','无补测记录')
+    # 13. Review 记录
+    if disp:
+        rev_rows=''.join(f'<tr><td>{k}</td><td>{esc(disp.get(f))}</td></tr>' for k,f in (('审核员','reviewer'),('决定','decision'),('推翻为','overridden_status'),('理由','reason'),('时间','created_at'),('run','run_id')) if disp.get(f) is not None)
+        rev_html=f'<h4 data-section="review">Review 记录（审核员 · 决定 · 理由 · 时间）</h4><div class="tblwrap"><table>{rev_rows}</table></div>'
+    else: rev_html=_empty('review','Review 记录','无审核记录（review.json 缺失）')
+    # 14. 附录
+    warn_li=''.join(f'<li class="mono" style="font-size:12.5px">{esc(w)}</li>' for w in (s.get('warnings') or [])) or '<li>无</li>'
+    unres_li=''.join(f'<li><b>{esc(u.get("phrase") if isinstance(u,dict) else u)}</b> — {esc(u.get("reason")) if isinstance(u,dict) else ""}</li>' for u in unres) or '<li>无</li>'
+    cam_h=man.get('camera_height_m') or s.get('camera_height_m')
+    spec_li=''.join(f'<li><span class="mono">{esc(sp.get("policy_id"))}</span> · {esc(sp.get("predicate"))} {esc(sp.get("threshold"))} {esc(sp.get("unit") or "")}'
+                    + (' <span class="pill warn">阈值已按本 run 调整</span>' if sp.get('adjusted_for_run') else '')
+                    + (f' · <span style="color:var(--muted)">不支持：{esc(sp["unsupported_reason"])}</span>' if sp.get('unsupported_reason') else '') + '</li>' for sp in (p.get('specs') or [])) or '<li>无</li>'
+    prov_rows=''.join(f'<tr><td class="mono">{esc(k)}</td><td class="mono">{esc(v)}</td></tr>' for k,v in (man.get('providers') or {}).items()) or '<tr><td colspan=2>无</td></tr>'
+    appendix=(f'<h4 data-section="appendix">附录（warnings 全量 · unresolved 全量 · run 参数）</h4>'
+              f'<div class="legend"><b>scene warnings（{len(s.get("warnings") or [])}）</b><ul style="margin:4px 0 0 18px;padding:0">{warn_li}</ul></div>'
+              f'<div class="legend"><b>unresolved（{len(unres)}）</b><ul style="margin:4px 0 0 18px;padding:0">{unres_li}</ul></div>'
+              f'<div class="legend"><b>run 参数</b><div>相机高度：<span class="mono">{f"{cam_h} m" if cam_h is not None else "—（未持久化）"}</span></div>'
+              f'<div>policy 集：<ul style="margin:4px 0 0 18px;padding:0">{spec_li}</ul></div>'
+              f'<div>后端来源：<div class="tblwrap" style="margin-top:4px"><table>{prov_rows}</table></div></div></div>')
+    plan_html=(f'<h4 data-section="plan">CAD 平面图 + 交互平面（点选出距离矩阵 · cell 矩形约束）</h4>{cell_rect_html(inv)}'
+               + (plan or '<p class="hint">无平面对象</p>'))
+    sf_txt=round(sf,2) if isinstance(sf,(int,float)) else '—'
+    return (f'''<details class="case"><summary>{f'<img src="{thumb(inp)}">' if inp is not None else ''}<span class="cid mono">{rid}</span>
+    <span class="pill {cls}">{zh}</span><span class="cmeta mono">scale {sf_txt} · {len(s.get("entities",[]))} 实体</span></summary>
+      <div class="body">{header}{CASE_NOTES.get(rid,'')}
+    <h4 data-section="verdicts">判定明细</h4>{pol_rows}
+    {phr_html}{det_html}{photo}{plan_html}{viewer}
+    <h4 data-section="measurements">实体测量（物体 / 数量 / 高 / 尺寸 / 距相机 / 足迹方法）</h4>{scale_html}
+    <div class="tblwrap"><table><tr><th>物体</th><th>数量</th><th>高度</th></tr>{ent_rows}</table></div>{obj_tbl}
+    {reproj_html}{figs}{refine_html}{chat_html(run)}{rev_html}{appendix}
     <p class="hint mono">全量 3D：runs/{rid}/viewer.html · 自助补测：工作台 补测 tab（或 scripts/refine_region.py --apply）</p>
       </div></details>''')
 

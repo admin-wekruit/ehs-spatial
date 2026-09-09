@@ -258,6 +258,92 @@ def _run_deep_report_chain(run_id: str) -> None:
         _mark("failed")
 
 
+def layer_summary_markdown(run_dir: Path) -> object:
+    """First-eye page view of the VLM + detection layers: every phrase the
+    VLM enumerated with where it went (instances or an unresolved reason)
+    and the taxonomy checklist (found / missing / rejected). Returns a
+    gr.update() no-op until the deep chain has produced the files."""
+    run_dir = Path(run_dir)
+    inventory_path = run_dir / "inventory" / "inventory.json"
+    detections_path = run_dir / "detection" / "detections.json"
+    if not inventory_path.exists() and not detections_path.exists():
+        return gr.update()
+    lines = []
+    if inventory_path.exists():
+        try:
+            inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+        except Exception:
+            inventory = {}
+        phrases = inventory.get("phrases") or []
+        if isinstance(phrases, dict):
+            phrases = list(phrases.keys())
+        objects = inventory.get("objects") or []
+        unresolved = {}
+        try:
+            for item in json.loads(
+                (run_dir / "inventory" / "unresolved.json").read_text(encoding="utf-8")
+            ):
+                unresolved[str(item.get("phrase"))] = str(item.get("reason", ""))
+        except Exception:
+            pass
+        lines.append(f"**VLM 枚举 {len(phrases)} 项 → 去向**（枚举必有交代）")
+        for phrase in phrases:
+            count = sum(1 for o in objects if str(o.get("label")) == str(phrase))
+            if count:
+                lines.append(f"- {phrase}: {count} 个实例")
+            else:
+                lines.append(
+                    f"- {phrase}: 未成实例 — {unresolved.get(str(phrase), '未记录原因')}"
+                )
+    if detections_path.exists():
+        try:
+            detections = json.loads(detections_path.read_text(encoding="utf-8"))
+        except Exception:
+            detections = {}
+        found = detections.get("detections") or []
+        missing = detections.get("missing") or []
+        rejected = detections.get("rejected") or []
+        lines.append("")
+        lines.append(
+            f"**装置检测清单**：检出 {len(found)} · 缺失 {len(missing)} · 拒绝 {len(rejected)}"
+        )
+        for det in found[:20]:
+            lines.append(
+                f"- #{det.get('number', '?')} [{det.get('category', '?')}] "
+                f"{det.get('zh') or det.get('label') or det.get('item_id')} "
+                f"(SAM {det.get('sam_score', det.get('score', '—'))})"
+            )
+        if missing:
+            lines.append(
+                "- 缺失/需现场核实: " + "、".join(
+                    str(m.get("zh") or m.get("item_id")) for m in missing
+                )
+            )
+        for rej in rejected[:5]:
+            lines.append(
+                f"- 拒绝 {rej.get('zh') or rej.get('item_id')}: {str(rej.get('reason', ''))[:120]}"
+            )
+    return gr.update(value="\n".join(lines))
+
+
+def _review_markdown(run_dir: Path) -> str:
+    review_path = Path(run_dir) / "review.json"
+    if not review_path.exists():
+        return "_未审核_"
+    try:
+        review = json.loads(review_path.read_text(encoding="utf-8"))
+    except Exception:
+        return "_审核记录无法读取_"
+    decision = review.get("decision", "?")
+    status = review.get("overridden_status") or review.get("status") or ""
+    return (
+        f"**已审核** — {review.get('reviewer', '?')} · {decision}"
+        + (f" → {status}" if decision == "overridden" and status else "")
+        + (f"\n\n理由：{review.get('reason')}" if review.get("reason") else "")
+        + (f"\n\n{review.get('reviewed_at') or review.get('created_at') or ''}")
+    )
+
+
 def _start_deep_report_chain(run_id: str) -> None:
     import threading
 
@@ -956,6 +1042,12 @@ def build_app(
                                 height=420,
                                 buttons=["fullscreen"],
                             )
+                        # VLM enumeration + taxonomy detection: what the
+                        # models said is in the picture and where each
+                        # item went — filled in as the deep chain lands
+                        layer_summary = gr.Markdown(
+                            "_VLM 枚举与装置检测：完整报告链跑完后在此显示_"
+                        )
                         structured_result = gr.JSON(
                             label="Assessment + SceneMap",
                             open=False,
@@ -1249,7 +1341,18 @@ def build_app(
                         stamp = datetime.fromtimestamp(
                             path.stat().st_mtime
                         ).strftime("%m-%d %H:%M")
-                        choices.append((f"{stamp}  ·  {path.name}", path.name))
+                        # history row = time · verdict · review state · id
+                        verdict = "—"
+                        try:
+                            verdict = json.loads(
+                                (path / "assessment.json").read_text(encoding="utf-8")
+                            ).get("status", "—")
+                        except Exception:
+                            pass
+                        reviewed = "已审核" if (path / "review.json").exists() else "未审核"
+                        choices.append(
+                            (f"{stamp}  ·  {verdict}  ·  {reviewed}  ·  {path.name}", path.name)
+                        )
                     return choices
 
                 _seed_runs = _report_run_choices()
@@ -1274,6 +1377,44 @@ def build_app(
                     interactive=False,
                     height=520,
                 )
+                report_cad = gr.Image(
+                    label="CAD 平面图（inventory 完整版：全实体 · 墙线 · cell 矩形 · 尺寸）",
+                    type="filepath",
+                    interactive=False,
+                )
+                # the report page is the one place: review and the agent
+                # live beside the report they change
+                with gr.Accordion("Review 审核 — 对本 run 签字", open=True):
+                    review_summary = gr.Markdown("_未审核_")
+                    with gr.Row():
+                        review_reviewer = gr.Textbox(label="审核员")
+                        review_decision = gr.Radio(
+                            choices=["confirmed", "overridden"],
+                            value="confirmed",
+                            label="决定",
+                        )
+                        review_override = gr.Dropdown(
+                            choices=list(OVERRIDE_STATUSES),
+                            label="推翻后的状态（仅推翻时）",
+                        )
+                    review_reason = gr.Textbox(label="理由（推翻必填）", lines=2)
+                    review_save = gr.Button("保存审核", variant="primary")
+                with gr.Accordion(
+                    "Agent 对话 — 追问 / 补测 / 纠错 / 调整策略（全部写入 run，进报告）",
+                    open=True,
+                ):
+                    hub_chat = gr.Chatbot(label="对话记录", height=320)
+                    with gr.Row():
+                        hub_say = gr.Textbox(
+                            label="说一句",
+                            placeholder=(
+                                "例：围栏离机器人多远？ / 右边黄色柱子帮我量 / "
+                                "这块不是围栏，是导向挡板 / p01 改成 0.8m"
+                            ),
+                            scale=4,
+                        )
+                        hub_apply = gr.Checkbox(label="回灌判定", value=True)
+                        hub_send = gr.Button("发送", variant="primary")
 
                 def _report_runs() -> gr.Dropdown:
                     choices = _report_run_choices()
@@ -1346,7 +1487,65 @@ def build_app(
                         + '"></iframe>'
                     )
                     cloud = run_dir / "geometry" / "point_cloud.glb"
-                    return str(path), framed, (str(cloud) if cloud.exists() else None)
+                    cad = run_dir / "inventory" / "floor_plan.png"
+                    if not cad.exists():
+                        cad = run_dir / "topdown.png"
+                    from .agent_hub import chat_history
+
+                    return (
+                        str(path),
+                        framed,
+                        str(cloud) if cloud.exists() else None,
+                        str(cad) if cad.exists() else None,
+                        _review_markdown(run_dir),
+                        chat_history(run_dir),
+                    )
+
+                def _hub_save_review(name, reviewer, decision, override, reason):
+                    if not name:
+                        raise gr.Error("先选一个 run")
+                    save_disposition(
+                        service, name, reviewer, decision, override, reason
+                    )
+                    return _review_markdown(Path("runs") / name)
+
+                def _hub_agent(name, message, apply_it, history):
+                    from .agent import agent_refine
+                    from .agent_hub import agent_turn
+                    from .refine import RefineError
+
+                    if not name:
+                        raise gr.Error("先选一个 run")
+                    if not (message or "").strip():
+                        raise gr.Error("先说一句")
+
+                    def _answer(question: str) -> str:
+                        answer = GroundedAnswer.model_validate(
+                            service.answer_question(name, question)
+                        )
+                        facts = ", ".join(answer.fact_ids) or "none"
+                        return f"{answer.answer}\n\nFact IDs: `{facts}`"
+
+                    def _refine(rid: str, instruction: str, apply: bool) -> dict:
+                        try:
+                            return agent_refine(
+                                rid, instruction, runs_root=service.store.root,
+                                apply=bool(apply),
+                            )
+                        except (RefineError, ProviderError) as exc:
+                            return {"message": f"补测失败：{exc}"}
+
+                    try:
+                        out = agent_turn(
+                            name, message.strip(), apply=bool(apply_it),
+                            answer_fn=_answer, refine_fn=_refine,
+                        )
+                    except ProviderError as exc:
+                        raise gr.Error(_provider_error_copy(exc)) from exc
+                    history = list(history or [])
+                    history.append({"role": "user", "content": f"[{out['intent']}] {message.strip()}"})
+                    history.append({"role": "assistant", "content": out["reply"]})
+                    return history, ""
 
                 report_refresh.click(
                     _report_runs,
@@ -1354,13 +1553,57 @@ def build_app(
                     concurrency_id=REPORT_CONCURRENCY_ID,
                     concurrency_limit=1,
                 )
+                review_save.click(
+                    _hub_save_review,
+                    inputs=[report_run, review_reviewer, review_decision,
+                            review_override, review_reason],
+                    outputs=[review_summary],
+                    concurrency_id=LOCAL_CONCURRENCY_ID,
+                    concurrency_limit=1,
+                )
+                hub_send.click(
+                    _hub_agent,
+                    inputs=[report_run, hub_say, hub_apply, hub_chat],
+                    outputs=[hub_chat, hub_say],
+                    concurrency_id=PIPELINE_CONCURRENCY_ID,
+                    concurrency_limit=1,
+                )
                 report_go.click(
                     _report_go,
                     inputs=[report_run],
-                    outputs=[report_file, report_view, report_cloud],
+                    outputs=[report_file, report_view, report_cloud, report_cad,
+                             review_summary, hub_chat],
                     concurrency_id=REPORT_CONCURRENCY_ID,
                     concurrency_limit=1,
                 )
+
+        # First-eye page keeps up with the deep chain: once the inventory's
+        # full CAD exists for the run on screen, it replaces the quick
+        # top-down without the operator doing anything.
+        cad_timer = gr.Timer(30)
+
+        def _cad_refresh(current_run):
+            if not current_run:
+                return gr.update(), gr.update()
+            run_dir = Path("runs") / str(current_run)
+            full = run_dir / "inventory" / "floor_plan.png"
+            cad = (
+                gr.update(
+                    value=str(full),
+                    label="CAD 平面图（完整版 · 全实体 · cell 矩形）",
+                )
+                if full.exists()
+                else gr.update()
+            )
+            return cad, layer_summary_markdown(run_dir)
+
+        cad_timer.tick(
+            _cad_refresh,
+            inputs=[run_id],
+            outputs=[topdown, layer_summary],
+            concurrency_id=LOCAL_CONCURRENCY_ID,
+            concurrency_limit=1,
+        )
 
         # Evidence follows the run id rather than extending the analyze
         # tuple: the 8-output analyze contract stays stable, and a failed

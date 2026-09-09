@@ -792,7 +792,12 @@ def test_build_app_has_required_gradio_620_components_events_and_serialization(t
         and component["props"].get("label") == "Assessment + SceneMap"
         for component in components
     )
-    [chatbot] = [component for component in components if component["type"] == "chatbot"]
+    # two chatbots now: workbench grounded QA and the report-page agent hub
+    [chatbot] = [
+        component for component in components
+        if component["type"] == "chatbot"
+        and component["props"].get("label") == "Grounded answers"
+    ]
     assert "type" not in chatbot["props"]
     assert chatbot["props"]["value"] == []
 

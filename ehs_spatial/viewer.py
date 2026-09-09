@@ -25,6 +25,8 @@ from .providers.sam3 import decode_coco_rle
 MAX_POINTS = 140_000
 MIN_MASK_PIXELS = 50
 MIN_OBJECT_POINTS = 40
+# Orbit pivot: the floor point this far ahead of the camera (PRODUCT_PLAN §2.2).
+LOOK_AHEAD_M = 2.5
 # Labels kept as scene context, never as selectable objects.
 DEFAULT_EXCLUDE = frozenset({"floor", "ceiling", "wall", "ground", "roof"})
 _OVERLAY_ALPHA = 0.45
@@ -120,6 +122,45 @@ def _frames(run: Path) -> list[GeometryFrame]:
             )
         )
     return out
+
+
+def camera_anchor(
+    camera_to_world,
+    transform,
+    frame_id: str = "",
+    look_ahead_m: float = LOOK_AHEAD_M,
+) -> dict:
+    """One frame's camera pose in the viewer's floor frame (+Z up, z=0 on
+    the floor) plus its orbit pivot.
+
+    The pivot is the floor point `look_ahead_m` ahead of the camera along
+    its horizontal heading — never the cloud centroid, which the far
+    background drags away from what the photo was actually of.
+    """
+    c2w = np.asarray(camera_to_world, dtype=float)
+    position = transform.apply(c2w[:3, 3][None])[0]
+    # OpenCV columns: +X right, +Y down, +Z forward; the floor rotation is a
+    # pure rotation so directions need no scale or origin shift.
+    axes = transform.rotation @ c2w[:3, :3]
+    right, up, forward = axes[:, 0], -axes[:, 1], axes[:, 2]
+    heading = np.array([forward[0], forward[1], 0.0])
+    if np.linalg.norm(heading) < 1e-6:
+        # Camera pointing straight down: image-up is the only heading left.
+        heading = np.array([up[0], up[1], 0.0])
+    heading /= np.linalg.norm(heading) or 1.0
+    pivot = np.array([position[0], position[1], 0.0]) + look_ahead_m * heading
+
+    def rounded(vector) -> list[float]:
+        return [round(float(v), 4) for v in vector]
+
+    return {
+        "frame_id": frame_id,
+        "position": rounded(position),
+        "forward": rounded(forward),
+        "up": rounded(up),
+        "right": rounded(right),
+        "pivot": rounded(pivot),
+    }
 
 
 def _label_from_cache(path: Path) -> str:
@@ -268,6 +309,10 @@ def build_viewer_html(
     ).transform
     if transform is None:
         raise ValueError("run has no floor transform")
+    anchors = [
+        camera_anchor(frame.camera_to_world, transform, frame.frame_id)
+        for frame in frames
+    ]
 
     labels: list[str] = []
     chunks_xyz, chunks_rgb, chunks_id = [], [], []
@@ -417,11 +462,16 @@ def build_viewer_html(
     }
     html = _VIEWER_TEMPLATE.replace(
         "__PAYLOAD__", json.dumps(payload, separators=(",", ":"))
-    )
+    ).replace("__ANCHORS__", json.dumps(anchors, separators=(",", ":")))
     out = Path(out_path) if out_path is not None else run / "viewer.html"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html, encoding="utf-8")
-    return {"path": out, "points": int(len(xyz)), "objects": objects}
+    return {
+        "path": out,
+        "points": int(len(xyz)),
+        "objects": objects,
+        "anchors": anchors,
+    }
 
 
 _VIEWER_TEMPLATE = r"""<!doctype html>
@@ -466,14 +516,17 @@ button:focus-visible,.item:focus-visible{outline:2px solid var(--accent);outline
     <div id="bar">
       <button id="all">全选</button><button id="none">全不选</button>
       <button id="mode">语义色 / 照片色</button><button id="scene">场景点 开/关</button>
-      <button id="reset">复位视角</button>
+      <button id="reset">重置</button><span id="cams" style="display:contents"></span>
     </div>
     <div id="list"></div>
-    <div id="foot">拖动旋转 · 滚轮缩放 · 右键拖动平移<br>点击物体名高亮,其余变暗</div>
+    <div id="foot">拖动旋转 · 滚轮缩放 · 右键拖动平移<br>点击物体名高亮,其余变暗<br>
+      视角锚定在相机 1 的拍摄位姿,绕其正前方 2.5 m 地面点旋转 · 相机 N 切到该帧</div>
   </aside>
 </div>
+<script id="anchors" type="application/json">__ANCHORS__</script>
 <script>
 const DATA = __PAYLOAD__;
+const ANCHORS = JSON.parse(document.getElementById('anchors').textContent);
 const b64 = (s, T) => { const bin = atob(s); const b = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
   return new T(b.buffer); };
@@ -481,11 +534,34 @@ const q = b64(DATA.xyz, Uint16Array), rgb = b64(DATA.rgb, Uint8Array), ids = b64
 const N = DATA.count, S = DATA.span / 65535, O = DATA.origin;
 const pos = new Float32Array(N * 3);
 for (let i = 0; i < N; i++) { pos[i*3] = q[i*3]*S + O[0]; pos[i*3+1] = q[i*3+1]*S + O[1]; pos[i*3+2] = q[i*3+2]*S + O[2]; }
-let cx = 0, cy = 0, cz = 0;
-for (let i = 0; i < N; i++) { cx += pos[i*3]; cy += pos[i*3+1]; cz += pos[i*3+2]; }
+let cx = 0, cy = 0, cz = 0, minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+for (let i = 0; i < N; i++) { const x = pos[i*3], y = pos[i*3+1]; cx += x; cy += y; cz += pos[i*3+2];
+  if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
 cx /= N; cy /= N; cz /= N;
 let radius = 0;
 for (let i = 0; i < N; i += 7) { const d = Math.hypot(pos[i*3]-cx, pos[i*3+1]-cy, pos[i*3+2]-cz); if (d > radius) radius = d; }
+
+// Overlay lines ride in the point buffers after the cloud (one draw setup):
+// a 1 m floor grid over the cloud's footprint and a frustum per camera.
+const LINE_ID = DATA.objects.length + 1;  // the texel past the last object
+const L = [], LC = [];
+const seg = (a, b, c) => { L.push(...a, ...b); LC.push(...c, ...c); };
+const GRID = [74, 84, 100], CAM = [79, 179, 222], CAM1 = [255, 216, 25];
+const p0 = ANCHORS.length ? ANCHORS[0].pivot : [cx, cy, 0];
+const gx0 = Math.floor(Math.max(minX, p0[0] - 30)), gx1 = Math.ceil(Math.min(maxX, p0[0] + 30));
+const gy0 = Math.floor(Math.max(minY, p0[1] - 30)), gy1 = Math.ceil(Math.min(maxY, p0[1] + 30));
+for (let x = gx0; x <= gx1; x++) seg([x, gy0, 0], [x, gy1, 0], GRID);
+for (let y = gy0; y <= gy1; y++) seg([gx0, y, 0], [gx1, y, 0], GRID);
+ANCHORS.forEach((a, i) => {
+  const E = a.position, f = a.forward, r = a.right, u = a.up, c = i ? CAM : CAM1;
+  const corner = (sx, sy) => [0, 1, 2].map(k => E[k] + 0.35*f[k] + sx*0.25*r[k] + sy*0.19*u[k]);
+  const C = [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)];
+  C.forEach((pt, k) => { seg(E, pt, c); seg(pt, C[(k + 1) % 4], c); });
+});
+const NL = L.length / 3;
+const posAll = new Float32Array(N*3 + L.length); posAll.set(pos); posAll.set(L, N*3);
+const rgbAll = new Uint8Array(N*3 + LC.length); rgbAll.set(rgb); rgbAll.set(LC, N*3);
+const idAll = new Float32Array(N + NL); idAll.set(ids); idAll.fill(LINE_ID, N);
 
 const cv = document.getElementById('c');
 const gl = cv.getContext('webgl', {antialias:true, alpha:false});
@@ -500,11 +576,12 @@ void main(){
   vDrop = shown < 0.5 ? 1.0 : 0.0;
   float grey = dot(col, vec3(0.299,0.587,0.114));
   vec3 c = col;
-  bool isObj = oid > 0.5;
+  bool isLine = oid > nObj - 1.5;  // grid + camera markers keep their own colour
+  bool isObj = oid > 0.5 && !isLine;
   // Semantic mode paints every object its legend colour and mutes the rest,
   // so a glance answers "which thing is that" without clicking.
-  if (semantic > 0.5) { c = isObj ? meta.rgb : vec3(grey*0.42+0.30); }
-  if (sel > 0.5) {
+  if (semantic > 0.5 && !isLine) { c = isObj ? meta.rgb : vec3(grey*0.42+0.30); }
+  if (sel > 0.5 && !isLine) {
     if (abs(oid - sel) < 0.5) { c = mix(min(c*1.1+0.12, vec3(1.0)), meta.rgb, 0.55); }
     else { c = vec3(grey*0.26+0.11); }
   }
@@ -523,11 +600,11 @@ function buf(data, loc, size, type, norm){ const b = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
   const l = gl.getAttribLocation(prog, loc); gl.enableVertexAttribArray(l);
   gl.vertexAttribPointer(l, size, type, norm, 0, 0); }
-buf(pos, 'p', 3, gl.FLOAT, false);
-buf(rgb, 'col', 3, gl.UNSIGNED_BYTE, true);
-buf(Float32Array.from(ids), 'oid', 1, gl.FLOAT, false);
+buf(posAll, 'p', 3, gl.FLOAT, false);
+buf(rgbAll, 'col', 3, gl.UNSIGNED_BYTE, true);
+buf(idAll, 'oid', 1, gl.FLOAT, false);
 
-const nObj = DATA.objects.length + 1;
+const nObj = DATA.objects.length + 2;  // 0 = scene, 1..n objects, n+1 = lines
 const visData = new Uint8Array(nObj * 4).fill(255);
 DATA.objects.forEach(o => { visData[o.id*4] = o.color[0];
   visData[o.id*4+1] = o.color[1]; visData[o.id*4+2] = o.color[2]; visData[o.id*4+3] = 255; });
@@ -545,6 +622,23 @@ gl.uniform1f(gl.getUniformLocation(prog, 'nObj'), nObj);
 
 let yaw = -0.6, pitch = 0.5, dist = radius * 2.1, panX = 0, panY = 0;
 let sel = 0, sceneOn = 1, semantic = 0;  // photo colours read best
+// Anchor the orbit rig to a frame's camera: the pivot (cx,cy,cz) is the floor
+// point ahead of the phone, and yaw/pitch/dist/pan are solved so the eye sits
+// exactly where the phone was, looking exactly where it looked. The pivot
+// is off the view axis in general, so it rides as a pan offset.
+function goTo(i){
+  const a = ANCHORS[i]; if (!a) return;
+  const E = a.position, f = a.forward;
+  cx = a.pivot[0]; cy = a.pivot[1]; cz = a.pivot[2];
+  const zx = -f[0], zy = -f[1], zz = -f[2];  // orbit z points from target to eye
+  pitch = Math.asin(Math.max(-1, Math.min(1, zz))); yaw = Math.atan2(zx, zy);
+  dist = Math.max(0.5, (cx-E[0])*f[0] + (cy-E[1])*f[1] + (cz-E[2])*f[2]);
+  const xl = Math.hypot(zx, zy) || 1, xx = -zy/xl, xy = zx/xl;
+  const ux = -zz*xy, uy = zz*xx, uz = zx*xy - zy*xx;
+  const tx = E[0] + f[0]*dist - cx, ty = E[1] + f[1]*dist - cy, tz = E[2] + f[2]*dist - cz;
+  panX = -(tx*xx + ty*xy); panY = -(tx*ux + ty*uy + tz*uz);
+}
+goTo(0);
 function mat(){
   const a = cv.width / cv.height, f = 1 / Math.tan(0.5), near = 0.02, far = radius * 40;
   const P = [f/a,0,0,0, 0,f,0,0, 0,0,(far+near)/(near-far),-1, 0,0,2*far*near/(near-far),0];
@@ -573,9 +667,11 @@ function draw(){
   gl.uniform1f(gl.getUniformLocation(prog,'sel'), sel);
   gl.uniform1f(gl.getUniformLocation(prog,'sceneOn'), sceneOn);
   gl.uniform1f(gl.getUniformLocation(prog,'semantic'), semantic);
-  gl.uniform1f(gl.getUniformLocation(prog,'psize'), Math.max(2.2, 4.2 * dpr * (radius*2.1/dist)));
+  gl.uniform1f(gl.getUniformLocation(prog,'psize'),
+    Math.min(6 * dpr, Math.max(2.2, 4.2 * dpr * (radius*2.1/dist))));
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, visTex);
   gl.drawArrays(gl.POINTS, 0, N);
+  gl.drawArrays(gl.LINES, N, NL);
 }
 let drag = null;
 cv.addEventListener('pointerdown', e => { drag = {x:e.clientX, y:e.clientY, b:e.button};
@@ -623,8 +719,11 @@ document.getElementById('none').onclick = () => { DATA.objects.forEach(o => visD
   [...list.children].forEach(c => c.classList.remove('on')); sel = 0; pushVis(); draw(); };
 document.getElementById('mode').onclick = () => { semantic = semantic ? 0 : 1; draw(); };
 document.getElementById('scene').onclick = () => { sceneOn = sceneOn ? 0 : 1; draw(); };
-document.getElementById('reset').onclick = () => { yaw = -0.6; pitch = 0.5; dist = radius*2.1;
-  panX = 0; panY = 0; sel = 0; draw(); };
+document.getElementById('reset').onclick = () => { goTo(0); sel = 0; draw(); };
+if (ANCHORS.length > 1) ANCHORS.forEach((a, i) => {
+  const b = document.createElement('button'); b.textContent = '相机 ' + (i + 1);
+  b.title = a.frame_id; b.onclick = () => { goTo(i); draw(); };
+  document.getElementById('cams').appendChild(b); });
 document.getElementById('hud').textContent = `${DATA.objects.length} objects · ${N.toLocaleString()} points`;
 // Embedding pages (the test-set report's interactive floor plan) drive the
 // same focus routine over postMessage: {type:'ehs-select', label}.
@@ -649,4 +748,4 @@ draw();
 """
 
 
-__all__ = ["build_viewer_html", "render_frame_overlays", "DEFAULT_EXCLUDE"]
+__all__ = ["build_viewer_html", "camera_anchor", "render_frame_overlays", "DEFAULT_EXCLUDE"]
