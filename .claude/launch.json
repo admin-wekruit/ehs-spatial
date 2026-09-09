@@ -8,9 +8,12 @@
         "run",
         "--env-file",
         ".env",
-        "python",
-        "-c",
-        "from ehs_spatial.app import build_app; build_app().launch(server_name='127.0.0.1', server_port=7860)"
+        "uvicorn",
+        "ehs_spatial.serve:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "7860"
       ],
       "port": 7860
     },

@@ -249,6 +249,14 @@ def _run_deep_report_chain(run_id: str) -> None:
 
         _inventory.main(["--run", run_id, "--live"])
         _mark("report")
+        # one pipeline, one instance set: the 3D viewer must show the same
+        # objects the report and CAD show, so rebuild it from the inventory
+        try:
+            from .viewer import build_viewer_html
+
+            build_viewer_html(run_dir)
+        except Exception:
+            traceback.print_exc()
         from .interactive_report import build_interactive_run_report
 
         build_interactive_run_report(run_id)
@@ -350,6 +358,26 @@ def _start_deep_report_chain(run_id: str) -> None:
     threading.Thread(
         target=_run_deep_report_chain, args=(run_id,), daemon=True
     ).start()
+
+
+def resume_interrupted_chains(runs_root: str | Path = "runs") -> list[str]:
+    """A chain runs inside the app process; a restart mid-chain used to
+    strand the run at the thin report forever. On startup every run whose
+    status is still in-flight (or failed) is picked up again — the chain
+    is re-entrant, so finished stages are skipped, not redone."""
+    resumed = []
+    root = Path(runs_root)
+    if not root.exists():
+        return resumed
+    for status_path in root.glob("*/deep_report.status"):
+        try:
+            state = status_path.read_text(encoding="utf-8").strip()
+        except Exception:
+            continue
+        if state in {"detect", "inventory", "report", "failed"}:
+            _start_deep_report_chain(status_path.parent.name)
+            resumed.append(status_path.parent.name)
+    return resumed
 
 
 def analyze_run(
@@ -1370,6 +1398,12 @@ def build_app(
                     )
                     report_refresh = gr.Button("刷新 run 列表")
                     report_go = gr.Button("生成/查看报告", variant="primary")
+                # the real thing is one standalone page served by the app —
+                # this tab is the index into it plus an inline preview
+                report_link = gr.HTML(
+                    "<p>选 run 后点「生成/查看报告」，这里会出现"
+                    "<b>完整报告页</b>链接（一个页面：报告 + 3D + CAD + 审核 + Agent）。</p>"
+                )
                 report_file = gr.File(label="下载", interactive=False)
                 report_view = gr.HTML()
                 report_cloud = gr.Model3D(
@@ -1437,7 +1471,15 @@ def build_app(
                     # a run without the current rules gets upgraded the
                     # moment someone opens it (skips detection when the
                     # run already has it), and the page says so
-                    if state != "current" and not running:
+                    stage_now = (
+                        (run_dir / "deep_report.status").read_text(encoding="utf-8").strip()
+                        if (run_dir / "deep_report.status").exists()
+                        else ""
+                    )
+                    # not current, or a chain that died mid-way (app restart,
+                    # provider outage): kick it again — re-entrant, so only
+                    # the missing stages run
+                    if (state != "current" or stage_now == "failed") and not running:
                         _start_deep_report_chain(name)
                         running = True
                     stage = (
@@ -1492,6 +1534,12 @@ def build_app(
                         cad = run_dir / "topdown.png"
                     from .agent_hub import chat_history
 
+                    link = (
+                        f'<p style="font-size:16px"><a href="/report/{name}" target="_blank">'
+                        f"▶ 打开完整报告页 /report/{name[:12]}…</a>"
+                        "　·　一个页面：报告 + 3D + CAD + 审核签字 + Agent 对话"
+                        f'　·　<a href="/report/{name}/file">下载 HTML</a></p>'
+                    )
                     return (
                         str(path),
                         framed,
@@ -1499,6 +1547,7 @@ def build_app(
                         str(cad) if cad.exists() else None,
                         _review_markdown(run_dir),
                         chat_history(run_dir),
+                        link,
                     )
 
                 def _hub_save_review(name, reviewer, decision, override, reason):
@@ -1572,7 +1621,7 @@ def build_app(
                     _report_go,
                     inputs=[report_run],
                     outputs=[report_file, report_view, report_cloud, report_cad,
-                             review_summary, hub_chat],
+                             review_summary, hub_chat, report_link],
                     concurrency_id=REPORT_CONCURRENCY_ID,
                     concurrency_limit=1,
                 )

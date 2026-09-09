@@ -252,6 +252,47 @@ def _masks_for_frame(
                     ).astype(np.uint8)
                 add(item["label"], mask.astype(bool))
 
+    # Detection-layer instances synced into the inventory (taxonomy items
+    # located by the VLM and segmented by SAM box prompts) live as
+    # refinements/<slug>.json without a refinements.json entry — the glass
+    # guard, deflectors, e-stops. One pipeline: the viewer shows them too.
+    inventory_path = run / "inventory" / "inventory.json"
+    if inventory_path.exists():
+        try:
+            inventory_objects = json.loads(inventory_path.read_text()).get("objects", [])
+        except Exception:
+            inventory_objects = []
+        inputs = sorted((run / "input").glob("image_*"))
+        for item in inventory_objects:
+            slug = item.get("refine_slug")
+            if not slug or item.get("frame", "frame_0001") != frame.frame_id:
+                continue
+            cache = run / "refinements" / f"{slug}.json"
+            if not cache.is_file():
+                continue
+            response = json.loads(cache.read_text())
+            rles = response.get("rle") or []
+            if isinstance(rles, str):
+                rles = [rles]
+            if not rles:
+                continue
+            scores = response.get("scores") or [1.0] * len(rles)
+            best = int(np.argmax(scores))
+            native_h = response.get("height")
+            native_w = response.get("width")
+            if not native_h or not native_w:
+                with Image.open(inputs[0]) as native:
+                    native_w, native_h = native.size
+            mask = decode_coco_rle(
+                rles[best], height=int(native_h), width=int(native_w)
+            ).astype(np.uint8)
+            if (int(native_h), int(native_w)) != (height, width):
+                mask = (
+                    np.asarray(Image.fromarray(mask * 255).resize((width, height)))
+                    > 127
+                ).astype(np.uint8)
+            add(str(item.get("label", slug)), mask.astype(bool))
+
     for observation in observations:
         if observation.frame_id != frame.frame_id or not observation.mask_path:
             continue
