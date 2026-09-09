@@ -237,6 +237,10 @@ def build_case(rid):
     if fp.exists(): figs+=f'<figure><img src="{uri(fp)}"><figcaption><b>测量平面图（CAD 版，全实例）</b></figcaption></figure>'
     figs+='</div>'
     vs=run/'viewer_small.html'
+    if not vs.exists():
+        # app runs ship the pipeline's full self-contained viewer instead
+        # of the test-set slim build — same three.js scene, embed it
+        vs=run/'viewer.html'
     viewer=f'<h4>交互 3D（照片色 · 按实例）</h4><iframe class="v3d" srcdoc="{srcdoc(vs)}" style="width:100%;height:460px;border:1px solid var(--line);border-radius:4px;display:block;background:#0d1114" title="{rid} 3D"></iframe>' if vs.exists() else ''
     refine_html=''
     det_html=''

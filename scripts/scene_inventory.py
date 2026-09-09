@@ -35,6 +35,12 @@ from ehs_spatial.providers.sam3 import (
     encode_coco_rle,
 )
 
+# Bump whenever the geometry/inventory rules change in a way that should
+# re-run on every stored run: the app compares this stamp on open and
+# upgrades stale inventories, so the product never shows two generations
+# of analysis side by side.
+ANALYSIS_VERSION = "2026-08-30.cell-rect-v1"
+
 MAX_PHRASES = 26
 MIN_MASK_PIXELS = 50
 MIN_CLOUD_POINTS = 50
@@ -2901,6 +2907,7 @@ def main(argv: list[str] | None = None) -> int:
                 if theta is None
                 else round(float(np.degrees(theta)), 1),
                 "cell_rect": cell,
+                "analysis_version": ANALYSIS_VERSION,
             },
             indent=2,
         )

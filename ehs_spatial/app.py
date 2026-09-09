@@ -177,15 +177,56 @@ def _status_copy(
     return "\n\n".join(lines)
 
 
+def _scripts_on_path() -> None:
+    import sys as _sys
+
+    scripts_dir = str(Path(__file__).resolve().parents[1] / "scripts")
+    if scripts_dir not in _sys.path:
+        _sys.path.insert(0, scripts_dir)
+
+
+def current_analysis_version() -> str:
+    _scripts_on_path()
+    from scene_inventory import ANALYSIS_VERSION
+
+    return ANALYSIS_VERSION
+
+
+def analysis_state(run_dir: Path) -> str:
+    """'current' | 'stale' | 'missing' — one product, one generation of
+    analysis: a run whose inventory predates the current rules is stale
+    and gets upgraded on open instead of being shown as-is."""
+    inventory = run_dir / "inventory" / "inventory.json"
+    if not inventory.exists():
+        return "missing"
+    try:
+        stamp = json.loads(inventory.read_text(encoding="utf-8")).get(
+            "analysis_version"
+        )
+    except Exception:
+        return "stale"
+    return "current" if stamp == current_analysis_version() else "stale"
+
+
+def _chain_running(run_dir: Path) -> bool:
+    status_path = run_dir / "deep_report.status"
+    if not status_path.exists():
+        return False
+    return status_path.read_text(encoding="utf-8").strip() in {
+        "detect", "inventory", "report",
+    }
+
+
 def _run_deep_report_chain(run_id: str) -> None:
     """Device detection -> inventory refinement (order matters: the
     inventory's detection-sync reads detections.json) -> interactive
     report. Fail-soft stage by stage; status file keeps the 报告 tab
-    honest while this grinds."""
-    import sys as _sys
+    honest while this grinds. Re-entrant for upgrades: a run that already
+    has detections skips straight to the inventory rules."""
     import traceback
 
-    status_path = Path("runs") / run_id / "deep_report.status"
+    run_dir = Path("runs") / run_id
+    status_path = run_dir / "deep_report.status"
 
     def _mark(state: str) -> None:
         try:
@@ -193,16 +234,15 @@ def _run_deep_report_chain(run_id: str) -> None:
         except Exception:
             pass
 
-    scripts_dir = str(Path(__file__).resolve().parents[1] / "scripts")
-    if scripts_dir not in _sys.path:
-        _sys.path.insert(0, scripts_dir)
-    try:
-        _mark("detect")
-        import detect_devices as _detect
+    _scripts_on_path()
+    if not (run_dir / "detection" / "detections.json").exists():
+        try:
+            _mark("detect")
+            import detect_devices as _detect
 
-        _detect.main(["--run", run_id])
-    except Exception:
-        traceback.print_exc()
+            _detect.main(["--run", run_id])
+        except Exception:
+            traceback.print_exc()
     try:
         _mark("inventory")
         import scene_inventory as _inventory
@@ -1229,6 +1269,11 @@ def build_app(
                     report_go = gr.Button("生成/查看报告", variant="primary")
                 report_file = gr.File(label="下载", interactive=False)
                 report_view = gr.HTML()
+                report_cloud = gr.Model3D(
+                    label="3D 点云（同一 run 的重建结果，可旋转）",
+                    interactive=False,
+                    height=520,
+                )
 
                 def _report_runs() -> gr.Dropdown:
                     choices = _report_run_choices()
@@ -1244,42 +1289,53 @@ def build_app(
                         if not choices:
                             return None, "<p>还没有任何 run。</p>"
                         name = choices[0][1]
-                    # full interactive report (photo pick / plan sync /
-                    # distance matrix) whenever the run's inventory layer
-                    # exists; the static summary is only the fallback
-                    if (Path("runs") / name / "inventory" / "inventory.json").exists():
+                    run_dir = Path("runs") / name
+                    state = analysis_state(run_dir)
+                    running = _chain_running(run_dir)
+                    # one generation of analysis for the whole product:
+                    # a run without the current rules gets upgraded the
+                    # moment someone opens it (skips detection when the
+                    # run already has it), and the page says so
+                    if state != "current" and not running:
+                        _start_deep_report_chain(name)
+                        running = True
+                    stage = (
+                        (run_dir / "deep_report.status").read_text(
+                            encoding="utf-8"
+                        ).strip()
+                        if (run_dir / "deep_report.status").exists()
+                        else ""
+                    )
+                    notice = (
+                        "<p style='padding:8px 12px;background:#fff3cd;"
+                        "border:1px solid #ffe08a;border-radius:6px'>{}</p>"
+                    )
+                    if state == "missing":
+                        from .report import build_run_report
+
+                        path = build_run_report(name)
+                        banner = notice.format(
+                            "⏳ 正在用最新分析生成完整交互报告（检测清单 / 矩形约束 / "
+                            f"精修测量），当前阶段: {stage or 'detect'}。实测约 5-8 分钟，"
+                            "期间重新点击「生成/查看报告」即可。下面先显示快速摘要。"
+                        )
+                    else:
                         from .interactive_report import (
                             build_interactive_run_report,
                         )
 
                         path = build_interactive_run_report(name)
                         banner = ""
-                    else:
-                        from .report import build_run_report
-
-                        path = build_run_report(name)
-                        status_path = Path("runs") / name / "deep_report.status"
-                        state = (
-                            status_path.read_text(encoding="utf-8").strip()
-                            if status_path.exists()
-                            else ""
-                        )
-                        if state in {"detect", "inventory", "report"}:
-                            banner = (
-                                "<p style='padding:8px 12px;background:#fff3cd;"
-                                "border:1px solid #ffe08a;border-radius:6px'>"
-                                "⏳ 深度报告生成中（检测清单 / 精修测量 / 交互标注，"
-                                f"当前阶段: {state}）— 实测约 5-8 分钟，期间可重新点击"
-                                "「生成/查看报告」即为完整版。下面先显示快速摘要。</p>"
+                        if state == "stale":
+                            banner = notice.format(
+                                "⏳ 此 run 的分析早于当前规则，正在后台用最新分析重算"
+                                f"（当前阶段: {stage or 'inventory'}，约 2-4 分钟）。"
+                                "下面是升级前的版本，稍后重新点击即为最新。"
                             )
-                        elif state == "failed":
-                            banner = (
-                                "<p style='padding:8px 12px;background:#f8d7da;"
-                                "border:1px solid #f1aeb5;border-radius:6px'>"
-                                "深度报告链失败，以下为快速摘要（服务器日志有 traceback）。</p>"
+                        elif stage == "failed":
+                            banner = notice.format(
+                                "深度报告链失败，显示的是已有版本（服务器日志有 traceback）。"
                             )
-                        else:
-                            banner = ""
                     html = path.read_text(encoding="utf-8")
                     if banner:
                         html = banner + html
@@ -1289,7 +1345,8 @@ def build_app(
                         + html.replace("&", "&amp;").replace('"', "&quot;")
                         + '"></iframe>'
                     )
-                    return str(path), framed
+                    cloud = run_dir / "geometry" / "point_cloud.glb"
+                    return str(path), framed, (str(cloud) if cloud.exists() else None)
 
                 report_refresh.click(
                     _report_runs,
@@ -1300,7 +1357,7 @@ def build_app(
                 report_go.click(
                     _report_go,
                     inputs=[report_run],
-                    outputs=[report_file, report_view],
+                    outputs=[report_file, report_view, report_cloud],
                     concurrency_id=REPORT_CONCURRENCY_ID,
                     concurrency_limit=1,
                 )
