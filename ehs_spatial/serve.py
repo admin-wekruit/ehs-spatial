@@ -156,8 +156,26 @@ def create_server() -> FastAPI:
     if not os.environ.get("PANOPTES_NO_RESUME"):
         resume_interrupted_chains()
 
+    @api.exception_handler(HTTPException)
+    async def _html_errors(request, exc: HTTPException):
+        # a person clicking a report link gets a page with a way back,
+        # not a JSON blob; API callers still get JSON
+        if request.url.path.startswith("/report/"):
+            body = (
+                "<!doctype html><meta charset='utf-8'><title>Panoptes</title>"
+                "<div style='font:15px/1.6 -apple-system,Noto Sans SC,sans-serif;"
+                "max-width:640px;margin:60px auto;padding:0 20px'>"
+                f"<h2>{exc.status_code} · {html.escape(str(exc.detail))}</h2>"
+                "<p>链接可能被截断或带了多余字符。到 <a href='/'>工作台 → 报告 tab</a>"
+                " 的历史列表里点对应的 run 进入报告页。</p></div>"
+            )
+            return HTMLResponse(body, status_code=exc.status_code)
+        return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+
     @api.get("/report/{run_id}", response_class=HTMLResponse)
     def report_page(run_id: str) -> HTMLResponse:
+        # tolerate a trailing punctuation/markdown tail from copy-paste
+        run_id = run_id.strip().rstrip("*）)。，,.;:")
         path = _ensure_report(run_id)
         page = path.read_text(encoding="utf-8")
         panel = _HUB_PANEL.replace("__RUN__", html.escape(run_id)).replace(
