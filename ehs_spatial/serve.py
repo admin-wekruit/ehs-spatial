@@ -163,6 +163,25 @@ def create_server() -> FastAPI:
         panel = _HUB_PANEL.replace("__RUN__", html.escape(run_id)).replace(
             "__REVIEW__", html.escape(_review_markdown(RUNS / run_id).replace("**", ""))
         )
+        # one product: the report page carries the app's navigation
+        nav = (
+            '<nav style="position:sticky;top:0;z-index:40;display:flex;gap:18px;'
+            'align-items:center;padding:10px 22px;background:var(--surface,#fff);'
+            'border-bottom:1px solid var(--line,#DAE0DE);font:14px/1.4 \'Noto Sans SC\','
+            '\'IBM Plex Sans\',sans-serif">'
+            '<a href="/" style="font-weight:600;text-decoration:none">← 工作台 · 提交新分析</a>'
+            '<a href="/" style="text-decoration:none">历史</a>'
+            f'<span style="margin-left:auto;font-family:monospace;font-size:12px">{html.escape(run_id)}</span>'
+            f'<a href="/report/{html.escape(run_id)}/file" style="text-decoration:none">下载 HTML</a>'
+            '<a href="#hub" style="text-decoration:none">审核 / Agent ↓</a>'
+            "</nav>"
+        )
+        head_end = page.find("</style>")
+        if head_end != -1:
+            head_end += len("</style>")
+            page = page[:head_end] + nav + page[head_end:]
+        else:
+            page = nav + page
         return HTMLResponse(page + panel)
 
     @api.get("/report/{run_id}/file")
@@ -209,9 +228,11 @@ def create_server() -> FastAPI:
                 return {"message": f"补测失败：{exc}"}
 
         try:
+            # the pipeline already logs grounded QA as chat_turn; logging
+            # it again as agent_turn showed every question twice
             out = agent_turn(
                 body.run_id, body.message.strip(), apply=body.apply,
-                answer_fn=_answer, refine_fn=_refine,
+                answer_fn=_answer, refine_fn=_refine, log_ask=False,
             )
         except ProviderError as exc:
             raise HTTPException(502, f"{exc.provider} {exc.operation} failed") from exc

@@ -212,6 +212,7 @@ def agent_turn(
     apply: bool = True,
     answer_fn: Callable[[str], str] | None = None,
     refine_fn: Callable[[str, str, bool], dict] | None = None,
+    log_ask: bool = True,
 ) -> dict:
     """Route one operator sentence, do it, log it. Returns
     {"intent", "reply", "changed", "overlay_path"}."""
@@ -271,18 +272,19 @@ def agent_turn(
                 changed = bool(apply)
             else:
                 reply = result.get("message") or "没定位到，换个说法或框选补测。"
-    entry = {
-        "type": "agent_turn",
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "intent": intent,
-        "user": message,
-        "assistant": reply,
-        "changed": changed,
-    }
-    chat = run_dir / "chat.jsonl"
-    chat.parent.mkdir(parents=True, exist_ok=True)
-    with chat.open("a", encoding="utf-8") as stream:
-        stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    if intent != "ask" or log_ask:
+        entry = {
+            "type": "agent_turn",
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "intent": intent,
+            "user": message,
+            "assistant": reply,
+            "changed": changed,
+        }
+        chat = run_dir / "chat.jsonl"
+        chat.parent.mkdir(parents=True, exist_ok=True)
+        with chat.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
     return {"intent": intent, "reply": reply, "changed": changed, "overlay_path": overlay}
 
 

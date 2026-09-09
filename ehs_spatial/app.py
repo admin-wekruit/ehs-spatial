@@ -436,8 +436,9 @@ def analyze_run(
             run_id,
             gr.update(
                 value=_status_copy(assessment, scene, policy_results, policy_specs)
-                + "\n\n⏳ **完整交互报告后台生成中（实测约 5–8 分钟）** — "
-                "到 报告 tab 点「生成/查看报告」，好了会自动显示完整版。",
+                + f"\n\n⏳ **完整报告页后台生成中（实测约 5–8 分钟）** — "
+                f"[打开报告页 /report/{run_id[:12]}…](/report/{run_id})"
+                "（现在是快速版，深链跑完刷新即完整版；报告 tab 的历史列表里也能进）。",
                 elem_classes=["result-status", f"status-{status_class}"],
             ),
             str(paths.point_cloud_glb),
@@ -1339,18 +1340,16 @@ def build_app(
 
             with gr.Tab("报告 Report"):
                 gr.Markdown(
-                    "## 单 run 报告\n选 run → 生成自包含 HTML（判定+检测清单+"
-                    "测量+回投+补测证据），页面内直接看，也可下载转发。",
+                    "## 报告 · 历史\n每个 run 一份完整报告页——判定、VLM 枚举与检测清单、"
+                    "原图点选、CAD、相机锚定 3D、回投验证、证据图集、审核签字、Agent 对话，"
+                    "全在同一页。下面的列表按提交时间倒序，就是全部历史；点一行进入。",
                     elem_classes="section-heading",
                 )
                 _EXCLUDED_RUN_PREFIXES = (
                     "gen-", "real-anno-", "demo-", "poc-", "video-", "phase",
                 )
 
-                def _report_run_choices() -> list[tuple[str, str]]:
-                    # operator submissions + the real-photo test set only,
-                    # newest first, submission time in the label — this
-                    # list IS the run history
+                def _history_rows() -> list[dict]:
                     from datetime import datetime
 
                     candidates = [
@@ -1361,15 +1360,9 @@ def build_app(
                         )
                         and not p.name.startswith(_EXCLUDED_RUN_PREFIXES)
                     ]
-                    candidates.sort(
-                        key=lambda p: p.stat().st_mtime, reverse=True
-                    )
-                    choices = []
+                    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                    rows = []
                     for path in candidates:
-                        stamp = datetime.fromtimestamp(
-                            path.stat().st_mtime
-                        ).strftime("%m-%d %H:%M")
-                        # history row = time · verdict · review state · id
                         verdict = "—"
                         try:
                             verdict = json.loads(
@@ -1377,18 +1370,58 @@ def build_app(
                             ).get("status", "—")
                         except Exception:
                             pass
-                        reviewed = "已审核" if (path / "review.json").exists() else "未审核"
-                        choices.append(
-                            (f"{stamp}  ·  {verdict}  ·  {reviewed}  ·  {path.name}", path.name)
+                        state = analysis_state(path)
+                        stage = ""
+                        status_path = path / "deep_report.status"
+                        if status_path.exists():
+                            stage = status_path.read_text(encoding="utf-8").strip()
+                        rows.append({
+                            "id": path.name,
+                            "time": datetime.fromtimestamp(path.stat().st_mtime).strftime("%m-%d %H:%M"),
+                            "verdict": verdict,
+                            "reviewed": (path / "review.json").exists(),
+                            "report": (
+                                "完整" if state == "current"
+                                else ("生成中 · " + stage if stage in {"detect", "inventory", "report"} else "待升级")
+                            ),
+                        })
+                    return rows
+
+                def _report_run_choices() -> list[tuple[str, str]]:
+                    return [
+                        (
+                            f"{r['time']}  ·  {r['verdict']}  ·  "
+                            f"{'已审核' if r['reviewed'] else '未审核'}  ·  {r['id']}",
+                            r["id"],
                         )
-                    return choices
+                        for r in _history_rows()
+                    ]
+
+                def _history_html() -> str:
+                    rows = _history_rows()
+                    if not rows:
+                        return "<p>还没有任何 run。到 Workbench 提交第一组照片。</p>"
+                    cells = []
+                    for r in rows[:60]:
+                        badge = {
+                            "FAIL": "#C13B3B", "PASS": "#178A50",
+                            "NEEDS_REVIEW": "#A9740E",
+                        }.get(r["verdict"], "#5D6B76")
+                        cells.append(
+                            f'<tr><td><a href="/report/{r["id"]}" style="font-weight:600">{r["time"]}</a></td>'
+                            f'<td><span style="color:{badge};font-weight:600">{r["verdict"]}</span></td>'
+                            f'<td>{"已审核" if r["reviewed"] else "未审核"}</td>'
+                            f'<td>{r["report"]}</td>'
+                            f'<td style="font-family:monospace;font-size:12px"><a href="/report/{r["id"]}">{r["id"]}</a></td></tr>'
+                        )
+                    return (
+                        '<table style="width:100%;border-collapse:collapse;font-size:14px">'
+                        "<tr><th align=left>提交时间</th><th align=left>判定</th>"
+                        "<th align=left>审核</th><th align=left>报告</th><th align=left>run</th></tr>"
+                        + "".join(cells) + "</table>"
+                    )
 
                 _seed_runs = _report_run_choices()
-                gr.Markdown(
-                    "提交后：快速判定约 1 分钟（单图）/ 3-4 分钟（4 图）；"
-                    "完整交互报告随后自动生成，再等约 5-8 分钟。"
-                    "列表按提交时间排序，就是全部历史。"
-                )
                 with gr.Row():
                     report_run = gr.Dropdown(
                         label="Run（按时间倒序 = 历史）",
@@ -1396,232 +1429,28 @@ def build_app(
                         value=_seed_runs[0][1] if _seed_runs else None,
                         allow_custom_value=True,
                     )
-                    report_refresh = gr.Button("刷新 run 列表")
-                    report_go = gr.Button("生成/查看报告", variant="primary")
-                # the real thing is one standalone page served by the app —
-                # this tab is the index into it plus an inline preview
-                report_link = gr.HTML(
-                    "<p>选 run 后点「生成/查看报告」，这里会出现"
-                    "<b>完整报告页</b>链接（一个页面：报告 + 3D + CAD + 审核 + Agent）。</p>"
-                )
-                report_file = gr.File(label="下载", interactive=False)
-                report_view = gr.HTML()
-                report_cloud = gr.Model3D(
-                    label="3D 点云（同一 run 的重建结果，可旋转）",
-                    interactive=False,
-                    height=520,
-                )
-                report_cad = gr.Image(
-                    label="CAD 平面图（inventory 完整版：全实体 · 墙线 · cell 矩形 · 尺寸）",
-                    type="filepath",
-                    interactive=False,
-                )
-                # the report page is the one place: review and the agent
-                # live beside the report they change
-                with gr.Accordion("Review 审核 — 对本 run 签字", open=True):
-                    review_summary = gr.Markdown("_未审核_")
-                    with gr.Row():
-                        review_reviewer = gr.Textbox(label="审核员")
-                        review_decision = gr.Radio(
-                            choices=["confirmed", "overridden"],
-                            value="confirmed",
-                            label="决定",
-                        )
-                        review_override = gr.Dropdown(
-                            choices=list(OVERRIDE_STATUSES),
-                            label="推翻后的状态（仅推翻时）",
-                        )
-                    review_reason = gr.Textbox(label="理由（推翻必填）", lines=2)
-                    review_save = gr.Button("保存审核", variant="primary")
-                with gr.Accordion(
-                    "Agent 对话 — 追问 / 补测 / 纠错 / 调整策略（全部写入 run，进报告）",
-                    open=True,
-                ):
-                    hub_chat = gr.Chatbot(label="对话记录", height=320)
-                    with gr.Row():
-                        hub_say = gr.Textbox(
-                            label="说一句",
-                            placeholder=(
-                                "例：围栏离机器人多远？ / 右边黄色柱子帮我量 / "
-                                "这块不是围栏，是导向挡板 / p01 改成 0.8m"
-                            ),
-                            scale=4,
-                        )
-                        hub_apply = gr.Checkbox(label="回灌判定", value=True)
-                        hub_send = gr.Button("发送", variant="primary")
+                    report_refresh = gr.Button("刷新")
+                    report_go = gr.Button("打开报告", variant="primary")
+                history_view = gr.HTML(_history_html())
 
-                def _report_runs() -> gr.Dropdown:
+                def _report_runs():
                     choices = _report_run_choices()
-                    return gr.Dropdown(
-                        choices=choices,
-                        value=choices[0][1] if choices else None,
-                    )
-
-                def _report_go(name):
-                    if not name:
-                        # zero-friction default: newest run
-                        choices = _report_run_choices()
-                        if not choices:
-                            return None, "<p>还没有任何 run。</p>"
-                        name = choices[0][1]
-                    run_dir = Path("runs") / name
-                    state = analysis_state(run_dir)
-                    running = _chain_running(run_dir)
-                    # one generation of analysis for the whole product:
-                    # a run without the current rules gets upgraded the
-                    # moment someone opens it (skips detection when the
-                    # run already has it), and the page says so
-                    stage_now = (
-                        (run_dir / "deep_report.status").read_text(encoding="utf-8").strip()
-                        if (run_dir / "deep_report.status").exists()
-                        else ""
-                    )
-                    # not current, or a chain that died mid-way (app restart,
-                    # provider outage): kick it again — re-entrant, so only
-                    # the missing stages run
-                    if (state != "current" or stage_now == "failed") and not running:
-                        _start_deep_report_chain(name)
-                        running = True
-                    stage = (
-                        (run_dir / "deep_report.status").read_text(
-                            encoding="utf-8"
-                        ).strip()
-                        if (run_dir / "deep_report.status").exists()
-                        else ""
-                    )
-                    notice = (
-                        "<p style='padding:8px 12px;background:#fff3cd;"
-                        "border:1px solid #ffe08a;border-radius:6px'>{}</p>"
-                    )
-                    if state == "missing":
-                        from .report import build_run_report
-
-                        path = build_run_report(name)
-                        banner = notice.format(
-                            "⏳ 正在用最新分析生成完整交互报告（检测清单 / 矩形约束 / "
-                            f"精修测量），当前阶段: {stage or 'detect'}。实测约 5-8 分钟，"
-                            "期间重新点击「生成/查看报告」即可。下面先显示快速摘要。"
-                        )
-                    else:
-                        from .interactive_report import (
-                            build_interactive_run_report,
-                        )
-
-                        path = build_interactive_run_report(name)
-                        banner = ""
-                        if state == "stale":
-                            banner = notice.format(
-                                "⏳ 此 run 的分析早于当前规则，正在后台用最新分析重算"
-                                f"（当前阶段: {stage or 'inventory'}，约 2-4 分钟）。"
-                                "下面是升级前的版本，稍后重新点击即为最新。"
-                            )
-                        elif stage == "failed":
-                            banner = notice.format(
-                                "深度报告链失败，显示的是已有版本（服务器日志有 traceback）。"
-                            )
-                    html = path.read_text(encoding="utf-8")
-                    if banner:
-                        html = banner + html
-                    framed = (
-                        '<iframe style="width:100%;height:900px;border:1px '
-                        'solid #ccc;border-radius:6px" srcdoc="'
-                        + html.replace("&", "&amp;").replace('"', "&quot;")
-                        + '"></iframe>'
-                    )
-                    cloud = run_dir / "geometry" / "point_cloud.glb"
-                    cad = run_dir / "inventory" / "floor_plan.png"
-                    if not cad.exists():
-                        cad = run_dir / "topdown.png"
-                    from .agent_hub import chat_history
-
-                    link = (
-                        f'<p style="font-size:16px"><a href="/report/{name}" target="_blank">'
-                        f"▶ 打开完整报告页 /report/{name[:12]}…</a>"
-                        "　·　一个页面：报告 + 3D + CAD + 审核签字 + Agent 对话"
-                        f'　·　<a href="/report/{name}/file">下载 HTML</a></p>'
-                    )
                     return (
-                        str(path),
-                        framed,
-                        str(cloud) if cloud.exists() else None,
-                        str(cad) if cad.exists() else None,
-                        _review_markdown(run_dir),
-                        chat_history(run_dir),
-                        link,
+                        gr.Dropdown(choices=choices, value=choices[0][1] if choices else None),
+                        _history_html(),
                     )
-
-                def _hub_save_review(name, reviewer, decision, override, reason):
-                    if not name:
-                        raise gr.Error("先选一个 run")
-                    save_disposition(
-                        service, name, reviewer, decision, override, reason
-                    )
-                    return _review_markdown(Path("runs") / name)
-
-                def _hub_agent(name, message, apply_it, history):
-                    from .agent import agent_refine
-                    from .agent_hub import agent_turn
-                    from .refine import RefineError
-
-                    if not name:
-                        raise gr.Error("先选一个 run")
-                    if not (message or "").strip():
-                        raise gr.Error("先说一句")
-
-                    def _answer(question: str) -> str:
-                        answer = GroundedAnswer.model_validate(
-                            service.answer_question(name, question)
-                        )
-                        facts = ", ".join(answer.fact_ids) or "none"
-                        return f"{answer.answer}\n\nFact IDs: `{facts}`"
-
-                    def _refine(rid: str, instruction: str, apply: bool) -> dict:
-                        try:
-                            return agent_refine(
-                                rid, instruction, runs_root=service.store.root,
-                                apply=bool(apply),
-                            )
-                        except (RefineError, ProviderError) as exc:
-                            return {"message": f"补测失败：{exc}"}
-
-                    try:
-                        out = agent_turn(
-                            name, message.strip(), apply=bool(apply_it),
-                            answer_fn=_answer, refine_fn=_refine,
-                        )
-                    except ProviderError as exc:
-                        raise gr.Error(_provider_error_copy(exc)) from exc
-                    history = list(history or [])
-                    history.append({"role": "user", "content": f"[{out['intent']}] {message.strip()}"})
-                    history.append({"role": "assistant", "content": out["reply"]})
-                    return history, ""
 
                 report_refresh.click(
                     _report_runs,
-                    outputs=[report_run],
+                    outputs=[report_run, history_view],
                     concurrency_id=REPORT_CONCURRENCY_ID,
                     concurrency_limit=1,
                 )
-                review_save.click(
-                    _hub_save_review,
-                    inputs=[report_run, review_reviewer, review_decision,
-                            review_override, review_reason],
-                    outputs=[review_summary],
-                    concurrency_id=LOCAL_CONCURRENCY_ID,
-                    concurrency_limit=1,
-                )
-                hub_send.click(
-                    _hub_agent,
-                    inputs=[report_run, hub_say, hub_apply, hub_chat],
-                    outputs=[hub_chat, hub_say],
-                    concurrency_id=PIPELINE_CONCURRENCY_ID,
-                    concurrency_limit=1,
-                )
+                # the report is a page, not a panel: navigate to it
                 report_go.click(
-                    _report_go,
+                    None,
                     inputs=[report_run],
-                    outputs=[report_file, report_view, report_cloud, report_cad,
-                             review_summary, hub_chat, report_link],
+                    js="(name) => { if (name) { window.location.href = '/report/' + name; } }",
                     concurrency_id=REPORT_CONCURRENCY_ID,
                     concurrency_limit=1,
                 )
