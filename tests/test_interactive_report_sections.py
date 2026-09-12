@@ -64,12 +64,12 @@ def test_minimal_run_degrades_gracefully(tmp_path, monkeypatch):
     html = out.read_text(encoding="utf-8")
     assert _markers(html) == SECTIONS
     assert "无判定" in html  # no assessment.json -> neutral badge
-    assert "无审核记录" in html and "无对话记录" in html
+    assert "无审核记录" in html and "对话记录仅在授权工作区查看" in html
     assert "阈值已按本 run 调整" in html
     assert "<li class=\"mono\" style=\"font-size:12.5px\">w1</li>" in html
 
 
-def test_chat_and_review_render_both_entry_shapes(tmp_path, monkeypatch):
+def test_chat_remains_private_while_review_renders(tmp_path, monkeypatch):
     run = tmp_path / "runs" / "run-chat"
     run.mkdir(parents=True)
     (run / "manifest.json").write_text(json.dumps({"run_id": "run-chat", "created_at": "t0", "providers": {}}))
@@ -90,9 +90,9 @@ def test_chat_and_review_render_both_entry_shapes(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     html = build_interactive_run_report("run-chat").read_text(encoding="utf-8")
     chat = html.split('data-section="chat"')[1].split("<h4")[0]
-    assert chat.count('<div class="policy">') == 2  # cursor row skipped
-    assert "围栏离机器人多远？" in chat and "0.42 m" in chat and "facts: fact-1" in chat
-    assert ">relabel<" in chat and "已改动 run" in chat and "2026-09-08T10:05:00+00:00" in chat
+    assert "对话记录仅在授权工作区查看" in chat
+    for text in ["围栏离机器人多远？", "0.42 m", "facts: fact-1", "把 3 号改成 bollard", "已改 1 处"]:
+        assert text not in html
     review = html.split('data-section="review"')[1].split("<h4")[0]
     assert "adam" in review and "overridden" in review and "PASS" in review and "fence is a neighbour cell" in review
     assert "推翻机器判定 → PASS" in html  # header 审核结论 line

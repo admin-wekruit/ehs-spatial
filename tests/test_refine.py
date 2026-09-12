@@ -84,13 +84,33 @@ def test_refine_region_rejects_wrong_grid_before_measurement(tmp_path, monkeypat
     from ehs_spatial.providers.sam3 import encode_coco_rle
 
     run = _fake_run(tmp_path)
-    cache = run / "refinements" / "x_1_1_20_20.json"
-    cache.parent.mkdir()
-    cache.write_text(json.dumps({"rle": [encode_coco_rle(np.ones((24, 32), bool))]}))
-    monkeypatch.setattr("ehs_spatial.refine.measure", lambda *a: pytest.fail("wrong-grid mask reached geometry"))
+    monkeypatch.setattr("ehs_spatial.refine.measure", lambda *a, **kw: pytest.fail("wrong-grid mask reached geometry"))
     with pytest.raises(RefineError, match="does not match input image"):
-        refine_region("r1", "x", (1, 1, 20, 20), runs_root=tmp_path / "runs")
-    assert not cache.with_suffix(".png").exists()
+        refine_region("r1", "x", (1, 1, 20, 20), runs_root=tmp_path / "runs",
+                      subscriber=lambda *a, **kw: {"rle": [encode_coco_rle(np.ones((24, 32), bool))]})
+    assert not list((run / "refinements").glob("*.png"))
+
+
+def test_measure_uses_selected_frame_geometry(tmp_path, monkeypatch):
+    import shutil
+    import ehs_spatial.refine as refine
+
+    run = _fake_run(tmp_path)
+    frame1 = run / "geometry/frames/frame_0001"
+    frame2 = run / "geometry/frames/frame_0002"
+    shutil.copytree(frame1, frame2)
+    Image.new("RGB", (64, 48), (200, 0, 0)).save(run / "input/image_02.png")
+    y, x = np.indices((48, 64))
+    points = np.stack((x / 10, y / 10, np.full_like(x, 2)), axis=-1)
+    np.save(frame1 / "pts3d.npy", points)
+    points[..., 0] += 10
+    np.save(frame2 / "pts3d.npy", points)
+    monkeypatch.setattr(refine, "_build_geometry", lambda *a, **kw: SimpleNamespace(
+        transform=SimpleNamespace(apply=lambda cloud: cloud)))
+    mask = np.zeros((48, 64), bool)
+    mask[8:32, 16:32] = True
+    measured = refine.measure(run, mask, 1.5, None, frame_id="frame_0002")
+    assert measured["centroid_xy"] == [12.35, 1.95]
 
 
 def test_measure_uses_padded_input_mask_on_native_points(tmp_path, monkeypatch):

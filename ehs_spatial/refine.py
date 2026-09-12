@@ -9,13 +9,18 @@ a miss draws a box instead of fighting the vocabulary. Cached per
 """
 
 import base64
+import hashlib
 import json
+import re
+import tempfile
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
+from .contracts import Observation2D
 from .geometry import _build_geometry
+from .path_safety import validate_safe_path_segment
 from .providers.map_anything import input_mask_to_canonical
 from .providers.sam3 import decode_coco_rle
 from .viewer import _frames
@@ -27,6 +32,37 @@ class RefineError(RuntimeError):
     pass
 
 
+def input_image(run: Path, frame_id: str = "frame_0001") -> Path:
+    """Resolve the same ordered input/frame mapping used by geometry."""
+    if not re.fullmatch(r"frame_[0-9]{4}", frame_id):
+        raise RefineError("invalid frame_id")
+    images = sorted((run / "input").glob("image_*"))
+    index = int(frame_id[6:]) - 1
+    if not 0 <= index < len(images):
+        raise RefineError(f"input image for {frame_id} is missing")
+    return images[index]
+
+
+def _persist(run: Path, result: dict) -> bool:
+    path = run / "refinements.json"
+    records = json.loads(path.read_text()) if path.exists() else []
+    record = {k: v for k, v in result.items() if k not in {"changed", "policies"}}
+    for index, previous in enumerate(records):
+        if previous.get("evidence_id") == result["evidence_id"]:
+            if previous == record:
+                return False
+            records[index] = record
+            break
+    else:
+        records.append(record)
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=run, delete=False) as stream:
+        json.dump(records, stream, ensure_ascii=False, indent=2)
+        stream.write("\n")
+        temporary = Path(stream.name)
+    temporary.replace(path)
+    return True
+
+
 def _default_subscriber(endpoint: str, *, arguments: dict) -> dict:
     from .providers.sam3 import sam_subscribe
 
@@ -34,13 +70,16 @@ def _default_subscriber(endpoint: str, *, arguments: dict) -> dict:
 
 
 def measure(
-    run: Path, mask: np.ndarray, camera_height: float, scale: float | None
+    run: Path, mask: np.ndarray, camera_height: float, scale: float | None,
+    *, frame_id: str = "frame_0001",
 ) -> dict:
     frames = _frames(run)
-    frame = frames[0]
-    transform = _build_geometry(
-        frames, [], camera_height, scale_factor_override=scale
-    ).transform
+    frame = next((f for f in frames if f.frame_id == frame_id), None)
+    if frame is None:
+        raise RefineError(f"geometry for {frame_id} is missing")
+    observations_path = run / "observations.json"
+    observations = [Observation2D.model_validate(item) for item in json.loads(observations_path.read_text())] if observations_path.exists() else []
+    transform = _build_geometry(frames, observations, camera_height, scale_factor_override=scale).transform
     if transform is None:
         raise RefineError("run has no floor transform")
     points3d = np.load(frame.pts3d_path)
@@ -58,7 +97,8 @@ def measure(
         raise RefineError(f"only {int(chosen.sum())} 3D points under the mask")
     # depth bleed through/around transparent structures: a boxed object is
     # one physical thing, so keep the nearest depth cluster (p10 + 1 m).
-    depth = points3d[..., 2]
+    pose = np.asarray(frame.camera_to_world, dtype=float)
+    depth = (points3d - pose[:3, 3]) @ pose[:3, 2]
     near = np.percentile(depth[chosen], 10)
     chosen &= depth <= near + 1.0
     cloud = transform.apply(points3d[chosen])
@@ -81,7 +121,7 @@ def measure(
         "base_m": round(base, 2),
         "extent_m": f"{np.ptp(xy[:, 0]):.2f}x{np.ptp(xy[:, 1]):.2f}",
         "centroid_xy": [round(float(v), 2) for v in xy.mean(axis=0)],
-        "camera_dist_m": round(float(np.linalg.norm(xy.mean(axis=0))), 2),
+        "camera_dist_m": round(float(np.linalg.norm(xy.mean(axis=0) - transform.apply(pose[None, :3, 3])[0, :2])), 2),
         "footprint_xy": footprint,
     }
 
@@ -95,21 +135,39 @@ def refine_region(
     camera_height: float = 1.5,
     apply: bool = False,
     subscriber=None,
+    frame_id: str = "frame_0001",
+    instruction: str | None = None,
+    located_rationale: str | None = None,
 ) -> dict:
-    """Box-prompt SAM + floor-frame measurement for one region of a run's
-    input photo. With apply=True the correction becomes a scene entity and
-    the run's policies re-evaluate (idempotent per label+box)."""
+    """Segment a selected source frame; retain evidence before measurement.
+
+    apply=True persists the observation. Only a successful measurement can
+    become a scene entity and enter the run's existing policy evaluation.
+    """
     run = Path(runs_root) / run_id
-    image_path = next((run / "input").glob("image_*"))
+    try:
+        validate_safe_path_segment(run_id, "run_id")
+    except ValueError as error:
+        raise RefineError(str(error)) from error
+    if not run.resolve().is_relative_to(Path(runs_root).resolve()):
+        raise RefineError("run is outside runs_root")
+    image_path = input_image(run, frame_id)
+    label = label.strip()
+    if not label or len(label) > 200 or any(ord(c) < 32 for c in label):
+        raise RefineError("label must be a nonempty noun phrase of at most 200 characters")
     with Image.open(image_path) as image:
         width, height = image.size
+    if len(box) != 4 or any(isinstance(v, bool) or not isinstance(v, (int, np.integer)) for v in box):
+        raise RefineError("box must contain four integer original-image pixels")
     x1, y1, x2, y2 = (int(v) for v in box)
     if not (0 <= x1 < x2 <= width and 0 <= y1 < y2 <= height):
         raise RefineError(f"box {box} outside image {width}x{height}")
 
     out_dir = run / "refinements"
     out_dir.mkdir(exist_ok=True)
-    slug = f"{label.replace(' ', '_')}_{x1}_{y1}_{x2}_{y2}"
+    image_sha = hashlib.sha256(image_path.read_bytes()).hexdigest()
+    identity = json.dumps([frame_id, image_sha, label, [x1, y1, x2, y2]], ensure_ascii=False)
+    slug = f"{frame_id}__{image_sha[:12]}__{hashlib.sha256(identity.encode()).hexdigest()[:20]}"
     cache = out_dir / f"{slug}.json"
     if cache.exists():
         response = json.loads(cache.read_text())
@@ -127,7 +185,10 @@ def refine_region(
                 "max_masks": 3,
             },
         )
+        response = {**response, "frame_id": frame_id, "source_image_sha256": image_sha}
         cache.write_text(json.dumps(response) + "\n")
+    if response.get("frame_id") != frame_id or response.get("source_image_sha256") != image_sha:
+        raise RefineError("cached segmentation does not match the selected photograph")
     rles = response.get("rle") or []
     if isinstance(rles, str):
         rles = [rles]
@@ -145,10 +206,22 @@ def refine_region(
         scale = json.loads(scene_path.read_text()).get("scale_factor")
     result = {
         "label": label,
+        "frame_id": frame_id,
+        "frame": frame_id,
+        "source": "reviewer",
+        "refine_slug": slug,
+        "evidence_id": f"refine:{slug}",
+        "source_image_sha256": image_sha,
+        "mask_path": str(cache.relative_to(run)),
+        "mask_sha256": hashlib.sha256(cache.read_bytes()).hexdigest(),
         "box": [x1, y1, x2, y2],
         "sam_score": round(float(scores[best]), 3),
         "mask_pixels": int(mask.sum()),
-        **measure(run, mask, camera_height, scale),
+        "geometry_status": "unmeasured",
+        "geometry_reason": "measurement pending",
+        "instruction": instruction,
+        "located_rationale": located_rationale,
+        "applied": bool(apply),
     }
 
     with Image.open(image_path) as image:
@@ -160,14 +233,20 @@ def refine_region(
     Image.fromarray(overlay).save(overlay_path)
     result["overlay_path"] = str(overlay_path)
 
-    log_path = run / "refinements.json"
-    log = json.loads(log_path.read_text()) if log_path.exists() else []
-    if not any(item.get("box") == result["box"] and item.get("label") == label
-               for item in log):
-        log.append({k: v for k, v in result.items() if k != "overlay_path"})
-        log_path.write_text(json.dumps(log, indent=2) + "\n")
-
+    # A 2D observation exists before geometry succeeds. Small masks are
+    # still evidence and must survive every later measurement gate.
+    before = (run / "refinements.json").read_bytes() if (run / "refinements.json").exists() else None
     if apply:
+        _persist(run, result)
+    try:
+        result.update(measure(run, mask, camera_height, scale, frame_id=frame_id))
+        result.update(geometry_status="measured", geometry_reason=None)
+    except (RefineError, FileNotFoundError, ValueError) as error:
+        result["geometry_reason"] = str(error)
+    if apply:
+        _persist(run, result)
+    result["changed"] = bool(apply and before != (run / "refinements.json").read_bytes())
+    if apply and result["geometry_status"] == "measured" and scene_path.exists():
         result["policies"] = _apply_to_scene(run, label, slug, result)
     return result
 
@@ -197,7 +276,7 @@ def _apply_to_scene(run: Path, label: str, slug: str, result: dict) -> list[dict
                     (float(x), float(y)) for x, y in result["footprint_xy"]
                 ],
                 height_m=max(0.01, float(result["height_m"])),
-                evidence_frame_ids=["frame_0001"],
+                evidence_frame_ids=[result.get("frame_id", "frame_0001")],
             )
         )
         (run / "scene.json").write_text(scene.model_dump_json(indent=2) + "\n")
@@ -205,7 +284,7 @@ def _apply_to_scene(run: Path, label: str, slug: str, result: dict) -> list[dict
     if policies_path.exists():
         envelope = json.loads(policies_path.read_text())
         specs = [PolicySpec.model_validate(s) for s in envelope.get("specs", [])]
-        results = evaluate_policies(specs, scene, capture_frame_count=1)
+        results = evaluate_policies(specs, scene, capture_frame_count=len(list((run / "input").glob("image_*"))))
         envelope["results"] = [r.model_dump(mode="json") for r in results]
         policies_path.write_text(json.dumps(envelope, indent=2) + "\n")
         statuses = [

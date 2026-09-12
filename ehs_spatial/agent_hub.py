@@ -22,6 +22,7 @@ import re
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
+from .path_safety import validate_safe_path_segment
 
 INTENTS = ("ask", "refine", "relabel", "policy_adjust")
 
@@ -204,6 +205,23 @@ def apply_policy_adjust(
     return touched, _reevaluate(run_dir)
 
 
+def add_object(
+    run_id: str, message: str, *, runs_root: str | Path, apply: bool,
+    frame_id: str, box=None, label: str | None = None,
+) -> dict:
+    """One domain tool: explicit ROI costs no locator call; prose costs one."""
+    from .agent import agent_refine
+    from .refine import RefineError, refine_region
+
+    if box is not None:
+        if not label or not label.strip():
+            raise RefineError("a boxed object requires a label")
+        return refine_region(run_id, label, box, runs_root=runs_root, apply=apply,
+                             frame_id=frame_id, instruction=message)
+    description = message if not label else f"{message}\nObject label: {label}"
+    return agent_refine(run_id, description, runs_root=runs_root, apply=apply, frame_id=frame_id)
+
+
 def agent_turn(
     run_id: str,
     message: str,
@@ -213,13 +231,49 @@ def agent_turn(
     answer_fn: Callable[[str], str] | None = None,
     refine_fn: Callable[[str, str, bool], dict] | None = None,
     log_ask: bool = True,
+    action: str | None = None,
+    frame_id: str | None = None,
+    box: list[int] | None = None,
+    label: str | None = None,
+    language: str = "zh",
+    add_object_fn: Callable[..., dict] | None = None,
 ) -> dict:
     """Route one operator sentence, do it, log it. Returns
     {"intent", "reply", "changed", "overlay_path"}."""
+    validate_safe_path_segment(run_id, "run_id")
+    if action not in {None, "ask", "add_object"}:
+        raise ValueError("unsupported agent action")
+    if language not in {"zh", "en"}:
+        raise ValueError("language must be zh or en")
     run_dir = Path(runs_root) / run_id
-    intent = classify_intent(message)
+    if not run_dir.is_dir() or not run_dir.resolve().is_relative_to(Path(runs_root).resolve()):
+        raise ValueError("run does not exist")
+    intent = action or classify_intent(message)
     reply, changed, overlay = "", False, None
-    if intent == "ask":
+    details = {"action": action, "language": language}
+    if intent == "add_object":
+        if not frame_id:
+            raise ValueError("add_object requires frame_id")
+        result = (add_object_fn or add_object)(
+            run_id, message, runs_root=runs_root, apply=apply,
+            frame_id=frame_id, box=box, label=label,
+        )
+        changed = bool(result.get("changed"))
+        overlay = result.get("overlay_path")
+        details.update({key: result.get(key) for key in (
+            "evidence_id", "frame_id", "box", "label", "geometry_status",
+            "geometry_reason", "applied", "sam_score", "mask_pixels",
+        )})
+        name = result.get("label", label or "object")
+        if language == "en":
+            reply = f"{'Saved' if apply else 'Previewed'} “{name}” in {frame_id}; SAM {result.get('sam_score')}. "
+            reply += ("The refreshed report shows supported spatial bounds and dimensions with their scale source; unsupported readings retain their reasons."
+                      if apply else "Source evidence is previewed; saving refreshes its spatial bounds and dimension readings.")
+        else:
+            reply = f"{'已保存' if apply else '已预览'} {frame_id} 的「{name}」，SAM {result.get('sam_score')}。"
+            reply += ("报告刷新后会显示有证据支持的空间范围、尺寸及尺度来源；无法确定的读数保留原因。"
+                      if apply else "当前为证据预览；保存后会刷新空间范围与尺寸读数。")
+    elif intent == "ask":
         reply = answer_fn(message) if answer_fn else "（问答后端未接入）"
     elif intent == "relabel":
         parsed = parse_relabel(message)
@@ -263,13 +317,14 @@ def agent_turn(
             result = refine_fn(run_id, message, apply) or {}
             overlay = result.get("overlay_path")
             if result.get("label"):
-                reply = (
+                reply = (f"已保留「{result['label']}」的二维证据；三维不可测：{result.get('geometry_reason')}。"
+                         if result.get("geometry_status") == "unmeasured" else (
                     f"定位到「{result.get('label')}」：高 {result.get('height_m')} m，"
                     f"占地 {result.get('extent_m')}，距相机 {result.get('camera_dist_m')} m，"
                     f"SAM {result.get('sam_score')}。"
                     + ("已回灌判定。" if apply else "未回灌（预览）。")
-                )
-                changed = bool(apply)
+                ))
+                changed = bool(result.get("changed"))
             else:
                 reply = result.get("message") or "没定位到，换个说法或框选补测。"
     if intent != "ask" or log_ask:
@@ -280,12 +335,13 @@ def agent_turn(
             "user": message,
             "assistant": reply,
             "changed": changed,
+            **details,
         }
         chat = run_dir / "chat.jsonl"
         chat.parent.mkdir(parents=True, exist_ok=True)
         with chat.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    return {"intent": intent, "reply": reply, "changed": changed, "overlay_path": overlay}
+    return {"intent": intent, "reply": reply, "changed": changed, "overlay_path": overlay, **details}
 
 
 def chat_history(run_dir: Path) -> list[dict]:

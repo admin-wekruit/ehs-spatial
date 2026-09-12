@@ -367,10 +367,11 @@ def build_run_report(run_id: str, *, runs_root: str | Path = "runs") -> Path:
     detections_path = run / "detection" / "detections.json"
     if detections_path.exists():
         envelope = json.loads(detections_path.read_text())
-        overlay = run / "detection" / "overlay.png"
         body = ""
-        if overlay.exists():
-            body += f'<figure><img src="{_jpeg_uri(overlay)}"></figure>'
+        for frame in envelope.get("frames") or [{"frame_id": "frame_0001", "overlay_path": "detection/overlay.png"}]:
+            overlay = run / frame["overlay_path"]
+            if overlay.exists():
+                body += f'<figure><img src="{_jpeg_uri(overlay)}"><figcaption>{escape(frame["frame_id"])}</figcaption></figure>'
         groups: dict[str, list[dict]] = {}
         for det in envelope.get("detections", []):
             if "rle" in det:
@@ -381,7 +382,7 @@ def build_run_report(run_id: str, *, runs_root: str | Path = "runs") -> Path:
             name, colour = CATEGORY_META[category]
             items = " ".join(
                 f'<span class="lg"><b style="color:{colour}">#{d["number"]}'
-                f"</b> {d['zh']}"
+                f"</b> {d.get('frame_id', 'frame_0001')} {d['zh']}"
                 + (f' <span class="dim">{d["iso"]}</span>' if d.get("iso") else "")
                 + "</span>"
                 for d in groups[category]
@@ -390,7 +391,7 @@ def build_run_report(run_id: str, *, runs_root: str | Path = "runs") -> Path:
         missing = envelope.get("missing", [])
         body += (
             '<div class="miss">未见/需现场核实：'
-            + "、".join(m["zh"] for m in missing)
+            + "、".join(f"{m.get('frame_id', 'frame_0001')} {m['zh']}" for m in missing)
             + "</div>"
             if missing
             else '<div class="ok">检测清单全部检出</div>'
@@ -443,9 +444,7 @@ def build_run_report(run_id: str, *, runs_root: str | Path = "runs") -> Path:
     if refinements_path.exists():
         figs = ""
         for item in json.loads(refinements_path.read_text()):
-            if "height_m" not in item:
-                continue
-            slug = (
+            slug = item.get("refine_slug") or (
                 item["label"].replace(" ", "_")
                 + "_"
                 + "_".join(str(v) for v in item["box"])
@@ -455,8 +454,10 @@ def build_run_report(run_id: str, *, runs_root: str | Path = "runs") -> Path:
                 continue
             figs += (
                 f'<figure><img src="{_jpeg_uri(overlay, 520, 66)}">'
-                f'<figcaption>{item["label"]} · SAM {item["sam_score"]} · '
-                f'{item["height_m"]} m</figcaption></figure>'
+                f'<figcaption>{escape(item["label"])} · {escape(item.get("frame_id", "frame_0001"))} · SAM {item["sam_score"]} · '
+                + (f'{item["height_m"]} m' if "height_m" in item else
+                   f'二维证据；三维不可测：{escape(item.get("geometry_reason", "未测量"))}')
+                + '</figcaption></figure>'
             )
         if figs:
             parts.append(_section("人工/agent 补测", f'<div class="row">{figs}</div>'))
@@ -479,6 +480,4 @@ table{{border-collapse:collapse;width:100%;font-size:13.5px}} td,th{{border:1px 
     out = run / "report.html"
     out.write_text(html, encoding="utf-8")
     return out
-
-
 

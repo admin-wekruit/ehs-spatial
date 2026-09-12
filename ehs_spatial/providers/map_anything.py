@@ -2,6 +2,7 @@ import base64
 from collections.abc import Callable, Mapping
 from functools import lru_cache
 import json
+import hashlib
 import math
 from pathlib import Path
 from urllib.parse import urlparse
@@ -20,6 +21,45 @@ MAP_ANYTHING_MODEL_ID = (
     "bb68c254a65d3ce6b173909181d2dfbd044300b3ebca25ab63f07aa7eb1eebff"
 )
 # This pinned Replicate wrapper uses the map-anything-apache checkpoint.
+
+
+def map_anything_model_identifier() -> str:
+    from ..backends import service_backend
+    return "facebook/map-anything" if service_backend("GEOMETRY_BACKEND", "replicate") == "modal" else MAP_ANYTHING_MODEL_ID
+
+
+def saved_geometry_runner(geometry_dir: Path, *, input_sha256: list[str],
+                          provider_sha256: list[str], point_cloud_sha256: str):
+    """Explicit replay of a verified completed stage; never an automatic cache fallback."""
+    if not 1 <= len(input_sha256) <= 4 or len(input_sha256) != len(provider_sha256):
+        raise ValueError("Saved geometry requires one checksum per source/provider frame")
+    if any(not isinstance(s, str) or len(s) != 64 or any(c not in '0123456789abcdef' for c in s)
+           for s in [*input_sha256, *provider_sha256, point_cloud_sha256]):
+        raise ValueError("Saved geometry requires exact SHA256 checksums")
+    geometry_dir = Path(geometry_dir).resolve()
+
+    def checked(path, expected):
+        if not path.resolve().is_relative_to(geometry_dir):
+            raise ValueError("Saved geometry leaves its run")
+        data = path.read_bytes()
+        if hashlib.sha256(data).hexdigest() != expected:
+            raise ValueError("Saved geometry SHA256 mismatch")
+        return data
+
+    def run(model_identifier, *, input):
+        sources = input.get("inputs", [])
+        if len(sources) != len(input_sha256):
+            raise ValueError("Saved geometry source frame count changed")
+        for uri, expected in zip(sources, input_sha256):
+            if not isinstance(uri, str) or not uri.startswith("data:image/") or ";base64," not in uri:
+                raise ValueError("Saved geometry requires the actual source image bytes")
+            data = base64.b64decode(uri.split(",", 1)[1], validate=True)
+            if hashlib.sha256(data).hexdigest() != expected:
+                raise ValueError("Saved geometry source SHA256 mismatch")
+        return {"data": [checked(geometry_dir / "provider" / f"frame_{i:04d}.json", sha)
+                         for i, sha in enumerate(provider_sha256, 1)],
+                "point_cloud": checked(geometry_dir / "point_cloud.glb", point_cloud_sha256)}
+    return run
 
 
 def decode_encoded_array(payload: dict[str, object]) -> np.ndarray:
@@ -55,13 +95,35 @@ def _input_mask_mapping(path: Path, mtime_ns: int, size: int) -> tuple:
     rect = (int(x.min()), int(y.min()), int(x.max()) + 1, int(y.max()) + 1)
     if np.count_nonzero(alpha) != (rect[2] - rect[0]) * (rect[3] - rect[1]):
         raise ValueError(f"alpha_mask content is not a solid rectangle: {path}")
-    return source_shape, alpha.shape, rect
+    transform = payload.get("input_mask_transform")
+    if transform is None:
+        resized_shape = (rect[3]-rect[1], rect[2]-rect[0])
+        crop = (0, 0, resized_shape[1], resized_shape[0])
+    else:
+        if not isinstance(transform, dict) or not isinstance(transform.get("resized_shape_hw"), list) or not isinstance(transform.get("crop_xyxy"), list):
+            raise ValueError(f"Missing explicit resize/crop operations: {path}")
+        resized_shape = tuple(transform["resized_shape_hw"])
+        crop = tuple(transform["crop_xyxy"])
+        if (len(resized_shape) != 2 or len(crop) != 4 or
+                not all(type(n) is int and n > 0 for n in resized_shape) or
+                not all(type(n) is int for n in crop) or
+                not (0 <= crop[0] < crop[2] <= resized_shape[1] and 0 <= crop[1] < crop[3] <= resized_shape[0]) or
+                (crop[2]-crop[0], crop[3]-crop[1]) != (rect[2]-rect[0], rect[3]-rect[1])):
+            raise ValueError(f"Invalid recorded resize/crop transform: {path}")
+    sx, sy = resized_shape[1]/source_shape[1], resized_shape[0]/source_shape[0]
+    affine = [[sx, 0, (sx-1)/2-crop[0]+rect[0]], [0, sy, (sy-1)/2-crop[1]+rect[1]], [0, 0, 1]]
+    if transform is not None:
+        declared = np.asarray(transform.get("input_to_canonical_pixel_centres"), dtype=float)
+        if declared.shape != (3, 3) or not np.allclose(declared, affine, atol=1e-10, rtol=0):
+            raise ValueError(f"Recorded affine disagrees with actual resize/crop dimensions: {path}")
+    return source_shape, alpha.shape, rect, {"resized_shape_hw": list(resized_shape), "crop_xyxy": list(crop),
+        "input_to_canonical_pixel_centres": affine}
 
 
 def input_mask_to_canonical(
     mask: np.ndarray, run: Path, frame_id: str, shape: tuple[int, int]
 ) -> np.ndarray:
-    """Map an input-image mask through the recorded resize/padding transform.
+    """Map an input-image mask through the recorded resize/crop/padding transform.
 
     Canonical masks already index native pts3d directly. Other resolutions
     require the exact provider source dimensions and rectangular alpha mask;
@@ -81,7 +143,7 @@ def input_mask_to_canonical(
         stat = path.stat()
     except OSError as exc:
         raise ValueError(f"Missing input-mask transform evidence: {path}") from exc
-    source_shape, canonical_shape, rect = _input_mask_mapping(path, stat.st_mtime_ns, stat.st_size)
+    source_shape, canonical_shape, rect, transform = _input_mask_mapping(path, stat.st_mtime_ns, stat.st_size)
     if mask.shape != source_shape or tuple(shape) != canonical_shape:
         raise ValueError(
             f"Input-mask transform grid mismatch: mask={mask.shape}, original={source_shape}, "
@@ -90,7 +152,8 @@ def input_mask_to_canonical(
     left, top, right, bottom = rect
     mapped = np.zeros(shape, dtype=bool)
     mapped[top:bottom, left:right] = np.asarray(
-        Image.fromarray(mask).resize((right - left, bottom - top), Image.Resampling.NEAREST)
+        Image.fromarray(mask).resize(tuple(transform["resized_shape_hw"])[::-1], Image.Resampling.NEAREST)
+        .crop(transform["crop_xyxy"])
     )
     return mapped
 
@@ -271,7 +334,7 @@ class MapAnythingAdapter:
             "alpha_blend_onto": "white",
         }
         request_metadata = {
-            "model_identifier": MAP_ANYTHING_MODEL_ID,
+            "model_identifier": map_anything_model_identifier(),
             "input": {**flags, "inputs": image_paths},
         }
         (output_dir / "map_anything_request.json").write_text(
@@ -289,7 +352,7 @@ class MapAnythingAdapter:
                 for source in sources
             ]
             response = self.runner(
-                MAP_ANYTHING_MODEL_ID,
+                map_anything_model_identifier(),
                 input={"inputs": inputs, **flags},
             )
         except Exception as exc:

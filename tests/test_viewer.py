@@ -126,6 +126,9 @@ def test_build_viewer_html_from_disk_measures_the_box_and_excludes_scenery(tmp_p
     assert 0.7 < pallet["height_m"] < 1.1
     assert 1.5 < pallet["camera_dist_m"] < 3.0
     assert pallet["points"] >= 40
+    assert pallet["bounds"]["max"][2] - pallet["bounds"]["min"][2] == pytest.approx(1.0, abs=0.05)
+    payload = json.loads(re.search(r'const DATA = (.*);', html)[1])
+    assert payload["scale_source"] is None, "a default camera height is not recorded calibration"
     assert '"label":"pallet"' in html
     # "wall" is scene context, never a selectable object.
     assert '"label":"wall"' not in html
@@ -151,7 +154,7 @@ def test_build_viewer_html_mirrors_the_assessed_scene_scale(tmp_path, monkeypatc
     import ehs_spatial.viewer as viewer_module
 
     run, frames, observations = _synthetic_run(tmp_path)
-    (run / "scene.json").write_text(json.dumps({"scale_factor": 2.75}))
+    (run / "scene.json").write_text(json.dumps({"scale_factor": 2.75, "scale_source": "moge_anchor"}))
     seen = {}
     real_build = viewer_module._build_geometry
 
@@ -293,16 +296,17 @@ def test_generated_viewer_javascript_executes_selection_protocol(tmp_path):
     from ehs_spatial.viewer import _VIEWER_TEMPLATE
     objects = [{"id":i+1,"inv":inv,"frame":"frame_0001","label":"same label",
                 "height_m":1,"size":"1 x 1 m","camera_dist_m":2,"points":100,
-                "tilt_deg":0,"color":[100,150,200]} for i,inv in enumerate([0,1,0,None])]
+                "tilt_deg":0,"color":[100,150,200],"bounds":{"min":[0,0,0],"max":[0.2,0.2,0.2]}} for i,inv in enumerate([0,1,0,None])]
     payload = {"objects":objects,"supported_inv":[0,1],"inventory_count":3,
                "interactive_inv":[0,1,2],
                "unavailable":[{"inv":2,"label":"not observed","frame":"frame_0001","reason":"no points"}],
-               "count":4,"origin":[0,0,0],"span":4,"run":"linked-check",
+               "count":4,"origin":[0,0,0],"span":65535,"run":"linked-check",
                "xyz":base64.b64encode(np.arange(12,dtype='<u2').tobytes()).decode(),
                "rgb":base64.b64encode(bytes([100]*12)).decode(),
                "ids":base64.b64encode(np.arange(1,5,dtype='<u2').tobytes()).decode()}
     path = tmp_path / "viewer.html"
-    path.write_text(_VIEWER_TEMPLATE.replace("__PAYLOAD__",json.dumps(payload)).replace("__ANCHORS__","[]"))
+    path.write_text(_VIEWER_TEMPLATE.replace("__PAYLOAD__",json.dumps(payload)).replace("__ANCHORS__","[]")
+                   .replace("__SURFACE__","null").replace("__SURFACE_JS__",Path("ehs_spatial/surface_viewer.js").read_text()))
     result = subprocess.run(["node",str(Path(__file__).with_name("test_viewer_js.mjs")),str(path)],
                             capture_output=True,text=True)
     assert result.returncode == 0, result.stdout + result.stderr

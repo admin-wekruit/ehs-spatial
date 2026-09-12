@@ -7,3 +7,5 @@ __pycache__/
 runs/
 /outputs/
 .DS_Store
+
+/.workspace-access.json

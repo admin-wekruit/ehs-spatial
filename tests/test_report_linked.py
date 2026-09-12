@@ -183,6 +183,13 @@ def test_photo_masks_use_source_frame_and_canonical_grid(tmp_path, monkeypatch):
     assert 'class="photo-frame"' in report and report.count('class="iphoto"')==2
     assert 'data-frame="frame_0002"' in report
     assert report.index('data-section-group="linked"') < report.index('data-section="verdicts"')
+    (run/'surface').mkdir()
+    (run/'surface/surface.json').write_text(json.dumps({'source_frames':['frame_0002']}))
+    report = build_interactive_run_report('run-syn').read_text()
+    assert '<option value="frame_0002" selected>' in report
+    assert re.search(r'<div class="iphoto" data-frame="frame_0001"[^>]* hidden>', report)
+    assert not re.search(r'<div class="iphoto" data-frame="frame_0002"[^>]* hidden>', report)
+    assert '交互 3D（内部模型 / 测量点云）' in report
 
 
 def test_refinement_derived_mask_is_bound_to_source_and_accepted_entry(tmp_path):
@@ -216,6 +223,10 @@ const pos={0:0,2:1,5:2,7:3,10:4,11:5},sent=[],handlers={},frameHandlers={};
 const child={postMessage:(payload,origin)=>sent.push({payload,origin})};
 const embedded={contentWindow:child,addEventListener:(name,cb)=>frameHandlers[name]=cb};
 const L={querySelector:()=>embedded};
+const photoHandlers={},photos=[{dataset:{frame:'frame_0003'}},{dataset:{frame:'frame_0004'}}];
+const framePicker={value:'frame_0003',addEventListener:(name,cb)=>photoHandlers[name]=cb};
+let shownFrame=null;
+function showPhoto(photo){if(photo){shownFrame=photo.dataset.frame;framePicker.value=shownFrame;}}
 const window={origin:'http://localhost:8791',location:{origin:'null'}};
 function addEventListener(name,cb){handlers[name]=cb;}
 var bus=BUS;
@@ -225,6 +236,7 @@ assert.equal(bus.sel.size,6);
 sent.length=0;
 handlers.message({source:child,origin:window.origin,data:{type:'panoptes:ready',supported_inv:[0,2,5]}});
 assert.deepEqual(sent[0],{payload:{type:'panoptes:select',inv:[0,2,5,7,10,11],exclusive:true},origin:window.origin});
+assert.deepEqual(sent[1].payload,{type:'panoptes:frame',frame_id:'frame_0003'});
 handlers.message({source:{},origin:window.origin,data:{type:'panoptes:selected',inv:[2]}});
 handlers.message({source:child,origin:'https://wrong.example',data:{type:'panoptes:selected',inv:[2]}});
 assert.equal(bus.sel.size,6);
@@ -233,5 +245,14 @@ handlers.message({source:child,origin:window.origin,data:{type:'panoptes:selecte
 assert.deepEqual([...bus.sel],[2,5]);assert.equal(sent.length,0);
 frameHandlers.load();assert.deepEqual(sent[0].payload.inv,[2,5]);
 bus.select(2);assert.deepEqual([...bus.sel],[5]);bus.set([]);assert.equal(bus.sel.size,0);
+sent.length=0;
+handlers.message({source:child,origin:window.origin,data:{type:'panoptes:frame',frame_id:'frame_0004'}});
+assert.equal(shownFrame,'frame_0004');assert.equal(sent.length,0,'frame update must not echo');
+handlers.message({source:{},origin:window.origin,data:{type:'panoptes:frame',frame_id:'frame_0003'}});
+assert.equal(shownFrame,'frame_0004');
+handlers.message({source:child,origin:window.origin,data:{type:'panoptes:frame',frame_id:'not-a-source-frame'}});
+assert.equal(shownFrame,'frame_0004');
+framePicker.value='frame_0003';photoHandlers.change();
+assert.deepEqual(sent[0].payload,{type:'panoptes:frame',frame_id:'frame_0003'});
 """.replace('BUS;',bus_js).replace('BRIDGE',bridge_js)
     subprocess.run([shutil.which('node'),'-e',script],check=True,capture_output=True,text=True)

@@ -3,6 +3,7 @@ import email.message
 import importlib
 import io
 import json
+import hashlib
 from pathlib import Path
 
 import numpy as np
@@ -16,6 +17,33 @@ def encoded_array(array):
         "dtype": str(array.dtype),
         "data": base64.b64encode(array.tobytes()).decode("ascii"),
     }
+
+
+def test_explicit_saved_geometry_replay_preserves_native_arrays_and_rejects_changes(tmp_path, monkeypatch):
+    from ehs_spatial.providers.map_anything import MapAnythingAdapter, saved_geometry_runner
+    monkeypatch.setenv("GEOMETRY_BACKEND", "modal")
+    source = tmp_path / 'image.png'
+    Image.new('RGB', (6, 4), (5, 10, 15)).save(source)
+    geometry = tmp_path / 'geometry'
+    (geometry / 'provider').mkdir(parents=True)
+    raw = geometry / 'provider/frame_0001.json'
+    raw.write_text(json.dumps(provider_frame_payload()))
+    cloud = geometry / 'point_cloud.glb'
+    cloud.write_bytes(b'exact-native-cloud')
+    digest = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
+    replay = saved_geometry_runner(geometry, input_sha256=[digest(source)],
+        provider_sha256=[digest(raw)], point_cloud_sha256=digest(cloud))
+    frames, result_cloud = MapAnythingAdapter(runner=replay).run([str(source)], geometry)
+    assert len(frames) == 1 and result_cloud.read_bytes() == b'exact-native-cloud'
+    np.testing.assert_array_equal(np.load(frames[0].pts3d_path), np.arange(18, dtype=np.float32).reshape(2, 3, 3))
+    assert json.loads((geometry/'map_anything_request.json').read_text())['model_identifier'] == 'facebook/map-anything'
+    payload = {'inputs': ['data:image/png;base64,' + base64.b64encode(source.read_bytes()).decode()]}
+    cloud.write_bytes(b'changed')
+    with pytest.raises(ValueError, match='SHA256 mismatch'):
+        replay('facebook/map-anything', input=payload)
+    payload['inputs'] = ['data:image/png;base64,' + base64.b64encode(b'different source').decode()]
+    with pytest.raises(ValueError, match='source SHA256 mismatch'):
+        replay('facebook/map-anything', input=payload)
 
 
 def provider_frame_payload():
@@ -115,6 +143,27 @@ def test_input_mask_mapping_requires_evidence_only_across_resolutions(tmp_path):
     )
     with pytest.raises(ValueError, match="Missing input-mask transform evidence"):
         input_mask_to_canonical(np.ones((16, 12), bool), tmp_path, "frame_0001", (8, 8))
+
+
+def test_input_mask_mapping_preserves_recorded_native_crop_pixel_centres(tmp_path):
+    from ehs_spatial.providers.map_anything import input_mask_to_canonical
+
+    payload = {"original_image": {"width": 20, "height": 10}, "image": {"shape": [8, 8, 3]},
+        "alpha_mask": encoded_array(np.ones((8, 8), np.uint8)),
+        "input_mask_transform": {"resized_shape_hw": [8, 16], "crop_xyxy": [4, 0, 12, 8],
+            "input_to_canonical_pixel_centres": [[.8, 0, -4.1], [0, .8, -.1], [0, 0, 1]]}}
+    path = tmp_path / "geometry/provider/frame_0001.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(payload))
+    mask = np.zeros((10, 20), bool); mask[5, 8] = True
+    mapped = input_mask_to_canonical(mask, tmp_path, "frame_0001", (8, 8))
+    np.testing.assert_array_equal(np.argwhere(mapped), [[4, 2]])
+    # Native pixel (8,5) maps to canonical (2.3,3.9); stretching would incorrectly select x=3.
+    np.testing.assert_allclose(np.asarray(payload["input_mask_transform"]["input_to_canonical_pixel_centres"]) @ [8, 5, 1], [2.3, 3.9, 1])
+    payload["input_mask_transform"]["input_to_canonical_pixel_centres"][0][2] += 1
+    path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match="affine disagrees"):
+        input_mask_to_canonical(mask, tmp_path, "frame_0001", (8, 8))
 
 
 @pytest.mark.parametrize("bad", ["missing_alpha", "image_grid", "source_grid", "target_grid", "alpha_hole", "alpha_fraction"])

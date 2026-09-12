@@ -1,0 +1,8 @@
+{
+  "package": "deep-chat",
+  "version": "2.5.1",
+  "license": "MIT",
+  "source": "https://github.com/OvidijusParsiunas/deep-chat",
+  "tarball": "https://registry.npmjs.org/deep-chat/-/deep-chat-2.5.1.tgz",
+  "integrity": "sha512-ZLyaSx6z5tScVtIEtqLDQ+zfWqbexntiz0hAdY0N+G68QkH7we5K/WFlo1xczxlF/L8VvCw0O2aKL6fVcpHmZA=="
+}

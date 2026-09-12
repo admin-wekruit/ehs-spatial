@@ -15,6 +15,7 @@ import hashlib
 import json
 import re
 from pathlib import Path
+from urllib.parse import quote
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -310,16 +311,17 @@ def _masks_for_frame(
 
     # Human box-prompt refinements (scripts/refine_region.py) are reviewer
     # ground truth for classes the text prompts miss — include them. They
-    # are measured on the first frame's full-res input (refine.py), and only
-    # the applied ones carry footprint_xy: the detection layer's own log
+    # carry their source frame and full-res input identity (refine.py); only
+    # measured ones carry footprint_xy. The detection layer's own log
     # entries (source=detection / enumeration-reconcile) are superseded by
     # the inventory's refine_slug objects below.
     refine_log = run / "refinements.json"
-    if refine_log.exists() and frame.frame_id == "frame_0001":
+    if refine_log.exists():
         for item in json.loads(refine_log.read_text()):
-            if "footprint_xy" not in item:
+            if ("footprint_xy" not in item
+                    or item.get("frame_id", item.get("frame", "frame_0001")) != frame.frame_id):
                 continue
-            slug = (
+            slug = item.get("refine_slug") or (
                 f"{item['label'].replace(' ', '_')}_"
                 + "_".join(str(b) for b in item["box"])
             )
@@ -343,7 +345,7 @@ def _masks_for_frame(
                 native_w = response.get("width")
                 if not native_h or not native_w:
                     inputs = sorted((run / "input").glob("image_*"))
-                    with Image.open(inputs[0]) as native:
+                    with Image.open(inputs[int(frame.frame_id.rsplit('_', 1)[1])-1]) as native:
                         native_w, native_h = native.size
                 native_h, native_w = int(native_h), int(native_w)
                 mask = decode_coco_rle(
@@ -424,6 +426,7 @@ def build_viewer_html(
     inventory_path = run / "inventory" / "inventory.json"
     inventory_objects = json.loads(inventory_path.read_text())["objects"] if inventory_path.exists() else []
     interactive_inv = [o["inv"] for o in inventory_plan_objects({"objects":inventory_objects})]
+    surface = _surface_data(run, interactive_inv)
     if frames is None:
         frames = _frames(run)
     if observations is None:
@@ -434,12 +437,10 @@ def build_viewer_html(
     # Mirror the assessed scene's scale: without this, a run whose scale
     # came from the auto anchor (or any non-1.5 m camera) would rebuild
     # geometry under a fabricated height and could fail its MAD gate.
+    scene_path = run / "scene.json"
+    scene_record = json.loads(scene_path.read_text(encoding="utf-8")) if scene_path.exists() else {}
     if scale_factor_override is None:
-        scene_path = run / "scene.json"
-        if scene_path.exists():
-            scale_factor_override = json.loads(
-                scene_path.read_text(encoding="utf-8")
-            ).get("scale_factor")
+        scale_factor_override = scene_record.get("scale_factor")
     transform = _build_geometry(
         frames,
         observations,
@@ -598,6 +599,7 @@ def build_viewer_html(
                 "orientation_deg": None if orientation is None else round(orientation, 1),
                 "color": PALETTE[(index - 1) % len(PALETTE)],
                 "centroid": [round(float(v), 3) for v in np.median(cloud, axis=0)],
+                "bounds": {"min": cloud.min(axis=0).tolist(), "max": cloud.max(axis=0).tolist()},
             }
         )
         if inv is not None:
@@ -648,13 +650,23 @@ def build_viewer_html(
         "unavailable": unavailable,
         "inventory_count": len(inventory_objects),
         "run": run.name,
+        "scale_source": scene_record.get("scale_source"),
         "xyz": base64.b64encode(quantized.tobytes()).decode("ascii"),
         "rgb": base64.b64encode(rgb.astype(np.uint8).tobytes()).decode("ascii"),
         "ids": base64.b64encode(ids.tobytes()).decode("ascii"),
     }
     html = _VIEWER_TEMPLATE.replace(
         "__PAYLOAD__", json.dumps(payload, separators=(",", ":")).replace("</", "<\\/")
-    ).replace("__ANCHORS__", json.dumps(anchors, separators=(",", ":")))
+    ).replace("__ANCHORS__", json.dumps(anchors, separators=(",", ":"))).replace(
+        "__SURFACE__", json.dumps(surface, separators=(",", ":")).replace("</", "<\\/")
+    ).replace("__SURFACE_JS__", Path(__file__).with_name("surface_viewer.js").read_text(encoding="utf-8"))
+    # Inline the existing shared UI translator so URL and downloaded srcdoc
+    # viewers use the same language and iframe protocol without network assets.
+    ui = Path(__file__).with_name("static")
+    html = html.replace("__I18N_JS__", "\n".join(
+        (ui / name).read_text(encoding="utf-8")
+        for name in ("i18n-catalog.js", "i18n.js")
+    ))
     out = Path(out_path) if out_path is not None else run / "viewer.html"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html, encoding="utf-8")
@@ -666,7 +678,26 @@ def build_viewer_html(
         "interactive_inv": interactive_inv,
         "unavailable": unavailable,
         "anchors": anchors,
+        "surface_supported_inv": surface["supported_inv"] if surface else [],
     }
+
+
+def _surface_data(run: Path, interactive_inv: list[int]) -> dict | None:
+    manifest = run / "surface" / "surface.json"
+    if not manifest.is_file():
+        return None
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    inventory = run / "inventory" / "inventory.json"
+    if not inventory.is_file() or hashlib.sha256(inventory.read_bytes()).hexdigest() != data.get("inventory_sha256"):
+        raise ValueError("内部模型 inv 关联已过期：inventory 改变后须重新导入 surface")
+    if not isinstance(data.get("supported_inv"), list) or any(type(i) is not int or i not in interactive_inv for i in data["supported_inv"]):
+        raise ValueError("内部模型关联含不可交互的 inventory 对象")
+    for filename, field in [("surface.glb", "asset_sha256"), ("face-inv.bin", "face_map_sha256")]:
+        asset = manifest.parent / filename
+        if not asset.is_file() or hashlib.sha256(asset.read_bytes()).hexdigest() != data.get(field):
+            raise ValueError(f"内部模型资产与 manifest 不一致：{filename}")
+    base = f"/report/{quote(run.name, safe='')}/surface/"
+    return dict(data, asset_url=base + "surface.glb", face_map_url=base + "face-inv.bin")
 
 
 _VIEWER_TEMPLATE = r"""<!doctype html>
@@ -682,6 +713,12 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
 #stage{flex:1;position:relative;min-width:0}
 canvas{display:block;width:100%;height:100%;cursor:grab}
 canvas.dragging{cursor:grabbing}
+#surface-host{position:absolute;inset:0;display:grid;place-items:center;overflow:hidden}
+#surface-host[hidden],button[hidden],span[hidden]{display:none}
+#surface-c{max-width:100%;max-height:100%}
+#cams{display:contents}
+#cams[hidden]{display:none}
+button[aria-pressed="true"]{border-color:var(--accent);background:#1d3545}
 #side{width:310px;flex:none;background:var(--panel);border-left:1px solid var(--edge);
   display:flex;flex-direction:column;overflow:hidden}
 #side h1{font-size:13px;margin:0;padding:14px 16px 10px;letter-spacing:.04em;
@@ -706,6 +743,9 @@ button:focus-visible,.item:focus-visible{outline:2px solid var(--accent);outline
 #hud{position:absolute;left:14px;top:12px;font-size:12px;color:#c8d2dc;
   background:rgba(15,18,22,.72);padding:8px 12px;border-radius:8px;line-height:1.6;
   font-variant-numeric:tabular-nums;pointer-events:none;white-space:pre-line;max-width:calc(100% - 28px)}
+#selection-reference{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:hidden}
+#selection-reference-info{position:absolute;left:10px;bottom:9px;max-width:calc(100% - 20px);padding:7px 10px;border:1px solid #455766;border-radius:6px;background:#0f161deb;color:#dbe7ef;font-size:11px;line-height:1.5;pointer-events:none;white-space:pre-line}
+#selection-reference-info[hidden]{display:none}
 @media(max-width:700px){
   #app{flex-direction:column} #stage{min-height:170px}
   #side{width:auto;max-height:42%;border-left:0;border-top:1px solid var(--edge)}
@@ -715,23 +755,30 @@ button:focus-visible,.item:focus-visible{outline:2px solid var(--accent);outline
 }
 </style></head><body>
 <div id="app">
-  <div id="stage"><canvas id="c"></canvas><div id="hud"></div></div>
+  <div id="stage"><canvas id="c"></canvas><div id="surface-host" hidden><canvas id="surface-c"></canvas></div><svg id="selection-reference" aria-label="选中对象参考坐标轴与包围框"></svg><div id="selection-reference-info" hidden></div><div id="hud"></div></div>
   <aside id="side">
     <h1 id="title">Objects</h1>
     <div id="bar">
+      <button id="surface-mode" hidden>内部模型</button><button id="point-mode" hidden>测量点云</button>
       <button id="all">全选</button><button id="none">全不选</button>
       <button id="mode">语义色 / 照片色</button><button id="scene">场景点 开/关</button>
-      <button id="reset">重置</button><span id="cams" style="display:contents"></span>
+      <button id="reset">重置</button><span data-language-switch></span><span id="cams"></span><span id="surface-cams" hidden></span>
     </div>
     <details id="objectlist" open><summary>物体列表 · 点选 / 多选</summary><div id="list"></div></details>
     <div id="foot">拖动旋转 · 滚轮缩放 · 右键拖动平移<br>点击物体名或点云高亮,其余变暗 · Shift 多选 · Alt 隐藏<br>
       视角锚定在相机 1 的拍摄位姿,绕其正前方 2.5 m 地面点旋转 · 相机 N 切到该帧</div>
   </aside>
 </div>
+<script>__I18N_JS__</script>
 <script id="anchors" type="application/json">__ANCHORS__</script>
+<script id="surface-data" type="application/json">__SURFACE__</script>
 <script>
+__SURFACE_JS__
 const DATA = __PAYLOAD__;
+const SURFACE = JSON.parse(document.getElementById('surface-data').textContent);
+let surfaceMode = !!SURFACE, surfaceView = null, surfaceStatus = SURFACE ? '内部模型加载中…' : '', frameStatus = '';
 const ANCHORS = JSON.parse(document.getElementById('anchors').textContent);
+let requestedFrameId = SURFACE ? SURFACE.cameras.frames[0].id : ANCHORS[0]?.frame_id;
 const b64 = (s, T) => { const bin = atob(s); const b = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
   return new T(b.buffer); };
@@ -851,7 +898,28 @@ function tellParent(type, fields){
   if (parentOrigin !== null) window.parent.postMessage({type, ...fields}, parentOrigin === 'null' ? '*' : parentOrigin);
 }
 function selectedInv(){ return [...selected].filter(Number.isInteger); }
+function updateHUD(){
+  const visibleKeys = surfaceMode ? new Set(SURFACE.supported_inv.filter(i=>selected.has(i)))
+    : new Set(DATA.objects.filter(o=>selected.has(key(o))).map(key));
+  const prefix = surfaceMode ? '内部模型 · '+SURFACE.cameras.frames.map(f=>f.label || f.id).join(' / ')+' · 尺度未标定'
+    : '测量点云 · '+N.toLocaleString()+' 点';
+  const lines = [prefix];
+  if(surfaceMode)lines.push(`${SURFACE.face_count.toLocaleString()} 三角面 · ${SURFACE.supported_inv.length} 个已关联对象`);
+  if(surfaceMode && surfaceStatus)lines.push(surfaceStatus);
+  if(surfaceMode && frameStatus)lines.push(frameStatus);
+  if(selected.size)lines.push(`已选 ${selected.size} 个 · 当前 3D 可显示 ${visibleKeys.size} 个`);
+  if(surfaceMode){
+    const missing=selectedInv().filter(i=>!SURFACE.supported_inv.includes(i));
+    if(missing.length>3)lines.push(`内部模型未覆盖 ${missing.length} 个已选对象的机位/关联（列表已标注）`);
+    else if(missing.length)lines.push(...missing.map(i=>{
+      const o=DATA.objects.find(o=>o.inv===i) || DATA.unavailable.find(o=>o.inv===i);
+      return `${o ? o.label+' ('+o.frame+')' : 'inv '+i}：内部模型未覆盖该对象的机位/关联`; }));
+    lines.push('列表量测来自测量点云');
+  } else lines.push(...DATA.unavailable.filter(o=>selected.has(o.inv)).map(o=>`${o.label} (${o.frame})：${o.reason}`));
+  document.getElementById('hud').textContent=lines.join('\n');
+}
 function setSel(keys, notify = true){
+  const added = keys.filter(k=>!selected.has(k)).at(-1);
   selected.clear();
   keys.forEach(k => { selected.add(k); hidden.delete(k); });
   DATA.objects.forEach(o => {
@@ -860,13 +928,12 @@ function setSel(keys, notify = true){
     if (el) { el.classList.toggle('sel', on); el.classList.toggle('on', !hidden.has(k));
       el.setAttribute('aria-pressed', String(on)); }
   });
-  const visibleKeys = new Set(DATA.objects.filter(o => selected.has(key(o))).map(key));
-  document.getElementById('hud').textContent = selected.size
-    ? `已选 ${selected.size} 个 · 当前 3D 可显示 ${visibleKeys.size} 个`
-    : `${DATA.objects.length} 个物体 · ${N.toLocaleString()} 点`;
-  const missing = DATA.unavailable.filter(o => selected.has(o.inv));
-  if (missing.length) document.getElementById('hud').textContent += '\n' +
-    missing.map(o => `${o.label} (${o.frame})：${o.reason}`).join('\n');
+  if(surfaceMode && SURFACE.supported_inv.includes(added)){
+    const object=DATA.objects.find(o=>o.inv===added);
+    if(object)goToFrame(object.frame,notify);
+  }
+  updateHUD();
+  if(surfaceView)surfaceView.setSelection(selectedInv(),[...hidden]);
   pushVis(); draw();
   if (notify) tellParent('panoptes:selected', {inv: selectedInv()});
 }
@@ -915,6 +982,7 @@ function mat(){
   return M;
 }
 function draw(pick = false){
+  if(surfaceMode)return;
   const dpr = Math.min(devicePixelRatio || 1, 2);
   const w = cv.clientWidth * dpr | 0, h = cv.clientHeight * dpr | 0;
   if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
@@ -931,6 +999,7 @@ function draw(pick = false){
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, visTex);
   gl.drawArrays(gl.POINTS, 0, N);
   gl.drawArrays(gl.LINES, N, NL);
+  if(!pick)drawSelectionReference({canvas:cv,matrix:mat(),objects:DATA.objects.filter(o=>selected.has(key(o))&&!hidden.has(key(o))).map(o=>({key:key(o),bounds:o.bounds})),floor:true,scaleSource:DATA.scale_source});
 }
 let drag = null;
 cv.addEventListener('pointerdown', e => { drag = {x:e.clientX, y:e.clientY, b:e.button, moved:0};
@@ -975,6 +1044,7 @@ DATA.objects.forEach(o => {
   dot.style.background = `rgb(${o.color.join(',')})`; el.appendChild(dot);
   const text = document.createElement('span');
   text.textContent = `${o.label} · ${o.frame}\n高 ${o.height_m} m · ${o.size}\n距相机 ${o.camera_dist_m} m · ${o.points} 点`;
+  if(SURFACE && !SURFACE.supported_inv.includes(o.inv))text.textContent+='\n内部模型未覆盖该对象的机位/关联';
   text.style.whiteSpace = 'pre-line'; text.className = 'meta'; el.appendChild(text);
   el.addEventListener('click', e => e.altKey ? toggleHidden(o) : clickSel(o, e.shiftKey || e.metaKey || e.ctrlKey));
   el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') {
@@ -986,21 +1056,74 @@ document.getElementById('all').onclick = () => setSel(DATA.inventory_count ? DAT
 document.getElementById('none').onclick = () => setSel([]);
 document.getElementById('mode').onclick = () => { semantic = semantic ? 0 : 1; draw(); };
 document.getElementById('scene').onclick = () => { sceneOn = sceneOn ? 0 : 1; draw(); };
-document.getElementById('reset').onclick = () => { goTo(0); hidden.clear(); setSel([]); };
+document.getElementById('reset').onclick = () => {goToFrame(surfaceMode?SURFACE.cameras.frames[0].id:ANCHORS[0]?.frame_id,true);hidden.clear();setSel([]);};
 if (ANCHORS.length > 1) ANCHORS.forEach((a, i) => {
   const b = document.createElement('button'); b.textContent = '相机 ' + (i + 1);
-  b.title = a.frame_id; b.onclick = () => { goTo(i); draw(); };
+  b.title = a.frame_id; b.onclick = () => goToFrame(a.frame_id,true);
   document.getElementById('cams').appendChild(b); });
 // Only the real same-origin parent may drive this viewer. Keep valid inventory
 // selections without geometry so a later Shift-click does not erase them.
 addEventListener('message', e => {
   const m = e.data;
-  if (parentOrigin === null || e.source !== window.parent || e.origin !== parentOrigin
-      || !m || m.type !== 'panoptes:select' || !Array.isArray(m.inv)) return;
+  if (parentOrigin === null || e.source !== window.parent || e.origin !== parentOrigin || !m) return;
+  if(m.type==='panoptes:frame'){
+    if(ANCHORS.some(a=>a.frame_id===m.frame_id) || SURFACE?.cameras.frames.some(f=>f.id===m.frame_id))goToFrame(m.frame_id);
+    return;
+  }
+  if(m.type!=='panoptes:select' || !Array.isArray(m.inv))return;
   const incoming = m.inv.filter(i => Number.isInteger(i) && DATA.interactive_inv.includes(i));
   setSel(m.exclusive === false ? [...selected, ...incoming] : incoming, false);
 });
-addEventListener('resize', () => draw());
+addEventListener('resize', () => {draw();if(surfaceView)surfaceView.draw();});
+addEventListener('panoptes:language-change', () => {draw();if(surfaceView)surfaceView.draw();});
+function goToFrame(frameId,notify=false){
+  if(!frameId)return;
+  requestedFrameId=frameId;
+  if(surfaceMode){
+    const index=SURFACE.cameras.frames.findIndex(f=>f.id===frameId);
+    frameStatus=index<0?'内部模型仅覆盖 '+SURFACE.cameras.frames.map(f=>f.label||f.id).join(' / ')+'；当前照片机位未覆盖':'';
+    if(index>=0 && surfaceView){surfaceView.goTo(index);surfaceStatus='';}
+  }else{
+    const index=ANCHORS.findIndex(a=>a.frame_id===frameId);if(index>=0)goTo(index);
+  }
+  updateHUD();draw();
+  if(notify)tellParent('panoptes:frame',{frame_id:frameId});
+}
+function chooseMode(internal){
+  surfaceMode=internal;
+  document.getElementById('selection-reference').innerHTML='';document.getElementById('selection-reference-info').hidden=true;
+  cv.style.display=internal?'none':'block'; document.getElementById('surface-host').hidden=!internal;
+  for(const id of ['mode','scene','cams'])document.getElementById(id).hidden=internal;
+  document.getElementById('surface-cams').hidden=!internal;
+  document.getElementById('surface-mode').setAttribute('aria-pressed',String(internal));
+  document.getElementById('point-mode').setAttribute('aria-pressed',String(!internal));
+  if(surfaceView)surfaceView.setActive(internal);
+  document.getElementById('foot').textContent=internal
+    ? '拖动旋转 · 滚轮缩放 · 右键拖动平移 · Shift 多选 · Alt 隐藏。照片按钮回到真实源机位；列表量测来自测量点云。'
+    : '拖动旋转 · 滚轮缩放 · 右键拖动平移 · Shift 多选 · Alt 隐藏。相机按钮回到测量点云机位。';
+  goToFrame(requestedFrameId);
+}
+if(SURFACE){
+  document.getElementById('surface-mode').hidden=false;document.getElementById('point-mode').hidden=false;
+  document.getElementById('surface-mode').onclick=()=>chooseMode(true);
+  document.getElementById('point-mode').onclick=()=>chooseMode(false);
+  SURFACE.cameras.frames.forEach((frame,i)=>{const b=document.createElement('button');b.textContent=frame.label||frame.id;b.disabled=true;
+    b.onclick=()=>goToFrame(frame.id,true);document.getElementById('surface-cams').appendChild(b);});
+  chooseMode(true);
+  createSurfaceViewer({canvas:document.getElementById('surface-c'),manifest:SURFACE,inventoryCount:DATA.inventory_count,
+    onPick(inv,e,hitSurface){
+      const multi=e.shiftKey||e.metaKey||e.ctrlKey;
+      surfaceStatus=inv===null&&hitSurface?'该表面尚未建立对象对应，暂不能联动':'';
+      updateHUD();
+      if(inv===null){if(!multi)setSel([]);return;}
+      if(!SURFACE.supported_inv.includes(inv))return;
+      const object={inv};if(e.altKey)toggleHidden(object);else clickSel(object,multi);
+    }}).then(view=>{
+      surfaceView=view;surfaceStatus='';view.setActive(surfaceMode);goToFrame(requestedFrameId);view.setSelection(selectedInv(),[...hidden]);
+      for(const b of document.getElementById('surface-cams').children)b.disabled=false;
+      updateHUD();
+    }).catch(error=>{surfaceStatus='内部模型加载失败：'+error.message;updateHUD();});
+}
 setSel([], false);
 tellParent('panoptes:ready', {supported_inv: DATA.supported_inv, unavailable: DATA.unavailable});
 </script></body></html>

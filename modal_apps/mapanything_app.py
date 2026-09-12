@@ -22,6 +22,7 @@ import json
 import modal
 
 app = modal.App("mapanything-inference")
+CODE_REV = "3d10cf7a3016fc0f9bb13a071ee66c47b10be0d9"
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
@@ -29,6 +30,7 @@ image = (
     .pip_install(
         "torch==2.4.0",
         "torchvision==0.19.0",
+        "torchaudio==2.4.0",
         index_url="https://download.pytorch.org/whl/cu121",
     )
     .pip_install(
@@ -36,8 +38,10 @@ image = (
         "pillow",
         "trimesh",
         "huggingface_hub",
-        "git+https://github.com/facebookresearch/map-anything.git",
+        "protobuf>=5,<7",
+        f"git+https://github.com/facebookresearch/map-anything.git@{CODE_REV}",
     )
+    .run_commands("python -c 'import numpy as np, torch, torchvision, torchaudio; from mapanything.models import MapAnything; from mapanything.utils.image import load_images; assert torch.__version__.startswith(\"2.4.0\"); assert torchaudio.__version__.startswith(\"2.4.0\"); assert np.array_equal(torch.from_numpy(np.arange(3)).numpy(), np.arange(3)); print(\"PASS: pinned runtime imports and NumPy tensor roundtrip; no model loaded\")'")
     .env({"HF_HOME": "/cache/huggingface"})
 )
 
@@ -56,6 +60,42 @@ def _encode_array(array) -> dict:
         "dtype": str(array.dtype),
         "data": base64.b64encode(array.tobytes()).decode("ascii"),
     }
+
+
+def load_images_with_metadata(paths):
+    """Observe the exact upstream raster transform; never infer it from aspect ratio."""
+    import numpy as np
+    from PIL import Image, ImageOps
+    from mapanything.utils.image import load_images, rgb
+    from mapanything.utils.cropping import rescale_image_and_other_optional_info, crop_image_and_other_optional_info
+
+    views = load_images(paths)
+    if len(views) != len(paths):
+        raise ValueError("Upstream skipped an input image")
+    metadata = []
+    for path, view in zip(paths, views):
+        with Image.open(path) as image:
+            original = ImageOps.exif_transpose(image).convert("RGB")
+        h, w = map(int, view["true_shape"][0])
+        # Replay the official resize helper to get actual rounded raster size;
+        # its scalar camera-intrinsics scaling is not the pixel-centre affine.
+        resized = rescale_image_and_other_optional_info(original, np.array([w, h]))[0]
+        rw, rh = resized.size
+        left, top = (rw-w)//2, (rh-h)//2
+        crop = [left, top, left+w, top+h]
+        canonical = np.asarray(crop_image_and_other_optional_info(resized, crop)[0])
+        loaded = np.rint(rgb(view["img"][0], view["data_norm_type"][0])*255).astype(np.uint8)
+        if not np.array_equal(canonical, loaded):
+            raise ValueError("Recorded preprocessing does not reproduce the actual upstream model input")
+        sx, sy = rw/original.width, rh/original.height
+        affine = [[sx, 0, (sx-1)/2-left], [0, sy, (sy-1)/2-top], [0, 0, 1]]
+        metadata.append({"original_image": {"width": original.width, "height": original.height},
+            "alpha_mask": _encode_array(np.ones((h, w), np.uint8)),
+            "input_mask_transform": {"resized_shape_hw": [rh, rw], "crop_xyxy": crop,
+                "input_to_canonical_pixel_centres": affine,
+                "source": f"mapanything.utils.image.load_images@{CODE_REV}",
+                "rgb_replay_pixel_exact": True}, "_canonical_rgb": canonical})
+    return views, metadata
 
 
 @app.cls(
@@ -84,7 +124,6 @@ class MapAnything:
 
         import numpy as np
         import trimesh
-        from mapanything.utils.image import load_images
 
         torch = self.torch
         sources = input.get("inputs") or []
@@ -97,7 +136,7 @@ class MapAnything:
                 path = Path(workdir) / f"view_{index:02d}.png"
                 path.write_bytes(base64.b64decode(encoded))
                 paths.append(str(path))
-            views = load_images(paths)
+            views, metadata = load_images_with_metadata(paths)
             with torch.inference_mode():
                 # apply_mask=False: zeroing masked points would blank the
                 # returned mask and leave 0,0,0 landmines in pts3d — the
@@ -116,9 +155,13 @@ class MapAnything:
             return tensor[0].float().cpu().numpy()
 
         frames, cloud_points, cloud_colors = [], [], []
-        for prediction in predictions:
+        if len(predictions) != len(metadata):
+            raise ValueError("Prediction count disagrees with input frames")
+        for prediction, source_metadata in zip(predictions, metadata):
             rgb = np.clip(_np(prediction["img_no_norm"]), 0.0, 1.0)
             image_u8 = (rgb * 255.0 + 0.5).astype(np.uint8)
+            if not np.array_equal(image_u8, source_metadata.pop("_canonical_rgb")):
+                raise ValueError("Prediction image grid changed after the verified preprocessing")
             pts3d = _np(prediction["pts3d"]).astype(np.float32)
             conf = _np(prediction["conf"]).astype(np.float32)
             mask = _np(prediction["non_ambiguous_mask"]).astype(bool)
@@ -142,6 +185,10 @@ class MapAnything:
                         "non_ambiguous_mask": _encode_array(mask),
                         "camera_poses": _encode_array(pose),
                         "intrinsics": _encode_array(intrinsics),
+                        **source_metadata,
+                        "model_id": MODEL_ID,
+                        "code_revision": CODE_REV,
+                        "backend": "modal",
                     }
                 ).encode("utf-8")
             )

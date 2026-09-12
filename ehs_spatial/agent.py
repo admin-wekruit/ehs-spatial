@@ -13,6 +13,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from .providers.base import ProviderError
+from .path_safety import validate_safe_path_segment
 from .providers.gemini import (
     GEMINI_MODEL_ID,
     GeminiAdapter,
@@ -20,7 +21,7 @@ from .providers.gemini import (
     _response_format,
     _text_block,
 )
-from .refine import RefineError, refine_region
+from .refine import RefineError, input_image, refine_region
 
 
 class LocatedObject(BaseModel):
@@ -38,27 +39,15 @@ class LocatedObject(BaseModel):
     rationale: str
 
 
-# Field lessons the reviewer taught us. Every locate turn carries them so
-# the agent does not repeat a mistake the reviewer already corrected once.
-AGENT_LESSONS = (
-    "框要紧贴目标本体：绝不把相邻的红色斜坡挡板/踢脚板包进围栏框——斜坡是独立对象，单独一框。",
-    "透明板/围栏后面会透出别的东西：框仍按板框边界画，不要为了包住透出的背景把框放大。",
-    "并排的护栏/板段是多个独立对象，一段一框；只有同一块板被横向切成上下几条时才是一个对象。",
-    "斜坡下沿贴地的传感器横杆、立柱上的小装置（指示灯、门联锁、急停）最容易漏，别跳过。",
-    "前后排要分清：护栏后面的板/机器是独立对象，属于第二排——重叠像素归离相机近的结构。",
-    "场景前提：每个工位 cell 是长方形围合——围栏/墙构成矩形边界，平面图输出必须服从这个矩形约束。",
-    "黄黑条纹不只等于警示：条纹表面可以是栅栏、导向挡板、也可以是放置物料的台面——按几何(水平=台面/斜面=导向/竖直=栏)判身份，不只按纹理。",
-    "判断'是否同一排/同一条线'用图像证据（像素高度、左右相邻），不要信单张图的 3D 高度读数。",
-)
-
 _LOCATE_PROMPT = (
     "You are helping audit an industrial workcell photo. The reviewer says "
     "an object was missed by automatic segmentation and describes it below "
     "(possibly in Chinese). Locate that object in the photo.\n"
     "Reviewer: {instruction}\n"
-    "Field rules (learned from past reviewer corrections):\n"
-    + "".join(f"- {lesson}\n" for lesson in AGENT_LESSONS)
-    + "Return found=false if you cannot see a matching object. box_2d MUST be "
+    "Use only this photograph. Locate one visible instance; adjacent objects "
+    "and objects seen through transparent surfaces remain separate. Do not "
+    "infer a hidden object, physical dimensions, rectangular layout, or safety function. "
+    "Return found=false if you cannot identify a single matching object. box_2d MUST be "
     "[ymin, xmin, ymax, xmax] in 0-1000 normalized coordinates, tight "
     "around the described object only."
 )
@@ -114,14 +103,20 @@ def agent_refine(
     locator=None,
     subscriber=None,
     verifier=None,
+    frame_id: str = "frame_0001",
 ) -> dict:
-    """One conversational correction turn. Raises RefineError/ProviderError
-    on failure — never fabricates a measurement. The located crop is shown
-    back to the VLM before segmentation; a mismatch aborts the turn."""
+    """Locate once in the selected photo, then persist SAM evidence.
+
+    A supplied verifier is an explicit offline/test check; this path never
+    creates a second VLM call to inspect its own crop.
+    """
     from PIL import Image
 
     run = Path(runs_root) / run_id
-    image_path = next((run / "input").glob("image_*"))
+    validate_safe_path_segment(run_id, "run_id")
+    if not run.resolve().is_relative_to(Path(runs_root).resolve()):
+        raise RefineError("run is outside runs_root")
+    image_path = input_image(run, frame_id)
     if locator is None:
         adapter = GeminiAdapter()
 
@@ -134,7 +129,7 @@ def agent_refine(
     with Image.open(image_path) as image:
         width, height = image.size
     y_min, x_min, y_max, x_max = located.box_2d
-    if max(located.box_2d) > 1000:
+    if min(located.box_2d) < 0 or max(located.box_2d) > 1000:
         raise RefineError(
             f"locator returned non-normalized coordinates {located.box_2d}; "
             "refusing to guess the convention"
@@ -147,22 +142,12 @@ def agent_refine(
         min(width, int(x_max / 1000 * width)),
         min(height, int(y_max / 1000 * height)),
     )
-    if verifier is None and locator is not None:
-        verifier = False  # injected test locator: skip the live verify hop
-    if verifier is not False:
+    if callable(verifier):
         import tempfile
-
-        if verifier is None:
-            adapter_v = GeminiAdapter()
-
-            def verifier(path, text):  # noqa: F811
-                return _gemini_verify(path, text, adapter_v)
 
         with Image.open(image_path) as image:
             crop = image.crop(box)
-            with tempfile.NamedTemporaryFile(
-                suffix=".png", delete=False
-            ) as handle:
+            with tempfile.NamedTemporaryFile(suffix=".png") as handle:
                 crop.save(handle.name)
                 check = verifier(handle.name, instruction)
         if not check.matches:
@@ -176,9 +161,10 @@ def agent_refine(
         runs_root=runs_root,
         apply=apply,
         subscriber=subscriber,
+        frame_id=frame_id,
+        instruction=instruction,
+        located_rationale=located.rationale,
     )
-    result["instruction"] = instruction
-    result["located_rationale"] = located.rationale
     return result
 
 
@@ -259,11 +245,12 @@ def agent_sweep(
             outcomes.append(
                 {
                     "item": instruction,
-                    "status": "measured",
+                    "status": result.get("geometry_status", "measured"),
                     "label": result["label"],
                     "sam_score": result["sam_score"],
-                    "height_m": result["height_m"],
-                    "camera_dist_m": result["camera_dist_m"],
+                    "height_m": result.get("height_m"),
+                    "camera_dist_m": result.get("camera_dist_m"),
+                    "geometry_reason": result.get("geometry_reason"),
                 }
             )
         except RefineError as exc:

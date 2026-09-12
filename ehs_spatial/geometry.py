@@ -8,6 +8,7 @@ from PIL import Image
 from shapely.geometry import MultiPoint, Point, Polygon
 
 from .contracts import Entity3D, GeometryFrame, Observation2D
+from .measurements import _rotation_to_positive_z
 
 
 FLOOR_LABEL = "factory floor"
@@ -79,23 +80,6 @@ def _data_for(
     if frame_id not in loaded:
         loaded[frame_id] = _load_frame(frames[frame_id])
     return loaded[frame_id]
-
-
-def _rotation_to_positive_z(normal: np.ndarray) -> np.ndarray:
-    target = np.array([0.0, 0.0, 1.0])
-    cross = np.cross(normal, target)
-    sine = np.linalg.norm(cross)
-    cosine = float(np.dot(normal, target))
-    if sine < 1e-12:
-        return np.eye(3) if cosine > 0 else np.diag([1.0, -1.0, -1.0])
-    skew = np.array(
-        [
-            [0.0, -cross[2], cross[1]],
-            [cross[2], 0.0, -cross[0]],
-            [-cross[1], cross[0], 0.0],
-        ]
-    )
-    return np.eye(3) + skew + skew @ skew * ((1.0 - cosine) / sine**2)
 
 
 _FLOOR_NORMAL_MAX_ANGLE_COS = float(np.cos(np.radians(20.0)))

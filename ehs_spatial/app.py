@@ -247,20 +247,25 @@ def _run_deep_report_chain(run_id: str) -> None:
             pass
 
     _scripts_on_path()
-    if not (run_dir / "detection" / "detections.json").exists():
-        try:
-            _mark("detect")
-            import detect_devices as _detect
+    try:
+        _mark("detect")
+        import detect_devices as _detect
 
-            _detect.main(["--run", run_id])
-        except Exception:
-            traceback.print_exc()
+        # Detection owns per-frame content caches. An envelope from an older
+        # first-photo pass must not hide remaining views in a new capture.
+        _detect.main(["--run", run_id])
+    except Exception:
+        traceback.print_exc()
     try:
         _mark("inventory")
         import scene_inventory as _inventory
 
         _inventory.main(["--run", run_id, "--live"])
+        from .object_evidence import write_object_evidence
+        write_object_evidence(run_dir)
         _mark("report")
+        from .observed_scene import build_observed_scene
+        build_observed_scene(run_dir)
         # one pipeline, one instance set: the 3D viewer must show the same
         # objects the report and CAD show, so rebuild it from the inventory
         try:

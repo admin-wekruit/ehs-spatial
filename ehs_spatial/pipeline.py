@@ -105,7 +105,7 @@ class EHSAssessmentPipeline:
 
     def _write_manifest(self, prepared: CaptureRun, paths) -> None:
         from .providers.gemini import GEMINI_MODEL_ID
-        from .providers.map_anything import MAP_ANYTHING_MODEL_ID
+        from .providers.map_anything import map_anything_model_identifier
         from .providers.moge import MOGE_VERSION
         from .providers.sam3 import SAM3_ENDPOINT
 
@@ -124,7 +124,7 @@ class EHSAssessmentPipeline:
             operator=prepared.operator,
             capture_tier="multiview" if len(prepared.image_paths) >= 2 else "mono",
             providers=ProviderManifest(
-                mapanything_model_id=MAP_ANYTHING_MODEL_ID,
+                mapanything_model_id=map_anything_model_identifier(),
                 sam_endpoint=SAM3_ENDPOINT,
                 gemini_model=GEMINI_MODEL_ID,
                 moge_version=MOGE_VERSION,

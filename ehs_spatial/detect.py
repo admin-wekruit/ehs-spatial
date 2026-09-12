@@ -1,17 +1,13 @@
-"""Detection layer: taxonomy-driven object detection in front of SAM.
+"""One taxonomy sweep per source photo, then native-box SAM segmentation.
 
-One bulk VLM pass walks the whole safety-device taxonomy and returns a box
-for every visible item (or reports it not visible); every box is verified
-with a crop self-check, failed items retry through the single-item locator;
-verified boxes become SAM box prompts. SAM never guesses from text here —
-it always segments WITH detection context, and coverage is an auditable
-checklist with an explicit missing list.
-
-Outputs land in runs/<run>/detection/: detections.json (boxes, masks as
-RLE, verdicts) and overlay.png (numbered category-colored masks).
+Per-frame content caches make retries and appended photos incremental.
+Each successful or failed instance retains its source identity. A single
+VLM sweep and SAM score do not establish semantic correctness or safety.
 """
 
 import base64
+import hashlib
+import tempfile
 import json
 from pathlib import Path
 
@@ -19,8 +15,7 @@ import numpy as np
 from PIL import Image
 from pydantic import BaseModel, Field
 
-from .agent import CropCheck, _gemini_locator, _gemini_verify
-from .providers.base import ProviderError
+from .path_safety import validate_safe_path_segment
 from .providers.gemini import (
     GEMINI_MODEL_ID,
     GeminiAdapter,
@@ -30,6 +25,8 @@ from .providers.gemini import (
 )
 from .providers.sam3 import decode_coco_rle
 from .taxonomy import CATEGORIES, TAXONOMY
+
+DETECTION_VERSION = "2026-09-09.multiframe-single-sweep-v1"
 
 
 class DetectedBox(BaseModel):
@@ -45,51 +42,6 @@ class TaxonomySweep(BaseModel):
     not_visible: list[str] = Field(
         description="taxonomy item ids that are NOT visible in this photo"
     )
-
-
-class ExtraSweep(BaseModel):
-    boxes: list[DetectedBox]
-
-
-_MORE_PROMPT = (
-    "You are auditing an industrial robot-cell photo for machine-safety "
-    "devices. The instances below are ALREADY detected. Find visible "
-    "instances of checklist items NOT covered by any existing box — "
-    "especially additional side-by-side guard/panel sections next to an "
-    "already-boxed one, extra buttons, extra signs. Boxes MUST be box_2d "
-    "[ymin, xmin, ymax, xmax] in 0-1000 normalized coordinates, tight "
-    "around one device each. Return an empty list when nothing is left.\n"
-    "Checklist:\n{checklist}\nAlready detected:\n{found}"
-)
-
-
-class SectionSplit(BaseModel):
-    boxes: list[tuple[int, int, int, int]] = Field(
-        description="one tight box_2d [ymin, xmin, ymax, xmax] (0-1000, "
-        "within THIS crop) per individual section"
-    )
-
-
-_SPLIT_PROMPT = (
-    "This crop shows industrial machine guarding. If it contains MULTIPLE "
-    "side-by-side guard/fence/panel sections separated by vertical posts, "
-    "return one tight box per individual section. If it is a single "
-    "section, return exactly one box covering it. Boxes are box_2d "
-    "[ymin, xmin, ymax, xmax] in 0-1000 normalized coordinates of THIS "
-    "crop."
-)
-
-
-def _box_iou(a, b) -> float:
-    ix = max(0, min(a[2], b[2]) - max(a[0], b[0]))
-    iy = max(0, min(a[3], b[3]) - max(a[1], b[1]))
-    inter = ix * iy
-    union = (
-        (a[2] - a[0]) * (a[3] - a[1])
-        + (b[2] - b[0]) * (b[3] - b[1])
-        - inter
-    )
-    return inter / union if union else 0.0
 
 
 _SWEEP_PROMPT = (
@@ -150,346 +102,189 @@ def _sam_box(run: Path, image_path: Path, box, slug: str, subscriber) -> dict:
     return response
 
 
+def _write_json(path: Path, value: dict) -> None:
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as stream:
+        json.dump(value, stream, ensure_ascii=False, indent=2)
+        stream.write("\n")
+        temporary = Path(stream.name)
+    temporary.replace(path)
+
+
 def detect_devices(
     run_id: str,
     *,
     runs_root: str | Path = "runs",
     adapter: GeminiAdapter | None = None,
     subscriber=None,
-    verifier=None,
+    fresh: bool = False,
 ) -> dict:
-    """Run the taxonomy detection pass over one run's photo. Returns the
-    detections envelope (also written to runs/<run>/detection/)."""
+    """One cached taxonomy sweep per input photo, followed by native-box SAM.
+
+    Every returned instance is retained, including failed segmentation. SAM
+    success is not an independent semantic verification or a safety verdict.
+    """
+    validate_safe_path_segment(run_id, "run_id")
     run = Path(runs_root) / run_id
-    image_path = next((run / "input").glob("image_*"))
-    with Image.open(image_path) as image:
-        width, height = image.size
+    if not run.resolve().is_relative_to(Path(runs_root).resolve()):
+        raise ValueError("run is outside runs_root")
+    inputs = sorted((run / "input").glob("image_*"))
+    if not inputs:
+        raise ValueError("run has no input photographs")
     out_dir = run / "detection"
     out_dir.mkdir(exist_ok=True)
-    cache = out_dir / "detections.json"
-    if cache.exists():
-        return json.loads(cache.read_text())
-
-    if adapter is None:
-        adapter = GeminiAdapter()
-    if verifier is None:
-        def verifier(crop_path, text):  # noqa: F811 - default binding
-            return _gemini_verify(crop_path, text, adapter)
-
-    sweep = _bulk_sweep(str(image_path), adapter)
+    frames_dir = out_dir / "frames"
+    frames_dir.mkdir(exist_ok=True)
+    manifest_path = out_dir / "detections.json"
+    saved = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
     by_id = {t.item_id: t for t in TAXONOMY}
-    detections: list[dict] = []
-    rejected: list[dict] = []
-    for det in sweep.boxes:
-        spec = by_id.get(det.item_id)
-        if spec is None:
-            continue
-        y1, x1, y2, x2 = det.box_2d
-        if max(det.box_2d) > 1000 or not (y1 < y2 and x1 < x2):
-            rejected.append({"item_id": det.item_id, "reason": "bad box"})
-            continue
-        box = (
-            max(0, int(x1 / 1000 * width)),
-            max(0, int(y1 / 1000 * height)),
-            min(width, int(x2 / 1000 * width)),
-            min(height, int(y2 / 1000 * height)),
-        )
-        import tempfile
-
+    all_frames, detections, missing, rejected = [], [], [], []
+    sweep_calls = sam_calls = 0
+    for index, image_path in enumerate(inputs, 1):
+        frame_id = f"frame_{index:04d}"
+        image_sha = hashlib.sha256(image_path.read_bytes()).hexdigest()
         with Image.open(image_path) as image:
-            crop = image.crop(box)
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
-                crop.save(f.name)
-                check: CropCheck = verifier(f.name, spec.en)
-        if not check.matches:
-            rejected.append(
-                {"item_id": det.item_id, "reason": f"crop check: {check.reason}"}
-            )
-            continue
-        detections.append(
-            {"item_id": det.item_id, "box": list(box), "note": det.note}
-        )
-
-    # single-item retry for checklist items with no surviving box that the
-    # bulk pass did NOT explicitly mark invisible
-    # the bulk pass under-claims: it marks hard items not_visible that the
-    # single-item locator finds (floor sensor bar, door interlock — both
-    # confirmed present by reviewers). Retry every missing non-optional
-    # item; "missing" is only honest after the focused look also fails.
-    seen_ids = {d["item_id"] for d in detections}
-    for spec in TAXONOMY:
-        if spec.item_id in seen_ids or spec.expect == "optional":
-            continue
-        try:
-            located = _gemini_locator(str(image_path), spec.en, adapter)
-        except ProviderError:
-            continue
-        if not located.found or max(located.box_2d) > 1000:
-            continue
-        y1, x1, y2, x2 = located.box_2d
-        if not (y1 < y2 and x1 < x2):
-            continue
-        detections.append(
-            {
-                "item_id": spec.item_id,
-                "box": [
-                    max(0, int(x1 / 1000 * width)),
-                    max(0, int(y1 / 1000 * height)),
-                    min(width, int(x2 / 1000 * width)),
-                    min(height, int(y2 / 1000 * height)),
-                ],
-                "note": "retry:" + located.rationale[:80],
-            }
-        )
-
-    # completeness rounds: a 'multi' item with ONE hit never re-asked was
-    # how three side-by-side gate sections came back as one — feed the
-    # found boxes back and ask ONLY for what they do not cover, until a
-    # round adds nothing
-    checklist = "\n".join(
-        f"- {t.item_id} [{t.expect}]: {t.en}" for t in TAXONOMY
-    )
-    for _ in range(2):
-        found_lines = "\n".join(
-            f"- {d['item_id']}: box_2d ["
-            f"{int(d['box'][1] / height * 1000)}, "
-            f"{int(d['box'][0] / width * 1000)}, "
-            f"{int(d['box'][3] / height * 1000)}, "
-            f"{int(d['box'][2] / width * 1000)}]"
-            for d in detections
-        )
-        response = adapter._create(
-            "detect.more",
-            model=GEMINI_MODEL_ID,
-            input=[
-                _text_block(
-                    _MORE_PROMPT.format(
-                        checklist=checklist, found=found_lines or "(none)"
-                    )
-                ),
-                _image_block(str(image_path)),
-            ],
-            response_format=_response_format(ExtraSweep),
-        )
-        extra, _ = adapter._parse(response, ExtraSweep, "detect.more")
-        added = 0
-        for det in extra.boxes:
-            spec = by_id.get(det.item_id)
-            if spec is None:
-                continue
-            y1, x1, y2, x2 = det.box_2d
-            if max(det.box_2d) > 1000 or not (y1 < y2 and x1 < x2):
-                continue
-            box = (
-                max(0, int(x1 / 1000 * width)),
-                max(0, int(y1 / 1000 * height)),
-                min(width, int(x2 / 1000 * width)),
-                min(height, int(y2 / 1000 * height)),
-            )
-            if any(_box_iou(box, d["box"]) > 0.5 for d in detections):
-                continue
-            import tempfile
-
-            with Image.open(image_path) as image:
-                crop = image.crop(box)
-                with tempfile.NamedTemporaryFile(
-                    suffix=".png", delete=False
-                ) as f:
-                    crop.save(f.name)
-                    check = verifier(f.name, spec.en)
-            if not check.matches:
-                rejected.append(
-                    {
-                        "item_id": det.item_id,
-                        "reason": f"more-round crop check: {check.reason}",
-                    }
-                )
-                continue
-            detections.append(
-                {"item_id": det.item_id, "box": list(box), "note": "more"}
-            )
-            added += 1
-        if added == 0:
-            break
-
-    # granularity: a guard box much wider than tall usually spans SEVERAL
-    # side-by-side sections (one bulk box over a three-section gate) —
-    # crop it and have the VLM enumerate the individual sections
-    split_result: list[dict] = []
-    for det in detections:
-        spec = by_id[det["item_id"]]
-        x1, y1, x2, y2 = det["box"]
-        wide = (x2 - x1) > 1.6 * max(1, y2 - y1)
-        if spec.category != "C" or spec.expect != "multi" or not wide:
-            split_result.append(det)
-            continue
-        import tempfile
-
-        with Image.open(image_path) as image:
-            crop = image.crop((x1, y1, x2, y2))
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
-                crop.save(f.name)
-                response = adapter._create(
-                    "detect.split",
-                    model=GEMINI_MODEL_ID,
-                    input=[
-                        _text_block(_SPLIT_PROMPT),
-                        _image_block(f.name),
-                    ],
-                    response_format=_response_format(SectionSplit),
-                )
-        try:
-            split, _ = adapter._parse(response, SectionSplit, "detect.split")
-        except Exception:
-            split_result.append(det)
-            continue
-        good = [
-            b
-            for b in split.boxes
-            if max(b) <= 1000 and b[0] < b[2] and b[1] < b[3]
-        ]
-        if len(good) < 2:
-            split_result.append(det)
-            continue
-        for cy1, cx1, cy2, cx2 in good:
-            split_result.append(
-                {
-                    "item_id": det["item_id"],
-                    "box": [
-                        x1 + int(cx1 / 1000 * (x2 - x1)),
-                        y1 + int(cy1 / 1000 * (y2 - y1)),
-                        x1 + int(cx2 / 1000 * (x2 - x1)),
-                        y1 + int(cy2 / 1000 * (y2 - y1)),
-                    ],
-                    "note": "split",
-                }
-            )
-    detections = split_result
-
-    # one physical device, one detection: drop any box that near-duplicates
-    # an earlier one, whatever checklist item claimed it (the same panel
-    # answering both 'clear guard' and 'low rail' is a relabel, not a
-    # second device)
-    deduped: list[dict] = []
-    for det in detections:
-        if any(_box_iou(det["box"], d["box"]) > 0.6 for d in deduped):
-            continue
-        deduped.append(det)
-    detections = deduped
-
-    # detection is monotonic across rounds: a crop-verified device from a
-    # previous round survives a weaker re-detect (VLM rounds vary; a bad
-    # round must add nothing, never subtract)
-    previous = out_dir / "detections.prev.json"
-    if previous.exists():
-        for old in json.loads(previous.read_text()).get("detections", []):
-            if "rle" not in old:
-                continue
-            if any(
-                _box_iou(old["box"], d["box"]) > 0.5 for d in detections
-            ):
-                continue
-            detections.append(
-                {
-                    "item_id": old["item_id"],
-                    "box": old["box"],
-                    "note": "carried",
-                }
-            )
-        previous.unlink()
-
-    # SAM with detection context: every verified box becomes a box prompt
-    for index, det in enumerate(detections):
-        spec = by_id[det["item_id"]]
-        slug = f"{det['item_id']}_{'_'.join(str(v) for v in det['box'])}"
-        try:
-            response = _sam_box(run, image_path, det["box"], slug, subscriber)
-        except Exception as error:
-            det["sam_error"] = str(error)[:120]
-            continue
-        rles = response.get("rle") or []
-        if isinstance(rles, str):
-            rles = [rles]
-        if not rles:
-            det["sam_error"] = "no mask"
-            continue
-        scores = response.get("scores") or [1.0] * len(rles)
-        best = int(np.argmax(scores))
-        det["rle"] = rles[best]
-        det["sam_score"] = round(float(scores[best]), 3)
-        det["number"] = index + 1
-        det["label"] = spec.sam_label
-        det["category"] = spec.category
-        det["zh"] = spec.zh
-        det["iso"] = spec.iso
-
-    missing = [
-        {"item_id": t.item_id, "zh": t.zh, "iso": t.iso}
-        for t in TAXONOMY
-        if t.item_id not in {d["item_id"] for d in detections}
-        and t.expect != "optional"
-    ]
-    envelope = {
-        "run_id": run_id,
-        "image_size": [width, height],
-        "detections": detections,
-        "missing": missing,
-        "rejected": rejected,
-        "categories": {k: v[0] for k, v in CATEGORIES.items()},
-    }
-    cache.write_text(json.dumps(envelope, ensure_ascii=False, indent=2) + "\n")
+            width, height = image.size
+        frame = {"frame_id": frame_id, "source_image_sha256": image_sha,
+                 "image_path": image_path.relative_to(run).as_posix(), "image_size": [width, height],
+                 "detection_version": DETECTION_VERSION,
+                 "overlay_path": f"detection/overlay_{frame_id}.png"}
+        key = f"{frame_id}__{image_sha}__{DETECTION_VERSION}"
+        cache = frames_dir / f"{key}.json"
+        if cache.is_file() and not fresh:
+            result = json.loads(cache.read_text())
+            if any(result.get(k) != frame[k] for k in ("frame_id", "source_image_sha256", "detection_version", "image_size")):
+                raise ValueError(f"detection cache identity mismatch for {frame_id}")
+        elif (not fresh and index == 1 and saved and not saved.get("frames")
+              and saved.get("image_size") == [width, height]):
+            # Frozen first-photo reports predate source hashes. Preserve their
+            # evidence explicitly as legacy; they never cover another photo.
+            result = {**frame, "source_binding": "legacy_first_frame_unverified",
+                      "detections": [], "missing": [], "rejected": []}
+            for field in ("detections", "missing", "rejected"):
+                result[field] = [{**r, "frame_id": frame_id,
+                    "source_image_sha256": None, "source_binding": "legacy_first_frame_unverified",
+                    "semantic_verification": "legacy_unrecorded"} for r in saved.get(field, [])]
+            _write_json(cache, result)
+        else:
+            sweep_cache = frames_dir / f"{key}.sweep.json"
+            if sweep_cache.is_file() and not fresh:
+                sweep = TaxonomySweep.model_validate(json.loads(sweep_cache.read_text()))
+            else:
+                adapter = adapter or GeminiAdapter()
+                sweep = _bulk_sweep(str(image_path), adapter)
+                sweep_calls += 1
+                _write_json(sweep_cache, sweep.model_dump(mode="json"))
+            result = {**frame, "source_binding": "content_hash",
+                      "semantic_verification": "single_sweep", "detections": [], "missing": [], "rejected": []}
+            seen = set()
+            for ordinal, proposed in enumerate(sweep.boxes):
+                evidence = {"frame_id": frame_id, "source_image_sha256": image_sha,
+                            "image_size": [width, height], "box_2d": list(proposed.box_2d),
+                            "item_id": proposed.item_id, "note": proposed.note,
+                            "semantic_verification": "single_sweep"}
+                spec = by_id.get(proposed.item_id)
+                y1, x1, y2, x2 = proposed.box_2d
+                if spec is None or min(proposed.box_2d) < 0 or max(proposed.box_2d) > 1000 or not (y1 < y2 and x1 < x2):
+                    result["rejected"].append({**evidence, "reason": "unknown taxonomy item" if spec is None else "bad box"})
+                    continue
+                box = [int(x1 * width / 1000), int(y1 * height / 1000), int(x2 * width / 1000), int(y2 * height / 1000)]
+                if box[0] >= box[2] or box[1] >= box[3]:
+                    result["rejected"].append({**evidence, "box": box, "reason": "box collapses at source resolution"})
+                    continue
+                signature = (proposed.item_id, *box)
+                if signature in seen:
+                    result["rejected"].append({**evidence, "box": box, "reason": "duplicate identical item and box in the same sweep"})
+                    continue
+                seen.add(signature)
+                slug = key + "__" + hashlib.sha256(json.dumps(signature).encode()).hexdigest()[:20]
+                det = {**evidence, "box": box, "instance_id": f"{frame_id}:{proposed.item_id}:{ordinal}",
+                       "label": spec.sam_label, "category": spec.category, "zh": spec.zh, "iso": spec.iso,
+                       "mask_path": f"detection/sam/{slug}.json", "mask_status": "unavailable"}
+                try:
+                    if not (run / det["mask_path"]).exists():
+                        sam_calls += 1
+                    response = _sam_box(run, image_path, box, slug, subscriber)
+                    rles = response.get("rle") or []
+                    if isinstance(rles, str):
+                        rles = [rles]
+                    if not rles:
+                        raise ValueError("SAM returned no mask")
+                    scores = response.get("scores") or [1.0] * len(rles)
+                    if len(scores) != len(rles) or not np.isfinite(scores).all():
+                        raise ValueError("invalid SAM scores")
+                    best = int(np.argmax(scores))
+                    mask = decode_coco_rle(rles[best], height=height, width=width).astype(bool)
+                    if mask.shape != (height, width) or not mask.any():
+                        raise ValueError("SAM mask is empty or disagrees with source resolution")
+                    det.update(rle=rles[best], sam_score=round(float(scores[best]), 3), mask_status="available",
+                               mask_pixels=int(mask.sum()), mask_sha256=hashlib.sha256((run / det["mask_path"]).read_bytes()).hexdigest())
+                except Exception as error:
+                    det["sam_error"] = str(error)[:200]
+                result["detections"].append(det)
+            visible = {d["item_id"] for d in result["detections"]}
+            result["missing"] = [{"item_id": t.item_id, "label": t.sam_label, "zh": t.zh, "iso": t.iso,
+                                  "frame_id": frame_id, "source_image_sha256": image_sha,
+                                  "reason": "not_visible_in_single_sweep" if t.item_id in sweep.not_visible else "not_reported_in_single_sweep"}
+                                 for t in TAXONOMY if t.item_id not in visible and t.expect != "optional"]
+            _write_json(cache, result)
+        all_frames.append({**frame, "source_binding": result.get("source_binding"),
+                           "cache_path": cache.relative_to(run).as_posix(),
+                           "detections_count": len(result["detections"]),
+                           "masked_count": sum("rle" in d for d in result["detections"])})
+        detections.extend(result["detections"])
+        missing.extend(result["missing"])
+        rejected.extend(result["rejected"])
+    for number, detection in enumerate(detections, 1):
+        detection["number"] = number
+    envelope = {"run_id": run_id, "detection_version": DETECTION_VERSION, "frames": all_frames,
+                "detections": detections, "missing": missing, "rejected": rejected,
+                "categories": {k: v[0] for k, v in CATEGORIES.items()},
+                "semantic_verification": "single_sweep_or_explicit_legacy",
+                "last_execution": {"sweep_calls": sweep_calls, "sam_calls": sam_calls},
+                "recall": None, "recall_reason": "No instance-level ground truth is provided"}
+    _write_json(manifest_path, envelope)
     render_overlay(run_id, runs_root=runs_root)
     return envelope
 
 
 def render_overlay(run_id: str, *, runs_root: str | Path = "runs") -> Path:
-    """Numbered, category-colored mask overlay like a machine-safety audit
-    sheet. Reads detection/detections.json, writes detection/overlay.png."""
-    from PIL import ImageDraw
+    """Write one numbered native-resolution overlay per source photograph."""
+    from PIL import ImageDraw, ImageFont
 
     run = Path(runs_root) / run_id
-    envelope = json.loads((run / "detection" / "detections.json").read_text())
-    width, height = envelope["image_size"]
-    image = np.asarray(
-        Image.open(next((run / "input").glob("image_*"))).convert("RGB")
-    ).copy()
-    labels = []
-    for det in envelope["detections"]:
-        if "rle" not in det:
-            continue
-        colour = np.array(
-            tuple(
-                int(CATEGORIES[det["category"]][1][i : i + 2], 16)
-                for i in (1, 3, 5)
-            )
-        )
-        mask = decode_coco_rle(det["rle"], height=height, width=width).astype(
-            bool
-        )
-        image[mask] = (0.5 * image[mask] + 0.5 * colour).astype(np.uint8)
-        ys, xs = np.nonzero(mask)
-        if len(xs):
-            labels.append((int(xs.mean()), int(ys.min()), det["number"]))
-    overlay = Image.fromarray(image)
-    draw = ImageDraw.Draw(overlay)
-    from PIL import ImageFont
-
-    try:
-        font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 56)
-    except OSError:
-        font = ImageFont.load_default()
-    for cx, cy, number in labels:
-        text = str(number)
-        tw = draw.textlength(text, font=font)
-        top = max(0, cy - 12)
-        draw.rectangle(
-            [cx - tw / 2 - 10, top, cx + tw / 2 + 10, top + 66],
-            fill=(20, 20, 20),
-        )
-        draw.text((cx - tw / 2, top + 4), text, fill=(255, 235, 59), font=font)
-    path = run / "detection" / "overlay.png"
-    overlay.save(path)
-    return path
+    envelope = json.loads((run / "detection/detections.json").read_text())
+    outputs = []
+    for frame in envelope["frames"]:
+        image_path = run / frame["image_path"]
+        if hashlib.sha256(image_path.read_bytes()).hexdigest() != frame["source_image_sha256"]:
+            raise ValueError("source photograph changed before overlay rendering")
+        with Image.open(image_path) as original:
+            image = np.asarray(original.convert("RGB")).copy()
+        height, width = image.shape[:2]
+        labels = []
+        for det in envelope["detections"]:
+            if det.get("frame_id") != frame["frame_id"] or "rle" not in det:
+                continue
+            colour = np.array(tuple(int(CATEGORIES[det["category"]][1][i:i+2], 16) for i in (1, 3, 5)))
+            mask = decode_coco_rle(det["rle"], height=height, width=width).astype(bool)
+            if mask.shape != (height, width):
+                raise ValueError("detection mask does not match its source photograph")
+            image[mask] = (0.5 * image[mask] + 0.5 * colour).astype(np.uint8)
+            ys, xs = np.nonzero(mask)
+            if len(xs):
+                labels.append((int(xs.mean()), int(ys.min()), det["number"]))
+        overlay = Image.fromarray(image)
+        draw = ImageDraw.Draw(overlay)
+        font = ImageFont.load_default(size=max(12, round(width / 55)))
+        for cx, cy, number in labels:
+            text = str(number)
+            bounds = draw.textbbox((cx, cy), text, font=font)
+            draw.rectangle(bounds, fill=(20, 20, 20))
+            draw.text((cx, cy), text, fill=(255, 235, 59), font=font)
+        path = run / frame["overlay_path"]
+        overlay.save(path)
+        outputs.append(path)
+    return outputs[0]
 
 
 __all__ = ["detect_devices", "render_overlay", "TaxonomySweep", "DetectedBox"]

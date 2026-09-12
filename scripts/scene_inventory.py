@@ -1208,6 +1208,10 @@ def _refine_mask(run: Path, slug: str, height: int, width: int,
     if isinstance(rles, str): rles = [rles]
     if not rles: return None
     source = sorted((run/'input').glob('image_*'))[int(frame_id.rsplit('_', 1)[1])-1]
+    image_sha = hashlib.sha256(source.read_bytes()).hexdigest()
+    if (response.get('frame_id', frame_id) != frame_id
+            or response.get('source_image_sha256', image_sha) != image_sha):
+        raise ValueError(f'Refinement is bound to a different source photograph: {slug}')
     with Image.open(source) as image:
         full_width, full_height = image.size
     # The refinement endpoint receives the original photo; resized legacy RLE is not source evidence.
@@ -1234,7 +1238,7 @@ def _save_refinement_mask(run: Path, frame_id: str, slug: str, mask: np.ndarray)
     except (ValueError, AttributeError): explicit_size = None
     path.with_suffix('.json').write_text(json.dumps({
         'frame_id':frame_id, 'shape':list(mask.shape), 'coordinate_space':'canonical', 'mask_sha256':mask_sha256,
-        'source_path':str(source), 'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),
+        'source_path':source.relative_to(run).as_posix(), 'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),
         'source_explicit_rle_size':explicit_size,
         'source_grid':'explicit COCO size' if explicit_size else 'original input image dimensions for fal pairs',
         'processing':'sibling overlap carving; normal split and hull fill when supported',
@@ -1344,6 +1348,20 @@ def _reconcile_enumeration(
     return unresolved
 
 
+def _record_unmeasured(unresolved, *, frame, source, phrase, stage, reason, **evidence):
+    """Retain source-instance evidence independently of metric geometry gates."""
+    if unresolved is None:
+        return
+    record = {"phrase": phrase, "frame": frame, "source": source,
+              "stage": stage, "reason": reason, **evidence}
+    keys = ("frame", "source", "phrase", "refine_slug", "instance")
+    for index, previous in enumerate(unresolved):
+        if all(previous.get(key) == record.get(key) for key in keys):
+            unresolved[index] = record
+            return
+    unresolved.append(record)
+
+
 def _ingest_refinements(
     run: Path,
     frame: GeometryFrame,
@@ -1352,12 +1370,17 @@ def _ingest_refinements(
     entries: list[dict],
     unresolved: list[dict] | None = None,
 ) -> None:
-    """Fence-family box refinements become first-class geometry entries:
+    """Box refinements become geometry entries or explicit unmeasured evidence:
     normal split, nearest-cluster lift, and (downstream) contact edge,
     guard-line chaining, and reprojection feedback — one process for every
     photo, whether SAM found the object itself or a reviewer boxed it.
     Refinements duplicating an existing fence instance (IoU>0.5) are
     skipped — the inventory version already went through the pipeline."""
+    def unmeasured(item, slug, stage, reason):
+        _record_unmeasured(unresolved, phrase=item["label"], refine_slug=slug,
+                           frame=frame.frame_id, box=list(item["box"]),
+                           source=item.get("source", "refinement"), stage=stage, reason=reason)
+
     log_path = run / "refinements.json"
     # the detection layer's fence-family results flow in through the same
     # door: persist them in refinement format (same SAM response schema),
@@ -1367,20 +1390,24 @@ def _ingest_refinements(
     if det_path.exists():
         log = json.loads(log_path.read_text()) if log_path.exists() else []
         known = {
-            item["label"].replace(" ", "_")
+            item.get("refine_slug") or item["label"].replace(" ", "_")
             + "_"
             + "_".join(str(v) for v in item["box"])
             for item in log
         }
         added = False
         for det in json.loads(det_path.read_text()).get("detections", []):
-            if "rle" not in det:
+            if det.get("frame_id", "frame_0001") != frame.frame_id:
                 continue
-            slug = (
+            slug = Path(det["mask_path"]).stem if det.get("mask_path") else (
                 det["label"].replace(" ", "_")
                 + "_"
                 + "_".join(str(v) for v in det["box"])
             )
+            if "rle" not in det:
+                unmeasured({**det, "source": "detection"}, slug, "mask",
+                           "detected instance has no segmentation mask")
+                continue
             if slug in known:
                 continue
             destination = run / "refinements" / f"{slug}.json"
@@ -1396,6 +1423,8 @@ def _ingest_refinements(
                         + ".json"
                     )
                 )
+                if det.get("mask_path"):
+                    source = run / det["mask_path"]
                 destination.write_text(
                     source.read_text()
                     if source.exists()
@@ -1413,6 +1442,11 @@ def _ingest_refinements(
                     "box": list(det["box"]),
                     "sam_score": det.get("sam_score"),
                     "source": "detection",
+                    "frame_id": frame.frame_id,
+                    "refine_slug": slug,
+                    "source_image_sha256": det.get("source_image_sha256"),
+                    "mask_sha256": det.get("mask_sha256"),
+                    "semantic_verification": det.get("semantic_verification"),
                 }
             )
             known.add(slug)
@@ -1455,7 +1489,9 @@ def _ingest_refinements(
     # is written back so display, index and measurement all agree.
     decoded_items: list[tuple[dict, str, np.ndarray]] = []
     for item in json.loads(log_path.read_text()):
-        slug = (
+        if item.get("frame_id", item.get("frame", "frame_0001")) != frame.frame_id:
+            continue
+        slug = item.get("refine_slug") or (
             item["label"].replace(" ", "_")
             + "_"
             + "_".join(str(v) for v in item["box"])
@@ -1464,9 +1500,11 @@ def _ingest_refinements(
             mask = _refine_mask(run, slug, height, width, frame.frame_id, use_derived=False)
         except ValueError as error:
             print(f"  [refinement] {slug}: {error}")
-            if unresolved is not None: unresolved.append({"phrase":item["label"], "refine_slug":slug, "reason":str(error)})
+            unmeasured(item, slug, "mask", str(error))
             continue
         if mask is None or mask.sum() < MIN_MASK_PIXELS:
+            unmeasured(item, slug, "mask", "missing segmentation mask" if mask is None else
+                       f"canonical mask has {int(mask.sum())} pixels; measurement requires {MIN_MASK_PIXELS}")
             continue
         decoded_items.append((item, slug, mask))
     decoded_items.sort(key=lambda t: int(t[2].sum()))
@@ -1512,6 +1550,8 @@ def _ingest_refinements(
                 mask_j &= ~mask_i
     for item, slug, mask in decoded_items:
         if mask.sum() < MIN_MASK_PIXELS:
+            unmeasured(item, slug, "mask_overlap",
+                       f"{int(mask.sum())} mask pixels remain after sibling overlap removal; measurement requires {MIN_MASK_PIXELS}")
             continue
         duplicate = False
         for seen in existing_fence_masks:
@@ -1529,18 +1569,25 @@ def _ingest_refinements(
         if split is not None:
             mask = _hull_fill(split)
         selected = mask & finite
-        depth_map = points3d[..., 2]
+        pose = np.asarray(frame.camera_to_world, dtype=float)
+        depth_map = (points3d - pose[:3, 3]) @ pose[:3, 2]
         if selected.sum() < MIN_MASK_PIXELS:
+            unmeasured(item, slug, "geometry_points",
+                       f"mask has {int(selected.sum())} valid geometry points; measurement requires {MIN_MASK_PIXELS}")
             continue
         near = np.percentile(depth_map[selected], 10)
         selected &= depth_map <= near + max(0.25, 0.12 * near)
         cloud = _clean(transform.apply(points3d[selected]))
         if cloud is None:
+            unmeasured(item, slug, "geometry_points",
+                       f"depth and point cleaning leave fewer than {MIN_CLOUD_POINTS} usable points")
             continue
         hull = MultiPoint([(x, y) for x, y in cloud[:, :2]]).convex_hull
         # a thin section seen edge-on legitimately has a tiny footprint;
         # the point-count gates already killed the noise cases
         if not isinstance(hull, Polygon) or hull.area < 0.004:
+            unmeasured(item, slug, "footprint",
+                       "projected footprint is degenerate or below the 0.004 m² measurement gate; no metric geometry accepted")
             continue
         top = float(np.quantile(cloud[:, 2], 0.95))
         ys, xs = np.nonzero(mask)
@@ -2627,15 +2674,16 @@ def main(argv: list[str] | None = None) -> int:
     print(f"VLM listed {len(phrases)} objects: {', '.join(phrases)}")
 
     entries: list[dict] = []
+    unresolved: list[dict] = []
     cleaned_masks: dict[tuple[str, str], dict[int, np.ndarray]] = {}
-    first_frame_moge = None
+    moge_by_frame = {}
     for frame in frames:
         points3d = np.load(frame.pts3d_path)
         valid = np.load(frame.valid_mask_path).astype(bool)
         finite = valid & np.isfinite(points3d).all(axis=2) & (np.abs(points3d).sum(axis=2) > 1e-6)
         height, width = valid.shape
         moge_maps = _moge3_maps(run, frame, live=args.live)
-        if frame == frames[0]: first_frame_moge = moge_maps
+        moge_by_frame[frame.frame_id] = moge_maps
         for phrase in phrases:
             response = _segment(run, frame, phrase, live=args.live)
             if response is None:
@@ -2653,11 +2701,16 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 groups = [(i, [i]) for i in range(len(decoded))]
             for index, members in groups:
+                evidence = {"frame": frame.frame_id, "source": "text-sam", "phrase": phrase,
+                            "instance": index, "merged_instances": members,
+                            "mask_path": f"inventory/sam/{frame.frame_id}__{re.sub(r'[^a-z0-9]+', '_', phrase).strip('_')}.json"}
                 mask = decoded[index]
                 for member in members:
                     if member != index:
                         mask = mask | decoded[member]
                 if int(mask.sum()) < MIN_MASK_PIXELS:
+                    _record_unmeasured(unresolved, **evidence, stage="mask",
+                                       reason=f"canonical mask has {int(mask.sum())} pixels; measurement requires {MIN_MASK_PIXELS}")
                     continue
                 # MoGe-3 normal split: pixels seen THROUGH a clear panel
                 # carry the background's normals; keep the panel's dominant
@@ -2671,6 +2724,7 @@ def main(argv: list[str] | None = None) -> int:
                     split = _normal_split(mask, *moge_maps)
                 if split is not None:
                     mask = split
+                    evidence["merged_instances"] = [index]
                     # the cleaned mask is the frame skeleton; the panel FACE
                     # is the quad the frame encloses. Display = convex hull
                     # of the skeleton's significant components, so clicking
@@ -2700,9 +2754,13 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 cloud = _clean(transform.apply(points3d[selected]))
                 if cloud is None:
+                    _record_unmeasured(unresolved, **evidence, stage="geometry_points",
+                                       reason=f"depth and point cleaning leave fewer than {MIN_CLOUD_POINTS} usable points")
                     continue
                 hull = MultiPoint([(x, y) for x, y in cloud[:, :2]]).convex_hull
                 if not isinstance(hull, Polygon) or hull.area < 0.01:
+                    _record_unmeasured(unresolved, **evidence, stage="footprint",
+                                       reason="projected footprint is degenerate or below the 0.01 m² measurement gate; no metric geometry accepted")
                     continue
                 top = float(np.quantile(cloud[:, 2], 0.95))
                 orientation, tilt, _ = _spatial_state(cloud, max(top, 0.0))
@@ -2775,10 +2833,11 @@ def main(argv: list[str] | None = None) -> int:
         response["rle"] = rles
         cache.write_text(json.dumps(response) + "\n")
 
-    unresolved = _reconcile_enumeration(
+    unresolved.extend(_reconcile_enumeration(
         run, frames[0], entries, phrases, live=args.live
-    )
-    _ingest_refinements(run, frames[0], transform, first_frame_moge, entries, unresolved)
+    ))
+    for frame in frames:
+        _ingest_refinements(run, frame, transform, moge_by_frame[frame.frame_id], entries, unresolved)
     # the guarantee, settled AFTER measurement: every enumerated phrase
     # either has a measured instance or an explicit unresolved record
     covered_after = {e["label"] for e in entries}

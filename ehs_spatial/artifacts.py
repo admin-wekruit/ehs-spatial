@@ -115,7 +115,7 @@ class ArtifactStore:
         if not self.root.is_dir():
             return summaries
         for run_dir in self.root.iterdir():
-            if not run_dir.is_dir():
+            if run_dir.name.startswith('.') or not run_dir.is_dir():
                 continue
             try:
                 paths = self.paths(run_dir.name)

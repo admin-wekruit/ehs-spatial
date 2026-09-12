@@ -125,16 +125,17 @@ def mask_index_png(rid, objs, frame_id='frame_0001'):
     return 'data:image/png;base64,'+base64.b64encode(buffer.getvalue()).decode(), width, height, visible, issues, masks
 
 
-def photo_fragment(rid, objs):
+def photo_fragment(rid, objs, initial_frame=None):
     frames = sorted((Path('runs')/rid/'geometry'/'frames').glob('frame_*/canonical.png'))
     if not frames: return '<p class="hint">无（无可点选实体或缺少几何帧）</p>'
+    initial_frame = initial_frame or frames[0].parent.name
     options, panels = [], []
     for number, canonical in enumerate(frames, 1):
         frame_id = canonical.parent.name
         index_uri, width, height, visible, issues, masks = mask_index_png(rid, objs, frame_id)
-        options.append(f'<option value="{frame_id}">机位 {number} · {frame_id}</option>')
+        options.append(f'<option value="{frame_id}"'+(' selected' if frame_id==initial_frame else '')+f'>机位 {number} · {frame_id}</option>')
         attrs = html.escape(json.dumps({'clickable_inv': visible, 'mask_inv': list(masks), 'issues': issues}), quote=True)
-        panels.append(f'<div class="iphoto" data-frame="{frame_id}" data-mw="{width}" data-mh="{height}" data-photo="{attrs}"'+(' hidden' if number>1 else '')+'>'
+        panels.append(f'<div class="iphoto" data-frame="{frame_id}" data-mw="{width}" data-mh="{height}" data-photo="{attrs}"'+(' hidden' if frame_id!=initial_frame else '')+'>'
                       f'<canvas style="width:100%;display:block;border:1px solid var(--line);border-radius:4px;cursor:crosshair"></canvas>'
                       f'<img class="ipbase" src="data:image/png;base64,{base64.b64encode(canonical.read_bytes()).decode()}" hidden>'
                       f'<img class="ipidx" src="{index_uri}" hidden>'+''.join(f'<img class="ipmask" data-mask-inv="{inv}" src="{mask_uri}" hidden>' for inv, mask_uri in masks.items())+'</div>')
@@ -256,28 +257,17 @@ def cell_rect_html(inv):
     return (f'<div class="legend"><b>cell 矩形约束</b> · Manhattan 角度 <span class="mono">{cr.get("theta_deg")}°</span> · {size_txt}'
             f'<div class="tblwrap" style="margin-top:6px"><table><tr><th>边</th><th>偏移</th><th>支撑长度</th><th>来源</th></tr>{rows}</table></div>{nb_html}</div>')
 
-def _chat_text(v):
-    if isinstance(v, dict): return v.get('content') or v.get('text') or ''
-    return '' if v is None else str(v)
+_CHAT_SECTION = '<h4 data-section="chat">Agent 对话</h4><p class="hint">对话记录仅在授权工作区查看。</p>'
 
-def chat_html(run):
-    cp = run / 'chat.jsonl'
-    rows = ''
-    for line in (cp.read_text(encoding='utf-8').splitlines() if cp.exists() else []):
-        try: e = json.loads(line)
-        except Exception: continue
-        kind = e.get('type')
-        if kind not in ('chat_turn', 'agent_turn'): continue
-        t = esc(e.get('ts') or e.get('created_at') or e.get('time') or '—')
-        tag = f'<span class="pill insuff">{esc(e.get("intent"))}</span> ' if kind == 'agent_turn' else '<span class="pill insuff">ask</span> '
-        chg = ' <span class="pill warn">已改动 run</span>' if e.get('changed') else ''
-        q = _chat_text(e.get('question') or e.get('user')); a_ = e.get('answer') or e.get('assistant')
-        facts = (a_.get('fact_ids') if isinstance(a_, dict) else None) or e.get('fact_ids') or []
-        rows += (f'<div class="policy"><div><b>用户</b> {tag}<span class="mono" style="color:var(--muted);font-size:12px">{t}</span>{chg}</div>'
-                 f'<div style="white-space:pre-wrap">{esc(q)}</div>'
-                 f'<div class="reason"><b>Agent</b><div style="white-space:pre-wrap">{esc(_chat_text(a_))}</div>'
-                 + (f'<div class="mono raw">facts: {esc(", ".join(map(str, facts)))}</div>' if facts else '') + '</div></div>')
-    return '<h4 data-section="chat">Agent 对话记录（本 run 上的问答 / 纠错 / 阈值调整，附时间）</h4>' + (rows or '<p class="hint">无对话记录</p>')
+
+def strip_report_chat(page: str) -> str:
+    """Remove saved conversation text from legacy HTML without rewriting its source."""
+    # The report owns this serialization: chat is followed by review/appendix.
+    # A truncated report without that boundary must not retain private text.
+    return re.sub(
+        r'''<h4\b[^>]*\bdata-section\s*=\s*(["'])chat\1[^>]*>.*?(?=<h4\b[^>]*\bdata-section\s*=\s*["'](?:review|appendix)["']|</details\s*>|\Z)''',
+        _CHAT_SECTION, page, flags=re.S | re.I,
+    )
 
 
 def build_case(rid):
@@ -297,7 +287,10 @@ def build_case(rid):
             f'<div><b>分析版本</b> <span class="mono">{esc(inv.get("analysis_version") or "—")}</span> · <b>创建时间</b> <span class="mono">{esc(man.get("created_at") or "—")}</span></div>'
             f'<div class="hint">四联动使用当前库存测量；判定明细沿用已保存的分析结果，重建视图不会重新评定规则。</div></div>')
     # Photo and hit map use the exact same canonical pixels for each evidence frame.
-    photo = photo_fragment(rid, objs)
+    surface_path = run/'surface'/'surface.json'
+    surface = json.loads(surface_path.read_text()) if surface_path.exists() else None
+    photo = photo_fragment(rid, objs, surface['source_frames'][0] if surface else None)
+    viewer_title = '交互 3D（内部模型 / 测量点云）' if surface else '交互 3D（照片色 · 按实例）'
     # 8. 实体测量 + 尺度来源
     ents={}
     for e in s.get('entities',[]): ents.setdefault(e['label'],[]).append(e.get('height_m'))
@@ -353,15 +346,11 @@ def build_case(rid):
     if det_path.exists():
         env=json.loads(det_path.read_text())
         CAT_META={'A':('感知防护 SENSING/AOPD','#39c5cf'),'B':('控制防护 CONTROL','#f25c8a'),'C':('防护罩/围护 GUARDS','#4ad07a'),'D':('阻挡与引导 IMPEDING','#e8b93c'),'E':('信息标识 INFO','#c9a0ff'),'F':('物料/载具 PAYLOAD','#f0a35e')}
-        ov=run/'detection'/'overlay.png'
-        from PIL import Image as PImage
-        import io as io_mod
         ov_fig=''
-        if ov.exists():
-            with PImage.open(ov) as im_:
-                im_=im_.convert('RGB'); im_.thumbnail((1150,1150))
-                b=io_mod.BytesIO(); im_.save(b,'JPEG',quality=82)
-            ov_fig='data:image/jpeg;base64,'+base64.b64encode(b.getvalue()).decode()
+        for frame in env.get('frames') or [{'frame_id':'frame_0001','overlay_path':'detection/overlay.png'}]:
+            ov=run/frame['overlay_path']
+            if ov.exists():
+                ov_fig+=f'<figure><img src="{uri(ov,maxw=1150,q=82)}" style="max-width:100%"><figcaption>{esc(frame["frame_id"])} · 编号=下方图例</figcaption></figure>'
         groups={}
         for d in env.get('detections',[]):
             if 'rle' not in d: continue
@@ -370,17 +359,17 @@ def build_case(rid):
         for cat in 'ABCDEF':
             if cat not in groups: continue
             name,color=CAT_META[cat]
-            rows=' '.join(f'<span style="display:inline-block;margin:2px 10px 2px 0;font-size:12.5px"><b style="color:{color}">#{d["number"]}</b> {d["zh"]} <span style="color:var(--muted)">· SAM {d["sam_score"]}{(" · "+d["iso"]) if d.get("iso") else ""}</span></span>' for d in groups[cat])
+            rows=' '.join(f'<span style="display:inline-block;margin:2px 10px 2px 0;font-size:12.5px"><b style="color:{color}">#{d["number"]}</b> {esc(d.get("frame_id","frame_0001"))} {d["zh"]} <span style="color:var(--muted)">· SAM {d["sam_score"]}{(" · "+d["iso"]) if d.get("iso") else ""}</span></span>' for d in groups[cat])
             legend_html+=f'<div style="margin:4px 0"><span style="display:inline-block;width:10px;height:10px;background:{color};border-radius:2px;margin-right:6px"></span><b style="font-size:12.5px">{name}</b><div style="margin-left:16px">{rows}</div></div>'
         n_found=sum(len(v) for v in groups.values())
         missing=env.get('missing',[])
-        miss_html=('<div style="margin:6px 0;font-size:12.5px;color:var(--fail)"><b>未见/需现场核实：</b>'+ '、'.join(m['zh'] for m in missing)+'</div>') if missing else '<div style="margin:6px 0;font-size:12.5px;color:var(--pass)"><b>清单全部检出</b>（缺失清单为空）</div>'
-        rej=env.get('rejected') or []
-        rej_html=('<div style="margin:6px 0;font-size:12.5px"><b style="color:var(--warn)">拒绝项（VLM 出框但裁剪自检未通过，不计入检出）：</b><ul style="margin:4px 0 0 18px;padding:0">'
+        miss_html=('<div style="margin:6px 0;font-size:12.5px;color:var(--fail)"><b>未见/需现场核实：</b>'+ '、'.join(f'{m.get("frame_id","frame_0001")} {m["zh"]}' for m in missing)+'</div>') if missing else '<div style="margin:6px 0;font-size:12.5px;color:var(--pass)"><b>缺失清单为空</b>（不代表召回率或功能验证）</div>'
+        rej=(env.get('rejected') or []) + [{**d, 'reason':d['sam_error']} for d in env.get('detections',[]) if d.get('sam_error')]
+        rej_html=('<div style="margin:6px 0;font-size:12.5px"><b style="color:var(--warn)">保留的检测/分割失败项：</b><ul style="margin:4px 0 0 18px;padding:0">'
                   + ''.join(f'<li><b>{esc(r.get("zh") or TAX_ZH.get(r.get("item_id"), r.get("item_id")))}</b> <span class="mono" style="color:var(--muted)">{esc(r.get("item_id"))}</span> — {esc(r.get("reason"))}</li>' for r in rej)
                   + '</ul></div>') if rej else '<div style="margin:6px 0;font-size:12.5px;color:var(--muted)"><b>拒绝项：</b>无</div>'
-        det_html=(f'<h4 data-section="detections">装置检测清单（taxonomy 检测层 · VLM 出框+裁剪自检 → SAM box-prompt）</h4>'
-                  + (f'<figure><img src="{ov_fig}" style="max-width:100%"><figcaption>{n_found} 项检出 · 编号=下方图例</figcaption></figure>' if ov_fig else '')
+        det_html=(f'<h4 data-section="detections">装置检测清单（逐照片出框 → 原图 SAM；分割成功不代表语义或安全功能已验证）</h4>'
+                  + ov_fig
                   + f'{legend_html}{miss_html}{rej_html}')
     det_html = det_html or _empty('detections','装置检测清单','无（detection/detections.json 缺失）')
     # 9. 回投验证
@@ -406,11 +395,12 @@ def build_case(rid):
         items=json.loads(rf.read_text()); refine_html='<h4 data-section="refinements">人工框选补测（--apply 回灌判定 · 工作台"补测"tab 可自助）</h4><div class="figs">'
         seen=set()
         for it in items:
-            slug=f"{it['label'].replace(' ','_')}_{'_'.join(str(b) for b in it['box'])}"
+            slug=it.get('refine_slug') or f"{it['label'].replace(' ','_')}_{'_'.join(str(b) for b in it['box'])}"
             if slug in seen: continue
             seen.add(slug)
-            if 'height_m' not in it or not (run/'refinements'/(slug+'.png')).exists(): continue
-            refine_html+=f'<figure><img src="{uri(run/"refinements"/(slug+".png"))}"><figcaption><b>{LBL.get(it["label"],it["label"])}</b> · SAM {it["sam_score"]} · 高 {it["height_m"]} m · {it["extent_m"]} m · 距相机 {it["camera_dist_m"]} m</figcaption></figure>'
+            if not (run/'refinements'/(slug+'.png')).exists(): continue
+            geometry=(f'高 {it["height_m"]} m · {it["extent_m"]} m · 距相机 {it["camera_dist_m"]} m' if 'height_m' in it else f'二维证据；三维不可测：{esc(it.get("geometry_reason", "未测量"))}')
+            refine_html+=f'<figure><img src="{uri(run/"refinements"/(slug+".png"))}"><figcaption><b>{esc(LBL.get(it["label"],it["label"]))}</b> · {esc(it.get("frame_id", "frame_0001"))} · SAM {it["sam_score"]} · {geometry}</figcaption></figure>'
         refine_html+='</div>'
     refine_html = refine_html or _empty('refinements','人工框选补测','无补测记录')
     # 13. Review 记录
@@ -438,7 +428,7 @@ def build_case(rid):
             f'<div class="lbar"><button class="lall">全选</button><button class="lclear">全不选</button><span class="lcount">已选 0 个</span><span class="lnames"></span></div>'
             f'<div class="linked" data-section-group="linked">'
             f'<div class="lcell" data-section="photo"><h4>原图点选（按机位）</h4>{photo}</div>'
-            f'<div class="lcell" data-section="viewer"><h4>交互 3D（照片色 · 按实例）</h4>{viewer}</div>'
+            f'<div class="lcell" data-section="viewer"><h4>{viewer_title}</h4>{viewer}</div>'
             f'<div class="lcell" data-subsection="cad"><h4>CAD 平面图（全实例 · 悬停看名称）</h4>{cad_fragment(run)}</div>'
             f'<div class="lcell" data-section="plan"><h4>交互平面（点选出距离矩阵）</h4>{plan or "<p class=hint>无平面对象</p>"}</div>'
             f'</div>{cell_rect_html(inv)}')
@@ -450,7 +440,7 @@ def build_case(rid):
     {phr_html}{det_html}
     <h4 data-section="measurements">实体测量（物体 / 数量 / 高 / 尺寸 / 距相机 / 足迹方法）</h4>{scale_html}
     <div class="tblwrap"><table><tr><th>物体</th><th>数量</th><th>高度</th></tr>{ent_rows}</table></div>{obj_tbl}
-    {reproj_html}{figs}{refine_html}{chat_html(run)}{rev_html}{appendix}
+    {reproj_html}{figs}{refine_html}{_CHAT_SECTION}{rev_html}{appendix}
     <p class="hint mono">全量 3D：runs/{rid}/viewer.html · 自助补测：工作台 补测 tab（或 scripts/refine_region.py --apply）</p>
       </div></details>''')
 
@@ -497,7 +487,7 @@ document.querySelectorAll('.linked').forEach(function(L){
   bus.on(function(sel){L.querySelectorAll('.icad polygon').forEach(function(pg){pg.classList.toggle('on',sel.indexOf(+pg.getAttribute('data-inv'))>=0);});});
   // Each photo and mask use its own canonical grid and inventory IDs.
   var photos=Array.from(L.querySelectorAll('.iphoto')),framePicker=L.querySelector('.photo-frame');
-  var activePhoto=photos[0],previousSelection=new Set();
+  var activePhoto=photos.find(function(p){return !p.hidden;})||photos[0],previousSelection=new Set();
   function pixelInv(data,p){return data[p*4]+(data[p*4+1]<<8)+(data[p*4+2]<<16)-1;}
   function photoDraw(){
     if(!activePhoto)return;
@@ -596,11 +586,15 @@ document.querySelectorAll('.linked').forEach(function(L){
   if(frame){
     var expectedOrigin=window.origin||window.location.origin,targetOrigin=expectedOrigin==='null'?'*':expectedOrigin;
     function sendSelection(){if(frame.contentWindow)frame.contentWindow.postMessage({type:'panoptes:select',inv:Array.from(bus.sel),exclusive:true},targetOrigin);}
+    function sendFrame(){if(framePicker&&frame.contentWindow)frame.contentWindow.postMessage({type:'panoptes:frame',frame_id:framePicker.value},targetOrigin);}
+    function sendViewState(){sendSelection();sendFrame();}
     bus.on(function(sel,src){if(src!=='viewer')sendSelection();});
-    frame.addEventListener('load',sendSelection);
+    if(framePicker)framePicker.addEventListener('change',sendFrame);
+    frame.addEventListener('load',sendViewState);
     addEventListener('message',function(e){var m=e.data;
       if(e.source!==frame.contentWindow||e.origin!==expectedOrigin||!m)return;
-      if(m.type==='panoptes:ready'){sendSelection();return;}
+      if(m.type==='panoptes:ready'){sendViewState();return;}
+      if(m.type==='panoptes:frame'){showPhoto(photos.find(function(p){return p.dataset.frame===m.frame_id;}));return;}
       if(m.type==='panoptes:selected'&&Array.isArray(m.inv))bus.set(m.inv,{source:'viewer'});
     });
   }

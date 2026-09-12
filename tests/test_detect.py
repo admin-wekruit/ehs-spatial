@@ -1,7 +1,9 @@
-"""Detection-layer tests: taxonomy walk, box validation, crop-check gate,
-retry path, SAM wiring — all with injected fakes, zero live calls."""
+"""Per-frame detection identities, bounded calls, and retained failures."""
 
 import json
+import base64
+import hashlib
+import io
 from pathlib import Path
 
 import numpy as np
@@ -26,30 +28,8 @@ class FakeAdapter:
         return op
 
     def _parse(self, response, model, op):
-        if op == "detect.sweep":
-            return self.sweep, None
-        if op == "detect.more":
-            from ehs_spatial.detect import ExtraSweep
-
-            return ExtraSweep(boxes=[]), None
-        if op == "detect.split":
-            from ehs_spatial.detect import SectionSplit
-
-            return SectionSplit(boxes=[]), None
-        from ehs_spatial.agent import LocatedObject
-
-        return (
-            LocatedObject(
-                found=False, label_en="", box_2d=(0, 0, 1, 1), rationale="none"
-            ),
-            None,
-        )
-
-
-class Check:
-    def __init__(self, matches, reason=""):
-        self.matches = matches
-        self.reason = reason
+        assert op == "detect.sweep", "unexpected extra semantic call"
+        return self.sweep, None
 
 
 @pytest.fixture
@@ -87,7 +67,6 @@ def test_detect_walks_taxonomy_and_masks(run_dir):
         runs_root=run_dir,
         adapter=FakeAdapter(sweep),
         subscriber=_subscriber,
-        verifier=lambda crop, text: Check(True),
     )
     found = [d for d in envelope["detections"] if "rle" in d]
     assert {d["item_id"] for d in found} == {"a1", "d1"}
@@ -105,22 +84,19 @@ def test_detect_walks_taxonomy_and_masks(run_dir):
     assert adapter.calls == []
 
 
-def test_crop_check_rejects_bad_boxes(run_dir):
-    sweep = _sweep(
-        ("b1", (100, 50, 600, 120)),
-        not_visible=[t.item_id for t in TAXONOMY if t.item_id != "b1"],
-    )
+def test_failed_sam_keeps_the_localized_instance(run_dir):
     envelope = detect_devices(
-        "r1",
-        runs_root=run_dir,
-        adapter=FakeAdapter(sweep),
-        subscriber=_subscriber,
-        verifier=lambda crop, text: Check(False, "wrong object"),
+        "r1", runs_root=run_dir,
+        adapter=FakeAdapter(_sweep(("b1", (100, 50, 600, 120)))),
+        subscriber=lambda *a, **kw: {"rle": [], "scores": []},
     )
-    assert envelope["detections"] == [] or all(
-        "rle" not in d for d in envelope["detections"]
-    )
-    assert envelope["rejected"][0]["item_id"] == "b1"
+    detection = envelope["detections"][0]
+    assert detection["label"] == "emergency stop button"
+    assert detection["mask_status"] == "unavailable" and "no mask" in detection["sam_error"]
+    assert detection["frame_id"] == "frame_0001"
+    assert detection["semantic_verification"] == "single_sweep"
+    assert detection["source_image_sha256"]
+    assert envelope["last_execution"] == {"sweep_calls": 1, "sam_calls": 1}
 
 
 def test_non_normalized_box_rejected(run_dir):
@@ -133,7 +109,6 @@ def test_non_normalized_box_rejected(run_dir):
         runs_root=run_dir,
         adapter=FakeAdapter(sweep),
         subscriber=_subscriber,
-        verifier=lambda crop, text: Check(True),
     )
     assert envelope["rejected"][0]["reason"] == "bad box"
 
@@ -148,10 +123,91 @@ def test_overlay_written(run_dir):
         runs_root=run_dir,
         adapter=FakeAdapter(sweep),
         subscriber=_subscriber,
-        verifier=lambda crop, text: Check(True),
     )
-    assert (Path(run_dir) / "r1" / "detection" / "overlay.png").exists()
+    assert (Path(run_dir) / "r1" / "detection" / "overlay_frame_0001.png").exists()
     envelope = json.loads(
         (Path(run_dir) / "r1" / "detection" / "detections.json").read_text()
     )
     assert envelope["detections"][0]["number"] == 1
+
+
+def test_legacy_first_frame_cache_does_not_hide_new_photo_and_retries_cost_zero(run_dir):
+    from ehs_spatial.object_evidence import build_object_evidence, load_candidate_mask
+
+    run = run_dir / "r1"
+    directory = run / "detection"
+    directory.mkdir()
+    mask1 = np.zeros((100, 200), bool)
+    mask1[10:20, 10:20] = True
+    old = {"run_id": "r1", "image_size": [200, 100], "detections": [
+        {"item_id": "b1", "label": "emergency stop button", "box": [10, 10, 20, 20],
+         "rle": encode_coco_rle(mask1), "sam_score": .9, "number": 1,
+         "category": "B", "zh": "急停", "iso": ""}], "missing": [], "rejected": []}
+    (directory / "detections.json").write_text(json.dumps(old))
+    second = run / "input/image_02.png"
+    Image.new("RGB", (120, 240), (200, 0, 0)).save(second)
+    adapter = FakeAdapter(_sweep(("b1", (100, 100, 150, 150))))
+    calls = []
+    def subscriber(endpoint, *, arguments):
+        payload = base64.b64decode(arguments["image_url"].split(",", 1)[1])
+        assert payload == second.read_bytes()
+        with Image.open(io.BytesIO(payload)) as image:
+            width, height = image.size
+        box = arguments["box_prompts"][0]
+        mask = np.zeros((height, width), bool)
+        mask[box["y_min"]:box["y_max"], box["x_min"]:box["x_max"]] = True
+        calls.append((width, height))
+        return {"rle": [encode_coco_rle(mask)], "scores": [.91]}
+    result = detect_devices("r1", runs_root=run_dir, adapter=adapter, subscriber=subscriber)
+    assert adapter.calls == ["detect.sweep"] and calls == [(120, 240)]
+    assert len(result["frames"]) == 2 and len(result["detections"]) == 2
+    first, found = result["detections"]
+    assert first["source_binding"] == "legacy_first_frame_unverified" and first["source_image_sha256"] is None
+    assert found["frame_id"] == "frame_0002" and found["box"] == [12, 24, 18, 36]
+    assert found["source_image_sha256"] == hashlib.sha256(second.read_bytes()).hexdigest()
+    assert result["last_execution"] == {"sweep_calls": 1, "sam_calls": 1}
+    assert result["recall"] is None
+    for frame in result["frames"]:
+        with Image.open(run / frame["overlay_path"]) as image:
+            assert list(image.size) == frame["image_size"]
+    registry = build_object_evidence(run)
+    assert len(registry["candidates"]) == 2
+    native = next(c for c in registry["candidates"] if c["frame_id"] == "frame_0002")
+    assert load_candidate_mask(run, native).shape == (240, 120)
+    from types import SimpleNamespace
+    from scripts.scene_inventory import _ingest_refinements
+    (run / "inventory").mkdir()
+    geometry = run / "geometry/frames/frame_0002"
+    geometry.mkdir(parents=True)
+    y, x = np.indices((240, 120))
+    np.save(geometry / "pts3d.npy", np.stack([1+x*.01, 2+y*.01, np.ones_like(x)*2], -1))
+    np.save(geometry / "valid_mask.npy", np.ones((240, 120), bool))
+    frame = SimpleNamespace(frame_id="frame_0002", pts3d_path=geometry/"pts3d.npy",
+                            valid_mask_path=geometry/"valid_mask.npy", camera_to_world=np.eye(4))
+    entries, unresolved = [], []
+    _ingest_refinements(run, frame, SimpleNamespace(apply=lambda p: p), None, entries, unresolved)
+    row = json.loads((run / "refinements.json").read_text())[0]
+    assert row["frame_id"] == "frame_0002" and row["source_image_sha256"] == found["source_image_sha256"]
+    assert hashlib.sha256((run / "refinements" / f'{row["refine_slug"]}.json').read_bytes()).hexdigest() == row["mask_sha256"]
+    rebuilt = build_object_evidence(run)
+    native = next(c for c in rebuilt["candidates"] if c["frame_id"] == "frame_0002")
+    assert native["mask"]["status"] == "available"
+    again = detect_devices("r1", runs_root=run_dir, adapter=adapter, subscriber=subscriber)
+    assert again["last_execution"] == {"sweep_calls": 0, "sam_calls": 0}
+    assert len(adapter.calls) == 1 and len(calls) == 1
+    Image.new("RGB", (120, 240), (0, 200, 0)).save(second)
+    changed = detect_devices("r1", runs_root=run_dir, adapter=adapter, subscriber=subscriber)
+    assert changed["last_execution"] == {"sweep_calls": 1, "sam_calls": 1}
+    assert changed["detections"][1]["mask_path"] != found["mask_path"]
+    assert len(adapter.calls) == 2 and len(calls) == 2
+
+
+def test_cold_run_spends_one_sweep_per_frame(run_dir):
+    run = run_dir / "r1"
+    Image.new("RGB", (60, 80)).save(run / "input/image_02.png")
+    adapter = FakeAdapter(_sweep())
+    result = detect_devices("r1", runs_root=run_dir, adapter=adapter,
+                            subscriber=lambda *a, **kw: pytest.fail("no detected boxes"))
+    assert adapter.calls == ["detect.sweep", "detect.sweep"]
+    assert result["last_execution"] == {"sweep_calls": 2, "sam_calls": 0}
+    assert {m["frame_id"] for m in result["missing"]} == {"frame_0001", "frame_0002"}
