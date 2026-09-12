@@ -56,13 +56,27 @@ class PolicySpec(BaseModel):
     subject_labels: list[str] = Field(min_length=1)
     # Empty for self-referential predicates (MAX_HEIGHT, MAX_TILT).
     object_labels: list[str] = Field(default_factory=list)
-    threshold: float = Field(gt=0)
-    unit: Literal["m", "deg"] = "m"
+    threshold: float = Field(ge=0, allow_inf_nan=False)
+    unit: Literal["m", "m2", "deg"] = "m"
     severity: Severity = Severity.MAJOR
     rationale: str = ""
     # Set by the compiler when the prose carries a requirement this
     # vocabulary cannot express; such specs are never evaluated.
     unsupported_reason: str | None = None
+
+    @model_validator(mode="after")
+    def validate_predicate_units(self) -> Self:
+        expected = "m2" if self.predicate is Predicate.NOT_INSIDE else "deg" if self.predicate is Predicate.MAX_TILT else "m"
+        if self.unit != expected:
+            raise ValueError(f"{self.predicate.value} requires unit {expected}")
+        if self.predicate is Predicate.NOT_INSIDE:
+            if self.threshold != 0:
+                raise ValueError("not_inside requires a zero overlap-area threshold")
+        elif self.threshold <= 0:
+            raise ValueError("this predicate requires a positive threshold")
+        if any(not label.strip() for label in self.subject_labels + self.object_labels):
+            raise ValueError("policy labels cannot be blank")
+        return self
 
     def requires_labels(self) -> set[str]:
         return set(self.subject_labels) | set(self.object_labels)
@@ -125,6 +139,9 @@ class Entity3D(BaseModel):
     # of upper-band points beyond the base-band convex hull, metres.
     orientation_deg: float | None = Field(default=None, ge=0, lt=180)
     tilt_deg: float | None = Field(default=None, ge=0, le=90)
+    # PCA describes shape orientation. Only an explicitly evidenced physical
+    # axis may be used to evaluate an equipment-tilt requirement.
+    tilt_reference: Literal["physical_axis"] | None = None
     overhang_m: float | None = Field(default=None, ge=0)
 
 

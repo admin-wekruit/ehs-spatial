@@ -23,6 +23,15 @@ policy_compile = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(policy_compile)
 
 
+def test_compiler_cache_bound_to_content_schema_prompt_model_and_bindings(monkeypatch):
+    base = policy_compile._cache_path("first text", 1, ["pallet"])
+    assert base != policy_compile._cache_path("different text", 1, ["pallet"])
+    assert base != policy_compile._cache_path("first text", 1, ["cart"])
+    assert base != policy_compile._cache_path("first text", 2, ["pallet"])
+    monkeypatch.setattr(policy_compile, "COMPILER_MODEL", "changed-model")
+    assert base != policy_compile._cache_path("first text", 1, ["pallet"])
+
+
 def _square(x, y, size):
     return [(x, y), (x + size, y), (x + size, y + size), (x, y + size)]
 
@@ -51,7 +60,9 @@ def _write_fixture_tree(tmp_path):
         object_labels=["safety fence"],
         threshold=0.6,
     )
-    cache = tmp_path / "outputs" / "policies" / "compiled" / "p01.json"
+    from ehs_spatial.providers.sam3 import PROMPT_VOCABULARY
+    vocabulary = sorted(set(PROMPT_VOCABULARY) | {"pallet", "safety fence"})
+    cache = tmp_path / policy_compile._cache_path(spec.source_text, 1, vocabulary)
     cache.parent.mkdir(parents=True)
     cache.write_text(spec.model_dump_json(indent=2) + "\n")
     scene = SceneMap(

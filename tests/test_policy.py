@@ -22,6 +22,7 @@ def _entity(entity_id, label, footprint, frames=("f1", "f2"), height=1.0, tilt=N
         height_m=height,
         evidence_frame_ids=list(frames),
         tilt_deg=tilt,
+        tilt_reference="physical_axis" if tilt is not None else None,
     )
 
 
@@ -53,6 +54,44 @@ def _spec(**kwargs):
     )
     base.update(kwargs)
     return PolicySpec(**base)
+
+
+def test_predicate_unit_contract_and_zero_area_threshold():
+    import pytest
+    for fields in ({"predicate": "not_inside", "threshold": 0, "unit": "m"},
+                   {"predicate": "not_inside", "threshold": .01, "unit": "m2"},
+                   {"predicate": "max_tilt", "threshold": 15, "unit": "m"},
+                   {"threshold": float("inf")}, {"threshold": 0}):
+        with pytest.raises(ValueError):
+            _spec(**fields)
+    assert _spec(predicate="not_inside", threshold=0, unit="m2").threshold == 0
+
+
+def test_unmeasured_matching_entity_cannot_disappear_into_pass_and_tiny_entity_survives():
+    fence = _entity("fence", "safety fence", _square(0, 0, 2))
+    safe = _entity("safe", "pallet", _square(4, 0))
+    missing = _entity("missing", "pallet", [])
+    result = evaluate_policy(_spec(), _scene([fence, safe, missing]))
+    assert result.status.value == "INSUFFICIENT_EVIDENCE"
+    assert "missing" in result.warnings[-1]
+    tiny = _entity("tiny", "pallet", _square(2.01, .5, .001))
+    result = evaluate_policy(_spec(), _scene([fence, tiny]), error_budget_m=0)
+    assert result.status.value == "FAIL" and result.facts[0].subject_id == "tiny"
+
+
+def test_direct_entry_scale_qualification_and_explicit_uncertainty():
+    scene = _scene([_entity("fence", "safety fence", _square(0, 0, 2)), _entity("near", "pallet", _square(2.7, 0))])
+    assert evaluate_policy(_spec(), scene).status.value == "NEEDS_REVIEW"
+    assert evaluate_policy(_spec(), scene, error_budget_m=0.01).status.value == "PASS"
+    assert evaluate_policy(_spec(), scene.model_copy(update={"scale_source": "model_native"}), error_budget_m=0.01).status.value == "NEEDS_REVIEW"
+    assert evaluate_policy(_spec(), scene.model_copy(update={"scale_factor": None}), error_budget_m=0.01).status.value == "INSUFFICIENT_EVIDENCE"
+
+
+def test_pca_shape_orientation_cannot_certify_physical_tilt():
+    item = _entity("ladder", "ladder", _square(0, 0), tilt=20).model_copy(update={"tilt_reference": None})
+    spec = _spec(predicate="max_tilt", subject_labels=["ladder"], object_labels=[], threshold=15, unit="deg")
+    result = evaluate_policy(spec, _scene([item]))
+    assert result.status.value == "INSUFFICIENT_EVIDENCE" and "PCA" in result.warnings[0]
 
 
 def test_min_separation_fails_below_threshold_and_passes_above():
@@ -157,7 +196,8 @@ def test_not_inside_flags_overlap_only():
         predicate=Predicate.NOT_INSIDE,
         subject_labels=["person"],
         object_labels=["hazard zone"],
-        threshold=0.01,
+        threshold=0,
+        unit="m2",
     )
 
     result = evaluate_policy(spec, _scene([zone, inside, outside]))
@@ -253,6 +293,7 @@ def test_max_tilt_abstains_when_no_subject_has_a_tilt():
         subject_labels=["step ladder"],
         object_labels=[],
         threshold=15.0,
+        unit="deg",
     )
     untilted = _entity("l1", "step ladder", _square(0, 0))
     tilted = _entity("l2", "step ladder", _square(2, 0), tilt=22.0)
@@ -330,7 +371,8 @@ def test_not_inside_reports_zero_area_limit_not_the_placement_tolerance():
         predicate="not_inside",
         subject_labels=["pallet"],
         object_labels=["safety fence"],
-        threshold=0.01,
+        threshold=0,
+        unit="m2",
     )
     fence = _entity("fence", "safety fence", _square(0, 0, 2.0))
     inside = _entity("inside", "pallet", _square(0.5, 0.5))

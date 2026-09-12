@@ -1,0 +1,512 @@
+{
+  "jobId": "7c703c1b-0790-499d-b8e0-bd75d8e68a78",
+  "projectId": "a2b7c04d-0162-488b-b7db-37711a37ea62",
+  "sceneRevisionId": "96f60839-af84-48e1-8411-17627d5733e9",
+  "requestId": "48ffc45a-97e9-41e1-b986-b1e20518dc5b",
+  "status": "incomplete",
+  "downloadedAssets": [
+    {
+      "assetId": "a67cef2a-425a-4cae-8a16-9149cd82dba1",
+      "name": "blender-validation.json",
+      "sha256": "38d3484d8c77cbdaf1a737a2fd53788b72becd985a98baed20ab0f77c076cb68",
+      "bytes": 12772
+    },
+    {
+      "assetId": "15449756-3105-447f-8035-ceb0654f20e9",
+      "name": "manifest.json",
+      "sha256": "36076c1f4eeea8888c84c3e496f213138a994f6919116fef8f13431d7cbdfdf6",
+      "bytes": 15014
+    },
+    {
+      "assetId": "fe88e8d6-c864-4a27-9f04-f275c264556c",
+      "name": "scene.blend",
+      "sha256": "2228c3bed1138545fe6b4a6f6b4606fc5e4f39f157e8dfcdead180461cea5647",
+      "bytes": 35302988
+    },
+    {
+      "assetId": "d9df8c3b-673b-4450-ab54-0823d0d06190",
+      "name": "scene.glb",
+      "sha256": "db23d724db960b8874a9c3856b877007a37e5a13d0b300a9aa741b250f8a0879",
+      "bytes": 16573464
+    }
+  ],
+  "workerSeconds": 8.839828458003467,
+  "newModelCalls": 0,
+  "headUnchanged": true,
+  "validation": {
+    "glb": {
+      "bytes": 16573464,
+      "sha256": "db23d724db960b8874a9c3856b877007a37e5a13d0b300a9aa741b250f8a0879",
+      "status": "passed",
+      "objects": 48,
+      "sourceCameras": 3
+    },
+    "blender": {
+      "status": "passed",
+      "cameras": [
+        {
+          "meaning": "Numerical export/reopen consistency, not physical reconstruction accuracy",
+          "cameraId": "a21dd627-67b8-5158-b21e-1e30cc5e5976",
+          "toleranceBasis": "16 float32 ULPs at source-image magnitude; minimum .001 px",
+          "reopenTolerancePixels": 0.00390625,
+          "maxConversionErrorPixels": 0.001688776789478652,
+          "intrinsicConversionErrorPixels": 4.547473508864641e-13
+        },
+        {
+          "meaning": "Numerical export/reopen consistency, not physical reconstruction accuracy",
+          "cameraId": "67ad470b-5bd6-5771-a795-a97df35023d9",
+          "toleranceBasis": "16 float32 ULPs at source-image magnitude; minimum .001 px",
+          "reopenTolerancePixels": 0.00390625,
+          "maxConversionErrorPixels": 0.00036679481956980453,
+          "intrinsicConversionErrorPixels": 0.0
+        },
+        {
+          "meaning": "Numerical export/reopen consistency, not physical reconstruction accuracy",
+          "cameraId": "7cd116c7-66d6-521e-8e17-ede995d79950",
+          "toleranceBasis": "16 float32 ULPs at source-image magnitude; minimum .001 px",
+          "reopenTolerancePixels": 0.00390625,
+          "maxConversionErrorPixels": 0.0008642719517411024,
+          "intrinsicConversionErrorPixels": 4.547473508864641e-13
+        }
+      ],
+      "objects": [
+        {
+          "entityId": "ed46d9e5-8146-567b-9253-2a554046e144",
+          "vertices": 17077,
+          "materials": 1,
+          "triangles": 32841,
+          "representationId": "5e0cc949-ab9a-5f5b-bf49-013bd97d884a",
+          "maxLinearColorError": 2.9231538967167126e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "ad4a5029-1191-56a9-bc84-487811138837",
+          "vertices": 56012,
+          "materials": 1,
+          "triangles": 106721,
+          "representationId": "e8f1e969-db65-5a1d-bbca-feedde6287b8",
+          "maxLinearColorError": 2.9658357325601514e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "9805a4ae-4942-5b88-9080-cba8b88393c2",
+          "vertices": 33099,
+          "materials": 1,
+          "triangles": 60659,
+          "representationId": "4cdf7b8c-f382-51c1-a865-1bc861789f05",
+          "maxLinearColorError": 2.9658357325601514e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "37e1203b-fdd6-506e-bfd7-847438a65d3f",
+          "vertices": 31,
+          "materials": 1,
+          "triangles": 20,
+          "representationId": "8a0483cb-198b-5d30-8fbb-dc6632cc532c",
+          "maxLinearColorError": 2.736760040811248e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "49637bd6-d4aa-5608-b313-65b0aff301af",
+          "vertices": 3011,
+          "materials": 1,
+          "triangles": 5241,
+          "representationId": "bf1f3965-9b62-598a-947a-7f4b30aca1c2",
+          "maxLinearColorError": 2.736760040811248e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "7b9004a8-5314-524b-976a-bf645e6597f8",
+          "vertices": 18,
+          "materials": 1,
+          "triangles": 12,
+          "representationId": "72e3f21b-9f77-5db2-97fa-a3d619ef8ba2",
+          "maxLinearColorError": 1.7547052144628594e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "5fdd01a4-1fb5-5f45-8d3c-f721a0a00513",
+          "vertices": 206,
+          "materials": 1,
+          "triangles": 196,
+          "representationId": "d944b64a-7aa5-5086-bcc4-f7940e0acc95",
+          "maxLinearColorError": 2.433118162503689e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "c036e1c3-cfb8-53c5-a643-a939623435ef",
+          "vertices": 761,
+          "materials": 1,
+          "triangles": 807,
+          "representationId": "aee9c9b9-7dde-5c37-ab34-409c973d588f",
+          "maxLinearColorError": 2.9658357325601514e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "637852a5-51b5-53cc-8e27-01b34e1fcbf2",
+          "vertices": 43462,
+          "materials": 1,
+          "triangles": 84383,
+          "representationId": "6ffdb61a-bc41-5bf6-a0bc-64853230f101",
+          "maxLinearColorError": 2.736760040811248e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "90e47a0f-69df-5684-a130-55f671355511",
+          "vertices": 314,
+          "materials": 1,
+          "triangles": 552,
+          "representationId": "42d963ee-dae7-5a3d-9437-6b1abb683fec",
+          "maxLinearColorError": 2.9658357325601514e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "d22e72d1-ca73-5ea4-a5f3-68057d7af6dd",
+          "vertices": 5572,
+          "materials": 1,
+          "triangles": 10467,
+          "representationId": "c0d5631b-b2e3-512c-ad88-2ba79bad78b3",
+          "maxLinearColorError": 2.9231538967167126e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "1ec981e4-10f0-573d-a8ee-75c79aeaead4",
+          "vertices": 42229,
+          "materials": 1,
+          "triangles": 81935,
+          "representationId": "54536fbf-6587-59ef-b643-9a8deec969ad",
+          "maxLinearColorError": 2.736760040811248e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "33188399-aa51-5e81-9d46-8f22ff399b93",
+          "vertices": 602,
+          "materials": 1,
+          "triangles": 934,
+          "representationId": "7d86f8f6-09d7-53cf-b8a6-f852fd985e38",
+          "maxLinearColorError": 2.736760040811248e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "0f73b37a-d2e4-5819-8390-c959e0cfe29f",
+          "vertices": 1827,
+          "materials": 1,
+          "triangles": 3368,
+          "representationId": "7fb34b34-1ab4-5711-a183-c4ff30f1e5eb",
+          "maxLinearColorError": 2.736760040811248e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "f0e43dd1-735c-577a-a9db-67e24c93616e",
+          "vertices": 392,
+          "materials": 1,
+          "triangles": 688,
+          "representationId": "a781077e-ba82-5976-a52f-5f411d80cf1e",
+          "maxLinearColorError": 2.9658357325601514e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "d730b21f-c6b7-5607-abe6-9b2881e43677",
+          "vertices": 1801,
+          "materials": 1,
+          "triangles": 3239,
+          "representationId": "b7fce708-7112-5363-940c-c848e7f57b57",
+          "maxLinearColorError": 2.9658357325601514e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "33e5c934-cbae-5053-9b71-8c7bf63a072c",
+          "vertices": 182,
+          "materials": 1,
+          "triangles": 301,
+          "representationId": "1caef127-a3c6-5094-b9cd-96c865828f02",
+          "maxLinearColorError": 2.9658357325601514e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "9ae374a6-238b-5778-b188-e1863a695186",
+          "vertices": 5052,
+          "materials": 1,
+          "triangles": 9552,
+          "representationId": "c78ac8a2-a909-5d51-983d-0f9e92797cd1",
+          "maxLinearColorError": 2.9231538967167126e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "9d055e08-a5a8-546e-9f82-8ead2e5c8af3",
+          "vertices": 3085,
+          "materials": 1,
+          "triangles": 5415,
+          "representationId": "a08a76d8-5cfc-5f18-9aab-ddc58da3478f",
+          "maxLinearColorError": 2.736760040811248e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "a214c225-ba7a-5550-9af8-5bea16c2cfe4",
+          "vertices": 43,
+          "materials": 1,
+          "triangles": 60,
+          "representationId": "78ef544e-0c28-56fe-94d6-5fec7e7c50a9",
+          "maxLinearColorError": 2.9658357325601514e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "bdf7e629-d2c5-5191-b606-1061264e2fd8",
+          "vertices": 83,
+          "materials": 1,
+          "triangles": 122,
+          "representationId": "e54a793e-795f-5116-8a1f-8f61814ac40d",
+          "maxLinearColorError": 2.9658357325601514e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "94df2397-80a4-529c-9c41-85a746d4f420",
+          "vertices": 2566,
+          "materials": 1,
+          "triangles": 4711,
+          "representationId": "701635f7-b2fb-5710-8699-da85d71b4a0e",
+          "maxLinearColorError": 2.736760040811248e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "0ed857a2-3a29-534a-af01-243471fd0a2e",
+          "vertices": 378,
+          "materials": 1,
+          "triangles": 320,
+          "representationId": "630b96ed-24d8-52a3-8123-b897a3493c90",
+          "maxLinearColorError": 2.9658357325601514e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "f4bce8c0-2756-53f1-ad2b-4e67162415ca",
+          "vertices": 2481,
+          "materials": 1,
+          "triangles": 4581,
+          "representationId": "40192c53-3d67-582d-b071-0d42701185bf",
+          "maxLinearColorError": 2.736760040811248e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "7ed570b4-f194-5c53-b374-1cb85a1edb86",
+          "vertices": 366,
+          "materials": 1,
+          "triangles": 657,
+          "representationId": "d987035b-8305-5904-9b2a-e2517eb89e68",
+          "maxLinearColorError": 2.9658357325601514e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "9b77a5b8-8eb2-5235-ba09-35678a26f60d",
+          "vertices": 1998,
+          "materials": 1,
+          "triangles": 3791,
+          "representationId": "ca03b1f0-9c92-51c1-b84b-f5aa6faad902",
+          "maxLinearColorError": 2.9658357325601514e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "a6946301-c40c-525c-b731-f0dd95ae164e",
+          "vertices": 510,
+          "materials": 1,
+          "triangles": 568,
+          "representationId": "5a032e10-125b-51c8-9e37-78df8e67a904",
+          "maxLinearColorError": 2.736760040811248e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "4f584238-6ce2-5f12-97b2-4429f122b72e",
+          "vertices": 1675,
+          "materials": 1,
+          "triangles": 2991,
+          "representationId": "87ef467e-32e9-546a-b138-5f5e1db31bd6",
+          "maxLinearColorError": 2.9658357325601514e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "5c16a2fb-44b8-5961-8faa-b2d24d229ffc",
+          "vertices": 627,
+          "materials": 1,
+          "triangles": 672,
+          "representationId": "4388a79b-20bf-5a24-b842-23dd0539d6e7",
+          "maxLinearColorError": 2.9658357325601514e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "a98cf4c5-6c84-5b8c-b27b-93fc17e56d3d",
+          "vertices": 313,
+          "materials": 1,
+          "triangles": 366,
+          "representationId": "32d701ec-700a-5c1c-ab80-4085b44867c7",
+          "maxLinearColorError": 2.9658357325601514e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "41b4ed25-6de2-58a2-9669-47ad5e392bf7",
+          "vertices": 1147,
+          "materials": 1,
+          "triangles": 1737,
+          "representationId": "93bd95e0-6d8e-5e19-81f7-16e975ea64da",
+          "maxLinearColorError": 2.736760040811248e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "f138f2cd-9cfe-5db0-85d0-394798588694",
+          "vertices": 18147,
+          "materials": 1,
+          "triangles": 34402,
+          "representationId": "78d0adf0-c2e9-5cc0-b405-b0a2e933914c",
+          "maxLinearColorError": 2.736760040811248e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "2fae17c7-bf08-5d1b-8cc7-6791a403c7f1",
+          "vertices": 290,
+          "materials": 1,
+          "triangles": 324,
+          "representationId": "7e208f56-ba49-578c-ac50-37ced05572dd",
+          "maxLinearColorError": 2.9658357325601514e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "21eebd8a-107f-5132-9db1-e75a88630c7c",
+          "vertices": 109,
+          "materials": 1,
+          "triangles": 95,
+          "representationId": "70341618-9833-588a-ad0a-b898e37fe472",
+          "maxLinearColorError": 6.899700005780218e-09,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "a7bbff43-8416-53a6-b0a8-ba210e1ad284",
+          "vertices": 2473,
+          "materials": 1,
+          "triangles": 4569,
+          "representationId": "73a83423-8be8-5491-8535-8e3f3c4fada7",
+          "maxLinearColorError": 2.736760040811248e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "ca38d2b3-6807-57c1-89a5-fd4b64358a89",
+          "vertices": 685,
+          "materials": 1,
+          "triangles": 1256,
+          "representationId": "00c71985-cce5-5e36-8506-85c7549c0288",
+          "maxLinearColorError": 2.9658357325601514e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "f9e1ad9d-2418-5a35-8914-3087a0cd4514",
+          "vertices": 382,
+          "materials": 1,
+          "triangles": 674,
+          "representationId": "476c57c1-ad2b-5fbb-8ebc-98fa9de76371",
+          "maxLinearColorError": 2.9658357325601514e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "706f731a-a42e-5520-90de-4d4fb4b2cf77",
+          "vertices": 412,
+          "materials": 1,
+          "triangles": 730,
+          "representationId": "a6469451-b61e-5fd1-9b05-7275305a448f",
+          "maxLinearColorError": 2.9658357325601514e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "82c02133-9b24-5be9-a9a4-f936b184af3f",
+          "vertices": 2560,
+          "materials": 1,
+          "triangles": 4689,
+          "representationId": "e9966837-c973-59a1-99ca-06e25c2a1bc4",
+          "maxLinearColorError": 2.736760040811248e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "3a875626-ce97-5f04-a3d0-24f207ce6243",
+          "vertices": 4310,
+          "materials": 1,
+          "triangles": 7548,
+          "representationId": "82e686be-4cdb-54c0-b546-74b7f58b070c",
+          "maxLinearColorError": 2.9231538967167126e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "965e797a-54db-574a-8ebf-d44452af59d1",
+          "vertices": 7,
+          "materials": 1,
+          "triangles": 5,
+          "representationId": "0cdd501c-5731-5f93-96c2-bbfb7932f311",
+          "maxLinearColorError": 2.423529751882647e-09,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "ede664b5-0b39-56be-a8a6-080ebe1b1cd3",
+          "vertices": 16634,
+          "materials": 1,
+          "triangles": 31576,
+          "representationId": "21efd191-9c42-5813-8314-ea97dff971c4",
+          "maxLinearColorError": 2.736760040811248e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "5af975cb-fd5d-5989-8d60-cbf2ba543bfc",
+          "vertices": 669,
+          "materials": 1,
+          "triangles": 1220,
+          "representationId": "fcc27663-3d91-589c-b831-31ef3ce3e91a",
+          "maxLinearColorError": 2.9658357325601514e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "9dd85edd-2dad-5c47-b123-f4b29ac60153",
+          "vertices": 535,
+          "materials": 1,
+          "triangles": 651,
+          "representationId": "7f6a1703-81b2-5348-a2c5-68a7adda9a46",
+          "maxLinearColorError": 2.736760040811248e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "59b6410a-a3d6-5e4b-86b7-afe1e0c1c1f8",
+          "vertices": 752,
+          "materials": 1,
+          "triangles": 1340,
+          "representationId": "9a5a9adc-574f-5913-bb40-a1fab610d10d",
+          "maxLinearColorError": 2.736760040811248e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "5a62a2d3-0216-512d-b384-3eadd69d3e9e",
+          "vertices": 104,
+          "materials": 1,
+          "triangles": 92,
+          "representationId": "e26f1ce2-b475-5339-9d1a-756dd04c7e77",
+          "maxLinearColorError": 1.3728505998678031e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "37deeae6-6d88-50f8-b546-e606b8f38d28",
+          "vertices": 124,
+          "materials": 1,
+          "triangles": 98,
+          "representationId": "82eb0ac0-404a-5370-9160-a6ef8730c0c5",
+          "maxLinearColorError": 2.433118162503689e-08,
+          "maxWorldErrorNative": 0.0
+        },
+        {
+          "entityId": "45ff37f5-8605-542f-8f95-453b6a91ddb3",
+          "vertices": 401,
+          "materials": 1,
+          "triangles": 718,
+          "representationId": "9a0cbec3-aed7-5ffa-9884-363ed6a90ef7",
+          "maxLinearColorError": 2.9658357325601514e-08,
+          "maxWorldErrorNative": 0.0
+        }
+      ],
+      "parameters": [],
+      "newModelCalls": 0,
+      "sceneRevisionId": "96f60839-af84-48e1-8411-17627d5733e9"
+    }
+  },
+  "unplacedEntityCount": 22
+}

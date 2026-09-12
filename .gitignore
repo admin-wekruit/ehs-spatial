@@ -9,3 +9,6 @@ runs/
 .DS_Store
 
 /.workspace-access.json
+/.platform/
+/web/node_modules/
+/web/dist/

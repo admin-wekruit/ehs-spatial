@@ -18,16 +18,25 @@ dependencies = [
     "pydantic==2.13.4",
     "replicate==1.0.7",
     "shapely==2.1.2",
+    "fastapi>=0.115,<1",
+    "psycopg[binary]>=3.2,<4",
+    "boto3>=1.35,<2",
+    "python-multipart>=0.0.20",
+    "uvicorn>=0.30,<1",
+    "zen-engine>=0.50,<1",
+    "pypdf>=6,<7",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest==9.1.1"]
 
 [tool.setuptools.packages.find]
-include = ["ehs_spatial*"]
+include = ["ehs_spatial*", "panoptes_worker*"]
 
 [tool.setuptools.package-data]
 ehs_spatial = ["surface_viewer.js", "static/*", "static/vendor/*"]
+"ehs_spatial.platform" = ["migrations/*.sql"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]

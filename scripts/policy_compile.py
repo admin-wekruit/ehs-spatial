@@ -15,6 +15,7 @@ Usage:
 """
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -52,16 +53,16 @@ def _prompt(text: str, index: int, vocabulary: list[str]) -> str:
         "  keep_clear: nothing of the subject labels may come within "
         "`threshold` metres of object\n"
         "  not_inside: subject footprint must not overlap object footprint "
-        "(threshold is a small positive tolerance)\n"
+        "(threshold must be 0, unit must be 'm2')\n"
         "  max_height: subject height must not exceed `threshold` metres\n"
         "  min_height: subject height must be at least `threshold` metres\n"
-        "  max_tilt: subject tilt must not exceed `threshold` degrees\n\n"
+        "  max_tilt: an evidenced physical axis tilt must not exceed `threshold` degrees; PCA shape orientation is not physical tilt\n\n"
         f"Object labels the perception layer can currently produce: "
         f"{vocabulary}. Prefer these; a label outside the list is allowed but "
         "means the rule cannot be checked until that class is added.\n\n"
         "Respond with ONLY one JSON object with keys: policy_id (slug), "
         "predicate, subject_labels (array), object_labels (array, empty for "
-        "max_height/min_height/max_tilt), threshold (number > 0), unit ('m' or 'deg'), "
+        "max_height/min_height/max_tilt), threshold (0 for not_inside, otherwise > 0), unit ('m2' for not_inside, 'deg' for max_tilt, otherwise 'm'), "
         "severity (critical|major|minor|advisory), rationale (one sentence), "
         "unsupported_reason (string or null).\n"
         "Set unsupported_reason and keep the other fields plausible when the "
@@ -72,8 +73,15 @@ def _prompt(text: str, index: int, vocabulary: list[str]) -> str:
     )
 
 
+def _cache_path(text: str, index: int, vocabulary: list[str]) -> Path:
+    inputs = {"text": text, "schema": PolicySpec.model_json_schema(), "prompt": _prompt(text, index, vocabulary),
+              "model": COMPILER_MODEL, "bindings": sorted(set(vocabulary))}
+    key = hashlib.sha256(json.dumps(inputs, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+    return CACHE_DIR / "compiled" / (key + ".json")
+
+
 def _compile_one(text: str, index: int, vocabulary: list[str], *, live: bool):
-    cache = CACHE_DIR / "compiled" / f"p{index:02d}.json"
+    cache = _cache_path(text, index, vocabulary)
     if cache.exists():
         return PolicySpec.model_validate_json(cache.read_text())
     if not live:
@@ -128,8 +136,8 @@ def main(argv: list[str] | None = None) -> int:
         vocabulary = sorted(set(vocabulary) | scene_labels)
     pending = sum(
         1
-        for index in range(1, len(texts) + 1)
-        if not (CACHE_DIR / "compiled" / f"p{index:02d}.json").exists()
+        for index, text in enumerate(texts, 1)
+        if not _cache_path(text, index, vocabulary).exists()
     )
     print(f"{len(texts)} rule(s) | {pending} uncompiled")
     if pending and not args.live:

@@ -16,7 +16,7 @@ minimum height (guarding fences, exit-route headroom) were previously
 inexpressible because the vocabulary only bounded height from above.
 """
 
-import numpy as np
+import math
 from shapely.geometry import Polygon
 
 # Models live in contracts.py (CaptureRun.policies needs PolicySpec);
@@ -36,10 +36,7 @@ from .contracts import (
 
 
 _SELF_PREDICATES = {Predicate.MAX_HEIGHT, Predicate.MIN_HEIGHT, Predicate.MAX_TILT}
-# Same discipline as the clearance rule: a footprint too small or seen in too
-# few frames is not evidence, it is noise.
 MIN_EVIDENCE_FRAMES = 2
-MIN_FOOTPRINT_M2 = 0.0025
 
 
 def _valid(entities: list[Entity3D], labels: set[str], frame_gate: int):
@@ -47,8 +44,11 @@ def _valid(entities: list[Entity3D], labels: set[str], frame_gate: int):
     for entity in entities:
         if entity.label not in labels:
             continue
-        polygon = Polygon(entity.footprint_xy)
-        if not polygon.is_valid or polygon.area < MIN_FOOTPRINT_M2:
+        try:
+            polygon = Polygon(entity.footprint_xy)
+        except (ValueError, TypeError):
+            continue
+        if not polygon.is_valid or not math.isfinite(polygon.area) or polygon.area <= 0:
             continue
         if len(set(entity.evidence_frame_ids)) < frame_gate:
             continue
@@ -65,6 +65,7 @@ def evaluate_policy(
     scene: SceneMap,
     *,
     capture_frame_count: int = 4,
+    error_budget_m: float | None = None,
 ) -> PolicyResult:
     """Deterministic evaluation. No model is consulted here, ever."""
     if spec.unsupported_reason:
@@ -74,8 +75,11 @@ def evaluate_policy(
             warnings=[f"policy not evaluable: {spec.unsupported_reason}"],
         )
 
+    if error_budget_m is not None and (not math.isfinite(error_budget_m) or error_budget_m < 0):
+        raise ValueError("error_budget_m must be finite and nonnegative")
     frame_gate = min(MIN_EVIDENCE_FRAMES, max(1, capture_frame_count))
     subjects = _valid(scene.entities, set(spec.subject_labels), frame_gate)
+    missing = [e.entity_id for e in scene.entities if e.label in spec.subject_labels and e.entity_id not in {s.entity_id for s, _ in subjects}]
     if not subjects:
         return PolicyResult(
             policy_id=spec.policy_id,
@@ -89,6 +93,7 @@ def evaluate_policy(
     objects: list[tuple[Entity3D, Polygon]] = []
     if spec.predicate not in _SELF_PREDICATES:
         objects = _valid(scene.entities, set(spec.object_labels), frame_gate)
+        missing.extend(e.entity_id for e in scene.entities if e.label in spec.object_labels and e.entity_id not in {o.entity_id for o, _ in objects})
         if not objects:
             return PolicyResult(
                 policy_id=spec.policy_id,
@@ -104,7 +109,7 @@ def evaluate_policy(
     # cannot honestly pick a side and becomes NEEDS_REVIEW, never a razor-
     # edge PASS/FAIL on reconstruction noise. Tilt (degrees) has no
     # calibrated budget yet and keeps bare comparison.
-    band = (
+    band = error_budget_m if error_budget_m is not None else (
         ERROR_BUDGET_MULTIVIEW_M
         if capture_frame_count >= 2
         else ERROR_BUDGET_MONO_M
@@ -176,7 +181,8 @@ def evaluate_policy(
     elif spec.predicate is Predicate.MAX_TILT:
         measured_any = False
         for subject, _ in subjects:
-            if subject.tilt_deg is None:
+            if subject.tilt_deg is None or subject.tilt_reference != "physical_axis":
+                missing.append(subject.entity_id)
                 continue
             measured_any = True
             record(subject, None, subject.tilt_deg)
@@ -194,7 +200,7 @@ def evaluate_policy(
             return PolicyResult(
                 policy_id=spec.policy_id,
                 status=AssessmentStatus.INSUFFICIENT_EVIDENCE,
-                warnings=["no subject has a measurable tilt"],
+                warnings=["no subject has an evidenced physical-axis tilt; PCA shape orientation is not physical tilt"],
             )
     elif spec.predicate is Predicate.MAX_SEPARATION:
         # "must be within X of" — the nearest object decides, so a subject
@@ -232,6 +238,8 @@ def evaluate_policy(
     elif spec.predicate is Predicate.NOT_INSIDE:
         for subject, polygon in subjects:
             for obj, obj_poly in objects:
+                if subject.entity_id == obj.entity_id:
+                    continue
                 overlap = polygon.intersection(obj_poly).area
                 record(subject, obj, overlap)
                 if overlap > 0:
@@ -284,10 +292,21 @@ def evaluate_policy(
     ordered = [v for _, v in sorted(violations, key=lambda item: -item[0])]
     if ordered:
         status = AssessmentStatus.FAIL
+    elif missing:
+        status = AssessmentStatus.INSUFFICIENT_EVIDENCE
     elif review_notes:
         status = AssessmentStatus.NEEDS_REVIEW
     else:
         status = AssessmentStatus.PASS
+    if missing:
+        review_notes.append("missing geometry or qualified measurement for target entities: " + ", ".join(sorted(set(missing))))
+    if spec.unit in {"m", "m2"} and scene.scale_source not in {"camera_height", "moge_anchor", "operator_anchored"}:
+        if status in {AssessmentStatus.PASS, AssessmentStatus.FAIL}:
+            status = AssessmentStatus.NEEDS_REVIEW
+        review_notes.append("scale is model-native or unqualified; metric compliance requires calibrated scale")
+    if spec.unit in {"m", "m2"} and scene.scale_factor is None:
+        status = AssessmentStatus.INSUFFICIENT_EVIDENCE
+        review_notes.append("metric scale factor is missing")
     return PolicyResult(
         policy_id=spec.policy_id,
         status=status,
@@ -303,26 +322,12 @@ def evaluate_policies(
     scene: SceneMap,
     *,
     capture_frame_count: int = 4,
+    error_budget_m: float | None = None,
 ) -> list[PolicyResult]:
     results = [
-        evaluate_policy(spec, scene, capture_frame_count=capture_frame_count)
+        evaluate_policy(spec, scene, capture_frame_count=capture_frame_count, error_budget_m=error_budget_m)
         for spec in specs
     ]
-    if scene.scale_source == "model_native":
-        # An unanchored gauge cannot honestly certify either side.
-        for index, result in enumerate(results):
-            if result.status in (AssessmentStatus.PASS, AssessmentStatus.FAIL):
-                results[index] = result.model_copy(
-                    update={
-                        "status": AssessmentStatus.NEEDS_REVIEW,
-                        "warnings": [
-                            *result.warnings,
-                            "scale is model-native (unanchored); the "
-                            "measurement gauge is unknown, verdict demoted "
-                            "to review",
-                        ],
-                    }
-                )
     return results
 
 

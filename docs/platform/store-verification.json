@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "verified": {
+    "assets": 294,
+    "revisions": 22,
+    "publications": 10
+  },
+  "failures": []
+}
