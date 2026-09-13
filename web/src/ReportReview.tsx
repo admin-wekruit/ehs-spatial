@@ -160,7 +160,7 @@ export function ReportReview({ detail, publication, reviewMode, canWrite, onSele
     <ErrorNotice error={error} />
     {status && <p className="rr-status" role="status">{t(status)}</p>}
     {!!findings.length && <ul className="rr-counts" aria-label={t("rrAssessment")}>{Object.entries(counts).map(([key, count]) => <li key={key}><strong>{count}</strong> {t(key)}</li>)}</ul>}
-    {!publication && records?.scope !== scope && !error ? <p role="status">{t("loading")}</p> : (publication || records?.scope === scope) && !evaluations.length && <div className="rr-empty"><strong>{t("rrEmpty")}</strong><p>{t(writable ? "rrEmptyHint" : "rrReadOnly")}</p></div>}
+    {!publication && records?.scope !== scope && !error ? <p role="status">{t("loading")}</p> : (publication || records?.scope === scope) && !evaluations.length && <div className="rr-empty"><strong>{t("rrEmpty")}</strong>{!publication && <p>{t(writable ? "rrEmptyHint" : "rrReadOnly")}</p>}</div>}
 
     <div className="rr-evaluations">{evaluations.map(evaluation => <section className="rr-evaluation" key={evaluation.id}>
       <header className="rr-evaluation-heading"><h3>{t("rrAssessment")} · {when(evaluation.createdAt)}</h3><span>{t(evaluation.context)}</span></header>
