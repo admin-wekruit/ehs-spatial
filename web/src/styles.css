@@ -969,6 +969,9 @@ small,
   fill: transparent;
   pointer-events: none;
 }
+.photo-bound[data-evidence-kind="detection_box"] {
+  stroke-dasharray: 4 3;
+}
 .photo-bound.selected {
   stroke: #db8b43;
   stroke-width: 3;

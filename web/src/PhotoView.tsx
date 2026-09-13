@@ -177,6 +177,7 @@ export function PhotoView({
                 key={entity.id + observation.id}
                 d={d}
                 fillRule="evenodd"
+                data-evidence-kind={polygons.length ? "segmentation" : "detection_box"}
                 className={
                   entity.id === selectedId
                     ? "photo-bound selected"

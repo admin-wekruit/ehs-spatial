@@ -48,6 +48,7 @@ new Function('require','module','exports',code)(name=>{
   if(name==='./AgentPanel')return {AgentPanel};
   if(name==='./ReportEvidence')return {ReportEvidence:empty};
   if(name==='./ReportReview')return {ReportReview:empty};
+  if(name==='./ReportObjectFindings')return {ReportObjectFindings:empty};
   if(name==='./api')return {owner:async()=> 'local-capability',request:async(url,options)=>{
     assert.equal(options?.method,undefined,'selection must not send mutations/model calls');requests.push(url);
     return url==='/api/projects/project'?detail:url==='/api/revisions/revision'?revision:{items:url.endsWith('/edits')?edits:[]};
@@ -56,7 +57,7 @@ new Function('require','module','exports',code)(name=>{
 },module,module.exports);
 const {WorkcellReport}=module.exports;
 async function render(){for(let i=0;i<8;i++){cursor=0;tree=WorkcellReport({projectId:'project',requestedRevision:'revision'});for(const effect of effects.splice(0))effect();await Promise.resolve();}}
-function find(predicate,node=tree){if(!React.isValidElement(node))return null;if(predicate(node))return node;for(const child of React.Children.toArray(node.props.children)){const hit=find(predicate,child);if(hit)return hit;}return null;}
+function find(predicate,node=tree){if(!React.isValidElement(node))return null;if(predicate(node))return node;for(const child of React.Children.toArray([node.props.children,node.props.inspector])){const hit=find(predicate,child);if(hit)return hit;}return null;}
 const params=()=>new URLSearchParams(hash.split('?')[1]);
 await render();
 const workbench=find(n=>n.type==='a'&&n.props.className==='button primary').props.href;

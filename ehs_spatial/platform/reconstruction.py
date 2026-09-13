@@ -29,6 +29,7 @@ from .spatial import (FrameGeometry, MaskObservation, MeshData, SAM3DMeshAdapter
 PIPELINE_VERSION = "capture-v1-per-image-cache"
 MAP_PINS = {"model": "facebook/map-anything-apache", "modelRevision": "00f9c245bbcb60522d1ed7f9e9d88462c6e3f38a",
             "codeRevision": "3d10cf7a3016fc0f9bb13a071ee66c47b10be0d9", "adapter": PIPELINE_VERSION}
+MAX_MASK_POLYGON_RUNS = 100_000
 
 
 def _packed(value):
@@ -272,6 +273,53 @@ def _canonical_mask(mask,record):
     return result
 
 
+def _original_mask_polygons(mask):
+    from shapely import box, get_parts, union_all
+
+    edges = np.diff(np.pad(mask.astype(np.int8),((0,0),(1,1))),axis=1)
+    count = int(np.count_nonzero(edges == 1))
+    metadata = {"methodVersion":"pixel-runs-union-v1","runCount":count,"status":"complete"}
+    # ponytail: bound GEOS allocation at 100k row runs; larger masks keep their
+    # complete PNG. Streaming contour extraction can lift this ceiling later.
+    if count > MAX_MASK_POLYGON_RUNS:
+        return None,{**metadata,"status":"complexity_limit","maxRuns":MAX_MASK_POLYGON_RUNS}
+    if not count:
+        return [],metadata
+    rows,starts = np.where(edges == 1)
+    _,ends = np.where(edges == -1)
+    geometry = union_all(box(starts,rows,ends,rows+1))
+    # Union exact pixel cells, with no hull, area threshold or simplification.
+    rings = [np.asarray(ring.coords).tolist() for polygon in get_parts(geometry)
+             for ring in (polygon.exterior,*polygon.interiors)]
+    return rings,metadata
+
+
+def _save_observation_mask(document,observation,image,response,evidence,stages):
+    mask = np.asarray(response.get("mask"),dtype=bool)
+    if mask.shape != (image["height"],image["width"]):
+        raise PlatformError("mask_image_grid_mismatch",observationId=observation["id"])
+    stream = io.BytesIO()
+    Image.fromarray(mask.astype(np.uint8)*255).save(stream,format="PNG")
+    asset = stages.put(stream.getvalue(),{"kind":"observation_mask","observationId":observation["id"],"sourceRefs":[_ref(evidence)]},"image/png")
+    polygons,polygonization = _original_mask_polygons(mask)
+    observation.update(maskAssetId=asset["id"],maskStatus="present" if mask.any() else "empty",geometrySupport=None,
+        maskPolygonization=polygonization,polygonCoordinateConvention="pixel_edges",fillRule="evenodd")
+    if polygons is None:
+        observation.pop("originalPixelPolygons",None)
+    else:
+        observation["originalPixelPolygons"] = polygons
+    missing = [x for x in observation.get("missingEvidence",[]) if x not in ("segmentation_empty","mask_polygon_complexity_limit")]
+    if not mask.any():
+        missing.append("segmentation_empty")
+    if polygons is None:
+        missing.append("mask_polygon_complexity_limit")
+    observation["missingEvidence"] = missing
+    observation["sourceRefs"].append(_ref(evidence))
+    _include(document,asset)
+    # The retained box is discovery evidence, including for empty/complex masks.
+    return mask
+
+
 def _mesh(points,valid,rgb,mask):
     keep = valid & mask & np.isfinite(points).all(axis=-1)
     index = np.full(keep.shape,-1,dtype=np.int64)
@@ -343,7 +391,7 @@ def _associate_and_surfaces(document,frames,canonical,masks,stages):
             "coverage":"visible_support_only","uncertainty":{"status":"not_quantified","causes":["estimated_depth","occlusion","mask_boundary"]}}
         bounds = observation["geometrySupport"]["boundsNative"]
         dimensions = np.asarray(bounds["max"])-np.asarray(bounds["min"])
-        entity["measurements"].update({"dimensionsNative":dict(zip(("width","depth","height"),dimensions.tolist())),
+        entity["measurements"].update({"dimensionsNative":dimensions.tolist(),
             "coordinateFrameId":f.coordinate_frame_id,"dimensionBasis":"native_axes_not_ground_aligned"})
         mesh = _mesh(f.points,f.support(),canonical[f.image_id]["rgb"],masks[oid])
         if mesh is None:
@@ -368,7 +416,7 @@ def _capture_context(document,frames,canonical,stages):
     asset = _save_mesh(stages,mesh,{"kind":"capture_context","imageId":anchor.image_id})
     _include(document,asset)
     identity = _id(document["captureId"],"capture_context")
-    entity = {"id":identity,"label":"Observed capture context","kind":"capture_context","editable":False,"observationRefs":[],"associationState":"confirmed",
+    entity = {"id":identity,"label":"Observed capture context","kind":"capture_context","sourceContext":True,"editable":False,"observationRefs":[],"associationState":"confirmed",
         "representations":[{"id":_id(document["captureId"],"context",asset["sha256"]),"kind":"observed_surface","assetId":asset["id"],"coordinateFrameId":anchor.coordinate_frame_id,
             "transform":{"coordinateFrameId":anchor.coordinate_frame_id,"position":[0.,0.,0.],"quaternion":[0.,0.,0.,1.],"scale":[1.,1.,1.]},
             "primitive":None,"bounds":asset["metadata"]["bounds"],"placementState":"confirmed","editable":False,"sourceRefs":[{"imageId":anchor.image_id},_ref(asset)],"coverage":"observed_camera_state_only"}],
@@ -443,17 +491,9 @@ def run_analysis(repository,blobs,job,providers):
             continue
         response,evidence = output
         _include(document,evidence)
-        mask = np.asarray(response.get("mask"),dtype=bool)
-        if mask.shape != (image["height"],image["width"]):
-            errors.append({"stage":"segmentation","code":"mask_image_grid_mismatch","observationId":observation["id"]})
+        mask = attempt("segmentation",lambda:_save_observation_mask(document,observation,image,response,evidence,stages))
+        if mask is None:
             continue
-        stream = io.BytesIO()
-        Image.fromarray(mask.astype(np.uint8)*255).save(stream,format="PNG")
-        asset = stages.put(stream.getvalue(),{"kind":"observation_mask","observationId":observation["id"],"sourceRefs":[_ref(evidence)]},"image/png")
-        observation["maskAssetId"] = asset["id"]
-        observation["sourceRefs"] += [_ref(evidence)]
-        if asset["id"] not in {a["id"] for a in document["assets"]}:
-            document["assets"].append(asset)
         if image["id"] in canonical:
             masks[observation["id"]] = _canonical_mask(mask,canonical[image["id"]])
         stages.checkpoint(document,"segmentation")
@@ -494,17 +534,8 @@ def run_segmentation(repository,blobs,job,providers):
         try:
             response,evidence = stages.call("segmentation",[image],{"image":_image_payload(image),"box":observation["originalPixelBox"]},observation["sourceRefs"])
             _include(document,evidence)
-            mask = np.asarray(response.get("mask"),bool)
-            if mask.shape != (image["height"],image["width"]):
-                raise PlatformError("mask_image_grid_mismatch")
-            output = io.BytesIO()
-            Image.fromarray(mask.astype(np.uint8)*255).save(output,format="PNG")
-            asset = stages.put(output.getvalue(),{"kind":"observation_mask","observationId":observation["id"],"sourceRefs":[_ref(evidence)]},"image/png")
-            observation["maskAssetId"] = asset["id"]
+            _save_observation_mask(document,observation,image,response,evidence,stages)
             observation["revision"] += 1
-            observation["geometrySupport"] = None
-            observation["sourceRefs"].append(_ref(evidence))
-            document["assets"] = [a for a in document["assets"] if a["id"] != asset["id"]] + [asset]
             for entity in document["entities"]:
                 if observation["id"] in entity["observationRefs"]:
                     # Retain old meshes as explicit stale evidence; never silently
@@ -533,7 +564,7 @@ def run_segmentation(repository,blobs,job,providers):
 def run_generation(repository,blobs,job,providers):
     _,document,images = _capture(repository,blobs,job)
     stages = _Stages(repository,blobs,job,providers)
-    requested = job["inputs"].get("entityIds") or ([job["inputs"]["entityId"]] if job["inputs"].get("entityId") else [e["id"] for e in document["entities"] if e.get("kind") != "capture_context"] if job["kind"] == "generate_scene" else [])
+    requested = job["inputs"].get("entityIds") or ([job["inputs"]["entityId"]] if job["inputs"].get("entityId") else [e["id"] for e in document["entities"] if not e.get("sourceContext")] if job["kind"] == "generate_scene" else [])
     entities = [e for e in document["entities"] if e["id"] in requested]
     if not requested or len(entities) != len(set(requested)):
         raise PlatformError("entity_not_found",404)
@@ -568,6 +599,14 @@ def run_generation(repository,blobs,job,providers):
             rep = {"id":_id(document["captureId"],"generated",entity["id"],mesh_asset["sha256"]),"kind":"generated_mesh","assetId":mesh_asset["id"],"coordinateFrameId":f.coordinate_frame_id,
                    "transform":transform,"bounds":mesh_asset["metadata"]["bounds"],"primitive":None,"placementState":"unconfirmed","sourceRefs":[_ref(evidence),{"observationId":anchor["id"],"revision":anchor["revision"]}],
                    "placementReason":"requires_alignment_confirmation" if proposed is not None else "insufficient_observed_depth","shapeStatus":"ready"}
+            previous = entity["representations"]
+            # Clear only a copied, unconfirmed generated proposal. Manual/primitive
+            # edits and unattributed entity poses cannot be classified as stale.
+            if not any(r["kind"] == "primitive" or (r.get("placementSource") or {}).get("type") == "manual_assertion" for r in previous) and any(
+                r["kind"] == "generated_mesh" and r.get("placementState") == "unconfirmed" and
+                r.get("placementReason") in ("imported_proposal", "requires_alignment_confirmation", "insufficient_observed_depth") and
+                r["transform"] == entity.get("currentModelTransform") for r in previous):
+                entity["currentModelTransform"] = None
             entity["representations"] = [r for r in entity["representations"] if r["kind"] != "generated_mesh"] + [rep]
             ready.append(entity["id"])
         except PlatformError as exc:

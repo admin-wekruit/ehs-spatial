@@ -104,6 +104,26 @@ const document = {
 };
 const idsAt = (x, y) =>
   photoHits(document, "photo", x, y).map((hit) => hit.entity.id);
+const edgeObservation = {...fence,originalPixelBox:[0,0,15,9],polygonCoordinateConvention:"pixel_edges",
+  originalPixelPolygons:[[[0,0],[15,0],[15,9],[0,9]],[[4,2],[11,2],[11,7],[4,7]],[[7,4],[8,4],[8,5],[7,5]]]};
+const edgeBefore = structuredClone(edgeObservation);
+const edgeContours = observationPolygons(edgeObservation);
+assert.deepEqual(edgeContours,edgeObservation.originalPixelPolygons,"Pixel-edge contours must not receive a second half-pixel shift");
+const edgeDocument = {...document,entities:[document.entities[0]],observations:[edgeObservation]};
+for(let y=0;y<9;y++)for(let x=0;x<15;x++) {
+  const material=!(x>=4&&x<11&&y>=2&&y<7)||(x===7&&y===4);
+  assert.equal(photoHits(edgeDocument,"photo",x+.5,y+.5).length,material?1:0,"9x15 mask holes and the single-pixel island retain exact pixel membership");
+}
+assert.equal(photoHits(edgeDocument,"photo",.1,.1).length,1,"The first source pixel starts at zero, not at a shifted contour edge");
+assert.deepEqual(edgeObservation,edgeBefore);
+const extendedMask = {...edgeObservation,originalPixelBox:[5,2,6,3]};
+const extendedDocument = {...edgeDocument,observations:[extendedMask]};
+assert.equal(photoHits(extendedDocument,"photo",1.5,1.5).length,1,"A valid segmentation outside the initial detector box remains selectable");
+assert.equal(photoHits(extendedDocument,"photo",5.5,2.5).length,0,"A source detection box cannot fill a segmentation hole");
+assert.equal(photoHits(extendedDocument,"photo",7.5,4.5)[0].area,15*9,"Overlap ordering uses the actual mask bounds, not an obsolete smaller detector box");
+assert.deepEqual(extendedMask.originalPixelBox,[5,2,6,3],"The detector bbox remains untouched as source evidence");
+const noMask = {...button,originalPixelPolygons:[],originalPixelBox:[5,2,6,3],polygonCoordinateConvention:"pixel_edges"};
+assert.equal(photoHits({...document,entities:[document.entities[1]],observations:[noMask]},"photo",5.5,2.5).length,1,"A detected object without segmentation remains selectable by its source bbox");
 assert.deepEqual(
   idsAt(13, 43),
   ["button", "fence"],

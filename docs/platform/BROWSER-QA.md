@@ -121,3 +121,19 @@ node --experimental-strip-types web/checks/renderer.mjs
 最终执行：`pytest tests/test_platform_import.py tests/test_platform_report_evidence.py tests/test_platform_geometry_import.py -q` 为10 passed、1 skipped；跳过项为未设置集成测试数据库。生产数据通过同一导入/任务/发布合同另行生成上述新版本，未运行付费推理。`observed-plan.mjs` 对两份原快照验证68/68与81/85；新发布的report-evidence、report-context、report-review、renderer、report-scene、plan-selection检查及TypeScript/Vite构建通过。
 
 模型工作台开源参考已核对官方来源：[Three.js Editor](https://threejs.org/editor/)提供场景导入、对象编辑和GLB等导出；[PlayCanvas Editor](https://github.com/playcanvas/editor)与[PCUI](https://github.com/playcanvas/pcui)可参考对象树/属性面板。当前PlayCanvas Editor README的本地前端流程仍连接托管Editor服务，不将其称为完整独立自托管后端。本轮没有安装或整合上述编辑器；继续复用已有渲染器与实体/版本合同。
+
+
+## 三栏联动报告与共享几何修正（最新）
+
+2026-09-12，同一 publication `f55f9704-0999-460e-863a-4c58cca86fb9` / revision `45f843bb-066c-4dd5-9cf0-a460455718b6`。本轮更新渲染与通用分析代码，未覆盖报告数据或另建测试内容充当真实工位。此节取代前文的页面布局描述。
+
+- 左侧常驻全部68条对象记录，可搜索名称与短ID；中间原图、3D、CAD、交互平面支持四视图、单视图和独立全屏；右侧为所选对象的观测/模型尺寸、来源与精确判定。理解、历史EHS、原始CAD、Blender和任务历史仍在同一报告下方。
+- 根任务使用 `mcp__cua_repl` 在1440×1000实际构建中：左栏搜索并点击照片1 control `33e5c934`，右栏显示该按钮观测范围；放大CAD后用其可访问按钮选围栏 `ce9516a5`，两张平面图和右栏选择一致；Esc回四视图。全屏3D中直接用鼠标点击红色机器人，实体切为 `d5780205`。单视图仍保留两侧栏，主canvas数量为1。
+- 切换观测层保留实体选择。共享 `entityGeometryForLayer` 让照片投影、3D选择框和两张平面图消费相同图层、坐标系与来源；模型层才可优先模型。失效表示和无定位依据的生成资产不制造可定位范围。旋转模型的选择框保留其8个原始角点。
+- 最新真实快照的模型层68个范围=9模型+46观测+13观测测量；观测层68=46观测+22观测测量。195组3D选择角点与共享几何相同，3,814个照片角点的独立K/c2w软件计算最大浮点残差0.001254px。该值仅说明投影实现一致，不是重建或现场测量精度。原CAD仍是33条历史区域/6条明确关联，不跨坐标系强行合并。
+- 从照片3选择floor `f138f2cd`：两个平面图同步选择；原图轴文字与3D轴文字均为空；右栏仅参考面范围，没有设备高度、位置、倾角。
+- 在390×844切换“对象→选择照片3 control `45ff37f5`→详情→英文”：实体、照片与观察ID保留，页面scrollWidth=390，canvas数量1。是浏览器窄屏检查，不声称真实手机GPU测试。
+- 新分析/resegment共用原图mask保存路径，写精确pixel-edge轮廓、孔洞及单像素；保留原始检测框的证据身份。空mask与复杂度限制显式记录，完整PNG和对象不消失。前端按声明的像素约定处理轮廓，检测框用虚线显示。新capture背景使用sourceContext，原生尺寸使用数组；稀疏有效观测bounds即使不能成面也能选中其范围。
+- 右栏只消费当前评估或发布快照，不增加API请求。当前报告尚无本版本评估，9条历史检查缺少可验证对象关联，因此不将其中整体FAIL归给选中按钮。Agent仍须通过已有编辑/副本合同提交。
+
+验证：TypeScript/Vite构建、前端interaction-check，以及report-context、report-review、report-object-findings、report-evidence、report-scene、report-interactions、plan-selection、observed-plan、renderer各检查通过。`pytest tests/test_platform_reconstruction.py tests/test_platform_spatial.py -q` 为34 passed。生产快照保持不可变；新增模型调用为0。新照片真实模型质量、许可及预算发布门槛仍未因此获得通过声明。

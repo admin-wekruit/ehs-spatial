@@ -1,0 +1,13 @@
+.report-object-findings { min-width: 0; font-size: 13px; line-height: 1.7; }
+.report-object-findings h3 { font-size: 16px; margin: 0 0 12px; }
+.report-object-findings h4 { font-size: 12px; margin: 12px 0 4px; }
+.report-object-findings p { margin: 8px 0; overflow-wrap: anywhere; }
+.report-object-findings article { border-top: 1px solid var(--line); padding: 14px 0; }
+.report-object-findings ul { padding-left: 18px; margin: 6px 0; }
+.report-object-findings summary { cursor: pointer; padding: 8px 0; font-weight: 600; }
+.report-object-findings small { color: var(--report-muted); overflow-wrap: anywhere; }
+.report-object-findings .rof-result { display: flex; align-items: start; justify-content: space-between; gap: 8px; }
+.report-object-findings .rof-result strong { min-width: 0; overflow-wrap: anywhere; }
+.report-object-findings .rof-history { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 8px; }
+.report-object-findings .report-evidence-fields > div { display: block; }
+.report-object-findings .report-evidence-fields dt { font-size: 11px; }

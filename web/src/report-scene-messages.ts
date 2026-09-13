@@ -1,4 +1,13 @@
 export const reportSceneMessages: Record<string, [string, string]> = {
+  sceneBoundsOnly: ["有观测范围，尚无网格", "Observed bounds, no mesh yet"],
+  sceneWorkspace: ["空间工作台", "Spatial workspace"],
+  sceneViews: ["视图", "Views"],
+  sceneInspector: ["对象详情", "Object details"],
+  sceneQuad: ["四视图", "Four views"],
+  sceneSingleView: ["展开单视图", "Expand view"],
+  sceneNoSelection: ["尚未选择物体", "No object selected"],
+  sceneNoPhotoLink: ["未绑定照片", "No linked photo"],
+  sceneExitFullscreen: ["退出全屏", "Exit fullscreen"],
   sceneSourceCad: ["核对原始 CAD", "Compare source CAD"],
   sceneLinked: ["一个工位，四个相连的视角", "One scene, four connected views"],
   sceneReadOnly: [
@@ -25,8 +34,8 @@ export const reportSceneMessages: Record<string, [string, string]> = {
   sceneFullscreen: ["全屏查看", "View fullscreen"],
   sceneCloseFullscreen: ["返回四视图", "Return to four views"],
   sceneFullscreenUnavailable: [
-    "浏览器不支持全屏；已展开此视图。",
-    "Fullscreen is unavailable; this view has been expanded.",
+    "浏览器不支持全屏，可使用单视图展开。",
+    "Fullscreen is unavailable. Use the single-view controls to expand a view.",
   ],
   scenePhotoNumber: ["照片", "Photo"],
   sceneObjects: ["场景对象", "Scene objects"],

@@ -12,6 +12,7 @@ import type {
   Observation,
   Operation,
   PublicationSummary,
+  Representation,
   SceneDocument,
   Transform,
   Vec3,
@@ -44,16 +45,16 @@ export function photoHits(
   for (const entity of document.entities) {
     if (entity.visible === false) continue;
     for (const observation of observationsFor(document, entity)) {
-      const b = observation.originalPixelBox;
-      if (observation.imageId !== imageId || !b) continue;
+      if (observation.imageId !== imageId) continue;
       const polygons = observationPolygons(observation);
-      if (
-        x >= b[0] &&
-        x < b[2] &&
-        y >= b[1] &&
-        y < b[3] &&
-        (!polygons.length || insidePolygons(polygons, x, y))
-      )
+      const points = polygons.flat();
+      const b = points.length ? points.reduce((bounds, [px, py]) => [
+        Math.min(bounds[0], px), Math.min(bounds[1], py),
+        Math.max(bounds[2], px), Math.max(bounds[3], py),
+      ], [Infinity, Infinity, -Infinity, -Infinity]) : observation.originalPixelBox;
+      if (!b) continue;
+      if (polygons.length ? insidePolygons(polygons, x, y)
+        : x >= b[0] && x < b[2] && y >= b[1] && y < b[3])
         hits.push({ entity, observation, area: (b[2] - b[0]) * (b[3] - b[1]) });
     }
   }
@@ -64,7 +65,8 @@ export function photoHits(
 export function observationPolygons(observation: Observation): number[][][] {
   const raw = observation.originalPixelPolygons;
   if (!Array.isArray(raw)) return [];
-  // Source contours are pixel centres; SVG and pointer positions use image edges.
+  // Legacy contours use pixel centres; new mask unions already use image edges.
+  const offset = observation.polygonCoordinateConvention === "pixel_edges" ? 0 : 0.5;
   return raw
     .filter(
       (p): p is number[][] =>
@@ -77,7 +79,7 @@ export function observationPolygons(observation: Observation): number[][][] {
             v.every((n) => typeof n === "number" && Number.isFinite(n)),
         ),
     )
-    .map((p) => p.map(([x, y]) => [x + 0.5, y + 0.5]));
+    .map((p) => p.map(([x, y]) => [x + offset, y + offset]));
 }
 export function insidePolygons(polygons: number[][][], x: number, y: number) {
   let inside = false;
@@ -265,6 +267,7 @@ export function modelGeometry(entity: Entity) {
 export function observedGeometry(entity: Entity, frameId: string) {
   const representations = (entity.representations || []).filter((rep) =>
     ["observed_surface", "point_cloud"].includes(rep.kind) &&
+    rep.sourceValidity !== "stale" &&
     rep.placementState === "confirmed" && !!rep.assetId &&
     rep.coordinateFrameId === frameId && rep.transform.coordinateFrameId === frameId &&
     isVec3(rep.bounds?.min) && isVec3(rep.bounds?.max) &&
@@ -274,6 +277,71 @@ export function observedGeometry(entity: Entity, frameId: string) {
   return corners.length && corners.every(isVec3)
     ? { corners, frameId, representationIds: representations.map((rep) => rep.id) }
     : null;
+}
+export type GeometryLayer = "model" | "observed_surface" | "point_cloud";
+export type GeometryOptions = { layer: GeometryLayer; frameId: string; showCandidates?: boolean };
+
+export function representationAvailable(entity: Entity, rep: Representation, frameId: string | null, showCandidates = false) {
+  const modeled = ["generated_mesh", "primitive"].includes(rep.kind);
+  const transform = modeled ? entity.currentModelTransform || rep.transform : rep.transform;
+  return entity.visible !== false && rep.sourceValidity !== "stale" && !!frameId &&
+    rep.coordinateFrameId === frameId && transform?.coordinateFrameId === frameId &&
+    (rep.placementState === "confirmed" || showCandidates &&
+      ["requires_alignment_confirmation", "imported_proposal"].includes(rep.placementReason || ""));
+}
+
+/** One located geometry choice for source-photo axes, 3D bounds and plan views. */
+export function entityGeometryForLayer(entity: Entity, { layer, frameId, showCandidates = true }: GeometryOptions) {
+  if (entity.sourceContext || entity.visible === false) return null;
+  const representations = (entity.representations || []).filter((rep) =>
+    representationAvailable(entity, rep, frameId, showCandidates) &&
+    (rep.kind === "primitive" ? !!rep.primitive : !!rep.assetId));
+  const identity: Transform = {coordinateFrameId: frameId, position: [0, 0, 0], quaternion: [0, 0, 0, 1], scale: [1, 1, 1]};
+  function fromRepresentations(reps: Representation[], geometryKind: "model" | "observed" | "point_cloud") {
+    const geometries = reps.flatMap((rep) => {
+      const transform = geometryKind === "model" ? entity.currentModelTransform || rep.transform : rep.transform;
+      const bounds = rep.bounds;
+      const validBounds = isVec3(bounds?.min) && isVec3(bounds?.max) && bounds.max.every((value, k) => value >= bounds.min[k]);
+      const corners = validBounds
+        ? boundsCorners(bounds!).map((p) => point(transformMatrix(transform), p))
+        : rep.kind === "primitive" ? modelGeometry({...entity, representations: [rep]})?.corners : null;
+      return corners?.length && corners.every(isVec3) ? [{rep, transform, corners}] : [];
+    });
+    if (!geometries.length) return null;
+    const all = geometries.flatMap((g) => g.corners);
+    const corners = geometries.length === 1 ? all : boundsCorners({
+      min: [0, 1, 2].map((k) => Math.min(...all.map((p) => p[k]))),
+      max: [0, 1, 2].map((k) => Math.max(...all.map((p) => p[k]))),
+    });
+    return {corners, transform: geometries[0].transform, frameId,
+      axisSpace: geometryKind === "model" ? "local" as const : "native" as const,
+      geometryKind, representationIds: geometries.map((g) => g.rep.id)};
+  }
+  if (layer === "model") {
+    const model = fromRepresentations(representations.filter((r) => ["generated_mesh", "primitive"].includes(r.kind)), "model");
+    if (model) return model;
+  }
+  if (layer === "point_cloud") {
+    const cloud = fromRepresentations(representations.filter((r) => r.kind === "point_cloud"), "point_cloud");
+    if (cloud) return cloud;
+  }
+  const observed = fromRepresentations(representations.filter((r) => r.kind === "observed_surface"), "observed");
+  if (observed) return observed;
+  const measurements = entity.measurements || {};
+  const basis = jsonObject(measurements.basis)?.cornersNative;
+  const bounds = jsonObject(measurements.observedBounds);
+  const measuredBounds = bounds?.coordinateFrameId === frameId && bounds.source === "observed_measurement" &&
+    bounds.sourceValidity !== "stale" && Array.isArray(bounds.sourceRefs) && bounds.sourceRefs.length > 0 &&
+    isVec3(bounds.min) && isVec3(bounds.max) && bounds.max.every((value, k) => value >= (bounds.min as Vec3)[k]);
+  // A sparse observed point set can locate a range without enough neighbouring
+  // pixels to form triangles. Its source-bound bounds remain usable evidence.
+  const corners = Array.isArray(basis) && basis.length === 8 && basis.every(isVec3)
+    ? basis : measuredBounds ? boundsCorners({min: bounds!.min as Vec3, max: bounds!.max as Vec3}) : null;
+  if (measurements.coordinateFrameId === frameId && measurements.sourceValidity !== "stale" &&
+      corners)
+    return {corners, transform: identity, frameId, axisSpace: "native" as const,
+      geometryKind: "observed_measurement" as const, representationIds: [] as string[]};
+  return null;
 }
 export function modelTilt(document: SceneDocument, entity: Entity) {
   const transform = editableTransform(entity);
@@ -295,10 +363,11 @@ export function modelTilt(document: SceneDocument, entity: Entity) {
     Math.PI
   );
 }
-export function planShapes(document: SceneDocument) {
+export function planShapes(document: SceneDocument, options: Partial<GeometryOptions> = {}) {
   const frame = document.coordinateFrames.find(
     (f) =>
-      Array.isArray(f.ground?.normal) && Math.hypot(...f.ground.normal) > 1e-8,
+      (!options.frameId || f.id === options.frameId) &&
+      Array.isArray(f.ground?.normal) && f.ground.normal.every(Number.isFinite) && Math.hypot(...f.ground.normal) > 1e-8,
   );
   const normal = frame?.ground?.normal;
   if (!frame || !normal) return [];
@@ -327,13 +396,8 @@ export function planShapes(document: SceneDocument) {
   return document.entities
     .filter((e) => e.visible !== false && !e.sourceContext)
     .flatMap((entity) => {
-      const model = modelGeometry(entity);
-      const observed = observedGeometry(entity, frame.id);
-      const basis = jsonObject(entity.measurements?.basis)?.cornersNative;
-      const measured = entity.measurements?.coordinateFrameId === frame.id &&
-        Array.isArray(basis) && basis.length > 0 && basis.every(isVec3)
-        ? { corners: basis, frameId: frame.id } : null;
-      const geometry = model?.frameId === frame.id ? model : measured || observed;
+      const geometry = entityGeometryForLayer(entity, {layer: options.layer || "model", frameId: frame.id, showCandidates: options.showCandidates});
+      if (!geometry) return [];
       const frameId = geometry?.frameId;
       const corners = geometry?.corners;
       if (
@@ -344,7 +408,17 @@ export function planShapes(document: SceneDocument) {
       )
         return [];
       const saved = jsonObject(entity.measurements?.projectedHull);
+      const snapshot = saved?.representationSnapshot;
+      // A frozen hull with both model and observed sources is ambiguous. Recompute
+      // from the chosen layer unless its exact representation IDs are declared.
+      const sameGeometry = saved?.representationIds !== undefined || saved?.geometryKind !== undefined
+        ? saved?.geometryKind === geometry.geometryKind && sameJSON(saved?.representationIds, geometry.representationIds)
+        : Array.isArray(snapshot) && snapshot.length > 0 && snapshot.every((rep) =>
+          rep && typeof rep === "object" && geometry.representationIds.includes(rep.id) &&
+          (geometry.geometryKind === "model" ? ["generated_mesh", "primitive"].includes(rep.kind)
+            : geometry.geometryKind === "point_cloud" ? rep.kind === "point_cloud" : rep.kind === "observed_surface"));
       const canReuse =
+        sameGeometry &&
         saved?.coordinateFrameId === frame.id &&
         plane &&
         sameJSON(saved.nativeToPlane, plane) &&
@@ -368,9 +442,10 @@ export function planShapes(document: SceneDocument) {
           entity,
           polygon: ps,
           coordinateFrameId: frame.id,
-          projectionSource: useSavedHull ? "saved_hull" as const : geometry === model
-            ? "model_bounds" as const : geometry === measured ? "observed_measurement" as const : "observed_bounds" as const,
-          representationIds: geometry === observed ? observed!.representationIds : [],
+          projectionSource: useSavedHull ? "saved_hull" as const : geometry.geometryKind === "model"
+            ? "model_bounds" as const : geometry.geometryKind === "observed_measurement" ? "observed_measurement" as const : "observed_bounds" as const,
+          geometryKind: geometry.geometryKind,
+          representationIds: geometry.representationIds,
           min: [
             Math.min(...ps.map((p) => p[0])),
             Math.min(...ps.map((p) => p[1])),

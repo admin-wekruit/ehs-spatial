@@ -1,5 +1,6 @@
 import {add,scale,dot,cross,unit,identity,matmul,point,rotate,transformMatrix,sourceCamera,cameraMatrix,boundsCorners,projected,fitCamera,type Camera,type Vec,type Transform} from './native-math.ts';
 import {isReferenceSurface} from '../scene-semantics.ts';
+import {entityGeometryForLayer,representationAvailable,type GeometryLayer} from '../core.ts';
 import type {SceneDocument} from '../types';
 
 type Mesh={vertices:Float32Array;indices:Uint32Array;mode:number;matrix:ArrayLike<number>;texture?:Blob;bounds:{min:Vec;max:Vec}};
@@ -9,8 +10,7 @@ export type ViewerOptions={resolveAsset:(id:string)=>Promise<string|{url:string}
 export type SceneViewer=ReturnType<typeof mountSceneViewer>;
 
 export function representationPass(entity:any,representation:any,frameId:string|null,layers:any) {
-  const transform=['generated_mesh','primitive'].includes(representation.kind)?entity?.currentModelTransform||representation.transform:representation.transform;
-  const available=!!entity&&entity.visible!==false&&!!frameId&&representation.coordinateFrameId===frameId&&transform?.coordinateFrameId===frameId&&(representation.placementState==='confirmed'||layers.showCandidates&&['requires_alignment_confirmation','imported_proposal'].includes(representation.placementReason));
+  const available=!!entity&&representationAvailable(entity,representation,frameId,!!layers.showCandidates);
   const visible=available&&layers[representation.kind]!==false;
   const cloudOnly=layers.point_cloud!==false&&['observed_surface','generated_mesh','primitive'].every(kind=>layers[kind]===false);
   // Pick actual observed triangles in a cloud view, never invisible generated
@@ -18,18 +18,13 @@ export function representationPass(entity:any,representation:any,frameId:string|
   return {available,visible,pick:visible||available&&cloudOnly&&!entity.sourceContext&&representation.kind==='observed_surface'&&representation.placementState==='confirmed',selectable:available&&!entity.sourceContext};
 }
 
-export function selectionGeometry(document:SceneDocument,entity:any,frameId:string|null,layers:any,loaded:Pick<GPU,'mesh'|'representation'>[],preview?:Transform) {
+export function selectionGeometry(document:SceneDocument,entity:any,frameId:string|null,layers:any,preview?:Transform) {
   if(!entity||entity.sourceContext||entity.visible===false||!frameId||isReferenceSurface(document,entity))return {corners:[] as Vec[],transform:undefined,axisSpace:'native',editable:false};
-  const reps=(entity.representations||[]).filter((r:any)=>representationPass(entity,r,frameId,layers).available),models=reps.filter((r:any)=>['generated_mesh','primitive'].includes(r.kind)),observedReps=reps.filter((r:any)=>['observed_surface','point_cloud'].includes(r.kind)),chosen=models.length&&(models.some((r:any)=>representationPass(entity,r,frameId,layers).visible)||!observedReps.length)?models:observedReps;
-  const modeled=chosen[0]&&['generated_mesh','primitive'].includes(chosen[0].kind),transform=chosen[0]?(modeled?preview||entity.currentModelTransform||chosen[0].transform:chosen[0].transform):undefined;
-  const corners=chosen.flatMap((r:any)=>{
-    const t=['generated_mesh','primitive'].includes(r.kind)?preview||entity.currentModelTransform||r.transform:r.transform;
-    if(t?.coordinateFrameId!==frameId)return [];
-    return loaded.filter(g=>g.representation.id===r.id).flatMap(g=>boundsCorners(g.mesh.bounds).map(p=>point(matmul(transformMatrix(t),g.mesh.matrix),p)));
-  });
-  const observed=entity.measurements?.coordinateFrameId===frameId?entity.measurements?.basis?.cornersNative:null;
-  const validObserved=!chosen.length&&Array.isArray(observed)&&observed.length===8&&observed.every((p:any)=>Array.isArray(p)&&p.length===3&&p.every(Number.isFinite));
-  return {corners:corners.length?corners:validObserved?observed:[],transform,axisSpace:modeled?'local':'native',editable:!!transform&&!!modeled&&layers.editable!==false&&models.some((r:any)=>representationPass(entity,r,frameId,layers).visible)};
+  const cloudOnly=layers.point_cloud!==false&&['observed_surface','generated_mesh','primitive'].every(kind=>layers[kind]===false);
+  const layer:GeometryLayer=cloudOnly?'point_cloud':layers.generated_mesh!==false||layers.primitive!==false?'model':'observed_surface';
+  const subject=preview?{...entity,currentModelTransform:preview}:entity;
+  const geometry=entityGeometryForLayer(subject,{layer,frameId,showCandidates:!!layers.showCandidates});
+  return geometry?{...geometry,editable:geometry.geometryKind==='model'&&layers.editable!==false}:{corners:[] as Vec[],transform:undefined,axisSpace:'native',editable:false};
 }
 
 export function readPacked(buffer:ArrayBuffer,metadata:any):Mesh[] {
@@ -112,7 +107,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
   function model(g:GPU){const e=entity(g.entityId),t=g.representation.kind==='observed_surface'||g.representation.kind==='point_cloud'?g.representation.transform:preview.get(g.entityId)||e?.currentModelTransform||g.representation.transform;return matmul(transformMatrix(t),g.mesh.matrix);}
   function visible(g:GPU){return representationPass(entity(g.entityId),g.representation,frameId,layers).visible;}
   function corners(id?:string){return gpu.filter(g=>(!id||g.entityId===id)&&visible(g)).flatMap(g=>boundsCorners(g.mesh.bounds).map(p=>point(model(g),p)));}
-  function selectedGeometry(id:string){return selectionGeometry(doc,entity(id),frameId,layers,gpu.filter(g=>g.entityId===id),preview.get(id));}
+  function selectedGeometry(id:string){return selectionGeometry(doc,entity(id),frameId,layers,preview.get(id));}
   function fittingPoints(){const models=gpu.filter(g=>visible(g)&&['generated_mesh','primitive'].includes(g.representation.kind));return models.length?models.flatMap(g=>boundsCorners(g.mesh.bounds).map(p=>point(model(g),p))):corners();}
   function dimensions(){const ps=fittingPoints();if(!ps.length)return;const min=[0,1,2].map(k=>Math.min(...ps.map(p=>p[k]))),max=[0,1,2].map(k=>Math.max(...ps.map(p=>p[k])));center=min.map((v,k)=>(v+max[k])/2);radius=Math.max(Math.hypot(...max.map((v,k)=>v-min[k]))/2,1e-4);}
   function viewSize(){const w=stage.clientWidth,h=stage.clientHeight,ratio=camera?.exact?camera.frame.width/camera.frame.height:w/h,cw=Math.min(w,h*ratio),ch=cw/ratio;return {w,h,cw,ch};}
@@ -124,7 +119,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
     for(const g of drawing){const pass=representationPass(entity(g.entityId),g.representation,frameId,layers);if(!(pick?pass.pick:pass.visible))continue;const id=pass.selectable?doc.entities.findIndex((e:any)=>e.id===g.entityId)+1:0;gl!.bindBuffer(gl!.ARRAY_BUFFER,g.vertex);gl!.bindBuffer(gl!.ELEMENT_ARRAY_BUFFER,g.index);attrs.forEach((a,k)=>gl!.vertexAttribPointer(a,k===3?2:3,gl!.FLOAT,false,44,k*12));gl!.activeTexture(gl!.TEXTURE0);gl!.bindTexture(gl!.TEXTURE_2D,g.texture);gl!.uniformMatrix4fv(u.model,false,model(g));gl!.uniform1f(u.selected,pass.selectable&&g.entityId===selection.entityId?1:0);gl!.uniform3f(u.pickColor,(id&255)/255,((id>>8)&255)/255,((id>>16)&255)/255);const mat=entity(g.entityId)?.material?.color;gl!.uniform3fv(u.tint,Array.isArray(mat)&&mat.length>=3?mat.slice(0,3):[1,1,1]);gl!.drawElements(g.mesh.mode===0?gl!.POINTS:gl!.TRIANGLES,g.mesh.indices.length,gl!.UNSIGNED_INT,0);}
     if(pick)return;svg.setAttribute('viewBox',`0 0 ${w} ${h}`);svg.replaceChildren();const project=(p:Vec)=>{const q=projected(vp,p,cw,ch);return q?add(q,[(w-cw)/2,(h-ch)/2]):null;};
     const line=(a:Vec|null,b:Vec|null,color:string,width=1.5)=>{if(!a||!b)return null;const el=document.createElementNS(svg.namespaceURI,'line');for(const[k,v]of Object.entries({x1:a[0],y1:a[1],x2:b[0],y2:b[1],stroke:color,'stroke-width':width}))el.setAttribute(k,String(v));svg.append(el);return el;};
-    const ids=layers.allBounds?doc.entities.filter((e:any)=>!e.sourceContext).map((e:any)=>e.id):[selection.entityId];for(const id of ids){if(!id)continue;const ps=selectedGeometry(id).corners;if(!ps.length)continue;const b={min:[0,1,2].map(k=>Math.min(...ps.map((p:Vec)=>p[k]))),max:[0,1,2].map(k=>Math.max(...ps.map((p:Vec)=>p[k])))};const box=boundsCorners(b).map(project);for(let i=0;i<8;i++)for(let k=0;k<3;k++)if(!(i&(1<<k)))line(box[i],box[i|(1<<k)],id===selection.entityId?'#7ae6cf':'#607e89');}
+    const ids=layers.allBounds?doc.entities.filter((e:any)=>!e.sourceContext).map((e:any)=>e.id):[selection.entityId];for(const id of ids){if(!id)continue;const ps=selectedGeometry(id).corners;if(!ps.length)continue;const box=ps.map(project);for(let i=0;i<8;i++)for(let k=0;k<3;k++)if(!(i&(1<<k)))line(box[i],box[i|(1<<k)],id===selection.entityId?'#7ae6cf':'#607e89');}
     const e=entity(selection.entityId),geometry=selectedGeometry(selection.entityId),ps=geometry.corners;if(e&&ps.length){const origin=[0,1,2].map(k=>ps.reduce((s:number,p:Vec)=>s+p[k],0)/ps.length),t=geometry.transform,m=geometry.axisSpace==='native'?identity():transformMatrix(t),length=radius*.16;
       for(let k=0;k<3;k++){const direction=unit([m[k*4],m[k*4+1],m[k*4+2]]),a=project(origin),b=project(add(origin,scale(direction,length))),color=['#ff6b6b','#65de96','#6bb3ff'][k];line(a,b,color,3);if(!a||!b)continue;
         const label=document.createElementNS(svg.namespaceURI,'text');label.textContent='XYZ'[k];for(const[key,value]of Object.entries({x:b[0]+5,y:b[1]-5,fill:color,'font-size':14,'font-weight':700}))label.setAttribute(key,String(value));svg.append(label);
@@ -135,7 +130,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
   async function url(id:string){const r=await options.resolveAsset(id);return typeof r==='string'?r:r.url;}
   async function setPhoto(){const n=++photoEpoch;photoAbort.abort();photoAbort=new AbortController();photo.hidden=true;if(photoObjectURL){URL.revokeObjectURL(photoObjectURL);photoObjectURL=null;}if(!camera?.exact)return;const f=camera.frame;let objectURL:string|null=null;try{const src=await url(f.imageId);if(disposed||n!==photoEpoch)return;const response=await fetch(src,{signal:photoAbort.signal});if(!response.ok)throw Error('photo_load_failed');objectURL=URL.createObjectURL(await response.blob());const img=new Image();img.src=objectURL;await img.decode();if(disposed||n!==photoEpoch){URL.revokeObjectURL(objectURL);return;}photoObjectURL=objectURL;photo.src=objectURL;photo.hidden=false;emit('renderReady',{phase:'photo',cameraId:f.id});}catch(error:any){if(objectURL&&objectURL!==photoObjectURL)URL.revokeObjectURL(objectURL);if(n===photoEpoch&&error.name!=='AbortError')emit('loadError',{code:'photo_load_failed',assetId:f.imageId});}}
   function setCamera(value:any){
-    if(disposed)return;viewMode=typeof value==='string'?value:value?.mode||'free';const f=(typeof value==='string'||value?.mode==='photo')?doc.cameras.find((c:any)=>c.id===(typeof value==='string'?value:value?.cameraId)):null;if(f){frameId=f.coordinateFrameId;camera=sourceCamera(f,radius,center);setPhoto();draw();return;}
+    if(disposed)return;viewMode=typeof value==='string'?value:value?.mode||'free';const f=doc.cameras.find((c:any)=>c.id===(typeof value==='string'?value:value?.cameraId));if(f)frameId=f.coordinateFrameId;if(f&&(typeof value==='string'||value?.mode==='photo')){camera=sourceCamera(f,radius,center);setPhoto();draw();return;}
     dimensions();const mode=typeof value==='string'?value:value?.mode||'free';if(value?.eye){navigationVersion++;camera=value;photo.hidden=true;draw();return;}
     const frame=doc.coordinateFrames.find((f:any)=>f.id===frameId),up=unit(frame?.ground?.normal||[0,0,1]),reference=doc.cameras.find((c:any)=>c.coordinateFrameId===frameId),rawFront=reference?reference.cameraToWorld.slice(0,3).map((r:Vec)=>-r[2]):[0,-1,0];let planar=add(rawFront,scale(up,-dot(rawFront,up)));if(Math.hypot(...planar)<1e-6){const axis=Math.abs(up[0])<.8?[1,0,0]:[0,1,0];planar=add(axis,scale(up,-dot(axis,up)));}const front=unit(planar),right=unit(cross(up,front)),back=mode==='top'?up:mode==='side'?right:mode==='front'?front:unit(add(add(front,scale(right,.45)),scale(up,.55))),vup=mode==='top'?scale(front,-1):up,ps=fittingPoints();
     camera=fitCamera(ps.length?ps:boundsCorners({min:[-1,-1,-1],max:[1,1,1]}),back,vup,Math.max(stage.clientWidth,1)/Math.max(stage.clientHeight,1),['top','front','side'].includes(mode));photoEpoch++;photoAbort.abort();photo.hidden=true;draw();

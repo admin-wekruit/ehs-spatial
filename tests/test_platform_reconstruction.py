@@ -23,12 +23,13 @@ class Repo:
         self.pid,self.cid,self.rid,self.jid = [str(uuid4()) for _ in range(4)]
         self.document = empty_document()
         self.document.update(captureId=self.cid,target="standalone_object")
+        height,width = (size,size) if isinstance(size,int) else size
         images = []
         for i in range(2):
             raw = io.BytesIO()
-            Image.fromarray(np.full((size,size,3),40+i,np.uint8)).save(raw,format="PNG")
+            Image.fromarray(np.full((height,width,3),40+i,np.uint8)).save(raw,format="PNG")
             asset = self.register_asset(self.pid,blobs.put(raw.getvalue(),"image/png"))
-            images.append({"id":asset["id"],"assetId":asset["id"],"width":size,"height":size,"pixelMapping":[]})
+            images.append({"id":asset["id"],"assetId":asset["id"],"width":width,"height":height,"pixelMapping":[]})
             self.document["assets"].append(asset)
         self.capture = {"id":self.cid,"images":images,"target":"standalone_object"}
         self.job = {"id":self.jid,"projectId":self.pid,"baseRevisionId":self.rid,"inputs":{"captureId":self.cid},"attemptToken":str(uuid4()),"kind":"analyze_capture","config":{}}
@@ -107,12 +108,17 @@ def test_generic_multiphoto_analysis_retains_tiny_objects_caches_frames_and_uses
     assert len(tiny) == 2 and all(not e["representations"] for e in tiny)
     assert len([r for e in document["entities"] for r in e["representations"]]) == 3
     context = next(e for e in document["entities"] if e.get("kind") == "capture_context")
+    assert context["sourceContext"] is True
+    assert len([e for e in document["entities"] if not e.get("sourceContext")]) == 4
     assert context["editable"] is False and context["representations"][0]["coverage"] == "observed_camera_state_only"
     for entity in document["entities"]:
         for rep in entity["representations"]:
             assert np.asarray(rep["bounds"]["min"]).shape == (3,)
         if entity["measurements"]:
             assert entity["measurements"]["dimensionBasis"] == "native_axes_not_ground_aligned"
+            bounds = entity["measurements"]["observedBounds"]
+            assert isinstance(entity["measurements"]["dimensionsNative"],list)
+            assert entity["measurements"]["dimensionsNative"] == pytest.approx(np.asarray(bounds["max"])-np.asarray(bounds["min"]))
     validate_document(document)
     calls = len(repo.calls)
     second,again = run_analysis(repo,blobs,repo.job,providers)
@@ -121,6 +127,12 @@ def test_generic_multiphoto_analysis_retains_tiny_objects_caches_frames_and_uses
     assert [e["id"] for e in second["entities"]] == [e["id"] for e in document["entities"]]
     depth = [a for a in repo.assets if a.get("metadata",{}).get("stage") == "depth"]
     assert len(depth) == 2 and depth[0]["metadata"]["cacheKey"] != depth[1]["metadata"]["cacheKey"]
+    repo.document = deepcopy(document)
+    # Context identity follows the shared field, including imported contexts.
+    next(e for e in repo.document["entities"] if e.get("sourceContext")).pop("kind")
+    _, generation = run_generation(repo,blobs,{**repo.job,"kind":"generate_scene","inputs":{}},{})
+    assert set(generation["manifest"]["entityIds"]) == {e["id"] for e in document["entities"] if not e.get("sourceContext")}
+    assert len(repo.calls) == calls
 
 
 def test_discovery_persisted_even_if_geometry_fails_no_retry_on_unknown_outcome(tmp_path):
@@ -275,3 +287,102 @@ def test_analysis_binds_estimated_native_ground_only_to_explicit_mask_evidence(t
     assert any(a.get("metadata",{}).get("kind") == "ground_fit_evidence" for a in document["assets"])
     assert result["groundFit"]["views"] and all(e["measurements"].get("groundHeightNative",0) == pytest.approx(0,abs=1e-6) for e in document["entities"])
     validate_document(document)
+
+
+@pytest.mark.parametrize("pose_source", ["imported_proposal", "requires_alignment_confirmation", "manual", "primitive", "unattributed"])
+def test_regeneration_replaces_stale_proposal_without_erasing_manual_or_unknown_pose(tmp_path, pose_source):
+    from ehs_spatial.platform.repository import apply_operations
+    from ehs_spatial.platform.spatial import primitive_mesh
+
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    providers = bundle(repo)
+    document, _ = run_analysis(repo, blobs, repo.job, providers)
+    target = next(e for e in document["entities"] if e["label"] == "unlisted ceramic fixture")
+    old = deepcopy(target["representations"][0])
+    old.update(id=str(uuid4()), kind="generated_mesh", placementState="unconfirmed", placementReason=pose_source)
+    old["transform"]["position"] = [8., 9., 10.]
+    target["representations"].append(old)
+    target["currentModelTransform"] = deepcopy(old["transform"])
+    if pose_source == "manual":
+        document, _ = apply_operations(document, [{"type":"setTransform", "entityId":target["id"], "transform":old["transform"]}])
+    elif pose_source == "primitive":
+        document, _ = apply_operations(document, [{"type":"setPrimitive", "entityId":target["id"], "primitive":{"type":"box", "dimensions":[1, 2, 3]}, "transform":old["transform"]}])
+    elif pose_source == "unattributed":
+        target["currentModelTransform"]["position"] = [18., 19., 20.]
+    repo.document = document
+    before = deepcopy(document)
+    mesh = primitive_mesh({"type":"box", "dimensions":[.1, .2, .3]})
+    proposed = np.eye(4)
+    proposed[:3, 3] = [1., 2., 3.]
+    providers["generation"] = provider("generation", lambda _: {"vertices":mesh.vertices, "faces":mesh.faces, "proposedObjectToNative":proposed})
+    generated, result = run_generation(repo, blobs, {**repo.job, "id":str(uuid4()), "kind":"generate_object", "inputs":{"entityId":target["id"]}}, providers)
+    entity = next(e for e in generated["entities"] if e["id"] == target["id"])
+    new = next(r for r in entity["representations"] if r["kind"] == "generated_mesh")
+    assert new["transform"]["position"] == pytest.approx([1., 2., 3.])
+    assert new["placementState"] == "unconfirmed"
+    assert result["placementConfirmedEntityIds"] == []
+    assert entity["currentModelTransform"] == (None if pose_source in ("imported_proposal", "requires_alignment_confirmation") else next(e for e in before["entities"] if e["id"] == target["id"])["currentModelTransform"])
+    assert repo.document == before
+    validate_document(generated)
+
+
+def test_original_mask_rings_survive_crop_resize_holes_single_pixels_and_resegmentation(tmp_path, monkeypatch):
+    from shapely import Polygon, contains_xy
+
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs,size=(9,15))
+    providers = bundle(repo)
+    providers["discovery"] = provider("discovery",lambda _:{"items":[{"label":"fixture","box":[0,0,15,9]}]})
+    mask = np.zeros((9,15),bool)
+    mask[1:8,2:13] = True
+    mask[3:6,5:9] = False
+    mask[0,0] = mask[8,14] = True  # Source pixels outside the geometry crop survive.
+    providers["segmentation"] = provider("segmentation",lambda _:{"mask":mask})
+    mapping = np.array([[.5,0,-1],[0,.5,-1],[0,0,1.]])
+    def geometry(payload):
+        y,x = np.mgrid[:4,:6]
+        return {"frames":[{"imageId":image["imageId"],"points":np.stack((x,y,np.ones_like(x)*2),axis=-1),
+            "valid":np.ones((4,6),bool),"K":np.array([[5,0,2.5],[0,5,1.5],[0,0,1.]]),"cameraToWorld":np.eye(4),
+            "rgb":np.full((4,6,3),100,np.uint8),"inputToCanonical":mapping} for image in payload["images"]]}
+    providers["geometry"] = provider("geometry",geometry)
+    document,result = run_analysis(repo,blobs,repo.job,providers)
+    assert result["status"] == "succeeded",result["errors"]
+    def check(observation, expected):
+        assert observation["polygonCoordinateConvention"] == "pixel_edges" and observation["fillRule"] == "evenodd"
+        assert observation["maskPolygonization"]["methodVersion"] == "pixel-runs-union-v1"
+        y,x = np.mgrid[:9,:15]
+        restored = np.zeros(expected.shape,bool)
+        for ring in observation["originalPixelPolygons"]:
+            restored ^= contains_xy(Polygon(ring),x+.5,y+.5)
+        np.testing.assert_array_equal(restored,expected)
+        asset = repo.get_asset(observation["maskAssetId"])
+        with Image.open(io.BytesIO(blobs.get(asset["storageKey"],asset["sha256"],asset["sizeBytes"]))) as image:
+            np.testing.assert_array_equal(np.asarray(image)>0,expected)
+        assert observation["originalPixelBox"] == [0,0,15,9]
+    for observation in document["observations"]:
+        check(observation,mask)
+        assert len(observation["originalPixelPolygons"]) == 4  # Outer, hole, two single-pixel components.
+    repo.document = document
+    original = deepcopy(document)
+    oid = document["observations"][0]["id"]
+    mask = np.zeros_like(mask)
+    empty,_ = run_segmentation(repo,blobs,{**repo.job,"inputs":{"observationId":oid}},providers)
+    observation = next(o for o in empty["observations"] if o["id"] == oid)
+    check(observation,mask)
+    assert observation["revision"] == 2 and observation["maskStatus"] == "empty"
+    assert observation["originalPixelPolygons"] == [] and "segmentation_empty" in observation["missingEvidence"]
+    assert any(oid in entity["observationRefs"] for entity in empty["entities"])
+    assert repo.document == original
+    repo.document = empty
+    mask[::2,::2] = True
+    monkeypatch.setattr("ehs_spatial.platform.reconstruction.MAX_MASK_POLYGON_RUNS",2)
+    limited,_ = run_segmentation(repo,blobs,{**repo.job,"inputs":{"observationId":oid}},providers)
+    observation = next(o for o in limited["observations"] if o["id"] == oid)
+    assert observation["maskStatus"] == "present" and "originalPixelPolygons" not in observation
+    assert observation["maskPolygonization"]["status"] == "complexity_limit"
+    assert "mask_polygon_complexity_limit" in observation["missingEvidence"] and "segmentation_empty" not in observation["missingEvidence"]
+    asset = repo.get_asset(observation["maskAssetId"])
+    with Image.open(io.BytesIO(blobs.get(asset["storageKey"],asset["sha256"],asset["sizeBytes"]))) as image:
+        np.testing.assert_array_equal(np.asarray(image)>0,mask)
+    validate_document(limited)

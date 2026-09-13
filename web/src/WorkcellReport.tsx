@@ -23,6 +23,7 @@ import { useI18n } from "./i18n";
 import { ErrorNotice } from "./App";
 import { AgentPanel } from "./AgentPanel";
 import { ReportScene } from "./ReportScene";
+import { ReportObjectFindings } from "./ReportObjectFindings";
 import { ReportReview, type AssessmentSummary } from "./ReportReview";
 import { isReferenceSurface } from "./scene-semantics";
 import { ReportEvidence } from "./ReportEvidence";
@@ -169,6 +170,7 @@ export function WorkcellReport({
     [search, setSearch] = useState(""),
     [generation, setGeneration] = useState(0);
   const [assessment, setAssessment] = useState<AssessmentSummary>();
+  const [evaluationRecords, setEvaluationRecords] = useState<{ revisionId: string; evaluations: Evaluation[] | null }>();
   const saving = useRef(false),
     alive = useRef(true),
     appliedHead = useRef<string | undefined>(undefined);
@@ -647,11 +649,27 @@ export function WorkcellReport({
         <div className="report-title-row">
           <div>
             <h1>{publication?.title || project.title}</h1>
-            <p>{t("reportFirstHint")}</p>
+
           </div>
           <div className="report-header-actions">
             <a className="button primary" href={modelWorkbenchURL}>{t("reportModelWorkbench")} ↗</a>
             <button onClick={() => { setReviewMode(true); jump("safety"); }}>{t("reportReviewAction")}</button>
+          <button
+            onClick={() => {
+              setReviewMode(true);
+              setAgentOpen(true);
+              setDraw(true);
+              setBox(null);
+              setSelection((s) => ({
+                ...s,
+                entityId: null,
+                observationId: null,
+              }));
+              jump("spatial");
+            }}
+          >
+            {t("reportMissingObject")} ＋
+          </button>
             <button disabled={busy} onClick={copy}>
               {t("copy")}
             </button>
@@ -682,7 +700,7 @@ export function WorkcellReport({
             }}
           >
             {t("readReport")}
-            <small>{t("reportReadOnly")}</small>
+
           </button>
           <button
             aria-pressed={reviewMode}
@@ -692,21 +710,11 @@ export function WorkcellReport({
             }}
           >
             {t("reviewReport")}
-            <small>{t("reportOpenAgent")}</small>
+
           </button>
         </div>
       </header>
       <nav className="report-index" aria-label={t("reportContents")}>
-        <span
-          className="report-index-identity"
-          title={publication?.title || project.title}
-        >
-          {publication?.title || project.title}
-          <small>
-            {sourceImages.length} {t("photos")} · {t("version")}{" "}
-            {revision.id.slice(0, 8)}
-          </small>
-        </span>
         {reportSections.map(([anchor, key]) => (
           <button key={anchor} onClick={() => jump(anchor)}>
             {t(key)}
@@ -719,19 +727,76 @@ export function WorkcellReport({
           {t(notice)}
         </p>
       )}
-      <section className="report-overview" aria-label={t("reportSituation")}>
-        <div>
-          <span className="report-kicker">{t("reportSituation")}</span>
-          <h2>{t("reportAssessment_" + assessmentState)}</h2>
-          <p>{t(assessmentState === "assessed" ? "reportAssessmentSavedHint" : "reportAssessmentScopeHint")}</p>
-        </div>
-        <ul className="report-attention">
-          {assessmentState === "assessed" && <li><button onClick={() => jump("safety")}><strong>{assessment!.attentionCount}</strong> {t("reportAttentionFindings")} <span aria-hidden="true">↗</span></button></li>}
-          {!!pendingGeometry && <li><a href={modelWorkbenchURL}><strong>{pendingGeometry}</strong> {t("reportAttentionGeometry")} <span aria-hidden="true">↗</span></a></li>}
-          {assessmentState === "unassessed" && <li><button onClick={() => { setReviewMode(true); jump("safety"); }}>{t("reportStartAssessment")} <span aria-hidden="true">↗</span></button></li>}
-          {assessmentState === "unavailable" && <li><button onClick={() => jump("safety")}>{t("reportAssessmentError")} <span aria-hidden="true">↗</span></button></li>}
-        </ul>
+      <section
+        id="workcell-spatial"
+        className="workcell-section report-visual-section"
+      >
+
+
+        {draw && <p className="report-notice">{t("reportDrawHint")}</p>}
+        <ReportScene
+          revision={revision}
+          selection={selection}
+          onSelect={select}
+          imageId={imageId}
+          cameraId={selection.cameraId}
+          onCamera={changeCamera}
+          onOpenSourceCad={jsonObject(jsonObject(doc.reportEvidence)?.historical)?.cad ? () => jump("original-cad") : undefined}
+          inspector={<>
+            <div className="report-selection-details">
+              {entity ? <>
+                <ObjectFacts entity={entity} document={doc} />
+                <ReportObjectFindings revision={revision} publication={publication} entityId={entity.id}
+                  evaluations={evaluationRecords?.revisionId === revision.id ? evaluationRecords.evaluations ?? undefined : undefined}
+                  loading={assessmentState === "loading"}
+                  onReview={() => { setReviewMode(true); jump("safety"); }} />
+              </> : <div className="report-inspector-empty"><h3>{t("reportSelectObject")}</h3><p>{t("reportSelectDetails")}</p><strong>{t("reportAssessment_" + assessmentState)}</strong><p>{t("reportAssessmentScopeHint")}</p></div>}
+            </div>
+            <button className="report-inspector-agent" aria-expanded={reviewMode && agentOpen} onClick={() => { setReviewMode(true); setAgentOpen(v => !v); }}>{t(agentOpen && reviewMode ? "reportCloseAgent" : "reportOpenAgent")}</button>
+        {reviewMode && agentOpen && (
+          <div className="report-correction" id="report-correction">
+            <div>
+              <p>{t("reportReviewHint")}</p>
+              {box && (
+                <p>
+                  {t("selectedBox")}: {box.map(Math.round).join(", ")}
+                </p>
+              )}
+            </div>
+            {agentOpen &&
+              (canWrite ? (
+                <AgentPanel
+                  projectId={project.id}
+                  revision={revision}
+                  branch={detail.branch}
+                  entityId={selection.entityId}
+                  observationId={selection.observationId}
+                  imageId={imageId}
+                  box={box}
+                  canWrite={!busy}
+                  onApply={apply}
+                />
+              ) : (
+                <div className="report-copy-prompt">
+                  <p>{t("reportCopyReason")}</p>
+                  <button className="primary" disabled={busy} onClick={copy}>
+                    {t("reportCopyToReview")} →
+                  </button>
+                </div>
+              ))}
+          </div>
+        )}
+          </>}
+          draw={draw}
+          onBox={(value) => {
+            setBox(value);
+            setDraw(false);
+            setAgentOpen(true);
+            setReviewMode(true);
+          }}
+        />
       </section>
+      <section id="workcell-understanding" className="workcell-section">
       <div className="report-summary">
         <div>
           <strong>{objects.length}</strong>
@@ -760,96 +825,7 @@ export function WorkcellReport({
           <span>{t("reportPhotoEvidence")}</span>
         </div>
       </div>
-      <section
-        id="workcell-spatial"
-        className="workcell-section report-visual-section"
-      >
-        <div className="report-section-heading">
-          <div>
-            <span className="report-kicker">01 / {t("reportReadOnly")}</span>
-            <h2>{t("reportSpatial")}</h2>
-          </div>
-          <button
-            onClick={() => {
-              setReviewMode(true);
-              setAgentOpen(true);
-              setDraw(true);
-              setBox(null);
-              setSelection((s) => ({
-                ...s,
-                entityId: null,
-                observationId: null,
-              }));
-              jump("spatial");
-            }}
-          >
-            {t("reportMissingObject")} ＋
-          </button>
-        </div>
-        <p className="report-section-intro">{t("reportSpatialHint")}</p>
-        {draw && <p className="report-notice">{t("reportDrawHint")}</p>}
-        <ReportScene
-          revision={revision}
-          selection={selection}
-          onSelect={select}
-          imageId={imageId}
-          cameraId={selection.cameraId}
-          onCamera={changeCamera}
-          onOpenSourceCad={jsonObject(jsonObject(doc.reportEvidence)?.historical)?.cad ? () => jump("original-cad") : undefined}
-          draw={draw}
-          onBox={(value) => {
-            setBox(value);
-            setDraw(false);
-            setAgentOpen(true);
-            setReviewMode(true);
-          }}
-        />
-        <div className="report-selection-details">
-          {entity ? (
-            <ObjectFacts entity={entity} document={doc} />
-          ) : (
-            <p>{t("reportSelectDetails")}</p>
-          )}
-        </div>
-        {reviewMode && (
-          <div className="report-correction" id="report-correction">
-            <div>
-              <h3>{t("reportOpenAgent")}</h3>
-              <p>{t("reportReviewHint")}</p>
-              {box && (
-                <p>
-                  {t("selectedBox")}: {box.map(Math.round).join(", ")}
-                </p>
-              )}
-              <button onClick={() => setAgentOpen((v) => !v)}>
-                {t(agentOpen ? "reportCloseAgent" : "reportOpenAgent")}
-              </button>
-            </div>
-            {agentOpen &&
-              (canWrite ? (
-                <AgentPanel
-                  projectId={project.id}
-                  revision={revision}
-                  branch={detail.branch}
-                  entityId={selection.entityId}
-                  observationId={selection.observationId}
-                  imageId={imageId}
-                  box={box}
-                  canWrite={!busy}
-                  onApply={apply}
-                />
-              ) : (
-                <div className="report-copy-prompt">
-                  <p>{t("reportCopyReason")}</p>
-                  <button className="primary" disabled={busy} onClick={copy}>
-                    {t("reportCopyToReview")} →
-                  </button>
-                </div>
-              ))}
-          </div>
-        )}
-      </section>
-      <section id="workcell-understanding" className="workcell-section">
+
         <div className="report-section-heading">
           <div>
             <span className="report-kicker">02 / {t("sourceEvidence")}</span>
@@ -943,6 +919,20 @@ export function WorkcellReport({
         <p className="report-footnote">{t("reportAssociationHint")}</p>
       </section>
       <section id="workcell-safety" className="workcell-section">
+      <section className="report-overview" aria-label={t("reportSituation")}>
+        <div>
+          <span className="report-kicker">{t("reportSituation")}</span>
+          <h2>{t("reportAssessment_" + assessmentState)}</h2>
+          <p>{t(assessmentState === "assessed" ? "reportAssessmentSavedHint" : "reportAssessmentScopeHint")}</p>
+        </div>
+        <ul className="report-attention">
+          {assessmentState === "assessed" && <li><button onClick={() => jump("safety")}><strong>{assessment!.attentionCount}</strong> {t("reportAttentionFindings")} <span aria-hidden="true">↗</span></button></li>}
+          {!!pendingGeometry && <li><a href={modelWorkbenchURL}><strong>{pendingGeometry}</strong> {t("reportAttentionGeometry")} <span aria-hidden="true">↗</span></a></li>}
+          {assessmentState === "unassessed" && <li><button onClick={() => { setReviewMode(true); jump("safety"); }}>{t("reportStartAssessment")} <span aria-hidden="true">↗</span></button></li>}
+          {assessmentState === "unavailable" && <li><button onClick={() => jump("safety")}>{t("reportAssessmentError")} <span aria-hidden="true">↗</span></button></li>}
+        </ul>
+      </section>
+
         <div className="report-section-heading">
           <div>
             <span className="report-kicker">03 / EHS</span>
@@ -975,6 +965,7 @@ export function WorkcellReport({
           }}
           onSaved={onSaved}
           onSummary={setAssessment}
+          onEvaluations={setEvaluationRecords}
         />
         <ReportEvidence
           document={doc}
@@ -1169,11 +1160,9 @@ function Extent({
   const { t } = useI18n(),
     d = sourceDimensions(entity),
     scale = sourceScale(document, entity),
-    values = isReferenceSurface(document, entity) ? [d.widthNative, d.depthNative] : [
-      d.widthNative ?? d.extentX,
-      d.depthNative ?? d.extentY,
-      d.groundHeight ?? d.extentZ,
-    ];
+    groundDimensions = [d.widthNative, d.depthNative, d.groundHeight],
+    values = isReferenceSurface(document, entity) ? [d.widthNative, d.depthNative] :
+      groundDimensions.every(Number.isFinite) ? groundDimensions : [d.extentX, d.extentY, d.extentZ];
   return values.some(Number.isFinite) ? (
     <span className="report-numeric">
       {values
@@ -1198,6 +1187,7 @@ function ObjectFacts({
 }) {
   const { t } = useI18n(),
     model = modelGeometry(entity),
+    dimensions = sourceDimensions(entity),
     scale = sourceScale(document, entity),
     transform = editableTransform(entity),
     tilt = modelTilt(document, entity);
@@ -1219,7 +1209,7 @@ function ObjectFacts({
       </div>
       <dl className="report-measurements">
         <div>
-          <dt>{t("reportObservedExtent")}</dt>
+          <dt>{t(referenceSurface ? "reportObservedExtent" : [dimensions.widthNative, dimensions.depthNative, dimensions.groundHeight].every(Number.isFinite) ? "reportGroundExtents" : "reportNativeExtents")}</dt>
           <dd>
             <Extent entity={entity} document={document} />
           </dd>

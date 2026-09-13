@@ -1447,6 +1447,7 @@ function Workspace({
                   document={document}
                   selectedId={selectedId}
                   onSelect={select}
+                  geometryOptions={{ layer: representation as "model" | "observed_surface" | "point_cloud", frameId: camera?.coordinateFrameId, showCandidates: !report }}
                 />
               </div>
               <div className="canvas-pane">
@@ -1455,6 +1456,7 @@ function Workspace({
                   document={document}
                   selectedId={selectedId}
                   onSelect={select}
+                  geometryOptions={{ layer: representation as "model" | "observed_surface" | "point_cloud", frameId: camera?.coordinateFrameId, showCandidates: !report }}
                   interactive
                 />
               </div>
@@ -1831,11 +1833,13 @@ export function PlanView({
   selectedId,
   onSelect,
   interactive = false,
+  geometryOptions,
 }: {
   document: SceneDocument;
   selectedId: string | null;
   onSelect: (id: string) => void;
   interactive?: boolean;
+  geometryOptions?: Parameters<typeof planShapes>[1];
 }) {
   const { t } = useI18n(),
     [zoom, setZoom] = useState(1),
@@ -1844,14 +1848,14 @@ export function PlanView({
     svg = useRef<SVGSVGElement>(null),
     picker = useRef<HTMLDivElement>(null),
     pointer = useRef<{ x: number; y: number; moved: boolean } | null>(null);
-  useEffect(() => { setCandidates([]); pointer.current = null; }, [document, selectedId, zoom]);
+  useEffect(() => { setCandidates([]); pointer.current = null; }, [document, selectedId, zoom, geometryOptions?.layer, geometryOptions?.frameId]);
   useEffect(() => { if (candidates.length) picker.current?.querySelector<HTMLButtonElement>("button[data-candidate]")?.focus(); }, [candidates]);
   function choose(id: string) {
     setCandidates([]);
     onSelect(id);
     svg.current?.focus();
   }
-  const shapes = planShapes(document);
+  const shapes = planShapes(document, geometryOptions);
   if (!shapes.length)
     return <div className="empty-stage">{t("emptyPlan")}</div>;
   const min = [
@@ -1922,7 +1926,7 @@ export function PlanView({
                 (b.max[0] - b.min[0]) * (b.max[1] - b.min[1]) -
                 (a.max[0] - a.min[0]) * (a.max[1] - a.min[1]),
             )
-            .map(({ entity, min: lo, max: hi, polygon, projectionSource }) => (
+            .map(({ entity, min: lo, max: hi, polygon, projectionSource, geometryKind }) => (
               <g
                 key={entity.id}
                 role="button"
@@ -1946,7 +1950,7 @@ export function PlanView({
                       ),
                     )
                     .join(" ")}
-                  className={[entity.id === selectedId ? "selected" : "", projectionSource === "model_bounds" ? "model-footprint" : projectionSource === "saved_hull" ? "saved-footprint" : "observed-footprint"].join(" ")}
+                  className={[entity.id === selectedId ? "selected" : "", geometryKind === "model" ? "model-footprint" : projectionSource === "saved_hull" ? "saved-footprint" : "observed-footprint"].join(" ")}
                 />
                 <title>{entity.label || entity.id}</title>
                 {entity.id === selectedId && (

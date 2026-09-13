@@ -17,6 +17,7 @@ export type ReportReviewProps = {
   onSaved: (commit: Commit) => void;
   onError?: (error: unknown) => void;
   onSummary?: (summary: AssessmentSummary) => void;
+  onEvaluations?: (records: { revisionId: string; evaluations: Evaluation[] | null }) => void;
 };
 
 export type AssessmentSummary = {
@@ -25,7 +26,7 @@ export type AssessmentSummary = {
   evaluationCount: number;
   attentionCount: number;
 };
-function findingResult(finding: Evaluation["document"]["findings"][number]) {
+export function findingResult(finding: Evaluation["document"]["findings"][number]) {
   return finding.applicability === "unknown" ? "APPLICABILITY_UNKNOWN" : finding.applicability === "not_applicable" ? "NOT_APPLICABLE" : finding.machineResult || "INSUFFICIENT_EVIDENCE";
 }
 export function assessmentSummary(revisionId: string, evaluations: Evaluation[]): AssessmentSummary {
@@ -44,7 +45,7 @@ export function exactReviewEvidence(revisionId: string, evaluations: Evaluation[
 }
 
 const fieldKeys: Record<string, string> = { source: "rrFieldSource", value: "rrFieldValue", unit: "rrFieldUnit", uncertaintyM: "rrFieldUncertainty", requirement: "rrFieldRequirement", passed: "rrFieldPassed", sourceRefs: "rrFieldRefs", evidenceRefs: "rrFieldRefs", annotationId: "rrFieldAnnotation", assetId: "rrFieldAsset", coordinateFrameId: "rrFieldFrame" };
-const missingKeys: Record<string, string> = { applicability_confirmation: "rrApplicabilityMissing", target_inventory_confirmation: "rrInventoryMissing", metric_footprint: "rrFootprintMissing", metric_calibration: "rrCalibrationMissing", metric_height: "rrHeightMissing", invalid_geometry: "rrGeometryMissing", registered_coordinate_frame: "rrRegistrationMissing" };
+export const missingKeys: Record<string, string> = { applicability_confirmation: "rrApplicabilityMissing", target_inventory_confirmation: "rrInventoryMissing", metric_footprint: "rrFootprintMissing", metric_calibration: "rrCalibrationMissing", metric_height: "rrHeightMissing", invalid_geometry: "rrGeometryMissing", registered_coordinate_frame: "rrRegistrationMissing" };
 
 function EvidenceValue({ value, t }: { value: unknown; t: (key: string) => string }) {
   if (value === null || value === undefined) return <span className="rr-muted">{t("rrEvidenceMissing")}</span>;
@@ -58,7 +59,7 @@ function sourceURL(value: unknown) {
   try { const url = new URL(String(value)); return ["http:", "https:"].includes(url.protocol) ? url.href : null; } catch { return null; }
 }
 
-export function ReportReview({ detail, publication, reviewMode, canWrite, onSelect, onSaved, onError, onSummary }: ReportReviewProps) {
+export function ReportReview({ detail, publication, reviewMode, canWrite, onSelect, onSaved, onError, onSummary, onEvaluations }: ReportReviewProps) {
   const { language, t: globalT } = useI18n();
   const t = (key: string) => reportReviewMessages[key]?.[language === "zh" ? 0 : 1] || globalT(key);
   const revision = publication?.snapshot.revision || detail.revision;
@@ -116,10 +117,11 @@ export function ReportReview({ detail, publication, reviewMode, canWrite, onSele
   const sourceRecords = publication ? publication.snapshot : records?.scope === scope ? records : { evaluations: [], reviews: [], evidence: [] };
   const { evaluations, reviews } = exactReviewEvidence(revision.id, sourceRecords.evaluations, sourceRecords.reviews);
   useEffect(() => {
+    onEvaluations?.({ revisionId: revision.id, evaluations: !publication && records?.scope !== scope ? null : sourceRecords.evaluations });
     onSummary?.(!publication && records?.scope !== scope
       ? { revisionId: revision.id, state: error ? "unavailable" : "loading", evaluationCount: 0, attentionCount: 0 }
       : assessmentSummary(revision.id, sourceRecords.evaluations));
-  }, [scope, publication, records, error, onSummary]);
+  }, [scope, publication, records, error, onSummary, onEvaluations]);
   const policies = policyRecords?.projectId === projectId ? policyRecords.policies : [];
   const policyDetails = policyRecords?.projectId === projectId ? policyRecords.details : [];
   const activePolicies = policies.filter(p => p.activeRevisionId);

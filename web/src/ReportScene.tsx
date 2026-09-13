@@ -1,14 +1,12 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { SpatialView, PlanView } from "./App";
 import { PhotoView } from "./PhotoView";
 import { useI18n } from "./i18n";
-import { observationsFor, modelGeometry, jsonObject, planShapes } from "./core";
+import { observationsFor, entityGeometryForLayer, jsonObject, planShapes, type GeometryOptions } from "./core";
 import { isReferenceSurface } from "./scene-semantics";
 import {
   add,
-  boundsCorners,
   cameraMatrix,
-  point,
   projected,
   scale,
   sourceCamera,
@@ -31,7 +29,7 @@ const paneOrder: Pane[] = ["photo", "spatial", "cad", "plan"];
 const colors = ["#e86b58", "#39ad7c", "#458ce0"];
 const noEdit = () => {};
 
-function sceneAvailability(document: SceneDocument) {
+function sceneAvailability(document: SceneDocument, geometryOptions: GeometryOptions) {
   const frames = new Set(document.coordinateFrames.map((frame) => frame.id));
   const assets = new Set(document.assets.map((asset) => asset.id));
   const representations = document.entities.flatMap((entity) =>
@@ -43,83 +41,20 @@ function sceneAvailability(document: SceneDocument) {
     ["observed_surface", "point_cloud"].includes(representation.kind) && representation.placementState === "confirmed");
   const hasModel = representations.some((representation) => ["generated_mesh", "primitive"].includes(representation.kind));
   const hasGround = document.coordinateFrames.some((frame) => {
+    if (frame.id !== geometryOptions.frameId) return false;
     const normal = frame.ground?.normal;
     return Array.isArray(normal) && normal.length === 3 && normal.every(Number.isFinite) && Math.hypot(...normal) > 1e-8;
   });
   return {
     spatialTitle: hasModel && !hasObserved ? "sceneObjectModels" : "scene3D",
-    planEmpty: planShapes(document).length ? null : hasGround ? "sceneNoPlanProjection" : "sceneNoPlanGround",
-  };
-}
-
-function entityGeometry(entity: Entity, layer: Layer, frameId?: string) {
-  if (entity.sourceContext || entity.visible === false) return null;
-  const representations = (entity.representations || []).filter(
-    (representation) =>
-      (!frameId || representation.coordinateFrameId === frameId) &&
-      (representation.placementState === "confirmed" ||
-        ["imported_proposal", "requires_alignment_confirmation"].includes(
-          representation.placementReason || "",
-        )),
-  );
-  const representation =
-    representations.find((r) =>
-      layer === "model"
-        ? r.kind === "generated_mesh" || r.kind === "primitive"
-        : r.kind === layer,
-    ) ||
-    representations.find((r) => r.kind === "observed_surface") ||
-    representations.find(
-      (r) => r.kind === "generated_mesh" || r.kind === "primitive",
-    );
-  if (!representation) {
-    const corners = jsonObject(entity.measurements?.basis)?.cornersNative;
-    const coordinateFrameId = entity.measurements?.coordinateFrameId;
-    if (
-      typeof coordinateFrameId !== "string" ||
-      (frameId && coordinateFrameId !== frameId) ||
-      !Array.isArray(corners) ||
-      corners.length !== 8 ||
-      !corners.every(
-        (p) =>
-          Array.isArray(p) &&
-          p.length === 3 &&
-          p.every((v) => typeof v === "number" && Number.isFinite(v)),
-      )
-    )
-      return null;
-    return {
-      corners: corners as Vec[],
-      transform: {
-        coordinateFrameId,
-        position: [0, 0, 0],
-        quaternion: [0, 0, 0, 1],
-        scale: [1, 1, 1],
-      },
-      axisSpace: "native",
-    };
-  }
-  const modeled = ["generated_mesh", "primitive"].includes(representation.kind);
-  const transform = modeled
-    ? entity.currentModelTransform || representation.transform
-    : representation.transform;
-  const model = modeled
-    ? modelGeometry({ ...entity, representations: [representation] })
-    : null;
-  if (model) return { corners: model.corners, transform, axisSpace: "local" };
-  if (!representation.bounds) return null;
-  const matrix = transformMatrix(transform);
-  return {
-    corners: boundsCorners(representation.bounds).map((p) => point(matrix, p)),
-    transform,
-    axisSpace: modeled ? "local" : "native",
+    planEmpty: planShapes(document, geometryOptions).length ? null : hasGround ? "sceneNoPlanProjection" : "sceneNoPlanGround",
   };
 }
 
 // Uses the same camera projection and pixel-centre convention as the WebGL view.
 function photoOverlay(document: SceneDocument, entity: Entity, camera: Camera, layer: Layer) {
   if (isReferenceSurface(document, entity)) return null;
-  const geometry = entityGeometry(entity, layer, camera.coordinateFrameId);
+  const geometry = entityGeometryForLayer(entity, { layer, frameId: camera.coordinateFrameId, showCandidates: true });
   if (
     !geometry ||
     geometry.transform.coordinateFrameId !== camera.coordinateFrameId
@@ -257,15 +192,8 @@ function PhotoAxes({
 }
 
 export function ReportScene({
-  revision,
-  selection,
-  onSelect,
-  imageId,
-  cameraId,
-  onCamera,
-  draw = false,
-  onBox,
-  onOpenSourceCad,
+  revision, selection, onSelect, imageId, cameraId, onCamera,
+  draw = false, onBox, onOpenSourceCad, inspector,
 }: {
   revision: Revision;
   selection: Selection;
@@ -276,382 +204,169 @@ export function ReportScene({
   draw?: boolean;
   onBox?: (box: number[] | null) => void;
   onOpenSourceCad?: () => void;
+  inspector?: ReactNode;
 }) {
-  const { t } = useI18n(),
-    container = useRef<HTMLElement>(null),
-    panePrefix = useId();
+  const { t } = useI18n(), container = useRef<HTMLElement>(null),
+    objectList = useRef<HTMLDivElement>(null), panePrefix = useId();
   const [layer, setLayer] = useState<Layer>("model"),
-    [allBounds, setAllBounds] = useState(false);
-  const [mobilePane, setMobilePane] = useState<Pane>("photo"),
-    [focused, setFocused] = useState<Pane | null>(null);
-  const [search, setSearch] = useState(""),
-    [fullscreenError, setFullscreenError] = useState(false);
-  const document = revision.document;
-  const availability = sceneAvailability(document);
-  const selected = document.entities.find(
-    (entity) => entity.id === selection.entityId,
-  );
-  const camera =
-    document.cameras.find((c) => c.id === cameraId && c.imageId === imageId) ||
+    [allBounds, setAllBounds] = useState(false),
+    [focused, setFocused] = useState<Pane | null>(null),
+    [mobileSection, setMobileSection] = useState("views"),
+    [search, setSearch] = useState(""),
+    [fullscreenError, setFullscreenError] = useState(false),
+    [isFullscreen, setIsFullscreen] = useState(false);
+  const document = revision.document,
+    selected = document.entities.find((entity) => entity.id === selection.entityId);
+  const camera = document.cameras.find((c) => c.id === cameraId && c.imageId === imageId) ||
     document.cameras.find((c) => c.imageId === imageId);
-  const images = [
-    ...new Set([
-      ...document.assets
-        .filter((a) => a.kind === "source_image")
-        .map((a) => a.id),
-      ...document.cameras.map((c) => c.imageId),
-    ]),
-  ].map((id) => ({
-    imageId: id,
-    cameraId: document.cameras.find((c) => c.imageId === id)?.id || null,
-  }));
-  const hasPointCloud = document.entities.some((e) =>
-    (e.representations || []).some((r) => r.kind === "point_cloud"),
-  );
-  const hasRepresentation = document.entities.some((e) =>
-    (e.representations || []).some((r) =>
-      layer === "model"
-        ? ["generated_mesh", "primitive", "observed_surface"].includes(r.kind)
-        : r.kind === layer,
-    ),
-  );
-  const hasCandidates =
-    layer === "model" &&
-    document.entities.some((e) =>
-      (e.representations || []).some(
-        (r) =>
-          r.placementState === "unconfirmed" &&
-          ["imported_proposal", "requires_alignment_confirmation"].includes(
-            r.placementReason || "",
-          ),
-      ),
-    );
-  const selectedOverlay =
-    selected && camera ? photoOverlay(document, selected, camera, layer) : null;
+  const geometryOptions: GeometryOptions = { layer, frameId: camera?.coordinateFrameId || document.coordinateFrames[0]?.id || "", showCandidates: true };
+  const availability = sceneAvailability(document, geometryOptions);
+  const images = [...new Set([
+    ...document.assets.filter((a) => a.kind === "source_image").map((a) => a.id),
+    ...document.cameras.map((c) => c.imageId),
+  ])].map((id) => ({ imageId: id, cameraId: document.cameras.find((c) => c.imageId === id)?.id || null }));
+  const hasPointCloud = document.entities.some((e) => (e.representations || []).some((r) => r.kind === "point_cloud"));
+  const hasRepresentation = document.entities.some((e) => (e.representations || []).some((r) => layer === "model"
+    ? ["generated_mesh", "primitive", "observed_surface"].includes(r.kind) : r.kind === layer));
+  const hasCandidates = layer === "model" && document.entities.some((e) => (e.representations || []).some((r) =>
+    r.placementState === "unconfirmed" && ["imported_proposal", "requires_alignment_confirmation"].includes(r.placementReason || "")));
+  const selectedOverlay = selected && camera ? photoOverlay(document, selected, camera, layer) : null;
   const objects = document.entities.filter((entity) => !entity.sourceContext);
-  const filtered = objects.filter((e) =>
-    `${e.label || ""} ${e.id}`.toLowerCase().includes(search.toLowerCase()),
-  );
-  useEffect(() => {
-    if (layer === "point_cloud" && !hasPointCloud) setLayer("model");
-  }, [hasPointCloud, layer]);
-  useEffect(() => {
-    if (draw) {
-      setMobilePane("photo");
-      setFocused(null);
-    }
-  }, [draw]);
-  useEffect(() => {
-    const changed = () => {
-      if (!window.document.fullscreenElement) setFocused(null);
-    };
-    window.document.addEventListener("fullscreenchange", changed);
-    return () =>
-      window.document.removeEventListener("fullscreenchange", changed);
-  }, []);
-  async function fullscreen(pane: Pane) {
-    setFocused(pane);
-    setMobilePane(pane);
-    setFullscreenError(false);
-    try {
-      if (!container.current?.requestFullscreen)
-        throw new Error("fullscreen_unavailable");
-      await container.current.requestFullscreen();
-    } catch {
-      setFullscreenError(true);
+  const filtered = objects.filter((e) => `${e.label || ""} ${e.id}`.toLowerCase().includes(search.toLowerCase()));
+  const photoIds = new Map(objects.map((entity) => [entity.id, new Set(observationsFor(document, entity).map((o) => o.imageId))]));
+  const reportObjects = jsonObject(document.reportEvidence)?.objects;
+  if (Array.isArray(reportObjects)) for (const item of reportObjects) {
+    const record = jsonObject(item), views = record?.views;
+    if (typeof record?.entityId !== "string" || !Array.isArray(views)) continue;
+    for (const view of views) {
+      const source = jsonObject(view);
+      if (typeof source?.imageId === "string" && images.some((image) => image.imageId === source.imageId))
+        photoIds.get(record.entityId)?.add(source.imageId);
     }
   }
-  async function closeFullscreen() {
-    setFocused(null);
+  useEffect(() => { if (layer === "point_cloud" && !hasPointCloud) setLayer("model"); }, [hasPointCloud, layer]);
+  useEffect(() => { if (draw) { setFocused("photo"); setMobileSection("views"); } }, [draw]);
+  useEffect(() => {
+    const changed = () => {
+      const active = window.document.fullscreenElement === container.current;
+      setIsFullscreen(active);
+      if (!active) setFocused(null);
+    };
+    window.document.addEventListener("fullscreenchange", changed);
+    return () => window.document.removeEventListener("fullscreenchange", changed);
+  }, []);
+  useEffect(() => {
+    const list = objectList.current, active = list?.querySelector<HTMLElement>('[aria-pressed="true"]');
+    if (!list || !active) return;
+    const row = active.getBoundingClientRect(), viewport = list.getBoundingClientRect();
+    // Scroll only the object rail; selecting a scene object must not move the report.
+    if (row.top < viewport.top) list.scrollTop -= viewport.top - row.top;
+    else if (row.bottom > viewport.bottom) list.scrollTop += row.bottom - viewport.bottom;
+  }, [selection.entityId, search]);
+  function chooseView(pane: Pane | null) { setFocused(pane); setMobileSection("views"); }
+  async function fullscreen() {
     setFullscreenError(false);
-    if (window.document.fullscreenElement)
-      await window.document.exitFullscreen();
+    try {
+      if (window.document.fullscreenElement === container.current) await window.document.exitFullscreen();
+      else if (container.current?.requestFullscreen) await container.current.requestFullscreen();
+      else throw new Error("fullscreen_unavailable");
+    } catch { setFullscreenError(true); }
   }
   function selectEntity(entityId: string, observationId?: string) {
     onSelect(entityId, observationId);
+    setMobileSection("views");
     const entity = document.entities.find((e) => e.id === entityId);
     if (!entity) return;
-    const observations = observationsFor(document, entity);
-    const observation =
-      observations.find((o) => o.id === observationId) ||
-      observations.find((o) => o.imageId === imageId) ||
-      observations[0];
-    if (observation && observation.imageId !== imageId) {
-      const nextCamera = document.cameras.find(
-        (c) => c.imageId === observation.imageId,
-      );
-      onCamera(observation.imageId, nextCamera?.id || null);
-    }
+    const observations = observationsFor(document, entity), observation = observations.find((o) => o.id === observationId) ||
+      observations.find((o) => o.imageId === imageId) || observations[0];
+    if (observation && observation.imageId !== imageId)
+      onCamera(observation.imageId, document.cameras.find((c) => c.imageId === observation.imageId)?.id || null);
   }
   return (
-    <section
-      ref={container}
-      className={`report-scene ${focused ? "report-scene-focused" : ""}`}
-      data-mobile-pane={mobilePane}
-      data-focused-pane={focused || ""}
-    >
-      <div className="report-scene-toolbar">
-        <div className="report-scene-intro">
-          <strong>{t("sceneLinked")}</strong>
-          <span>
-            {selected
-              ? `${t("sceneSelected")} · ${selected.label || selected.id}`
-              : t("sceneReadOnly")}
-          </span>
-        </div>
+    <section ref={container} className="report-scene" data-view={focused || "quad"}
+      data-mobile-section={mobileSection} data-mobile-pane={focused || "photo"}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && !event.defaultPrevented) { setFocused(null); setFullscreenError(false); }
+      }}>
+      <header className="report-scene-toolbar">
+        <div className="report-scene-intro"><strong>{t("sceneWorkspace")}</strong><span>{t("sceneLinked")}</span></div>
         <div className="report-scene-controls">
-          <label>
-            <span>{t("sceneLayers")}</span>
-            <select
-              aria-label={t("sceneLayers")}
-              value={layer}
-              onChange={(e) => setLayer(e.target.value as Layer)}
-            >
-              <option value="model">{t("sceneModel")}</option>
-              <option value="observed_surface">{t("sceneObserved")}</option>
-              <option value="point_cloud" disabled={!hasPointCloud}>
-                {t(hasPointCloud ? "scenePoints" : "sceneNoPoints")}
-              </option>
-            </select>
-          </label>
-          <label className="report-scene-check">
-            <input
-              type="checkbox"
-              checked={allBounds}
-              onChange={(e) => setAllBounds(e.target.checked)}
-            />
-            {t("sceneAllBounds")}
-          </label>
-          {focused && (
-            <button onClick={closeFullscreen}>
-              {t("sceneCloseFullscreen")} ×
-            </button>
-          )}
+          <label><span>{t("sceneLayers")}</span><select aria-label={t("sceneLayers")} value={layer} onChange={(e) => setLayer(e.target.value as Layer)}>
+            <option value="model">{t("sceneModel")}</option><option value="observed_surface">{t("sceneObserved")}</option>
+            <option value="point_cloud" disabled={!hasPointCloud}>{t(hasPointCloud ? "scenePoints" : "sceneNoPoints")}</option>
+          </select></label>
+          <label className="report-scene-check"><input type="checkbox" checked={allBounds} onChange={(e) => setAllBounds(e.target.checked)} />{t("sceneAllBounds")}</label>
+          <button className="report-scene-fullscreen" onClick={fullscreen} aria-pressed={isFullscreen} aria-label={t(isFullscreen ? "sceneExitFullscreen" : "sceneFullscreen")}>⛶ <span>{t(isFullscreen ? "sceneExitFullscreen" : "sceneFullscreen")}</span></button>
         </div>
-      </div>
-      {fullscreenError && (
-        <p className="report-scene-notice" role="status">
-          {t("sceneFullscreenUnavailable")}
-        </p>
-      )}
-      {hasCandidates && (
-        <p className="report-scene-notice">{t("sceneCandidateNotice")}</p>
-      )}
-      <div
-        className="report-scene-mobile-tabs"
-        role="tablist"
-        aria-label={t("sceneLinked")}
-      >
-        {paneOrder.map((pane, index) => (
-          <button
-            key={pane}
-            role="tab"
-            tabIndex={mobilePane === pane ? 0 : -1}
-            onKeyDown={(event) => {
-              if (
-                !["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)
-              )
-                return;
-              event.preventDefault();
-              const next =
-                event.key === "Home"
-                  ? 0
-                  : event.key === "End"
-                    ? paneOrder.length - 1
-                    : (index +
-                        (event.key === "ArrowRight" ? 1 : -1) +
-                        paneOrder.length) %
-                      paneOrder.length;
-              setMobilePane(paneOrder[next]);
-              if (focused) setFocused(paneOrder[next]);
-              event.currentTarget.parentElement
-                ?.querySelectorAll<HTMLButtonElement>("button")
-                [next]?.focus();
-            }}
-            aria-selected={mobilePane === pane}
-            aria-controls={`${panePrefix}-${pane}`}
-            onClick={() => {
-              setMobilePane(pane);
-              if (focused) setFocused(pane);
-            }}
-          >
-            {t(paneNames[pane])}
-          </button>
-        ))}
-      </div>
-      <div className="report-scene-grid">
-        {paneOrder.map((pane, index) => (
-          <section
-            className="report-scene-pane"
-            id={`${panePrefix}-${pane}`}
-            data-pane={pane}
-            key={pane}
-            aria-label={t(paneNames[pane])}
-          >
-            <header>
-              <h3>
-                <span>{String(index + 1).padStart(2, "0")}</span>
-                {t(pane === "spatial" ? availability.spatialTitle : paneNames[pane])}
-              </h3>
-              {pane === "cad" && onOpenSourceCad && <button className="report-scene-source-cad" onClick={onOpenSourceCad}>{t("sceneSourceCad")} ↗</button>}
-              <button
-                className="report-scene-expand"
-                aria-label={`${t("sceneFullscreen")} · ${t(paneNames[pane])}`}
-                title={t("sceneFullscreen")}
-                onClick={() => fullscreen(pane)}
-              >
-                ⛶
-              </button>
-            </header>
-            <div className="report-scene-pane-body">
-              {pane === "photo" && (
-                <>
-                  <PhotoView
-                    document={document}
-                    imageId={imageId}
-                    selectedId={selection.entityId}
-                    onSelect={selectEntity}
-                    draw={draw}
-                    onBox={onBox}
-                  />
-                  {camera && (
-                    <PhotoAxes
-                      revision={revision}
-                      camera={camera}
-                      layer={layer}
-                      selectedId={selection.entityId}
-                      allBounds={allBounds}
-                    />
-                  )}
-                </>
-              )}
-              {pane === "spatial" && (
-                <>
-                  <SpatialView
-                    revision={revision}
-                    selection={selection}
-                    onSelect={selectEntity}
-                    onCommit={noEdit}
-                    mode="free"
-                    cameraId={cameraId}
-                    layers={{
-                      observed_surface: layer !== "point_cloud",
-                      generated_mesh: layer === "model",
-                      primitive: layer === "model",
-                      point_cloud: layer === "point_cloud",
-                      allBounds,
-                      showCandidates: true,
-                      editable: false,
-                      opacity: 1,
-                    }}
-                  />
-                  {!hasRepresentation && (
-                    <div className="report-scene-stage-note">
-                      {t("sceneNoRepresentation")}
-                    </div>
-                  )}
-                </>
-              )}
-              {(pane === "cad" || pane === "plan") && availability.planEmpty && (
-                <div className="report-scene-plan-empty" role="status">
-                  <strong>{t("scenePlanUnavailable")}</strong>
-                  <p>{t(availability.planEmpty)}</p>
-                  <small>{t("sceneSelectionRetained")}</small>
-                </div>
-              )}
-              {pane === "cad" && !availability.planEmpty && (
-                <PlanView
-                  document={document}
-                  selectedId={selection.entityId}
-                  onSelect={selectEntity}
-                />
-              )}
-              {pane === "plan" && !availability.planEmpty && (
-                <PlanView
-                  document={document}
-                  selectedId={selection.entityId}
-                  onSelect={selectEntity}
-                  interactive
-                />
-              )}
-            </div>
-            {pane === "photo" && (
-              <footer className="report-scene-photo-switch">
-                {images.map((image, i) => (
-                  <button
-                    key={image.imageId}
-                    aria-pressed={imageId === image.imageId}
-                    onClick={() => onCamera(image.imageId, image.cameraId)}
-                  >
-                    {t("scenePhotoNumber")} {i + 1}
-                  </button>
-                ))}
-                {draw && <span>{t("sceneDrawActive")}</span>}
-              </footer>
-            )}
-          </section>
-        ))}
-      </div>
-      {selected && (
-        <p className="report-scene-selection-note">
-          <strong>
-            {t("sceneSelected")} · {selected.label || selected.id}
-          </strong>
-          <span>
-            {isReferenceSurface(document, selected)
-              ? t("sceneReferenceSurface")
-              : selectedOverlay
-              ? t(
-                  selectedOverlay.axisSpace === "native"
-                    ? "sceneNativeAxis"
-                    : "sceneSourceAxis",
-                )
-              : !entityGeometry(selected, layer)
-                ? t("sceneNoGeometrySelection")
-                : t("sceneNoPhotoAxes")}
-          </span>
-        </p>
-      )}
-      <details className="report-scene-objects">
-        <summary>
-          {t("sceneObjects")} <span>{objects.length}</span>
-          {selected && <small>{selected.label || selected.id}</small>}
-        </summary>
-        <div className="report-scene-object-content">
-          <input
-            type="search"
-            aria-label={t("sceneSearch")}
-            placeholder={t("sceneSearch")}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <div className="report-scene-object-list">
-            {filtered.map((entity) => (
-              <button
-                key={entity.id}
-                aria-pressed={entity.id === selection.entityId}
-                onClick={() => selectEntity(entity.id)}
-              >
+      </header>
+      {fullscreenError && <p className="report-scene-notice" role="status">{t("sceneFullscreenUnavailable")}</p>}
+      <nav className="report-scene-section-tabs" aria-label={t("sceneWorkspace")}>
+        {(["objects", "views", "inspector"] as const).map((section) => <button key={section}
+          aria-pressed={mobileSection === section} aria-controls={`${panePrefix}-${section}`} onClick={() => setMobileSection(section)}>
+          {t(section === "objects" ? "sceneObjects" : section === "views" ? "sceneViews" : "sceneInspector")}
+          {section === "objects" && <span>{objects.length}</span>}
+        </button>)}
+      </nav>
+      <div className="report-scene-shell">
+        <aside className="report-scene-object-rail" id={`${panePrefix}-objects`} aria-label={t("sceneObjects")}>
+          <header><h3>{t("sceneObjects")}</h3><span className="report-scene-count">{objects.length}</span></header>
+          <div className="report-scene-object-search"><input type="search" aria-label={t("sceneSearch")} placeholder={t("sceneSearch")} value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+          <div className="report-scene-current-object" aria-live="polite">
+            <span>{t("sceneSelected")}</span><strong>{selected?.label || selected?.id || t("sceneNoSelection")}</strong>
+            {selected && <small>{selected.id.slice(0, 8)}</small>}
+          </div>
+          <div ref={objectList} className="report-scene-object-list">
+            {filtered.map((entity) => {
+              const indices = images.flatMap((image, index) => photoIds.get(entity.id)?.has(image.imageId) ? [index + 1] : []);
+              return <button key={entity.id} aria-pressed={entity.id === selection.entityId} onClick={() => selectEntity(entity.id)}>
                 <strong>{entity.label || entity.id}</strong>
-                <span>
-                  {observationsFor(document, entity).length}{" "}
-                  {t("sceneEvidenceCount")} · {entity.id.slice(0, 6)}
-                  {!(entity.representations || []).length
-                    ? ` · ${t("sceneNoGeometry")}`
-                    : (entity.representations || []).some(
-                          (r) => r.placementState === "unconfirmed",
-                        )
-                      ? ` · ${t("sceneCandidate")}`
-                      : ""}
-                </span>
-              </button>
+                <span>{indices.length ? `${t("scenePhotoNumber")} ${indices.join(" / ")}` : t("sceneNoPhotoLink")}<small>{entity.id.slice(0, 8)}</small></span>
+                {!(entity.representations || []).length ? <em>{t(entityGeometryForLayer(entity, geometryOptions) ? "sceneBoundsOnly" : "sceneNoGeometry")}</em> :
+                  (entity.representations || []).some((r) => r.placementState === "unconfirmed") && <em>{t("sceneCandidate")}</em>}
+              </button>;
+            })}
+            {!filtered.length && <p className="report-scene-list-empty">{t(objects.length ? "sceneNoMatches" : "sceneNoObjects")}</p>}
+          </div>
+          <footer>{filtered.length} / {objects.length} · {t("sceneObjects")}</footer>
+        </aside>
+        <div className="report-scene-center" id={`${panePrefix}-views`}>
+          <nav className="report-scene-view-switch" aria-label={t("sceneViews")}>
+            <button className="report-scene-quad" aria-pressed={!focused} onClick={() => chooseView(null)}>{t("sceneQuad")}</button>
+            {paneOrder.map((pane) => <button key={pane} aria-pressed={focused === pane} aria-controls={`${panePrefix}-${pane}`} onClick={() => chooseView(pane)}>{t(paneNames[pane])}</button>)}
+          </nav>
+          <nav className="report-scene-view-switch report-scene-mobile-views" aria-label={t("sceneViews")}>
+            {paneOrder.map((pane) => <button key={pane} aria-pressed={(focused || "photo") === pane} aria-controls={`${panePrefix}-${pane}`} onClick={() => chooseView(pane)}>{t(paneNames[pane])}</button>)}
+          </nav>
+          {hasCandidates && <p className="report-scene-notice">{t("sceneCandidateNotice")}</p>}
+          <div className="report-scene-grid">
+            {paneOrder.map((pane, index) => (
+              <section className="report-scene-pane" id={`${panePrefix}-${pane}`} data-pane={pane} key={pane} aria-label={t(paneNames[pane])}>
+                <header><h3><span>{String(index + 1).padStart(2, "0")}</span>{t(pane === "spatial" ? availability.spatialTitle : paneNames[pane])}</h3>
+                  {pane === "cad" && onOpenSourceCad && <button className="report-scene-source-cad" onClick={onOpenSourceCad}>{t("sceneSourceCad")} ↗</button>}
+                  <button className="report-scene-expand" aria-label={`${t(focused === pane ? "sceneQuad" : "sceneSingleView")} · ${t(paneNames[pane])}`}
+                    title={t(focused === pane ? "sceneQuad" : "sceneSingleView")} onClick={() => chooseView(focused === pane ? null : pane)}>{focused === pane ? "⊞" : "↗"}</button>
+                </header>
+                <div className="report-scene-pane-body">
+                  {pane === "photo" && <><PhotoView document={document} imageId={imageId} selectedId={selection.entityId} onSelect={selectEntity} draw={draw} onBox={onBox} />
+                    {camera && <PhotoAxes revision={revision} camera={camera} layer={layer} selectedId={selection.entityId} allBounds={allBounds} />}</>}
+                  {pane === "spatial" && <><SpatialView revision={revision} selection={selection} onSelect={selectEntity} onCommit={noEdit} mode="free" cameraId={cameraId}
+                    layers={{ observed_surface: layer !== "point_cloud", generated_mesh: layer === "model", primitive: layer === "model", point_cloud: layer === "point_cloud", allBounds, showCandidates: true, editable: false, opacity: 1 }} />
+                    {!hasRepresentation && <div className="report-scene-stage-note">{t("sceneNoRepresentation")}</div>}</>}
+                  {(pane === "cad" || pane === "plan") && availability.planEmpty && <div className="report-scene-plan-empty" role="status"><strong>{t("scenePlanUnavailable")}</strong><p>{t(availability.planEmpty)}</p><small>{t("sceneSelectionRetained")}</small></div>}
+                  {pane === "cad" && !availability.planEmpty && <PlanView document={document} selectedId={selection.entityId} onSelect={selectEntity} geometryOptions={geometryOptions} />}
+                  {pane === "plan" && !availability.planEmpty && <PlanView document={document} selectedId={selection.entityId} onSelect={selectEntity} interactive geometryOptions={geometryOptions} />}
+                </div>
+                {pane === "photo" && <footer className="report-scene-photo-switch">{images.map((image, i) => <button key={image.imageId} aria-pressed={imageId === image.imageId} onClick={() => onCamera(image.imageId, image.cameraId)}>{t("scenePhotoNumber")} {i + 1}</button>)}{draw && <span>{t("sceneDrawActive")}</span>}</footer>}
+              </section>
             ))}
           </div>
-          {!filtered.length && (
-            <p>{t(objects.length ? "sceneNoMatches" : "sceneNoObjects")}</p>
-          )}
+          <p className="report-scene-selection-note">{selected ? isReferenceSurface(document, selected) ? t("sceneReferenceSurface") : selectedOverlay ? t(selectedOverlay.axisSpace === "native" ? "sceneNativeAxis" : "sceneSourceAxis") : !entityGeometryForLayer(selected, geometryOptions) ? t("sceneNoGeometrySelection") : t("sceneNoPhotoAxes") : t("sceneReadOnly")}</p>
         </div>
-      </details>
+        <aside className="report-scene-inspector" id={`${panePrefix}-inspector`} aria-label={t("sceneInspector")}>
+          <header><h3>{t("sceneInspector")}</h3>{selected && <span>{selected.id.slice(0, 8)}</span>}</header>
+          <div className="report-scene-inspector-content">{inspector ?? <p className="report-scene-inspector-empty">{t("sceneReadOnly")}</p>}</div>
+        </aside>
+      </div>
     </section>
   );
 }
