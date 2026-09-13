@@ -12,6 +12,7 @@ import {
 import {
   editableTransform,
   jobResultSummary,
+  jsonObject,
   modelGeometry,
   modelTilt,
   observationsFor,
@@ -22,7 +23,8 @@ import { useI18n } from "./i18n";
 import { ErrorNotice } from "./App";
 import { AgentPanel } from "./AgentPanel";
 import { ReportScene } from "./ReportScene";
-import { ReportReview } from "./ReportReview";
+import { ReportReview, type AssessmentSummary } from "./ReportReview";
+import { isReferenceSurface } from "./scene-semantics";
 import { ReportEvidence } from "./ReportEvidence";
 import type {
   Commit,
@@ -166,6 +168,7 @@ export function WorkcellReport({
   const [allObjects, setAllObjects] = useState(false),
     [search, setSearch] = useState(""),
     [generation, setGeneration] = useState(0);
+  const [assessment, setAssessment] = useState<AssessmentSummary>();
   const saving = useRef(false),
     alive = useRef(true),
     appliedHead = useRef<string | undefined>(undefined);
@@ -622,6 +625,9 @@ export function WorkcellReport({
     (e.label || e.id).toLowerCase().includes(search.toLowerCase()),
   );
   const sourceImages = doc.assets.filter((a) => a.kind === "source_image");
+  const modelWorkbenchURL = contextURL("#/projects/" + project.id + "/workbench?revision=" + revision.id, { selection, imageId, box: null, reviewMode: false, agentOpen: false });
+  const pendingGeometry = objects.filter(e => !e.representations?.length || e.representations.some(r => r.placementState === "unconfirmed")).length;
+  const assessmentState = assessment?.revisionId === revision.id ? assessment.state : "loading";
   const exactEvents =
     publication?.snapshot.editBatches ||
     events.filter((e) => e.revisionId === revision.id);
@@ -644,11 +650,13 @@ export function WorkcellReport({
             <p>{t("reportFirstHint")}</p>
           </div>
           <div className="report-header-actions">
+            <a className="button primary" href={modelWorkbenchURL}>{t("reportModelWorkbench")} ↗</a>
+            <button onClick={() => { setReviewMode(true); jump("safety"); }}>{t("reportReviewAction")}</button>
             <button disabled={busy} onClick={copy}>
               {t("copy")}
             </button>
             {canWrite && (
-              <button disabled={busy} className="primary" onClick={publish}>
+              <button disabled={busy} onClick={publish}>
                 {t("reportPublish")} ↗
               </button>
             )}
@@ -711,6 +719,19 @@ export function WorkcellReport({
           {t(notice)}
         </p>
       )}
+      <section className="report-overview" aria-label={t("reportSituation")}>
+        <div>
+          <span className="report-kicker">{t("reportSituation")}</span>
+          <h2>{t("reportAssessment_" + assessmentState)}</h2>
+          <p>{t(assessmentState === "assessed" ? "reportAssessmentSavedHint" : "reportAssessmentScopeHint")}</p>
+        </div>
+        <ul className="report-attention">
+          {assessmentState === "assessed" && <li><button onClick={() => jump("safety")}><strong>{assessment!.attentionCount}</strong> {t("reportAttentionFindings")} <span aria-hidden="true">↗</span></button></li>}
+          {!!pendingGeometry && <li><a href={modelWorkbenchURL}><strong>{pendingGeometry}</strong> {t("reportAttentionGeometry")} <span aria-hidden="true">↗</span></a></li>}
+          {assessmentState === "unassessed" && <li><button onClick={() => { setReviewMode(true); jump("safety"); }}>{t("reportStartAssessment")} <span aria-hidden="true">↗</span></button></li>}
+          {assessmentState === "unavailable" && <li><button onClick={() => jump("safety")}>{t("reportAssessmentError")} <span aria-hidden="true">↗</span></button></li>}
+        </ul>
+      </section>
       <div className="report-summary">
         <div>
           <strong>{objects.length}</strong>
@@ -774,6 +795,7 @@ export function WorkcellReport({
           imageId={imageId}
           cameraId={selection.cameraId}
           onCamera={changeCamera}
+          onOpenSourceCad={jsonObject(jsonObject(doc.reportEvidence)?.historical)?.cad ? () => jump("original-cad") : undefined}
           draw={draw}
           onBox={(value) => {
             setBox(value);
@@ -933,6 +955,7 @@ export function WorkcellReport({
             {t("reportDispute")}
           </button>
         </div>
+        <p className="report-policy-link"><a href="#/policies">{t("reportPolicySettings")} ↗</a></p>
         {reviewMode && !canWrite && (
           <div className="report-copy-prompt">
             <p>{t("reportCopyReason")}</p>
@@ -951,6 +974,7 @@ export function WorkcellReport({
             jump("spatial");
           }}
           onSaved={onSaved}
+          onSummary={setAssessment}
         />
         <ReportEvidence
           document={doc}
@@ -969,9 +993,7 @@ export function WorkcellReport({
           </div>
           <a
             className="button"
-            href={
-              "#/projects/" + project.id + "/workbench?revision=" + revision.id
-            }
+            href={modelWorkbenchURL}
           >
             {t("reportAdvanced")} ↗
           </a>
@@ -1147,7 +1169,7 @@ function Extent({
   const { t } = useI18n(),
     d = sourceDimensions(entity),
     scale = sourceScale(document, entity),
-    values = [
+    values = isReferenceSurface(document, entity) ? [d.widthNative, d.depthNative] : [
       d.widthNative ?? d.extentX,
       d.depthNative ?? d.extentY,
       d.groundHeight ?? d.extentZ,
@@ -1179,6 +1201,7 @@ function ObjectFacts({
     scale = sourceScale(document, entity),
     transform = editableTransform(entity),
     tilt = modelTilt(document, entity);
+  const referenceSurface = isReferenceSurface(document, entity);
   const f = (n: number | undefined | null) =>
     typeof n === "number" && Number.isFinite(n)
       ? (n * (scale?.nativeToMeters || 1)).toFixed(3)
@@ -1189,7 +1212,7 @@ function ObjectFacts({
         <span>{t("selection")}</span>
         <h3>{entity.label || entity.id}</h3>
         <small>
-          {(entity.representations || []).length
+          {referenceSurface ? t("sceneReferenceSurface") : (entity.representations || []).length
             ? t("sourceEvidence")
             : t("reportMissingGeometry")}
         </small>
@@ -1201,7 +1224,7 @@ function ObjectFacts({
             <Extent entity={entity} document={document} />
           </dd>
         </div>
-        <div>
+        {!referenceSurface && <div>
           <dt>
             {t("reportCurrentModel")} · {t("width")} × {t("depth")} ×{" "}
             {t("height")}
@@ -1209,17 +1232,17 @@ function ObjectFacts({
           <dd>
             {[model?.width, model?.depth, model?.height].map(f).join(" × ")}
           </dd>
-        </div>
-        <div>
+        </div>}
+        {!referenceSurface && <div>
           <dt>{t("reportPosition")}</dt>
           <dd>{transform?.position.map(f).join(" / ") || "—"}</dd>
-        </div>
-        <div>
+        </div>}
+        {!referenceSurface && <div>
           <dt>{t("reportOrientation")}</dt>
           <dd>{tilt === null ? "—" : tilt.toFixed(1) + "°"}</dd>
-        </div>
+        </div>}
       </dl>
-      <p className="report-footnote">{t("reportMeasurementNote")}</p>
+      <p className="report-footnote">{t(referenceSurface ? "reportReferenceSurfaceNote" : "reportMeasurementNote")}</p>
       <details className="report-source-details">
         <summary>{t("reportSelectedEvidence")}</summary>
         {observationsFor(document, entity).map((o) => (

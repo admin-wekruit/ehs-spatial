@@ -1,4 +1,5 @@
 export const reportSceneMessages: Record<string, [string, string]> = {
+  sceneSourceCad: ["核对原始 CAD", "Compare source CAD"],
   sceneLinked: ["一个工位，四个相连的视角", "One scene, four connected views"],
   sceneReadOnly: [
     "选择对象以核对来源与空间范围。",
@@ -65,6 +66,10 @@ export const reportSceneMessages: Record<string, [string, string]> = {
   sceneNativeAxis: [
     "范围来自观测几何；XYZ 为场景原生坐标轴，非物体结构轴。",
     "Bounds come from observed geometry; XYZ follows the native scene frame, not the object's structural axes.",
+  ],
+  sceneReferenceSurface: [
+    "参考表面：保留观测轮廓与表面，不显示设备姿态轴或体积框。坡度需有独立参考依据。",
+    "Reference surface: observed contours and surface are retained without equipment pose axes or volume boxes. Slope requires an independent reference.",
   ],
   sceneSelected: ["当前选择", "Selected"],
 };

@@ -35,12 +35,14 @@ globalThis.location={get hash(){return hash;},set hash(value){navigations.push(v
 globalThis.window={history:{replaceState(_state,_title,url){assert.ok(url.startsWith('#/'));hash=url;}},scrollTo(){}};
 const code=ts.transpileModule(fs.readFileSync(path.join(root,'src/WorkcellReport.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
 const core=await import('../src/core.ts');
+const semantics=await import('../src/scene-semantics.ts');
 const module={exports:{}};
 new Function('require','module','exports',code)(name=>{
   if(name==='react')return hooks;
   if(name.endsWith('.css'))return {};
   if(name==='./i18n')return {useI18n:()=>({t:key=>key})};
   if(name==='./core')return core;
+  if(name==='./scene-semantics')return semantics;
   if(name==='./App')return {ErrorNotice:empty};
   if(name==='./ReportScene')return {ReportScene};
   if(name==='./AgentPanel')return {AgentPanel};
@@ -57,6 +59,16 @@ async function render(){for(let i=0;i<8;i++){cursor=0;tree=WorkcellReport({proje
 function find(predicate,node=tree){if(!React.isValidElement(node))return null;if(predicate(node))return node;for(const child of React.Children.toArray(node.props.children)){const hit=find(predicate,child);if(hit)return hit;}return null;}
 const params=()=>new URLSearchParams(hash.split('?')[1]);
 await render();
+const workbench=find(n=>n.type==='a'&&n.props.className==='button primary').props.href;
+assert.equal(workbench.split('?')[0],'#/projects/project/workbench');
+assert.deepEqual(Object.fromEntries(new URLSearchParams(workbench.split('?')[1])),{revision:'revision',object:'a',observation:'observation-a',image:'image-a'},'the model workbench keeps the exact revision and photo/object context');
+assert.ok(find(n=>n.type==='a'&&n.props.href==='#/policies'),'rule sources remain accessible within the report');
+find(n=>typeof n.props.onSummary==='function').props.onSummary({revisionId:'revision',state:'unassessed',evaluationCount:0,attentionCount:0});await render();
+assert.ok(find(n=>n.type==='h2'&&n.props.children==='reportAssessment_unassessed'),'saved assessment status leads the report');
+const facts=find(n=>typeof n.type==='function'&&n.type.name==='ObjectFacts');
+const floorFacts=facts.type({...facts.props,entity:{...entities[0],geometryRole:'floor'}});
+assert.equal(find(n=>n.type==='dt'&&n.props.children==='reportOrientation',floorFacts),null,'reference surfaces do not show equipment tilt');
+assert.equal(find(n=>n.type==='dt'&&React.Children.toArray(n.props.children).includes('reportCurrentModel'),floorFacts),null,'reference surfaces do not show equipment model height');
 assert.ok(find(n=>n.type===AgentPanel), String(find(n=>n.type===empty)?.props.error));
 assert.deepEqual(find(n=>n.type===AgentPanel).props.box,[1,2,30,40],'copy/deep-link box survives first load');
 assert.ok(find(n=>n.type==='strong'&&n.props.children==='setLabel'),'the edit producing this exact revision is shown');

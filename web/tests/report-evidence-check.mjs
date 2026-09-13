@@ -55,6 +55,10 @@ assert.equal(comparisonSource(doc.reportEvidence,'source-button').runId,'experim
 assert.equal(comparisonSource(doc.reportEvidence,'different-candidate'),undefined);
 function render(section,document=doc){return renderToStaticMarkup(React.createElement(ReportEvidence,{document,section,onSelect:()=>{}}));}
 const understanding=render('understanding'),safety=render('safety'),quality=render('quality');
+assert.doesNotMatch(understanding,/<details[^>]* open=""/,'long source interpretation lists start collapsed');
+assert.match(safety,/<details class="report-rule-basis"><summary>/,'complete original rules remain available without dominating the initial reading');
+assert.match(quality,/<details class="report-historical report-quality-details"><summary>/,'technical experiment metrics start collapsed');
+assert.match(render('assets'),/<details class="report-source-details"><summary>Original models, analysis &amp; evidence files/);
 assert.ok(understanding.indexOf('Bound button note')<understanding.indexOf('Unassociated old note'));
 assert.match(understanding,/source-3.*target-1/);
 const mixedDoc=structuredClone(doc);mixedDoc.reportEvidence.imageInterpretations=[{...current,items:mixedItems}];
@@ -67,6 +71,14 @@ assert.match(mixedHtml,/<details class="report-evidence-origin"><summary>Photogr
 assert.match(safety,/Exact policy rationale/);assert.match(safety,/Exact source clause/);assert.match(safety,/No temporal evidence/);assert.match(safety,/Policy threshold<\/dt><dd>0 m/);assert.doesNotMatch(safety,/Wrong rationale/);
 assert.match(quality,/experiment-run/);assert.match(quality,/Original shape experiment; not current parametric button/);assert.match(quality,/Assembled scene run.*assembled-run/);assert.match(quality,/0\.4000.*0\.6000/);
 assert.match(render('assets'),/data-asset="old-photo"/);
+const cadDoc=structuredClone(doc);
+cadDoc.reportEvidence.historical.cad={assetId:'historical-cad',width:1600,height:1240,regions:[{inventoryIndex:1,entityIds:['button'],polygon:[]},{inventoryIndex:1,entityIds:['button'],polygon:[]},{inventoryIndex:2,entityIds:['missing-entity'],polygon:[]},{inventoryIndex:3,entityIds:[],polygon:[]}]};
+const cadHtml=render('assets',cadDoc);
+assert.match(cadHtml,/id="workcell-original-cad"/);
+assert.match(cadHtml,/3 original CAD object records · 1 linked to the current scene/,'count source object records once and exclude stale scene associations');
+assert.match(cadHtml,/old-run · Image-region coordinates 1600 × 1240 px/);
+assert.match(cadHtml,/not the current model plan or a verified site survey/);
+assert.match(cadHtml,/data-asset="historical-cad"/,'the original CAD download remains available');
 assert.equal(JSON.stringify(doc),before,'rendering/sorting must not mutate the fixed scene snapshot');
 language='zh';assert.match(render('safety'),/规则理由/);assert.match(render('quality'),/原始实验候选对比/);
 if(process.env.PANOPTES_TEST_PUBLICATION_URL){

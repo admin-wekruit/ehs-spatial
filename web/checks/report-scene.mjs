@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import ts from "typescript";
 import * as math from "../src/viewer/native-math.ts";
+import { isReferenceSurface } from "../src/scene-semantics.ts";
 import { modelGeometry, jsonObject, planShapes } from "../src/core.ts";
 
 // Exercise the actual two pure functions without importing the browser app.
@@ -35,12 +36,14 @@ const executable = ts.transpileModule(
 const context = vm.createContext({
   ...math,
   modelGeometry,
+  isReferenceSurface,
   jsonObject,
   planShapes,
   colors: ["red", "green", "blue"],
 });
 vm.runInContext(executable, context);
 const { entityGeometry, photoOverlay, sceneAvailability } = context;
+const document = { observations: [], coordinateFrames: [] };
 const camera = {
   id: "camera",
   imageId: "photo",
@@ -81,7 +84,7 @@ const entity = {
   currentModelTransform: transform,
 };
 const geometry = entityGeometry(entity, "model"),
-  overlay = photoOverlay(entity, camera, "model");
+  overlay = photoOverlay(document, entity, camera, "model");
 assert.equal(overlay.corners.length, 8);
 assert.equal(overlay.axes.length, 3);
 for (let i = 0; i < geometry.corners.length; i++) {
@@ -99,22 +102,22 @@ for (let i = 0; i < geometry.corners.length; i++) {
   );
 }
 assert.equal(
-  photoOverlay({ id: "no-mesh", representations: null }, camera, "model"),
+  photoOverlay(document, { id: "no-mesh", representations: null }, camera, "model"),
   null,
 );
 assert.equal(
-  photoOverlay(entity, { ...camera, coordinateFrameId: "other" }, "model"),
+  photoOverlay(document, entity, { ...camera, coordinateFrameId: "other" }, "model"),
   null,
 );
 assert.equal(
-  photoOverlay(
+  photoOverlay(document,
     { ...entity, representations: [{ ...rep, placementReason: "no_depth" }] },
     camera,
     "model",
   ),
   null,
 );
-assert.equal(photoOverlay(entity, camera, "point_cloud").corners.length, 8,
+assert.equal(photoOverlay(document, entity, camera, "point_cloud").corners.length, 8,
   "The display layer must not erase verified object bounds on photo/tree selection");
 const observed = {
   ...rep,
@@ -131,22 +134,40 @@ assert.equal(
   JSON.stringify(geometry.corners),
   "Immutable observed geometry must not move with a model transform",
 );
-assert.equal(photoOverlay(observedOnly, camera, "point_cloud").corners.length, 8,
+assert.equal(photoOverlay(document, observedOnly, camera, "point_cloud").corners.length, 8,
   "Point-cloud mode reuses the object's confirmed observed surface");
-assert.equal(photoOverlay(observedOnly, camera, "point_cloud").axisSpace, "native");
+assert.equal(photoOverlay(document, observedOnly, camera, "point_cloud").axisSpace, "native");
 const measuredOnly = { id: "measured-only", representations: [], measurements: {
   coordinateFrameId: "f", basis: { cornersNative: geometry.corners },
 } };
-const measuredOverlay = photoOverlay(measuredOnly, camera, "point_cloud");
+const measuredOverlay = photoOverlay(document, measuredOnly, camera, "point_cloud");
 assert.equal(measuredOverlay.corners.length, 8);
 assert.equal(measuredOverlay.axes.length, 3);
 assert.equal(measuredOverlay.axisSpace, "native",
   "A located native observation gets scene axes, never an invented local structure pose");
-assert.equal(photoOverlay(measuredOnly, { ...camera, coordinateFrameId: "other" }, "model"), null);
-assert.equal(photoOverlay({ ...measuredOnly, sourceContext: true }, camera, "model"), null);
-assert.equal(photoOverlay({ id: "size-only", measurements: { dimensionsNative: [1, 2, 3] } }, camera, "model"), null);
+assert.equal(photoOverlay(document, measuredOnly, { ...camera, coordinateFrameId: "other" }, "model"), null);
+assert.equal(photoOverlay(document, { ...measuredOnly, sourceContext: true }, camera, "model"), null);
+assert.equal(photoOverlay(document, { id: "size-only", measurements: { dimensionsNative: [1, 2, 3] } }, camera, "model"), null);
+const floorObservation = { id: "floor-observation", revision: 2, labelEvidence: [{ label: "floor", source: "legacy_import" }] };
+const floorDocument = { observations: [floorObservation], coordinateFrames: [] };
+const floor = { ...observedOnly, id: "reference", label: "任意显示名称", observationRefs: [floorObservation.id] };
+assert.equal(isReferenceSurface(floorDocument, floor), true, "Frozen observation categories survive renaming");
+assert.equal(isReferenceSurface(floorDocument, { ...floor, label: "a machine" }), true);
+assert.equal(isReferenceSurface(document, { ...observedOnly, label: "floor" }), false, "Display names never classify a surface");
+assert.equal(isReferenceSurface(document, { ...observedOnly, geometryRole: "floor" }), true);
+for (const role of ["unknown", "object"]) {
+  assert.equal(isReferenceSurface(floorDocument, { ...floor, geometryRole: role }), false, "Explicit role overrides frozen category");
+  assert.equal(isReferenceSurface({ ...floorDocument, observations: [{ ...floorObservation, labelEvidence: [{ label: "floor", geometryRole: role }] }] }, floor), false);
+}
+for (const layer of ["model", "observed_surface", "point_cloud"])
+  assert.equal(photoOverlay(floorDocument, floor, camera, layer), null, "Reference surfaces never get photo equipment axes/volume boxes");
+assert.equal(entityGeometry(floor, "observed_surface").corners.length, 8, "Observed evidence is retained independently of pose overlays");
+const groundDocument = { observations: [{ ...floorObservation, labelEvidence: [] }], coordinateFrames: [{ ground: { sourceRefs: [{ observationId: floorObservation.id, revision: 2 }] } }] };
+assert.equal(isReferenceSurface(groundDocument, floor), true, "An explicitly bound ground observation establishes a reference role, not a slope");
+assert.equal(isReferenceSurface({ ...groundDocument, coordinateFrames: [{ ground: { sourceRefs: [{ observationId: floorObservation.id, revision: 1 }] } }] }, floor), false, "Stale ground observation revisions cannot supply a role");
+assert.equal(isReferenceSurface({ ...document, coordinateFrames: [{ ground: { normal: [0, 0, 1], sourceRefs: [{ assetId: "whole-scene" }] } }] }, observedOnly), false, "A ground normal or whole-scene source asset does not classify every object");
 const behind = { ...transform, position: [1, 1, 2] };
-const behindOverlay = photoOverlay(
+const behindOverlay = photoOverlay(document,
   { ...entity, currentModelTransform: behind },
   camera,
   "model",

@@ -104,3 +104,20 @@ node --experimental-strip-types web/checks/renderer.mjs
 - 本轮不增加模型调用，不改变历史报告内容、生成资产或安全事实。原有生成姿态偏差、未关联观察、未运行当前EHS评估及模型发布门槛仍须如实保留。
 
 新增可执行检查：`web/tests/report-catalog-check.mjs`、`web/checks/plan-selection.mjs`；后端 `tests/test_platform_publications.py` 的固定摘要回归。最终 TypeScript/Vite 构建通过，publication/backend 23项测试通过，report-catalog、report-context、plan-selection、report-scene及renderer五个前端检查通过。完整模型质量与浏览器文件落盘并未因此获得新的通过声明。
+
+## 管理者报告、地面语义与 CAD 对照复核
+
+2026-09-12，根任务在实际8792构建中使用 CUA 验证；下列浏览器结果与本地导出验证分别记录。
+
+- 报告开头说明本版本是否已有安全评估；模型工作台为主要编辑入口，规则来源与设置保留为次级入口。历史 EHS 的 FAIL、理由和原文完整保留，但不计作本版本合规结论。实际从报告打开模型工作台，固定 revision、照片3及 control 对象上下文均保留。
+- 组件报告 `20962b70-3d10-4180-9d52-257deeb20ec1` 的85条记录中，CAD实际可投影81条；其余4条出现在缺失清单，control `b8a871…` 可选。根因是 `planShapes` 漏掉已确认的观测几何；修正采用相同坐标系及对象自身 TRS 投影，没有将缺失几何补成虚构矩形。该报告没有原始 CAD 资产，不引用其他项目的 CAD。
+- 原完整报告 `2d77667b-5369-4d66-b5c4-d426e9833e18` 的原始 CAD 容器为 `workcell-original-cad`：来源 `user-bor1-02`，33条区域/对象记录、6条有明确当前实体关联。图内区域坐标为1600×1240像素，保留历史来源坐标与估计尺度；它不是当前模型平面，也不是已验证的现场实测图纸。另27条未关联记录仍未解决，不记为联动修复完成，不强行叠入当前三维坐标。
+- CUA在照片1以 Enter 选择 floor：保留表面轮廓，不再展示设备式 XYZ；control仍可选。390×844复测中 `scrollWidth=390`、一个canvas，中英文切换保留选择，临时视口已复位；未记录控制台 warn/error。这些结果不代表真实手机驱动验证。
+- 地面角色以新版本保存：revision `45f843bb-066c-4dd5-9cf0-a460455718b6`，publication `f55f9704-0999-460e-863a-4c58cca86fb9`，包含71个实体、67条观察、179项场景资产。未覆盖既有 revision/publication。对应本地 Blender job `44db2d21-3ff1-444b-a7eb-a657d35dac4b` 重开验证通过：48个对象、3台相机；22个对象未放置，整体状态仍为 `incomplete`。4项导出资产通过 SHA 校验，本轮新增模型调用为0。
+- 根任务已刷新最终构建 `app-zn2mw1f4.js` 并实查新发布 `f55f9704-0999-460e-863a-4c58cca86fb9`：从对象表点击主地面 `ed46d9e5…` 后，3D表面仍高亮，原图与3D无设备轴/体积框；属性仅有观测宽深，没有模型位置、高度和设备倾角。CAD/交互平面显示68/68，来源投影轮廓单独标示，未按实体是否存在其他坐标系模型来误着色。下载区实际显示固定45f843bb版本的四个导出按钮与完整原始CAD33/6说明。控制台warn/error为空；浏览器下载落盘文件仍未验证，不将文件哈希与重开验证替代该检查。
+
+本轮定向检查在 `web/` 执行：`node tests/report-context-check.mjs`、`node tests/report-review-check.mjs`、`PANOPTES_TEST_PUBLICATION_URL=http://127.0.0.1:8792/api/publications/2d77667b-5369-4d66-b5c4-d426e9833e18 node tests/report-evidence-check.mjs`、`npx tsc --noEmit`，均通过。检查覆盖固定版本入口和选择上下文、历史判定隔离、参考面不显示设备高度/倾角、原始规则/证据可展开，以及原 CAD 计数按来源对象去重并排除无效实体关联。
+
+最终执行：`pytest tests/test_platform_import.py tests/test_platform_report_evidence.py tests/test_platform_geometry_import.py -q` 为10 passed、1 skipped；跳过项为未设置集成测试数据库。生产数据通过同一导入/任务/发布合同另行生成上述新版本，未运行付费推理。`observed-plan.mjs` 对两份原快照验证68/68与81/85；新发布的report-evidence、report-context、report-review、renderer、report-scene、plan-selection检查及TypeScript/Vite构建通过。
+
+模型工作台开源参考已核对官方来源：[Three.js Editor](https://threejs.org/editor/)提供场景导入、对象编辑和GLB等导出；[PlayCanvas Editor](https://github.com/playcanvas/editor)与[PCUI](https://github.com/playcanvas/pcui)可参考对象树/属性面板。当前PlayCanvas Editor README的本地前端流程仍连接托管Editor服务，不将其称为完整独立自托管后端。本轮没有安装或整合上述编辑器；继续复用已有渲染器与实体/版本合同。

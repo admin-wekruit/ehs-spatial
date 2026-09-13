@@ -1,4 +1,6 @@
 export const reportReviewMessages: Record<string, [string, string]> = {
+  rrWorkcellContext: ["工位整体", "Workcell"],
+  rrSavedCheck: ["保存的检查规则", "Saved check"],
   rrTitle: ["判定与理由复核", "Assessment and reasoning review"],
   rrVersion: ["所用场景版本", "Scene revision used"],
   rrFrozen: ["以下为发布时保存的评估与复核。", "Assessments and reviews below are the saved publication snapshot."],

@@ -262,6 +262,19 @@ export function modelGeometry(entity: Entity) {
     frameId: transform.coordinateFrameId,
   };
 }
+export function observedGeometry(entity: Entity, frameId: string) {
+  const representations = (entity.representations || []).filter((rep) =>
+    ["observed_surface", "point_cloud"].includes(rep.kind) &&
+    rep.placementState === "confirmed" && !!rep.assetId &&
+    rep.coordinateFrameId === frameId && rep.transform.coordinateFrameId === frameId &&
+    isVec3(rep.bounds?.min) && isVec3(rep.bounds?.max) &&
+    rep.bounds.max.every((value, index) => value >= rep.bounds!.min[index]));
+  const corners = representations.flatMap((rep) =>
+    boundsCorners(rep.bounds!).map((p) => point(transformMatrix(rep.transform), p)));
+  return corners.length && corners.every(isVec3)
+    ? { corners, frameId, representationIds: representations.map((rep) => rep.id) }
+    : null;
+}
 export function modelTilt(document: SceneDocument, entity: Entity) {
   const transform = editableTransform(entity);
   if (!transform) return null;
@@ -315,12 +328,14 @@ export function planShapes(document: SceneDocument) {
     .filter((e) => e.visible !== false && !e.sourceContext)
     .flatMap((entity) => {
       const model = modelGeometry(entity);
-      const frameId =
-        model?.frameId ||
-        (entity.representations || [])[0]?.coordinateFrameId ||
-        entity.measurements?.coordinateFrameId;
-      const corners =
-        model?.corners || jsonObject(entity.measurements?.basis)?.cornersNative;
+      const observed = observedGeometry(entity, frame.id);
+      const basis = jsonObject(entity.measurements?.basis)?.cornersNative;
+      const measured = entity.measurements?.coordinateFrameId === frame.id &&
+        Array.isArray(basis) && basis.length > 0 && basis.every(isVec3)
+        ? { corners: basis, frameId: frame.id } : null;
+      const geometry = model?.frameId === frame.id ? model : measured || observed;
+      const frameId = geometry?.frameId;
+      const corners = geometry?.corners;
       if (
         frameId !== frame.id ||
         !Array.isArray(corners) ||
@@ -335,8 +350,8 @@ export function planShapes(document: SceneDocument) {
         sameJSON(saved.nativeToPlane, plane) &&
         sameJSON(saved.representationSnapshot, entity.representations) &&
         sameJSON(saved.modelTransformSnapshot, entity.currentModelTransform);
-      const ps =
-        canReuse &&
+      const useSavedHull =
+        !!canReuse &&
         Array.isArray(saved.points) &&
         saved.points.length >= 3 &&
         saved.points.every(
@@ -344,13 +359,18 @@ export function planShapes(document: SceneDocument) {
             Array.isArray(p) &&
             p.length === 2 &&
             p.every((v) => typeof v === "number" && Number.isFinite(v)),
-        )
-          ? (saved.points as number[][])
+        );
+      const ps = useSavedHull
+          ? (saved!.points as number[][])
           : convexHull2D(corners.map(project));
       return [
         {
           entity,
           polygon: ps,
+          coordinateFrameId: frame.id,
+          projectionSource: useSavedHull ? "saved_hull" as const : geometry === model
+            ? "model_bounds" as const : geometry === measured ? "observed_measurement" as const : "observed_bounds" as const,
+          representationIds: geometry === observed ? observed!.representationIds : [],
           min: [
             Math.min(...ps.map((p) => p[0])),
             Math.min(...ps.map((p) => p[1])),

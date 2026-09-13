@@ -1,4 +1,6 @@
 import {add,scale,dot,cross,unit,identity,matmul,point,rotate,transformMatrix,sourceCamera,cameraMatrix,boundsCorners,projected,fitCamera,type Camera,type Vec,type Transform} from './native-math.ts';
+import {isReferenceSurface} from '../scene-semantics.ts';
+import type {SceneDocument} from '../types';
 
 type Mesh={vertices:Float32Array;indices:Uint32Array;mode:number;matrix:ArrayLike<number>;texture?:Blob;bounds:{min:Vec;max:Vec}};
 type GPU={mesh:Mesh;vertex:WebGLBuffer;index:WebGLBuffer;texture:WebGLTexture;entityId:string;representation:any};
@@ -16,8 +18,8 @@ export function representationPass(entity:any,representation:any,frameId:string|
   return {available,visible,pick:visible||available&&cloudOnly&&!entity.sourceContext&&representation.kind==='observed_surface'&&representation.placementState==='confirmed',selectable:available&&!entity.sourceContext};
 }
 
-export function selectionGeometry(entity:any,frameId:string|null,layers:any,loaded:Pick<GPU,'mesh'|'representation'>[],preview?:Transform) {
-  if(!entity||entity.sourceContext||entity.visible===false||!frameId)return {corners:[] as Vec[],transform:undefined,axisSpace:'native',editable:false};
+export function selectionGeometry(document:SceneDocument,entity:any,frameId:string|null,layers:any,loaded:Pick<GPU,'mesh'|'representation'>[],preview?:Transform) {
+  if(!entity||entity.sourceContext||entity.visible===false||!frameId||isReferenceSurface(document,entity))return {corners:[] as Vec[],transform:undefined,axisSpace:'native',editable:false};
   const reps=(entity.representations||[]).filter((r:any)=>representationPass(entity,r,frameId,layers).available),models=reps.filter((r:any)=>['generated_mesh','primitive'].includes(r.kind)),observedReps=reps.filter((r:any)=>['observed_surface','point_cloud'].includes(r.kind)),chosen=models.length&&(models.some((r:any)=>representationPass(entity,r,frameId,layers).visible)||!observedReps.length)?models:observedReps;
   const modeled=chosen[0]&&['generated_mesh','primitive'].includes(chosen[0].kind),transform=chosen[0]?(modeled?preview||entity.currentModelTransform||chosen[0].transform:chosen[0].transform):undefined;
   const corners=chosen.flatMap((r:any)=>{
@@ -110,7 +112,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
   function model(g:GPU){const e=entity(g.entityId),t=g.representation.kind==='observed_surface'||g.representation.kind==='point_cloud'?g.representation.transform:preview.get(g.entityId)||e?.currentModelTransform||g.representation.transform;return matmul(transformMatrix(t),g.mesh.matrix);}
   function visible(g:GPU){return representationPass(entity(g.entityId),g.representation,frameId,layers).visible;}
   function corners(id?:string){return gpu.filter(g=>(!id||g.entityId===id)&&visible(g)).flatMap(g=>boundsCorners(g.mesh.bounds).map(p=>point(model(g),p)));}
-  function selectedGeometry(id:string){return selectionGeometry(entity(id),frameId,layers,gpu.filter(g=>g.entityId===id),preview.get(id));}
+  function selectedGeometry(id:string){return selectionGeometry(doc,entity(id),frameId,layers,gpu.filter(g=>g.entityId===id),preview.get(id));}
   function fittingPoints(){const models=gpu.filter(g=>visible(g)&&['generated_mesh','primitive'].includes(g.representation.kind));return models.length?models.flatMap(g=>boundsCorners(g.mesh.bounds).map(p=>point(model(g),p))):corners();}
   function dimensions(){const ps=fittingPoints();if(!ps.length)return;const min=[0,1,2].map(k=>Math.min(...ps.map(p=>p[k]))),max=[0,1,2].map(k=>Math.max(...ps.map(p=>p[k])));center=min.map((v,k)=>(v+max[k])/2);radius=Math.max(Math.hypot(...max.map((v,k)=>v-min[k]))/2,1e-4);}
   function viewSize(){const w=stage.clientWidth,h=stage.clientHeight,ratio=camera?.exact?camera.frame.width/camera.frame.height:w/h,cw=Math.min(w,h*ratio),ch=cw/ratio;return {w,h,cw,ch};}

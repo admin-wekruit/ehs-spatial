@@ -16,7 +16,23 @@ export type ReportReviewProps = {
   onSelect: (entityId: string) => void;
   onSaved: (commit: Commit) => void;
   onError?: (error: unknown) => void;
+  onSummary?: (summary: AssessmentSummary) => void;
 };
+
+export type AssessmentSummary = {
+  revisionId: string;
+  state: "loading" | "unavailable" | "unassessed" | "assessed";
+  evaluationCount: number;
+  attentionCount: number;
+};
+function findingResult(finding: Evaluation["document"]["findings"][number]) {
+  return finding.applicability === "unknown" ? "APPLICABILITY_UNKNOWN" : finding.applicability === "not_applicable" ? "NOT_APPLICABLE" : finding.machineResult || "INSUFFICIENT_EVIDENCE";
+}
+export function assessmentSummary(revisionId: string, evaluations: Evaluation[]): AssessmentSummary {
+  const exact = exactReviewEvidence(revisionId, evaluations, []).evaluations;
+  return { revisionId, state: exact.length ? "assessed" : "unassessed", evaluationCount: exact.length,
+    attentionCount: exact.flatMap(e => e.document.findings).filter(f => !["PASS", "NOT_APPLICABLE"].includes(findingResult(f))).length };
+}
 
 // Findings and reviews belong to an evaluation, never merely to a matching label.
 export function exactReviewEvidence(revisionId: string, evaluations: Evaluation[], reviews: Review[]) {
@@ -42,7 +58,7 @@ function sourceURL(value: unknown) {
   try { const url = new URL(String(value)); return ["http:", "https:"].includes(url.protocol) ? url.href : null; } catch { return null; }
 }
 
-export function ReportReview({ detail, publication, reviewMode, canWrite, onSelect, onSaved, onError }: ReportReviewProps) {
+export function ReportReview({ detail, publication, reviewMode, canWrite, onSelect, onSaved, onError, onSummary }: ReportReviewProps) {
   const { language, t: globalT } = useI18n();
   const t = (key: string) => reportReviewMessages[key]?.[language === "zh" ? 0 : 1] || globalT(key);
   const revision = publication?.snapshot.revision || detail.revision;
@@ -99,6 +115,11 @@ export function ReportReview({ detail, publication, reviewMode, canWrite, onSele
 
   const sourceRecords = publication ? publication.snapshot : records?.scope === scope ? records : { evaluations: [], reviews: [], evidence: [] };
   const { evaluations, reviews } = exactReviewEvidence(revision.id, sourceRecords.evaluations, sourceRecords.reviews);
+  useEffect(() => {
+    onSummary?.(!publication && records?.scope !== scope
+      ? { revisionId: revision.id, state: error ? "unavailable" : "loading", evaluationCount: 0, attentionCount: 0 }
+      : assessmentSummary(revision.id, sourceRecords.evaluations));
+  }, [scope, publication, records, error, onSummary]);
   const policies = policyRecords?.projectId === projectId ? policyRecords.policies : [];
   const policyDetails = policyRecords?.projectId === projectId ? policyRecords.details : [];
   const activePolicies = policies.filter(p => p.activeRevisionId);
@@ -137,34 +158,35 @@ export function ReportReview({ detail, publication, reviewMode, canWrite, onSele
     <ErrorNotice error={error} />
     {status && <p className="rr-status" role="status">{t(status)}</p>}
     {!!findings.length && <ul className="rr-counts" aria-label={t("rrAssessment")}>{Object.entries(counts).map(([key, count]) => <li key={key}><strong>{count}</strong> {t(key)}</li>)}</ul>}
-    {!publication && records?.scope !== scope && !error ? <p role="status">{t("loading")}</p> : !evaluations.length && <div className="rr-empty"><strong>{t("rrEmpty")}</strong><p>{t(writable ? "rrEmptyHint" : "rrReadOnly")}</p></div>}
+    {!publication && records?.scope !== scope && !error ? <p role="status">{t("loading")}</p> : (publication || records?.scope === scope) && !evaluations.length && <div className="rr-empty"><strong>{t("rrEmpty")}</strong><p>{t(writable ? "rrEmptyHint" : "rrReadOnly")}</p></div>}
 
     <div className="rr-evaluations">{evaluations.map(evaluation => <section className="rr-evaluation" key={evaluation.id}>
-      <header className="rr-evaluation-heading"><h3>{t("rrAssessment")} · {evaluation.id.slice(0, 8)}</h3><span>{when(evaluation.createdAt)} · {t(evaluation.context)}</span></header>
+      <header className="rr-evaluation-heading"><h3>{t("rrAssessment")} · {when(evaluation.createdAt)}</h3><span>{t(evaluation.context)}</span></header>
       {!evaluation.document.findings.length && <p className="rr-muted">{t("rrNoFindings")}</p>}
-      {evaluation.document.findings.map(finding => {
+      {evaluation.document.findings.slice().sort((a, b) => Number(["PASS", "NOT_APPLICABLE"].includes(findingResult(a))) - Number(["PASS", "NOT_APPLICABLE"].includes(findingResult(b)))).map(finding => {
         const key = `${evaluation.id}:${finding.id}`;
         const policy = policyDetails.find(p => p.revisions.some(r => r.id === finding.policyRevisionId));
         const policyRevision = policy?.revisions.find(r => r.id === finding.policyRevisionId);
         const source = policyRevision?.sourceId === finding.sourceId ? policy?.sources.find(s => s.id === finding.sourceId) : undefined;
-        const result = finding.applicability === "unknown" ? "APPLICABILITY_UNKNOWN" : finding.applicability === "not_applicable" ? "NOT_APPLICABLE" : finding.machineResult || "INSUFFICIENT_EVIDENCE";
+        const result = findingResult(finding);
         const defaultReason = finding.applicability === "unknown" ? "rrUnknownReason" : finding.applicability === "not_applicable" ? "rrNotApplicableReason" : result === "PASS" ? "rrPassReason" : result === "FAIL" ? "rrFailReason" : result === "NEEDS_REVIEW" ? "rrReviewReason" : "rrInsufficientReason";
         const reason = typeof finding.reason === "string" ? finding.reason : typeof finding.summary === "string" ? finding.summary : t(defaultReason);
         const findingReviews = reviews.filter(r => r.evaluationId === evaluation.id && r.findingId === finding.id);
         const url = sourceURL(source?.document.url);
         return <article className="rr-finding" key={key}>
-          <header className="rr-finding-heading"><h4>{finding.policyTitle || finding.policyRevisionId}</h4><span className={`rr-badge rr-${result.toLowerCase()}`}>{t(result)}</span></header>
-          {finding.entityId && objectButton(finding.entityId)}
-          <h5>{t("rrReason")}</h5><p>{reason}</p>
+          <header className="rr-finding-heading"><h4>{finding.entityId ? objectButton(finding.entityId) : t("rrWorkcellContext")}</h4><span className={`rr-badge rr-${result.toLowerCase()}`}>{t(result)}</span></header>
+          <p className="rr-check-title">{finding.policyTitle || t("rrSavedCheck")}</p>
+          <p className="rr-outcome-copy">{t(defaultReason)}</p>
           {!!finding.missingEvidence.length && <div className="rr-missing"><h5>{t("rrMissing")}</h5><ul>{finding.missingEvidence.map((missing, i) => { const [kind, entityId] = missing.split(":"); return <li key={i}>{t(missingKeys[kind] || missing)} {entityId && objectButton(entityId)}</li>; })}</ul></div>}
-          <details className="rr-source"><summary>{t("rrSource")} · {finding.policyRevisionId.slice(0, 8)}</summary>{source ? <>
+          <details className="rr-reason"><summary>{t("rrReason")}</summary><p>{reason}</p></details>
+          <details className="rr-source"><summary>{t("rrSource")}</summary>{source ? <>
             <p><strong>{source.document.title}</strong><br />{[source.document.publisher, source.document.jurisdiction].filter(Boolean).join(" · ")}</p>
             {url && <a href={url} target="_blank" rel="noreferrer">{t("rrFieldSource")} ↗</a>}
             {(source.document.clauses.length ? source.document.clauses : [{ locator: "", text: source.document.text }]).map((clause, i) => <blockquote key={i}><strong>{clause.locator}</strong><p>{clause.text}</p></blockquote>)}
             {!!policyRevision?.document.limitations.length && <><h5>{t("rrLimitations")}</h5><EvidenceValue value={policyRevision.document.limitations} t={t} /></>}
-          </> : <p className="rr-muted">{t("rrSourceMissing")}</p>}</details>
+          </> : <p className="rr-muted">{t("rrSourceMissing")}</p>}<small className="rr-muted">{t("rrAssessment")} · {evaluation.id}<br />{t("rrSavedCheck")} · {finding.policyRevisionId}</small></details>
           <details><summary>{t("rrFacts")} · {finding.facts.length}</summary>{finding.facts.length ? <EvidenceValue value={finding.facts} t={t} /> : <p className="rr-muted">{t("rrNoFacts")}</p>}{finding.comparison && <><h5>{t("rrComparison")}</h5><EvidenceValue value={finding.comparison} t={t} /></>}</details>
-          <details open={findingReviews.length > 0}><summary>{t("rrReviews")} · {findingReviews.length}</summary>{findingReviews.length ? <ol className="rr-reviews">{findingReviews.map(review => <li key={review.id}><strong>{review.document.displayName} · {t("review_" + review.document.decision)}</strong><time dateTime={review.createdAt}>{when(review.createdAt)}</time><p>{review.document.reason}</p>{!!review.document.evidenceRefs.length && <EvidenceValue value={review.document.evidenceRefs} t={t} />}</li>)}</ol> : <p className="rr-muted">{t("rrNoReviews")}</p>}</details>
+          <details><summary>{t("rrReviews")} · {findingReviews.length}</summary>{findingReviews.length ? <ol className="rr-reviews">{findingReviews.map(review => <li key={review.id}><strong>{review.document.displayName} · {t("review_" + review.document.decision)}</strong><time dateTime={review.createdAt}>{when(review.createdAt)}</time><p>{review.document.reason}</p>{!!review.document.evidenceRefs.length && <EvidenceValue value={review.document.evidenceRefs} t={t} />}</li>)}</ol> : <p className="rr-muted">{t("rrNoReviews")}</p>}</details>
           {writable && <details className="rr-review-form"><summary>{t("rrWriteReview")}</summary><form onSubmit={event => { event.preventDefault(); if (reviewer.trim() && reasons[key]?.trim()) void act(() => post(`/api/projects/${projectId}/findings/${finding.id}/reviews`, { evaluationId: evaluation.id, decision: decisions[key] || "needs_evidence", reason: reasons[key].trim(), displayName: reviewer.trim(), evidenceRefs: [] }), "rrReviewSaved"); }}>
             <label>{t("reviewName")}<input required value={reviewer} onChange={event => setReviewer(event.target.value)} /></label>
             <label>{t("rrDecision")}<select value={decisions[key] || "needs_evidence"} onChange={event => setDecisions(old => ({ ...old, [key]: event.target.value as Review["document"]["decision"] }))}>{["confirmed", "rejected", "needs_evidence"].map(decision => <option key={decision} value={decision}>{t("review_" + decision)}</option>)}</select></label>

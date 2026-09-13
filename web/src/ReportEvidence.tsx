@@ -289,14 +289,23 @@ export function EvidenceValue({ value }: { value: unknown }) {
 }
 function HistoricalCAD({
   cad,
+  runId,
+  document,
   onSelect,
 }: {
   cad: NonNullable<NonNullable<ReportBundle["historical"]>["cad"]>;
+  runId: string;
+  document: SceneDocument;
   onSelect: (entityId: string) => void;
 }) {
-  const { t } = useI18n(),
-    [url, setURL] = useState<string>(),
+  const { language, t: globalT } = useI18n();
+  const t = (key: string) => reportEvidenceMessages[key]?.[language === "zh" ? 0 : 1] || globalT(key);
+  const [url, setURL] = useState<string>(),
     [error, setError] = useState<unknown>();
+  const entityIds = new Set(document.entities.map(entity => entity.id));
+  const linkedRegions = cad.regions.map(region => ({ ...region, entityIds: region.entityIds.filter(id => entityIds.has(id)) })).filter(region => region.entityIds.length);
+  const objectCount = new Set(cad.regions.map(region => region.inventoryIndex)).size;
+  const linkedCount = new Set(linkedRegions.map(region => region.inventoryIndex)).size;
   useEffect(() => {
     let live = true;
     setURL(undefined);
@@ -313,8 +322,9 @@ function HistoricalCAD({
     };
   }, [cad.assetId]);
   return (
-    <figure className="report-cad-evidence">
+    <figure id="workcell-original-cad" className="report-cad-evidence" style={{ scrollMarginTop: 80 }}>
       <h3>{t("reportCadOriginal")}</h3>
+      <p className="report-evidence-note">{objectCount} {t("reCadObjectRecords")} · {linkedCount} {t("reCadLinkedObjects")}</p>
       <ErrorNotice error={error} />
       {url && (
         <svg
@@ -322,8 +332,7 @@ function HistoricalCAD({
           aria-label={t("reportCadOriginal")}
         >
           <image href={url} width={cad.width} height={cad.height} />
-          {cad.regions
-            .filter((r) => r.entityIds.length)
+          {linkedRegions
             .map((r, i) => (
               <polygon
                 key={i}
@@ -346,7 +355,10 @@ function HistoricalCAD({
             ))}
         </svg>
       )}
-      <figcaption>{t("reportCoordinateNote")}</figcaption>
+      <figcaption>
+        {t("reCadBasis")}<br />
+        {t("reportSource")} · {runId} · {t("reCadPixelCoordinates")} {cad.width} × {cad.height} px
+      </figcaption>
       <ReportDownload assetId={cad.assetId}>CAD</ReportDownload>
     </figure>
   );
@@ -460,7 +472,6 @@ export function ReportEvidence({
             <details
               className="report-source-details"
               key={analysis.runId + ":" + index}
-              open={index === 0}
             >
               <summary>
                 {analysis.runId === historical?.runId
@@ -573,10 +584,11 @@ export function ReportEvidence({
       <div className="report-historical">
         <h3>{t("reportHistoricalSafety")}</h3>
         <p className="report-evidence-note">{t("reportHistoricalHint")}</p>
-        <p className="report-kicker">{historical.runId}</p>
-        <p className="report-evidence-note">{t("rePolicySourceNote")}</p>
+        <p className="report-historical-count">{historical.findings.length} {t("reHistoricalChecks")}</p>
         <details className="report-source-details">
           <summary>{t("reportOriginalAssessment")}</summary>
+          <p className="report-kicker">{historical.runId}</p>
+          <p className="report-evidence-note">{t("rePolicySourceNote")}</p>
           <EvidenceValue value={historical.summary} />
           <EvidenceValue value={historical.assessment} />
         </details>
@@ -592,14 +604,20 @@ export function ReportEvidence({
               key={finding.id || i}
             >
               <summary>
-                <span>{finding.title || finding.id}</span>
+                <span className="report-historical-scope">
+                  <small>{t("rePolicyScope")}</small>
+                  {spec?.subjectLabels?.length || spec?.objectLabels?.length
+                    ? [spec.subjectLabels?.join(", "), spec.objectLabels?.join(", ")].filter(Boolean).join(" → ")
+                    : finding.title || finding.id}
+                </span>
                 <span className={"badge " + finding.status?.toLowerCase()}>
                   {t(finding.status || "unknown")}
                 </span>
               </summary>
               {finding.summary && <p>{finding.summary}</p>}
-              <div className="report-rule-basis">
-                <h4>{t("rePolicyBasis")}</h4>
+              <details className="report-rule-basis">
+                <summary>{t("rePolicyBasis")}</summary>
+                <h4>{finding.title || finding.id}</h4>
                 {spec ? (
                   <dl className="report-evidence-fields">
                     {spec.rationale && (
@@ -674,8 +692,10 @@ export function ReportEvidence({
                     <EvidenceValue value={finding.warnings} />
                   </details>
                 )}
-              </div>
-              <div className="report-downloads">
+              </details>
+              <details className="report-source-details">
+                <summary>{t("reportTechnical")}</summary>
+                <div className="report-downloads">
                 {policy?.sourceRefs?.map((ref, j) => (
                   <ReportDownload key={"policy:" + j} assetId={ref.assetId}>
                     {t("rePolicyText")}
@@ -687,7 +707,8 @@ export function ReportEvidence({
                     {ref.jsonPointer ? " · " + ref.jsonPointer : ""}
                   </ReportDownload>
                 ))}
-              </div>
+                </div>
+              </details>
             </details>
           );
         })}
@@ -697,7 +718,7 @@ export function ReportEvidence({
     return (
       <>
         {historical?.cad && (
-          <HistoricalCAD cad={historical.cad} onSelect={onSelect} />
+          <HistoricalCAD cad={historical.cad} runId={historical.runId} document={document} onSelect={onSelect} />
         )}
         {!!historical?.frames?.length && (
           <details className="report-source-details">
@@ -716,7 +737,9 @@ export function ReportEvidence({
             </div>
           </details>
         )}
-        <div className="report-resource-list">
+        {!!bundle?.resources?.length && <details className="report-source-details">
+          <summary>{t("reSourceFiles")} · {bundle.resources.length}</summary>
+          <div className="report-resource-list">
           {bundle?.resources?.map((resource) => (
             <div className="report-resource-row" key={resource.id}>
               <strong>{resource.label}</strong>
@@ -730,7 +753,8 @@ export function ReportEvidence({
               </ReportDownload>
             </div>
           ))}
-        </div>
+          </div>
+        </details>}
       </>
     );
   const comparison =
@@ -747,8 +771,8 @@ export function ReportEvidence({
   const fmt = (v: number | null | undefined) =>
     typeof v === "number" && Number.isFinite(v) ? v.toFixed(4) : "—";
   return (
-    <div className="report-historical">
-      <h3>{t("reportQuality")}</h3>
+    <details className="report-historical report-quality-details">
+      <summary>{t("reportQuality")}</summary>
       {comparison.length ? (
         <>
           <h4>{t("reExperiment")}</h4>
@@ -848,6 +872,8 @@ export function ReportEvidence({
           </div>
         </details>
       )}
-    </div>
+    </details>
   );
 }
+
+export { HistoricalCAD as OriginalCadEvidence };

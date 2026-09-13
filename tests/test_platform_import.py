@@ -12,7 +12,7 @@ import pytest
 from ehs_spatial.platform.contracts import PlatformError
 from ehs_spatial.platform.spatial import transform_matrix
 from ehs_spatial.platform.repository import apply_operations
-from scripts.import_public_scene import import_document, legacy_transform, packed_asset, source_path
+from scripts.import_public_scene import floor_evidence, floor_mesh_members, import_document, legacy_transform, packed_asset, source_path
 
 
 def make_public_scene(root):
@@ -79,6 +79,34 @@ def test_native_euler_exact_order_and_content_hash_validation(tmp_path):
         source_path(tmp_path,'../outside.json')
 
 
+def test_import_normalizes_observed_basis_without_report_and_retains_floor_query(tmp_path):
+    path = make_public_scene(tmp_path)
+    source = json.loads(path.read_text())
+    region = source['observed_regions'][0]
+    region['label'] = 'Arbitrary display name'
+    region['measurements'] = {'status':'available','dimensions_native':{'height':0,'width':2,'depth':3},
+        'basis':{'kind':'floor_aligned_native','axes_native':np.eye(3).tolist(),'corners_native':[[0,0,2],[1,0,2],[0,1,2]]}}
+    query = {'type':'text-sam','label':'floor','path':'saved-query.json','sha256':'a'*64,'pointer':['rle',0]}
+    region['provenance'] = {'source_record':{'source_refs':[query]}}
+    source['objects'][1]['label'] = 'floor'
+    path.write_text(json.dumps(source))
+    def put(data,media_type,metadata):
+        sha=hashlib.sha256(data).hexdigest()
+        return {'id':str(uuid5(NAMESPACE_URL,sha)),'sha256':sha,'sizeBytes':len(data),'mediaType':media_type,'metadata':metadata}
+    document,manifest = import_document(path,put)
+    assert 'reportEvidence' not in document
+    observed = next(e for e in document['entities'] if e['id']==manifest['entityIds']['tiny'])
+    assert observed['measurements']['basis'] == {'kind':'floor_aligned_native','axesNative':np.eye(3).tolist(),'cornersNative':[[0,0,2],[1,0,2],[0,1,2]]}
+    assert observed['measurements']['groundHeightNative'] == 0
+    assert observed['geometryRole'] == 'floor'
+    assert observed['geometryRoleSourceRefs'][0]['sourceEvidence'] == query
+    observation = next(o for o in document['observations'] if o['id'] in observed['observationRefs'])
+    assert observation['labelEvidence'][0]['geometryRole'] == 'floor'
+    assert observation['labelEvidence'][0]['source'] == 'imported_segmentation_query'
+    assert not next(e for e in document['entities'] if e['label']=='floor').get('geometryRole'), 'A display label never establishes a geometric role'
+    assert json.loads(path.read_text()) == source, 'Conversion must not mutate source artifacts'
+
+
 def test_imported_bounds_measures_exact_photo_binding_and_manual_acceptance(tmp_path):
     path = make_public_scene(tmp_path)
     source = json.loads(path.read_text())
@@ -110,3 +138,64 @@ def test_imported_bounds_measures_exact_photo_binding_and_manual_acceptance(tmp_
     rejected,_=import_document(path,put)
     assert rejected['entities'][1]['observationRefs']==[]
     assert rejected['entities'][1]['missingEvidence']==['source_observation_binding_pending']
+
+
+def test_floor_role_requires_pinned_native_mesh_membership(tmp_path, monkeypatch):
+    path = make_public_scene(tmp_path)
+    source = json.loads(path.read_text())
+    fid = source['cameras'][0]['id']
+    points = np.array([[[0,0,2],[.01,0,2]],[[0,.01,2],[.01,.01,2]]], dtype='<f4')
+    faces = np.array([[0,1,2],[1,3,2]], dtype='<u4')
+    vertices = np.c_[points.reshape(-1,3),np.tile([0,0,1,.5,.5,.5],(4,1))].astype('<f4')
+    raw = vertices.tobytes()+faces.tobytes()
+    packed = gzip.compress(raw)
+    (tmp_path/'context.bin.gz').write_bytes(packed)
+    for record in source['objects']:
+        record['mesh'].update(vertex_count=4,index_byte_offset=144,index_count=6)
+        record['mesh']['asset'].update(bytes=len(raw),packed_bytes=len(packed),sha256=hashlib.sha256(raw).hexdigest())
+    source['objects'][0]['label'] = 'Unrelated display name'
+    values = {'pts3d.npy':points,'valid_mask.npy':np.ones((2,2),bool),'content_valid_mask.npy':np.ones((2,2),bool),
+        'conf.npy':np.ones((2,2)),'intrinsics.npy':np.array(source['cameras'][0]['K']),
+        'camera_to_world.npy':np.eye(4),'mask.npy':np.ones((2,2),bool),'points.npy':points.reshape(-1,3)}
+    hashes = {}
+    for name,value in values.items():
+        destination=tmp_path/'geometry'/'frames'/fid/name
+        destination.parent.mkdir(parents=True,exist_ok=True)
+        np.save(destination,value,allow_pickle=False)
+        hashes[name]=hashlib.sha256(destination.read_bytes()).hexdigest()
+    keys = {'pointmap_path':'pts3d.npy','valid_path':'valid_mask.npy','content_valid_path':'content_valid_mask.npy',
+        'conf_path':'conf.npy','K_path':'intrinsics.npy','c2w_path':'camera_to_world.npy','canonical_mask_path':'mask.npy','points_path':'points.npy'}
+    view={'frame_id':fid,'sha256':hashes,**{key:f'geometry/frames/{fid}/{name}' for key,name in keys.items()}}
+    floor_raw=json.dumps({'views':[view],'coordinate_system':'Descriptive source wording'}).encode()
+    (tmp_path/'floor.json').write_bytes(floor_raw)
+    floor_sha=hashlib.sha256(floor_raw).hexdigest()
+    frozen={'experiment':source['run_id'],'evidence':{'floor_sha256':floor_sha},'geometry':{'frames':[{'frame_id':fid,'files':hashes}]}}
+    frozen_raw=json.dumps(frozen).encode()
+    (tmp_path/'manifest.json').write_bytes(frozen_raw)
+    source['provenance']={'observed_ranges':{'source_sha256':{'manifest.json':hashlib.sha256(frozen_raw).hexdigest()}}}
+    source['floor_reference']={'path':'floor.json','sha256':floor_sha,'coordinate_system':'Another descriptive wording'}
+    path.write_text(json.dumps(source))
+    # Geometry-cloud import has its own end-to-end test; isolate floor binding here.
+    monkeypatch.setattr('scripts.import_geometry_evidence.import_geometry_evidence',lambda *args:{})
+    def put(data,media_type,metadata):
+        sha=hashlib.sha256(data).hexdigest()
+        return {'id':str(uuid5(NAMESPACE_URL,sha)),'sha256':sha,'sizeBytes':len(data),'mediaType':media_type,'metadata':metadata}
+    document,manifest=import_document(path,put,geometry_root=tmp_path)
+    entity=next(e for e in document['entities'] if e['id']==manifest['entityIds']['context'])
+    assert entity['geometryRole']=='floor' and not entity['observationRefs']
+    assert len(entity['geometryRoleSourceRefs'])==11
+    assert manifest['floorBinding']['sourceRecordIds']==['context']
+    assert manifest['floorBinding']['vertexCount']==4 and manifest['floorBinding']['faceCount']==2
+    assert 'geometryRole' not in document['entities'][1], 'Generated geometry never proves floor membership'
+    evidence=floor_evidence(tmp_path,source)
+    changed=vertices.copy();changed[0,0]=.001
+    assert floor_mesh_members(evidence,{'context':source['objects'][0]},{'context':(changed,faces)},'native')[0]==[]
+    evidence['arrays']['points_path']=points.reshape(-1,3).copy();evidence['arrays']['points_path'][0,0]=.001
+    with pytest.raises(PlatformError,match='import_floor_sample_mismatch'):
+        floor_mesh_members(evidence,{}, {},'native')
+    source['cameras'][0]['camera_to_world'][0][3]=1
+    with pytest.raises(PlatformError,match='import_floor_camera_mismatch'):
+        floor_evidence(tmp_path,source)
+    (tmp_path/'floor.json').write_bytes(floor_raw+b' ')
+    with pytest.raises(PlatformError,match='import_floor_evidence_hash_mismatch'):
+        floor_evidence(tmp_path,source)

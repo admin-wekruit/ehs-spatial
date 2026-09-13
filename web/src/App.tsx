@@ -66,6 +66,7 @@ import type {
   Vec3,
 } from "./types";
 import { mountSceneViewer } from "./viewer/native-viewer";
+import { isReferenceSurface } from "./scene-semantics";
 import "./styles.css";
 const PolicyPage = lazy(() => import("./PolicyPage"));
 const path = (value: string) => "#" + value;
@@ -235,7 +236,7 @@ export default function App() {
           </span>
         </a>
         <nav aria-label="Primary">
-          {["projects", "reports", "policies"].map((item) => (
+          {["projects", "reports"].map((item) => (
             <a
               key={item}
               href={path("/" + item)}
@@ -581,7 +582,7 @@ function ProjectNav({
         <a
           key={tab}
           href={path(
-            `/projects/${projectId}/${tab}${tab === "safety" && revisionId ? "?revision=" + revisionId : ""}`,
+            `/projects/${projectId}/${tab}${tab !== "history" && revisionId ? "?revision=" + revisionId : ""}`,
           )}
           aria-current={active === tab ? "page" : undefined}
         >
@@ -856,6 +857,7 @@ function Workbench({
           <a className="breadcrumb" href={path("/projects")}>
             {t("projects")} /
           </a>
+          <p className="eyebrow">{t("workbench")}</p>
           <h1>{detail.project.title}</h1>
         </div>
         <ProjectNav
@@ -1143,11 +1145,12 @@ function Workspace({
     { t } = useI18n();
   const query = new URLSearchParams(location.hash.split("?")[1] || ""),
     [selectedId, setSelected] = useState<string | null>(query.get("object")),
-    [observationId, setObservation] = useState<string | null>(null),
+    [observationId, setObservation] = useState<string | null>(
+      document.observations.find(o => o.id === query.get("observation") && document.entities.find(e => e.id === query.get("object"))?.observationRefs?.includes(o.id))?.id || null),
     [cameraId, setCamera] = useState<string | null>(
-      document.cameras[0]?.id || null,
+      document.cameras.find(c => c.imageId === query.get("image"))?.id || document.cameras[0]?.id || null,
     ),
-    [sourceImageId, setSourceImage] = useState<string | null>(null),
+    [sourceImageId, setSourceImage] = useState<string | null>(document.assets.find(a => a.id === query.get("image") && a.kind === "source_image")?.id || null),
     [mode, setMode] = useState<ViewerMode>("photo"),
     [four, setFour] = useState(false),
     [panel, setPanel] = useState<"properties" | "agent">("properties"),
@@ -1562,7 +1565,8 @@ function EntityInspector({
         r.placementReason || "",
       ),
   );
-  const transform = editableTransform(entity),
+  const referenceSurface = isReferenceSurface(document, entity),
+    transform = referenceSurface ? null : editableTransform(entity),
     dimensions = sourceDimensions(entity),
     scale = sourceScale(document, entity),
     model = modelGeometry(entity),
@@ -1575,6 +1579,7 @@ function EntityInspector({
     <div className="entity-inspector">
       <p className="eyebrow">{t("selection")}</p>
       <h2>{entity.label || entity.id}</h2>
+      {referenceSurface && <p className="evidence-note">{t("sceneReferenceSurface")}</p>}
       <Badge
         value={
           entity.associationState === "confirmed"
@@ -1663,10 +1668,10 @@ function EntityInspector({
         <h3>{t("sourceMeasurements")}</h3>
         <Badge value={scale?.status || "uncalibrated"} />
         <dl className="measurement-list">
-          {(["groundHeight", "extentX", "extentY", "extentZ"] as const).map(
+          {(referenceSurface ? ["widthNative", "depthNative"] as const : ["groundHeight", "extentX", "extentY", "extentZ"] as const).map(
             (key) => (
               <div key={key}>
-                <dt>{t(key)}</dt>
+                <dt>{t(key === "widthNative" ? "width" : key === "depthNative" ? "depth" : key)}</dt>
                 <dd>{display(dimensions[key])}</dd>
               </div>
             ),
@@ -1674,7 +1679,7 @@ function EntityInspector({
         </dl>
         <p className="subtle">{t("sourceNote")}</p>
       </section>
-      {onGenerate && (
+      {onGenerate && !referenceSurface && (
         <button className="wide" onClick={onGenerate}>
           {t("generate")} ↗
         </button>
@@ -1870,6 +1875,10 @@ export function PlanView({
         svg.current?.focus();
       }
     }}>
+      <div className="plan-coverage">
+        <strong>{t(interactive ? "planScope" : "cadScope")}</strong>
+        <span>{shapes.length} / {document.entities.filter((entity) => entity.visible !== false && !entity.sourceContext).length} {t("planCoverage")}</span>
+      </div>
       {interactive && (
         <div className="plan-tools">
           <button onClick={() => setZoom((z) => Math.max(0.5, z / 1.2))}>
@@ -1898,6 +1907,10 @@ export function PlanView({
           if (hits.length === 1) choose(hits[0].entity.id);
           else setCandidates(hits.map((hit) => hit.entity.id));
         }}>
+        {!interactive && <g className="plan-grid" aria-hidden="true">
+          {Array.from({ length: 13 }, (_, index) => <line key={"x" + index} x1={index * 50} y1="0" x2={index * 50} y2="400" />)}
+          {Array.from({ length: 9 }, (_, index) => <line key={"y" + index} x1="0" y1={index * 50} x2="600" y2={index * 50} />)}
+        </g>}
         <g
           ref={drawing}
           transform={`translate(300 200) scale(${zoom}) translate(${(-(max[0] - min[0]) * factor) / 2} ${(-(max[1] - min[1]) * factor) / 2})`}
@@ -1909,7 +1922,7 @@ export function PlanView({
                 (b.max[0] - b.min[0]) * (b.max[1] - b.min[1]) -
                 (a.max[0] - a.min[0]) * (a.max[1] - a.min[1]),
             )
-            .map(({ entity, min: lo, max: hi, polygon }) => (
+            .map(({ entity, min: lo, max: hi, polygon, projectionSource }) => (
               <g
                 key={entity.id}
                 role="button"
@@ -1933,7 +1946,7 @@ export function PlanView({
                       ),
                     )
                     .join(" ")}
-                  className={entity.id === selectedId ? "selected" : ""}
+                  className={[entity.id === selectedId ? "selected" : "", projectionSource === "model_bounds" ? "model-footprint" : projectionSource === "saved_hull" ? "saved-footprint" : "observed-footprint"].join(" ")}
                 />
                 <title>{entity.label || entity.id}</title>
                 {entity.id === selectedId && (
@@ -1948,6 +1961,10 @@ export function PlanView({
             ))}
         </g>
       </svg>
+      <div className="plan-legend"><span className="observed-key">{t("planObserved")}</span><span className="model-key">{t("planModeled")}</span><span className="saved-key">{t("planSaved")}</span><span>{t("planNativeUnits")}</span></div>
+      {!interactive && <details className="plan-object-index"><summary>{t("planIndex")}</summary>
+        <div>{document.entities.filter((entity) => entity.visible !== false && !entity.sourceContext).map((entity) => <button key={entity.id} type="button" aria-pressed={entity.id === selectedId} onClick={() => choose(entity.id)}><span>{entity.label || entity.id}</span><small>{shapes.some((shape) => shape.entity.id === entity.id) ? t("planProjected") : t("planMissing")}</small></button>)}</div>
+      </details>}
       {candidates.length > 1 && (
         <div ref={picker} className="plan-hit-picker" role="group" aria-label={t("scenePlanOverlap")}>
           <header><strong>{t("scenePlanOverlap")} · {candidates.length}</strong><button type="button" aria-label={t("close")} onClick={() => { setCandidates([]); svg.current?.focus(); }}>×</button></header>

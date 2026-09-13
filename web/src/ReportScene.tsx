@@ -3,6 +3,7 @@ import { SpatialView, PlanView } from "./App";
 import { PhotoView } from "./PhotoView";
 import { useI18n } from "./i18n";
 import { observationsFor, modelGeometry, jsonObject, planShapes } from "./core";
+import { isReferenceSurface } from "./scene-semantics";
 import {
   add,
   boundsCorners,
@@ -116,7 +117,8 @@ function entityGeometry(entity: Entity, layer: Layer, frameId?: string) {
 }
 
 // Uses the same camera projection and pixel-centre convention as the WebGL view.
-function photoOverlay(entity: Entity, camera: Camera, layer: Layer) {
+function photoOverlay(document: SceneDocument, entity: Entity, camera: Camera, layer: Layer) {
+  if (isReferenceSurface(document, entity)) return null;
   const geometry = entityGeometry(entity, layer, camera.coordinateFrameId);
   if (
     !geometry ||
@@ -197,7 +199,7 @@ function PhotoAxes({
             (allBounds || e.id === selectedId),
         )
         .map((entity) => {
-          const overlay = photoOverlay(entity, camera, layer);
+          const overlay = photoOverlay(revision.document, entity, camera, layer);
           if (!overlay) return null;
           const selected = entity.id === selectedId;
           return (
@@ -263,6 +265,7 @@ export function ReportScene({
   onCamera,
   draw = false,
   onBox,
+  onOpenSourceCad,
 }: {
   revision: Revision;
   selection: Selection;
@@ -272,6 +275,7 @@ export function ReportScene({
   onCamera: (imageId: string, cameraId: string | null) => void;
   draw?: boolean;
   onBox?: (box: number[] | null) => void;
+  onOpenSourceCad?: () => void;
 }) {
   const { t } = useI18n(),
     container = useRef<HTMLElement>(null),
@@ -323,7 +327,7 @@ export function ReportScene({
       ),
     );
   const selectedOverlay =
-    selected && camera ? photoOverlay(selected, camera, layer) : null;
+    selected && camera ? photoOverlay(document, selected, camera, layer) : null;
   const objects = document.entities.filter((entity) => !entity.sourceContext);
   const filtered = objects.filter((e) =>
     `${e.label || ""} ${e.id}`.toLowerCase().includes(search.toLowerCase()),
@@ -489,6 +493,7 @@ export function ReportScene({
                 <span>{String(index + 1).padStart(2, "0")}</span>
                 {t(pane === "spatial" ? availability.spatialTitle : paneNames[pane])}
               </h3>
+              {pane === "cad" && onOpenSourceCad && <button className="report-scene-source-cad" onClick={onOpenSourceCad}>{t("sceneSourceCad")} ↗</button>}
               <button
                 className="report-scene-expand"
                 aria-label={`${t("sceneFullscreen")} · ${t(paneNames[pane])}`}
@@ -593,7 +598,9 @@ export function ReportScene({
             {t("sceneSelected")} · {selected.label || selected.id}
           </strong>
           <span>
-            {selectedOverlay
+            {isReferenceSurface(document, selected)
+              ? t("sceneReferenceSurface")
+              : selectedOverlay
               ? t(
                   selectedOverlay.axisSpace === "native"
                     ? "sceneNativeAxis"

@@ -102,6 +102,7 @@
   font-size: 20px;
   border: 0;
 }
+.report-scene-source-cad { margin-left: auto; font-size: 11px; min-height: 32px; padding: 4px 8px; }
 .report-scene-pane-body {
   flex: 1 1 auto;
   height: clamp(250px, 30vh, 340px);

@@ -24,7 +24,7 @@ from ehs_spatial.platform.contracts import PlatformError, canonical, digest, emp
 from ehs_spatial.platform.spatial import MeshData, camera_intrinsics, transform_matrix
 from scripts.import_report_evidence import canonical_measurements, import_report_evidence, original_box, original_polygons, report_dependencies
 
-CONVERTER_VERSION = "public-scene-v5"
+CONVERTER_VERSION = "public-scene-v6"
 
 
 def converter_identity():
@@ -100,6 +100,81 @@ def unpack_mesh(root, record):
     if not np.isfinite(vertices).all():
         raise PlatformError("import_mesh_nonfinite", 422)
     return vertices, faces
+
+
+def floor_evidence(geometry_root, source):
+    """Hash-pinned floor samples in the source scene's native camera frame."""
+    if not geometry_root or not source.get("floor_reference"):
+        return None
+    from scripts.import_geometry_evidence import pinned_manifest
+    root = Path(geometry_root).resolve()
+    frozen, manifest_raw = pinned_manifest(root, source)
+    reference = source["floor_reference"]
+    raw = source_path(root, reference["path"]).read_bytes()
+    if hashlib.sha256(raw).hexdigest() != reference.get("sha256") or frozen.get("evidence", {}).get("floor_sha256") != reference["sha256"]:
+        raise PlatformError("import_floor_evidence_hash_mismatch", 422)
+    floor = json.loads(raw)
+    view = floor["views"][-1]
+    fid = view["frame_id"]
+    specs = [record for record in frozen["geometry"]["frames"] if record["frame_id"] == fid]
+    cameras = [camera for camera in source["cameras"] if camera["id"] == fid]
+    if len(specs) != 1 or len(cameras) != 1:
+        raise PlatformError("import_floor_frame_mismatch", 422)
+    files = {"manifest.json": manifest_raw, reference["path"]: raw}
+    arrays = {}
+    for key, name in (("pointmap_path", "pts3d.npy"), ("valid_path", "valid_mask.npy"),
+                      ("content_valid_path", "content_valid_mask.npy"), ("conf_path", "conf.npy"),
+                      ("K_path", "intrinsics.npy"), ("c2w_path", "camera_to_world.npy"),
+                      ("canonical_mask_path", None), ("points_path", None)):
+        relative = view[key]
+        expected = view["sha256"].get(Path(relative).name) if name is None else specs[0]["files"].get(name)
+        if name is not None and relative != f"geometry/frames/{fid}/{name}":
+            raise PlatformError("import_floor_frame_mismatch", 422)
+        data = source_path(root, relative).read_bytes()
+        if not expected or hashlib.sha256(data).hexdigest() != expected:
+            raise PlatformError("import_floor_evidence_hash_mismatch", 422)
+        files[relative] = data
+        arrays[key] = np.load(io.BytesIO(data), allow_pickle=False)
+    if not np.array_equal(arrays["K_path"], cameras[0]["K"]) or not np.array_equal(arrays["c2w_path"], cameras[0]["camera_to_world"]):
+        raise PlatformError("import_floor_camera_mismatch", 422)
+    return {"view": view, "files": files, "arrays": arrays}
+
+
+def floor_mesh_members(evidence, records, meshes, frame_id):
+    """Prove exact indexed geometry membership, independent of object IDs/names."""
+    arrays = evidence["arrays"]
+    points, mask = arrays["pointmap_path"], arrays["canonical_mask_path"].astype(bool)
+    if points.shape != (*mask.shape, 3) or any(arrays[key].shape != mask.shape for key in ("valid_path", "content_valid_path", "conf_path")):
+        raise PlatformError("import_floor_grid_mismatch", 422)
+    inverse = np.linalg.inv(arrays["c2w_path"])
+    local = points @ inverse[:3, :3].T + inverse[:3, 3]
+    conf = arrays["conf_path"]
+    valid = mask & arrays["valid_path"].astype(bool) & arrays["content_valid_path"].astype(bool) & np.isfinite(local).all(-1) & (local[..., 2] > 0) & np.isfinite(conf) & (conf >= .1)
+    if not np.array_equal(points[valid], arrays["points_path"]):
+        raise PlatformError("import_floor_sample_mismatch", 422)
+    grid = np.arange(mask.size).reshape(mask.shape)
+    a, b, c, d = grid[:-1, :-1], grid[:-1, 1:], grid[1:, :-1], grid[1:, 1:]
+    faces = np.concatenate([np.stack([a, b, c], -1).reshape(-1, 3), np.stack([b, d, c], -1).reshape(-1, 3)])
+    faces = faces[valid.ravel()[faces].all(axis=1)]
+    vertices, depth = points.reshape(-1, 3), local[..., 2].ravel()
+    # Exact observed-mesh profile: adjacent source pixels and depth-relative
+    # discontinuity rejection. No fitted plane or label can establish membership.
+    lengths = np.linalg.norm(vertices[faces] - vertices[faces[:, [1, 2, 0]]], axis=2)
+    faces = faces[lengths.max(axis=1) <= .04 * np.median(depth[faces], axis=1)]
+    if not len(faces):
+        raise PlatformError("import_floor_mesh_empty", 422)
+    used, remapped = np.unique(faces, return_inverse=True)
+    expected_vertices, expected_faces = vertices[used].astype("<f4"), remapped.reshape(-1, 3).astype("<u4")
+    matches = []
+    for old_id, (mesh_vertices, mesh_faces) in meshes.items():
+        record = records[old_id]
+        if record.get("source") != "observed" or record.get("frame_ids") != [evidence["view"]["frame_id"]]:
+            continue
+        transform = transform_matrix(legacy_transform(record["transform"], frame_id))
+        native = (mesh_vertices[:, :3] @ transform[:3, :3].T + transform[:3, 3]).astype("<f4")
+        if np.array_equal(native, expected_vertices) and np.array_equal(mesh_faces, expected_faces):
+            matches.append(old_id)
+    return matches, len(expected_vertices), len(expected_faces)
 
 
 def import_document(scene_path, put_asset, *, legacy_root=None, observation_root=None, geometry_root=None):
@@ -183,6 +258,18 @@ def import_document(scene_path, put_asset, *, legacy_root=None, observation_root
     for record in source.get("objects", []):
         if record.get("mesh"):
             meshes[record["id"]] = unpack_mesh(root, record["mesh"])
+    floor_members, floor_refs = set(), []
+    floor = floor_evidence(geometry_root, source)
+    if floor:
+        matched, vertices, faces = floor_mesh_members(floor, records, meshes, frame_id)
+        floor_members = set(matched)
+        for relative, raw in floor["files"].items():
+            aid = include(raw, "application/json" if relative.endswith(".json") else "application/octet-stream",
+                          {"kind": "floor_role_evidence", "sourcePath": relative}, "floor_role/" + relative)
+            floor_refs.append({"assetId": aid, "sha256": hashlib.sha256(raw).hexdigest(), "sourcePath": relative})
+        manifest["floorBinding"] = {"status": "verified" if matched else "no_matching_source_mesh", "sourceRecordIds": matched,
+                                    "sourceFrameId": floor["view"]["frame_id"], "vertexCount": vertices, "faceCount": faces,
+                                    "method": "exact_native_indexed_mesh_from_hash_pinned_floor_samples", "sourceRefs": floor_refs}
 
     def save_mesh(vertices, faces, source_record):
         indices = np.asarray(faces, dtype="<u4").ravel()
@@ -199,6 +286,21 @@ def import_document(scene_path, put_asset, *, legacy_root=None, observation_root
                 "visible": record.get("visible", True), "sourceContext": record.get("role") == "context"}
         measurements = record.get("measurements", {})
         item["measurements"] = canonical_measurements(measurements, frame_id, [{"assetId": source_asset, "sourceRecordId": old_id}])
+        provenance = record.get("provenance", {})
+        source_record = provenance.get("source_record", {}) if isinstance(provenance, dict) else {}
+        source_refs = source_record.get("source_refs", []) if isinstance(source_record, dict) else []
+        floor_sources = [ref for ref in source_refs if isinstance(ref, dict) and ref.get("type") == "text-sam" and ref.get("label") == "floor"] if isinstance(source_refs, list) else []
+        label_evidence = {"label": item["label"], "source": "legacy_import"}
+        if floor_sources:
+            # The saved segmentation query is evidence of a floor category;
+            # a display name or the existence of a ground plane is not.
+            role_refs = [{"assetId": source_asset, "sourceRecordId": old_id, "sourceEvidence": deepcopy(ref)} for ref in floor_sources]
+            item.update(geometryRole="floor", geometryRoleSourceRefs=role_refs)
+            label_evidence.update(geometryRole="floor", source="imported_segmentation_query", sourceRefs=deepcopy(role_refs))
+        if old_id in floor_members:
+            role_refs = [{"assetId": source_asset, "sourceRecordId": old_id, "binding": "exact_native_floor_mesh"}, *deepcopy(floor_refs)]
+            item.update(geometryRole="floor", geometryRoleSourceRefs=role_refs)
+            label_evidence.update(geometryRole="floor", source="verified_floor_mesh", sourceRefs=deepcopy(role_refs))
         frame_ref = record.get("reference_frame")
         mask = record.get("mask")
         source_box = record.get("source_bbox", {})
@@ -219,7 +321,7 @@ def import_document(scene_path, put_asset, *, legacy_root=None, observation_root
             observation_id = ident("observation", old_id + ":" + frame_ref)
             observation = {"id": observation_id, "revision": 1, "imageId": camera_images[frame_ref], "originalPixelBox": list(box), "maskAssetId": mask_id,
                 "pixelMapping": [{"source": "canonical_pixels", "target": "original_pixels", "coordinateConvention": "pixel_centers", "matrix": camera["canonicalToOriginal"].tolist()}],
-                "labelEvidence": [{"label": item["label"], "source": "legacy_import"}], "geometrySupport": None,
+                "labelEvidence": [deepcopy(label_evidence)], "geometrySupport": None,
                 "sourceRefs": [{"assetId": source_asset, "sourceRecordId": old_id}], "sourceBoxEvidence": deepcopy(source_box)}
             if old_id in linked_views:
                 view = next((v for v in linked_views[old_id][0] if v.get("frame_id") == frame_ref), None)
@@ -253,7 +355,7 @@ def import_document(scene_path, put_asset, *, legacy_root=None, observation_root
                 oid = ident("observation", old_id + ":" + anchor)
                 document["observations"].append({"id": oid, "revision": 1, "imageId": camera_images[anchor], "originalPixelBox": list(box), "maskAssetId": None,
                     "pixelMapping": [{"source": "canonical_pixels", "target": "original_pixels", "matrix": camera["canonicalToOriginal"].tolist(), "coordinateConvention": "pixel_centers"}],
-                    "labelEvidence": [{"label": item["label"], "source": "legacy_import"}], "geometrySupport": None,
+                    "labelEvidence": [deepcopy(label_evidence)], "geometrySupport": None,
                     "sourceRefs": [{"assetId": match["assetId"], "sourceRecordId": old_id, "binding": "exact_candidate_id_and_image_sha256", "imageSha256": camera_hashes[anchor]}],
                     "missingEvidence": ["source_mask_not_packaged"], "originalPixelPolygons": original_polygons(match.get("polygons", []), camera["canonicalToOriginal"]),
                     "polygonCoordinateConvention": "pixel_centers", "boxConvention": "edges_xyxy_right_bottom_exclusive", "fillRule": "evenodd"})
@@ -350,7 +452,8 @@ def run_import(scene_path, repository, blobs, output_dir, title=None, *, legacy_
         geometry_files = geometry_dependencies(geometry_root, source)
     converter_key = digest({"converter": converter, "evidence": [hashlib.sha256(raw).hexdigest() for _, raw in evidence_documents(scene_path, source)],
                             "reportDependencies": [hashlib.sha256(path.read_bytes()).hexdigest() for path in report_dependencies(scene_path, source, legacy_root, observation_root)],
-                            "geometryDependencies": [hashlib.sha256(path.read_bytes()).hexdigest() for path in geometry_files]})
+                            "geometryDependencies": [hashlib.sha256(path.read_bytes()).hexdigest() for path in geometry_files],
+                            "floorDependencies": [hashlib.sha256(raw).hexdigest() for raw in (floor_evidence(geometry_root, source) or {}).get("files", {}).values()]})
     manifest_path = output_dir / (sha + "." + converter_key + ".manifest.json")
     if manifest_path.exists():
         return json.loads(manifest_path.read_text())

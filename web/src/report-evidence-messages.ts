@@ -1,4 +1,10 @@
 export const reportEvidenceMessages: Record<string, [string, string]> = {
+  reCadObjectRecords: ["条原始 CAD 对象记录", "original CAD object records"],
+  reCadLinkedObjects: ["条已关联到当前场景", "linked to the current scene"],
+  reCadPixelCoordinates: ["图内区域坐标", "Image-region coordinates"],
+  reCadBasis: ["历史分析生成的 CAD 参考图，保留来源坐标与估计尺度。它不是当前模型平面，也未作为现场实测图纸验证；只有明确关联的区域可联动当前对象。", "A CAD reference image from historical analysis, retaining its source coordinates and estimated scale. It is not the current model plan or a verified site survey; only explicitly linked regions select current objects."],
+  reHistoricalChecks: ["项历史检查 · 未在本版本重新评估", "historical checks · not reassessed for this revision"],
+  reSourceFiles: ["原始模型、分析与证据文件", "Original models, analysis & evidence files"],
   reLinkedRecords: ["条已关联", "linked"],
   reSourceRecords: ["条来源记录", "source records"],
   reUnassociatedRecords: [
@@ -14,7 +20,7 @@ export const reportEvidenceMessages: Record<string, [string, string]> = {
   reScenePhoto: ["场景照片", "Scene photograph"],
   reSourceRecord: ["原候选", "Source candidate"],
   reHistoricalPhotos: ["原始 run 的照片", "Photographs from the source run"],
-  rePolicyBasis: ["该历史规则的依据", "Basis of this historical policy"],
+  rePolicyBasis: ["展开完整规则、理由与证据", "Full policy, reasoning & evidence"],
   rePolicyReason: ["规则理由", "Policy rationale"],
   rePolicyText: ["保存的规则原文", "Saved policy text"],
   rePolicyLimit: ["未支持的检查及原因", "Unsupported check and reason"],

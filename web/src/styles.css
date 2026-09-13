@@ -370,7 +370,7 @@ small,
   padding-bottom: 4px;
 }
 .catalog-report-link:hover .catalog-open {
-  color: var(--accent);
+  color: var(--green);
 }
 .catalog-missing {
   font-size: 13px;
@@ -1278,17 +1278,36 @@ pre {
   height: 100%;
   position: relative;
   background: #f4f6ed;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 .plan-view svg {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   width: 100%;
 }
 .plan-view rect,
 .plan-view polygon {
-  fill: #d7e2cc;
+  fill: #d7e2cc42;
   stroke: #869b7c;
   stroke-width: 1;
 }
+.plan-view .model-footprint:not(.selected) { fill: #709bad24; stroke: #4f8196; }
+.plan-grid { stroke: #9daf9836; stroke-width: .6; pointer-events: none; }
+.plan-coverage { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; padding: 10px 14px; font-size: 11px; border-bottom: 1px solid var(--line); }
+.plan-coverage span { color: var(--muted); }
+.plan-legend { display: flex; flex-wrap: wrap; gap: 7px 14px; padding: 8px 14px; font-size: 10px; color: var(--muted); }
+.plan-legend .observed-key::before, .plan-legend .model-key::before, .plan-legend .saved-key::before { content: ""; display: inline-block; width: 14px; border-top: 2px solid #869b7c; margin: 0 5px 3px 0; }
+.plan-legend .model-key::before { border-color: #4f8196; }
+.plan-legend .saved-key::before { border-color: #778d84; }
+.plan-view .saved-footprint:not(.selected) { fill: #778d8416; stroke: #778d84; }
+.plan-view:has(.plan-object-index) { padding-bottom: 36px; }
+.plan-object-index { position: absolute; bottom: 0; left: 0; right: 0; max-height: 75%; overflow: auto; background: var(--panel); padding: 7px 14px; border-top: 1px solid var(--line); font-size: 11px; z-index: 2; }
+.plan-object-index > div { max-height: 180px; overflow: auto; margin-top: 8px; }
+.plan-object-index button { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 0; border-radius: 0; border-bottom: 1px solid var(--line); background: transparent; padding: 7px 4px; text-align: left; font-size: 11px; }
+.plan-object-index button small { color: var(--muted); white-space: nowrap; }
+.plan-object-index button[aria-pressed="true"] { color: var(--green); font-weight: 700; }
 .plan-view rect.selected,
 .plan-view polygon.selected {
   fill: #efcdad;
@@ -1302,7 +1321,7 @@ pre {
 }
 .plan-tools {
   position: absolute;
-  bottom: 10px;
+  bottom: 38px;
   right: 10px;
   display: flex;
   gap: 4px;
