@@ -161,3 +161,14 @@ node --experimental-strip-types web/checks/renderer.mjs
 - 独立代码复核发现“边缘按下、捕获前离开、在外部松开、重新进入会继续平移”的问题，已修复并执行实际事件处理器回归。重叠命中仍使用共享真实多边形，拖动后不触发选择。
 
 检查：`web/checks/cad-view.mjs`（合成与本报告真实快照）、`report-scene.mjs`、`plan-selection.mjs`、`observed-plan.mjs`、`web/tests/report-context-check.mjs`、`report-evidence-check.mjs`、`npm --prefix web run check`以及TypeScript/Vite构建通过。该图展示当前对象范围/保存轮廓的地面投影；不是新生成的实体工程图，也没有提升模型姿态或现场测量精度。未发生新模型调用。
+
+
+## Public feedback deployment — 2026-09-13
+
+- Public entry: https://admin-wekruit.github.io/panoptes-workcell-report/app.html#/reports/f55f9704-0999-460e-863a-4c58cca86fb9
+- Frozen revision: `45f843bb-066c-4dd5-9cf0-a460455718b6`; 68 object records, 3 photos. Uses the same report renderer and current-scene CAD as the local platform.
+- Public API audit fetched all 197 saved metadata responses and all 183 assets (271,985,343 bytes), matching the frozen export and every SHA-256. CORS, HEAD, byte ranges, unknown IDs and write rejection passed. Machine-readable output is in ignored `.platform/public-deployment-check.json`.
+- Actual in-app browser on the public website: report loads; fullscreen displays object list, four linked panes and inspector. Selecting control button #30 updates photo 1, CAD #30, plan and observed 3D axes; CAD focus magnifies its saved polygon and dimensions. Selecting cart #06 from CAD updates the photo 3 URL and linked selection. Chinese/English switching preserves the selected object and CAD view. No captured browser console errors.
+- 478 px panel uses view tabs; fullscreen at 1728x1080 shows all four panes. Scene assets actually rendered, rather than merely passing metadata checks.
+- Export buttons were clicked in browser; the in-app browser download-event wait timed out, so completion through its download UI is not asserted. The Blender and GLB files were successfully downloaded and hash-verified through their actual public HTTP endpoints in the independent asset audit.
+- This deployment is a view-only feedback publication. Mutation/Agent/model-workbench routes are not exposed here. The local full platform is unchanged; model quality/release gates remain as documented.
