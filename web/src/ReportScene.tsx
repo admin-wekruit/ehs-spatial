@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { SpatialView, PlanView } from "./App";
 import { PhotoView } from "./PhotoView";
+import { OriginalCadEvidence, sourceCadFor } from "./ReportEvidence";
 import { useI18n } from "./i18n";
 import { observationsFor, entityGeometryForLayer, jsonObject, planShapes, type GeometryOptions } from "./core";
 import { isReferenceSurface } from "./scene-semantics";
@@ -216,6 +217,7 @@ export function ReportScene({
     [fullscreenError, setFullscreenError] = useState(false),
     [isFullscreen, setIsFullscreen] = useState(false);
   const document = revision.document,
+    sourceCad = sourceCadFor(document),
     selected = document.entities.find((entity) => entity.id === selection.entityId);
   const camera = document.cameras.find((c) => c.id === cameraId && c.imageId === imageId) ||
     document.cameras.find((c) => c.imageId === imageId);
@@ -352,8 +354,10 @@ export function ReportScene({
                   {pane === "spatial" && <><SpatialView revision={revision} selection={selection} onSelect={selectEntity} onCommit={noEdit} mode="free" cameraId={cameraId}
                     layers={{ observed_surface: layer !== "point_cloud", generated_mesh: layer === "model", primitive: layer === "model", point_cloud: layer === "point_cloud", allBounds, showCandidates: true, editable: false, opacity: 1 }} />
                     {!hasRepresentation && <div className="report-scene-stage-note">{t("sceneNoRepresentation")}</div>}</>}
-                  {(pane === "cad" || pane === "plan") && availability.planEmpty && <div className="report-scene-plan-empty" role="status"><strong>{t("scenePlanUnavailable")}</strong><p>{t(availability.planEmpty)}</p><small>{t("sceneSelectionRetained")}</small></div>}
-                  {pane === "cad" && !availability.planEmpty && <PlanView document={document} selectedId={selection.entityId} onSelect={selectEntity} geometryOptions={geometryOptions} />}
+                  {(pane === "plan" || (pane === "cad" && !sourceCad)) && availability.planEmpty && <div className="report-scene-plan-empty" role="status"><strong>{t("scenePlanUnavailable")}</strong><p>{t(availability.planEmpty)}</p><small>{t("sceneSelectionRetained")}</small></div>}
+                  {pane === "cad" && (sourceCad
+                    ? <OriginalCadEvidence {...sourceCad} document={document} onSelect={selectEntity} selectedId={selection.entityId} embedded />
+                    : !availability.planEmpty && <PlanView document={document} selectedId={selection.entityId} onSelect={selectEntity} geometryOptions={geometryOptions} />)}
                   {pane === "plan" && !availability.planEmpty && <PlanView document={document} selectedId={selection.entityId} onSelect={selectEntity} interactive geometryOptions={geometryOptions} />}
                 </div>
                 {pane === "photo" && <footer className="report-scene-photo-switch">{images.map((image, i) => <button key={image.imageId} aria-pressed={imageId === image.imageId} onClick={() => onCamera(image.imageId, image.cameraId)}>{t("scenePhotoNumber")} {i + 1}</button>)}{draw && <span>{t("sceneDrawActive")}</span>}</footer>}

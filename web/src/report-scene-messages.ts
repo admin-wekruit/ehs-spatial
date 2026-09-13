@@ -8,7 +8,7 @@ export const reportSceneMessages: Record<string, [string, string]> = {
   sceneNoSelection: ["尚未选择物体", "No object selected"],
   sceneNoPhotoLink: ["未绑定照片", "No linked photo"],
   sceneExitFullscreen: ["退出全屏", "Exit fullscreen"],
-  sceneSourceCad: ["核对原始 CAD", "Compare source CAD"],
+  sceneSourceCad: ["图纸来源", "Drawing source"],
   sceneLinked: ["一个工位，四个相连的视角", "One scene, four connected views"],
   sceneReadOnly: [
     "选择对象以核对来源与空间范围。",
@@ -17,7 +17,7 @@ export const reportSceneMessages: Record<string, [string, string]> = {
   scenePhoto: ["原图与对象", "Photograph & objects"],
   scene3D: ["场景 3D", "Scene 3D"],
   sceneObjectModels: ["对象模型 · 尚无场景重建", "Object models · no scene reconstruction"],
-  sceneCAD: ["CAD 投影", "CAD projection"],
+  sceneCAD: ["CAD 图纸", "CAD drawing"],
   scenePlan: ["交互平面", "Interactive plan"],
   scenePlanOverlap: ["此处有重叠物体", "Overlapping objects here"],
   sceneChoosePlanObject: ["请选择要查看的物体；当前选择保持不变。", "Choose an object to inspect; your current selection is unchanged."],

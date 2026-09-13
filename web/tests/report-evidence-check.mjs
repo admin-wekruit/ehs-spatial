@@ -27,7 +27,7 @@ function load(filename) {
   new Function('require','module','exports',code)(dependency,module,module.exports);
   return module.exports;
 }
-const {ReportEvidence,interpretationSelection,orderedInterpretations,partitionInterpretationItems,exactHistoricalPolicy,comparisonSource}=load(path.join(root,'src/ReportEvidence.tsx'));
+const {ReportEvidence,interpretationSelection,orderedInterpretations,partitionInterpretationItems,exactHistoricalPolicy,comparisonSource,sourceCadFor,cadZoomView,cadPanView,cadFocusView,cadLinkedEntities,OriginalCadEvidence}=load(path.join(root,'src/ReportEvidence.tsx'));
 const item={label:'Button',labelZh:'按钮',note:'Bound button note',entityIds:['button'],imageId:'photo-b',cameraId:'camera-b',sourceFrameId:'source-3',targetSourceFrameId:'target-1',mappingStatus:'verified',sourceCandidateIds:['candidate']};
 const legacy={runId:'old-run',items:[{...item,label:'Unassociated old note',entityIds:[],imageId:null}],missing:[],rejected:[],sourceRefs:[]};
 const current={runId:'capture-run',items:[item],missing:[],rejected:[],sourceRefs:[]};
@@ -72,7 +72,31 @@ assert.match(safety,/Exact policy rationale/);assert.match(safety,/Exact source 
 assert.match(quality,/experiment-run/);assert.match(quality,/Original shape experiment; not current parametric button/);assert.match(quality,/Assembled scene run.*assembled-run/);assert.match(quality,/0\.4000.*0\.6000/);
 assert.match(render('assets'),/data-asset="old-photo"/);
 const cadDoc=structuredClone(doc);
-cadDoc.reportEvidence.historical.cad={assetId:'historical-cad',width:1600,height:1240,regions:[{inventoryIndex:1,entityIds:['button'],polygon:[]},{inventoryIndex:1,entityIds:['button'],polygon:[]},{inventoryIndex:2,entityIds:['missing-entity'],polygon:[]},{inventoryIndex:3,entityIds:[],polygon:[]}]};
+const ring=[[0,0],[100,0],[100,100],[0,100]];
+cadDoc.assets.push({id:'historical-cad',mediaType:'image/png',metadata:{sourceRunId:'old-run'}});
+cadDoc.reportEvidence.historical.cad={assetId:'historical-cad',width:1600,height:1240,regions:[{inventoryIndex:1,entityIds:['button'],polygon:ring},{inventoryIndex:1,entityIds:['button'],polygon:ring},{inventoryIndex:2,entityIds:['missing-entity'],polygon:ring},{inventoryIndex:3,entityIds:[],polygon:ring}]};
+const validatedCad=sourceCadFor(cadDoc);
+assert.equal(validatedCad.runId,'old-run');
+assert.equal(validatedCad.cad.regions.length,4);
+assert.equal(sourceCadFor(doc),null);
+for(const change of [d=>d.reportEvidence.schemaVersion=2,d=>d.reportEvidence.historical.runId='wrong-source',d=>d.reportEvidence.historical.cad.width=0,d=>d.reportEvidence.historical.cad.regions[0].polygon=[[1,Infinity]],d=>d.reportEvidence.historical.cad.regions[0].entityIds=[17],d=>d.assets.find(a=>a.id==='historical-cad').mediaType='text/html']){
+  const invalid=structuredClone(cadDoc);change(invalid);assert.equal(sourceCadFor(invalid),null,'invalid source geometry/identity must not enter the source CAD pane');
+}
+for(const mediaType of ['image/png','image/jpeg','image/webp','image/svg+xml']){const imageDoc=structuredClone(cadDoc);imageDoc.assets.at(-1).mediaType=mediaType;assert.ok(sourceCadFor(imageDoc));}
+assert.deepEqual(cadLinkedEntities(cadDoc,{entityIds:['button','button','foreign']}),['button']);
+const multiple=structuredClone(cadDoc);multiple.entities.push({id:'second'});
+assert.deepEqual(cadLinkedEntities(multiple,{entityIds:['button','second','foreign']}),['button','second'],'ambiguous source association must not silently choose its first entity');
+assert.deepEqual(cadZoomView([0,0,1600,1240],1600,2,[400,300]),[200,150,800,620]);
+assert.equal(cadZoomView([0,0,1600,1240],1600,1000,[0,0])[2],100,'zoom has a bounded 16x limit');
+assert.equal(cadZoomView([0,0,1600,1240],1600,.001,[0,0])[2],1600,'zooming out preserves full-sheet scale');
+assert.deepEqual(cadPanView([200,150,800,620],25,-10),[175,160,800,620]);
+const focused=cadFocusView(validatedCad.cad,[ring]);assert.ok(focused[2]<1600&&focused[2]>=1600/3,'automatic focus retains surrounding context and limits raster enlargement to 3x');assert.equal(focused[0]+focused[2]/2,50);assert.equal(focused[1]+focused[3]/2,50);
+assert.deepEqual(cadFocusView(validatedCad.cad,[]),[0,0,1600,1240]);
+const embedded=renderToStaticMarkup(React.createElement(OriginalCadEvidence,{...validatedCad,document:cadDoc,onSelect:()=>{},embedded:true,selectedId:'foreign'}));
+assert.match(embedded,/report-cad-embedded/);assert.match(embedded,/not linked to this source CAD/);assert.doesNotMatch(embedded,/id="workcell-original-cad"/,'embedded and archive views have distinct page identity');
+assert.match(embedded,/<button type="button" disabled="">Focus selection/);
+const linkedEmbed=renderToStaticMarkup(React.createElement(OriginalCadEvidence,{...validatedCad,document:cadDoc,onSelect:()=>{},embedded:true,selectedId:'button'}));
+assert.doesNotMatch(linkedEmbed,/not linked to this source CAD/);assert.match(linkedEmbed,/<button type="button">Focus selection/);
 const cadHtml=render('assets',cadDoc);
 assert.match(cadHtml,/id="workcell-original-cad"/);
 assert.match(cadHtml,/3 original CAD object records · 1 linked to the current scene/,'count source object records once and exclude stale scene associations');
@@ -84,6 +108,8 @@ language='zh';assert.match(render('safety'),/规则理由/);assert.match(render(
 if(process.env.PANOPTES_TEST_PUBLICATION_URL){
   const response=await fetch(process.env.PANOPTES_TEST_PUBLICATION_URL);assert.equal(response.status,200);
   const publication=await response.json(),actual=publication.snapshot.revision.document,bundle=actual.reportEvidence;
+  const liveCad=sourceCadFor(actual);assert.ok(liveCad);assert.equal(liveCad.cad.assetId,bundle.historical.cad.assetId);assert.equal(liveCad.runId,bundle.historical.runId);
+  assert.equal(liveCad.cad.regions.length,bundle.historical.cad.regions.length,'all original source CAD region records are preserved');
   const sorted=orderedInterpretations(actual,bundle.imageInterpretations,bundle.historical.runId);
   assert.ok(sorted[0].items.some(i=>i.entityIds.some(id=>interpretationSelection(actual,i,id)?.imageId)));
   const groups=partitionInterpretationItems(actual,sorted[0].items);

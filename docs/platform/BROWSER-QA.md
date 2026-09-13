@@ -137,3 +137,13 @@ node --experimental-strip-types web/checks/renderer.mjs
 - 右栏只消费当前评估或发布快照，不增加API请求。当前报告尚无本版本评估，9条历史检查缺少可验证对象关联，因此不将其中整体FAIL归给选中按钮。Agent仍须通过已有编辑/副本合同提交。
 
 验证：TypeScript/Vite构建、前端interaction-check，以及report-context、report-review、report-object-findings、report-evidence、report-scene、report-interactions、plan-selection、observed-plan、renderer各检查通过。`pytest tests/test_platform_reconstruction.py tests/test_platform_spatial.py -q` 为34 passed。生产快照保持不可变；新增模型调用为0。新照片真实模型质量、许可及预算发布门槛仍未因此获得通过声明。
+
+## 主窗口显示完整 CAD 图纸
+
+2026-09-13，继续使用同一 `f55f9704-0999-460e-863a-4c58cca86fb9` 发布快照。
+
+- 主 CAD 窗口复用已保存的完整原图 `30accb8b-b3b0-4b4f-8456-c41bdc3a51c7`（1600×1240），保留来源 `user-bor1-02` 的编号、标注、图例和全部33条CAD区域记录。6条区域记录明确关联到3个当前实体，未把当前68条记录宣称为原图覆盖数量。
+- `OriginalCadEvidence` 同时用于主窗口和来源证据区；支持拖动、缩放、完整图纸和定位所选。自动定位最高3×以保留上下文；普通滚轮继续滚动报告，Ctrl/⌘滚轮才缩放图纸。未关联对象显示说明，不借用当前场景坐标强行落点。
+- 当前交互平面仍使用同源当前几何。没有完整来源CAD资产的Capture仍显示当前投影；本次没有新增完整CAD生成阶段，也没有改写场景、Publication或资产内容。来源图纸是原始PNG，缩放不会增加其分辨率。
+- CUA实际检查：主窗口已显示原图而非简化多边形；键盘选择区域13联动围栏 `ce9516a5`；全屏中鼠标点击防撞柱区域21联动 `27d00998` 与右侧尺寸。放大后拖动改变viewBox且不改变所选对象；完整图纸按钮恢复 `0 0 1600 1240`；定位所选宽度为533.333px，符合3×上限。全屏三栏和窄屏CAD标签均能显示图纸，最终控制台warn/error为空。
+- `report-evidence-check`（含真实发布快照只读检查）、`report-scene`、`report-context` 与 TypeScript/Vite构建通过；未执行模型推理。

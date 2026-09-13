@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { resolveAsset } from "./api";
 import { jsonObject } from "./core";
 import { useI18n } from "./i18n";
@@ -287,82 +287,175 @@ export function EvidenceValue({ value }: { value: unknown }) {
     </dl>
   ) : null;
 }
-function HistoricalCAD({
-  cad,
-  runId,
-  document,
-  onSelect,
-}: {
-  cad: NonNullable<NonNullable<ReportBundle["historical"]>["cad"]>;
+type SourceCAD = NonNullable<NonNullable<ReportBundle["historical"]>["cad"]>;
+type CadViewBox = [number, number, number, number];
+
+export function sourceCadFor(document: SceneDocument): { cad: SourceCAD; runId: string } | null {
+  const bundle = jsonObject(document.reportEvidence);
+  if (bundle?.schemaVersion !== 1) return null;
+  const historical = jsonObject(bundle.historical);
+  const raw = jsonObject(historical?.cad);
+  if (!raw || typeof historical?.runId !== "string" || !historical.runId.trim()
+      || typeof raw.assetId !== "string" || !Number.isSafeInteger(raw.width) || Number(raw.width) <= 0
+      || !Number.isSafeInteger(raw.height) || Number(raw.height) <= 0 || !Array.isArray(raw.regions)) return null;
+  const asset = document.assets.find(item => item.id === raw.assetId);
+  const assetRun = asset && (asset.sourceRunId ?? jsonObject(asset.metadata)?.sourceRunId);
+  if (!asset || typeof asset.mediaType !== "string" || !(["image/png", "image/jpeg", "image/webp", "image/svg+xml"].includes(asset.mediaType)) || assetRun !== historical.runId) return null;
+  const regions: SourceCAD["regions"] = [];
+  for (const value of raw.regions) {
+    const region = jsonObject(value);
+    if (!region || !Number.isSafeInteger(region.inventoryIndex) || Number(region.inventoryIndex) < 0
+        || !Array.isArray(region.entityIds) || !region.entityIds.every(id => typeof id === "string" && id.length > 0)
+        || !Array.isArray(region.polygon) || region.polygon.length < 3
+        || !region.polygon.every(point => Array.isArray(point) && point.length === 2 && point.every(n => typeof n === "number" && Number.isFinite(n)))) return null;
+    regions.push({ inventoryIndex: Number(region.inventoryIndex), entityIds: [...new Set(region.entityIds as string[])], polygon: region.polygon.map(point => [...point]) });
+  }
+  return { cad: { assetId: raw.assetId, width: Number(raw.width), height: Number(raw.height), regions }, runId: historical.runId };
+}
+
+export function cadZoomView(view: CadViewBox, width: number, factor: number, anchor: [number, number]): CadViewBox {
+  if (!Number.isFinite(factor) || factor <= 0) return view;
+  const zoom = Math.min(16, Math.max(1, width / view[2] * factor));
+  const ratio = width / zoom / view[2];
+  return [anchor[0] + (view[0] - anchor[0]) * ratio, anchor[1] + (view[1] - anchor[1]) * ratio, view[2] * ratio, view[3] * ratio];
+}
+
+export function cadPanView(view: CadViewBox, dx: number, dy: number): CadViewBox {
+  return [view[0] - dx, view[1] - dy, view[2], view[3]];
+}
+
+export function cadFocusView(cad: SourceCAD, polygons: number[][][]): CadViewBox {
+  const points = polygons.flat();
+  if (!points.length) return [0, 0, cad.width, cad.height];
+  const xs = points.map(point => point[0]), ys = points.map(point => point[1]);
+  const left = Math.min(...xs), right = Math.max(...xs), top = Math.min(...ys), bottom = Math.max(...ys);
+  const aspect = cad.width / cad.height;
+  const width = Math.min(cad.width, Math.max(cad.width / 3, (right - left) * 1.7, (bottom - top) * aspect * 1.7));
+  return [(left + right - width) / 2, (top + bottom - width / aspect) / 2, width, width / aspect];
+}
+
+export function cadLinkedEntities(document: SceneDocument, region: SourceCAD["regions"][number]): string[] {
+  const ids = new Set(document.entities.map(entity => entity.id));
+  return [...new Set(region.entityIds)].filter(id => ids.has(id));
+}
+
+function HistoricalCAD({ cad, runId, document, onSelect, embedded = false, selectedId = null }: {
+  cad: SourceCAD;
   runId: string;
   document: SceneDocument;
   onSelect: (entityId: string) => void;
+  embedded?: boolean;
+  selectedId?: string | null;
 }) {
   const { language, t: globalT } = useI18n();
   const t = (key: string) => reportEvidenceMessages[key]?.[language === "zh" ? 0 : 1] || globalT(key);
-  const [url, setURL] = useState<string>(),
-    [error, setError] = useState<unknown>();
-  const entityIds = new Set(document.entities.map(entity => entity.id));
-  const linkedRegions = cad.regions.map(region => ({ ...region, entityIds: region.entityIds.filter(id => entityIds.has(id)) })).filter(region => region.entityIds.length);
+  const [url, setURL] = useState<string>(), [error, setError] = useState<unknown>();
+  const [attempt, setAttempt] = useState(0), [imageReady, setImageReady] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false), [choices, setChoices] = useState<string[]>([]);
+  const [view, setView] = useState<CadViewBox>([0, 0, cad.width, cad.height]);
+  const svgRef = useRef<SVGSVGElement>(null), suppressClick = useRef(false);
+  const drag = useRef<{ pointerId: number; clientX: number; clientY: number; point: DOMPoint; matrix: DOMMatrix; view: CadViewBox; moved: boolean } | null>(null);
+  const linkedRegions = cad.regions.map(region => ({ ...region, entityIds: cadLinkedEntities(document, region) })).filter(region => region.entityIds.length);
   const objectCount = new Set(cad.regions.map(region => region.inventoryIndex)).size;
   const linkedCount = new Set(linkedRegions.map(region => region.inventoryIndex)).size;
+  const selectionMapped = linkedRegions.some(region => selectedId && region.entityIds.includes(selectedId));
+  const fit = () => setView([0, 0, cad.width, cad.height]);
+  const zoom = (factor: number) => setView(current => cadZoomView(current, cad.width, factor, [current[0] + current[2] / 2, current[1] + current[3] / 2]));
   useEffect(() => {
     let live = true;
-    setURL(undefined);
-    setError(undefined);
-    resolveAsset(cad.assetId)
-      .then((u) => {
-        if (live) setURL(u);
-      })
-      .catch((e) => {
-        if (live) setError(e);
-      });
-    return () => {
-      live = false;
+    setURL(undefined); setError(undefined); setImageReady(false); setImageFailed(false); setChoices([]);
+    setView([0, 0, cad.width, cad.height]);
+    resolveAsset(cad.assetId).then(u => { if (live) setURL(u); }).catch(e => { if (live) setError(e); });
+    return () => { live = false; drag.current = null; };
+  }, [cad.assetId, cad.width, cad.height, attempt]);
+  useEffect(() => { setChoices([]); }, [selectedId]);
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const wheel = (event: WheelEvent) => {
+      // Normal scrolling belongs to the report; modified wheel deliberately zooms the drawing.
+      if (!event.ctrlKey && !event.metaKey) return;
+      const matrix = svg.getScreenCTM();
+      if (!matrix) return;
+      event.preventDefault();
+      const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse());
+      setView(current => cadZoomView(current, cad.width, Math.exp(-Math.max(-100, Math.min(100, event.deltaY)) * 0.01), [point.x, point.y]));
     };
-  }, [cad.assetId]);
+    svg.addEventListener("wheel", wheel, { passive: false });
+    return () => svg.removeEventListener("wheel", wheel);
+  }, [url, cad.width]);
+  function choose(entityIds: string[]) {
+    if (entityIds.length === 1) { setChoices([]); onSelect(entityIds[0]); }
+    else setChoices(entityIds);
+  }
   return (
-    <figure id="workcell-original-cad" className="report-cad-evidence" style={{ scrollMarginTop: 80 }}>
-      <h3>{t("reportCadOriginal")}</h3>
-      <p className="report-evidence-note">{objectCount} {t("reCadObjectRecords")} · {linkedCount} {t("reCadLinkedObjects")}</p>
+    <figure id={embedded ? undefined : "workcell-original-cad"} className={`report-cad-evidence${embedded ? " report-cad-embedded" : ""}`}>
+      {!embedded && <h3>{t("reportCadOriginal")}</h3>}
+      <div className="report-cad-tools">
+        <span>{t("reCadSourceDrawing")} · {runId}</span>
+        <div role="group" aria-label={t("reCadNavigation")}>
+          <button type="button" aria-label={t("reCadZoomOut")} onClick={() => zoom(1 / 1.5)}>−</button>
+          <button type="button" onClick={fit}>{t("reCadFit")}</button>
+          <button type="button" disabled={!selectionMapped} onClick={() => setView(cadFocusView(cad, linkedRegions.filter(region => selectedId && region.entityIds.includes(selectedId)).map(region => region.polygon)))}>{t("reCadFocus")}</button>
+          <button type="button" aria-label={t("reCadZoomIn")} onClick={() => zoom(1.5)}>+</button>
+        </div>
+      </div>
+      <p className="report-cad-summary">{objectCount} {t("reCadObjectRecords")} · {linkedCount} {t("reCadLinkedObjects")}</p>
       <ErrorNotice error={error} />
-      {url && (
-        <svg
-          viewBox={`0 0 ${cad.width} ${cad.height}`}
-          aria-label={t("reportCadOriginal")}
+      {(error || imageFailed) && <div role="alert" className="report-cad-state">{imageFailed && t("reCadLoadError")} <button onClick={() => setAttempt(value => value + 1)}>{t("reCadRetry")}</button></div>}
+      {!error && !imageFailed && !imageReady && <div className="report-cad-state" role="status">{t("reCadLoading")}</div>}
+      <div className="report-cad-viewport">
+        {url && <svg ref={svgRef} viewBox={view.join(" ")} role="group" aria-label={t("reportCadOriginal")}
+          onClickCapture={event => { if (suppressClick.current && event.detail > 0) { event.preventDefault(); event.stopPropagation(); suppressClick.current = false; } }}
+          onPointerDown={event => {
+            if (event.button !== 0 || !event.isPrimary) return;
+            const matrix = event.currentTarget.getScreenCTM()?.inverse();
+            if (!matrix) return;
+            suppressClick.current = false;
+            drag.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY,
+              point: new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix), matrix, view, moved: false };
+          }}
+          onPointerMove={event => {
+            const current = drag.current;
+            if (!current || current.pointerId !== event.pointerId) return;
+            if (!current.moved && Math.hypot(event.clientX - current.clientX, event.clientY - current.clientY) < 4) return;
+            current.moved = true; suppressClick.current = true;
+            if (!event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.setPointerCapture(event.pointerId);
+            const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(current.matrix);
+            setView(cadPanView(current.view, point.x - current.point.x, point.y - current.point.y));
+          }}
+          onPointerUp={event => {
+            if (drag.current?.pointerId !== event.pointerId) return;
+            drag.current = null;
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+          }}
+          onPointerCancel={() => { drag.current = null; suppressClick.current = true; }}
         >
-          <image href={url} width={cad.width} height={cad.height} />
-          {linkedRegions
-            .map((r, i) => (
-              <polygon
-                key={i}
-                points={r.polygon.map((p) => p.join(",")).join(" ")}
-                tabIndex={0}
-                role="button"
-                aria-label={`${t("objects")} ${r.inventoryIndex}`}
-                onClick={() => onSelect(r.entityIds[0])}
-                onKeyDown={(e) => {
-                  if (["Enter", " "].includes(e.key)) {
-                    e.preventDefault();
-                    onSelect(r.entityIds[0]);
-                  }
-                }}
-              >
-                <title>
-                  {t("objects")} {r.inventoryIndex}
-                </title>
-              </polygon>
-            ))}
-        </svg>
-      )}
+          <image href={url} width={cad.width} height={cad.height} onLoad={() => setImageReady(true)} onError={() => setImageFailed(true)} />
+          {linkedRegions.map((region, index) => <polygon key={index}
+            data-selected={Boolean(selectedId && region.entityIds.includes(selectedId))}
+            points={region.polygon.map(point => point.join(",")).join(" ")} tabIndex={0} role="button"
+            aria-label={`${t("objects")} ${region.inventoryIndex}`} aria-pressed={Boolean(selectedId && region.entityIds.includes(selectedId))}
+            onClick={() => choose(region.entityIds)}
+            onKeyDown={event => { if (["Enter", " "].includes(event.key)) { event.preventDefault(); event.stopPropagation(); choose(region.entityIds); } }}>
+            <title>{t("objects")} {region.inventoryIndex}</title>
+          </polygon>)}
+        </svg>}
+      </div>
+      {choices.length > 1 && <div className="report-cad-choices" role="group" aria-label={t("reCadChooseEntity")}>
+        <span>{t("reCadChooseEntity")}</span>
+        {choices.map(id => <button key={id} onClick={() => { setChoices([]); onSelect(id); }}>{document.entities.find(entity => entity.id === id)?.label} · {id.slice(0, 8)}</button>)}
+      </div>}
+      {selectedId && !selectionMapped && <p className="report-cad-selection-note" role="status">{t("reCadSelectionUnmapped")}</p>}
       <figcaption>
-        {t("reCadBasis")}<br />
-        {t("reportSource")} · {runId} · {t("reCadPixelCoordinates")} {cad.width} × {cad.height} px
+        {embedded ? t("reCadEmbeddedBasis") : <>{t("reCadBasis")}<br />{t("reportSource")} · {runId} · {t("reCadPixelCoordinates")} {cad.width} × {cad.height} px</>}
+        <span className="report-cad-gesture">{t("reCadGesture")}</span>
       </figcaption>
-      <ReportDownload assetId={cad.assetId}>CAD</ReportDownload>
+      {!embedded && <ReportDownload assetId={cad.assetId}>CAD</ReportDownload>}
     </figure>
   );
 }
+
 export function ReportEvidence({
   document,
   section,

@@ -13,3 +13,37 @@
   padding: 6px 0;
   overflow-wrap: anywhere;
 }
+
+.report-cad-evidence .report-cad-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  min-height: 36px;
+}
+.report-cad-tools > span { overflow-wrap: anywhere; }
+.report-cad-tools [role="group"] { display: flex; flex-shrink: 0; gap: 4px; }
+.report-cad-tools button { min-height: 32px; min-width: 32px; padding: 4px 8px; font-size: 11px; }
+.report-cad-evidence .report-cad-summary { margin: 2px 0 6px; color: var(--report-muted); font-size: 11px; }
+.report-cad-evidence .report-cad-viewport { min-height: 240px; position: relative; overflow: hidden; background: #fff; }
+.report-cad-evidence .report-cad-viewport svg { width: 100%; height: 600px; display: block; max-height: none; cursor: grab; user-select: none; touch-action: none; }
+.report-cad-evidence .report-cad-viewport svg:active { cursor: grabbing; }
+.report-cad-evidence .report-cad-viewport polygon { fill: transparent; stroke: transparent; vector-effect: non-scaling-stroke; }
+.report-cad-evidence .report-cad-viewport polygon:hover,
+.report-cad-evidence .report-cad-viewport polygon:focus-visible,
+.report-cad-evidence .report-cad-viewport polygon[data-selected="true"] { fill: #f59a2338; stroke: #b85612; stroke-width: 2; outline: none; }
+.report-cad-evidence .report-cad-gesture { display: block; margin-top: 2px; }
+.report-cad-evidence .report-cad-state { padding: 6px 0; font-size: 12px; }
+.report-cad-evidence .report-cad-selection-note { margin: 4px 0; padding: 5px 8px; font-size: 11px; line-height: 1.4; background: #fff4dd; color: #765116; }
+.report-cad-evidence .report-cad-choices { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 6px 0; font-size: 11px; }
+.report-cad-evidence .report-cad-choices button { font-size: 11px; padding: 4px 7px; }
+.report-cad-evidence.report-cad-embedded { margin: 0; padding: 6px 10px; border: 0; height: 100%; width: 100%; min-height: 0; display: flex; flex-direction: column; box-sizing: border-box; }
+.report-cad-evidence.report-cad-embedded .report-cad-viewport { flex: 1; min-height: 80px; }
+.report-cad-evidence.report-cad-embedded .report-cad-viewport svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.report-cad-evidence.report-cad-embedded figcaption { margin: 4px 0 0; font-size: 10px; line-height: 1.35; }
+@media (max-width: 720px) {
+  .report-cad-evidence .report-cad-viewport svg { height: 420px; }
+  .report-cad-tools button { min-height: 36px; }
+}
