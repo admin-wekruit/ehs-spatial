@@ -38,7 +38,7 @@
 .report-scene-object-list > button { display: grid; width: 100%; gap: 5px; padding: 11px 9px; min-width: 0; justify-content: stretch; text-align: left; border: 1px solid transparent; border-bottom-color: #dce3d7; border-radius: 0; background: transparent; color: var(--scene-ink); }
 .report-scene-object-list > button:hover { background: #e1e9dc; }
 .report-scene-object-list > button[aria-pressed="true"] { border-color: #8ca38b; background: #d7e4d2; }
-.report-scene-object-list strong { overflow-wrap: anywhere; font-size: 12px; line-height: 1.35; font-weight: 600; }
+.report-scene-object-list strong { display: flex; align-items: baseline; gap: 7px; overflow-wrap: anywhere; font-size: 12px; line-height: 1.35; font-weight: 600; }
 .report-scene-object-list button > span { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px; color: #5e7263; font-size: 10px; }
 .report-scene-object-list small { font-size: 9px; font-variant-numeric: tabular-nums; }
 .report-scene-object-list em { color: #866029; font-size: 10px; font-style: normal; }
@@ -114,3 +114,6 @@
   .report-scene-current-object { grid-template-columns: 1fr auto; }
   .report-scene-inspector-content { padding: 18px; }
 }
+
+.report-scene-object-number { flex: 0 0 auto; color: #69806e; font-size: 10px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.report-scene-object-list [aria-pressed="true"] .report-scene-object-number { color: #315a45; }

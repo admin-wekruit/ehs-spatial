@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { SpatialView, PlanView } from "./App";
 import { PhotoView } from "./PhotoView";
-import { OriginalCadEvidence, sourceCadFor } from "./ReportEvidence";
+import { CadView } from "./CadView";
 import { useI18n } from "./i18n";
 import { observationsFor, entityGeometryForLayer, jsonObject, planShapes, type GeometryOptions } from "./core";
 import { isReferenceSurface } from "./scene-semantics";
@@ -217,7 +217,6 @@ export function ReportScene({
     [fullscreenError, setFullscreenError] = useState(false),
     [isFullscreen, setIsFullscreen] = useState(false);
   const document = revision.document,
-    sourceCad = sourceCadFor(document),
     selected = document.entities.find((entity) => entity.id === selection.entityId);
   const camera = document.cameras.find((c) => c.id === cameraId && c.imageId === imageId) ||
     document.cameras.find((c) => c.imageId === imageId);
@@ -234,7 +233,10 @@ export function ReportScene({
     r.placementState === "unconfirmed" && ["imported_proposal", "requires_alignment_confirmation"].includes(r.placementReason || "")));
   const selectedOverlay = selected && camera ? photoOverlay(document, selected, camera, layer) : null;
   const objects = document.entities.filter((entity) => !entity.sourceContext);
-  const filtered = objects.filter((e) => `${e.label || ""} ${e.id}`.toLowerCase().includes(search.toLowerCase()));
+  const objectNumbers = new Map(objects.map((entity, index) => [entity.id, String(index + 1).padStart(2, "0")]));
+  const query = search.trim().toLowerCase();
+  const numberedObject = objects.find((entity) => objectNumbers.get(entity.id) === query || String(Number(objectNumbers.get(entity.id))) === query);
+  const filtered = numberedObject ? [numberedObject] : objects.filter((e) => `${e.label || ""} ${e.id}`.toLowerCase().includes(query));
   const photoIds = new Map(objects.map((entity) => [entity.id, new Set(observationsFor(document, entity).map((o) => o.imageId))]));
   const reportObjects = jsonObject(document.reportEvidence)?.objects;
   if (Array.isArray(reportObjects)) for (const item of reportObjects) {
@@ -264,7 +266,7 @@ export function ReportScene({
     // Scroll only the object rail; selecting a scene object must not move the report.
     if (row.top < viewport.top) list.scrollTop -= viewport.top - row.top;
     else if (row.bottom > viewport.bottom) list.scrollTop += row.bottom - viewport.bottom;
-  }, [selection.entityId, search]);
+  }, [selection.entityId, search, isFullscreen, mobileSection]);
   function chooseView(pane: Pane | null) { setFocused(pane); setMobileSection("views"); }
   async function fullscreen() {
     setFullscreenError(false);
@@ -321,7 +323,7 @@ export function ReportScene({
             {filtered.map((entity) => {
               const indices = images.flatMap((image, index) => photoIds.get(entity.id)?.has(image.imageId) ? [index + 1] : []);
               return <button key={entity.id} aria-pressed={entity.id === selection.entityId} onClick={() => selectEntity(entity.id)}>
-                <strong>{entity.label || entity.id}</strong>
+                <strong><b className="report-scene-object-number">{objectNumbers.get(entity.id)}</b>{entity.label || entity.id}</strong>
                 <span>{indices.length ? `${t("scenePhotoNumber")} ${indices.join(" / ")}` : t("sceneNoPhotoLink")}<small>{entity.id.slice(0, 8)}</small></span>
                 {!(entity.representations || []).length ? <em>{t(entityGeometryForLayer(entity, geometryOptions) ? "sceneBoundsOnly" : "sceneNoGeometry")}</em> :
                   (entity.representations || []).some((r) => r.placementState === "unconfirmed") && <em>{t("sceneCandidate")}</em>}
@@ -354,10 +356,8 @@ export function ReportScene({
                   {pane === "spatial" && <><SpatialView revision={revision} selection={selection} onSelect={selectEntity} onCommit={noEdit} mode="free" cameraId={cameraId}
                     layers={{ observed_surface: layer !== "point_cloud", generated_mesh: layer === "model", primitive: layer === "model", point_cloud: layer === "point_cloud", allBounds, showCandidates: true, editable: false, opacity: 1 }} />
                     {!hasRepresentation && <div className="report-scene-stage-note">{t("sceneNoRepresentation")}</div>}</>}
-                  {(pane === "plan" || (pane === "cad" && !sourceCad)) && availability.planEmpty && <div className="report-scene-plan-empty" role="status"><strong>{t("scenePlanUnavailable")}</strong><p>{t(availability.planEmpty)}</p><small>{t("sceneSelectionRetained")}</small></div>}
-                  {pane === "cad" && (sourceCad
-                    ? <OriginalCadEvidence {...sourceCad} document={document} onSelect={selectEntity} selectedId={selection.entityId} embedded />
-                    : !availability.planEmpty && <PlanView document={document} selectedId={selection.entityId} onSelect={selectEntity} geometryOptions={geometryOptions} />)}
+                  {(pane === "plan" || pane === "cad") && availability.planEmpty && <div className="report-scene-plan-empty" role="status"><strong>{t("scenePlanUnavailable")}</strong><p>{t(availability.planEmpty)}</p><small>{t("sceneSelectionRetained")}</small></div>}
+                  {pane === "cad" && !availability.planEmpty && <CadView key={revision.id} document={document} selectedId={selection.entityId} onSelect={selectEntity} geometryOptions={geometryOptions} />}
                   {pane === "plan" && !availability.planEmpty && <PlanView document={document} selectedId={selection.entityId} onSelect={selectEntity} interactive geometryOptions={geometryOptions} />}
                 </div>
                 {pane === "photo" && <footer className="report-scene-photo-switch">{images.map((image, i) => <button key={image.imageId} aria-pressed={imageId === image.imageId} onClick={() => onCamera(image.imageId, image.cameraId)}>{t("scenePhotoNumber")} {i + 1}</button>)}{draw && <span>{t("sceneDrawActive")}</span>}</footer>}

@@ -1,3 +1,4 @@
+import { CadView } from "./CadView";
 import {
   createElement,
   lazy,
@@ -1443,7 +1444,8 @@ function Workspace({
             <>
               <div className="canvas-pane">
                 <span className="pane-label">03 {t("cad")}</span>
-                <PlanView
+                <CadView
+                  key={revision.id}
                   document={document}
                   selectedId={selectedId}
                   onSelect={select}

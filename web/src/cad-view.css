@@ -1,0 +1,58 @@
+.cad-view { --cad-ink: #29434e; --cad-muted: #6b777b; --cad-paper: #fcfcf8; display: flex; flex-direction: column; position: relative; width: 100%; height: 100%; min-height: 0; color: var(--cad-ink); background: var(--cad-paper); font-size: 11px; }
+.cad-tools { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 5px 8px; border-bottom: 1px solid #dce2df; }
+.cad-tools > span { font-size: 10px; color: #52646a; line-height: 1.3; }
+.cad-tools > div { display: flex; gap: 3px; flex: 0 0 auto; }
+.cad-tools button { border: 1px solid #d9e0dc; border-radius: 4px; min-height: 25px; padding: 3px 7px; background: #fff; font-size: 10px; white-space: nowrap; }
+.cad-tools button:disabled { opacity: .45; }
+.cad-stage { flex: 1 1 auto; min-height: 0; position: relative; overflow: hidden; }
+.cad-stage > svg { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+.cad-stage > svg:active { cursor: grabbing; }
+.cad-stage > svg:focus-visible { outline: 2px solid #ba681f; outline-offset: -3px; }
+.cad-grid { pointer-events: none; }
+.cad-grid line { stroke: #e5e9e5; stroke-width: .7; }
+.cad-grid text { fill: #8b9596; font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.cad-object { cursor: pointer; outline: none; }
+.cad-object polygon { stroke: #597b88; stroke-width: 1; fill: none; stroke-linejoin: round; }
+.cad-geometry[data-selection="true"] .cad-object:not(.is-selected) { opacity: .15; }
+.cad-geometry[data-selection="true"] .cad-object:not(.is-selected) polygon { stroke: #647279; }
+.cad-object.cad-model polygon { stroke: #263f4d; stroke-width: 1.35; }
+.cad-object.cad-observed polygon { stroke-dasharray: 4 2; }
+.cad-object.cad-hull polygon { stroke: #336c60; stroke-width: 1.3; }
+.cad-object.cad-floor polygon { fill: #d8dfd6; fill-opacity: .14; stroke: #aebbb0; stroke-width: .8; stroke-dasharray: 2 4; }
+.cad-object.is-selected polygon, .cad-object:focus-visible polygon { stroke: #c76c20; stroke-width: 2.2; fill: #e5a24c; fill-opacity: .12; stroke-dasharray: none; }
+.cad-object.cad-floor.is-selected polygon { fill-opacity: .035; }
+.cad-callouts { cursor: pointer; }
+.cad-callouts path { stroke: #9ba9a8; stroke-width: .7; fill: none; pointer-events: none; }
+.cad-callouts rect { fill: #fcfcf8; stroke: #bac8c9; stroke-width: .7; }
+.cad-callouts text { fill: #29434e; font: 600 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.cad-callouts .is-selected rect { fill: #bf641b; stroke: #bf641b; }
+.cad-callouts .is-selected text { fill: #fff; }
+.cad-callouts .is-selected path { stroke: #bf641b; }
+.cad-dimensions { pointer-events: none; }
+.cad-dimensions path { stroke: #bd6f31; stroke-width: .8; fill: none; }
+.cad-dimensions text { fill: #9d5420; font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; paint-order: stroke; stroke: #fcfcf8; stroke-width: 3; }
+.cad-scale { pointer-events: none; }
+.cad-scale rect { fill: #fcfcf8; fill-opacity: .92; }
+.cad-scale path { stroke: #435b60; stroke-width: 1.2; }
+.cad-scale text { fill: #435b60; font-size: 9px; }
+.cad-selection { flex: 0 0 auto; min-height: 25px; display: flex; align-items: center; flex-wrap: wrap; gap: 2px 10px; padding: 5px 9px; border-top: 1px solid #dce2df; line-height: 1.35; }
+.cad-selection strong { color: #a5561b; font-size: 11px; }
+.cad-selection span { color: #5c6c70; font-size: 10px; }
+.cad-legend { flex: 0 0 auto; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 11px; padding: 4px 9px; font-size: 9px; color: #68797b; border-top: 1px solid #edf0ec; }
+.cad-legend > span { display: flex; align-items: center; gap: 4px; }
+.cad-legend > span::before { content: ""; width: 14px; border-top: 1px dashed #597b88; }
+.cad-legend > .cad-key-model::before { border-top: 1.5px solid #263f4d; }
+.cad-legend > .cad-key-hull::before { border-top: 1.5px solid #336c60; }
+.cad-legend > .cad-key-floor::before { border-top: 1px dotted #aebbb0; }
+.cad-legend details { margin-left: auto; }
+.cad-legend summary { cursor: pointer; list-style: none; font-size: 12px; }
+.cad-legend details p { position: absolute; z-index: 5; bottom: 28px; right: 8px; max-width: min(310px, calc(100% - 16px)); padding: 10px; margin: 0; background: #fff; border: 1px solid #d4dcd8; box-shadow: 0 4px 20px #1b292320; font-size: 11px; line-height: 1.6; }
+.cad-empty { display: grid; place-content: center; height: 100%; padding: 20px; margin: 0; color: #6b777b; text-align: center; }
+.cad-hit-picker { position: absolute; z-index: 6; top: 10px; right: 10px; width: min(280px, calc(100% - 20px)); max-height: calc(100% - 20px); display: flex; flex-direction: column; background: #fff; border: 1px solid #bdc9c8; border-radius: 7px; box-shadow: 0 5px 24px #17312c25; }
+.cad-hit-picker header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; border-bottom: 1px solid #dde3de; }
+.cad-hit-picker header button { border: 0; padding: 3px 7px; font-size: 18px; min-height: 26px; }
+.cad-hit-picker > div { overflow-y: auto; padding: 5px; }
+.cad-hit-picker > div button { display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; padding: 7px; border: 0; border-radius: 4px; font-size: 11px; }
+.cad-hit-picker > div button b { color: #486570; font-family: ui-monospace, monospace; }
+.cad-hit-picker > div button[aria-pressed="true"] { color: #a65319; background: #f9eee0; }
+@media (max-width: 640px) { .cad-tools button { min-height: 32px; } .cad-tools { padding: 5px; } .cad-tools > span { max-width: 90px; } .cad-selection { min-height: 34px; } }

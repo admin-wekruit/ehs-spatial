@@ -215,7 +215,7 @@ const useState = (initial) => { const i = cursor++; if (!(i in hooks)) hooks[i] 
 const useRef = (initial) => { const i = cursor++; return hooks[i] ||= { current: initial }; };
 const useEffect = (fn, deps) => { const i = cursor++, old = hooks[i]; if (!old || deps.some((value, n) => !Object.is(value, old[n]))) effects.push(fn); hooks[i] = deps; };
 const React = { createElement: (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity).filter((c) => c !== null && c !== undefined && c !== false) }) };
-const SpatialView = () => {}, PlanView = () => {}, PhotoView = () => {}, PhotoAxes = () => {}, OriginalCadEvidence = () => {};
+const SpatialView = () => {}, PlanView = () => {}, PhotoView = () => {}, PhotoAxes = () => {}, CadView = () => {};
 const uiDocument = { ...objectOnlyDocument,
   assets: [{ id: "model-asset" }, { id: "photo", kind: "source_image" }, { id: "photo-2", kind: "source_image" }],
   cameras: [camera, { ...camera, id: "camera-2", imageId: "photo-2" }],
@@ -229,8 +229,7 @@ let uiSelection = { entityId: "object", cameraId: "camera" }, uiImageId = "photo
 const inspector = React.createElement("div", { id: "inspector-content" }, "real host inspector");
 const ui = vm.createContext({ React, useState, useRef, useEffect, useId: () => "workspace-check",
   useI18n: () => ({ t: (key) => key }), jsonObject, observationsFor, entityGeometryForLayer,
-  photoOverlay, sceneAvailability, isReferenceSurface, SpatialView, PlanView, PhotoView, PhotoAxes, OriginalCadEvidence,
-  sourceCadFor: (document) => document.reportEvidence?.historical?.cad ? {cad: document.reportEvidence.historical.cad, runId: document.reportEvidence.historical.runId} : null,
+  photoOverlay, sceneAvailability, isReferenceSurface, SpatialView, PlanView, PhotoView, PhotoAxes, CadView,
   paneOrder: ["photo", "spatial", "cad", "plan"], paneNames: { photo: "scenePhoto", spatial: "scene3D", cad: "sceneCAD", plan: "scenePlan" }, noEdit: () => {},
   window: { document: { fullscreenElement: null, addEventListener() {}, removeEventListener() {} }, scrollTo() { throw Error("Selecting an object must not scroll the report"); } },
 });
@@ -279,7 +278,7 @@ tree = renderWorkspace();
 assert.ok(nodes(rail()).some((node) => node.type === "strong" && node.children.includes("small button")), "The current selection remains visible when a search hides its row");
 nodes(tree).find((node) => node.type === "select").props.onChange({ target: { value: "observed_surface" } }); tree = renderWorkspace();
 assert.equal(spatialHost()[0].props.layers.generated_mesh, false);
-assert.ok(nodes(tree).filter((node) => node.type === PlanView).every((node) => node.props.geometryOptions.layer === "observed_surface" && node.props.geometryOptions.frameId === "f"), "Both plans use the same selected layer and frame as the photo and 3D");
+assert.ok(nodes(tree).filter((node) => [PlanView, CadView].includes(node.type)).every((node) => node.props.geometryOptions.layer === "observed_surface" && node.props.geometryOptions.frameId === "f"), "Both plans use the same selected layer and frame as the photo and 3D");
 for (const section of ["objects", "inspector", "views"]) {
   const tab = nodes(tree).find((node) => node.type === "button" && node.props["aria-controls"] === `workspace-check-${section}`);
   tab.props.onClick(); tree = renderWorkspace();
@@ -289,20 +288,27 @@ for (const section of ["objects", "inspector", "views"]) {
 tree.props.ref.current = { requestFullscreen: async () => { fullscreenRequests++; } };
 await nodes(tree).find((node) => node.props.className === "report-scene-fullscreen").props.onClick();
 assert.equal(fullscreenRequests, 1, "Only the separate fullscreen control requests browser fullscreen");
-// A saved detailed drawing is shown directly, even if current geometry has no floor.
-// Its explicit entity links still send selection through the shared application handler.
+// Source CAD stays evidence; it must never replace the current scene projection.
 uiDocument.reportEvidence = {historical: {runId: "source-run", cad: {assetId: "full-resolution-cad", width: 1600, height: 1240, regions: []}}};
+tree = renderWorkspace();
+const currentCad = nodes(tree).find((node) => node.type === CadView);
+assert.equal(currentCad.props.document, uiDocument);
+assert.equal(currentCad.props.selectedId, "no-geometry", "Objects without a historical CAD link stay selected in current CAD");
+assert.equal(currentCad.props.geometryOptions.frameId, "f");
+assert.equal(currentCad.props.key, "revision");
+currentCad.props.onSelect("object"); tree = renderWorkspace();
+assert.equal(uiSelection.entityId, "object");
+assert.equal(uiImageId, "photo", "Current CAD uses the common object and camera selection");
+nodes(tree).find((node) => node.type === "input" && node.props.type === "search").props.onChange({ target: { value: "small button" } });
+tree = renderWorkspace();
+assert.deepEqual(nodes(rail()).filter((node) => node.props.className === "report-scene-object-number").map((node) => node.children[0]), ["02"], "Filtering does not renumber object callouts");
+nodes(tree).find((node) => node.type === "input" && node.props.type === "search").props.onChange({ target: { value: "2" } });
+tree = renderWorkspace();
+assert.deepEqual(nodes(rail()).filter((node) => node.props.className === "report-scene-object-number").map((node) => node.children[0]), ["02"], "CAD number searches resolve the matching row");
 uiDocument.coordinateFrames[0].ground = null;
 tree = renderWorkspace();
-const originalCad = nodes(tree).find((node) => node.type === OriginalCadEvidence);
-assert.equal(originalCad.props.cad.assetId, "full-resolution-cad");
-assert.equal(originalCad.props.runId, "source-run");
-assert.equal(originalCad.props.embedded, true);
-assert.equal(originalCad.props.selectedId, uiSelection.entityId);
-assert.equal(nodes(tree).filter((node) => node.type === PlanView && !node.props.interactive).length, 0, "The detailed source drawing replaces the simplified CAD in this report");
-originalCad.props.onSelect("object"); tree = renderWorkspace();
-assert.equal(uiSelection.entityId, "object");
-assert.equal(uiImageId, "photo", "CAD links select the same object and photograph without inferring coordinates");
+assert.equal(nodes(tree).some((node) => node.type === CadView), false, "No inferred projection without a shared ground reference, even when source CAD exists");
+assert.ok(nodes(tree).some((node) => node.props.className === "report-scene-plan-empty"));
 const css = await readFile(new URL("../src/report-scene.css", import.meta.url), "utf8");
 assert.match(css, /grid-template-columns:\s*232px minmax\(0, 1fr\) 300px/);
 assert.match(css, /\.report-scene-object-list\s*\{[^}]*overflow-y:\s*auto/);
