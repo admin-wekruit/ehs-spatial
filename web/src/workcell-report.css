@@ -118,6 +118,24 @@
   min-height: 38px;
   padding: 8px 12px;
 }
+.report-index-identity {
+  flex: 0 0 190px;
+  align-self: center;
+  padding-right: 16px;
+  border-right: 1px solid var(--line);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+}
+.report-index-identity small {
+  display: block;
+  font-size: 10px;
+  color: var(--report-muted);
+  font-weight: 400;
+  margin-top: 4px;
+}
 .report-summary {
   display: flex;
   gap: 0;

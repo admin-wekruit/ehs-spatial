@@ -4,6 +4,12 @@ import { reportReviewMessages } from "./report-review-messages";
 import { createContext, useContext, useState, type ReactNode } from "react";
 export type Language = "zh" | "en";
 const messages: Record<string, [string, string]> = {
+  catalogIntro: ["每个工位一个入口。先核对照片与实际产物，再打开报告；历次发布保存在各工位下。", "One entry per workcell. Check its photographs and actual contents before opening; earlier publications stay with their workcell."],
+  catalogWorkcells: ["工位 / 项目", "workcells / projects"],
+  catalogPublications: ["次发布", "publications"],
+  catalogLatest: ["最近发布", "Latest publication"],
+  catalogHistory: ["此前发布", "Earlier publications"],
+  catalogNoObservedScene: ["未附物体的观测表面。请在报告中核对模型的照片与空间依据。", "No object-level observed surfaces attached. Check the models' photograph and spatial evidence in the report."],
   ...workcellMessages,
   ...reportSceneMessages,
   ...reportReviewMessages,

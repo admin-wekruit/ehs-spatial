@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { SpatialView, PlanView } from "./App";
 import { PhotoView } from "./PhotoView";
 import { useI18n } from "./i18n";
-import { observationsFor, modelGeometry, jsonObject } from "./core";
+import { observationsFor, modelGeometry, jsonObject, planShapes } from "./core";
 import {
   add,
   boundsCorners,
@@ -15,7 +15,7 @@ import {
   unit,
   type Vec,
 } from "./viewer/native-math";
-import type { Camera, Entity, Revision, Selection } from "./types";
+import type { Camera, Entity, Revision, Selection, SceneDocument } from "./types";
 import "./report-scene.css";
 
 type Pane = "photo" | "spatial" | "cad" | "plan";
@@ -29,6 +29,27 @@ const paneNames: Record<Pane, string> = {
 const paneOrder: Pane[] = ["photo", "spatial", "cad", "plan"];
 const colors = ["#e86b58", "#39ad7c", "#458ce0"];
 const noEdit = () => {};
+
+function sceneAvailability(document: SceneDocument) {
+  const frames = new Set(document.coordinateFrames.map((frame) => frame.id));
+  const assets = new Set(document.assets.map((asset) => asset.id));
+  const representations = document.entities.flatMap((entity) =>
+    (entity.representations || []).filter((representation) =>
+      frames.has(representation.coordinateFrameId) &&
+      representation.transform.coordinateFrameId === representation.coordinateFrameId &&
+      (representation.kind === "primitive" ? !!representation.primitive : !!representation.assetId && assets.has(representation.assetId))));
+  const hasObserved = representations.some((representation) =>
+    ["observed_surface", "point_cloud"].includes(representation.kind) && representation.placementState === "confirmed");
+  const hasModel = representations.some((representation) => ["generated_mesh", "primitive"].includes(representation.kind));
+  const hasGround = document.coordinateFrames.some((frame) => {
+    const normal = frame.ground?.normal;
+    return Array.isArray(normal) && normal.length === 3 && normal.every(Number.isFinite) && Math.hypot(...normal) > 1e-8;
+  });
+  return {
+    spatialTitle: hasModel && !hasObserved ? "sceneObjectModels" : "scene3D",
+    planEmpty: planShapes(document).length ? null : hasGround ? "sceneNoPlanProjection" : "sceneNoPlanGround",
+  };
+}
 
 function entityGeometry(entity: Entity, layer: Layer, frameId?: string) {
   if (entity.sourceContext || entity.visible === false) return null;
@@ -262,6 +283,7 @@ export function ReportScene({
   const [search, setSearch] = useState(""),
     [fullscreenError, setFullscreenError] = useState(false);
   const document = revision.document;
+  const availability = sceneAvailability(document);
   const selected = document.entities.find(
     (entity) => entity.id === selection.entityId,
   );
@@ -465,7 +487,7 @@ export function ReportScene({
             <header>
               <h3>
                 <span>{String(index + 1).padStart(2, "0")}</span>
-                {t(paneNames[pane])}
+                {t(pane === "spatial" ? availability.spatialTitle : paneNames[pane])}
               </h3>
               <button
                 className="report-scene-expand"
@@ -525,14 +547,21 @@ export function ReportScene({
                   )}
                 </>
               )}
-              {pane === "cad" && (
+              {(pane === "cad" || pane === "plan") && availability.planEmpty && (
+                <div className="report-scene-plan-empty" role="status">
+                  <strong>{t("scenePlanUnavailable")}</strong>
+                  <p>{t(availability.planEmpty)}</p>
+                  <small>{t("sceneSelectionRetained")}</small>
+                </div>
+              )}
+              {pane === "cad" && !availability.planEmpty && (
                 <PlanView
                   document={document}
                   selectedId={selection.entityId}
                   onSelect={selectEntity}
                 />
               )}
-              {pane === "plan" && (
+              {pane === "plan" && !availability.planEmpty && (
                 <PlanView
                   document={document}
                   selectedId={selection.entityId}

@@ -37,6 +37,8 @@ import {
   modelGeometry,
   modelTilt,
   planShapes,
+  planHits,
+  groupPublications,
   sourceDimensions,
   sourceScale,
 } from "./core";
@@ -280,14 +282,19 @@ export default function App() {
 
 function ProjectLibrary() {
   const { t } = useI18n(),
-    { data, error, reload } = useResource<{ items: Project[] }>(
-      "projects",
-      () => request("/api/projects"),
-    );
-  const { data: publications } = useResource<{ items: PublicationSummary[] }>(
-    "report-index",
-    () => request("/api/publications"),
-  );
+    { data, error, reload } = useResource<{
+      items: Project[];
+      publications: PublicationSummary[];
+    }>("projects", async () => {
+      const [projects, reports] = await Promise.all([
+        request<{ items: Project[] }>("/api/projects"),
+        request<{ items: PublicationSummary[] }>("/api/publications"),
+      ]);
+      return {
+        ...projects,
+        publications: groupPublications(reports.items).map((group) => group[0]),
+      };
+    });
   const [filter, setFilter] = useState(""),
     [mine, setMine] = useState(false),
     [owned, setOwned] = useState<Set<string>>(new Set()),
@@ -360,32 +367,51 @@ function ProjectLibrary() {
                 (!mine || owned.has(p.id)) &&
                 p.title.toLowerCase().includes(filter.toLowerCase()),
             )
-            .map((project, i) => (
-              <a
-                className="project-row"
-                key={project.id}
-                href={path(
-                  publications?.items.find((p) => p.projectId === project.id)
-                    ? "/reports/" +
-                        publications.items.find(
-                          (p) => p.projectId === project.id,
-                        )!.id
-                    : "/projects/" + project.id + "/report",
-                )}
-              >
-                <span className="project-number">
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <div>
-                  <h3>{project.title}</h3>
-                  <small>
-                    {owned.has(project.id) ? t("owned") : t("browse")}
-                  </small>
-                </div>
-                <DateLabel value={project.createdAt} />
-                <span className="row-arrow">↗</span>
-              </a>
-            ))}
+            .map((project, i) => {
+              const publication = data.publications.find(
+                (p) => p.projectId === project.id,
+              );
+              return (
+                <a
+                  className="project-row project-report-row"
+                  key={project.id}
+                  href={path(
+                    publication
+                      ? "/reports/" + publication.id
+                      : "/projects/" + project.id + "/report",
+                  )}
+                >
+                  {publication?.previewImageAssetId ? (
+                    <AssetImage
+                      assetId={publication.previewImageAssetId}
+                      alt={project.title}
+                      className="project-cover"
+                    />
+                  ) : (
+                    <span className="project-number">
+                      {String(i + 1).padStart(2, "0")}
+                    </span>
+                  )}
+                  <div>
+                    <h3>{project.title}</h3>
+                    <small>
+                      {owned.has(project.id) ? t("owned") : t("browse")}
+                    </small>
+                    {publication && (
+                      <p className="project-content-summary">
+                        {publication.photoCount} {t("photos")} ·{" "}
+                        {publication.objectCount} {t("reportObjectRecords")} ·{" "}
+                        {publication.modelObjectCount} {t("reportModelObjects")}{" "}
+                        · {t("version")}{" "}
+                        {publication.sceneRevisionId.slice(0, 8)}
+                      </p>
+                    )}
+                  </div>
+                  <DateLabel value={project.createdAt} />
+                  <span className="row-arrow">↗</span>
+                </a>
+              );
+            })}
         </div>
       ) : (
         <div className="empty-state">
@@ -1074,7 +1100,10 @@ export function SpatialView({
     <div className="spatial-view">
       <div ref={host} className="native-viewer" />
       {mode !== "photo" && (
-        <button className="spatial-fit" onClick={() => runtime.current?.setCamera({ mode, cameraId })}>
+        <button
+          className="spatial-fit"
+          onClick={() => runtime.current?.setCamera({ mode, cameraId })}
+        >
           {t("fit")}
         </button>
       )}
@@ -1804,7 +1833,19 @@ export function PlanView({
   interactive?: boolean;
 }) {
   const { t } = useI18n(),
-    [zoom, setZoom] = useState(1);
+    [zoom, setZoom] = useState(1),
+    [candidates, setCandidates] = useState<string[]>([]);
+  const drawing = useRef<SVGGElement>(null),
+    svg = useRef<SVGSVGElement>(null),
+    picker = useRef<HTMLDivElement>(null),
+    pointer = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  useEffect(() => { setCandidates([]); pointer.current = null; }, [document, selectedId, zoom]);
+  useEffect(() => { if (candidates.length) picker.current?.querySelector<HTMLButtonElement>("button[data-candidate]")?.focus(); }, [candidates]);
+  function choose(id: string) {
+    setCandidates([]);
+    onSelect(id);
+    svg.current?.focus();
+  }
   const shapes = planShapes(document);
   if (!shapes.length)
     return <div className="empty-stage">{t("emptyPlan")}</div>;
@@ -1821,7 +1862,14 @@ export function PlanView({
       320 / Math.max(max[1] - min[1], 1e-6),
     );
   return (
-    <div className="plan-view">
+    <div className="plan-view" onKeyDown={(event) => {
+      if (event.key === "Escape" && candidates.length) {
+        event.preventDefault();
+        event.stopPropagation();
+        setCandidates([]);
+        svg.current?.focus();
+      }
+    }}>
       {interactive && (
         <div className="plan-tools">
           <button onClick={() => setZoom((z) => Math.max(0.5, z / 1.2))}>
@@ -1833,8 +1881,25 @@ export function PlanView({
           </button>
         </div>
       )}
-      <svg viewBox="0 0 600 400" aria-label={t(interactive ? "plan" : "cad")}>
+      <svg ref={svg} tabIndex={-1} viewBox="0 0 600 400" aria-label={t(interactive ? "plan" : "cad")}
+        onPointerDown={(event) => { pointer.current = event.button === 0 ? { x: event.clientX, y: event.clientY, moved: false } : null; }}
+        onPointerMove={(event) => { const start = pointer.current; if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) start.moved = true; }}
+        onPointerCancel={() => { pointer.current = null; }}
+        onClick={(event) => {
+          const start = pointer.current;
+          pointer.current = null;
+          if (start?.moved) return;
+          const named = (event.target as Element).closest("[data-plan-entity]")?.getAttribute("data-plan-entity");
+          if (event.detail === 0 && named) { choose(named); return; }
+          const matrix = drawing.current?.getScreenCTM();
+          if (!matrix) return;
+          const local = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse());
+          const hits = planHits(shapes, local.x / factor + min[0], max[1] - local.y / factor);
+          if (hits.length === 1) choose(hits[0].entity.id);
+          else setCandidates(hits.map((hit) => hit.entity.id));
+        }}>
         <g
+          ref={drawing}
           transform={`translate(300 200) scale(${zoom}) translate(${(-(max[0] - min[0]) * factor) / 2} ${(-(max[1] - min[1]) * factor) / 2})`}
         >
           {shapes
@@ -1849,12 +1914,14 @@ export function PlanView({
                 key={entity.id}
                 role="button"
                 tabIndex={0}
+                data-plan-entity={entity.id}
                 aria-label={entity.label || entity.id}
-                onClick={() => onSelect(entity.id)}
+                aria-pressed={entity.id === selectedId}
                 onKeyDown={(e) => {
                   if (["Enter", " "].includes(e.key)) {
                     e.preventDefault();
-                    onSelect(entity.id);
+                    e.stopPropagation();
+                    choose(entity.id);
                   }
                 }}
               >
@@ -1881,6 +1948,18 @@ export function PlanView({
             ))}
         </g>
       </svg>
+      {candidates.length > 1 && (
+        <div ref={picker} className="plan-hit-picker" role="group" aria-label={t("scenePlanOverlap")}>
+          <header><strong>{t("scenePlanOverlap")} · {candidates.length}</strong><button type="button" aria-label={t("close")} onClick={() => { setCandidates([]); svg.current?.focus(); }}>×</button></header>
+          <p>{t("sceneChoosePlanObject")}</p>
+          <div className="plan-hit-options">
+            {candidates.map((id) => {
+              const entity = shapes.find((shape) => shape.entity.id === id)?.entity;
+              return entity && <button type="button" key={id} data-candidate={id} aria-pressed={id === selectedId} onClick={() => choose(id)}><span>{entity.label || id}</span><small>{id.slice(0, 8)}</small></button>;
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2081,27 +2160,111 @@ function ReportLibrary() {
       "publications",
       () => request("/api/publications"),
     );
+  const [search, setSearch] = useState("");
+  const groups = groupPublications(data?.items || []).filter((group) =>
+    group.some((p) =>
+      p.title.toLocaleLowerCase().includes(search.toLocaleLowerCase()),
+    ),
+  );
   return (
-    <section className="page-width">
-      <p className="eyebrow">PUBLISHED WORK</p>
+    <section className="page-width report-catalog">
       <h1>{t("reportLibrary")}</h1>
-      <p className="lede">{t("reportIntro")}</p>
+      <p className="lede">{t("catalogIntro")}</p>
       <ErrorNotice error={error} />
+      <div className="list-toolbar">
+        <input
+          type="search"
+          aria-label={t("search")}
+          placeholder={t("search")}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        {data && (
+          <span>
+            {groupPublications(data.items).length} {t("catalogWorkcells")} ·{" "}
+            {data.items.length} {t("catalogPublications")}
+          </span>
+        )}
+      </div>
       {!data && !error ? (
         <Loading />
       ) : data?.items.length ? (
-        <div className="report-list">
-          {data.items.map((p, i) => (
-            <a key={p.id} href={path("/reports/" + p.id)}>
-              <span className="project-number">
-                {String(i + 1).padStart(2, "0")}
-              </span>
-              <div>
-                <h2>{p.title}</h2>
-                <DateLabel value={p.createdAt} />
-              </div>
-              <span>↗</span>
-            </a>
+        <div className="workcell-catalog">
+          {!groups.length && <p className="empty-state">{t("noResults")}</p>}
+          {groups.map(([p, ...history]) => (
+            <article
+              className="catalog-workcell"
+              key={p.projectId}
+              aria-label={p.title}
+            >
+              <a
+                className="catalog-report-link"
+                href={path("/reports/" + p.id)}
+              >
+                <div className="catalog-cover">
+                  {p.previewImageAssetId ? (
+                    <AssetImage assetId={p.previewImageAssetId} alt={p.title} />
+                  ) : (
+                    <span>{t("noPhoto")}</span>
+                  )}
+                </div>
+                <div className="catalog-report-body">
+                  <p className="catalog-caption">
+                    {t("catalogLatest")} · <DateLabel value={p.createdAt} />
+                  </p>
+                  <h2>{p.title}</h2>
+                  <p className="catalog-revision">
+                    {t("version")} {p.sceneRevisionId.slice(0, 8)} ·{" "}
+                    {t("reportReadOnly")}
+                  </p>
+                  <dl className="catalog-content">
+                    {(
+                      [
+                        ["photos", p.photoCount],
+                        ["reportObjectRecords", p.objectCount],
+                        ["reportSpatialObjects", p.spatialObjectCount],
+                        ["reportModelObjects", p.modelObjectCount],
+                      ] as const
+                    ).map(([key, count]) => (
+                      <div key={key}>
+                        <dt>{t(key)}</dt>
+                        <dd>{count}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  {p.observedSurfaceObjectCount === 0 && (
+                    <p className="catalog-missing">
+                      {t("catalogNoObservedScene")}
+                    </p>
+                  )}
+                  <span className="catalog-open">
+                    {t("viewReport")} <span aria-hidden="true">↗</span>
+                  </span>
+                </div>
+              </a>
+              {history.length > 0 && (
+                <details className="catalog-history">
+                  <summary>
+                    {t("catalogHistory")} · {history.length}
+                  </summary>
+                  <ol>
+                    {history.map((old) => (
+                      <li key={old.id}>
+                        <a href={path("/reports/" + old.id)}>
+                          <span>{old.title}</span>
+                          <small>
+                            {t("version")} {old.sceneRevisionId.slice(0, 8)} ·{" "}
+                            {old.photoCount} {t("photos")} · {old.objectCount}{" "}
+                            {t("reportObjectRecords")}
+                          </small>
+                          <DateLabel value={old.createdAt} />
+                        </a>
+                      </li>
+                    ))}
+                  </ol>
+                </details>
+              )}
+            </article>
           ))}
         </div>
       ) : (

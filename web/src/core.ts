@@ -11,10 +11,23 @@ import type {
   Job,
   Observation,
   Operation,
+  PublicationSummary,
   SceneDocument,
   Transform,
   Vec3,
 } from "./types.ts";
+
+export function groupPublications(items: PublicationSummary[]) {
+  const groups = new Map<string, PublicationSummary[]>();
+  // Preserve the API's PostgreSQL timestamp ordering, including microseconds.
+  // String sorting and JavaScript Date can both select the wrong snapshot here.
+  for (const item of items) {
+    const group = groups.get(item.projectId) || [];
+    group.push(item);
+    groups.set(item.projectId, group);
+  }
+  return [...groups.values()];
+}
 
 export const refs = (entity: Entity) => entity.observationRefs || [];
 export function observationsFor(document: SceneDocument, entity: Entity) {
@@ -84,6 +97,15 @@ export function insidePolygons(polygons: number[][][], x: number, y: number) {
         inside = !inside;
     }
   return inside;
+}
+export function planHits(shapes: ReturnType<typeof planShapes>, x: number, y: number) {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return [];
+  const area = (polygon: number[][]) => Math.abs(polygon.reduce((sum, p, i) => {
+    const q = polygon[(i + 1) % polygon.length];
+    return sum + p[0] * q[1] - q[0] * p[1];
+  }, 0)) / 2;
+  return shapes.filter((shape) => insidePolygons([shape.polygon], x, y))
+    .sort((a, b) => area(a.polygon) - area(b.polygon) || a.entity.id.localeCompare(b.entity.id));
 }
 export function originalPixel(
   clientX: number,

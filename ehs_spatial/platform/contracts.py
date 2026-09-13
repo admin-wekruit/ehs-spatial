@@ -574,9 +574,17 @@ class PublicationSnapshot(DTO):
 class PublicationSummary(OwnedRecord):
     sceneRevisionId: str
     title: str
+    previewImageAssetId: str | None
+    photoCount: int = Field(ge=0)
+    objectCount: int = Field(ge=0, description="Entities excluding source context")
+    spatialObjectCount: int = Field(ge=0, description="Non-context entities with any representation, including unconfirmed placement")
+    modelObjectCount: int = Field(ge=0, description="Non-context entities with generated mesh or primitive representations")
+    observedSurfaceObjectCount: int = Field(ge=0, description="Non-context entities with observed-surface representations")
 
 
-class Publication(PublicationSummary):
+class Publication(OwnedRecord):
+    sceneRevisionId: str
+    title: str
     requestId: str
     evaluationIds: list[str]
     reviewIds: list[str]

@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import ts from "typescript";
 import * as math from "../src/viewer/native-math.ts";
-import { modelGeometry, jsonObject } from "../src/core.ts";
+import { modelGeometry, jsonObject, planShapes } from "../src/core.ts";
 
 // Exercise the actual two pure functions without importing the browser app.
 const source = await readFile(
@@ -18,7 +18,7 @@ const parsed = ts.createSourceFile(
   true,
   ts.ScriptKind.TSX,
 );
-const names = ["entityGeometry", "photoOverlay"];
+const names = ["entityGeometry", "photoOverlay", "sceneAvailability"];
 const declarations = parsed.statements.filter(
   (node) => ts.isFunctionDeclaration(node) && names.includes(node.name?.text),
 );
@@ -36,10 +36,11 @@ const context = vm.createContext({
   ...math,
   modelGeometry,
   jsonObject,
+  planShapes,
   colors: ["red", "green", "blue"],
 });
 vm.runInContext(executable, context);
-const { entityGeometry, photoOverlay } = context;
+const { entityGeometry, photoOverlay, sceneAvailability } = context;
 const camera = {
   id: "camera",
   imageId: "photo",
@@ -152,6 +153,24 @@ const behindOverlay = photoOverlay(
 );
 assert.ok(behindOverlay.corners.every((corner) => corner === null));
 assert.equal(behindOverlay.axes.length, 0);
+const objectOnlyDocument = { schemaVersion: 1, cameras: [], assets: [{ id: "model-asset" }],
+  observations: [], annotations: [], coordinateFrames: [{ id: "f", convention: "opencv", ground: null }],
+  entities: [{ ...entity, representations: [{ ...rep, assetId: "model-asset" }] }, { id: "unmodeled", representations: [] }] };
+const unchanged = structuredClone(objectOnlyDocument);
+assert.equal(sceneAvailability(objectOnlyDocument).spatialTitle, "sceneObjectModels",
+  "Individual model assets must not imply an observed scene reconstruction");
+assert.equal(sceneAvailability(objectOnlyDocument).planEmpty, "sceneNoPlanGround");
+assert.deepEqual(objectOnlyDocument, unchanged, "Presentation must preserve no-geometry entities");
+const sceneDocument = structuredClone(objectOnlyDocument);
+sceneDocument.entities.push({ id: "context", sourceContext: true, representations: [{ ...observed, kind: "point_cloud", assetId: "cloud" }] });
+sceneDocument.assets.push({ id: "cloud" });
+assert.equal(sceneAvailability(sceneDocument).spatialTitle, "scene3D",
+  "Confirmed registered observed geometry uses a neutral scene title, without asserting completeness");
+sceneDocument.coordinateFrames[0].ground = { normal: [0, 0, 1] };
+assert.equal(sceneAvailability(sceneDocument).planEmpty, null, "Real same-frame model corners remain projectable");
+sceneDocument.entities = [{ id: "unmodeled", representations: [] }];
+assert.equal(sceneAvailability(sceneDocument).planEmpty, "sceneNoPlanProjection",
+  "Ground alone does not establish an object footprint");
 // These are architecture invariants, separate from projection assertions.
 assert.equal(
   (source.match(/<SpatialView\b/g) || []).length,

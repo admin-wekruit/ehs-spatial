@@ -1,15 +1,17 @@
 """A publication owns its frozen process/download graph, never future live jobs."""
 from copy import deepcopy
+import io
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from PIL import Image
 import pytest
 
 from ehs_spatial.platform.api import create_app
 from ehs_spatial.platform.contracts import PlatformError, PublicationSnapshot
 from ehs_spatial.platform.storage import LocalBlobStore
 from panoptes_worker.__main__ import run_job
-from test_platform_backend import repo, project, identity
+from test_platform_backend import repo, project, identity, entity
 
 
 def enqueue(repo, cap, scene, kind="export_json"):
@@ -94,3 +96,50 @@ def test_publication_rechecks_output_blob_bytes(repo, tmp_path):
     with pytest.raises(PlatformError, match="blob_integrity_error"):
         repo.create_publication(scene["project"]["id"], cap, publish_body(scene))
     assert repo.list_publications()["items"] == []
+
+
+def test_publication_library_describes_fixed_content_without_returning_snapshots(repo, tmp_path):
+    repo.blobs = LocalBlobStore(tmp_path)
+    summaries = []
+    # A two-object acceptance scene and a larger observed workcell must have
+    # visibly different summaries, even after their live branches advance.
+    for photo_count, model_count, observed_count, missing_count in [(1, 1, 0, 1), (3, 9, 46, 13)]:
+        cap, scene = project(repo)
+        document = deepcopy(scene["revision"]["document"])
+        document["coordinateFrames"] = [{"id": "native", "convention": "opencv", "scale": {"status": "uncalibrated", "nativeToMeters": None}, "ground": None}]
+        for index in range(photo_count):
+            data = io.BytesIO()
+            Image.new("RGB", (8, 6), (index, 0, 0)).save(data, "PNG")
+            asset = repo.register_asset(scene["project"]["id"], repo.blobs.put(data.getvalue(), "image/png"))
+            document["assets"].append({**asset, "kind": "source_image"})
+        pose = {"coordinateFrameId": "native", "position": [0, 0, 0], "quaternion": [0, 0, 0, 1], "scale": [1, 1, 1]}
+        kinds = ["primitive"] * model_count + ["observed_surface"] * observed_count + [None] * missing_count
+        for kind in kinds + ["point_cloud"]:
+            item = entity()
+            if kind:
+                item["representations"] = [{"id": identity(), "kind": kind, "coordinateFrameId": "native", "transform": pose, "placementState": "unconfirmed",
+                    **({"primitive": {"kind": "box", "dimensions": [1, 1, 1]}} if kind == "primitive" else {})}]
+            if kind == "point_cloud":
+                item["sourceContext"] = True
+            document["entities"].append(item)
+        job = repo.claim_job(enqueue(repo, cap, scene, "analyze_capture")["id"])
+        job = repo.finish_job(job["id"], job["attemptToken"], "succeeded", document=document)
+        scene["revision"] = repo.get_revision(job["resultRevisionId"])
+        publication = repo.create_publication(scene["project"]["id"], cap, publish_body(scene))
+        summaries.append({"id": publication["id"], "previewImageAssetId": document["assets"][0]["id"], "photoCount": photo_count,
+            "objectCount": len(kinds), "spatialObjectCount": model_count + observed_count, "modelObjectCount": model_count, "observedSurfaceObjectCount": observed_count})
+        repo.commit_edits(scene["project"]["id"], cap, {"requestId": identity(), "branchId": scene["branch"]["id"], "baseRevisionId": scene["revision"]["id"],
+            "operations": [{"type": "addEntity", "entity": entity()}]})
+    cap, empty = project(repo)
+    blank = repo.create_publication(empty["project"]["id"], cap, publish_body(empty))
+    with TestClient(create_app(repository=repo, blobs=repo.blobs)) as client:
+        response = client.get("/api/publications")
+        assert response.status_code == 200
+        rows = {row["id"]: row for row in response.json()["items"]}
+        for expected in summaries:
+            assert {key: rows[expected["id"]][key] for key in expected} == expected
+        assert rows[blank["id"]]["previewImageAssetId"] is None
+        assert rows[blank["id"]]["objectCount"] == rows[blank["id"]]["photoCount"] == 0
+        assert all("snapshot" not in row and "document" not in row for row in rows.values())
+        schema = client.get("/openapi.json").json()["components"]["schemas"]["PublicationSummary"]
+        assert set(summaries[0]) <= set(schema["required"])

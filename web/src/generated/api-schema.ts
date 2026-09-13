@@ -1784,6 +1784,30 @@ export interface components {
             sceneRevisionId: string;
             /** Title */
             title: string;
+            /** Previewimageassetid */
+            previewImageAssetId: string | null;
+            /** Photocount */
+            photoCount: number;
+            /**
+             * Objectcount
+             * @description Entities excluding source context
+             */
+            objectCount: number;
+            /**
+             * Spatialobjectcount
+             * @description Non-context entities with any representation, including unconfirmed placement
+             */
+            spatialObjectCount: number;
+            /**
+             * Modelobjectcount
+             * @description Non-context entities with generated mesh or primitive representations
+             */
+            modelObjectCount: number;
+            /**
+             * Observedsurfaceobjectcount
+             * @description Non-context entities with observed-surface representations
+             */
+            observedSurfaceObjectCount: number;
         };
         /** Representation */
         Representation: {

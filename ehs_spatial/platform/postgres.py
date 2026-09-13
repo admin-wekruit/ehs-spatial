@@ -487,7 +487,28 @@ class PostgresRepository:
 
     def list_publications(self):
         with self._connect() as connection:
-            return {"items": _wire(connection.execute("SELECT id,project_id,scene_revision_id,title,created_at FROM publications ORDER BY created_at DESC,id LIMIT 200").fetchall())}
+            # Aggregate inside PostgreSQL: the immutable document is never sent
+            # to the application or browser for a library listing.
+            return {"items": _wire(connection.execute("""SELECT p.id,p.project_id,p.scene_revision_id,p.title,p.created_at,
+                images.preview_image_asset_id,images.photo_count,objects.object_count,objects.spatial_object_count,
+                objects.model_object_count,objects.observed_surface_object_count
+                FROM (SELECT id,project_id,scene_revision_id,title,created_at,snapshot->'revision'->'document' AS document
+                    FROM publications ORDER BY created_at DESC,id LIMIT 200) p
+                CROSS JOIN LATERAL (
+                    SELECT count(*) AS photo_count,(array_agg(image->>'id' ORDER BY ordinal))[1] AS preview_image_asset_id
+                    FROM jsonb_array_elements(p.document->'assets') WITH ORDINALITY AS images(image,ordinal)
+                    WHERE image->>'kind'='source_image'
+                ) images
+                CROSS JOIN LATERAL (
+                    SELECT count(*) AS object_count,
+                        count(*) FILTER (WHERE jsonb_array_length(entity->'representations')>0) AS spatial_object_count,
+                        count(*) FILTER (WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(entity->'representations') r
+                            WHERE r->>'kind' IN ('generated_mesh','primitive'))) AS model_object_count,
+                        count(*) FILTER (WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(entity->'representations') r
+                            WHERE r->>'kind'='observed_surface')) AS observed_surface_object_count
+                    FROM jsonb_array_elements(p.document->'entities') entity
+                    WHERE entity->'sourceContext' IS DISTINCT FROM 'true'::jsonb
+                ) objects ORDER BY p.created_at DESC,p.id""").fetchall())}
 
     def get_publication(self, publication_id):
         with self._connect() as connection:

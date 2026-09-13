@@ -106,16 +106,25 @@ function jump(section: string) {
     ?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function contextURL(hash: string, context: {
-  selection: Selection; imageId: string | null; box: number[] | null;
-  reviewMode: boolean; agentOpen: boolean;
-}) {
+function contextURL(
+  hash: string,
+  context: {
+    selection: Selection;
+    imageId: string | null;
+    box: number[] | null;
+    reviewMode: boolean;
+    agentOpen: boolean;
+  },
+) {
   const [route, query = ""] = hash.split("?");
   const params = new URLSearchParams(query);
   for (const [key, value] of Object.entries({
-    object: context.selection.entityId, observation: context.selection.observationId,
-    image: context.imageId, box: context.box?.join(","),
-    review: context.reviewMode ? "1" : null, agent: context.agentOpen ? "1" : null,
+    object: context.selection.entityId,
+    observation: context.selection.observationId,
+    image: context.imageId,
+    box: context.box?.join(","),
+    review: context.reviewMode ? "1" : null,
+    agent: context.agentOpen ? "1" : null,
   })) {
     if (value) params.set(key, value);
     else params.delete(key);
@@ -212,7 +221,9 @@ export function WorkcellReport({
       const observations = entity
         ? observationsFor(revision.document, entity)
         : [];
-      const imageObservations = observations.filter((o) => o.imageId === requestedImage);
+      const imageObservations = observations.filter(
+        (o) => o.imageId === requestedImage,
+      );
       const obs =
         observations.find(
           (o) =>
@@ -220,7 +231,9 @@ export function WorkcellReport({
             (!requestedImage || o.imageId === requestedImage),
         ) ||
         (requestedImage
-          ? imageObservations.length === 1 ? imageObservations[0] : undefined
+          ? imageObservations.length === 1
+            ? imageObservations[0]
+            : undefined
           : observations[0]);
       const camera =
         revision.document.cameras.find(
@@ -344,9 +357,23 @@ export function WorkcellReport({
   }, [detail?.revision.id]);
   useEffect(() => {
     if (!detail) return;
-    const next = contextURL(location.hash, { selection, imageId, box, reviewMode, agentOpen });
+    const next = contextURL(location.hash, {
+      selection,
+      imageId,
+      box,
+      reviewMode,
+      agentOpen,
+    });
     if (next !== location.hash) window.history.replaceState(null, "", next);
-  }, [detail?.revision.id, selection.entityId, selection.observationId, imageId, box, reviewMode, agentOpen]);
+  }, [
+    detail?.revision.id,
+    selection.entityId,
+    selection.observationId,
+    imageId,
+    box,
+    reviewMode,
+    agentOpen,
+  ]);
   function select(entityId: string, observationId?: string) {
     if (!detail) return;
     const entity = detail.revision.document.entities.find(
@@ -484,9 +511,16 @@ export function WorkcellReport({
         },
       );
       const created = await sendOwnedRequest<ProjectDetail>(pending);
-      location.hash = contextURL("/projects/" + created.project.id + "/report", {
-        selection, imageId, box, reviewMode: true, agentOpen,
-      });
+      location.hash = contextURL(
+        "/projects/" + created.project.id + "/report",
+        {
+          selection,
+          imageId,
+          box,
+          reviewMode: true,
+          agentOpen,
+        },
+      );
     } catch (e) {
       setError(e);
     } finally {
@@ -655,6 +689,16 @@ export function WorkcellReport({
         </div>
       </header>
       <nav className="report-index" aria-label={t("reportContents")}>
+        <span
+          className="report-index-identity"
+          title={publication?.title || project.title}
+        >
+          {publication?.title || project.title}
+          <small>
+            {sourceImages.length} {t("photos")} · {t("version")}{" "}
+            {revision.id.slice(0, 8)}
+          </small>
+        </span>
         {reportSections.map(([anchor, key]) => (
           <button key={anchor} onClick={() => jump(anchor)}>
             {t(key)}
@@ -710,7 +754,11 @@ export function WorkcellReport({
               setAgentOpen(true);
               setDraw(true);
               setBox(null);
-              setSelection(s=>({...s,entityId:null,observationId:null}));
+              setSelection((s) => ({
+                ...s,
+                entityId: null,
+                observationId: null,
+              }));
               jump("spatial");
             }}
           >
