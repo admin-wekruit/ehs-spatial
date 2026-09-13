@@ -30,6 +30,9 @@ const edits=[
   {id:'future-edit',baseRevisionId:'revision',revisionId:'future',operations:[{type:'setVisibility'}],inverseOperations:[],createdAt:'2026-09-13'},
 ];
 const requests=[],navigations=[];
+let publicPublicationId='';
+const publication={id:'publication',projectId:'project',title:'Frozen report',createdAt:revision.createdAt,sceneRevisionId:revision.id,
+  snapshot:{revision,editBatches:[edits[0]],evaluations:[],reviews:[],jobs:[{id:'export',kind:'export_blender',status:'succeeded',baseRevisionId:revision.id,createdAt:revision.createdAt,result:{assets:[{id:'blend',name:'workcell.blend'}]}}]}};
 let hash='#/projects/project/report?revision=revision&object=a&observation=observation-a&image=image-a&box=1,2,30,40&review=1&agent=1';
 globalThis.location={get hash(){return hash;},set hash(value){navigations.push(value);hash=value;}};
 globalThis.window={history:{replaceState(_state,_title,url){assert.ok(url.startsWith('#/'));hash=url;}},scrollTo(){}};
@@ -49,14 +52,14 @@ new Function('require','module','exports',code)(name=>{
   if(name==='./ReportEvidence')return {ReportEvidence:empty};
   if(name==='./ReportReview')return {ReportReview:empty};
   if(name==='./ReportObjectFindings')return {ReportObjectFindings:empty};
-  if(name==='./api')return {owner:async()=> 'local-capability',request:async(url,options)=>{
+  if(name==='./api')return {get PUBLICATION_ID(){return publicPublicationId;},owner:async()=> {assert.equal(publicPublicationId,'','public viewing must not depend on local management keys');return 'local-capability';},request:async(url,options)=>{
     assert.equal(options?.method,undefined,'selection must not send mutations/model calls');requests.push(url);
-    return url==='/api/projects/project'?detail:url==='/api/revisions/revision'?revision:{items:url.endsWith('/edits')?edits:[]};
+    return url==='/api/publications/publication'?publication:url==='/api/projects/project'?detail:url==='/api/revisions/revision'?revision:{items:url.endsWith('/edits')?edits:publicPublicationId?[publication]:[]};
   }};
   return require(name);
 },module,module.exports);
 const {WorkcellReport}=module.exports;
-async function render(){for(let i=0;i<8;i++){cursor=0;tree=WorkcellReport({projectId:'project',requestedRevision:'revision'});for(const effect of effects.splice(0))effect();await Promise.resolve();}}
+async function render(){for(let i=0;i<8;i++){cursor=0;tree=WorkcellReport(publicPublicationId?{publicationId:publicPublicationId}:{projectId:'project',requestedRevision:'revision'});for(const effect of effects.splice(0))effect();await Promise.resolve();}}
 function find(predicate,node=tree){if(!React.isValidElement(node))return null;if(predicate(node))return node;for(const child of React.Children.toArray([node.props.children,node.props.inspector])){const hit=find(predicate,child);if(hit)return hit;}return null;}
 const params=()=>new URLSearchParams(hash.split('?')[1]);
 await render();
@@ -93,3 +96,44 @@ await render();
 const reopened=find(n=>n.type===ReportScene).props;
 assert.equal(reopened.selection.entityId,'b');assert.equal(reopened.selection.observationId,null);assert.equal(reopened.imageId,'image-a');
 console.log('Report context passed: copy box, entity/camera selection, cleared observation/box, review/agent flags, fixed revision, refresh, no navigation/model requests, no future edits.');
+
+// The deployment flag keeps the same report interactions while removing unsupported writes.
+for(const slot of slots)slot?.cleanup?.();slots.length=0;effects.length=0;
+publicPublicationId='publication';requests.length=0;
+hash='#/reports/publication?object=a&image=image-a&review=1&agent=1&box=1,2,30,40';
+globalThis.document={getElementById(){return {scrollIntoView(){}};}};
+await render();
+assert.equal(find(n=>n.type===AgentPanel),null);
+assert.equal(find(n=>n.type==='a'&&/projects|policies|workbench/.test(n.props.href)),null);
+for(const label of ['copy','reportReviewAction','reportMissingObject','reportDispute','reviewReport','reportStartAssessment','reportExportBlender','reportPublish'])
+  assert.equal(find(n=>n.type==='button'&&React.Children.toArray(n.props.children).includes(label)),null,label+' is unavailable in public review');
+assert.equal(params().has('review')||params().has('agent')||params().has('box'),false);
+assert.equal(find(n=>n.type===ReportScene).props.onBox,undefined);
+assert.ok(find(n=>n.type==='span'&&n.props.children==='reportReadOnly'));
+assert.ok(find(n=>n.props.assetId==='blend'),'frozen Blender export remains downloadable');
+assert.ok(find(n=>n.props.assetId==='image-a'),'source photo remains downloadable');
+assert.ok(find(n=>n.type==='a'&&n.props.href==='#/reports/publication'),'published history stays on the site');
+assert.ok(find(n=>n.props.publication===publication&&typeof n.props.onSummary==='function'),'saved EHS data remains rendered');
+const objectFindings=find(n=>n.props.entityId==='a'&&typeof n.props.onReview==='function');
+assert.equal(objectFindings.props.readOnly,true);objectFindings.props.onReview();await render();
+assert.equal(params().has('review'),false,'viewing EHS details must not enable review editing');
+const publicRequests=requests.slice();
+find(n=>n.type===ReportScene).props.onSelect('b','observation-b');await render();
+assert.equal(params().get('object'),'b');assert.equal(params().get('image'),'image-b');
+assert.deepEqual(requests,publicRequests,'public object selection does not fetch or mutate data');
+assert.deepEqual(requests,['/api/publications/publication','/api/projects/project','/api/publications']);
+
+// Execute the actual route hook so direct write URLs cannot render an editing page.
+for(const slot of slots)slot?.cleanup?.();slots.length=0;effects.length=0;
+const appSource=fs.readFileSync(path.join(root,'src/App.tsx'),'utf8');
+const parsed=ts.createSourceFile('App.tsx',appSource,ts.ScriptTarget.ES2022,true,ts.ScriptKind.TSX);
+const routeSource=parsed.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='useRoute').getText(parsed);
+const routeCode=ts.transpileModule(routeSource,{compilerOptions:{module:ts.ModuleKind.None,target:ts.ScriptTarget.ES2022}}).outputText;
+window.addEventListener=()=>{};window.removeEventListener=()=>{};
+const useRoute=new Function('PUBLICATION_ID','useState','useEffect','path',routeCode+'; return useRoute;')('publication',hooks.useState,hooks.useEffect,value=>'#'+value);
+for(const [input,expected] of [['','/reports/publication'],['#/reports','/reports'],['#/reports/older?object=a','/reports/older'],['#/projects/new','/reports/publication'],['#/projects/project/workbench','/reports/publication'],['#/policies','/reports/publication']]){
+  for(const slot of slots)slot?.cleanup?.();slots.length=0;effects.length=0;cursor=0;hash=input;
+  const route=useRoute();for(const effect of effects.splice(0))effect();
+  assert.equal(route.pathname,expected);assert.ok(hash.startsWith('#/reports'));
+}
+console.log('Public report passed: default and restricted routes, view-only controls, frozen EHS/history/Blender/source downloads, restored object/photo selection, no management keys or mutations.');

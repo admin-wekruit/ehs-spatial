@@ -45,12 +45,13 @@ export function historicalObjectFindings(revision: Revision, entityId: string) {
     }) };
 }
 
-export function ReportObjectFindings({ revision, publication, entityId, evaluations, loading = false, onReview }: {
+export function ReportObjectFindings({ revision, publication, entityId, evaluations, loading = false, readOnly = false, onReview }: {
   revision: Revision;
   publication?: Publication;
   entityId: string;
   evaluations?: Evaluation[];
   loading?: boolean;
+  readOnly?: boolean;
   onReview: () => void;
 }) {
   const { language, t: globalT } = useI18n();
@@ -80,7 +81,7 @@ export function ReportObjectFindings({ revision, publication, entityId, evaluati
         <details><summary>{t("details")}</summary><p>{reason}</p><EvidenceValue value={finding.facts} />{finding.comparison && <EvidenceValue value={finding.comparison} />}<small>{t("rrAssessment")} · {evaluation.id}<br />{t("rrSavedCheck")} · {finding.policyRevisionId}</small></details>
       </article>;
     })}
-    <button type="button" onClick={onReview}>{t("review")} ↗</button>
+    <button type="button" onClick={onReview}>{t(readOnly ? "details" : "review")} ↗</button>
     {!!historical.total && <details className="rof-history"><summary>{t("historical")} · {historical.linked.length} {t("historicalCount")} {historical.total} {t("historicalTotal")}</summary>
       {!historical.linked.length && <p>{t("noHistoricalLink")}</p>}
       {historical.linked.map(({ finding, facts, violations }, index) => <article key={String(finding.id || index)}>

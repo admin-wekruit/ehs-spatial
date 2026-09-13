@@ -22,6 +22,55 @@ For Modal execution set `PANOPTES_EXECUTOR_BACKEND=modal`, `PANOPTES_MODAL_APP`,
 
 Host the API behind the website's `/api` path. `PANOPTES_WEB_ROOT` may select the Vite build directory on that host. A Pages build can use a configured API origin for background communication, while all navigation remains hash routes on the website. No management capability enters URLs, report JSON, or model context.
 
+## Publish a fixed report for external review
+
+The public feedback site serves a frozen publication, independently of the local
+database and workers. It uses the same React report and asset-ID contracts.
+Selection, CAD, 3D, language switching, evidence, history and existing downloads
+remain interactive. Creating projects, editing, Agent actions, forks and new jobs
+remain in the full platform; the public build does not advertise those actions.
+
+1. Export a selected publication using public read endpoints. Each original file
+   must match its frozen hash and byte count before the export becomes visible:
+
+   ```sh
+   .venv/bin/python scripts/export_platform_publication.py \
+     --api http://127.0.0.1:8792 --publication PUBLICATION_UUID \
+     --output .platform/publications/PUBLICATION_UUID
+   .venv/bin/python tests/check_publication_site.py \
+     --bundle .platform/publications/PUBLICATION_UUID \
+     --source-api http://127.0.0.1:8792
+   ```
+
+2. Deploy the independent read-only service. It has no model, database or project
+   credentials. Original project writes and all non-read HTTP methods are rejected.
+
+   ```sh
+   PANOPTES_PUBLICATION_BUNDLE="$PWD/.platform/publications/PUBLICATION_UUID" \
+     .venv/bin/modal deploy modal_apps/publication_site.py
+   ```
+
+3. Build the website with `VITE_PUBLICATION_ID=PUBLICATION_UUID` and
+   `VITE_API_ORIGIN` set to the returned HTTPS origin. Use a separate output path
+   to leave the running local platform build unchanged:
+
+   ```sh
+   cd web
+   VITE_PUBLICATION_ID=PUBLICATION_UUID VITE_API_ORIGIN=HTTPS_API_ORIGIN \
+     npm run build -- --outDir ../.platform/public-web
+   ```
+
+4. Copy that build's `app.html` and `assets/` into the Pages artifact repository;
+   use the same `app.html` contents for `index.html`. Commit and push its `main`
+   branch, then verify the Pages deployment's exact commit and the public browser
+   route. Navigation stays on the website; the API origin is background transport.
+
+The bundle includes only the selected publication and its referenced project and
+assets. This sharing deployment does not constitute the full SaaS/model release.
+The bundle itself is portable: `create_app(bundle_dir, allowed_origins=[...])`
+can run under any ASGI host, without Modal-specific domain code. Keep exported
+bundles outside Git. Exporting into an existing directory is refused.
+
 ## Models and budget
 
 `PANOPTES_PROVIDER_MANIFEST` is a local JSON deployment manifest. Its reviewed, secret-free fields are frozen into each job at enqueue time. Workers read that snapshot; a changed deployment does not change an already accepted job. Each stage has provider pins and license/runtime/quality evidence. Missing or failed gates stop that stage. There is no automatic alternate model route.

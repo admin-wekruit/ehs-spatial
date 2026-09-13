@@ -7,6 +7,7 @@ export type PendingRequest = {
   createdAt: string;
 };
 type Owner = { id: string; capability: string };
+export const PUBLICATION_ID = import.meta.env?.VITE_PUBLICATION_ID?.trim() || "";
 const DB = "panoptes-platform",
   API_ORIGIN = (import.meta.env?.VITE_API_ORIGIN || "").replace(/\/$/, "");
 let opened: Promise<IDBDatabase> | undefined;

@@ -40,6 +40,8 @@ const publication={id:'publication',projectId:'p',snapshot};
 const before=JSON.stringify({revision,publication});
 const render=(entityId='a',extra={})=>renderToStaticMarkup(React.createElement(ReportObjectFindings,{revision,publication,entityId,onReview(){},...extra}));
 const a=render();
+assert.doesNotMatch(render('a',{readOnly:true}),/Add evidence \/ review findings/);
+assert.match(render('a',{readOnly:true}),/<button[^>]*>Facts and assessment details/);
 assert.match(a,/A current exact reasoning/);assert.doesNotMatch(a,/B current|Old finding|Old assessment|Foreign project|B historical only|Unbound aggregate FAIL|Foreign run inventory/);
 assert.match(a,/1 explicitly linked \/ 4 historical checks/);assert.match(a,/not a finding for this object in the current revision/);
 assert.match(a,/<details><summary>Facts and assessment details/);assert.match(a,/Evidence-based scale calibration/);

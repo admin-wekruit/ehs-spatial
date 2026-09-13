@@ -5,6 +5,7 @@ import {
   downloadJSON,
   id,
   owner,
+  PUBLICATION_ID,
   prepareOwnedRequest,
   request,
   sendOwnedRequest,
@@ -145,6 +146,7 @@ export function WorkcellReport({
   requestedRevision?: string | null;
 }) {
   const { t } = useI18n();
+  const readOnly = !!PUBLICATION_ID;
   const [detail, setDetail] = useState<ProjectDetail>(),
     [publication, setPublication] = useState<Publication>();
   const [error, setError] = useState<unknown>(),
@@ -210,7 +212,7 @@ export function WorkcellReport({
         revision,
         branch: d.branches.find((b) => b.id === revision.branchId) || d.branch,
       };
-      const can = !!(await owner(pid));
+      const can = !readOnly && !!(await owner(pid));
       if (!live) return;
       setDetail(next);
       setPublication(pub);
@@ -258,8 +260,8 @@ export function WorkcellReport({
         observationId: obs?.id || null,
         cameraId: camera?.id || null,
       });
-      if (params.get("review") === "1") setReviewMode(true);
-      if (params.get("agent") === "1") setAgentOpen(true);
+      if (!readOnly && params.get("review") === "1") setReviewMode(true);
+      if (!readOnly && params.get("agent") === "1") setAgentOpen(true);
       const inputBox = params.get("box")?.split(",").map(Number);
       const image = revision.document.assets.find(
         (a) => a.id === selectedImage,
@@ -267,7 +269,7 @@ export function WorkcellReport({
       const width = camera?.width || Number(image?.width),
         height = camera?.height || Number(image?.height);
       if (
-        inputBox?.length === 4 &&
+        !readOnly && inputBox?.length === 4 &&
         inputBox.every(Number.isFinite) &&
         inputBox[0] >= 0 &&
         inputBox[1] >= 0 &&
@@ -503,7 +505,7 @@ export function WorkcellReport({
     }
   }
   async function copy() {
-    if (!detail) return;
+    if (!detail || readOnly) return;
     setBusy(true);
     setError(undefined);
     try {
@@ -597,6 +599,7 @@ export function WorkcellReport({
     }
   }
   const canWrite =
+    !readOnly &&
     !!detail &&
     canManage &&
     !publication &&
@@ -639,11 +642,11 @@ export function WorkcellReport({
     >
       <header className="workcell-masthead">
         <div className="report-breadcrumb">
-          <a href="#/projects">{t("projects")}</a>
+          <a href={readOnly ? "#/reports" : "#/projects"}>{t(readOnly ? "reports" : "projects")}</a>
           <span>/</span>
           <span>{t("workcellReport")}</span>
           <span className="report-status">
-            {t(publication ? "reportReadonlySnapshot" : "reportDraft")}
+            {t(readOnly ? "reportReadOnly" : publication ? "reportReadonlySnapshot" : "reportDraft")}
           </span>
         </div>
         <div className="report-title-row">
@@ -651,7 +654,7 @@ export function WorkcellReport({
             <h1>{publication?.title || project.title}</h1>
 
           </div>
-          <div className="report-header-actions">
+          {!readOnly && <div className="report-header-actions">
             <a className="button primary" href={modelWorkbenchURL}>{t("reportModelWorkbench")} ↗</a>
             <button onClick={() => { setReviewMode(true); jump("safety"); }}>{t("reportReviewAction")}</button>
           <button
@@ -678,7 +681,7 @@ export function WorkcellReport({
                 {t("reportPublish")} ↗
               </button>
             )}
-          </div>
+          </div>}
         </div>
         <div className="report-meta">
           <ReportDate value={publication?.createdAt || revision.createdAt} />
@@ -690,7 +693,7 @@ export function WorkcellReport({
           </span>
           <span>{t(detail.branch.kind)}</span>
         </div>
-        <div className="report-steps" aria-label={t("workcellReport")}>
+        {!readOnly && <div className="report-steps" aria-label={t("workcellReport")}>
           <button
             aria-pressed={!reviewMode}
             onClick={() => {
@@ -712,7 +715,7 @@ export function WorkcellReport({
             {t("reviewReport")}
 
           </button>
-        </div>
+        </div>}
       </header>
       <nav className="report-index" aria-label={t("reportContents")}>
         {reportSections.map(([anchor, key]) => (
@@ -747,13 +750,14 @@ export function WorkcellReport({
               {entity ? <>
                 <ObjectFacts entity={entity} document={doc} />
                 <ReportObjectFindings revision={revision} publication={publication} entityId={entity.id}
+                  readOnly={readOnly}
                   evaluations={evaluationRecords?.revisionId === revision.id ? evaluationRecords.evaluations ?? undefined : undefined}
                   loading={assessmentState === "loading"}
-                  onReview={() => { setReviewMode(true); jump("safety"); }} />
+                  onReview={() => { if (!readOnly) setReviewMode(true); jump("safety"); }} />
               </> : <div className="report-inspector-empty"><h3>{t("reportSelectObject")}</h3><p>{t("reportSelectDetails")}</p><strong>{t("reportAssessment_" + assessmentState)}</strong><p>{t("reportAssessmentScopeHint")}</p></div>}
             </div>
-            <button className="report-inspector-agent" aria-expanded={reviewMode && agentOpen} onClick={() => { setReviewMode(true); setAgentOpen(v => !v); }}>{t(agentOpen && reviewMode ? "reportCloseAgent" : "reportOpenAgent")}</button>
-        {reviewMode && agentOpen && (
+            {!readOnly && <button className="report-inspector-agent" aria-expanded={reviewMode && agentOpen} onClick={() => { setReviewMode(true); setAgentOpen(v => !v); }}>{t(agentOpen && reviewMode ? "reportCloseAgent" : "reportOpenAgent")}</button>}
+        {!readOnly && reviewMode && agentOpen && (
           <div className="report-correction" id="report-correction">
             <div>
               <p>{t("reportReviewHint")}</p>
@@ -788,7 +792,7 @@ export function WorkcellReport({
         )}
           </>}
           draw={draw}
-          onBox={(value) => {
+          onBox={readOnly ? undefined : (value) => {
             setBox(value);
             setDraw(false);
             setAgentOpen(true);
@@ -927,8 +931,8 @@ export function WorkcellReport({
         </div>
         <ul className="report-attention">
           {assessmentState === "assessed" && <li><button onClick={() => jump("safety")}><strong>{assessment!.attentionCount}</strong> {t("reportAttentionFindings")} <span aria-hidden="true">↗</span></button></li>}
-          {!!pendingGeometry && <li><a href={modelWorkbenchURL}><strong>{pendingGeometry}</strong> {t("reportAttentionGeometry")} <span aria-hidden="true">↗</span></a></li>}
-          {assessmentState === "unassessed" && <li><button onClick={() => { setReviewMode(true); jump("safety"); }}>{t("reportStartAssessment")} <span aria-hidden="true">↗</span></button></li>}
+          {!!pendingGeometry && <li>{readOnly ? <span><strong>{pendingGeometry}</strong> {t("reportAttentionGeometry")}</span> : <a href={modelWorkbenchURL}><strong>{pendingGeometry}</strong> {t("reportAttentionGeometry")} <span aria-hidden="true">↗</span></a>}</li>}
+          {!readOnly && assessmentState === "unassessed" && <li><button onClick={() => { setReviewMode(true); jump("safety"); }}>{t("reportStartAssessment")} <span aria-hidden="true">↗</span></button></li>}
           {assessmentState === "unavailable" && <li><button onClick={() => jump("safety")}>{t("reportAssessmentError")} <span aria-hidden="true">↗</span></button></li>}
         </ul>
       </section>
@@ -938,15 +942,15 @@ export function WorkcellReport({
             <span className="report-kicker">03 / EHS</span>
             <h2>{t("reportSafety")}</h2>
           </div>
-          <button
+          {!readOnly && <button
             aria-pressed={reviewMode}
             onClick={() => setReviewMode((v) => !v)}
           >
             {t("reportDispute")}
-          </button>
+          </button>}
         </div>
-        <p className="report-policy-link"><a href="#/policies">{t("reportPolicySettings")} ↗</a></p>
-        {reviewMode && !canWrite && (
+        {!readOnly && <p className="report-policy-link"><a href="#/policies">{t("reportPolicySettings")} ↗</a></p>}
+        {!readOnly && reviewMode && !canWrite && (
           <div className="report-copy-prompt">
             <p>{t("reportCopyReason")}</p>
             <button onClick={copy} className="primary" disabled={busy}>
@@ -982,12 +986,12 @@ export function WorkcellReport({
             <span className="report-kicker">04 / {t("reportAssets")}</span>
             <h2>{t("reportAssets")}</h2>
           </div>
-          <a
+          {!readOnly && <a
             className="button"
             href={modelWorkbenchURL}
           >
             {t("reportAdvanced")} ↗
-          </a>
+          </a>}
         </div>
         <p className="report-section-intro">{t("reportExportHint")}</p>
         <div className="report-downloads">

@@ -18,6 +18,7 @@ import {
   ownedIds,
   owner,
   pendingRequests,
+  PUBLICATION_ID,
   prepareOwnedRequest,
   request,
   resolveAsset,
@@ -75,9 +76,21 @@ function navigate(value: string) {
   location.hash = value;
 }
 function useRoute() {
-  const [value, set] = useState(() => location.hash.slice(1) || "/projects");
+  const read = () => {
+    const route = location.hash.slice(1);
+    return PUBLICATION_ID && !/^\/reports(?:\/[^/?#]+)?(?:\?|$)/.test(route)
+      ? "/reports/" + PUBLICATION_ID
+      : route || "/projects";
+  };
+  const [value, set] = useState(read);
   useEffect(() => {
-    const change = () => set(location.hash.slice(1) || "/projects");
+    const change = () => {
+      const next = read();
+      if (PUBLICATION_ID && location.hash.slice(1) !== next)
+        window.history.replaceState(null, "", path(next));
+      set(next);
+    };
+    change();
     window.addEventListener("hashchange", change);
     return () => window.removeEventListener("hashchange", change);
   }, []);
@@ -230,14 +243,14 @@ export default function App() {
         {t("open")}
       </a>
       <header className="app-header">
-        <a href={path("/projects")} className="brand">
+        <a href={path(PUBLICATION_ID ? "/reports/" + PUBLICATION_ID : "/projects")} className="brand">
           <span className="brand-mark">P</span>
           <span>
             PANOPTES<small>SPATIAL STUDIO</small>
           </span>
         </a>
         <nav aria-label="Primary">
-          {["projects", "reports"].map((item) => (
+          {(PUBLICATION_ID ? ["reports"] : ["projects", "reports"]).map((item) => (
             <a
               key={item}
               href={path("/" + item)}
@@ -248,7 +261,7 @@ export default function App() {
           ))}
         </nav>
         <div className="header-actions">
-          <label className="key-import">
+          {!PUBLICATION_ID && <label className="key-import">
             {t("importKey")}
             <input
               type="file"
@@ -265,7 +278,7 @@ export default function App() {
                 }
               }}
             />
-          </label>
+          </label>}
           <select
             aria-label="Language"
             value={language}
