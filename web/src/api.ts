@@ -204,4 +204,37 @@ export function asset(id: string) {
   return assets.get(id)!;
 }
 export const resolveAsset = async (id: string) => (await asset(id)).url;
+export async function downloadAsset(id: string) {
+  const value = await asset(id);
+  // A local blob URL keeps cross-origin signed assets from navigating away from the report.
+  const response = await fetch(
+    API_ORIGIN + "/api/assets/" + encodeURIComponent(id) + "/content",
+    {
+      credentials: "omit",
+      redirect: "error",
+    },
+  );
+  if (!response.ok)
+    throw new ApiError(response.status, "asset_download_failed");
+  const blob = await response.blob();
+  if (blob.size !== value.sizeBytes) throw new Error("asset_size_mismatch");
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const extension: Record<string, string> = {
+    "application/x-blender": ".blend",
+    "model/gltf-binary": ".glb",
+    "application/json": ".json",
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/svg+xml": ".svg",
+    "application/pdf": ".pdf",
+  };
+  a.download =
+    typeof value.metadata.name === "string"
+      ? value.metadata.name
+      : id + (extension[value.mediaType] || "");
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 export const id = () => crypto.randomUUID();

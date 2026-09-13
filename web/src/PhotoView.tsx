@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { resolveAsset } from "./api";
-import { observationsFor, originalPixel, photoHits } from "./core";
+import {
+  observationsFor,
+  originalPixel,
+  photoHits,
+  observationPolygons,
+} from "./core";
 import { useI18n } from "./i18n";
 import type { SceneDocument } from "./types";
 
@@ -25,7 +30,8 @@ export function PhotoView({
     [error, setError] = useState(false),
     [box, setBox] = useState<number[] | null>(null),
     ref = useRef<SVGSVGElement>(null),
-    start = useRef<[number, number] | null>(null);
+    start = useRef<[number, number] | null>(null),
+    drawingGesture = useRef(false);
   useEffect(() => {
     let live = true;
     setURL(undefined);
@@ -91,6 +97,7 @@ export function PhotoView({
           role="group"
           aria-label={t("sourceEvidence")}
           onPointerDown={(e) => {
+            drawingGesture.current = draw;
             if (!draw) return;
             start.current = coordinates(e);
             if (start.current) {
@@ -109,14 +116,24 @@ export function PhotoView({
                 Math.max(start.current[1], end[1]),
               ]);
           }}
-          onPointerUp={() => {
+          onPointerUp={(e) => {
+            const end = coordinates(e);
+            const region =
+              start.current && end
+                ? [
+                    Math.min(start.current[0], end[0]),
+                    Math.min(start.current[1], end[1]),
+                    Math.max(start.current[0], end[0]),
+                    Math.max(start.current[1], end[1]),
+                  ]
+                : box;
             if (
               start.current &&
-              box &&
-              box[2] - box[0] > 2 &&
-              box[3] - box[1] > 2
+              region &&
+              region[2] - region[0] > 2 &&
+              region[3] - region[1] > 2
             )
-              onBox?.(box);
+              onBox?.(region);
             start.current = null;
           }}
           onPointerCancel={() => {
@@ -124,6 +141,11 @@ export function PhotoView({
             setBox(null);
           }}
           onClick={(e) => {
+            // Pointer-up may leave drawing mode before its click event arrives.
+            if (drawingGesture.current) {
+              drawingGesture.current = false;
+              return;
+            }
             if (draw) return;
             const xy = coordinates(e);
             if (!xy) return;
@@ -141,32 +163,40 @@ export function PhotoView({
               img.src = url;
             }}
           />
-          {overlays.map(({ entity, observation, box: b }) => (
-            <rect
-              key={observation.id}
-              x={b[0]}
-              y={b[1]}
-              width={b[2] - b[0]}
-              height={b[3] - b[1]}
-              className={
-                entity.id === selectedId
-                  ? "photo-bound selected"
-                  : "photo-bound"
-              }
-              vectorEffect="non-scaling-stroke"
-              role="button"
-              tabIndex={0}
-              aria-label={entity.label || entity.id}
-              onKeyDown={(e) => {
-                if (["Enter", " "].includes(e.key)) {
-                  e.preventDefault();
-                  onSelect(entity.id, observation.id);
+          {overlays.map(({ entity, observation, box: b }) => {
+            const polygons = observationPolygons(observation);
+            const d = polygons.length
+              ? polygons
+                  .map(
+                    (p) => "M" + p.map((xy) => xy.join(",")).join(" L") + " Z",
+                  )
+                  .join(" ")
+              : `M${b[0]},${b[1]} H${b[2]} V${b[3]} H${b[0]} Z`;
+            return (
+              <path
+                key={entity.id + observation.id}
+                d={d}
+                fillRule="evenodd"
+                className={
+                  entity.id === selectedId
+                    ? "photo-bound selected"
+                    : "photo-bound"
                 }
-              }}
-            >
-              <title>{entity.label || entity.id}</title>
-            </rect>
-          ))}
+                vectorEffect="non-scaling-stroke"
+                role="button"
+                tabIndex={0}
+                aria-label={entity.label || entity.id}
+                onKeyDown={(e) => {
+                  if (["Enter", " "].includes(e.key)) {
+                    e.preventDefault();
+                    onSelect(entity.id, observation.id);
+                  }
+                }}
+              >
+                <title>{entity.label || entity.id}</title>
+              </path>
+            );
+          })}
           {box && (
             <rect
               x={box[0]}

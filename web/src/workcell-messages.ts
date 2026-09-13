@@ -1,0 +1,182 @@
+export const workcellMessages: Record<string, [string, string]> = {
+  reportImportScene: ['已有重建与证据导入', 'Import existing reconstruction and evidence'],
+  blender_worker_unavailable: ['本次任务没有可用的 Blender 运行环境。', 'A Blender runtime was not available to this task.'],
+  asset_download_failed: [
+    "文件下载失败，请重试。",
+    "The download failed. Please retry.",
+  ],
+  asset_size_mismatch: [
+    "下载内容不完整，请重试。",
+    "The downloaded file is incomplete. Please retry.",
+  ],
+  reportDetectionNotes: ["条识别解释", "recognition explanations"],
+  reportDetectionMeaning: [
+    "已保存的图像理解、漏检候选与筛选依据。来源记录与场景物体有明确关联时，可以点选联动。",
+    "Saved image interpretation, missing candidates and filtering evidence. Records explicitly linked to scene objects can be selected.",
+  ],
+  reportSourceFrameUnknown: ["原记录未绑定照片", "Source photograph not bound"],
+  reportUnassociated: [
+    "未关联到当前场景实体",
+    "Not associated with a current scene entity",
+  ],
+  reportMissingCandidates: [
+    "未找到 / 待补充的候选",
+    "Missing / unresolved candidates",
+  ],
+  reportRejectedCandidates: [
+    "被筛除的候选及原因",
+    "Rejected candidates & reasons",
+  ],
+  reportOriginalAssessment: [
+    "原始场景分析与尺度依据",
+    "Original assessment & scale evidence",
+  ],
+  workcellReport: ["工位报告", "Workcell report"],
+  reportFirst: [
+    "一张照片，一份完整的工位报告。",
+    "One photograph. One complete workcell report.",
+  ],
+  reportFirstHint: [
+    "查看物体、空间与安全依据，再补充漏检或复核结论。",
+    "Explore objects, space and safety evidence, then correct omissions or review findings.",
+  ],
+  readReport: ["1 · 查看完整报告", "1 · Read the report"],
+  reviewReport: ["2 · 补充与复核", "2 · Correct & review"],
+  reportReadOnly: ["只读查看", "View only"],
+  reportDraft: ["当前工位版本", "Current workcell revision"],
+  reportSpatial: ["工位全景 · 四视图联动", "The workcell · four linked views"],
+  reportSpatialHint: [
+    "点选原图、3D、平面或对象，查看同一物体的位置和证据。",
+    "Select an object in the photo, 3D, plan or inventory to follow its position and evidence.",
+  ],
+  reportUnderstanding: ["图片理解与对象清单", "Image understanding & objects"],
+  reportSafety: ["EHS 规则与判定依据", "EHS rules & findings"],
+  reportAssets: ["模型、CAD 与下载", "Models, CAD & downloads"],
+  reportHistory: ["分析结果与版本记录", "Analysis outcomes & revisions"],
+  reportContents: ["报告内容", "In this report"],
+  reportObjectRecords: ["对象记录", "Object records"],
+  reportSpatialObjects: ["有空间表示", "With spatial geometry"],
+  reportModelObjects: ["有对象模型", "With object models"],
+  reportPhotoEvidence: ["照片观察记录", "Photo observations"],
+  reportMissingGeometry: [
+    "已记录，暂无空间表示",
+    "Recorded; spatial geometry unavailable",
+  ],
+  reportNoAnalysis: [
+    "照片已保存，尚未得到对象分析结果。分析任务和具体原因见下方记录。",
+    "Photos are saved; object analysis is not available yet. Task outcomes and reasons are recorded below.",
+  ],
+  reportUnderstandingHint: [
+    "清单来自当前照片的已保存分析；点击一行可回到对应物体。",
+    "This inventory comes from saved photo analysis. Select a row to inspect its object.",
+  ],
+  reportAssociationHint: [
+    "待确认的跨图关联单独保留，不把观察记录数量当作已确认的物体数量。",
+    "Unconfirmed cross-photo associations are retained separately; observation counts are not confirmed object counts.",
+  ],
+  reportMissingObject: ["有物体漏检", "An object is missing"],
+  reportDispute: ["补充证据 / 复核理由", "Add evidence / review reasoning"],
+  reportReviewHint: [
+    "在同一工位内圈选漏检、补充现场证据或复核判定。已发布报告保留原版本。",
+    "Mark omissions, add site evidence or review findings within this workcell. Published reports retain their original revision.",
+  ],
+  reportDrawHint: [
+    "在上方原图拖出选框，再告诉 Agent 要补充什么。选框、照片和当前对象会一起传入。",
+    "Drag a box on the source photo, then tell the Agent what is missing. The box, photo and selected object are included together.",
+  ],
+  reportCopyToReview: ["保存我的副本并开始复核", "Save my copy & review"],
+  reportCopyReason: [
+    "这份报告只读。保存副本后，你可以在自己的工位版本中补充对象和复核，原报告保持不变。",
+    "This report is read only. Save a copy to add objects and review findings in your own workcell revision.",
+  ],
+  reportCorrecting: ["当前复核对象", "Review context"],
+  reportCloseAgent: ["收起 Agent", "Close Agent"],
+  reportOpenAgent: ["与 Agent 一起补充", "Correct with Agent"],
+  reportSaved: [
+    "已保存新工位版本；请重新评估受影响的规则。",
+    "A new workcell revision is saved. Re-evaluate affected rules.",
+  ],
+  reportPublish: ["发布这份报告", "Publish this report"],
+  reportAdvanced: ["建模与布局编辑", "Model & layout editor"],
+  reportSource: ["来源", "Source"],
+  reportOriginalEvidence: ["原始分析证据", "Original analysis evidence"],
+  reportObservedExtent: ["观测范围", "Observed extent"],
+  reportCurrentModel: ["当前模型", "Current model"],
+  reportPosition: ["模型位置 X / Y / Z", "Model position X / Y / Z"],
+  reportOrientation: ["模型局部轴角度", "Model local-axis angle"],
+  reportMeasurementNote: [
+    "观测范围、生成模型和实测尺寸分别记录。未标定数值为模型单位；局部轴角度不等于设备安装倾角。",
+    "Observed extents, generated models and measured dimensions are separate. Uncalibrated values use model units; local-axis angle is not equipment installation tilt.",
+  ],
+  reportSelectDetails: [
+    "选择一个物体，查看位置、尺寸、来源与缺失依据。",
+    "Select an object to inspect position, dimensions, sources and missing evidence.",
+  ],
+  reportNoExports: [
+    "此版本尚无导出文件。已有原图与场景 JSON 可直接下载。",
+    "No export files are attached to this revision yet. Source photos and scene JSON are available.",
+  ],
+  reportExactExport: [
+    "与此场景版本对应的导出",
+    "Exports of this exact scene revision",
+  ],
+  reportExportBlender: ["生成 Blender / GLB 文件", "Export Blender / GLB"],
+  reportExportHint: [
+    "在线查看无需安装 Blender。下载 .blend 后可在 Blender 中继续编辑。",
+    "Viewing online needs no Blender installation. Download .blend to continue editing in Blender.",
+  ],
+  reportTaskOutputs: ["产物", "Outputs"],
+  reportNoTasks: [
+    "此版本没有运行任务记录。导入的历史结果在原始证据中保留。",
+    "No task records for this revision. Imported outcomes are retained with the original evidence.",
+  ],
+  reportPinnedTasks: [
+    "这里只展示输入或产物对应当前版本的任务；完成、未完成和失败分别记录。",
+    "Only tasks whose input or output matches this revision are shown. Complete, incomplete and failed outcomes remain distinct.",
+  ],
+  reportHistorical: [
+    "历史分析 · 原始版本",
+    "Historical analysis · source revision",
+  ],
+  reportHistoricalSafety: [
+    "历史规则结果与理由",
+    "Historical rule findings & reasons",
+  ],
+  reportHistoricalHint: [
+    "保留原始 run 的结果与证据；它们没有在当前版本重新执行，不能作为当前版本的合规结论。",
+    "Results and evidence from the source run are preserved. They have not been re-evaluated for this revision and are not current compliance findings.",
+  ],
+  reportCadOriginal: ["原始 CAD 证据", "Original CAD evidence"],
+  reportCoordinateNote: [
+    "原始 CAD 与当前三维使用各自记录的坐标；只有明确关联的对象可以联动。",
+    "Original CAD and current 3D retain their recorded coordinate systems. Only explicitly linked objects synchronize.",
+  ],
+  reportQuality: ["重建质量与实验对比", "Reconstruction quality & comparisons"],
+  reportEmptyMetrics: [
+    "尚无同 run、同指标的有效对比记录。",
+    "No valid same-run, same-metric comparisons are attached.",
+  ],
+  reportTechnical: ["查看原始数据与来源", "Inspect data & provenance"],
+  reportRelated: ["该工位的报告历史", "Report history for this workcell"],
+  reportShowAll: ["展开完整清单", "Show full inventory"],
+  reportShowLess: ["收起清单", "Collapse inventory"],
+  reportPreview: ["报告预览", "Report preview"],
+  reportPhotoSelection: ["当前照片", "Current photograph"],
+  reportSelectedEvidence: [
+    "选中物体的图片证据",
+    "Photo evidence for the selected object",
+  ],
+  reportNoInterpretation: [
+    "暂无单独的图片解读文字；下方保留实际识别标签、定位和缺失依据。",
+    "No separate image interpretation text is attached. Actual labels, localization and evidence gaps are shown below.",
+  ],
+  reportStage: ["步骤", "Stage"],
+  reportResult: ["结果", "Outcome"],
+  reportTime: ["已记录耗时", "Recorded duration"],
+  reportRevision: ["工位版本", "Workcell revision"],
+  reportSourceDownload: ["原图", "Source photo"],
+  reportReadonlySnapshot: [
+    "发布快照 · 原始判定固定",
+    "Published snapshot · findings frozen",
+  ],
+};

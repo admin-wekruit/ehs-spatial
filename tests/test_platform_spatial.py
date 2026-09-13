@@ -213,6 +213,38 @@ def test_export_asset_allowlist_hash_and_unconfirmed_placement(tmp_path):
 BLENDER = Path(os.environ.get("BLENDER_EXECUTABLE","/Users/adam/Desktop/panoptes-public/.tools/blender-4.5.9/Blender.app/Contents/MacOS/Blender"))
 
 
+def test_export_point_cloud_context_excluded_but_object_stays_unplaced(tmp_path):
+    doc = scene_document()
+    doc["entities"][0]["sourceContext"] = True  # Mesh context still exports normally.
+    original = prepare_export("revision", doc, lambda _: pytest.fail("no mesh asset needed"))
+    cloud = deepcopy(doc["entities"][0])
+    cloud.update(id=str(uuid4()), sourceContext=True)
+    rep = cloud["representations"][0]
+    asset_id = str(uuid4())
+    rep.update(id=str(uuid4()), kind="point_cloud", assetId=asset_id, primitive=None)
+    doc["assets"].append({"id":asset_id, "kind":"point_cloud"})
+    doc["entities"].append(cloud)
+    context = prepare_export("revision", doc, lambda _: pytest.fail("point cloud must not be read as mesh"))
+    expected = [{"entityId":cloud["id"], "representationId":rep["id"], "reason":"point_cloud_context"}]
+    assert context["unplacedEntities"] == original["unplacedEntities"]
+    assert context["excludedRepresentations"] == expected
+    assert context["objects"] == original["objects"] and context["cameras"] == original["cameras"]
+    object_cloud = deepcopy(cloud)
+    object_cloud.update(id=str(uuid4()), sourceContext=False)
+    object_cloud["representations"][0]["id"] = str(uuid4())
+    doc["entities"].append(object_cloud)
+    prepared = prepare_export("revision", doc, lambda _: pytest.fail("point cloud must not be read as mesh"))
+    assert prepared["unplacedEntities"] == original["unplacedEntities"] + [{"entityId":object_cloud["id"], "representationId":object_cloud["representations"][0]["id"], "reason":"not_a_mesh"}]
+    assert prepared["excludedRepresentations"] == expected
+    if BLENDER.exists():
+        result = export_scene_revision("revision", doc, lambda _: pytest.fail("no mesh asset needed"), tmp_path/"export", BLENDER)
+        assert result["excludedRepresentations"] == expected
+        assert result["unplacedEntities"] == prepared["unplacedEntities"] and result["status"] == "incomplete"
+        assert len(result["validation"]["blender"]["objects"]) == len(original["objects"])
+        assert len(result["validation"]["blender"]["cameras"]) == len(original["cameras"])
+        assert json.loads((tmp_path/"export/manifest.json").read_text())["excludedRepresentations"] == expected
+
+
 @pytest.mark.skipif(not BLENDER.exists(),reason="real Blender executable not installed")
 def test_real_blender_generic_save_reopen_and_parametric_edit(tmp_path):
     doc = scene_document()

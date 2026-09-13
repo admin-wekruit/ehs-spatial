@@ -1,0 +1,50 @@
+export const reportEvidenceMessages: Record<string, [string, string]> = {
+  reLinkedRecords: ["条已关联", "linked"],
+  reSourceRecords: ["条来源记录", "source records"],
+  reUnassociatedRecords: [
+    "尚未关联到当前场景的来源记录",
+    "Source records not linked to this scene",
+  ],
+  reUnassociatedMeaning: [
+    "这些识别解释仍完整保留，但没有确认它们与当前场景照片及物体的关联，暂不能联动定位。",
+    "These recognition explanations are retained in full. Their links to this scene’s photos and objects are not confirmed, so linked selection is unavailable.",
+  ],
+  rePhotoSource: ["照片与关联依据", "Photograph and association evidence"],
+  reOriginalPhoto: ["来源照片", "Source photograph"],
+  reScenePhoto: ["场景照片", "Scene photograph"],
+  reSourceRecord: ["原候选", "Source candidate"],
+  reHistoricalPhotos: ["原始 run 的照片", "Photographs from the source run"],
+  rePolicyBasis: ["该历史规则的依据", "Basis of this historical policy"],
+  rePolicyReason: ["规则理由", "Policy rationale"],
+  rePolicyText: ["保存的规则原文", "Saved policy text"],
+  rePolicyLimit: ["未支持的检查及原因", "Unsupported check and reason"],
+  rePolicyThreshold: ["规则阈值", "Policy threshold"],
+  rePolicyScope: ["规则对象范围", "Policy object scope"],
+  reEvaluatedCheck: ["原始 run 采用的条件", "Check used in the source run"],
+  rePolicyMissing: [
+    "没有与此判定 ID 对应的完整规则原文。",
+    "No complete policy text is bound to this exact finding ID.",
+  ],
+  rePolicySourceNote: [
+    "这些是原始 run 保存的规则文本与理由；权威来源和现场适用性仍需确认。",
+    "These policy texts and reasons were saved by the source run; authoritative sourcing and site applicability still require confirmation.",
+  ],
+  reExperiment: [
+    "原始实验候选对比",
+    "Original experiment candidate comparisons",
+  ],
+  reExperimentMeaning: [
+    "每行对应原始候选的同 run 前后结果。点击仅定位对应物体；表中数值不代表之后替换、编辑的模型。",
+    "Each row compares the original candidate within its source run. Clicking locates the related object; these values do not describe later replacements or edits.",
+  ],
+  reMetricSource: ["候选及指标来源", "Candidate and metric source"],
+  reRunUnknown: [
+    "未记录明确的对比 run",
+    "Comparison run not explicitly recorded",
+  ],
+  reMetricMeaningUnknown: [
+    "未记录该候选的指标含义",
+    "Metric meaning was not recorded for this candidate",
+  ],
+  reSceneRun: ["当前组装场景 run", "Assembled scene run"],
+};

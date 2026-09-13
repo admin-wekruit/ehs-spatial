@@ -560,6 +560,7 @@ class PublicationSnapshot(DTO):
     revision: Revision
     evaluations: list[Evaluation]
     reviews: list[Review]
+    jobs: list[Job] = Field(default_factory=list)
     editBatches: list[EditBatch] | None = None
     branchKind: Literal["reconstruction", "planning"] | None = None
     branchTitle: str | None = None

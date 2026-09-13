@@ -14,7 +14,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from .contracts import PlatformError, capability_sha, digest, empty_document, validate_document
+from .contracts import Job, PlatformError, capability_sha, digest, empty_document, validate_document
 from .repository import apply_operations
 
 
@@ -34,6 +34,20 @@ def _wire(row):
     if isinstance(row, Decimal):
         return float(row)
     return row
+
+
+def _job_asset_references(result):
+    """Declared exporter/pipeline outputs; error params are not output assets."""
+    if not result:
+        return
+    assets, stages = result.get("assets", []), result.get("stages", [])
+    if not isinstance(assets, list) or any(not isinstance(ref, dict) or "id" not in ref for ref in assets) or not isinstance(stages, list) or any(not isinstance(stage, dict) for stage in stages):
+        raise PlatformError("publication_job_asset_invalid", 422)
+    yield from ((ref["id"], ref) for ref in assets)
+    yield from ((stage["assetId"], stage) for stage in stages if stage.get("assetId") is not None)
+    for key in ("checkpointAssetId", "protocolAssetId", "outputAssetId"):
+        if result.get(key) is not None:
+            yield result[key], {}
 
 
 class PostgresRepository:
@@ -434,16 +448,34 @@ class PostgresRepository:
                 SELECT b.* FROM ancestry a JOIN edit_batches b ON b.revision_id=a.id ORDER BY a.depth DESC""", (project_id, revision["id"], project_id)).fetchall()
             snapshot = {"schemaVersion": 1, "reportSchemaVersion": 1, "rendererVersion": "native-webgl-v1", "revision": _wire(revision), "evaluations": evaluations or [], "reviews": reviews or [],
                         "editBatches": _wire(edits), "branchKind": branch["kind"], "branchTitle": branch["title"]}
+            jobs = connection.execute("""SELECT * FROM jobs WHERE project_id=%s AND (base_revision_id=%s OR result_revision_id=%s)
+                ORDER BY created_at,id FOR SHARE""", (project_id, revision["id"], revision["id"])).fetchall()
+            # The public DTO excludes executor references, attempt tokens and late
+            # mutable outcomes. Config contains the server's frozen, secret-free pins.
+            snapshot["jobs"] = [Job.model_validate({key: value for key, value in _wire(job).items() if key in Job.model_fields}).model_dump(mode="json") for job in jobs]
             if branch["kind"] == "planning" and branch["source_revision_id"]:
                 snapshot["reconstructionRevision"] = _wire(self._revision(connection, project_id, branch["source_revision_id"]))
             reconstruction = snapshot.get("reconstructionRevision", snapshot["revision"])
             snapshot["playgroundDefinitions"] = [{"kind": "observed", "revisionId": reconstruction["id"]}, {"kind": "model", "revisionId": reconstruction["id"]}]
             if branch["kind"] == "planning":
                 snapshot["playgroundDefinitions"].append({"kind": "planning", "revisionId": str(revision["id"])})
-            asset_ids = sorted({asset["id"] for pinned in (snapshot["revision"], reconstruction) for asset in pinned["document"]["assets"]})
+            scene_asset_ids = {asset["id"] for pinned in (snapshot["revision"], reconstruction) for asset in pinned["document"]["assets"]}
+            output_refs = [ref for job in snapshot["jobs"] for ref in _job_asset_references(job["result"])]
+            try:
+                output_ids = {str(UUID(identity)) for identity, _ in output_refs}
+            except (ValueError, TypeError, AttributeError):
+                raise PlatformError("publication_job_asset_invalid", 422) from None
+            asset_ids = sorted(scene_asset_ids | output_ids)
             assets = connection.execute("SELECT * FROM assets WHERE id=ANY(%s::uuid[]) ORDER BY id", (asset_ids,)).fetchall()
             if len(assets) != len(asset_ids):
                 raise PlatformError("publication_asset_not_found", 422)
+            assets_by_id = {str(asset["id"]): _wire(asset) for asset in assets}
+            for identity, ref in output_refs:
+                asset = assets_by_id[str(UUID(identity))]
+                if asset["projectId"] != str(project_id) and asset["id"] not in scene_asset_ids:
+                    raise PlatformError("publication_job_asset_forbidden", 403)
+                if any(key in ref and ref[key] != asset[key] for key in ("sha256", "sizeBytes", "mediaType", "storageKey", "projectId", "jobId")):
+                    raise PlatformError("publication_job_asset_integrity_conflict", 422)
             snapshot["assetManifest"] = []
             for asset in assets:
                 if self.blobs is None:

@@ -192,9 +192,12 @@ def prepare_export(revision_id: str, document: dict[str, Any], resolve_asset: Ca
     document = json.loads(canonical(document))
     assets = {x["id"]: x for x in document["assets"]}
     frames = {x["id"] for x in document["coordinateFrames"]}
-    objects, unresolved = [], []
+    objects, unresolved, excluded = [], [], []
     for entity in document["entities"]:
         for rep in entity.get("representations", []):
+            if entity.get("sourceContext") is True and rep["kind"] == "point_cloud":
+                excluded.append({"entityId": entity["id"], "representationId": rep["id"], "reason": "point_cloud_context"})
+                continue
             if rep["placementState"] != "confirmed" or rep["kind"] == "point_cloud":
                 unresolved.append({"entityId": entity["id"], "representationId": rep["id"], "reason": "placement_unconfirmed" if rep["placementState"] != "confirmed" else "not_a_mesh"})
                 continue
@@ -223,7 +226,7 @@ def prepare_export(revision_id: str, document: dict[str, Any], resolve_asset: Ca
             unresolved.append({"entityId": entity["id"], "reason": "no_representation"})
     cameras = [{**c, "blender": blender_camera_parameters(c)} for c in document["cameras"]]
     return {"schemaVersion": 1, "sceneRevisionId": revision_id, "documentSha256": digest(document), "document": document,
-            "objects": objects, "cameras": cameras, "unplacedEntities": unresolved, "newModelCalls": 0}
+            "objects": objects, "cameras": cameras, "unplacedEntities": unresolved, "excludedRepresentations": excluded, "newModelCalls": 0}
 
 
 def write_glb(prepared: dict[str, Any], path: Path) -> dict[str, Any]:
@@ -577,7 +580,7 @@ def export_scene_revision(revision_id: str, document: dict[str, Any], resolve_as
             raise PlatformError("blender_export_validation_failed", 422)
         blend_validation = json.loads((root/"blender-validation.json").read_text())
         manifest = {"sceneRevisionId": revision_id,"documentSha256": prepared["documentSha256"],"status":"incomplete" if prepared["unplacedEntities"] else "succeeded", "newModelCalls":0,
-                    "unplacedEntities":prepared["unplacedEntities"],"validation":{"blender":blend_validation,"glb":glb_validation},"files":[]}
+                    "unplacedEntities":prepared["unplacedEntities"],"excludedRepresentations":prepared["excludedRepresentations"],"validation":{"blender":blend_validation,"glb":glb_validation},"files":[]}
         for name in ("scene.glb","scene.blend"):
             path = root/name
             manifest["files"].append({"name":name,"sha256":hashlib.sha256(path.read_bytes()).hexdigest(),"bytes":path.stat().st_size})

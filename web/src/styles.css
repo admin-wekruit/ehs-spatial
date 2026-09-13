@@ -835,6 +835,14 @@ small,
   stroke-width: 3;
   fill: #e58d2322;
 }
+
+.spatial-fit {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  z-index: 2;
+  background: var(--paper, #fafbf7);
+}
 .drawn-box {
   stroke: #e17a33;
   stroke-width: 3;
@@ -1136,12 +1144,14 @@ pre {
   height: 100%;
   width: 100%;
 }
-.plan-view rect {
+.plan-view rect,
+.plan-view polygon {
   fill: #d7e2cc;
   stroke: #869b7c;
   stroke-width: 1;
 }
-.plan-view rect.selected {
+.plan-view rect.selected,
+.plan-view polygon.selected {
   fill: #efcdad;
   stroke: #b46b36;
   stroke-width: 2;

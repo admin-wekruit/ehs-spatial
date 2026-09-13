@@ -22,12 +22,15 @@ from PIL import Image
 
 from ehs_spatial.platform.contracts import PlatformError, canonical, digest, empty_document, validate_document
 from ehs_spatial.platform.spatial import MeshData, camera_intrinsics, transform_matrix
+from scripts.import_report_evidence import canonical_measurements, import_report_evidence, original_box, original_polygons, report_dependencies
 
-CONVERTER_VERSION = "public-scene-v3"
+CONVERTER_VERSION = "public-scene-v5"
 
 
 def converter_identity():
-    return {"version": CONVERTER_VERSION, "reportRendererVersion": "native-webgl-v1", "codeSha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
+    return {"version": CONVERTER_VERSION, "reportRendererVersion": "native-webgl-v1", "codeSha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            "reportConverterSha256": hashlib.sha256(Path(__file__).with_name("import_report_evidence.py").read_bytes()).hexdigest(),
+            "geometryConverterSha256": hashlib.sha256(Path(__file__).with_name("import_geometry_evidence.py").read_bytes()).hexdigest()}
 
 
 def evidence_documents(scene_path, source):
@@ -99,7 +102,7 @@ def unpack_mesh(root, record):
     return vertices, faces
 
 
-def import_document(scene_path, put_asset):
+def import_document(scene_path, put_asset, *, legacy_root=None, observation_root=None, geometry_root=None):
     """Pure conversion apart from injected verified asset registration."""
     scene_path = Path(scene_path).resolve()
     root = scene_path.parent
@@ -195,12 +198,7 @@ def import_document(scene_path, put_asset):
                 "lineage": [{"operation": "offline_import", "sourceAssetId": source_asset, "sourceRecordId": old_id}],
                 "visible": record.get("visible", True), "sourceContext": record.get("role") == "context"}
         measurements = record.get("measurements", {})
-        dimensions = measurements.get("dimensions_native")
-        if measurements.get("status") == "available" and isinstance(dimensions, dict) and all(type(dimensions.get(k)) in (int, float) and math.isfinite(dimensions[k]) and dimensions[k] >= 0 for k in ("height", "width", "depth")):
-            item["measurements"] = {"dimensionsNative": deepcopy(dimensions), "unit": "native", "coverage": measurements.get("coverage"),
-                "source": "imported_observed_measurement", "coordinateFrameId": frame_id, "uncertaintyNative": None,
-                "basis": deepcopy(measurements.get("basis")), "sourceRefs": [{"assetId": source_asset, "sourceRecordId": old_id}],
-                "scaleEvidence": deepcopy(measurements.get("scale")), "orientationEvidence": deepcopy(measurements.get("orientation"))}
+        item["measurements"] = canonical_measurements(measurements, frame_id, [{"assetId": source_asset, "sourceRecordId": old_id}])
         frame_ref = record.get("reference_frame")
         mask = record.get("mask")
         source_box = record.get("source_bbox", {})
@@ -217,13 +215,17 @@ def import_document(scene_path, put_asset):
                 canonical_box = mask.get("bbox_xyxy") if mask else source_box.get("bbox_xyxy")
                 if not canonical_box:
                     raise PlatformError("import_observation_mapping_missing", 422)
-                corners = np.array([[canonical_box[0], canonical_box[1], 1], [canonical_box[2], canonical_box[3], 1]]) @ camera["canonicalToOriginal"].T
-                box = [max(0., float(corners[0, 0])), max(0., float(corners[0, 1])), min(float(camera["chosenWidth"]), float(corners[1, 0])), min(float(camera["chosenHeight"]), float(corners[1, 1]))]
+                box = original_box(canonical_box, camera["canonicalToOriginal"], camera["chosenWidth"], camera["chosenHeight"])
             observation_id = ident("observation", old_id + ":" + frame_ref)
             observation = {"id": observation_id, "revision": 1, "imageId": camera_images[frame_ref], "originalPixelBox": list(box), "maskAssetId": mask_id,
                 "pixelMapping": [{"source": "canonical_pixels", "target": "original_pixels", "coordinateConvention": "pixel_centers", "matrix": camera["canonicalToOriginal"].tolist()}],
                 "labelEvidence": [{"label": item["label"], "source": "legacy_import"}], "geometrySupport": None,
                 "sourceRefs": [{"assetId": source_asset, "sourceRecordId": old_id}], "sourceBoxEvidence": deepcopy(source_box)}
+            if old_id in linked_views:
+                view = next((v for v in linked_views[old_id][0] if v.get("frame_id") == frame_ref), None)
+                if view:
+                    observation.update(originalPixelPolygons=original_polygons(view.get("polygons", []), camera["canonicalToOriginal"]),
+                                       polygonCoordinateConvention="pixel_centers", boxConvention="edges_xyxy_right_bottom_exclusive", fillRule=view.get("fill_rule", "evenodd"))
             document["observations"].append(observation)
             item["observationRefs"].append(observation_id)
             manifest["observationIds"][old_id] = observation_id
@@ -245,8 +247,7 @@ def import_document(scene_path, put_asset):
                 camera = cameras[anchor]
                 box = match["bbox"]
                 if match["resolution"] == "canonical":
-                    p = np.array([[box[0], box[1], 1], [box[2], box[3], 1]]) @ camera["canonicalToOriginal"].T
-                    box = [max(0., float(p[0, 0])), max(0., float(p[0, 1])), min(float(camera["chosenWidth"]), float(p[1, 0])), min(float(camera["chosenHeight"]), float(p[1, 1]))]
+                    box = original_box(box, camera["canonicalToOriginal"], camera["chosenWidth"], camera["chosenHeight"])
                 elif match.get("shape") != [camera["chosenHeight"], camera["chosenWidth"]]:
                     raise PlatformError("import_linked_mask_dimensions_mismatch", 422)
                 oid = ident("observation", old_id + ":" + anchor)
@@ -254,7 +255,8 @@ def import_document(scene_path, put_asset):
                     "pixelMapping": [{"source": "canonical_pixels", "target": "original_pixels", "matrix": camera["canonicalToOriginal"].tolist(), "coordinateConvention": "pixel_centers"}],
                     "labelEvidence": [{"label": item["label"], "source": "legacy_import"}], "geometrySupport": None,
                     "sourceRefs": [{"assetId": match["assetId"], "sourceRecordId": old_id, "binding": "exact_candidate_id_and_image_sha256", "imageSha256": camera_hashes[anchor]}],
-                    "missingEvidence": ["source_mask_not_packaged"], "sourcePolygonsCanonical": match.get("polygons", [])})
+                    "missingEvidence": ["source_mask_not_packaged"], "originalPixelPolygons": original_polygons(match.get("polygons", []), camera["canonicalToOriginal"]),
+                    "polygonCoordinateConvention": "pixel_centers", "boxConvention": "edges_xyxy_right_bottom_exclusive", "fillRule": "evenodd"})
                 item["observationRefs"].append(oid)
                 manifest["observationIds"][old_id] = oid
             else:
@@ -296,13 +298,32 @@ def import_document(scene_path, put_asset):
         "sourceSha256": source_sha, "converter": converter_identity(), "sourceRunId": source.get("run_id"), "sourceUnits": source.get("units"), "limitations": source.get("limitations", []),
         "identityPolicy": "Existing source IDs retained; labels and cross-view observations never merged", "measurementsPolicy": "Observed native extents retain source provenance; metric scale and physical PCA-axis meanings are not promoted",
         "missingArtifacts": ["native_pointmaps", "native_depth", "native_confidence"], "recomputeRequiresNewCapture": True})
+    report = import_report_evidence(scene_path, source, document, manifest, include, cameras, camera_images, legacy_root, observation_root)
+    if report:
+        document["reportEvidence"] = report
+    if geometry_root:
+        from scripts.import_geometry_evidence import import_geometry_evidence
+        document["geometryEvidence"] = import_geometry_evidence(geometry_root, scene_path, source, document, manifest, include, ident, frame_id)
+        if report:
+            geometry = document["geometryEvidence"]
+            for field, label, meaning in (
+                ("pointCloudAssetId", "content-point-cloud.glb", "Same-frame native points after the frozen content-valid mask; no new inference or registration"),
+                ("sourcePointCloudAssetId", "source-point-cloud.glb", "Verified original same-frame point cloud, including pixels outside the source photo content"),
+            ):
+                asset_id = geometry[field]
+                report["resources"].append({"id": asset_id, "label": label, "kind": "point_cloud", "assetId": asset_id,
+                    "runId": geometry["sourceRunId"], "meaning": meaning, "sourceRefs": [{"assetId": geometry["manifestAssetId"]}]})
+        provenance = next(annotation for annotation in document["annotations"] if annotation.get("kind") == "import_provenance")
+        provenance["missingArtifacts"] = ["native_depth"]
+        provenance["recomputeRequiresNewCapture"] = False
+        provenance["recomputeStatus"] = "frozen_geometry_imported_not_a_platform_pipeline_checkpoint"
     validate_document(document)
     manifest.update(entityCount=len(document["entities"]), observationCount=len(document["observations"]),
                     representationCount=sum(len(e["representations"]) for e in document["entities"]), assetCount=len(document["assets"]), documentSha256=digest(document))
     return document, manifest
 
 
-def run_import(scene_path, repository, blobs, output_dir, title=None):
+def run_import(scene_path, repository, blobs, output_dir, title=None, *, legacy_root=None, observation_root=None, geometry_root=None):
     scene_path = Path(scene_path).resolve()
     source = json.loads(scene_path.read_bytes())
     sha = hashlib.sha256(scene_path.read_bytes()).hexdigest()
@@ -323,7 +344,13 @@ def run_import(scene_path, repository, blobs, output_dir, title=None):
     created = repository.create_project(pending["capability"], body)
     project_id = created["project"]["id"]
     converter = converter_identity()
-    converter_key = digest({"converter": converter, "evidence": [hashlib.sha256(raw).hexdigest() for _, raw in evidence_documents(scene_path, source)]})
+    geometry_files = []
+    if geometry_root:
+        from scripts.import_geometry_evidence import geometry_dependencies
+        geometry_files = geometry_dependencies(geometry_root, source)
+    converter_key = digest({"converter": converter, "evidence": [hashlib.sha256(raw).hexdigest() for _, raw in evidence_documents(scene_path, source)],
+                            "reportDependencies": [hashlib.sha256(path.read_bytes()).hexdigest() for path in report_dependencies(scene_path, source, legacy_root, observation_root)],
+                            "geometryDependencies": [hashlib.sha256(path.read_bytes()).hexdigest() for path in geometry_files]})
     manifest_path = output_dir / (sha + "." + converter_key + ".manifest.json")
     if manifest_path.exists():
         return json.loads(manifest_path.read_text())
@@ -333,7 +360,7 @@ def run_import(scene_path, repository, blobs, output_dir, title=None):
         asset["metadata"] = metadata
         return repository.register_asset(project_id, asset)
 
-    document, manifest = import_document(scene_path, put_asset)
+    document, manifest = import_document(scene_path, put_asset, legacy_root=legacy_root, observation_root=observation_root, geometry_root=geometry_root)
     request_id = str(uuid5(NAMESPACE_URL, "import-job:" + sha + ":" + converter_key))
     jobs = repository.list_project_records(project_id, "jobs")["items"]
     prior_job = next((job for job in jobs if job["requestId"] == request_id), None)
@@ -347,7 +374,11 @@ def run_import(scene_path, repository, blobs, output_dir, title=None):
     capture_id = str(uuid5(NAMESPACE_URL, "import-capture:"+sha+":"+converter_key))
     document["captureId"] = capture_id
     images = [{"id": camera["imageId"], "assetId": camera["imageId"], "width": camera["width"], "height": camera["height"], "sourceCameraId": camera["sourceRefs"][0]["sourceCameraId"]} for camera in document["cameras"]]
-    imported_capture = {"id": capture_id, "images": images, "task": {"schemaVersion": 1, "kind": "offline_import", "sourceSha256": sha, "imageIds": [image["id"] for image in images], "missingArtifacts": ["native_pointmaps", "native_depth", "native_confidence"], "recomputeRequiresNewCapture": True}}
+    provenance = next(annotation for annotation in document["annotations"] if annotation.get("kind") == "import_provenance")
+    imported_capture = {"id": capture_id, "images": images, "task": {"schemaVersion": 1, "kind": "offline_import", "sourceSha256": sha, "imageIds": [image["id"] for image in images],
+        "missingArtifacts": provenance["missingArtifacts"], "recomputeRequiresNewCapture": provenance["recomputeRequiresNewCapture"]}}
+    if geometry_root:
+        imported_capture["task"].update(geometryEvidence=document["geometryEvidence"], recomputeStatus=provenance["recomputeStatus"])
     job = repository.create_job(project_id, pending["capability"], {"requestId": request_id, "branchId": branch_id, "baseRevisionId": base_id, "kind": "import_scene", "inputs": {"sourceSha256": sha}, "config": {"offline": True, "converter": converter}})
     if job["status"] in ("pending_dispatch", "queued"):
         job = repository.claim_job(job["id"], lease_seconds=3600)
@@ -364,13 +395,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("scenes", nargs="+", type=Path)
     parser.add_argument("--output-dir", type=Path, default=Path(".platform/imports"))
+    parser.add_argument("--legacy-root", type=Path, help="Optional original report run; all frozen report source hashes must match")
+    parser.add_argument("--observation-root", type=Path, help="Optional observation run pinned by the source bridge registry SHA")
+    parser.add_argument("--geometry-root", type=Path, help="Optional frozen geometry run pinned by the source manifest SHA")
     args = parser.parse_args()
     from ehs_spatial.platform.runtime import services
     from ehs_spatial.platform.config import PlatformConfig
     repository, blobs = services(PlatformConfig.from_env())
     repository.migrate()
     for scene in args.scenes:
-        manifest = run_import(scene, repository, blobs, args.output_dir)
+        manifest = run_import(scene, repository, blobs, args.output_dir, legacy_root=args.legacy_root, observation_root=args.observation_root, geometry_root=args.geometry_root)
         print(json.dumps({key: manifest[key] for key in ("projectId", "publicationId", "sceneRevisionId", "entityCount", "observationCount", "assetCount", "newModelCalls")}, ensure_ascii=False))
 
 

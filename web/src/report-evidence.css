@@ -1,0 +1,15 @@
+.report-evidence-origin {
+  margin: 6px 0;
+  color: var(--report-muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+.report-evidence-origin > summary {
+  cursor: pointer;
+  width: fit-content;
+}
+.report-evidence-origin > small {
+  display: block;
+  padding: 6px 0;
+  overflow-wrap: anywhere;
+}

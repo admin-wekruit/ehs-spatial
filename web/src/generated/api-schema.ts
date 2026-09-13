@@ -1751,6 +1751,8 @@ export interface components {
             evaluations: components["schemas"]["Evaluation"][];
             /** Reviews */
             reviews: components["schemas"]["Review"][];
+            /** Jobs */
+            jobs?: components["schemas"]["Job"][];
             /** Editbatches */
             editBatches?: components["schemas"]["EditBatch"][] | null;
             /** Branchkind */

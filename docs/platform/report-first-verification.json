@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-09-13T00:18:26.627984+00:00",
+  "status": "local_report_ui_verified_external_release_pending",
+  "projectId": "a2b7c04d-0162-488b-b7db-37711a37ea62",
+  "revisionId": "518e7869-3ce2-4c2e-be18-64750483846d",
+  "publicationId": "2d77667b-5369-4d66-b5c4-d426e9833e18",
+  "python": {
+    "passed": 562,
+    "skipped": 28,
+    "warnings": 42,
+    "seconds": 30.11,
+    "postgresTestsEnabled": true,
+    "logSha256": "20cdd3c949c223dc11c29da7c797f4d7e341008e9199707dd35cb65beb5bf326"
+  },
+  "frontendChecks": [
+    "interaction",
+    "renderer",
+    "report-interactions",
+    "report-scene",
+    "report-download",
+    "photo-draw",
+    "report-review",
+    "report-context",
+    "report-evidence"
+  ],
+  "typescript": "passed",
+  "productionBuild": "passed",
+  "snapshot": {
+    "sourceImages": 3,
+    "observationRecords": 67,
+    "objectRecords": 68,
+    "objectsWithRepresentation": 55,
+    "objectModels": 9,
+    "contentPointCount": 581301,
+    "projectedHulls": 68,
+    "assets": 180,
+    "jobs": 2,
+    "currentEvaluations": 0,
+    "historicalPolicyFindings": 9
+  },
+  "blender": {
+    "actualExportAndReopen": "passed",
+    "exportedObjects": 48,
+    "unplacedObjects": 22,
+    "excludedPointCloudContext": 1,
+    "fourOutputAssetsHttpShaVerified": true
+  },
+  "liveModelCallsMade": 0,
+  "publicWebsiteChanged": false,
+  "browserDownload": {
+    "clickNoErrorAndSameSite": true,
+    "fileSaveEvent": "not_observed_in_managed_iab_or_chrome",
+    "actualBrowserSavedFilename": "unverified",
+    "serverContentAndSizeSha": "passed"
+  },
+  "evidence": [
+    "REPORT-FIRST-UI.md",
+    "BROWSER-QA.md"
+  ],
+  "unverified": [
+    "new-image real model quality and paid Agent provider",
+    "hosted infrastructure and release gates",
+    "physical iPhone Safari/WebGL recovery",
+    "browser download save completion"
+  ]
+}

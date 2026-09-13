@@ -1,6 +1,12 @@
+import { workcellMessages } from "./workcell-messages";
+import { reportSceneMessages } from "./report-scene-messages";
+import { reportReviewMessages } from "./report-review-messages";
 import { createContext, useContext, useState, type ReactNode } from "react";
 export type Language = "zh" | "en";
 const messages: Record<string, [string, string]> = {
+  ...workcellMessages,
+  ...reportSceneMessages,
+  ...reportReviewMessages,
   addSafetyEvidence: [
     "补充适用性 / 现场证据",
     "Add applicability / field evidence",
@@ -69,10 +75,10 @@ const messages: Record<string, [string, string]> = {
   reports: ["报告", "Reports"],
   policies: ["EHS 规则", "EHS policies"],
   newProject: ["新建项目", "New project"],
-  studio: ["空间建模工作台", "Spatial modeling studio"],
+  studio: ["工位与空间报告", "Workcell & spatial reports"],
   intro: [
-    "从照片出发，把空间变成可编辑的模型。",
-    "Turn photographs into spaces you can understand and edit.",
+    "上传照片，查看完整工位报告，再补充对象、复核安全依据。",
+    "Upload photographs, explore a complete workcell report, then correct objects and review safety evidence.",
   ],
   projectLibrary: ["项目库", "Project library"],
   reportLibrary: ["已发布报告", "Published reports"],

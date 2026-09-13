@@ -33,13 +33,57 @@ export function photoHits(
     for (const observation of observationsFor(document, entity)) {
       const b = observation.originalPixelBox;
       if (observation.imageId !== imageId || !b) continue;
-      if (x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3])
+      const polygons = observationPolygons(observation);
+      if (
+        x >= b[0] &&
+        x < b[2] &&
+        y >= b[1] &&
+        y < b[3] &&
+        (!polygons.length || insidePolygons(polygons, x, y))
+      )
         hits.push({ entity, observation, area: (b[2] - b[0]) * (b[3] - b[1]) });
     }
   }
   return hits.sort(
     (a, b) => a.area - b.area || a.entity.id.localeCompare(b.entity.id),
   );
+}
+export function observationPolygons(observation: Observation): number[][][] {
+  const raw = observation.originalPixelPolygons;
+  if (!Array.isArray(raw)) return [];
+  // Source contours are pixel centres; SVG and pointer positions use image edges.
+  return raw
+    .filter(
+      (p): p is number[][] =>
+        Array.isArray(p) &&
+        p.length >= 3 &&
+        p.every(
+          (v) =>
+            Array.isArray(v) &&
+            v.length === 2 &&
+            v.every((n) => typeof n === "number" && Number.isFinite(n)),
+        ),
+    )
+    .map((p) => p.map(([x, y]) => [x + 0.5, y + 0.5]));
+}
+export function insidePolygons(polygons: number[][][], x: number, y: number) {
+  let inside = false;
+  for (const polygon of polygons)
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const [ax, ay] = polygon[j],
+        [bx, by] = polygon[i];
+      if (
+        Math.abs((x - ax) * (by - ay) - (y - ay) * (bx - ax)) < 1e-8 &&
+        x >= Math.min(ax, bx) &&
+        x <= Math.max(ax, bx) &&
+        y >= Math.min(ay, by) &&
+        y <= Math.max(ay, by)
+      )
+        return true;
+      if (ay > y !== by > y && x < ((bx - ax) * (y - ay)) / (by - ay) + ax)
+        inside = !inside;
+    }
+  return inside;
 }
 export function originalPixel(
   clientX: number,
@@ -147,6 +191,8 @@ export function sourceDimensions(entity: Entity) {
     d = m.dimensionsNative;
   return {
     groundHeight: finiteNumber(m.groundHeightNative),
+    widthNative: finiteNumber(m.widthNative),
+    depthNative: finiteNumber(m.depthNative),
     extentX: Array.isArray(d) ? finiteNumber(d[0]) : undefined,
     extentY: Array.isArray(d) ? finiteNumber(d[1]) : undefined,
     extentZ: Array.isArray(d) ? finiteNumber(d[2]) : undefined,
@@ -155,7 +201,8 @@ export function sourceDimensions(entity: Entity) {
 export function sourceScale(document: SceneDocument, entity: Entity) {
   const id =
     (entity.representations || [])[0]?.coordinateFrameId ||
-    entity.currentModelTransform?.coordinateFrameId;
+    entity.currentModelTransform?.coordinateFrameId ||
+    entity.measurements?.coordinateFrameId;
   return document.coordinateFrames.find((f) => f.id === id)?.scale || null;
 }
 
@@ -223,8 +270,27 @@ export function planShapes(document: SceneDocument) {
   const n = unit(normal),
     x = unit(cross(Math.abs(n[0]) < 0.8 ? [1, 0, 0] : [0, 1, 0], n)),
     y = cross(n, x);
+  const evidencePlan = jsonObject(jsonObject(document.reportEvidence)?.plan);
+  const rawPlane = evidencePlan?.nativeToFloor;
+  const plane =
+    evidencePlan?.coordinateFrameId === frame.id &&
+    Array.isArray(rawPlane) &&
+    rawPlane.length === 4 &&
+    rawPlane.every(
+      (row) =>
+        Array.isArray(row) &&
+        row.length === 4 &&
+        row.every((v) => typeof v === "number" && Number.isFinite(v)),
+    ) &&
+    Math.abs(Math.abs(dot(unit(rawPlane[2].slice(0, 3)), n)) - 1) < 1e-6
+      ? (rawPlane as number[][])
+      : null;
+  const project = (p: number[]) =>
+    plane
+      ? [dot(p, plane[0]) + plane[0][3], dot(p, plane[1]) + plane[1][3]]
+      : [dot(p, x), dot(p, y)];
   return document.entities
-    .filter((e) => e.visible !== false)
+    .filter((e) => e.visible !== false && !e.sourceContext)
     .flatMap((entity) => {
       const model = modelGeometry(entity);
       const frameId =
@@ -240,10 +306,29 @@ export function planShapes(document: SceneDocument) {
         !corners.every(isVec3)
       )
         return [];
-      const ps = corners.map((p) => [dot(p, x), dot(p, y)]);
+      const saved = jsonObject(entity.measurements?.projectedHull);
+      const canReuse =
+        saved?.coordinateFrameId === frame.id &&
+        plane &&
+        sameJSON(saved.nativeToPlane, plane) &&
+        sameJSON(saved.representationSnapshot, entity.representations) &&
+        sameJSON(saved.modelTransformSnapshot, entity.currentModelTransform);
+      const ps =
+        canReuse &&
+        Array.isArray(saved.points) &&
+        saved.points.length >= 3 &&
+        saved.points.every(
+          (p) =>
+            Array.isArray(p) &&
+            p.length === 2 &&
+            p.every((v) => typeof v === "number" && Number.isFinite(v)),
+        )
+          ? (saved.points as number[][])
+          : convexHull2D(corners.map(project));
       return [
         {
           entity,
+          polygon: ps,
           min: [
             Math.min(...ps.map((p) => p[0])),
             Math.min(...ps.map((p) => p[1])),
@@ -255,6 +340,46 @@ export function planShapes(document: SceneDocument) {
         },
       ];
     });
+}
+
+function sameJSON(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const left = Object.keys(a),
+    right = Object.keys(b);
+  return (
+    left.length === right.length &&
+    left.every(
+      (k) =>
+        Object.hasOwn(b, k) &&
+        sameJSON(
+          (a as Record<string, unknown>)[k],
+          (b as Record<string, unknown>)[k],
+        ),
+    )
+  );
+}
+function convexHull2D(points: number[][]) {
+  const sorted = points.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const turn = (a: number[], b: number[], c: number[]) =>
+    (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  const half = (values: number[][]) => {
+    const out: number[][] = [];
+    for (const p of values) {
+      while (
+        out.length > 1 &&
+        turn(out[out.length - 2], out[out.length - 1], p) <= 0
+      )
+        out.pop();
+      out.push(p);
+    }
+    return out;
+  };
+  return [
+    ...half(sorted).slice(0, -1),
+    ...half(sorted.slice().reverse()).slice(0, -1),
+  ];
 }
 
 // Extension JSON is intentionally open in OpenAPI; narrow it before rendering.

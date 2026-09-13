@@ -41,6 +41,7 @@ import {
   sourceScale,
 } from "./core";
 import { useI18n } from "./i18n";
+import { WorkcellReport } from "./WorkcellReport";
 import { PhotoView } from "./PhotoView";
 import { PrimitiveCreator } from "./PrimitiveCreator";
 import { AgentPanel } from "./AgentPanel";
@@ -186,7 +187,13 @@ export default function App() {
   else if (parts[0] === "projects" && parts[1]) {
     const projectId = parts[1];
     content =
-      parts[2] === "history" ? (
+      parts[2] === "report" || !parts[2] ? (
+        <WorkcellReport
+          key={projectId + (route.query.get("revision") || "")}
+          projectId={projectId}
+          requestedRevision={route.query.get("revision")}
+        />
+      ) : parts[2] === "history" ? (
         <History projectId={projectId} />
       ) : parts[2] === "safety" ? (
         <Suspense fallback={<Loading />}>
@@ -204,7 +211,7 @@ export default function App() {
         />
       );
   } else if (parts[0] === "reports" && parts[1])
-    content = <Report publicationId={parts[1]} />;
+    content = <WorkcellReport key={parts[1]} publicationId={parts[1]} />;
   else if (parts[0] === "reports") content = <ReportLibrary />;
   else if (parts[0] === "policies")
     content = (
@@ -277,6 +284,10 @@ function ProjectLibrary() {
       "projects",
       () => request("/api/projects"),
     );
+  const { data: publications } = useResource<{ items: PublicationSummary[] }>(
+    "report-index",
+    () => request("/api/publications"),
+  );
   const [filter, setFilter] = useState(""),
     [mine, setMine] = useState(false),
     [owned, setOwned] = useState<Set<string>>(new Set()),
@@ -289,7 +300,7 @@ function ProjectLibrary() {
   async function resume(p: PendingRequest) {
     try {
       const result = await sendOwnedRequest<ProjectDetail>(p);
-      navigate("/projects/" + result.project.id + "/workbench");
+      navigate("/projects/" + result.project.id + "/report");
     } catch (e) {
       setActionError(e);
     }
@@ -353,7 +364,14 @@ function ProjectLibrary() {
               <a
                 className="project-row"
                 key={project.id}
-                href={path("/projects/" + project.id + "/workbench")}
+                href={path(
+                  publications?.items.find((p) => p.projectId === project.id)
+                    ? "/reports/" +
+                        publications.items.find(
+                          (p) => p.projectId === project.id,
+                        )!.id
+                    : "/projects/" + project.id + "/report",
+                )}
               >
                 <span className="project-number">
                   {String(i + 1).padStart(2, "0")}
@@ -431,7 +449,7 @@ function NewProject() {
         projectId: detail.project.id,
         body: data,
       });
-      navigate("/projects/" + detail.project.id + "/workbench");
+      navigate("/projects/" + detail.project.id + "/report");
     } catch (e) {
       setError(e);
     } finally {
@@ -533,7 +551,7 @@ function ProjectNav({
   const { t } = useI18n();
   return (
     <nav className="project-nav">
-      {["workbench", "safety", "history"].map((tab) => (
+      {["report", "workbench", "history"].map((tab) => (
         <a
           key={tab}
           href={path(
@@ -541,7 +559,7 @@ function ProjectNav({
           )}
           aria-current={active === tab ? "page" : undefined}
         >
-          {t(tab)}
+          {t(tab === "report" ? "workcellReport" : tab)}
         </a>
       ))}
     </nav>
@@ -971,7 +989,7 @@ function Workbench({
 }
 
 type ViewerMode = "photo" | "free" | "top" | "front" | "side";
-function SpatialView({
+export function SpatialView({
   revision,
   selection,
   onSelect,
@@ -1055,6 +1073,11 @@ function SpatialView({
   return (
     <div className="spatial-view">
       <div ref={host} className="native-viewer" />
+      {mode !== "photo" && (
+        <button className="spatial-fit" onClick={() => runtime.current?.setCamera({ mode, cameraId })}>
+          {t("fit")}
+        </button>
+      )}
       {status && (
         <p className="stage-status" role="status">
           {t(status)}
@@ -1769,7 +1792,7 @@ function TransformFields({
   );
 }
 
-function PlanView({
+export function PlanView({
   document,
   selectedId,
   onSelect,
@@ -1811,33 +1834,51 @@ function PlanView({
         </div>
       )}
       <svg viewBox="0 0 600 400" aria-label={t(interactive ? "plan" : "cad")}>
-        <g transform={`translate(300 200) scale(${zoom}) translate(-260 -160)`}>
-          {shapes.map(({ entity, min: lo, max: hi }) => (
-            <g
-              key={entity.id}
-              role="button"
-              tabIndex={0}
-              aria-label={entity.label || entity.id}
-              onClick={() => onSelect(entity.id)}
-              onKeyDown={(e) => {
-                if (["Enter", " "].includes(e.key)) onSelect(entity.id);
-              }}
-            >
-              <rect
-                x={(lo[0] - min[0]) * factor}
-                y={(lo[1] - min[1]) * factor}
-                width={Math.max(2, (hi[0] - lo[0]) * factor)}
-                height={Math.max(2, (hi[1] - lo[1]) * factor)}
-                className={entity.id === selectedId ? "selected" : ""}
-              />
-              <text
-                x={(lo[0] - min[0]) * factor + 5}
-                y={(lo[1] - min[1]) * factor + 16}
+        <g
+          transform={`translate(300 200) scale(${zoom}) translate(${(-(max[0] - min[0]) * factor) / 2} ${(-(max[1] - min[1]) * factor) / 2})`}
+        >
+          {shapes
+            .slice()
+            .sort(
+              (a, b) =>
+                (b.max[0] - b.min[0]) * (b.max[1] - b.min[1]) -
+                (a.max[0] - a.min[0]) * (a.max[1] - a.min[1]),
+            )
+            .map(({ entity, min: lo, max: hi, polygon }) => (
+              <g
+                key={entity.id}
+                role="button"
+                tabIndex={0}
+                aria-label={entity.label || entity.id}
+                onClick={() => onSelect(entity.id)}
+                onKeyDown={(e) => {
+                  if (["Enter", " "].includes(e.key)) {
+                    e.preventDefault();
+                    onSelect(entity.id);
+                  }
+                }}
               >
-                {entity.label || entity.id}
-              </text>
-            </g>
-          ))}
+                <polygon
+                  points={polygon
+                    .map((p) =>
+                      [(p[0] - min[0]) * factor, (max[1] - p[1]) * factor].join(
+                        ",",
+                      ),
+                    )
+                    .join(" ")}
+                  className={entity.id === selectedId ? "selected" : ""}
+                />
+                <title>{entity.label || entity.id}</title>
+                {entity.id === selectedId && (
+                  <text
+                    x={(lo[0] - min[0]) * factor + 5}
+                    y={(max[1] - hi[1]) * factor + 16}
+                  >
+                    {entity.label || entity.id}
+                  </text>
+                )}
+              </g>
+            ))}
         </g>
       </svg>
     </div>
@@ -2067,440 +2108,5 @@ function ReportLibrary() {
         <div className="empty-state">{t("noReports")}</div>
       )}
     </section>
-  );
-}
-
-function Report({ publicationId }: { publicationId: string }) {
-  const { t } = useI18n(),
-    resource = useResource<Publication>(publicationId, () =>
-      request("/api/publications/" + publicationId),
-    ),
-    [revision, setRevision] = useState<Revision>(),
-    [project, setProject] = useState<Project>(),
-    [error, setError] = useState<unknown>(),
-    [temporaryByRevision, setTemporaryByRevision] = useState<
-      Record<string, Operation[]>
-    >({}),
-    [kind, setKind] = useState<"observed" | "model" | "planning">("model"),
-    [active, setActive] = useState(false),
-    [events, setEvents] = useState<EditBatch[]>([]),
-    [replay, setReplay] = useState<Revision>();
-  const publication = resource.data;
-  useEffect(() => {
-    if (!publication) return;
-    setRevision(publication.snapshot.revision);
-    request<ProjectDetail>("/api/projects/" + publication.projectId)
-      .then((d) => setProject(d.project))
-      .catch(setError);
-    setEvents(publication.snapshot.editBatches || []);
-  }, [resource.data]);
-  const snapshot = resource.data?.snapshot;
-  const definition = snapshot?.playgroundDefinitions?.find(
-    (item: { kind: string; revisionId: string }) => item.kind === kind,
-  );
-  const pinnedRevision: Revision | undefined = [
-    revision,
-    snapshot?.reconstructionRevision,
-  ].find(
-    (item): item is Revision => !!item && item.id === definition?.revisionId,
-  );
-  async function fork() {
-    if (!revision || !publication) return;
-    try {
-      const pending = await prepareOwnedRequest(
-        `/api/projects/${publication.projectId}/forks`,
-        {
-          sourceRevisionId: (pinnedRevision || revision).id,
-          title: publication.title + " · " + t("copy"),
-          operations:
-            temporaryByRevision[(pinnedRevision || revision).id] || [],
-        },
-      );
-      const result = await sendOwnedRequest<ProjectDetail>(pending);
-      navigate("/projects/" + result.project.id + "/workbench");
-    } catch (e) {
-      setError(e);
-    }
-  }
-  if (!publication || !revision || !project)
-    return (
-      <>
-        <ErrorNotice error={resource.error || error} />
-        <Loading />
-      </>
-    );
-  const playgroundRevision = pinnedRevision || revision,
-    temporary = temporaryByRevision[playgroundRevision.id] || [];
-  const displayed = {
-      ...playgroundRevision,
-      document: previewOperations(playgroundRevision.document, temporary),
-    },
-    hasObserved = playgroundRevision.document.entities.some((e) =>
-      (e.representations || []).some(
-        (r) => r.kind === "observed_surface" || r.kind === "point_cloud",
-      ),
-    ),
-    hasModel = playgroundRevision.document.entities.some((e) =>
-      (e.representations || []).some(
-        (r) =>
-          (r.kind === "generated_mesh" || r.kind === "primitive") &&
-          r.placementState === "confirmed",
-      ),
-    ),
-    isPlanning = publication.snapshot.branchKind === "planning";
-  const hasCandidates = playgroundRevision.document.entities.some((e) =>
-    (e.representations || []).some(
-      (r) =>
-        (r.kind === "generated_mesh" || r.kind === "primitive") &&
-        r.placementState === "unconfirmed",
-    ),
-  );
-  const available =
-    !!pinnedRevision &&
-    (kind === "observed"
-      ? hasObserved
-      : kind === "planning"
-        ? isPlanning && hasModel
-        : hasModel);
-  const camera =
-    revision.document.cameras[0] ||
-    (() => {
-      const a = revision.document.assets.find((a) => a.kind === "source_image");
-      return a ? { imageId: a.id } : null;
-    })();
-  const filtered = {
-    ...displayed,
-    document: {
-      ...displayed.document,
-      entities: displayed.document.entities.map((e) => ({
-        ...e,
-        representations: (e.representations || []).filter((r) =>
-          kind === "observed"
-            ? r.kind === "observed_surface" || r.kind === "point_cloud"
-            : true,
-        ),
-      })),
-    },
-  };
-  return (
-    <article className="publication">
-      <header className="publication-header page-width">
-        <p className="eyebrow">SPATIAL REPORT / {publicationId.slice(0, 8)}</p>
-        <h1>{publication.title}</h1>
-        <p className="lede">{t("reportIntro")}</p>
-        <div className="publication-meta">
-          <Badge value="publishedSnapshot" />
-          <DateLabel value={publication.createdAt} />
-          <span>
-            {revision.document.assets.filter((a) => a.kind === "source_image")
-              .length || revision.document.cameras.length}{" "}
-            {t("photos")} · {revision.document.entities.length} {t("objects")}
-          </span>
-        </div>
-        <div className="publication-actions">
-          <a
-            className="button"
-            href={path(
-              `/projects/${publication.projectId}/workbench?revision=${revision.id}`,
-            )}
-          >
-            {t("openWorkbench")} ↗
-          </a>
-          <button className="primary" onClick={fork}>
-            {t("copy")} ↗
-          </button>
-          <button
-            onClick={() =>
-              downloadJSON(revision.document, "scene-" + revision.id + ".json")
-            }
-          >
-            JSON ↓
-          </button>
-        </div>
-      </header>
-      <ErrorNotice error={error} />
-      <section className="report-playground page-width">
-        <div className="section-heading">
-          <p className="eyebrow">01 / EXPLORE</p>
-          <h2>{t("playgrounds")}</h2>
-        </div>
-        <div className="playground-tabs">
-          {(["observed", "model", "planning"] as const).map((k) => (
-            <button
-              key={k}
-              aria-pressed={kind === k}
-              onClick={() => {
-                setKind(k);
-                setActive(false);
-                setReplay(undefined);
-              }}
-            >
-              <span>
-                {k === "observed" ? "01" : k === "model" ? "02" : "03"}
-              </span>
-              <strong>
-                {t(
-                  k === "observed"
-                    ? "playgroundObserved"
-                    : k === "planning"
-                      ? "playgroundPlanning"
-                      : "playgroundModel",
-                )}
-              </strong>
-            </button>
-          ))}
-        </div>
-        {active && available ? (
-          <Workspace
-            revision={filtered}
-            project={project}
-            branch={{ id: playgroundRevision.branchId }}
-            canWrite={false}
-            report
-            onCommit={(ops) =>
-              setTemporaryByRevision((old) => ({
-                ...old,
-                [playgroundRevision.id]: [
-                  ...(old[playgroundRevision.id] || []),
-                  ...ops,
-                ],
-              }))
-            }
-          />
-        ) : (
-          <div className="report-hero">
-            {camera && (
-              <AssetImage assetId={camera.imageId} alt={publication.title} />
-            )}
-            <div className="hero-overlay">
-              <span>SCENE PREVIEW</span>
-              {available ? (
-                <button onClick={() => setActive(true)}>
-                  {t("explore")} ↗
-                </button>
-              ) : (
-                <p>
-                  {t(
-                    kind !== "observed" && hasCandidates
-                      ? "candidatesAwaitReview"
-                      : "notGenerated",
-                  )}
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-        {temporary.length > 0 && (
-          <div className="trial-actions">
-            <span>{t("temporaryCopy")}</span>
-            <button
-              onClick={() =>
-                setTemporaryByRevision((old) => ({
-                  ...old,
-                  [playgroundRevision.id]: [],
-                }))
-              }
-            >
-              {t("reset")}
-            </button>
-            <button className="primary" onClick={fork}>
-              {t("copy")}
-            </button>
-          </div>
-        )}
-      </section>
-      <section className="page-width report-sources">
-        <div className="section-heading">
-          <p className="eyebrow">02 / SOURCE EVIDENCE</p>
-          <h2>{t("inputs")}</h2>
-        </div>
-        <div className="source-grid">
-          {(revision.document.cameras.length
-            ? revision.document.cameras
-            : revision.document.assets
-                .filter((a) => a.kind === "source_image")
-                .map((a) => ({ id: a.id, imageId: a.id }))
-          ).map((c, i) => (
-            <figure key={c.id}>
-              <AssetImage assetId={c.imageId} alt={`${t("photo")} ${i + 1}`} />
-              <figcaption>
-                {t("photo")} {i + 1}
-              </figcaption>
-            </figure>
-          ))}
-        </div>
-      </section>
-      <section className="page-width report-evidence">
-        <div className="section-heading">
-          <p className="eyebrow">03 / PROCESS</p>
-          <h2>{t("timeline")}</h2>
-        </div>
-        {events.length ? (
-          <ol className="event-list">
-            {events.map((event, i) => (
-              <li key={event.id}>
-                <span>{String(i + 1).padStart(2, "0")}</span>
-                <div>
-                  <strong>
-                    {event.operations.map((o) => o.type).join(" · ")}
-                  </strong>
-                  <div>
-                    {(["before", "after"] as const).map((phase) => (
-                      <button
-                        key={phase}
-                        disabled={
-                          !(phase === "before"
-                            ? event.baseRevisionId
-                            : event.revisionId)
-                        }
-                        onClick={async () => {
-                          try {
-                            const value = await request<Revision>(
-                              "/api/revisions/" +
-                                (phase === "before"
-                                  ? event.baseRevisionId
-                                  : event.revisionId),
-                            );
-                            setActive(false);
-                            setReplay(value);
-                          } catch (e) {
-                            setError(e);
-                          }
-                        }}
-                      >
-                        {t(phase)} ↗
-                      </button>
-                    ))}
-                  </div>
-                  <details>
-                    <summary>
-                      {t("before")} / {t("after")}
-                    </summary>
-                    <pre>
-                      {JSON.stringify(
-                        {
-                          before: event.inverseOperations,
-                          after: event.operations,
-                        },
-                        null,
-                        2,
-                      )}
-                    </pre>
-                  </details>
-                </div>
-                {event.createdAt && <DateLabel value={event.createdAt} />}
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <p className="empty-copy">{t("noEdits")}</p>
-        )}
-        {replay && (
-          <>
-            <div className="list-toolbar">
-              <span>
-                {t("version")} {replay.id.slice(0, 8)}
-              </span>
-              <button onClick={() => setReplay(undefined)}>{t("close")}</button>
-            </div>
-            <Workspace
-              revision={replay}
-              project={project}
-              branch={{ id: replay.branchId }}
-              canWrite={false}
-              busy
-              report
-              onCommit={() => {}}
-            />
-          </>
-        )}
-        <h2>{t("comparison")}</h2>
-        <ReportMetrics document={revision.document} />
-      </section>
-      <section className="page-width report-evidence">
-        <h2>{t("safety")}</h2>
-        {(publication.snapshot.evaluations || []).length ? (
-          (publication.snapshot.evaluations || []).map((e) => (
-            <div key={e.id}>
-              <p>
-                {t("version")} {e.sceneRevisionId.slice(0, 8)}
-              </p>
-              {(e.document.findings || []).map((f) => (
-                <div key={f.id} className="finding-heading">
-                  <span>{f.policyTitle || f.policyRevisionId}</span>
-                  <Badge
-                    value={
-                      f.applicability === "unknown"
-                        ? "APPLICABILITY_UNKNOWN"
-                        : f.applicability === "not_applicable"
-                          ? "NOT_APPLICABLE"
-                          : f.machineResult || "INSUFFICIENT_EVIDENCE"
-                    }
-                  />
-                </div>
-              ))}
-            </div>
-          ))
-        ) : (
-          <p className="subtle">{t("noPublishedAssessments")}</p>
-        )}
-        {(publication.snapshot.reviews || []).map((review) => (
-          <details key={review.id}>
-            <summary>
-              {t("review")} · {review.document.displayName}
-            </summary>
-            <p>{review.document.reason}</p>
-            <p>{t("review_" + review.document.decision)}</p>
-          </details>
-        ))}
-      </section>
-      <footer className="publication-footer page-width">
-        <span>PANOPTES · {revision.id.slice(0, 8)}</span>
-        <a href={path("/reports")}>{t("reports")} ↗</a>
-      </footer>
-    </article>
-  );
-}
-
-function ReportMetrics({ document }: { document: SceneDocument }) {
-  const { t } = useI18n();
-  const rows = document.annotations
-    .filter((a) => a.kind === "experiment_metrics")
-    .flatMap((record) =>
-      (Array.isArray(record.metrics) ? record.metrics : []).flatMap(
-        (value, index) => {
-          const metric = jsonObject(value),
-            before = finiteNumber(metric?.before),
-            after = finiteNumber(metric?.after);
-          const label = metric?.label || metric?.name;
-          return before !== undefined &&
-            after !== undefined &&
-            typeof label === "string"
-            ? [{ id: record.id + ":" + index, label, before, after }]
-            : [];
-        },
-      ),
-    );
-  return rows.length ? (
-    <table className="metrics-table">
-      <thead>
-        <tr>
-          <th>{t("objects")}</th>
-          <th>{t("before")}</th>
-          <th>{t("after")}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => (
-          <tr key={row.id}>
-            <td>{row.label}</td>
-            <td>{row.before}</td>
-            <td>{row.after}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  ) : (
-    <p className="subtle">{t("noMetrics")}</p>
   );
 }
