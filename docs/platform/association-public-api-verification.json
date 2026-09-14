@@ -1,0 +1,148 @@
+{
+  "verifiedAt": "2026-09-14T00:21:13.316019+00:00",
+  "api": "https://wekruit-livekit-agents--panoptes-publications-web.modal.run",
+  "catalog": ".platform/publication-catalog",
+  "concurrency": 8,
+  "checks": [
+    {
+      "check": "exact_json",
+      "passed": true,
+      "route": "/api/publications/f4e5ca43-543d-4624-8ea0-27aa2843e6e4",
+      "status": 200
+    },
+    {
+      "check": "json_cors",
+      "passed": true,
+      "route": "/api/publications/f4e5ca43-543d-4624-8ea0-27aa2843e6e4"
+    },
+    {
+      "check": "exact_json",
+      "passed": true,
+      "route": "/api/revisions/a97267c4-d435-43ee-915f-a59f2bb44ed6",
+      "status": 200
+    },
+    {
+      "check": "json_cors",
+      "passed": true,
+      "route": "/api/revisions/a97267c4-d435-43ee-915f-a59f2bb44ed6"
+    },
+    {
+      "check": "exact_json",
+      "passed": true,
+      "route": "/api/publications/f55f9704-0999-460e-863a-4c58cca86fb9",
+      "status": 200
+    },
+    {
+      "check": "json_cors",
+      "passed": true,
+      "route": "/api/publications/f55f9704-0999-460e-863a-4c58cca86fb9"
+    },
+    {
+      "check": "exact_json",
+      "passed": true,
+      "route": "/api/revisions/45f843bb-066c-4dd5-9cf0-a460455718b6",
+      "status": 200
+    },
+    {
+      "check": "json_cors",
+      "passed": true,
+      "route": "/api/revisions/45f843bb-066c-4dd5-9cf0-a460455718b6"
+    },
+    {
+      "check": "exact_json",
+      "passed": true,
+      "route": "/api/publications",
+      "status": 200
+    },
+    {
+      "check": "json_cors",
+      "passed": true,
+      "route": "/api/publications"
+    },
+    {
+      "check": "exact_json",
+      "passed": true,
+      "route": "/api/projects",
+      "status": 200
+    },
+    {
+      "check": "json_cors",
+      "passed": true,
+      "route": "/api/projects"
+    },
+    {
+      "check": "exact_json",
+      "passed": true,
+      "route": "/api/projects/a2b7c04d-0162-488b-b7db-37711a37ea62",
+      "status": 200
+    },
+    {
+      "check": "json_cors",
+      "passed": true,
+      "route": "/api/projects/a2b7c04d-0162-488b-b7db-37711a37ea62"
+    },
+    {
+      "check": "exact_json",
+      "passed": true,
+      "route": "/api/projects/a2b7c04d-0162-488b-b7db-37711a37ea62/revisions",
+      "status": 200
+    },
+    {
+      "check": "json_cors",
+      "passed": true,
+      "route": "/api/projects/a2b7c04d-0162-488b-b7db-37711a37ea62/revisions"
+    },
+    {
+      "check": "range",
+      "passed": true,
+      "route": "/api/assets/584a2140-d64b-4375-b71b-0b07608d6cfe/content",
+      "status": 206,
+      "contentRange": "bytes 0-31/63021411"
+    },
+    {
+      "check": "head",
+      "passed": true,
+      "route": "/api/assets/584a2140-d64b-4375-b71b-0b07608d6cfe/content",
+      "status": 200
+    },
+    {
+      "check": "cors_disallowed_origin",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "check": "cors_get_preflight",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "check": "cors_write_preflight_rejected",
+      "passed": true,
+      "status": 400
+    }
+  ],
+  "failures": [],
+  "assets": {
+    "expectedCount": 187,
+    "verifiedCount": 187,
+    "expectedBytes": 327118893,
+    "downloadedBytes": 327118893,
+    "uniqueHashes": 187
+  },
+  "historicalOnlyAssetIds": [
+    "3683fb6e-10cd-4dd0-ac19-fe76ba83836e",
+    "5ac5801d-0c28-4393-bb01-0a5eb7b2886f",
+    "9176a1d2-ab31-4279-be14-ac1614ea9457",
+    "d503ae46-30f8-4ff6-8b6c-74bfa07d0b3b"
+  ],
+  "publicationOrder": [
+    "f4e5ca43-543d-4624-8ea0-27aa2843e6e4",
+    "f55f9704-0999-460e-863a-4c58cca86fb9"
+  ],
+  "revisionIds": [
+    "a97267c4-d435-43ee-915f-a59f2bb44ed6",
+    "45f843bb-066c-4dd5-9cf0-a460455718b6"
+  ],
+  "elapsedSeconds": 33.216,
+  "passed": true
+}
