@@ -16,7 +16,7 @@ import threading
 from typing import Literal
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .contracts import PlatformError, canonical, digest
 
@@ -78,6 +78,23 @@ def persistent_feedback_app(app, volume, is_feedback_path):
     return dispatch
 
 
+class IdentitySuggestion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    decision: Literal["same", "different", "undecided"]
+    entityIds: tuple[str, str]
+    observationGroups: tuple[list[str], list[str]]
+    reason: str = Field(min_length=1, max_length=4000)
+    shareForReview: Literal[True]
+
+    @model_validator(mode="after")
+    def distinct(self):
+        if self.entityIds[0] == self.entityIds[1] or not self.reason.strip():
+            raise ValueError("Two distinct objects and a reason are required")
+        if any(len(g) != len(set(g)) for g in self.observationGroups):
+            raise ValueError("Duplicate observation reference")
+        return self
+
+
 class FeedbackRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     requestId: UUID
@@ -86,6 +103,7 @@ class FeedbackRequest(BaseModel):
     language: Literal["zh", "en"] = "en"
     imageId: UUID | None = None
     observationId: UUID | None = None
+    identitySuggestion: IdentitySuggestion | None = None
 
 
 def feedback_capability_sha(token):
@@ -104,6 +122,14 @@ def feedback_context(publication, entity_id, request):
     entity = next((e for e in doc["entities"] if e["id"] == entity_id), None)
     if entity is None:
         raise PlatformError("entity_not_found", 404)
+    suggestion = request.get("identitySuggestion")
+    if suggestion:
+        if entity_id not in suggestion["entityIds"]:
+            raise PlatformError("feedback_identity_scope_invalid", 422)
+        for candidate_id, group in zip(suggestion["entityIds"], suggestion["observationGroups"]):
+            candidate = next((e for e in doc["entities"] if e["id"] == candidate_id and not e.get("sourceContext")), None)
+            if candidate is None or set(group) != set(candidate.get("observationRefs") or []):
+                raise PlatformError("feedback_identity_scope_invalid", 422)
     observations = [o for o in doc["observations"] if o["id"] in (entity.get("observationRefs") or [])]
     selected = next((o for o in observations if o["id"] == request.get("observationId")), None)
     if request.get("observationId") and selected is None:
@@ -217,8 +243,19 @@ class FeedbackService:
             rows = connection.execute("SELECT * FROM feedback_turns WHERE conversation_id=? ORDER BY sequence", (conversation_id,)).fetchall()
             return {"items": [self._wire(row, publication, entity_id) for row in rows]}
 
+    def identity_suggestions(self, publication):
+        # Only the explicitly shared structured suggestion leaves the private conversation.
+        with self.lock, self._connect() as connection:
+            rows = connection.execute("""SELECT t.id,t.body,t.created_at,c.entity_id,c.revision_id FROM feedback_turns t
+                JOIN conversations c ON c.id=t.conversation_id WHERE c.publication_id=? ORDER BY t.sequence""", (publication["id"],)).fetchall()
+            return {"items": [{"suggestionId": row["id"], "publicationId": publication["id"], "revisionId": row["revision_id"],
+                "entityId": row["entity_id"], "createdAt": row["created_at"], "identitySuggestion": json.loads(row["body"])["identitySuggestion"]}
+                for row in rows if (json.loads(row["body"]).get("identitySuggestion") or {}).get("shareForReview") is True]}
+
     def submit(self, publication, entity_id, capability, body):
         body = FeedbackRequest.model_validate(body).model_dump(mode="json")
+        if body.get("identitySuggestion") is None:
+            body.pop("identitySuggestion", None)
         if not body["message"].strip():
             raise PlatformError("feedback_message_empty", 422)
         capability_sha = feedback_capability_sha(capability)
@@ -249,19 +286,22 @@ class FeedbackService:
                     error = "feedback_budget_exceeded"
                 elif len(json.dumps({"context": context, "conversation": messages}, ensure_ascii=False).encode()) + len(FEEDBACK_INSTRUCTION.encode()) > 96000:
                     error = "feedback_context_too_large"
-                status = "saved" if error else "outcome_unknown"
+                invoke_provider = not error and not body.get("identitySuggestion")
+                if body.get("identitySuggestion"):
+                    error = None
+                status = "outcome_unknown" if invoke_provider else "saved"
                 # Persist a conservative unknown outcome before crossing the paid boundary.
                 # A crash or retried HTTP request can never silently issue this call again.
                 turn_id = str(uuid4())
                 connection.execute("""INSERT INTO feedback_turns
                     (id,conversation_id,request_id,request_sha256,body,created_at,status,error_code,reserved_usd,provider,model,input_sha256,pricing_reference)
                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""", (turn_id, body["conversationId"], body["requestId"], digest(body), canonical(body).decode(), datetime.now(timezone.utc).isoformat(), status,
-                    error or "feedback_provider_outcome_unknown", str(self.call_reservation if not error else 0),
-                    self.provider.name if not error else None, self.provider.model if not error else None,
+                    "feedback_provider_outcome_unknown" if invoke_provider else error, str(self.call_reservation if invoke_provider else 0),
+                    self.provider.name if invoke_provider else None, self.provider.model if invoke_provider else None,
                     digest({"messages": messages, "context": context, "instruction": FEEDBACK_INSTRUCTION}),
-                    canonical(FEEDBACK_PRICING_REFERENCE).decode() if not error and self.provider.model == FEEDBACK_PRICING_REFERENCE["model"] else None))
+                    canonical(FEEDBACK_PRICING_REFERENCE).decode() if invoke_provider and self.provider.model == FEEDBACK_PRICING_REFERENCE["model"] else None))
             self.checkpoint()
-            if not error:
+            if invoke_provider:
                 assistant, usage, provider_ref = None, None, None
                 try:
                     reply = self.provider.respond(messages, context)

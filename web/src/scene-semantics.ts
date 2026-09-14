@@ -1,5 +1,13 @@
 import type { Entity, SceneDocument } from "./types";
 
+export function identityCounts(document: SceneDocument) {
+  const entities = document.entities.filter(entity => !entity.sourceContext);
+  return { records: entities.length,
+    linkedGroups: entities.filter(entity => entity.associationState === "confirmed" && entityEvidenceStatus(document, entity).photoCount > 1).length,
+    pending: entities.filter(entity => entity.associationState !== "confirmed").length,
+    observations: new Set(entities.flatMap(entity => entity.observationRefs || [])).size };
+}
+
 // Photo ownership, cross-view identity, and mesh placement are independent facts.
 export function entityEvidenceStatus(document: SceneDocument, entity: Entity) {
   const refs = new Set(entity.observationRefs || []);
@@ -17,7 +25,13 @@ export function entityEvidenceStatus(document: SceneDocument, entity: Entity) {
   const identityKey = !images.size ? null : entity.associationState === "confirmed" ?
     images.size > 1 ? "entityCrossViewConfirmed" : "entityIdentityConfirmed" :
     sceneImages.size <= 1 ? "entitySingleView" : reasons[evidence?.status || ""] || "entityAssociationNotChecked";
-  return { photoKey, identityKey, photoCount: images.size };
+  const representations = entity.representations || [],
+    models = representations.filter(rep => ["generated_mesh", "primitive"].includes(rep.kind)),
+    active = models.find(rep => rep.id === entity.activeModelRepresentationId),
+    observed = representations.find(rep => ["observed_surface", "point_cloud"].includes(rep.kind) && rep.sourceValidity !== "stale");
+  const modelKey = active?.sourceValidity === "stale" ? "identityModelStale" : active?.kind || observed?.kind ||
+    (models.length ? "identitySourceModelsOnly" : representations.length ? "identitySourceStale" : "noGeometry");
+  return { photoKey, identityKey, photoCount: images.size, modelKey };
 }
 
 function records(value: unknown): Record<string, unknown>[] {

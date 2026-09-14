@@ -17,7 +17,7 @@ const hooks={
 };
 const ReportScene=()=>null,AgentPanel=()=>null,empty=()=>null;
 const entities=['a','b'].map(id=>({id,label:id,representations:[],measurements:{},observationRefs:['observation-'+id]}));
-const doc={entities,observations:entities.map(e=>({id:e.observationRefs[0],imageId:'image-'+e.id})),
+const doc={schemaVersion:2,geometryBindings:Object.fromEntries(['a','b'].map(id=>['image-'+id,{cameraId:'camera-'+id,geometrySolutionId:'solution'}])),entities,observations:entities.map(e=>({id:e.observationRefs[0],imageId:'image-'+e.id})),
   cameras:entities.map(e=>({id:'camera-'+e.id,imageId:'image-'+e.id,width:100,height:100})),
   assets:entities.map(e=>({id:'image-'+e.id,kind:'source_image',width:100,height:100})),coordinateFrames:[],annotations:[]};
 entities[1].observationRefs.push('b-in-a-1','b-in-a-2');
@@ -48,6 +48,8 @@ new Function('require','module','exports',code)(name=>{
   if(name==='./scene-semantics')return semantics;
   if(name==='./App')return {ErrorNotice:empty};
   if(name==='./ReportScene')return {ReportScene};
+  if(name==='./IdentityReview')return {IdentityReview:empty};
+  if(name==='./ModelEvidence')return {ModelEvidence:empty};
   if(name==='./AgentPanel')return {AgentPanel};
   if(name==='./ReportEvidence')return {ReportEvidence:empty};
   if(name==='./ReportReview')return {ReportReview:empty};

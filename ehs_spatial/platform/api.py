@@ -144,6 +144,7 @@ def create_app(*, repository, blobs, executor=None, agent_service=None, policy_s
     async def captures(project_id: UUID, files: Annotated[list[UploadFile], File()],
                        target: Annotated[Literal["scene", "standalone_object"], Form()],
                        requestId: Annotated[UUID, Form()], branchId: Annotated[UUID, Form()], baseRevisionId: Annotated[UUID, Form()],
+                       captureMode: Annotated[Literal["initial", "append"], Form()] = "initial",
                        authorization: Annotated[str | None, Header()] = None):
         capability = _capability(authorization)
         repository.authorize(str(project_id), capability)
@@ -162,7 +163,7 @@ def create_app(*, repository, blobs, executor=None, agent_service=None, policy_s
             image["metadata"] = {**metadata, "originalAssetId": original["id"], "kind": "source_image"}
             images.append(image)
         return _public(repository.create_capture(str(project_id), capability,
-            {"requestId": str(requestId), "branchId": str(branchId), "baseRevisionId": str(baseRevisionId), "target": target}, images))
+            {"requestId": str(requestId), "branchId": str(branchId), "baseRevisionId": str(baseRevisionId), "target": target, "captureMode": captureMode}, images))
 
     @app.post("/api/projects/{project_id}/jobs", status_code=201, response_model=Job, response_model_exclude_unset=True)
     def jobs(project_id: UUID, body: JobRequest, tasks: BackgroundTasks, authorization: Annotated[str | None, Header()] = None):

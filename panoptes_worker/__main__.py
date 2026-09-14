@@ -83,6 +83,9 @@ def run_job(repository, blobs, job_id, providers=None):
         try:
             if job['kind'] in {'export_json', 'export_glb', 'export_blender'}:
                 result = export_job(repository, blobs, job)
+            elif job['kind'] == 'reassociate_scene':
+                from ehs_spatial.platform.reconstruction import run_reassociation
+                document, result = run_reassociation(repository, blobs, job)
             elif job['kind'] in {'analyze_capture', 'generate_object', 'generate_scene', 'segment_object'}:
                 from ehs_spatial.platform import reconstruction
                 providers = reconstruction.providers_from_manifest(job["config"].get("providerManifest", {})) if providers is None else providers

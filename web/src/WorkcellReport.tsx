@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ApiError,
+  type IdentitySuggestion,
   downloadAsset,
   downloadJSON,
   id,
@@ -11,6 +12,10 @@ import {
   sendOwnedRequest,
 } from "./api";
 import {
+  cameraForImage,
+  publicationReaderURL,
+  currentEntityId,
+  modelScale,
   editableTransform,
   jobResultSummary,
   jsonObject,
@@ -22,11 +27,13 @@ import {
 } from "./core";
 import { useI18n } from "./i18n";
 import { ErrorNotice } from "./App";
+import { ModelEvidence } from "./ModelEvidence";
+import { IdentityReview } from "./IdentityReview";
 import { AgentPanel } from "./AgentPanel";
 import { Extent, ReportScene } from "./ReportScene";
 import { ReportObjectFindings } from "./ReportObjectFindings";
 import { ReportReview, type AssessmentSummary } from "./ReportReview";
-import { entityEvidenceStatus, isReferenceSurface } from "./scene-semantics";
+import { entityEvidenceStatus, identityCounts, isReferenceSurface } from "./scene-semantics";
 import { ReportEvidence } from "./ReportEvidence";
 import type {
   Commit,
@@ -96,6 +103,7 @@ const jobKinds: Record<string, string> = {
   export_blender: "reportExportBlender",
   export_glb: "reportAssets",
   export_json: "reportAssets",
+  reassociate_scene: "reportReassociateScene",
 };
 const reportSections = [
   ["spatial", "reportSpatial"],
@@ -155,6 +163,8 @@ export function WorkcellReport({
     [notice, setNotice] = useState("");
   const [reviewMode, setReviewMode] = useState(false),
     [agentOpen, setAgentOpen] = useState(false),
+    [identitySuggestion, setIdentitySuggestion] = useState<IdentitySuggestion>(),
+    [identityEntityIds, setIdentityEntityIds] = useState<[string,string]>(),
     [draw, setDraw] = useState(false),
     [box, setBox] = useState<number[] | null>(null);
   const [selection, setSelection] = useState<Selection>({
@@ -205,6 +215,10 @@ export function WorkcellReport({
         (requestedRevision
           ? await request<Revision>("/api/revisions/" + requestedRevision)
           : d.revision);
+      if (pub) {
+        const reader = publicationReaderURL(revision.document.schemaVersion, location.href);
+        if (reader) { location.replace(reader); return; }
+      }
       if (revision.projectId !== pid) throw new Error("invalid_revision");
       const next = {
         ...d,
@@ -219,7 +233,7 @@ export function WorkcellReport({
       appliedHead.current = revision.id;
       const params = new URLSearchParams(location.hash.split("?")[1] || "");
       const entity = revision.document.entities.find(
-        (e) => e.id === params.get("object"),
+        (e) => e.id === currentEntityId(revision.document, params.get("object") || ""),
       );
       const requestedImage = revision.document.assets.find(
         (a) => a.id === params.get("image") && a.kind === "source_image",
@@ -241,10 +255,7 @@ export function WorkcellReport({
             ? imageObservations[0]
             : undefined
           : observations[0]);
-      const camera =
-        revision.document.cameras.find(
-          (c) => c.imageId === (requestedImage || obs?.imageId),
-        ) || (!requestedImage ? revision.document.cameras[0] : undefined);
+      const camera = cameraForImage(revision.document, requestedImage || obs?.imageId || revision.document.assets.find(a => a.kind === "source_image")?.id);
       const selectedImage =
         requestedImage ||
         camera?.imageId ||
@@ -391,9 +402,7 @@ export function WorkcellReport({
       observations.find((o) => o.id === observationId) ||
       observations.find((o) => o.imageId === imageId) ||
       observations[0];
-    const camera = detail.revision.document.cameras.find(
-      (c) => c.imageId === observation?.imageId,
-    );
+    const camera = cameraForImage(detail.revision.document, observation?.imageId);
     setSelection((s) => ({
       ...s,
       entityId,
@@ -417,7 +426,7 @@ export function WorkcellReport({
         : [];
       return {
         ...s,
-        cameraId: camera,
+        cameraId: cameraForImage(detail.revision.document, image)?.id || null,
         observationId:
           observations.find((o) => o.id === s.observationId)?.id ||
           (observations.length === 1 ? observations[0].id : null),
@@ -439,7 +448,7 @@ export function WorkcellReport({
         revisionId: detail.revision.id,
         entityId: context.entityId,
         observationId: context.observationId,
-        cameraId: context.cameraId,
+        cameraId: cameraForImage(detail.revision.document, context.imageId)?.id || null,
       });
       setImageId(context.imageId);
       setBox(null);
@@ -457,6 +466,7 @@ export function WorkcellReport({
           branch: { ...d.branch, headRevisionId: result.revision.id },
         },
     );
+    setSelection(previous => ({...previous,revisionId:result.revision.id, entityId:previous.entityId ? currentEntityId(result.revision.document, previous.entityId) : null}));
     setNotice("reportSaved");
     setDraw(false);
     setBox(null);
@@ -750,7 +760,10 @@ export function WorkcellReport({
           inspector={<>
             {!(reviewMode && agentOpen) && <div className="report-selection-details">
               {entity ? <>
-                <ObjectFacts entity={entity} document={doc} />
+                <ObjectFacts entity={entity} document={doc} /><ModelEvidence entity={entity} onCommit={canWrite ? operations => apply(operations) : undefined} disabled={busy} />
+                <IdentityReview revision={revision} entityId={entity.id} canWrite={canWrite && !busy} publicationId={readOnly ? publication?.id : undefined} onSelect={select} onApply={apply}
+                  onSuggest={suggestion => { select(suggestion.entityIds[0]); setIdentitySuggestion(suggestion); setReviewMode(true); setAgentOpen(true); }}
+                  onAgent={entityIds => { setIdentityEntityIds(entityIds); setReviewMode(true); setAgentOpen(true); }} />
                 <ReportObjectFindings revision={revision} publication={publication} entityId={entity.id}
                   readOnly={readOnly}
                   evaluations={evaluationRecords?.revisionId === revision.id ? evaluationRecords.evaluations ?? undefined : undefined}
@@ -774,6 +787,8 @@ export function WorkcellReport({
               (canWrite || (readOnly && publication && entity) ? (
                 <AgentPanel
                   feedbackPublicationId={readOnly ? publication?.id : undefined}
+                  identitySuggestion={identitySuggestion?.entityIds[0] === entity?.id ? identitySuggestion : undefined}
+                  identityEntityIds={identityEntityIds?.includes(entity?.id || "") ? identityEntityIds : undefined}
                   projectId={project.id}
                   revision={revision}
                   branch={detail.branch}
@@ -806,32 +821,10 @@ export function WorkcellReport({
       </section>
       <section id="workcell-understanding" className="workcell-section">
       <div className="report-summary">
-        <div>
-          <strong>{objects.length}</strong>
-          <span>{t("reportObjectRecords")}</span>
-        </div>
-        <div>
-          <strong>
-            {objects.filter((e) => (e.representations || []).length).length}
-          </strong>
-          <span>{t("reportSpatialObjects")}</span>
-        </div>
-        <div>
-          <strong>
-            {
-              objects.filter((e) =>
-                (e.representations || []).some((r) =>
-                  ["generated_mesh", "primitive"].includes(r.kind),
-                ),
-              ).length
-            }
-          </strong>
-          <span>{t("reportModelObjects")}</span>
-        </div>
-        <div>
-          <strong>{doc.observations.length}</strong>
-          <span>{t("reportPhotoEvidence")}</span>
-        </div>
+        <div><strong>{identityCounts(doc).records}</strong><span>{t("reportObjectRecords")}</span></div>
+        <div><strong>{identityCounts(doc).linkedGroups}</strong><span>{t("identityGroups")}</span></div>
+        <div><strong>{identityCounts(doc).pending}</strong><span>{t("identityPending")}</span></div>
+        <div><strong>{identityCounts(doc).observations}</strong><span>{t("reportPhotoEvidence")}</span></div>
       </div>
 
         <div className="report-section-heading">
@@ -1096,7 +1089,7 @@ function ObjectFacts({
   const { t } = useI18n(),
     model = modelGeometry(entity),
     dimensions = sourceDimensions(entity),
-    scale = sourceScale(document, entity),
+    scale = modelScale(document, entity),
     transform = editableTransform(entity),
     tilt = modelTilt(document, entity);
   const referenceSurface = isReferenceSurface(document, entity);

@@ -4,8 +4,8 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import ts from "typescript";
 import * as math from "../src/viewer/native-math.ts";
-import { entityEvidenceStatus, isReferenceSurface } from "../src/scene-semantics.ts";
-import { entityGeometryForLayer, observationsFor, jsonObject, planShapes, sourceDimensions, sourceScale } from "../src/core.ts";
+import { entityEvidenceStatus, identityCounts, isReferenceSurface } from "../src/scene-semantics.ts";
+import { cameraForImage, activeModel, entityGeometryForLayer, observationsFor, jsonObject, planShapes, sourceDimensions, sourceScale } from "../src/core.ts";
 
 // Exercise the actual two pure functions without importing the browser app.
 const source = await readFile(
@@ -43,8 +43,8 @@ const context = vm.createContext({
 });
 vm.runInContext(executable, context);
 const { photoOverlay, sceneAvailability } = context;
-const geometryOptions = { layer: "model", frameId: "f", showCandidates: true };
-const document = { observations: [], coordinateFrames: [] };
+const geometryOptions = { layer: "model", frameId: "f", showCandidates: true, imageId: "photo", observations:[{id:"obs",imageId:"photo"}] };
+const document = { observations: [{id:"obs",imageId:"photo"}], coordinateFrames: [] };
 const camera = {
   id: "camera",
   imageId: "photo",
@@ -80,7 +80,7 @@ const rep = {
   bounds: { min: [-0.1, -0.2, -0.3], max: [0.1, 0.2, 0.3] },
 };
 const entity = {
-  id: "object",
+  id: "object", activeModelRepresentationId: "mesh",
   associationState: "confirmed",
   representations: [rep],
   currentModelTransform: transform,
@@ -123,11 +123,12 @@ assert.equal(photoOverlay(document, entity, camera, "point_cloud"), null,
   "A point-cloud display cannot borrow a generated model bounding box");
 const observed = {
   ...rep,
-  kind: "observed_surface",
+  kind: "observed_surface", sourceRefs:[{observationId:"obs"}],
   placementState: "confirmed",
 };
 const observedOnly = {
   ...entity,
+  observationRefs: ["obs"],
   representations: [observed],
   currentModelTransform: { ...transform, position: [100, 100, 100] },
 };
@@ -139,7 +140,7 @@ assert.equal(
 assert.equal(photoOverlay(document, observedOnly, camera, "point_cloud").corners.length, 8,
   "Point-cloud mode reuses the object's confirmed observed surface");
 assert.equal(photoOverlay(document, observedOnly, camera, "point_cloud").axisSpace, "native");
-const measuredOnly = { id: "measured-only", representations: [], measurements: {
+const measuredOnly = { measurementSelections:{basis:"basis"}, measurementEvidence:[{id:"basis",observationRefs:["obs"]}], id: "measured-only", representations: [], measurements: {
   coordinateFrameId: "f", basis: { cornersNative: geometry.corners },
 } };
 const measuredOverlay = photoOverlay(document, measuredOnly, camera, "point_cloud");
@@ -163,7 +164,7 @@ for (const role of ["unknown", "object"]) {
 }
 for (const layer of ["model", "observed_surface", "point_cloud"])
   assert.equal(photoOverlay(floorDocument, floor, camera, layer), null, "Reference surfaces never get photo equipment axes/volume boxes");
-assert.equal(entityGeometryForLayer(floor, { ...geometryOptions, layer: "observed_surface" }).corners.length, 8, "Observed evidence is retained independently of pose overlays");
+assert.equal(entityGeometryForLayer({...floor,representations:[{...observed,sourceRefs:[{observationId:floorObservation.id}]}]}, { ...geometryOptions, observations:[{...floorObservation,imageId:camera.imageId}], layer: "observed_surface" }).corners.length, 8, "Observed evidence is retained independently of pose overlays");
 const groundDocument = { observations: [{ ...floorObservation, labelEvidence: [] }], coordinateFrames: [{ ground: { sourceRefs: [{ observationId: floorObservation.id, revision: 2 }] } }] };
 assert.equal(isReferenceSurface(groundDocument, floor), true, "An explicitly bound ground observation establishes a reference role, not a slope");
 assert.equal(isReferenceSurface({ ...groundDocument, coordinateFrames: [{ ground: { sourceRefs: [{ observationId: floorObservation.id, revision: 1 }] } }] }, floor), false, "Stale ground observation revisions cannot supply a role");
@@ -218,6 +219,7 @@ const React = { createElement: (type, props, ...children) => ({ type, props: pro
 const SpatialView = () => {}, PlanView = () => {}, PhotoView = () => {}, PhotoAxes = () => {}, CadView = () => {};
 const uiDocument = { ...objectOnlyDocument,
   assets: [{ id: "model-asset" }, { id: "photo", kind: "source_image" }, { id: "photo-2", kind: "source_image" }],
+  geometryBindings:{photo:{cameraId:"camera",geometrySolutionId:"solution"},"photo-2":{cameraId:"camera-2",geometrySolutionId:"solution"}},
   cameras: [camera, { ...camera, id: "camera-2", imageId: "photo-2" }],
   coordinateFrames: [{ id: "f", ground: { normal: [0, 0, 1] } }],
   entities: [{ ...entity, observationRefs: ["observation"], representations: [rep, { ...observed, id: "surface" }] },
@@ -228,7 +230,7 @@ const uiDocument = { ...objectOnlyDocument,
 let uiSelection = { entityId: "object", cameraId: "camera" }, uiImageId = "photo", calls = [], objectListRequest = 0, feedbackEnabled = false, feedbackCalls = [];
 const inspector = React.createElement("div", { id: "inspector-content" }, "real host inspector");
 const ui = vm.createContext({ React, useState, useRef, useEffect, useId: () => "workspace-check",
-  useI18n: () => ({ t: (key) => key }), jsonObject, observationsFor, entityGeometryForLayer,
+  useI18n: () => ({ t: (key) => key }), cameraForImage, activeModel, identityCounts, jsonObject, observationsFor, entityGeometryForLayer,
   photoOverlay, sceneAvailability, isReferenceSurface, entityEvidenceStatus, sourceDimensions, sourceScale, SpatialView, PlanView, PhotoView, PhotoAxes, CadView,
   paneOrder: ["photo", "spatial", "cad", "plan"], paneNames: { photo: "scenePhoto", spatial: "scene3D", cad: "sceneCAD", plan: "scenePlan" }, noEdit: () => {},
   window: { document: { fullscreenElement: null, addEventListener() {}, removeEventListener() {} }, requestAnimationFrame(callback) { callback(); return 1; }, cancelAnimationFrame() {}, scrollTo() { throw Error("Selecting an object must not scroll the report"); } },
@@ -275,7 +277,7 @@ for (const field of ["evidence", "identity", "model", "extent"])
   assert.ok(nodes(objectRow).some((node) => node.props.className === `report-scene-object-${field}`), `The left inventory retains ${field}`);
 assert.ok(nodes(objectRow).some((node) => node.type === ui.Extent), "Left inventory reuses the observed extent renderer");
 assert.ok(nodes(objectRow).some((node) => node.type === "em" && node.children.includes("sceneCandidate")), "Unconfirmed placement is explicitly shown");
-const measured = { ...entity, measurements: { widthNative: 2, depthNative: 3, groundHeightNative: 4 } };
+const measured = { ...entity, measurements: { coordinateFrameId:"f", widthNative: 2, depthNative: 3, groundHeightNative: 4 } };
 const nativeExtent = ui.Extent({ entity: measured, document: uiDocument });
 assert.equal(nativeExtent.children[0], "2.00 × 3.00 × 4.00");
 assert.ok(nodes(nativeExtent).some((node) => node.children.includes("uncalibrated")), "Native values are never shown as metres without scale");
@@ -313,6 +315,9 @@ for (const section of ["objects", "inspector", "views"]) {
 tree.props.ref.current = { requestFullscreen: async () => { fullscreenRequests++; } };
 await nodes(tree).find((node) => node.props.className === "report-scene-fullscreen").props.onClick();
 assert.equal(fullscreenRequests, 1, "Only the separate fullscreen control requests browser fullscreen");
+// Photo 2 has no observed source geometry; it must not borrow photo 1's state.
+assert.equal(nodes(tree).some(node=>node.type===CadView),false);
+nodes(tree).find(node=>node.type==="select").props.onChange({target:{value:"model"}});tree=renderWorkspace();
 // Source CAD stays evidence; it must never replace the current scene projection.
 uiDocument.reportEvidence = {historical: {runId: "source-run", cad: {assetId: "full-resolution-cad", width: 1600, height: 1240, regions: []}}};
 tree = renderWorkspace();

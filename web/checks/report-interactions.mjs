@@ -7,9 +7,10 @@ import {
   originalPixel,
   sourceDimensions,
   sourceScale,
-  planShapes,
+  planShapes as projectPlan,
 } from "../src/core.ts";
 
+const planShapes = (document, options={}) => projectPlan(document,{imageId:"photo",...options});
 const outer = [
   [0, 0],
   [99, 0],
@@ -209,7 +210,7 @@ assert.equal(
 // This canonical measurement has no generated mesh and no dimensionsNative:
 // width/depth are local observations, not assumed XYZ world extents or metres.
 const measured = {
-  id: "measured-no-mesh",
+  id: "measured-no-mesh", measurementSelections:{basis:"basis"}, measurementEvidence:[{id:"basis",observationRefs:["fence-view"]}],
   associationState: "confirmed",
   measurements: {
     coordinateFrameId: "native",
@@ -327,7 +328,7 @@ const identityPlane = [
   [0, 0, 0, 1],
 ];
 const placed = {
-  id: "verified-footprint",
+  id: "verified-footprint", activeModelRepresentationId:"mesh",
   associationState: "confirmed",
   observationRefs: [],
   currentModelTransform: {

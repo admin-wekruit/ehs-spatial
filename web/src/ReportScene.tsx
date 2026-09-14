@@ -3,8 +3,8 @@ import { SpatialView, PlanView } from "./App";
 import { PhotoView } from "./PhotoView";
 import { CadView } from "./CadView";
 import { useI18n } from "./i18n";
-import { observationsFor, entityGeometryForLayer, jsonObject, planShapes, sourceDimensions, sourceScale, type GeometryOptions } from "./core";
-import { entityEvidenceStatus, isReferenceSurface } from "./scene-semantics";
+import { cameraForImage, activeModel, observationsFor, entityGeometryForLayer, jsonObject, planShapes, sourceDimensions, sourceScale, type GeometryOptions } from "./core";
+import { entityEvidenceStatus, identityCounts, isReferenceSurface } from "./scene-semantics";
 import {
   add,
   cameraMatrix,
@@ -55,7 +55,7 @@ function sceneAvailability(document: SceneDocument, geometryOptions: GeometryOpt
 // Uses the same camera projection and pixel-centre convention as the WebGL view.
 function photoOverlay(document: SceneDocument, entity: Entity, camera: Camera, layer: Layer) {
   if (isReferenceSurface(document, entity)) return null;
-  const geometry = entityGeometryForLayer(entity, { layer, frameId: camera.coordinateFrameId, showCandidates: true });
+  const geometry = entityGeometryForLayer(entity, { layer, frameId: camera.coordinateFrameId, showCandidates: true, imageId: camera.imageId, observations: document.observations });
   if (
     !geometry ||
     geometry.transform.coordinateFrameId !== camera.coordinateFrameId
@@ -232,21 +232,21 @@ export function ReportScene({
     [isFullscreen, setIsFullscreen] = useState(false);
   const document = revision.document,
     selected = document.entities.find((entity) => entity.id === selection.entityId);
-  const camera = document.cameras.find((c) => c.id === cameraId && c.imageId === imageId) ||
-    document.cameras.find((c) => c.imageId === imageId);
-  const geometryOptions: GeometryOptions = { layer, frameId: camera?.coordinateFrameId || document.coordinateFrames[0]?.id || "", showCandidates: true };
+  const camera = cameraForImage(document, imageId);
+  const geometryOptions: GeometryOptions = { layer, frameId: camera?.coordinateFrameId || (!imageId ? document.coordinateFrames[0]?.id : "") || "", showCandidates: true, imageId, observations: document.observations };
   const availability = sceneAvailability(document, geometryOptions);
   const images = [...new Set([
     ...document.assets.filter((a) => a.kind === "source_image").map((a) => a.id),
     ...document.cameras.map((c) => c.imageId),
-  ])].map((id) => ({ imageId: id, cameraId: document.cameras.find((c) => c.imageId === id)?.id || null }));
+  ])].map((id) => ({ imageId: id, cameraId: cameraForImage(document, id)?.id || null }));
   const hasPointCloud = document.entities.some((e) => (e.representations || []).some((r) => r.kind === "point_cloud"));
   const hasRepresentation = document.entities.some((e) => (e.representations || []).some((r) => layer === "model"
-    ? ["generated_mesh", "primitive", "observed_surface"].includes(r.kind) : r.kind === layer));
+    ? (r.kind === "observed_surface" || r.id === e.activeModelRepresentationId) : r.kind === layer));
   const hasCandidates = layer === "model" && document.entities.some((e) => (e.representations || []).some((r) =>
-    r.placementState === "unconfirmed" && ["imported_proposal", "requires_alignment_confirmation"].includes(r.placementReason || "")));
+    r.id === e.activeModelRepresentationId && r.placementState === "unconfirmed" && ["imported_proposal", "requires_alignment_confirmation"].includes(r.placementReason || "")));
   const selectedOverlay = selected && camera ? photoOverlay(document, selected, camera, layer) : null;
   const objects = document.entities.filter((entity) => !entity.sourceContext);
+  const counts = identityCounts(document);
   const objectNumbers = new Map(objects.map((entity, index) => [entity.id, String(index + 1).padStart(2, "0")]));
   const query = search.trim().toLowerCase();
   const numberedObject = objects.find((entity) => objectNumbers.get(entity.id) === query || String(Number(objectNumbers.get(entity.id))) === query);
@@ -304,7 +304,7 @@ export function ReportScene({
     const observations = observationsFor(document, entity), observation = observations.find((o) => o.id === observationId) ||
       observations.find((o) => o.imageId === imageId) || observations[0];
     if (observation && observation.imageId !== imageId)
-      onCamera(observation.imageId, document.cameras.find((c) => c.imageId === observation.imageId)?.id || null);
+      onCamera(observation.imageId, cameraForImage(document, observation.imageId)?.id || null);
   }
   return (
     <section ref={container} className="report-scene" data-view={focused || "quad"}
@@ -334,7 +334,7 @@ export function ReportScene({
       </nav>
       <div className="report-scene-shell">
         <aside className="report-scene-object-rail" id={`${panePrefix}-objects`} aria-label={t("sceneObjects")}>
-          <header><h3>{t("sceneObjects")}</h3><span className="report-scene-count">{objects.length}</span></header>
+          <header><h3>{t("identityRecords")}</h3><span className="report-scene-count">{objects.length}</span></header>
           <div className="report-scene-object-search"><input ref={objectSearch} type="search" aria-label={t("sceneSearch")} placeholder={t("sceneSearch")} value={search} onChange={(e) => setSearch(e.target.value)} /></div>
           <div className="report-scene-current-object" aria-live="polite">
             <span>{t("sceneSelected")}</span><strong>{selected?.label || selected?.id || t("sceneNoSelection")}</strong>
@@ -345,20 +345,19 @@ export function ReportScene({
               const indices = images.flatMap((image, index) => photoIds.get(entity.id)?.has(image.imageId) ? [index + 1] : []);
               const evidence = entityEvidenceStatus(document, entity), observations = observationsFor(document, entity),
                 representations = entity.representations || [],
-                kinds = [...new Set(representations.map((representation) => t(representation.kind)))],
-                candidate = representations.some((representation) => representation.placementState === "unconfirmed");
+                candidate = representations.some((representation) => representation.id === entity.activeModelRepresentationId && representation.sourceValidity !== "stale" && representation.placementState === "unconfirmed");
               return <div key={entity.id} className="report-scene-object-row"><button key={entity.id} aria-pressed={entity.id === selection.entityId} onClick={() => selectEntity(entity.id)}>
                 <strong><b className="report-scene-object-number">{objectNumbers.get(entity.id)}</b>{entity.label || entity.id}</strong>
                 <span className="report-scene-object-source">{indices.length ? `${t("scenePhotoNumber")} ${indices.join(" / ")}` : t("sceneNoPhotoLink")}<small>{entity.id.slice(0, 8)}</small></span>
                 <span className="report-scene-object-evidence">{t(evidence.photoKey)}{observations.length > 0 && ` · ${observations.length} ${t("observations")}`}</span>
                 {evidence.identityKey && <span className="report-scene-object-identity"><span>{t("entityIdentity")}</span>{t(evidence.identityKey)}</span>}
-                <span className="report-scene-object-model"><span>{t("model")}</span>{kinds.length ? kinds.join(" · ") : t(entityGeometryForLayer(entity, geometryOptions) ? "sceneBoundsOnly" : "reportMissingGeometry")}{candidate && <em>{t("sceneCandidate")}</em>}</span>
+                <span className="report-scene-object-model"><span>{t("model")}</span>{t(evidence.modelKey === "noGeometry" ? entityGeometryForLayer(entity, geometryOptions) ? "sceneBoundsOnly" : "reportMissingGeometry" : evidence.modelKey)}{candidate && <em>{t("sceneCandidate")}</em>}</span>
                 <span className="report-scene-object-extent"><span>{t("reportObservedExtent")}</span><Extent entity={entity} document={document} /></span>
               </button>{onFeedback && <button className="report-object-feedback" aria-label={`${t("sceneFeedback")} · ${entity.label || entity.id}`} onClick={() => { selectEntity(entity.id); onFeedback(entity.id); setMobileSection("inspector"); }}>{t("sceneFeedback")} ↗</button>}</div>;
             })}
             {!filtered.length && <p className="report-scene-list-empty">{t(objects.length ? "sceneNoMatches" : "sceneNoObjects")}</p>}
           </div>
-          <footer><span>{filtered.length} / {objects.length} · {t("sceneObjects")}</span>
+          <footer><span>{filtered.length} / {counts.records} · {t("identityRecords")}</span><small>{counts.linkedGroups} {t("identityGroups")} · {counts.pending} {t("identityPending")} · {counts.observations} {t("observations")}</small>
             <details><summary>{t("sceneRecordNote")}</summary><p>{t("reportAssociationHint")}</p></details>
           </footer>
         </aside>
@@ -382,8 +381,8 @@ export function ReportScene({
                 <div className="report-scene-pane-body">
                   {pane === "photo" && <><PhotoView document={document} imageId={imageId} selectedId={selection.entityId} onSelect={selectEntity} draw={draw} onBox={onBox} showBounds={allBounds} />
                     {camera && allBounds && <PhotoAxes revision={revision} camera={camera} layer={layer} selectedId={selection.entityId} allBounds={allBounds} />}</>}
-                  {pane === "spatial" && <><SpatialView revision={revision} selection={selection} onSelect={selectEntity} onCommit={noEdit} mode="free" cameraId={cameraId}
-                    layers={{ observed_surface: layer !== "point_cloud", generated_mesh: layer === "model", primitive: layer === "model", point_cloud: layer === "point_cloud", allBounds, showBounds: allBounds, showCandidates: true, editable: false, opacity: 1 }} />
+                  {pane === "spatial" && <><SpatialView revision={revision} selection={selection} onSelect={selectEntity} onCommit={noEdit} mode="free" cameraId={camera?.id || null}
+                    layers={{ observed_surface: layer !== "point_cloud", generated_mesh: layer === "model", primitive: layer === "model", point_cloud: layer === "point_cloud", allBounds, showBounds: allBounds, showCandidates: true, editable: false, opacity: 1, imageId, observations: document.observations }} />
                     {!hasRepresentation && <div className="report-scene-stage-note">{t("sceneNoRepresentation")}</div>}</>}
                   {(pane === "plan" || pane === "cad") && availability.planEmpty && <div className="report-scene-plan-empty" role="status"><strong>{t("scenePlanUnavailable")}</strong><p>{t(availability.planEmpty)}</p><small>{t("sceneSelectionRetained")}</small></div>}
                   {pane === "cad" && !availability.planEmpty && <CadView key={revision.id} document={document} selectedId={selection.entityId} onSelect={selectEntity} geometryOptions={geometryOptions} />}

@@ -177,10 +177,16 @@ def mesh_from_asset(payload: bytes | MeshData, metadata: Mapping[str, Any]) -> M
     return MeshData(np.concatenate(vertices).astype(np.float32),np.concatenate(faces).astype(np.uint32),primitives=tuple(parts))
 
 
-def _export_parts(mesh, override):
+def _export_parts(mesh, override, *, apply_color_tint=False):
     parts = []
     for part in mesh.primitives or (mesh,):
         material = {**(part.material or {}),**override}
+        tint = override.get("color")
+        if apply_color_tint and isinstance(tint, (list, tuple)) and len(tint) >= 3:
+            if any(type(value) not in (int, float) or not np.isfinite(value) or not 0 <= value <= 1 for value in tint[:3]):
+                raise PlatformError("invalid_material_color", 422)
+            factor = material.get("baseColorFactor", [1.,1.,1.,1.])
+            material["baseColorFactor"] = [factor[i]*tint[i] for i in range(3)] + [factor[3]]
         parts.append({"vertices":np.asarray(part.vertices,dtype=np.float32).tolist(),"faces":part.faces.tolist(),
             "colors":part.colors.tolist() if part.colors is not None else None,"uv":part.uv.tolist() if part.uv is not None else None,
             "texture":base64.b64encode(part.texture_bytes).decode() if part.texture_bytes else None,"textureMimeType":part.texture_mime_type,"material":material})
@@ -195,6 +201,9 @@ def prepare_export(revision_id: str, document: dict[str, Any], resolve_asset: Ca
     objects, unresolved, excluded = [], [], []
     for entity in document["entities"]:
         for rep in entity.get("representations", []):
+            if document['schemaVersion'] == 2 and rep['kind'] in ('generated_mesh', 'primitive') and rep['id'] != entity.get('activeModelRepresentationId'):
+                excluded.append({'entityId':entity['id'], 'representationId':rep['id'], 'reason':'source_model_candidate'})
+                continue
             if entity.get("sourceContext") is True and rep["kind"] == "point_cloud":
                 excluded.append({"entityId": entity["id"], "representationId": rep["id"], "reason": "point_cloud_context"})
                 continue
@@ -213,14 +222,15 @@ def prepare_export(revision_id: str, document: dict[str, Any], resolve_asset: Ca
             if pose["coordinateFrameId"] not in frames:
                 raise PlatformError("invalid_coordinate_frame")
             matrix = transform_matrix(pose)
+            material = (rep.get("material") or {}) if document["schemaVersion"] == 2 else entity.get("material", rep.get("material", {}))
             objects.append({"entityId": entity["id"], "id": rep["id"], "label": entity.get("label", ""), "kind": rep["kind"],
                             "coordinateFrameId": pose["coordinateFrameId"], "transform": pose, "matrix": matrix.tolist(),
                             "vertices": np.asarray(mesh.vertices,dtype=np.float32).tolist(), "faces": mesh.faces.tolist(),
                             "colors": mesh.colors.tolist() if mesh.colors is not None else None,
                             "uv":mesh.uv.tolist() if mesh.uv is not None else None,
                             "texture":base64.b64encode(mesh.texture_bytes).decode() if mesh.texture_bytes else None,"textureMimeType":mesh.texture_mime_type,
-                            "material": entity.get("material", rep.get("material", {})), "visible": entity.get("visible", True),
-                            "parts":_export_parts(mesh,entity.get("material",rep.get("material",{}))),
+                            "material": material, "visible": entity.get("visible", True),
+                            "parts":_export_parts(mesh,material,apply_color_tint=document["schemaVersion"] == 2 and rep["kind"] in ("generated_mesh", "primitive")),
                             "primitive": rep.get("primitive"), "sourceRefs": rep.get("sourceRefs", [])})
         if not entity.get("representations"):
             unresolved.append({"entityId": entity["id"], "reason": "no_representation"})
@@ -462,7 +472,9 @@ for camera in spec['cameras']:
         scene.render.resolution_percentage = 100
         scene.render.pixel_aspect_x,scene.render.pixel_aspect_y = params['pixelAspectX'],params['pixelAspectY']
 text = bpy.data.texts.new('Panoptes source revision.json')
-text.write(json.dumps(spec['document'],ensure_ascii=False))
+# Blender's Text editor inserts very long lines quadratically. Keep the full
+# source document as readable JSON lines; reopen still compares every value.
+text.write(json.dumps(spec['document'],ensure_ascii=False,indent=1))
 bpy.ops.wm.save_as_mainfile(filepath=str(root/'scene.blend'))
 bpy.ops.wm.open_mainfile(filepath=str(root/'scene.blend'))
 records, camera_records, parameter_records = [],[],[]

@@ -118,6 +118,108 @@ def test_edit_idempotency_undo_redo_append_immutable_revision(repo):
             connection.execute("UPDATE scene_revisions SET label='changed' WHERE id=%s", (scene["revision"]["id"],))
 
 
+def test_v2_identity_migration_merge_cas_undo_and_frozen_publication(repo, tmp_path):
+    from test_platform_identity import source_scene, decision
+    cap, scene = project(repo)
+    pid, branch_id = scene["project"]["id"], scene["branch"]["id"]
+    repo.blobs = LocalBlobStore(tmp_path)
+    images = []
+    for color in ("red", "blue"):
+        output = io.BytesIO()
+        Image.new("RGB", (20, 20), color).save(output, format="PNG")
+        images.append({**repo.blobs.put(output.getvalue(), "image/png"), "metadata": {"width": 20, "height": 20}})
+    capture = repo.create_capture(pid, cap, {"requestId": identity(), "branchId": branch_id, "baseRevisionId": scene["revision"]["id"], "target": "scene"}, images)
+    doc = source_scene()
+    doc["captureId"] = capture["capture"]["id"]
+    for index, image in enumerate(capture["capture"]["images"]):
+        asset = repo.get_asset(image["assetId"])
+        doc["assets"][index].update(id=asset["id"], sha256=asset["sha256"])
+        doc["cameras"][index]["imageId"] = asset["id"]
+        doc["observations"][index]["imageId"] = asset["id"]
+    claimed = repo.claim_job(capture["job"]["id"])
+    produced = repo.finish_job(claimed["id"], claimed["attemptToken"], "succeeded", document=doc)
+    source = repo.get_revision(produced["resultRevisionId"])
+    publication = repo.create_publication(pid, cap, {"requestId": identity(), "sceneRevisionId": source["id"], "evaluationIds": [], "reviewIds": [], "title": "Frozen v1"})
+    frozen_sha = digest(publication)
+    migration_body = {"requestId": identity(), "branchId": branch_id, "baseRevisionId": source["id"], "operations": [{"type": "migrateScene", "schemaVersion": 2}]}
+    migrated = repo.commit_edits(pid, cap, migration_body)
+    assert repo.commit_edits(pid, cap, migration_body) == migrated
+    v2 = migrated["revision"]
+    assert v2["document"]["schemaVersion"] == 2 and repo.get_revision(source["id"])["document"] == doc
+    d = decision(v2["document"], base=v2["id"])
+    merge_body = {"requestId": identity(), "branchId": branch_id, "baseRevisionId": v2["id"], "operations": [
+        {"type": "recordIdentityDecision", "decision": d},
+        {"type": "mergeEntities", "entityIds": d["entityIds"], "survivorId": d["survivorId"], "decisionId": d["id"]}]}
+    saved = repo.commit_edits(pid, cap, merge_body)
+    assert repo.commit_edits(pid, cap, merge_body) == saved
+    assert len(saved["revision"]["document"]["entities"]) == 1
+    with pytest.raises(PlatformError, match="revision_conflict"):
+        repo.commit_edits(pid, cap, {**merge_body, "requestId": identity()})
+    with pytest.raises(PlatformError, match="capability_forbidden"):
+        repo.commit_edits(pid, capability(), merge_body)
+    undo = repo.commit_edits(pid, cap, {"requestId": identity(), "branchId": branch_id, "baseRevisionId": saved["revision"]["id"], "undoOf": saved["editBatch"]["id"]})
+    assert undo["revision"]["document"] == v2["document"]
+    redo = repo.commit_edits(pid, cap, {"requestId": identity(), "branchId": branch_id, "baseRevisionId": undo["revision"]["id"], "redoOf": saved["editBatch"]["id"]})
+    assert redo["revision"]["document"] == saved["revision"]["document"]
+    assert digest(repo.get_publication(publication["id"])) == frozen_sha
+    client = TestClient(create_app(repository=repo, blobs=repo.blobs))
+    response = client.get("/api/revisions/" + redo["revision"]["id"])
+    assert response.status_code == 200 and response.json()["document"] == redo["revision"]["document"]
+
+
+def test_append_capture_preserves_scene_deduplicates_sources_and_fences_concurrent_jobs(repo, tmp_path):
+    cap, scene = project(repo)
+    pid, branch = scene["project"]["id"], scene["branch"]["id"]
+    repo.blobs = LocalBlobStore(tmp_path)
+    images = []
+    for color in ("red", "blue", "green"):
+        output = io.BytesIO()
+        Image.new("RGB", (20, 20), color).save(output, format="PNG")
+        images.append({**repo.blobs.put(output.getvalue(), "image/png"), "metadata": {"width": 20, "height": 20, "pixelMapping": []}})
+    body = {"requestId": identity(), "branchId": branch, "baseRevisionId": scene["revision"]["id"], "target": "scene"}
+    first = repo.create_capture(pid, cap, body, images[:2])
+    item = entity()
+    observations = [{"id": identity(), "revision": 1, "imageId": image["assetId"], "originalPixelBox": [1, 2, 4, 6], "maskAssetId": None} for image in first["capture"]["images"]]
+    edited = repo.commit_edits(pid, cap, {"requestId": identity(), "branchId": branch, "baseRevisionId": first["revision"]["id"], "operations": [
+        {"type": "addEntity", "entity": item}, *[{"type": "addObservation", "entityId": item["id"], "observation": obs} for obs in observations]]})
+    migrated = repo.commit_edits(pid, cap, {"requestId": identity(), "branchId": branch, "baseRevisionId": edited["revision"]["id"], "operations": [{"type": "migrateScene"}]})
+    before = migrated["revision"]["document"]
+    append_body = {**body, "requestId": identity(), "baseRevisionId": migrated["revision"]["id"], "captureMode": "append"}
+    appended = repo.create_capture(pid, cap, append_body, [images[0], images[2]])
+    assert repo.create_capture(pid, cap, append_body, [images[0], images[2]]) == appended
+    after = appended["revision"]["document"]
+    for key in ("observations", "entities", "annotations", "identityDecisions", "coordinateFrames", "cameras"):
+        assert after[key] == before[key]
+    assert after["captureIds"] == [first["capture"]["id"], appended["capture"]["id"]]
+    assert len(after["assets"]) == 3
+    assert len(appended["job"]["inputs"]["newImageIds"]) == 1
+    assert appended["job"]["inputs"]["reusedImageIds"] == [first["capture"]["images"][0]["assetId"]]
+    assert after["geometryBindings"][appended["job"]["inputs"]["newImageIds"][0]] is None
+    assert repo.get_revision(migrated["revision"]["id"])["document"] == before
+    with pytest.raises(PlatformError, match="capture_append_required"):
+        repo.create_capture(pid, cap, {**body, "requestId": identity(), "baseRevisionId": appended["revision"]["id"]}, [images[2]])
+    with pytest.raises(PlatformError, match="image_count_out_of_range"):
+        repo.create_capture(pid, cap, {**append_body, "requestId": identity(), "baseRevisionId": appended["revision"]["id"]}, images * 2)
+    with pytest.raises(PlatformError, match="capture_image_mapping_conflict"):
+        repo.create_capture(pid, cap, {**append_body, "requestId": identity(), "baseRevisionId": appended["revision"]["id"]}, [{**images[0], "metadata": {**images[0]["metadata"], "pixelMapping": [{"matrix": [[2, 0, 0], [0, 2, 0], [0, 0, 1]]}]}}])
+    def competing_append(_):
+        try:
+            return repo.create_capture(pid, cap, {**append_body, "requestId": identity(), "baseRevisionId": appended["revision"]["id"]}, [images[2]])
+        except PlatformError as error:
+            return error
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(competing_append, (1, 2)))
+    winner = next(result for result in results if isinstance(result, dict))
+    loser = next(result for result in results if isinstance(result, PlatformError))
+    assert loser.code == "revision_conflict"
+    assert winner["job"]["inputs"]["newImageIds"] == [] and len(winner["job"]["inputs"]["reusedImageIds"]) == 1
+    running = repo.claim_job(winner["job"]["id"])
+    latest = repo.commit_edits(pid, cap, {"requestId": identity(), "branchId": branch, "baseRevisionId": winner["revision"]["id"], "operations": [{"type": "setLabel", "entityId": item["id"], "label": "Owner correction"}]})
+    late = repo.finish_job(running["id"], running["attemptToken"], "succeeded", document=winner["revision"]["document"])
+    assert late["headAdvanced"] is False and late["resultRevisionId"]
+    assert repo.get_project(pid)["revision"]["id"] == latest["revision"]["id"]
+
+
 def test_fork_independent_capability_publication_is_snapshot(repo):
     cap, scene = project(repo)
     pid = scene["project"]["id"]
@@ -426,3 +528,92 @@ def test_openapi_response_contracts_preserve_stored_documents_and_cover_routes(r
     response=client.get(f"/api/projects/{created['project']['id']}/agent-turns")
     assert response.status_code==200
     assert canonical(response.json())==canonical(_public(repo.list_agent_turns(created['project']['id'])))
+
+
+def test_identity_agent_scope_and_evidence_fulfillment_keep_historical_evaluation(repo, tmp_path):
+    from test_platform_identity import source_scene, decision
+    from ehs_spatial.platform.contracts import EvidenceRequest
+    from ehs_spatial.platform.policy_repository import PostgresPolicyRepository
+    from ehs_spatial.platform.policy_service import PolicyService, templates
+    cap, scene = project(repo)
+    pid, branch = scene['project']['id'], scene['branch']['id']
+    repo.blobs = LocalBlobStore(tmp_path)
+    service = PolicyService(PostgresPolicyRepository(repo), repo.blobs)
+    policy = service.create_policy(pid, cap, {**templates()[0], 'requestId': identity()})
+    service.activate(pid, policy['policy']['id'], cap, {'requestId': identity(), 'policyRevisionId': policy['revision']['id'], 'expectedActiveRevisionId': None})
+    images = []
+    for color in ('red', 'blue'):
+        output = io.BytesIO()
+        Image.new('RGB', (20, 20), color).save(output, format='PNG')
+        images.append({**repo.blobs.put(output.getvalue(), 'image/png'), 'metadata': {'width': 20, 'height': 20}})
+    capture = repo.create_capture(pid, cap, {'requestId': identity(), 'branchId': branch, 'baseRevisionId': scene['revision']['id'], 'target': 'scene'}, images)
+    doc = source_scene()
+    doc['captureId'] = capture['capture']['id']
+    for index, image in enumerate(capture['capture']['images']):
+        asset = repo.get_asset(image['assetId'])
+        doc['assets'][index].update(id=asset['id'], sha256=asset['sha256'])
+        doc['cameras'][index]['imageId'] = asset['id']
+        doc['observations'][index]['imageId'] = asset['id']
+    context = {**entity(), 'sourceContext': True}
+    doc['entities'].append(context)
+    doc['annotations'].append({'id': identity(), 'kind': 'policy_applicability', 'policyId': policy['policy']['id'], 'value': 'applicable', 'sourceRefs': [{'observationId': 'observation-2'}]})
+    claimed = repo.claim_job(capture['job']['id'])
+    result = repo.finish_job(claimed['id'], claimed['attemptToken'], 'succeeded', document=doc)
+    migrated = repo.commit_edits(pid, cap, {'requestId': identity(), 'branchId': branch, 'baseRevisionId': result['resultRevisionId'], 'operations': [{'type': 'migrateScene'}]})['revision']
+    agent = {'requestId': identity(), 'conversationId': identity(), 'branchId': branch, 'baseRevisionId': migrated['id'], 'message': 'Compare', 'entityId': 'entity-1', 'identityEntityIds': ['entity-1', 'entity-2']}
+    turn = repo.create_agent_turn(pid, cap, agent)
+    assert repo.create_agent_turn(pid, cap, agent) == turn
+    for invalid_pair in (['entity-1'], ['entity-1', 'entity-1'], ['entity-1', identity()], ['entity-1', context['id']]):
+        with pytest.raises(PlatformError, match='agent_identity_scope_invalid'):
+            repo.create_agent_turn(pid, cap, {**agent, 'requestId': identity(), 'identityEntityIds': invalid_pair})
+    with pytest.raises(PlatformError, match='agent_identity_scope_invalid'):
+        repo.create_agent_turn(pid, cap, {**agent, 'requestId': identity(), 'entityId': context['id']})
+    evaluate = {'requestId': identity(), 'sceneRevisionId': migrated['id'], 'policyRevisionIds': [policy['revision']['id']], 'context': 'observed'}
+    original = service.evaluate(pid, cap, evaluate)
+    original_hash = digest(original)
+    finding = next(f for f in original['document']['findings'] if f['entityId'] == 'entity-2')
+    request = service.review(pid, finding['id'], cap, {'requestId': identity(), 'evaluationId': original['id'], 'action': 'Inspect this observation'}, evidence_request=True)
+    d = decision(migrated['document'], ids=['entity-1', 'entity-2'], base=migrated['id'])
+    changed = repo.commit_edits(pid, cap, {'requestId': identity(), 'branchId': branch, 'baseRevisionId': migrated['id'], 'operations': [
+        {'type': 'recordIdentityDecision', 'decision': d}, {'type': 'mergeEntities', 'entityIds': d['entityIds'], 'survivorId': d['survivorId'], 'decisionId': d['id']},
+        {'type': 'addAnnotation', 'annotation': {'id': identity(), 'kind': 'manual_evidence', 'entityId': 'entity-1', 'requirement': 'walking_surface_hazard_review', 'passed': True, 'sourceRefs': [{'observationId': 'observation-2'}]}}]})
+    followup = service.evaluate(pid, cap, {**evaluate, 'requestId': identity(), 'sceneRevisionId': changed['revision']['id']})
+    new_finding = next(f for f in followup['document']['findings'] if f['entityId'] == 'entity-1')
+    body = {'requestId': identity(), 'evaluationId': followup['id'], 'findingId': new_finding['id'], 'evidenceRefs': [{'observationId': 'observation-2'}]}
+    with pytest.raises(PlatformError, match='evidence_identity_scope_mismatch'):
+        service.fulfill_evidence_request(pid, request['id'], cap, {**body, 'requestId': identity(), 'evidenceRefs': [{'observationId': 'observation-1'}]})
+    fulfillment = service.fulfill_evidence_request(pid, request['id'], cap, body)
+    assert fulfillment['document']['identityBinding']['observationIds'] == ['observation-2']
+    assert EvidenceRequest.model_validate(fulfillment).document.identityBinding.sourceFindingId == finding['id']
+    assert service.fulfill_evidence_request(pid, request['id'], cap, body) == fulfillment
+    assert digest(next(e for e in service.repository.list_evaluations(pid)['items'] if e['id'] == original['id'])) == original_hash
+    assert next(r for r in service.repository.list_evidence_requests(pid)['items'] if r['id'] == request['id'])['document']['status'] == 'open'
+
+
+def test_jsonb_roundtrip_hashes_are_stable_without_changing_existing_revisions(repo):
+    from ehs_spatial.platform.contracts import canonical
+    from psycopg.types.json import Jsonb
+    from copy import deepcopy
+    cap, scene = project(repo)
+    pid = scene['project']['id']
+    old_revision = deepcopy(repo.get_revision(scene['revision']['id']))
+    publication = repo.create_publication(pid, cap, {'requestId': identity(), 'sceneRevisionId': scene['revision']['id'], 'evaluationIds': [], 'reviewIds': [], 'title': 'Immutable before numeric revision'})
+    values = [-0.0, 0.0, 1.0, 1e16, 1e20, -1.2345678901234568e20, 1.2345678901234568e20, 1e-7, 5e-324, 1.7976931348623157e308, 123456789012345680000]
+    payload = {'nested': [{'values': values, 'literal': '-0.0 1e+20'}], 'one': 1.0}
+    source = deepcopy(payload)
+    with repo._connect() as c:
+        restored = c.execute('SELECT %s::jsonb AS value', (Jsonb(payload),)).fetchone()['value']
+    assert digest(payload) == digest(restored)
+    assert payload == source and canonical({'one': 1.0}) == b'{"one":1.0}'
+    assert canonical(1.2345678901234568e20) == b'123456789012345680000'
+    assert canonical(payload) == canonical(restored)
+    for bad in (float('nan'), float('inf'), -float('inf')):
+        with pytest.raises(ValueError):
+            canonical({'bad': bad})
+    body = edit_body(scene, [{'type': 'addAnnotation', 'annotation': {'id': identity(), 'kind': 'numeric_evidence', 'payload': payload}}])
+    committed = repo.commit_edits(pid, cap, body)
+    fetched = repo.get_revision(committed['revision']['id'])
+    assert fetched['documentSha256'] == digest(fetched['document'])
+    assert repo.commit_edits(pid, cap, body) == committed
+    assert repo.get_revision(old_revision['id']) == old_revision
+    assert repo.get_publication(publication['id']) == publication

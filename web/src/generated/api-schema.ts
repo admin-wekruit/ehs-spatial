@@ -618,6 +618,11 @@ export interface components {
             message: string;
             /** Entityid */
             entityId?: string | null;
+            /** Identityentityids */
+            identityEntityIds?: [
+                string,
+                string
+            ] | null;
             /** Observationid */
             observationId?: string | null;
             /** Imageid */
@@ -725,6 +730,18 @@ export interface components {
             /** Url */
             url: string;
         };
+        /** AssetIdentityEvidence */
+        AssetIdentityEvidence: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "asset";
+            /** Assetid */
+            assetId: string;
+            /** Sha256 */
+            sha256: string;
+        };
         /** AssetManifestEntry */
         AssetManifestEntry: {
             /** Assetid */
@@ -786,6 +803,12 @@ export interface components {
              * Format: uuid
              */
             baseRevisionId: string;
+            /**
+             * Capturemode
+             * @default initial
+             * @enum {string}
+             */
+            captureMode: "initial" | "append";
         };
         /** Body_source_text_api_projects__project_id__policy_source_text_post */
         Body_source_text_api_projects__project_id__policy_source_text_post: {
@@ -953,6 +976,8 @@ export interface components {
             pixelMapping?: {
                 [key: string]: unknown;
             }[] | null;
+            /** Sourcereused */
+            sourceReused?: boolean | null;
         } & {
             [key: string]: unknown;
         };
@@ -1111,6 +1136,14 @@ export interface components {
             groupId?: string | null;
             /** Lineage */
             lineage?: unknown[] | null;
+            /** Activemodelrepresentationid */
+            activeModelRepresentationId?: string | null;
+            /** Measurementevidence */
+            measurementEvidence?: components["schemas"]["MeasurementEvidence"][] | null;
+            /** Measurementselections */
+            measurementSelections?: {
+                [key: string]: string | null;
+            } | null;
         } & {
             [key: string]: unknown;
         };
@@ -1172,6 +1205,21 @@ export interface components {
             /** Findings */
             findings: components["schemas"]["Finding"][];
         };
+        /** EvidenceIdentityBinding */
+        EvidenceIdentityBinding: {
+            /** Sourcescenerevisionid */
+            sourceSceneRevisionId: string;
+            /** Sourcefindingid */
+            sourceFindingId: string;
+            /** Sourceentityid */
+            sourceEntityId: string;
+            /** Targetentityid */
+            targetEntityId: string;
+            /** Observationids */
+            observationIds: string[];
+            /** Identitydecisionids */
+            identityDecisionIds: string[];
+        };
         /** EvidenceRequest */
         EvidenceRequest: {
             /** Id */
@@ -1221,6 +1269,7 @@ export interface components {
             findingId?: string | null;
             /** Actor */
             actor?: "project_capability" | null;
+            identityBinding?: components["schemas"]["EvidenceIdentityBinding"] | null;
         };
         /** Finding */
         Finding: {
@@ -1276,6 +1325,13 @@ export interface components {
                 [key: string]: unknown;
             }[];
         };
+        /** GeometryBinding */
+        GeometryBinding: {
+            /** Geometrysolutionid */
+            geometrySolutionId: string;
+            /** Cameraid */
+            cameraId: string;
+        };
         /** GroundPlane */
         GroundPlane: {
             /** Normal */
@@ -1310,6 +1366,37 @@ export interface components {
              * @constant
              */
             schemaVersion: 1;
+        };
+        /** IdentityDecision */
+        IdentityDecision: {
+            /** Id */
+            id: string;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "same" | "different" | "undecided";
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "geometry" | "manual" | "source_binding";
+            /** Baserevisionid */
+            baseRevisionId: string;
+            /** Entityids */
+            entityIds: string[];
+            /** Observationgroups */
+            observationGroups: string[][];
+            /** Survivorid */
+            survivorId: string | null;
+            /** Evidencerefs */
+            evidenceRefs: (components["schemas"]["ObservationIdentityEvidence"] | components["schemas"]["AssetIdentityEvidence"] | components["schemas"]["MethodIdentityEvidence"])[];
+            /** Reason */
+            reason: string;
+            /** Supersedesdecisionid */
+            supersedesDecisionId: string | null;
+            /** Agentturnid */
+            agentTurnId?: string | null;
         };
         /** Items[AgentTurn] */
         Items_AgentTurn_: {
@@ -1465,10 +1552,49 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** MeasurementEvidence */
+        MeasurementEvidence: {
+            /** Id */
+            id: string;
+            /** Measurementkey */
+            measurementKey: string;
+            /** Originalmeasurement */
+            originalMeasurement: unknown;
+            /** Sourcerevisionid */
+            sourceRevisionId: string;
+            /** Sourceentityid */
+            sourceEntityId: string;
+            /** Observationrefs */
+            observationRefs: string[];
+            /** Representationid */
+            representationId: string | null;
+            /** Sourceevidenceid */
+            sourceEvidenceId?: string | null;
+            /** Sourcerefs */
+            sourceRefs?: unknown[] | null;
+            /** Coordinateframeid */
+            coordinateFrameId?: string | null;
+        };
+        /** MethodIdentityEvidence */
+        MethodIdentityEvidence: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "method";
+            /** Name */
+            name: string;
+            /** Version */
+            version: string;
+            /** Configsha256 */
+            configSha256: string;
+        };
         /** Observation */
         Observation: {
             /** Id */
             id: string;
+            /** Captureid */
+            captureId?: string | null;
             /** Revision */
             revision?: number | null;
             /** Imageid */
@@ -1494,6 +1620,18 @@ export interface components {
             sourceRefs?: unknown[] | null;
         } & {
             [key: string]: unknown;
+        };
+        /** ObservationIdentityEvidence */
+        ObservationIdentityEvidence: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "observation";
+            /** Observationid */
+            observationId: string;
+            /** Observationrevision */
+            observationRevision: number;
         };
         /** Operation */
         Operation: {
@@ -1841,6 +1979,10 @@ export interface components {
             bounds?: components["schemas"]["Bounds"] | null;
             /** Sourcerefs */
             sourceRefs?: unknown[] | null;
+            /** Material */
+            material?: {
+                [key: string]: unknown;
+            } | null;
         } & {
             [key: string]: unknown;
         };
@@ -1954,11 +2096,21 @@ export interface components {
         SceneDocument: {
             /**
              * Schemaversion
-             * @constant
+             * @enum {integer}
              */
-            schemaVersion: 1;
+            schemaVersion: 1 | 2;
             /** Captureid */
             captureId?: string | null;
+            /** Captureids */
+            captureIds?: string[] | null;
+            /** Identitydecisions */
+            identityDecisions?: components["schemas"]["IdentityDecision"][] | null;
+            /** Sourceidentityevidence */
+            sourceIdentityEvidence?: components["schemas"]["SourceIdentityEvidence"][] | null;
+            /** Geometrybindings */
+            geometryBindings?: {
+                [key: string]: components["schemas"]["GeometryBinding"] | null;
+            } | null;
             /**
              * Target
              * @enum {string}
@@ -1987,6 +2139,13 @@ export interface components {
             text: string;
         } & {
             [key: string]: unknown;
+        };
+        /** SourceIdentityEvidence */
+        SourceIdentityEvidence: {
+            /** Assetid */
+            assetId: string;
+            /** Sha256 */
+            sha256: string;
         };
         /** SourceText */
         SourceText: {

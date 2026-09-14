@@ -22,9 +22,9 @@ from PIL import Image
 
 from ehs_spatial.platform.contracts import PlatformError, canonical, digest, empty_document, validate_document
 from ehs_spatial.platform.spatial import MeshData, camera_intrinsics, transform_matrix
-from scripts.import_report_evidence import canonical_measurements, import_report_evidence, original_box, original_polygons, report_dependencies
+from scripts.import_report_evidence import canonical_measurements, canonical_observation_masks, import_report_evidence, import_observation_masks, import_source_equivalences, observation_mask_sources, original_box, original_polygons, report_dependencies
 
-CONVERTER_VERSION = "public-scene-v7"
+CONVERTER_VERSION = "public-scene-v9"
 
 
 def converter_identity():
@@ -194,8 +194,11 @@ def import_document(scene_path, put_asset, *, legacy_root=None, observation_root
     manifest = {"schemaVersion": 1, "converter": converter_identity(), "sourcePath": str(scene_path), "sourceSha256": source_sha, "runId": source.get("run_id"),
                 "cameraIds": {}, "entityIds": {}, "observationIds": {}, "assetIds": {}, "representationAssetIds": {}, "limitations": source.get("limitations", [])}
 
+    raster_bytes = {}
     def include(data, media_type, metadata, source_key=None):
         asset = put_asset(data, media_type, metadata)
+        if geometry_root and media_type in ("image/png", "application/x-npy"):
+            raster_bytes[asset["id"]] = data
         ref = {**asset, **metadata}
         if asset["id"] not in {a["id"] for a in document["assets"]}:
             document["assets"].append(ref)
@@ -409,6 +412,12 @@ def import_document(scene_path, put_asset, *, legacy_root=None, observation_root
     if geometry_root:
         from scripts.import_geometry_evidence import import_geometry_evidence
         document["geometryEvidence"] = import_geometry_evidence(geometry_root, scene_path, source, document, manifest, include, ident, frame_id)
+        manifest["observationMasks"] = import_observation_masks(geometry_root, source, document, manifest, include)
+        _, source_records, _ = observation_mask_sources(geometry_root, source)
+        if source_records:
+            masks, mask_errors = canonical_observation_masks(document, raster_bytes.__getitem__)
+            manifest["sourceIdentity"] = import_source_equivalences(document, source, source_asset, source_records, masks, include)
+            manifest["sourceIdentity"]["maskErrors"] = mask_errors
         if report:
             geometry = document["geometryEvidence"]
             for field, label, meaning in (
@@ -453,6 +462,7 @@ def run_import(scene_path, repository, blobs, output_dir, title=None, *, legacy_
     if geometry_root:
         from scripts.import_geometry_evidence import geometry_dependencies
         geometry_files = geometry_dependencies(geometry_root, source)
+        geometry_files += observation_mask_sources(geometry_root, source)[2]
     converter_key = digest({"converter": converter, "evidence": [hashlib.sha256(raw).hexdigest() for _, raw in evidence_documents(scene_path, source)],
                             "reportDependencies": [hashlib.sha256(path.read_bytes()).hexdigest() for path in report_dependencies(scene_path, source, legacy_root, observation_root)],
                             "geometryDependencies": [hashlib.sha256(path.read_bytes()).hexdigest() for path in geometry_files],

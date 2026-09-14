@@ -125,6 +125,123 @@ class FrameGeometry:
         return self.valid.astype(bool) & np.isfinite(self.points).all(axis=-1) & (depth > 0)
 
 
+
+def similarity_transform(source, target, weights=None):
+    """Positive Sim(3), extracted from the frozen alignment probe's NumPy solver."""
+    x, y = np.asarray(source, float), np.asarray(target, float)
+    if x.shape != y.shape or x.ndim != 2 or x.shape[1] != 3 or len(x) < 3 or not np.isfinite(x).all() or not np.isfinite(y).all():
+        raise PlatformError("registration_correspondences_invalid")
+    w = np.ones(len(x)) if weights is None else np.asarray(weights, float)
+    if w.shape != (len(x),) or not np.isfinite(w).all() or (w < 0).any() or w.sum() <= 0:
+        raise PlatformError("registration_weights_invalid")
+    w = w / w.sum()
+    mx, my = w @ x, w @ y
+    xc, yc = x - mx, y - my
+    u, singular, vt = np.linalg.svd((yc * w[:, None]).T @ xc)
+    parity = np.ones(3)
+    parity[-1] = np.linalg.det(u @ vt)
+    rotation = (u * parity) @ vt
+    variance = np.sum(w[:, None] * xc * xc)
+    if variance < 1e-16 or singular[1] / max(singular[0], 1e-30) < 1e-5:
+        raise PlatformError("registration_degenerate")
+    scale = np.sum(singular * parity) / variance
+    if scale <= 0:
+        raise PlatformError("registration_scale_invalid")
+    matrix = np.eye(4)
+    matrix[:3, :3] = scale * rotation
+    matrix[:3, 3] = my - scale * rotation @ mx
+    return matrix
+
+
+def register_reference(source: FrameGeometry, target: FrameGeometry, background, *, source_input_to_canonical, target_input_to_canonical, relative_tolerance=.02):
+    """Register shared-image pixels, then verify held-out pixels and camera rays.
+
+    Background is explicitly supplied from source masks. Neither labels nor nearest
+    object centres establish correspondences. Threshold is in target scene extent.
+    """
+    if source.image_id != target.image_id or source.image_sha256 != target.image_sha256 or not 0 < relative_tolerance < .1:
+        raise PlatformError("registration_reference_mismatch")
+    background = np.asarray(background, bool)
+    if background.shape != target.valid.shape:
+        raise PlatformError("registration_background_grid_mismatch")
+    h, w = target.valid.shape
+    y, x = np.mgrid[:h, :w]
+    mappings = [np.asarray(value, float) for value in (source_input_to_canonical, target_input_to_canonical)]
+    if any(a.shape != (3,3) or not np.isfinite(a).all() or abs(np.linalg.det(a)) < 1e-12 or not np.allclose(a[2], [0,0,1]) for a in mappings):
+        raise PlatformError('registration_pixel_mapping_invalid')
+    # Predicted intrinsics can vary across solves of the same photo. Only the
+    # recorded crop/resize transform establishes corresponding source pixels.
+    rays = np.stack((x, y, np.ones_like(x)), -1) @ (mappings[0] @ np.linalg.inv(mappings[1])).T
+    uv = np.floor(rays[..., :2] / rays[..., 2:] + .5).astype(int)
+    in_grid = (uv[..., 0] >= 0) & (uv[..., 0] < source.valid.shape[1]) & (uv[..., 1] >= 0) & (uv[..., 1] < source.valid.shape[0])
+    px, py = np.clip(uv[..., 0], 0, source.valid.shape[1]-1), np.clip(uv[..., 1], 0, source.valid.shape[0]-1)
+    valid = in_grid & background & target.support() & source.support()[py, px]
+    indices = np.flatnonzero(valid)
+    # Independent source pixels prevent upsampling from manufacturing support.
+    _, unique = np.unique((py * source.valid.shape[1] + px).ravel()[indices], return_index=True)
+    indices = indices[unique]
+    tiles = set(zip((x.ravel()[indices] * 4 // w).tolist(), (y.ravel()[indices] * 4 // h).tolist()))
+    if len(indices) < 64 or len(tiles) < 4:
+        raise PlatformError("registration_background_insufficient", 409, support=len(indices), tiles=len(tiles))
+    xx, yy = source.points[py, px].reshape(-1, 3)[indices], target.points.reshape(-1, 3)[indices]
+    extent = float(np.linalg.norm(np.quantile(yy, .95, axis=0) - np.quantile(yy, .05, axis=0)))
+    if extent < 1e-8:
+        raise PlatformError("registration_degenerate")
+    threshold = relative_tolerance * extent
+    rng = np.random.default_rng(0)
+    order = rng.permutation(len(xx))
+    holdout, training = order[::5], np.delete(order, np.arange(0, len(order), 5))
+    # ponytail: max 4096 training pixels and 64 hypotheses; a larger corpus can
+    # replace this bounded RANSAC without changing registration evidence fields.
+    training = training[:4096]
+    best, best_count = None, -1
+    for _ in range(64):
+        sample = rng.choice(training, 6, replace=False)
+        try:
+            matrix = similarity_transform(xx[sample], yy[sample])
+        except PlatformError:
+            continue
+        residual = np.linalg.norm(transform_points(xx[training], matrix) - yy[training], axis=1)
+        count = int((residual <= threshold).sum())
+        if count > best_count:
+            best, best_count = matrix, count
+    if best is None:
+        raise PlatformError("registration_degenerate")
+    residual = np.linalg.norm(transform_points(xx[training], best) - yy[training], axis=1)
+    inliers = training[residual <= threshold]
+    if len(inliers) < 32:
+        raise PlatformError("registration_residual_failed", 409)
+    matrix = similarity_transform(xx[inliers], yy[inliers])
+    error = np.linalg.norm(transform_points(xx[holdout], matrix) - yy[holdout], axis=1)
+    report = {"method":"shared_pixels_sim3_v2", "support":len(indices),"trainingCount":len(training),"holdoutCount":len(holdout),
+        "tileCount":len(tiles),"targetExtent":extent,"relativeTolerance":relative_tolerance,"inlierFraction":float(np.mean(error <= threshold)),
+        "holdoutP95Relative":float(np.quantile(error, .95) / extent),"sourceFrameId":source.coordinate_frame_id,"targetFrameId":target.coordinate_frame_id,"referenceImageId":source.image_id}
+    if report["inlierFraction"] < .9 or report["holdoutP95Relative"] > relative_tolerance:
+        raise PlatformError("registration_residual_failed", 409, metrics=report)
+    registered = registered_frame(source, matrix, target.coordinate_frame_id)
+    projected, depth = project_native(registered.points[py, px].reshape(-1,3)[indices[holdout]], target.camera())
+    expected = np.column_stack((x.ravel()[indices[holdout]], y.ravel()[indices[holdout]]))
+    report["cameraReprojectionP95Pixels"] = float(np.quantile(np.linalg.norm(projected - expected, axis=1), .95))
+    report['referenceCameraPositionRelative'] = float(np.linalg.norm(registered.camera_to_world[:3,3] - target.camera_to_world[:3,3]) / extent)
+    relative_rotation = registered.camera_to_world[:3,:3].T @ target.camera_to_world[:3,:3]
+    report['referenceCameraAngleDegrees'] = float(np.degrees(np.arccos(np.clip((np.trace(relative_rotation)-1)/2,-1,1))))
+    if not np.isfinite(projected).all() or np.any(depth <= 0) or report["cameraReprojectionP95Pixels"] > 1.5 or report['referenceCameraPositionRelative'] > relative_tolerance or report['referenceCameraAngleDegrees'] > 2:
+        raise PlatformError("registration_camera_reprojection_failed", 409, metrics=report)
+    return matrix, report
+
+
+def registered_frame(frame: FrameGeometry, matrix, target_frame_id):
+    matrix = affine(matrix)
+    scale = np.cbrt(np.linalg.det(matrix[:3, :3]))
+    rotation = matrix[:3, :3] / scale
+    if scale <= 0 or not np.allclose(rotation.T @ rotation, np.eye(3), atol=1e-6):
+        raise PlatformError("registration_similarity_required")
+    camera = np.eye(4)
+    camera[:3, :3] = rotation @ frame.camera_to_world[:3, :3]
+    camera[:3, 3] = transform_points(frame.camera_to_world[:3, 3][None], matrix)[0]
+    return FrameGeometry(frame.image_id, target_frame_id, frame.image_sha256,
+        transform_points(frame.points.reshape(-1,3), matrix).reshape(frame.points.shape), frame.valid.copy(), frame.K.copy(), camera)
+
 @dataclass(frozen=True)
 class MaskObservation:
     id: str
@@ -139,9 +256,10 @@ class AssociationConfig:
     min_containment: float = .65
     relative_depth_tolerance: float = .03
     best_margin: float = .15
+    min_depth_agreement: float = .65
 
     def __post_init__(self):
-        if self.min_support < 1 or not 0 < self.min_containment <= 1 or not 0 < self.relative_depth_tolerance < 1 or not 0 <= self.best_margin <= 1:
+        if self.min_support < 1 or not 0 < self.min_containment <= 1 or not 0 < self.relative_depth_tolerance < 1 or not 0 <= self.best_margin <= 1 or not 0 < self.min_depth_agreement <= 1:
             raise PlatformError("invalid_association_config")
 
 
@@ -155,7 +273,7 @@ def _direction(source: MaskObservation, target: MaskObservation, frames: Mapping
     xy = np.floor(uv[inside] + .5).astype(int)
     z = z[inside]
     if not len(xy):
-        return {"support": 0, "containment": None, "depthConsistent": 0}
+        return {"support": 0, "containment": None, "depthConsistent": 0, "visibleSupport": 0, "depthAgreement": None, "projectedSupport": 0, "sourceSupport": len(points)}
     # Count independent target pixels, not a dense source splatting onto one pixel.
     _, indices = np.unique(xy[:, 1]*w + xy[:, 0], return_index=True)
     xy, z = xy[indices], z[indices]
@@ -166,19 +284,36 @@ def _direction(source: MaskObservation, target: MaskObservation, frames: Mapping
     # cannot become positive identity evidence.
     consistent = visible & (np.abs(z-dz) <= config.relative_depth_tolerance * np.maximum(dz, 1e-12))
     count = int(consistent.sum())
+    # Points behind a closer surface are occluded. Points in front of observed
+    # geometry remain verifiable and cannot disappear from the match denominator.
+    verifiable = visible & (z <= dz + config.relative_depth_tolerance * np.maximum(dz, 1e-12))
+    visible_count = int(verifiable.sum())
     contained = target.mask[xy[:, 1], xy[:, 0]][consistent].astype(bool)
-    return {"support": count, "containment": float(contained.mean()) if count else None, "depthConsistent": count}
+    return {"support": count, "containment": float(contained.mean()) if count else None, "depthConsistent": count,
+            "visibleSupport": visible_count, "depthAgreement": count / visible_count if visible_count else None,
+            "projectedSupport": len(xy), "sourceSupport": len(points)}
 
 
-def associate_observations(observations: Sequence[MaskObservation], frames: Mapping[str, FrameGeometry], config: AssociationConfig = AssociationConfig()) -> dict[str, Any]:
+def associate_observations(observations: Sequence[MaskObservation], frames: Mapping[str, FrameGeometry], config: AssociationConfig = AssociationConfig(), *,
+                           confirmed_groups: Sequence[Sequence[str]] = (), excluded_groups: Sequence[Sequence[Sequence[str]]] = ()) -> dict[str, Any]:
     """Return observation groups; caller allocates durable entity UUIDs once.
 
-    No same-frame or transitive bridge merges. Unresolved observations are singleton
-    groups, including one-pixel detections and observations without geometry.
+    Confirmed identities can gain a uniquely supported view without requiring
+    invisible historical pairs to match. New groups still require a clique.
     """
     obs = sorted(observations, key=lambda x: x.id)
     if len({o.id for o in obs}) != len(obs):
         raise PlatformError("duplicate_observation_id")
+    ids = {o.id for o in obs}
+    seeds = [sorted(set(g) & ids) for g in confirmed_groups]
+    seeds = [g for g in seeds if g]
+    seeded_ids = [x for g in seeds for x in g]
+    if len(seeded_ids) != len(set(seeded_ids)):
+        raise PlatformError("overlapping_confirmed_identities")
+    forbidden = {frozenset((a, b)) for groups in excluded_groups for i, ga in enumerate(groups)
+                 for gb in groups[i+1:] for a in ga for b in gb if a != b}
+    if any(frozenset((a,b)) in forbidden for g in seeds for a in g for b in g if a != b):
+        raise PlatformError("conflicting_identity_constraints", 409)
     for o in obs:
         if o.image_id in frames and o.mask.shape != frames[o.image_id].valid.shape:
             raise PlatformError("mask_geometry_grid_mismatch", observationId=o.id)
@@ -198,20 +333,31 @@ def associate_observations(observations: Sequence[MaskObservation], frames: Mapp
                 continue
             ab, ba = _direction(a, b, frames, config, support_points, grids), _direction(b, a, frames, config, support_points, grids)
             enough = min(ab["support"], ba["support"]) >= config.min_support
+            depth_agrees = min(ab["depthAgreement"] or 0, ba["depthAgreement"] or 0) >= config.min_depth_agreement
             score = min(ab["containment"] or 0, ba["containment"] or 0) if enough else 0.
-            link = {"observationIds": [a.id, b.id], "directions": [ab, ba], "score": score, "eligible": enough and score >= config.min_containment, "accepted": False}
+            excluded = frozenset((a.id, b.id)) in forbidden
+            eligible = enough and depth_agrees and score >= config.min_containment and not excluded
+            link = {"observationIds": [a.id, b.id], "directions": [ab, ba], "score": score, "eligible": eligible, "accepted": False,
+                    "relation": "supported" if eligible else "conflict" if excluded or enough and (not depth_agrees or score < config.min_containment) else "not_comparable",
+                    "reason": "identity_exclusion" if excluded else "depth_disagreement" if enough and not depth_agrees else "insufficient_support" if not enough else "mask_mismatch" if score < config.min_containment else "supported"}
             links.append(link)
-            scores[a.id, b.id] = scores[b.id, a.id] = score
+            scores[a.id, b.id] = scores[b.id, a.id] = score if depth_agrees and not excluded else 0.
     lookup = {o.id: o for o in obs}
+    known_identity = {oid: index for index, group in enumerate(seeds) for oid in group}
     def clear_best(a: str, b: str) -> bool:
-        competitors = [scores.get((a, o.id), 0.) for o in obs if o.id != b and o.image_id == lookup[b].image_id]
+        # Multiple retained observations of one proven identity are not rival
+        # objects. Unconfirmed overlapping masks still compete independently.
+        competitors = [scores.get((a, o.id), 0.) for o in obs if o.id != b and o.image_id == lookup[b].image_id
+                       and not (b in known_identity and known_identity.get(o.id) == known_identity[b])]
         return scores[a, b] - max(competitors, default=0.) >= config.best_margin
     accepted = set()
     for link in links:
         a, b = link["observationIds"]
         if link["eligible"] and clear_best(a, b) and clear_best(b, a):
             accepted.add(frozenset((a, b)))
-    groups = [[o.id] for o in obs]
+    groups = seeds + [[o.id] for o in obs if o.id not in set(seeded_ids)]
+    seeded = set(seeded_ids)
+    links_by_pair = {frozenset(x['observationIds']): x for x in links}
     for link in sorted(links, key=lambda x: (-x["score"], x["observationIds"])):
         a, b = link["observationIds"]
         if frozenset((a, b)) not in accepted:
@@ -220,10 +366,15 @@ def associate_observations(observations: Sequence[MaskObservation], frames: Mapp
         if ga is gb:
             link["accepted"] = True
             continue
-        image_ids = [lookup[x].image_id for x in ga+gb]
-        if len(set(image_ids)) != len(image_ids):
+        if {lookup[x].image_id for x in ga} & {lookup[x].image_id for x in gb}:
             continue
-        if all(frozenset((x, y)) in accepted for x in ga for y in gb):
+        pairs = [frozenset((x, y)) for x in ga for y in gb]
+        if any(pair in forbidden for pair in pairs):
+            continue
+        anchored = bool(set(ga) & seeded or set(gb) & seeded)
+        comparable = [pair for pair in pairs if links_by_pair.get(pair, {}).get('relation') != 'not_comparable' and pair in links_by_pair]
+        can_join = (bool(comparable) and all(pair in accepted for pair in comparable)) if anchored else all(pair in accepted for pair in pairs)
+        if can_join:
             groups.remove(gb)
             ga.extend(gb)
             ga.sort()
@@ -231,7 +382,8 @@ def associate_observations(observations: Sequence[MaskObservation], frames: Mapp
     grouped = {x: g for g in groups for x in g}
     for link in links:
         a, b = link["observationIds"]
-        link["accepted"] = grouped[a] is grouped[b]
+        link["sameEntity"] = grouped[a] is grouped[b]
+        link["accepted"] = link["sameEntity"] and frozenset((a, b)) in accepted
     return {"groups": sorted(groups), "links": links, "ambiguous": [x for x in links if x["eligible"] and not x["accepted"]], "config": asdict(config)}
 
 

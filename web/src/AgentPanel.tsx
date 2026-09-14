@@ -1,5 +1,5 @@
 import { createElement, useEffect, useRef, useState } from "react";
-import { ApiError, feedbackSession, id, request, type FeedbackInput } from "./api";
+import { ApiError, feedbackSession, id, request, type FeedbackInput, type IdentitySuggestion } from "./api";
 import { useI18n } from "./i18n";
 import { observationsFor } from "./core";
 import { ErrorNotice } from "./App";
@@ -12,6 +12,8 @@ type Proposal = {
 };
 type AgentPanelProps = {
   feedbackPublicationId?: string;
+  identitySuggestion?: IdentitySuggestion;
+  identityEntityIds?: [string, string];
   projectId: string;
   revision: Revision;
   branch: Pick<Branch, "id">;
@@ -31,10 +33,10 @@ type AgentPanelProps = {
 type FeedbackTurn = {
   id: string; requestId: string; conversationId: string; publicationId: string; revisionId: string; entityId: string;
   message: string; language: "zh" | "en"; status: "saved" | "succeeded" | "failed" | "outcome_unknown";
-  assistantMessage: string | null; errorCode: string | null; createdAt: string;
+  identitySuggestion?: IdentitySuggestion | null; assistantMessage: string | null; errorCode: string | null; createdAt: string;
 };
 function feedbackReply(turn: FeedbackTurn, t: (key: string) => string) {
-  return turn.assistantMessage || t(turn.status === "outcome_unknown" ? "feedbackOutcomeUnknown" :
+  return turn.assistantMessage || t(turn.identitySuggestion && turn.status === "saved" ? "identitySuggestionSaved" : turn.status === "outcome_unknown" ? "feedbackOutcomeUnknown" :
     turn.status === "failed" ? "feedbackReplyFailed" : turn.errorCode === "feedback_budget_exceeded" ? "feedbackBudgetExceeded" : "feedbackSavedNoAgent");
 }
 function feedbackEvidence({ revision, entityId, imageId, observationId }: Pick<AgentPanelProps, "revision" | "entityId" | "imageId" | "observationId">) {
@@ -45,12 +47,12 @@ function feedbackEvidence({ revision, entityId, imageId, observationId }: Pick<A
   return { ...(image ? { imageId: image } : {}), ...(observation ? { observationId: observation.id } : {}) };
 }
 
-function conversationScope(projectId: string, branchId: string, revisionId: string, entityId?: string | null, policyId?: string | null) {
-  return JSON.stringify(policyId ? ["policy", projectId, policyId] : ["scene", projectId, branchId, revisionId, entityId || null]);
+function conversationScope(projectId: string, branchId: string, revisionId: string, entityId?: string | null, policyId?: string | null, identityEntityIds?: [string,string] | null) {
+  return JSON.stringify(policyId ? ["policy", projectId, policyId] : ["scene", projectId, branchId, revisionId, entityId || null, identityEntityIds ? [...identityEntityIds].sort() : null]);
 }
 
 function turnScope(turn: AgentTurn) {
-  return conversationScope(turn.projectId, turn.branchId, turn.baseRevisionId, turn.request.entityId, turn.request.policyId);
+  return conversationScope(turn.projectId, turn.branchId, turn.baseRevisionId, turn.request.entityId, turn.request.policyId, turn.request.identityEntityIds);
 }
 
 async function agentHistory(projectId: string, signal: AbortSignal) {
@@ -68,18 +70,19 @@ async function agentHistory(projectId: string, signal: AbortSignal) {
 
 export function AgentPanel(props: AgentPanelProps) {
   const scope = props.feedbackPublicationId ? JSON.stringify(["feedback", props.feedbackPublicationId, props.entityId]) :
-    conversationScope(props.projectId, props.branch.id, props.revision.id, props.entityId, props.policyId);
+    conversationScope(props.projectId, props.branch.id, props.revision.id, props.entityId, props.policyId, props.identityEntityIds);
   return <AgentConversation key={scope} {...props} />;
 }
 
 function AgentConversation({
   projectId, revision, branch, entityId, observationId, imageId, box,
-  canWrite, onApply, policyId, policyRevisionId, onPolicyApply, feedbackPublicationId,
+  canWrite, onApply, policyId, policyRevisionId, onPolicyApply, feedbackPublicationId, identitySuggestion, identityEntityIds,
 }: AgentPanelProps) {
   const { t, language } = useI18n(),
     chat = useRef<any>(null),
     context = useRef<any>(null),
     alive = useRef(true),
+    identitySubmission = useRef<IdentitySuggestion | null>(null),
     [proposal, setProposal] = useState<Proposal | null>(null),
     [error, setError] = useState<unknown>(),
     [ready, setReady] = useState(false),
@@ -99,6 +102,7 @@ function AgentConversation({
     policyRevisionId,
     historyReady,
     feedbackPublicationId,
+    identityEntityIds,
   };
   const conversation = useRef<string>(id());
   const feedbackRoute = feedbackPublicationId && entityId ? `/api/publications/${feedbackPublicationId}/entities/${encodeURIComponent(entityId)}/feedback` : null;
@@ -166,7 +170,7 @@ function AgentConversation({
       void loadPublicHistory(abort.signal);
       return () => abort.abort();
     }
-    const scope = conversationScope(projectId, branch.id, revision.id, entityId, policyId);
+    const scope = conversationScope(projectId, branch.id, revision.id, entityId, policyId, identityEntityIds);
     agentHistory(projectId, abort.signal)
       .then((history) => {
         if (!alive.current) return;
@@ -231,7 +235,9 @@ function AgentConversation({
             if (!ctx.entityId || typeof message !== "string" || !message.trim() || message.length > 8000) throw new Error(t("feedbackMessageInvalid"));
             await sendFeedback({ requestId: id(), conversationId: conversation.current, message: message.trim(), language: ctx.language,
               ...feedbackEvidence(ctx),
+              ...(identitySubmission.current ? { identitySuggestion: identitySubmission.current } : {}),
             }, signals);
+            identitySubmission.current = null;
             return;
           }
           if (!ctx.canWrite) throw new ApiError(403, "owner_capability_required");
@@ -246,6 +252,7 @@ function AgentConversation({
             box: ctx.box,
             language: ctx.language,
             ...(ctx.imageId ? { imageId: ctx.imageId } : {}),
+            ...(ctx.identityEntityIds ? { identityEntityIds: ctx.identityEntityIds } : {}),
             ...(ctx.policyId && ctx.policyRevisionId
               ? {
                   policyId: ctx.policyId,
@@ -286,6 +293,7 @@ function AgentConversation({
             await signals.onResponse({ error: t("error") });
           }
         } finally {
+          identitySubmission.current = null;
           if (alive.current) setWorking(false);
         }
       },
@@ -329,6 +337,10 @@ function AgentConversation({
         {box && <span>{t("selectedBox")}</span>}
         {feedbackPublicationId && !feedbackEvidence({ revision, entityId, imageId, observationId }).imageId && <span>{t("feedbackNoPhotoEvidence")}</span>}
       </div>
+      {feedbackPublicationId && identitySuggestion && identitySuggestion.entityIds[0] === entityId && <div className="identity-preview"><p>{t("identitySuggestionContext")}</p><p>{identitySuggestion.reason}</p><button disabled={!ready || !historyReady || working || !!feedbackRetry} onClick={() => {
+        identitySubmission.current = identitySuggestion;
+        chat.current.submitUserMessage({text: identitySuggestion.reason});
+      }}>{t("identitySuggestionSubmit")}</button></div>}
       {createElement("deep-chat", { ref: chat, className: "deep-chat", auxiliaryStyle: "#container { height: 100%; width: 100%; }" })}
       {working && <p role="status">{t("running")}</p>}
       <ErrorNotice error={error} />

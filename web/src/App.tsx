@@ -36,6 +36,9 @@ import {
   photoHits,
   previewOperations,
   quaternionEuler,
+  activeModel,
+  cameraForImage,
+  currentCameras,
   modelGeometry,
   modelTilt,
   planShapes,
@@ -43,10 +46,13 @@ import {
   groupPublications,
   sourceDimensions,
   sourceScale,
+  modelScale,
 } from "./core";
 import { useI18n } from "./i18n";
 import { WorkcellReport } from "./WorkcellReport";
 import { PhotoView } from "./PhotoView";
+import { IdentityReview } from "./IdentityReview";
+import { ModelEvidence } from "./ModelEvidence";
 import { PrimitiveCreator } from "./PrimitiveCreator";
 import { AgentPanel } from "./AgentPanel";
 import type {
@@ -485,6 +491,7 @@ function NewProject() {
       data.set("branchId", detail.branch.id);
       data.set("baseRevisionId", detail.revision.id);
       data.set("target", target);
+      data.set("captureMode", "initial");
       await request("/api/projects/" + detail.project.id + "/captures", {
         method: "POST",
         projectId: detail.project.id,
@@ -1156,38 +1163,43 @@ function Workspace({
   report?: boolean;
 }) {
   const document = revision.document,
+    objects = document.entities.filter(entity => !entity.sourceContext),
     { t } = useI18n();
   const query = new URLSearchParams(location.hash.split("?")[1] || ""),
     [selectedId, setSelected] = useState<string | null>(query.get("object")),
     [observationId, setObservation] = useState<string | null>(
       document.observations.find(o => o.id === query.get("observation") && document.entities.find(e => e.id === query.get("object"))?.observationRefs?.includes(o.id))?.id || null),
     [cameraId, setCamera] = useState<string | null>(
-      document.cameras.find(c => c.imageId === query.get("image"))?.id || document.cameras[0]?.id || null,
+      cameraForImage(document, query.get("image"))?.id || currentCameras(document)[0]?.id || null,
     ),
-    [sourceImageId, setSourceImage] = useState<string | null>(document.assets.find(a => a.id === query.get("image") && a.kind === "source_image")?.id || null),
+    [sourceImageId, setSourceImage] = useState<string | null>(document.assets.find(a => a.id === query.get("image") && a.kind === "source_image")?.id || document.observations.find(o=>o.id===query.get("observation"))?.imageId || document.assets.find(a=>a.kind==="source_image")?.id || null),
     [mode, setMode] = useState<ViewerMode>("photo"),
     [four, setFour] = useState(false),
     [panel, setPanel] = useState<"properties" | "agent">("properties"),
+    [identityEntityIds, setIdentityEntityIds] = useState<[string,string]>(),
     [draw, setDraw] = useState(false),
     [box, setBox] = useState<number[] | null>(null),
     [allBounds, setAllBounds] = useState(false),
     [opacity, setOpacity] = useState(0.45),
     [representation, setRepresentation] = useState("model"),
     [search, setSearch] = useState(""),
-    [creatingModel, setCreatingModel] = useState(false);
-  const selected = document.entities.find((e) => e.id === selectedId) || null,
+    [creatingModel, setCreatingModel] = useState(false),
+    [appending, setAppending] = useState(false), [appendFiles, setAppendFiles] = useState<File[]>([]), [captureError, setCaptureError] = useState<unknown>();
+  const appendRequest = useRef({id:id(),baseRevisionId:revision.id});
+  const selected = objects.find((e) => e.id === selectedId) || null,
     camera =
-      document.cameras.find((c) => c.id === cameraId) || document.cameras[0],
+      currentCameras(document).find((c) => c.id === cameraId),
     imageId =
-      camera?.imageId ||
-      document.observations.find((o) => o.id === observationId)?.imageId ||
       sourceImageId ||
+      document.observations.find((o) => o.id === observationId)?.imageId ||
+      camera?.imageId ||
       document.observations[0]?.imageId ||
       document.assets.find((a) => a.kind === "source_image")?.id ||
       null;
   useEffect(() => {
-    if (!cameraId && document.cameras[0]) setCamera(document.cameras[0].id);
-  }, [document.cameras, cameraId]);
+    const next = cameraForImage(document, imageId)?.id || null;
+    if (next !== cameraId) setCamera(next);
+  }, [document.geometryBindings, document.cameras, imageId, cameraId]);
   function select(entityId: string, obsId?: string) {
     setSelected(entityId);
     setBox(null);
@@ -1198,9 +1210,8 @@ function Workspace({
       observations.find((o) => o.imageId === imageId) ||
       observations[0];
     setObservation(next?.id || null);
-    if (next && next.imageId !== imageId && mode === "photo") {
-      const c = document.cameras.find((c) => c.imageId === next.imageId);
-      if (c) setCamera(c.id);
+    if (next && next.imageId !== imageId) {
+      setSourceImage(next.imageId);setCamera(cameraForImage(document, next.imageId)?.id || null);
     }
     const url = new URL(location.href);
     const [hashPath, hashQuery = ""] = url.hash.slice(1).split("?");
@@ -1220,6 +1231,7 @@ function Workspace({
       generated_mesh: representation === "model",
       primitive: representation === "model",
       point_cloud: representation === "point_cloud",
+      imageId, observations: document.observations,
       allBounds,
       showBounds: allBounds,
       opacity,
@@ -1231,7 +1243,7 @@ function Workspace({
       <aside className="entity-panel">
         <div className="panel-title">
           <h2>{t("objects")}</h2>
-          <span>{document.entities.length}</span>
+          <span>{objects.length}</span>
           {!busy && (
             <button
               className="icon-button"
@@ -1250,7 +1262,7 @@ function Workspace({
           onChange={(e) => setSearch(e.target.value)}
         />
         <div className="entity-list">
-          {document.entities
+          {objects
             .filter((e) =>
               (e.label || e.id).toLowerCase().includes(search.toLowerCase()),
             )
@@ -1269,9 +1281,7 @@ function Workspace({
                   <span>
                     {observationsFor(document, entity).length}{" "}
                     {t("observations")} ·{" "}
-                    {(entity.representations || []).length
-                      ? t((entity.representations || [])[0].kind)
-                      : t("noGeometry")}
+                    {t(entityEvidenceStatus(document, entity).modelKey)}
                   </span>
                 </button>
                 <button className="entity-feedback" aria-label={`${t("sceneFeedback")} · ${entity.label || entity.id}`}
@@ -1293,29 +1303,29 @@ function Workspace({
                 />
               </div>
             ))}
-          {!document.entities.length && (
+          {!objects.length && (
             <p className="empty-copy">{t("noObjects")}</p>
           )}
         </div>
+        {canWrite && !report && <div className="capture-append"><label>{t("identityAddPhotos")}
+          <input type="file" accept="image/*" multiple disabled={appending||busy} onChange={event=>{
+            const files=Array.from(event.target.files||[]);
+            if(files.length>4){setCaptureError(Error("photoLimit"));return;}
+            setAppendFiles(files);appendRequest.current={id:id(),baseRevisionId:revision.id};setCaptureError(undefined);
+          }}/></label>
+          {!!appendFiles.length && <button disabled={appending||busy} onClick={async()=>{
+            setAppending(true);setCaptureError(undefined);
+            try { const data=new FormData();appendFiles.forEach(file=>data.append("files",file));data.set("requestId",appendRequest.current.id);data.set("branchId",branch.id);data.set("baseRevisionId",appendRequest.current.baseRevisionId);data.set("target",document.target);data.set("captureMode","append");
+              await request("/api/projects/"+project.id+"/captures",{method:"POST",projectId:project.id,body:data});
+              navigate("/projects/"+project.id+"/report");
+            }catch(error){setCaptureError(error);}finally{setAppending(false);}
+          }}>{t(appending?"uploading":captureError?"retry":"identityAddPhotos")} · {appendFiles.length}</button>}
+          <ErrorNotice error={captureError}/>
+        </div>}
         <div className="photo-strip">
-          {(document.cameras.length
-            ? document.cameras
-            : document.assets
-                .filter((a) => a.kind === "source_image")
-                .map((a) => ({ id: a.id, imageId: a.id }))
-          ).map((c, i) => (
-            <button
-              key={c.id}
-              onClick={() => {
-                if (document.cameras.length) setCamera(c.id);
-                else setSourceImage(c.imageId);
-                setMode("photo");
-              }}
-              className={c.id === camera?.id ? "selected" : ""}
-              aria-label={`${t("photo")} ${i + 1}`}
-            >
-              <AssetImage assetId={c.imageId} alt={`${t("photo")} ${i + 1}`} />
-              <span>{i + 1}</span>
+          {document.assets.filter(asset=>asset.kind==="source_image").map((asset,i)=>(
+            <button key={asset.id} onClick={()=>{setSourceImage(asset.id);setCamera(cameraForImage(document,asset.id)?.id||null);setMode("photo");}} className={asset.id===(camera?.imageId||sourceImageId)?"selected":""} aria-label={`${t("photo")} ${i+1}`}>
+              <AssetImage assetId={asset.id} alt={`${t("photo")} ${i+1}`}/><span>{i+1}</span>
             </button>
           ))}
         </div>
@@ -1467,7 +1477,7 @@ function Workspace({
                   document={document}
                   selectedId={selectedId}
                   onSelect={select}
-                  geometryOptions={{ layer: representation as "model" | "observed_surface" | "point_cloud", frameId: camera?.coordinateFrameId, showCandidates: !report }}
+                  geometryOptions={{ layer: representation as "model" | "observed_surface" | "point_cloud", frameId: camera?.coordinateFrameId || "", imageId: camera?.imageId, observations: document.observations, showCandidates: !report }}
                 />
               </div>
               <div className="canvas-pane">
@@ -1476,7 +1486,7 @@ function Workspace({
                   document={document}
                   selectedId={selectedId}
                   onSelect={select}
-                  geometryOptions={{ layer: representation as "model" | "observed_surface" | "point_cloud", frameId: camera?.coordinateFrameId, showCandidates: !report }}
+                  geometryOptions={{ layer: representation as "model" | "observed_surface" | "point_cloud", frameId: camera?.coordinateFrameId || "", imageId: camera?.imageId, observations: document.observations, showCandidates: !report }}
                   interactive
                 />
               </div>
@@ -1531,7 +1541,7 @@ function Workspace({
             onClose={() => setCreatingModel(false)}
           />
         ) : panel === "properties" ? (
-          <EntityInspector
+          <><EntityInspector
             entity={selected}
             document={document}
             onCommit={onCommit}
@@ -1542,8 +1552,10 @@ function Workspace({
                 : undefined
             }
           />
+          {selected && <IdentityReview revision={revision} entityId={selected.id} canWrite={canWrite&&!busy} onSelect={select} onApply={async(ops,context)=>onCommit(ops,context)} onSuggest={()=>{}} onAgent={ids=>{setIdentityEntityIds(ids);setPanel("agent");}}/>}</>
         ) : (
           <AgentPanel
+            identityEntityIds={identityEntityIds?.includes(selectedId||"") ? identityEntityIds : undefined}
             projectId={project.id}
             revision={revision}
             branch={branch}
@@ -1582,7 +1594,7 @@ function EntityInspector({
   if (!entity) return <div className="empty-copy">{t("selectObject")}</div>;
   const candidate = (entity.representations || []).some(
     (r) =>
-      r.placementState === "unconfirmed" &&
+      r.id === entity.activeModelRepresentationId && r.sourceValidity !== "stale" && r.placementState === "unconfirmed" &&
       ["imported_proposal", "requires_alignment_confirmation"].includes(
         r.placementReason || "",
       ),
@@ -1593,15 +1605,17 @@ function EntityInspector({
     dimensions = sourceDimensions(entity),
     scale = sourceScale(document, entity),
     model = modelGeometry(entity),
+    modelUnits = modelScale(document, entity),
     tilt = modelTilt(document, entity);
-  const display = (value: number | undefined) =>
+  const display = (value: number | undefined, units = scale) =>
     Number.isFinite(value)
-      ? `${(value! * (scale?.nativeToMeters || 1)).toFixed(3)} ${scale?.nativeToMeters ? "m" : ""}`
+      ? `${(value! * (units?.nativeToMeters || 1)).toFixed(3)} ${units?.nativeToMeters ? "m" : ""}`
       : t("unknown");
   return (
     <div className="entity-inspector">
       <p className="eyebrow">{t("selection")}</p>
       <h2>{entity.label || entity.id}</h2>
+      <ModelEvidence entity={entity} onCommit={onCommit} disabled={busy} />
       {referenceSurface && <p className="evidence-note">{t("sceneReferenceSurface")}</p>}
       <Badge value={evidenceStatus.photoKey} />
       {evidenceStatus.identityKey && <p className="evidence-note">{t(evidenceStatus.identityKey)}</p>}
@@ -1645,7 +1659,7 @@ function EntityInspector({
             {(["height", "width", "depth"] as const).map((k) => (
               <div key={k}>
                 <dt>{t(k)}</dt>
-                <dd>{display(model?.[k])}</dd>
+                <dd>{display(model?.[k], modelUnits)}</dd>
               </div>
             ))}
             <div>
@@ -1725,9 +1739,7 @@ function PrimitiveFields({
   onCommit: (ops: Operation[]) => unknown;
 }) {
   const { t } = useI18n();
-  const rep = (entity.representations || []).find(
-      (r) => r.kind === "primitive",
-    ),
+  const rep = activeModel(entity)?.kind === "primitive" ? activeModel(entity) : null,
     spec: any = rep?.primitive,
     p = spec,
     kind = spec?.kind || spec?.type;

@@ -158,6 +158,19 @@ assert.equal(unknownPosts, 1, "An unknown model outcome never triggers an automa
 assert.equal(nodes(other.tree).some(node => node.props.className === "feedback-retry"), false);
 unmount();
 
+// Structured suggestions require the explicit shared-submit button; ordinary chat stays private.
+const suggestion={decision:"same",entityIds:["object/one","object/two"],observationGroups:[["obs-a","obs-b"],[]],reason:"Shared identity evidence",shareForReview:true};
+let sharedPayload;
+publicChat=await render({...publicProps,identitySuggestion:suggestion});
+publicChat.chat.submitUserMessage=({text})=>publicChat.chat.connect.handler({messages:[{role:"user",text}]},{onResponse:async()=>{}});
+postHandler=async(_url,{body})=>{sharedPayload=body;return {...body,id:"shared",entityId:"object/one",status:"saved",assistantMessage:null,errorCode:null};};
+await nodes(publicChat.tree).find(node=>node.type==="button"&&node.props.children==="identitySuggestionSubmit").props.onClick();
+await new Promise(resolve=>setTimeout(resolve,0));
+assert.deepEqual(sharedPayload.identitySuggestion,suggestion,"Explicitly shared structure is carried by the persisted feedback transport");
+await publicChat.chat.connect.handler({messages:[{role:"user",text:"Private follow-up"}]},{onResponse:async()=>{}});
+assert.equal(sharedPayload.identitySuggestion,undefined,"The following private message cannot automatically share another identity suggestion");
+assert.equal(nodes(publicChat.tree).some(node=>node.props.className==="proposal"),false);
+
 // Exercise the actual fetch boundary; feedback authentication never uses the
 // project-owner path or puts its private capability in a URL.
 const realApi = await import("../src/api.ts");

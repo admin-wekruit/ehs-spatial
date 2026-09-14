@@ -10,6 +10,7 @@ import hashlib
 import io
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 from PIL import Image
@@ -29,6 +30,219 @@ def _read(path, expected=None):
     if expected and hashlib.sha256(raw).hexdigest() != expected:
         raise PlatformError("import_report_source_hash_mismatch", 422)
     return raw
+
+
+def observation_mask_sources(geometry_root, source):
+    """Read explicit, hash-pinned segmentation records; never rasterize report polygons."""
+    from scripts.import_geometry_evidence import pinned_manifest
+    frozen, _ = pinned_manifest(geometry_root, source)
+    evidence, records, dependencies = frozen.get("evidence", {}), [], []
+    for kind in ("objects", "floor"):
+        if not evidence.get(kind):
+            continue
+        path = _path(geometry_root, evidence[kind])
+        expected = evidence.get(kind + "_sha256")
+        if not expected:
+            raise PlatformError("import_report_mask_source_unpinned", 422)
+        raw = _read(path, expected)
+        dependencies.append(path)
+        value = json.loads(raw)
+        rows = value["objects"] if kind == "objects" else [value]
+        for index, row in enumerate(rows):
+            for view_index, view in enumerate(row.get("views", [])):
+                if view.get("observed_only") is not True:
+                    raise PlatformError("import_report_mask_not_observed", 422)
+                files = {}
+                provenance = view.get("provenance", {})
+                if provenance.get("source_path") and provenance.get("source_sha256") and type(provenance.get("source_instance")) is int:
+                    original_source = Path(provenance["source_path"]).resolve()
+                    _read(original_source, provenance["source_sha256"])
+                    dependencies.append(original_source)
+                for key in ("mask_path", "canonical_mask_path"):
+                    file = _path(geometry_root, view[key])
+                    pin = view.get("sha256", {}).get(file.name)
+                    if not pin:
+                        raise PlatformError("import_report_mask_source_unpinned", 422)
+                    files[key] = (file, _read(file, pin))
+                    dependencies.append(file)
+                records.append({"kind": kind, "sourceRecordId": row.get("object_id"), "view": view,
+                    "sourcePath": evidence[kind], "sourceRaw": raw,
+                    "jsonPointer": (f"/objects/{index}" if kind == "objects" else "") + f"/views/{view_index}", "files": files})
+    return frozen, records, sorted(set(dependencies))
+
+
+def import_observation_masks(geometry_root, source, document, manifest, include):
+    """Attach both original and canonical raster evidence to existing observations."""
+    frozen, records, _ = observation_mask_sources(geometry_root, source)
+    if not records:
+        return {"attachedObservationIds": [], "sourceViewCount": 0, "newModelCalls": 0}
+    frames = {row["frame_id"]: row for row in frozen["frames"]}
+    cameras = {row["id"]: row for row in source["cameras"]}
+    entities = {row["id"]: row for row in document["entities"]}
+    observations = {row["id"]: row for row in document["observations"]}
+    geometry = document["geometryEvidence"]
+    prepared = []
+    for record in records:
+        view, files = record["view"], record["files"]
+        fid = view["frame_id"]
+        if fid not in frames or fid not in cameras or view.get("rgb_path") != frames[fid]["input"]:
+            raise PlatformError("import_report_mask_image_mismatch", 422)
+        camera, frame = cameras[fid], frames[fid]
+        original_shape = [frame["height"], frame["width"]]
+        canonical_shape = [camera["height"], camera["width"]]
+        with Image.open(io.BytesIO(files["mask_path"][1])) as image:
+            mask = np.asarray(image)
+            if image.format != "PNG" or mask.ndim != 2 or list(mask.shape) != original_shape:
+                raise PlatformError("import_report_mask_dimensions_mismatch", 422)
+        canonical_mask = np.load(io.BytesIO(files["canonical_mask_path"][1]), allow_pickle=False)
+        if list(canonical_mask.shape) != canonical_shape or canonical_mask.dtype.kind not in "bu" or not np.isin(canonical_mask, [0, 1]).all():
+            raise PlatformError("import_report_canonical_mask_invalid", 422)
+        source_ids = [record["sourceRecordId"]] if record["kind"] == "objects" else manifest.get("floorBinding", {}).get("sourceRecordIds", [])
+        for source_id in source_ids:
+            entity = entities.get(manifest["entityIds"].get(source_id))
+            if entity is None:
+                continue
+            current_camera = next(c for c in document["cameras"] if c["id"] == manifest["cameraIds"][fid])
+            candidates = [observations[oid] for oid in entity.get("observationRefs", []) if observations[oid]["imageId"] == current_camera["imageId"]]
+            if len(candidates) > 1:
+                raise PlatformError("import_report_mask_observation_ambiguous", 422)
+            if not candidates:
+                continue
+            observation = candidates[0]
+            if observation.get("maskAssetId"):
+                continue
+            prepared.append((record, observation, source_id, original_shape, canonical_shape, frame))
+    # All source hashes and grids pass before any callback registers bytes.
+    for record, observation, source_id, original_shape, canonical_shape, frame in prepared:
+        source_asset = include(record["sourceRaw"], "application/json", {"kind": "segmentation_source", "sourceRunId": frozen["experiment"]}, "segmentation/" + record["sourcePath"])
+        refs = [{"assetId": source_asset, "jsonPointer": record["jsonPointer"], "sourceRecordId": source_id,
+                 "sourceFrameId": record["view"]["frame_id"], "imageSha256": frame["sha256"]}]
+        saved = {}
+        for key, grid, shape, media in (("mask_path", "original_pixels", original_shape, "image/png"),
+                                      ("canonical_mask_path", "canonical_pixels", canonical_shape, "application/x-npy")):
+            path, raw = record["files"][key]
+            saved[key] = include(raw, media, {"kind": "source_mask", "resolution": grid, "shapeHw": shape,
+                "sourceRecordId": source_id, "sourceFrameId": record["view"]["frame_id"], "sourceRefs": refs}, "segmentation/" + str(path.relative_to(Path(geometry_root).resolve())))
+        observation["maskAssetId"] = saved["mask_path"]
+        observation["maskEvidence"] = {"originalMaskAssetId": saved["mask_path"], "canonicalMaskAssetId": saved["canonical_mask_path"],
+            "originalShape": original_shape, "canonicalShape": canonical_shape,
+            "inputToCanonical": frame["input_to_canonical_pixel_centres"], "geometryManifestAssetId": geometry["manifestAssetId"], "sourceRefs": refs}
+        observation["missingEvidence"] = [item for item in observation.get("missingEvidence", []) if item != "source_mask_not_packaged"]
+    return {"attachedObservationIds": [row[1]["id"] for row in prepared], "sourceViewCount": len(records), "newModelCalls": 0}
+
+
+def import_source_equivalences(document, source, source_asset_id, records, masks, include):
+    """Package exact shared SAM instances, never infer identity from mask overlap."""
+    from ehs_spatial.providers.sam3 import decode_coco_rle
+
+    def walk(value, pointer=""):
+        if isinstance(value, dict):
+            yield pointer, value
+            for key, child in value.items():
+                yield from walk(child, pointer + "/" + key.replace("~", "~0").replace("/", "~1"))
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                yield from walk(child, pointer + "/" + str(index))
+
+    assets = {a["id"]: a for a in document["assets"]}
+    observations = {o["id"]: o for o in document["observations"]}
+    cameras = {ref["sourceCameraId"]: c for c in document["cameras"] for ref in c.get("sourceRefs", []) if ref.get("sourceCameraId")}
+    source_owners = {}
+    for entity in document["entities"]:
+        for ref in entity.get("lineage", []):
+            if ref.get("operation") == "offline_import" and ref.get("sourceRecordId"):
+                source_owners.setdefault(ref["sourceRecordId"], []).append(entity)
+
+    def observation(source_id, image_id):
+        candidates = {oid for entity in source_owners.get(source_id, []) for oid in entity["observationRefs"] if observations[oid]["imageId"] == image_id}
+        if len(candidates) != 1:
+            return None
+        return observations[next(iter(candidates))]
+
+    # ponytail: pinned input inventories are small; scan provenance without
+    # coupling identity to a run name, label, object ID or dictionary location.
+    raw_records = [(pointer, value) for pointer, value in walk(source)
+                   if value.get("candidate_id") and isinstance(value.get("source_mask"), dict)]
+    pairs, unavailable, seen = [], [], set()
+    for record in records:
+        provenance = record["view"].get("provenance", {})
+        instance = provenance.get("source_instance")
+        checksum = provenance.get("source_sha256")
+        if not checksum or type(instance) is not int or instance < 0 or not provenance.get("source_path"):
+            continue
+        fid = record["view"]["frame_id"]
+        if fid not in cameras:
+            continue
+        image_id = cameras[fid]["imageId"]
+        for pointer, raw_record in raw_records:
+            reference = raw_record["source_mask"].get("ref", {})
+            if (reference.get("encoding") != "rle" or reference.get("sha256") != checksum
+                    or reference.get("pointer") != ["rle", instance]
+                    or raw_record.get("source_frame_id") != provenance.get("source_frame")
+                    or raw_record.get("target_frame_id") != fid):
+                continue
+            generated = observation(record["sourceRecordId"], image_id)
+            raw_observation = observation(raw_record["candidate_id"], image_id)
+            if generated is None or raw_observation is None:
+                unavailable.append({"sourceRecordIds": [record["sourceRecordId"], raw_record["candidate_id"]], "sourceFrameId": fid, "reason": "existing_observation_missing_or_ambiguous"})
+                continue
+            ids = tuple(sorted((generated["id"], raw_observation["id"])))
+            if len(set(ids)) != 2 or ids in seen:
+                continue
+            source_bytes = _read(Path(provenance["source_path"]), checksum)
+            source_json = json.loads(source_bytes)
+            if not isinstance(source_json.get("rle"), list) or instance >= len(source_json["rle"]):
+                raise PlatformError("import_source_instance_invalid", 422)
+            grids = [masks.get(oid) for oid in ids]
+            if any(grid is None for grid in grids) or not np.array_equal(grids[0], grids[1]):
+                unavailable.append({"observationIds": ids, "reason": "canonical_masks_differ_or_missing"})
+                continue
+            shape = list(grids[0].shape)
+            if reference.get("shape_hw") != shape:
+                unavailable.append({"observationIds": ids, "reason": "source_grid_not_canonical"})
+                continue
+            decoded = decode_coco_rle(source_json["rle"][instance], height=shape[0], width=shape[1]).astype(bool)
+            if not np.array_equal(decoded, grids[0]):
+                raise PlatformError("import_source_instance_mask_mismatch", 422)
+            source_id = include(source_bytes, "application/json", {"kind": "identity_source_segmentation"})
+            native_id = include(record["sourceRaw"], "application/json", {"kind": "segmentation_source"})
+            pairs.append({"kind": "canonical_sam_rle", "observationRefs": [{"observationId": oid, "revision": observations[oid]["revision"]} for oid in ids],
+                "imageId": image_id, "imageSha256": assets[image_id]["sha256"],
+                "sourceRef": {"assetId": source_id, "sha256": checksum, "jsonPointer": f"/rle/{instance}"},
+                "canonicalShape": shape, "canonicalMaskSha256": hashlib.sha256(np.ascontiguousarray(decoded, dtype=np.bool_).tobytes()).hexdigest(),
+                "evidenceRefs": [{"role": "native_mask_provenance", "assetId": native_id, "sha256": hashlib.sha256(record["sourceRaw"]).hexdigest(), "jsonPointer": record["jsonPointer"] + "/provenance"},
+                    {"role": "raw_source_reference", "assetId": source_asset_id, "sha256": assets[source_asset_id]["sha256"], "jsonPointer": pointer + "/source_mask/ref"}]})
+            seen.add(ids)
+    if pairs:
+        payload = json.dumps({"schemaVersion": 1, "kind": "same_source_observation_equivalences", "pairs": sorted(pairs, key=lambda p: [r["observationId"] for r in p["observationRefs"]])}, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+        identity = include(payload, "application/json", {"kind": "source_identity_evidence"})
+        document["sourceIdentityEvidence"] = [{"assetId": identity, "sha256": hashlib.sha256(payload).hexdigest()}]
+    return {"pairCount": len(pairs), "unavailable": unavailable, "newModelCalls": 0}
+
+
+def canonical_observation_masks(document, read_asset):
+    """Read imported raster evidence through the production canonical-mask loader."""
+    from ehs_spatial.platform.reconstruction import _load_masks
+    assets = {a["id"]: a for a in document["assets"]}
+    by_sha = {a["sha256"]: a for a in document["assets"]}
+    def get_blob(key, checksum, size):
+        raw = read_asset(by_sha[checksum]["id"])
+        if key != "sha256/" + checksum or len(raw) != size or hashlib.sha256(raw).hexdigest() != checksum:
+            raise PlatformError("import_report_source_hash_mismatch", 422)
+        return raw
+    stages = SimpleNamespace(repo=SimpleNamespace(get_asset=lambda aid: {**assets[aid], "storageKey": "sha256/" + assets[aid]["sha256"]}),
+                             blobs=SimpleNamespace(get=get_blob))
+    cameras = {c["id"]: c for c in document["cameras"]}
+    geometry, canonical = document["geometryEvidence"], {}
+    for frame in geometry["frames"]:
+        camera = cameras[frame["cameraId"]]
+        def array(name):
+            asset = assets[frame["assets"][name]]
+            return np.load(io.BytesIO(get_blob("sha256/" + asset["sha256"], asset["sha256"], asset["sizeBytes"])), allow_pickle=False)
+        canonical[camera["imageId"]] = {"points": array("pts3d.npy"),
+            "inputToCanonical": array("intrinsics.npy") @ np.linalg.inv(camera["K"]),
+            "originalShape": [camera["height"], camera["width"]], "geometryManifestAssetId": geometry["manifestAssetId"]}
+    return _load_masks(document, canonical, stages)
 
 
 def _camel(value):

@@ -1,5 +1,5 @@
 import { useI18n } from "./i18n";
-import { jsonObject } from "./core";
+import { currentEntityId, jsonObject } from "./core";
 import { EvidenceValue } from "./ReportEvidence";
 import { exactReviewEvidence, findingResult, missingKeys } from "./ReportReview";
 import { reportReviewMessages } from "./report-review-messages";
@@ -32,10 +32,10 @@ export function historicalObjectFindings(revision: Revision, entityId: string) {
   const sameRun = (record: Record<string, unknown>) =>
     (record.runId === undefined || record.runId === historical.runId) &&
     (record.sourceRunId === undefined || record.sourceRunId === historical.runId);
-  const inventory = new Set(records(historical.inventory).filter(item => sameRun(item) && Array.isArray(item.entityIds) && item.entityIds.includes(entityId) && Number.isInteger(item.inventoryIndex)).map(item => item.inventoryIndex));
+  const inventory = new Set(records(historical.inventory).filter(item => sameRun(item) && Array.isArray(item.entityIds) && item.entityIds.length === 1 && item.entityIds[0] === entityId && Number.isInteger(item.inventoryIndex)).map(item => item.inventoryIndex));
   const matches = (record: Record<string, unknown>) => sameRun(record) &&
-    ([record.entityId, record.subjectId, record.objectId].includes(entityId) ||
-      Array.isArray(record.entityIds) && record.entityIds.includes(entityId) ||
+    ([record.entityId, record.subjectId, record.objectId].some(id => typeof id === "string" && currentEntityId(revision.document, id) === entityId) ||
+      Array.isArray(record.entityIds) && record.entityIds.some(id => typeof id === "string" && currentEntityId(revision.document, id) === entityId) ||
       Number.isInteger(record.inventoryIndex) && inventory.has(record.inventoryIndex));
   return { runId: typeof historical.runId === "string" ? historical.runId : "", total: findings.length,
     linked: findings.flatMap(finding => {

@@ -67,3 +67,11 @@ if(process.env.PANOPTES_TEST_PUBLICATION_URL){
   console.log(`Real snapshot ${actual.id}: 9 historical rules, no invented object-finding links.`);
 }
 console.log('Object findings checks passed: A/B and project/revision isolation, fixed snapshot priority, unknown applicability, explicit same-run inventory links, no name matching, no requests, immutable evidence, zh/en.');
+
+const splitRevision=structuredClone(revision);
+splitRevision.document.entities=[{id:'a',observationRefs:['oa']},{id:'b',observationRefs:['ob']}];
+splitRevision.document.observations=[{id:'oa'},{id:'ob'}];
+splitRevision.document.identityDecisions=[{id:'split',decision:'different',entityIds:['retired-parent'],observationGroups:[['oa'],['ob']]}];
+splitRevision.document.reportEvidence.historical.inventory=[{inventoryIndex:7,entityIds:['a','b']}];
+splitRevision.document.reportEvidence.historical.findings=[{id:'aggregate',facts:[{inventoryIndex:7},{entityId:'retired-parent'}]}];
+for(const child of ['a','b']) assert.equal(historicalObjectFindings(splitRevision,child).linked.length,0,'An unscoped historical source conclusion cannot be attached to both split children');

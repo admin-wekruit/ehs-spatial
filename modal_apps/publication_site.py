@@ -46,7 +46,7 @@ image = (
     .add_local_file(ROOT / "ehs_spatial/__init__.py", "/app/ehs_spatial/__init__.py")
     .add_local_dir(catalog, "/publications")
 )
-for module in ("__init__", "publication_site", "feedback", "contracts", "agent_service", "repository"):
+for module in ("__init__", "publication_site", "feedback", "contracts", "agent_service", "repository", "identity"):
     image = image.add_local_file(ROOT / f"ehs_spatial/platform/{module}.py", f"/app/ehs_spatial/platform/{module}.py")
 
 
@@ -55,7 +55,7 @@ for module in ("__init__", "publication_site", "feedback", "contracts", "agent_s
 @modal.concurrent(max_inputs=32)
 @modal.asgi_app()
 def web():
-    from ehs_spatial.platform.publication_site import create_app, FEEDBACK_PATH
+    from ehs_spatial.platform.publication_site import create_app, FEEDBACK_PATH, IDENTITY_SUGGESTIONS_PATH
     from ehs_spatial.platform.feedback import FeedbackService, FEEDBACK_INSTRUCTION, persistent_feedback_app
     from ehs_spatial.platform.agent_service import GeminiAgentProvider
 
@@ -69,4 +69,4 @@ def web():
                                call_reservation=reservation, checkpoint=feedback_data.commit)
 
     server = create_app("/publications", allowed_origins=["https://admin-wekruit.github.io"], feedback=feedback)
-    return persistent_feedback_app(server, feedback_data, FEEDBACK_PATH.fullmatch)
+    return persistent_feedback_app(server, feedback_data, lambda path: FEEDBACK_PATH.fullmatch(path) or IDENTITY_SUGGESTIONS_PATH.fullmatch(path))

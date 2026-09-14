@@ -158,7 +158,7 @@ class PostgresRepository:
             if not source:
                 document["target"] = body.get("target", "scene")
             if body.get("operations"):
-                document, _ = apply_operations(document, body["operations"])
+                document, _ = apply_operations(document, body["operations"], base_revision_id=str(source["id"]) if source else None)
             project_id, branch_id, revision_id = uuid4(), uuid4(), uuid4()
             project = connection.execute("""INSERT INTO projects(id,title,capability_sha256,request_id,request_sha256,default_branch_id,fork_source_revision_id)
                 VALUES(%s,%s,%s,%s,%s,%s,%s) RETURNING *""", (project_id, body["title"], cap_sha, body["requestId"], digest(body), branch_id, source_revision_id)).fetchone()
@@ -238,7 +238,7 @@ class PostgresRepository:
                 operations = [{"type": "undo" if body.get("undoOf") else "redo", "editBatchId": str(batch_id)}]
                 inverse = [{"type": "restoreDocument", "document": base["document"]}]
             else:
-                document, inverse = apply_operations(base["document"], operations)
+                document, inverse = apply_operations(base["document"], operations, base_revision_id=str(base["id"]))
             revision = self._insert_revision(connection, project_id, body["branchId"], document, parent=base["id"], label=body.get("label"))
             batch = connection.execute("""INSERT INTO edit_batches(id,project_id,branch_id,base_revision_id,revision_id,request_id,request_sha256,operations,inverse_operations,undo_of,redo_of,agent_turn_id)
                 VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""", (uuid4(), project_id, body["branchId"], base["id"], revision["id"], body["requestId"], digest(body), Jsonb(operations), Jsonb(inverse), body.get("undoOf"), body.get("redoOf"), body.get("agentTurnId"))).fetchone()
@@ -269,6 +269,11 @@ class PostgresRepository:
             return _wire(self._one(connection, "SELECT * FROM assets WHERE id=%s", (asset_id,), code="asset_not_found"))
 
     def create_capture(self, project_id, capability, body, images):
+        mode = body.get("captureMode", "initial")
+        if mode not in ("initial", "append"):
+            raise PlatformError("invalid_capture_mode", 422)
+        if not isinstance(images, list) or not 1 <= len(images) <= 4:
+            raise PlatformError("image_count_out_of_range", 422, minimum=1, maximum=4)
         request = {**body, "images": [{k: value for k, value in image.items() if k != "id"} for image in images]}
         with self._connect() as connection:
             self._auth(connection, project_id, capability)
@@ -278,18 +283,54 @@ class PostgresRepository:
                 return _wire({"capture": previous, "revision": self._revision(connection, project_id, previous["revision_id"]), "job": job})
             self._branch(connection, project_id, body["branchId"], body["baseRevisionId"])
             base = self._revision(connection, project_id, body["baseRevisionId"])
+            source = base["document"]
+            if mode == "initial" and (source.get("captureId") or source.get("captureIds") or any(source[key] for key in ("entities", "observations", "coordinateFrames", "cameras", "assets", "annotations"))):
+                raise PlatformError("capture_append_required", 409)
+            if mode == "append" and body["target"] != source["target"]:
+                raise PlatformError("capture_target_mismatch", 422)
             identity, revision_id = uuid4(), uuid4()
             asset_rows = [self._register_asset(connection, project_id, image) for image in images]
-            image_records = [{"id": str(asset["id"]), "assetId": str(asset["id"]), **image.get("metadata", {})} for asset, image in zip(asset_rows, images)]
-            document = empty_document()
-            document.update(captureId=str(identity), target=body["target"], assets=[{"id": str(asset["id"]), "kind": "source_image", "mediaType": asset["media_type"]} for asset in asset_rows])
-            task = {"schemaVersion": 1, "kind": "capture_reconstruction", "target": body["target"], "imageIds": [image["id"] for image in image_records], "captureId": str(identity)}
+            existing_images = {a["id"] for a in source["assets"] if a.get("kind") == "source_image"}
+            capture_ids = source.get("captureIds") or ([source["captureId"]] if source.get("captureId") else [])
+            old_captures = connection.execute("SELECT images FROM captures WHERE project_id=%s AND id=ANY(%s::uuid[])", (project_id, capture_ids)).fetchall() if capture_ids else []
+            prior_images = [image for capture in old_captures for image in capture["images"]]
+            def image_mapping(image):
+                return {key: image.get(key) for key in ("width", "height", "originalWidth", "originalHeight", "pixelMapping", "exifOrientation")}
+            image_records = []
+            for asset, image in zip(asset_rows, images):
+                record = {**image.get("metadata", {}), "id": str(asset["id"]), "assetId": str(asset["id"])}
+                duplicate = next((r for r in image_records if r["id"] == record["id"]), None)
+                prior = [r for r in prior_images if r["assetId"] == record["assetId"]]
+                if duplicate is not None and image_mapping(duplicate) != image_mapping(record) or record["id"] in existing_images and not any(image_mapping(old) == image_mapping(record) for old in prior):
+                    raise PlatformError("capture_image_mapping_conflict", 422, imageId=record["id"])
+                if duplicate is None:
+                    record["sourceReused"] = record["id"] in existing_images
+                    image_records.append(record)
+            if mode == "append":
+                from .identity import migrate_document
+                document = migrate_document(source, base_revision_id=str(base["id"])) if source["schemaVersion"] == 1 else deepcopy(source)
+                document["captureIds"].append(str(identity))
+            else:
+                document = empty_document()
+            document.update(captureId=str(identity), target=body["target"])
+            asset_ids = {a["id"] for a in document["assets"]}
+            for asset in asset_rows:
+                aid = str(asset["id"])
+                if aid not in asset_ids:
+                    document["assets"].append({"id": aid, "kind": "source_image", "mediaType": asset["media_type"], "sha256": asset["sha256"].strip(), "sizeBytes": asset["size_bytes"]})
+                    asset_ids.add(aid)
+                    if document["schemaVersion"] == 2:
+                        document["geometryBindings"][aid] = None
+            new_images = [image["id"] for image in image_records if not image["sourceReused"]]
+            reused_images = [image["id"] for image in image_records if image["sourceReused"]]
+            task = {"schemaVersion": 1, "kind": "capture_reconstruction", "target": body["target"], "imageIds": [image["id"] for image in image_records],
+                    "captureId": str(identity), "captureMode": mode, "newImageIds": new_images, "reusedImageIds": reused_images}
             capture = connection.execute("""INSERT INTO captures(id,project_id,branch_id,base_revision_id,revision_id,request_id,request_sha256,target,images,task)
                 VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""", (identity, project_id, body["branchId"], base["id"], revision_id, body["requestId"], digest(request), body["target"], Jsonb(image_records), Jsonb(task))).fetchone()
             revision = self._insert_revision(connection, project_id, body["branchId"], document, parent=base["id"], label="Capture", revision_id=revision_id)
             connection.execute("UPDATE scene_branches SET head_revision_id=%s WHERE id=%s", (revision_id, body["branchId"]))
             job_body = {"requestId": body["requestId"], "branchId": body["branchId"], "baseRevisionId": str(revision_id),
-                        "kind": "analyze_capture", "inputs": {"captureId": str(identity)}, "config": {}}
+                        "kind": "analyze_capture", "inputs": {"captureId": str(identity), "captureMode": mode, "newImageIds": new_images, "reusedImageIds": reused_images}, "config": {}}
             job = connection.execute("""INSERT INTO jobs(id,project_id,branch_id,base_revision_id,request_id,request_sha256,kind,inputs,config,status)
                 VALUES(%s,%s,%s,%s,%s,%s,'analyze_capture',%s,%s,'pending_dispatch') RETURNING *""",
                 (uuid4(), project_id, body["branchId"], revision_id, body["requestId"], digest(job_body), Jsonb(job_body["inputs"]), Jsonb(self._job_config({})))).fetchone()
@@ -446,7 +487,8 @@ class PostgresRepository:
                 SELECT id,parent_revision_id,0 AS depth FROM scene_revisions WHERE project_id=%s AND id=%s
                 UNION ALL SELECT r.id,r.parent_revision_id,a.depth+1 FROM scene_revisions r JOIN ancestry a ON r.id=a.parent_revision_id WHERE r.project_id=%s)
                 SELECT b.* FROM ancestry a JOIN edit_batches b ON b.revision_id=a.id ORDER BY a.depth DESC""", (project_id, revision["id"], project_id)).fetchall()
-            snapshot = {"schemaVersion": 1, "reportSchemaVersion": 1, "rendererVersion": "native-webgl-v1", "revision": _wire(revision), "evaluations": evaluations or [], "reviews": reviews or [],
+            scene_version = revision["document"]["schemaVersion"]
+            snapshot = {"schemaVersion": 1, "reportSchemaVersion": scene_version, "rendererVersion": f"native-webgl-v{scene_version}", "revision": _wire(revision), "evaluations": evaluations or [], "reviews": reviews or [],
                         "editBatches": _wire(edits), "branchKind": branch["kind"], "branchTitle": branch["title"]}
             jobs = connection.execute("""SELECT * FROM jobs WHERE project_id=%s AND (base_revision_id=%s OR result_revision_id=%s)
                 ORDER BY created_at,id FOR SHARE""", (project_id, revision["id"], revision["id"])).fetchall()
@@ -536,6 +578,11 @@ class PostgresRepository:
             for field, collection in (("entityId", "entities"), ("observationId", "observations")):
                 if body.get(field) and body[field] not in {x["id"] for x in document[collection]}:
                     raise PlatformError("agent_scope_not_found", 422, field=field)
+            pair = body.get("identityEntityIds")
+            if pair is not None:
+                entity_ids = {e["id"] for e in document["entities"] if not e.get("sourceContext")}
+                if not isinstance(pair, (list, tuple)) or len(pair) != 2 or not all(isinstance(eid, str) for eid in pair) or pair[0] == pair[1] or not set(pair) <= entity_ids or (body.get("entityId") and body["entityId"] not in pair):
+                    raise PlatformError("agent_identity_scope_invalid", 422)
             turn_id, job_id = uuid4(), uuid4()
             job_body = {"requestId": body["requestId"], "branchId": body["branchId"], "baseRevisionId": body["baseRevisionId"], "kind": "agent_turn", "inputs": {"turnId": str(turn_id)}, "config": {}}
             connection.execute("""INSERT INTO jobs(id,project_id,branch_id,base_revision_id,request_id,request_sha256,kind,inputs,config,status)

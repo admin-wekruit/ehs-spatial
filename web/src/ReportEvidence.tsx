@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { resolveAsset } from "./api";
-import { jsonObject } from "./core";
+import { cameraForImage, currentEntityId, observationOwner, jsonObject } from "./core";
 import { useI18n } from "./i18n";
 import { ReportDownload } from "./WorkcellReport";
 import { ErrorNotice } from "./App";
@@ -63,6 +63,7 @@ type InterpretationItem = {
   imageId?: string | null;
   cameraId?: string | null;
   entityIds: string[];
+  observationId?: string | null;
   mappingStatus: string;
   mappingLimitation?: string;
 };
@@ -102,7 +103,8 @@ type ReportBundle = {
     };
   };
   objects: {
-    entityId: string;
+    entityId: string | null;
+    views?: {observationId:string|null;entityId:string|null;imageId?:string|null}[];
     sourceRecordId: string;
     metrics?: {
       beforeIou?: number | null;
@@ -130,13 +132,19 @@ export type ReportEvidenceSelection = {
   imageId: string | null;
   cameraId: string | null;
 };
+export function interpretationEntityIds(document: SceneDocument, item: InterpretationItem): string[] {
+  if (item.observationId) { const owner=observationOwner(document,item.observationId);return owner?[owner.id]:[]; }
+  const observations=document.observations.filter(observation=>observation.imageId===item.imageId && observation.sourceRefs?.some(ref=>item.sourceCandidateIds?.includes(String(jsonObject(ref)?.sourceRecordId))));
+  if(observations.length) return [...new Set(observations.flatMap(observation=>{const owner=observationOwner(document,observation.id);return owner?[owner.id]:[];}))];
+  return [...new Set(item.entityIds.flatMap(id=>{const current=currentEntityId(document,id);return current?[current]:[];}))];
+}
 export function interpretationSelection(
   document: SceneDocument,
   item: InterpretationItem,
   entityId: string,
 ): ReportEvidenceSelection | null {
   const entity = document.entities.find((e) => e.id === entityId);
-  if (!entity || !item.entityIds.includes(entityId)) return null;
+  if (!entity || !interpretationEntityIds(document,item).includes(entityId)) return null;
   const imageId =
     item.imageId && document.assets.some((a) => a.id === item.imageId)
       ? item.imageId
@@ -152,15 +160,12 @@ export function interpretationSelection(
     ),
   );
   const observation =
-    matching.length === 1
+    observations.find(observation => observation.id === item.observationId) || (matching.length === 1
       ? matching[0]
       : observations.length === 1
         ? observations[0]
-        : undefined;
-  const cameras = document.cameras.filter((c) => c.imageId === imageId);
-  const camera =
-    cameras.find((c) => c.id === item.cameraId) ||
-    (cameras.length === 1 ? cameras[0] : undefined);
+        : undefined);
+  const camera = cameraForImage(document, imageId);
   return {
     entityId,
     observationId: observation?.id || null,
@@ -175,7 +180,7 @@ export function orderedInterpretations(
 ) {
   const rank = (analysis: Interpretation) =>
     analysis.items.some((item) =>
-      item.entityIds.some(
+      interpretationEntityIds(document,item).some(
         (id) => interpretationSelection(document, item, id)?.imageId,
       ),
     )
@@ -193,7 +198,7 @@ export function partitionInterpretationItems(
   const rows = items.map((item) => ({
     item,
     sourcePhoto: interpretationSourcePhoto(document, item),
-    contexts: item.entityIds
+    contexts: interpretationEntityIds(document,item)
       .map((id) => interpretationSelection(document, item, id))
       .filter((value): value is ReportEvidenceSelection => !!value?.imageId),
   }));
@@ -711,13 +716,8 @@ export function ReportEvidence({
                   {historical.inventory.map((item, i) => (
                     <tr key={i}>
                       <td>
-                        {item.entityIds.length ? (
-                          <button onClick={() => onSelect(item.entityIds[0])}>
-                            {item.label} ↗
-                          </button>
-                        ) : (
-                          item.label
-                        )}
+                        {item.label}
+                        {item.entityIds.filter(id=>document.entities.some(entity=>entity.id===id)).map(id=><button key={id} onClick={()=>onSelect(id)}>{document.entities.find(entity=>entity.id===id)?.label || id.slice(0,8)} ↗</button>)}
                       </td>
                       <td>{item.sourceFrameId}</td>
                       <td>
@@ -967,9 +967,8 @@ export function ReportEvidence({
                         ) : (
                           o.sourceRecordId
                         )}
-                        <small>
-                          {t("reSourceRecord")} · {o.sourceRecordId}
-                        </small>
+                        <small>{t("reSourceRecord")} · {o.sourceRecordId}</small>
+                        {o.views?.map((view, index) => { const owner = view.observationId ? observationOwner(document, view.observationId) : null; return owner ? <button key={view.observationId || index} onClick={() => onSelect(owner.id)}>{t("photos")} {index + 1} · {owner.label || owner.id.slice(0,8)}</button> : null; })}
                       </td>
                       <td>
                         <strong>{source?.runId || t("reRunUnknown")}</strong>

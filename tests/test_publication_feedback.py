@@ -104,6 +104,37 @@ def history(client, path, body, headers=HEADERS):
     return client.get(path, params={"conversationId": body["conversationId"]}, headers=headers)
 
 
+def test_identity_suggestion_is_scoped_shared_and_never_invokes_a_model(catalog, tmp_path):
+    root, publications = catalog
+    publication = publications[0]
+    doc = publication['snapshot']['revision']['document']
+    frozen = deepcopy(publication)
+    provider = Provider()
+    client = client_for(root, tmp_path / 'identity.sqlite', provider, 2, .25)
+    pair = doc['entities']
+    suggestion = {'decision': 'same', 'entityIds': [e['id'] for e in pair],
+                  'observationGroups': [e['observationRefs'] for e in pair], 'reason': 'Please compare these two rails.', 'shareForReview': True}
+    private = request(message='This conversation text is private.')
+    post(client, route(publication), private)
+    calls = len(provider.calls)
+    body = request(conversationId=private['conversationId'], message='Private explanation must not be shared.', identitySuggestion=suggestion)
+    result = post(client, route(publication), body)
+    assert result['status'] == 'saved' and result['errorCode'] is None
+    assert post(client, route(publication), body)['id'] == result['id']
+    assert len(provider.calls) == calls
+    shared = client.get(f"/api/publications/{publication['id']}/identity-suggestions").json()['items']
+    assert len(shared) == 1 and shared[0]['identitySuggestion'] == suggestion
+    assert 'private' not in json.dumps(shared).lower() and 'conversationId' not in shared[0]
+    assert publication == frozen
+    bad = deepcopy(suggestion)
+    bad['observationGroups'][1] = pair[0]['observationRefs']
+    denied = client.post(route(publication), json=request(identitySuggestion=bad), headers=HEADERS)
+    assert denied.status_code == 422
+    bad['entityIds'][1] = publications[1]['snapshot']['revision']['document']['entities'][1]['id']
+    denied = client.post(route(publication), json=request(identitySuggestion=bad), headers=HEADERS)
+    assert denied.status_code == 422
+
+
 def test_disabled_feedback_persists_across_reopen_without_changing_publication(catalog, tmp_path):
     root, publications = catalog
     publication, body = publications[0], request()

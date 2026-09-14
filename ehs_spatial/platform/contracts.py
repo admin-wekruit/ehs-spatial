@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import re
+from decimal import Decimal
 from typing import Annotated, Any, Generic, Literal, TypeVar
 from uuid import UUID
 
@@ -19,7 +20,21 @@ class PlatformError(Exception):
 
 
 def canonical(value: Any) -> bytes:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    def jsonb_numbers(item):
+        if isinstance(item, float) and math.isfinite(item):
+            # JSONB removes a zero's sign and expands positive exponents to
+            # decimal integers. Preserve 1.0 and all other existing encodings.
+            if item == 0:
+                return 0.0
+            if "e+" in repr(item):
+                return int(Decimal(str(item)))
+        if isinstance(item, dict):
+            return {key: jsonb_numbers(value) for key, value in item.items()}
+        if isinstance(item, (list, tuple)):
+            return [jsonb_numbers(value) for value in item]
+        return item
+
+    return json.dumps(jsonb_numbers(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
 
 
 def digest(value: Any) -> str:
@@ -103,6 +118,7 @@ class AgentRequest(DTO):
     baseRevisionId: UUID
     message: str = Field(min_length=1, max_length=16000)
     entityId: str | None = None
+    identityEntityIds: tuple[str, str] | None = None
     observationId: str | None = None
     imageId: UUID | None = None
     box: list[float] | None = None
@@ -112,6 +128,8 @@ class AgentRequest(DTO):
 
     @model_validator(mode="after")
     def valid_box(self):
+        if self.identityEntityIds is not None and (not all(self.identityEntityIds) or self.identityEntityIds[0] == self.identityEntityIds[1]):
+            raise ValueError("identityEntityIds must contain two different entity IDs")
         if (self.policyId is None) != (self.policyRevisionId is None):
             raise ValueError("policyId and policyRevisionId must be supplied together")
         if self.box is not None and (len(self.box) != 4 or min(self.box) < 0 or self.box[2] <= self.box[0] or self.box[3] <= self.box[1]):
@@ -185,6 +203,7 @@ class Camera(IdentifiedDocument):
 
 
 class Observation(IdentifiedDocument):
+    captureId: str | None = None
     revision: int | None = None
     imageId: str
     originalPixelBox: Vec4
@@ -205,6 +224,87 @@ class Representation(IdentifiedDocument):
     placementSource: dict[str, Any] | None = None
     bounds: Bounds | None = None
     sourceRefs: list[Any] | None = None
+    material: dict[str, Any] | None = None
+
+
+class ObservationIdentityEvidence(DTO):
+    kind: Literal["observation"]
+    observationId: str = Field(min_length=1)
+    observationRevision: int = Field(ge=1)
+
+
+class AssetIdentityEvidence(DTO):
+    kind: Literal["asset"]
+    assetId: str = Field(min_length=1)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class MethodIdentityEvidence(DTO):
+    kind: Literal["method"]
+    name: str = Field(min_length=1, max_length=240)
+    version: str = Field(min_length=1, max_length=240)
+    configSha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+IdentityEvidenceRef = Annotated[ObservationIdentityEvidence | AssetIdentityEvidence | MethodIdentityEvidence, Field(discriminator="kind")]
+
+
+class IdentityDecision(DTO):
+    id: str = Field(min_length=1)
+    decision: Literal["same", "different", "undecided"]
+    source: Literal["geometry", "manual", "source_binding"]
+    baseRevisionId: str = Field(min_length=1)
+    entityIds: list[str] = Field(min_length=1)
+    observationGroups: list[list[str]] = Field(min_length=2)
+    survivorId: str | None
+    evidenceRefs: list[IdentityEvidenceRef] = Field(min_length=1)
+    reason: str = Field(min_length=1, max_length=8000)
+    supersedesDecisionId: str | None
+    agentTurnId: str | None = None
+
+
+class MeasurementEvidence(DTO):
+    id: str = Field(min_length=1)
+    measurementKey: str = Field(min_length=1)
+    originalMeasurement: Any
+    sourceRevisionId: str = Field(min_length=1)
+    sourceEntityId: str = Field(min_length=1)
+    observationRefs: list[str]
+    representationId: str | None
+    sourceEvidenceId: str | None = None
+    sourceRefs: list[Any] | None = None
+    coordinateFrameId: str | None = None
+
+
+class SourceIdentityEvidence(DTO):
+    assetId: str = Field(min_length=1)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class SourceIdentityPointer(SourceIdentityEvidence):
+    jsonPointer: str = Field(pattern=r"^/")
+    role: Literal['raw_source_reference', 'native_mask_provenance'] | None = None
+
+
+class SourceObservationRevision(DTO):
+    observationId: str = Field(min_length=1)
+    revision: int = Field(ge=1)
+
+
+class SourceObservationEquivalence(DTO):
+    kind: Literal['canonical_sam_rle'] = 'canonical_sam_rle'
+    observationRefs: tuple[SourceObservationRevision, SourceObservationRevision]
+    imageId: str = Field(min_length=1)
+    imageSha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    sourceRef: SourceIdentityPointer
+    canonicalMaskSha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    canonicalShape: tuple[Annotated[int, Field(gt=0)], Annotated[int, Field(gt=0)]]
+    evidenceRefs: list[SourceIdentityPointer] = Field(min_length=1)
+
+
+class GeometryBinding(DTO):
+    geometrySolutionId: str = Field(min_length=1)
+    cameraId: str = Field(min_length=1)
 
 
 class Entity(IdentifiedDocument):
@@ -218,6 +318,9 @@ class Entity(IdentifiedDocument):
     material: dict[str, Any] | None = None
     groupId: str | None = None
     lineage: list[Any] | None = None
+    activeModelRepresentationId: str | None = None
+    measurementEvidence: list[MeasurementEvidence] | None = None
+    measurementSelections: dict[str, str | None] | None = None
 
 
 class SceneAsset(IdentifiedDocument):
@@ -233,8 +336,13 @@ class Annotation(IdentifiedDocument):
 
 
 class SceneDocument(DocumentDTO):
-    schemaVersion: Literal[1]
+    # Frozen v1 responses retain their exact fields; v2 is created only by migration.
+    schemaVersion: Literal[1, 2]
     captureId: str | None = None
+    captureIds: list[str] | None = None
+    identityDecisions: list[IdentityDecision] | None = None
+    sourceIdentityEvidence: list[SourceIdentityEvidence] | None = None
+    geometryBindings: dict[str, GeometryBinding | None] | None = None
     target: Literal["scene", "standalone_object"]
     coordinateFrames: list[CoordinateFrame]
     cameras: list[Camera]
@@ -318,6 +426,7 @@ class CaptureImage(IdentifiedDocument):
     originalHeight: int | None = None
     originalSha256: str | None = None
     pixelMapping: list[dict[str, Any]] | None = None
+    sourceReused: bool | None = None
 
 
 class Capture(RequestedRecord):
@@ -515,6 +624,15 @@ class Review(FindingRecord):
     document: ReviewDocument
 
 
+class EvidenceIdentityBinding(DTO):
+    sourceSceneRevisionId: str
+    sourceFindingId: str
+    sourceEntityId: str
+    targetEntityId: str
+    observationIds: list[str]
+    identityDecisionIds: list[str]
+
+
 class EvidenceRequestDocument(DTO):
     schemaVersion: Literal[1]
     status: Literal["open", "fulfilled"]
@@ -527,6 +645,7 @@ class EvidenceRequestDocument(DTO):
     evaluationId: str | None = None
     findingId: str | None = None
     actor: Literal["project_capability"] | None = None
+    identityBinding: EvidenceIdentityBinding | None = None
 
 
 class EvidenceRequest(FindingRecord):
@@ -628,7 +747,7 @@ def validate_document(document: dict[str, Any]) -> dict[str, Any]:
         canonical(document)
     except (ValueError, TypeError):
         raise PlatformError("invalid_document") from None
-    if document.get("schemaVersion") != 1 or document.get("target") not in ("scene", "standalone_object"):
+    if document.get("schemaVersion") not in (1, 2) or document.get("target") not in ("scene", "standalone_object"):
         raise PlatformError("invalid_document")
     indexes = {}
     for key in ("coordinateFrames", "cameras", "observations", "entities", "assets", "annotations"):
@@ -689,4 +808,7 @@ def validate_document(document: dict[str, Any]) -> dict[str, Any]:
                 if not isinstance(rep.get("primitive"), dict):
                     raise PlatformError("invalid_primitive")
                 primitive_mesh(rep["primitive"])
+    if document["schemaVersion"] == 2:
+        from .identity import validate_identity_document
+        validate_identity_document(document)
     return document

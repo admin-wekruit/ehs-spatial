@@ -1,3 +1,4 @@
+import { identityMessages } from "./identity-messages";
 import { workcellMessages } from "./workcell-messages";
 import { reportSceneMessages } from "./report-scene-messages";
 import { reportReviewMessages } from "./report-review-messages";
@@ -10,6 +11,7 @@ const messages: Record<string, [string, string]> = {
   catalogLatest: ["最近发布", "Latest publication"],
   catalogHistory: ["此前发布", "Earlier publications"],
   catalogNoObservedScene: ["未附物体的观测表面。请在报告中核对模型的照片与空间依据。", "No object-level observed surfaces attached. Check the models' photograph and spatial evidence in the report."],
+  ...identityMessages,
   ...workcellMessages,
   ...reportSceneMessages,
   ...reportReviewMessages,

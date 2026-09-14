@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { resolveAsset } from "./api";
 import {
+  cameraForImage,
   observationsFor,
   originalPixel,
   photoHits,
@@ -51,7 +52,7 @@ export function PhotoView({
       live = false;
     };
   }, [imageId]);
-  const camera = document.cameras.find((c) => c.imageId === imageId),
+  const camera = cameraForImage(document, imageId),
     width = camera?.width || size[0],
     height = camera?.height || size[1];
   function coordinates(e: React.PointerEvent | React.MouseEvent) {

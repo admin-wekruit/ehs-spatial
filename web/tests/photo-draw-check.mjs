@@ -38,7 +38,7 @@ function load(filename){
   return module.exports;
 }
 const {PhotoView}=load(path.join(root,'src/PhotoView.tsx'));
-const document={cameras:[{imageId:'photo',width:800,height:600}],entities:[{id:'button',label:'Button',observationRefs:['button-photo']}],observations:[{id:'button-photo',imageId:'photo',originalPixelBox:[0,0,800,600]}]};
+const document={geometryBindings:{photo:{cameraId:'camera',geometrySolutionId:'solution'}},cameras:[{id:'camera',imageId:'photo',width:800,height:600}],entities:[{id:'button',label:'Button',observationRefs:['button-photo']}],observations:[{id:'button-photo',imageId:'photo',originalPixelBox:[0,0,800,600]}]};
 let draw=true,hostBox=null,showBounds;const selections=[],boxes=[],captured=[];
 const surface={getBoundingClientRect:()=>({left:100,top:50,width:400,height:300}),setPointerCapture:id=>captured.push(id)};
 function findSVG(node){

@@ -58,11 +58,14 @@ class PolicyRepository(Protocol):
     def list_evidence_requests(self, project_id: str) -> dict: ...
 
 
-def apply_operations(source: dict, operations: list[dict]) -> tuple[dict, list[dict]]:
+def apply_operations(source: dict, operations: list[dict], *, base_revision_id: str | None = None) -> tuple[dict, list[dict]]:
     document = deepcopy(source)
     frames = {x["id"] for x in document["coordinateFrames"]}
 
     def entity(identity: str) -> dict:
+        if document["schemaVersion"] == 2:
+            from .identity import resolve_entity_id
+            identity = resolve_entity_id(document, identity)
         found = next((x for x in document["entities"] if x["id"] == identity), None)
         if found is None:
             raise PlatformError("entity_not_found", 422, entityId=identity)
@@ -70,14 +73,24 @@ def apply_operations(source: dict, operations: list[dict]) -> tuple[dict, list[d
 
     for operation in operations:
         kind = operation.get("type")
-        if kind in ("setTransform", "setLabel", "setVisibility", "setMaterial", "setPrimitive"):
+        if kind == "migrateScene":
+            from .identity import migrate_document
+            if operation.get("schemaVersion", 2) != 2:
+                raise PlatformError("unsupported_scene_migration", 422)
+            document = migrate_document(document, base_revision_id=base_revision_id, active_model_selections=operation.get("activeModelSelections"))
+        elif kind in ("recordIdentityDecision", "mergeEntities", "splitEntity", "setActiveModelRepresentation", "selectMeasurementEvidence"):
+            from .identity import apply_identity_operation
+            apply_identity_operation(document, operation, base_revision_id=base_revision_id)
+        elif kind in ("setTransform", "setLabel", "setVisibility", "setMaterial", "setPrimitive"):
             item = entity(operation.get("entityId"))
             if kind == "setTransform":
                 value = operation.get("transform", {k: operation[k] for k in ("coordinateFrameId", "position", "quaternion", "scale") if k in operation})
                 validate_transform(value, frames)
+                if document["schemaVersion"] == 2 and item["activeModelRepresentationId"] is None:
+                    raise PlatformError("active_model_required", 422)
                 item["currentModelTransform"] = deepcopy(value)
                 for representation in item.get("representations", []):
-                    if representation.get("kind") in ("generated_mesh", "primitive"):
+                    if representation.get("kind") in ("generated_mesh", "primitive") and (document["schemaVersion"] == 1 or representation["id"] == item["activeModelRepresentationId"]):
                         representation["transform"] = deepcopy(value)
                         representation["coordinateFrameId"] = value["coordinateFrameId"]
                         representation["placementState"] = "confirmed"
@@ -94,7 +107,13 @@ def apply_operations(source: dict, operations: list[dict]) -> tuple[dict, list[d
             elif kind == "setMaterial":
                 if not isinstance(operation.get("material"), dict):
                     raise PlatformError("invalid_material")
-                item["material"] = deepcopy(operation["material"])
+                if document["schemaVersion"] == 2:
+                    active = next((r for r in item["representations"] if r["id"] == item["activeModelRepresentationId"]), None)
+                    if active is None:
+                        raise PlatformError("active_model_required", 422)
+                    active["material"] = deepcopy(operation["material"])
+                else:
+                    item["material"] = deepcopy(operation["material"])
             else:
                 primitive = operation.get("primitive")
                 if not isinstance(primitive, dict) or primitive.get("kind", primitive.get("type")) not in ("box", "cylinder"):
@@ -106,7 +125,15 @@ def apply_operations(source: dict, operations: list[dict]) -> tuple[dict, list[d
                     raise PlatformError("primitive_placement_required", 422)
                 validate_transform(transform, frames)
                 representation_id = operation.get("representationId")
-                rep = next((r for r in item.get("representations", []) if r.get("kind") == "primitive" and (representation_id is None or r["id"] == representation_id)), None)
+                if document["schemaVersion"] == 2:
+                    active_id = item["activeModelRepresentationId"]
+                    if representation_id is not None and representation_id != active_id:
+                        raise PlatformError("active_model_selection_required", 422)
+                    rep = next((r for r in item.get("representations", []) if r.get("kind") == "primitive" and r["id"] == active_id), None)
+                    if rep is None and any(r.get("kind") == "primitive" for r in item.get("representations", [])):
+                        raise PlatformError("active_model_selection_required", 422)
+                else:
+                    rep = next((r for r in item.get("representations", []) if r.get("kind") == "primitive" and (representation_id is None or r["id"] == representation_id)), None)
                 if representation_id is not None and rep is None:
                     raise PlatformError("primitive_representation_not_found", 422)
                 if rep is None:
@@ -119,10 +146,14 @@ def apply_operations(source: dict, operations: list[dict]) -> tuple[dict, list[d
                 if manual:
                     rep["sourceRefs"] = [{"type": "manual_assertion", "coordinateFrameId": frame["id"]}]
                 item["currentModelTransform"] = deepcopy(transform)
+                if document["schemaVersion"] == 2:
+                    item["activeModelRepresentationId"] = rep["id"]
         elif kind == "addEntity":
             value = operation.get("entity")
             if not isinstance(value, dict) or any(x["id"] == value.get("id") for x in document["entities"]):
                 raise PlatformError("invalid_entity")
+            if document["schemaVersion"] == 2 and any(value.get("id") in decision["entityIds"] for decision in document["identityDecisions"]):
+                raise PlatformError("identity_reused_entity_id", 422)
             document["entities"].append(deepcopy(value))
         elif kind == "removeEntity":
             item = entity(operation.get("entityId"))
@@ -134,36 +165,6 @@ def apply_operations(source: dict, operations: list[dict]) -> tuple[dict, list[d
                 raise PlatformError("invalid_observation")
             document["observations"].append(deepcopy(observation))
             item.setdefault("observationRefs", []).append(observation["id"])
-        elif kind == "mergeEntities":
-            identities = operation.get("entityIds", [])
-            survivor = operation.get("survivorId")
-            if len(identities) < 2 or len(set(identities)) != len(identities) or survivor not in identities:
-                raise PlatformError("invalid_merge")
-            items = [entity(identity) for identity in identities]
-            kept = entity(survivor)
-            for item in items:
-                if item is kept:
-                    continue
-                kept["observationRefs"] = list(dict.fromkeys(kept.get("observationRefs", []) + item.get("observationRefs", [])))
-                kept.setdefault("representations", []).extend(deepcopy(item.get("representations", [])))
-                kept.setdefault("lineage", []).append({"operation": "merge", "entityId": item["id"]})
-                document["entities"].remove(item)
-            kept["associationState"] = "confirmed"
-        elif kind == "splitEntity":
-            item = entity(operation.get("entityId"))
-            groups = operation.get("groups", [])
-            if len(groups) < 2 or any(not isinstance(group, dict) or not group.get("id") for group in groups):
-                raise PlatformError("invalid_split")
-            refs = [ref for group in groups for ref in group.get("observationRefs", [])]
-            if len(refs) != len(set(refs)) or set(refs) != set(item.get("observationRefs", [])):
-                raise PlatformError("invalid_split")
-            document["entities"].remove(item)
-            for group in groups:
-                # Representations cannot be assigned to a split observation without evidence.
-                document["entities"].append({"id": group["id"], "label": group.get("label", item["label"]),
-                    "observationRefs": group["observationRefs"], "associationState": "confirmed",
-                    "representations": [], "currentModelTransform": None, "measurements": {}, "groupId": item.get("groupId"),
-                    "lineage": [{"operation": "split", "entityId": item["id"]}]})
         elif kind == "addCoordinateFrame":
             frame = operation.get("frame")
             if not isinstance(frame, dict) or not isinstance(frame.get("id"), str) or frame["id"] in frames or frame.get("source") != "manual_assertion" or frame.get("ground") is not None or frame.get("scale", {}).get("status") != "uncalibrated":

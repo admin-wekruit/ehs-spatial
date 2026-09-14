@@ -4,11 +4,66 @@ from uuid import uuid4
 from psycopg.types.json import Jsonb
 
 from .contracts import PlatformError, digest
+from .identity import resolve_entity_id
 from .postgres import _wire
 from .policy_engine import (
     APPLICABILITY, ENGINE_VERSION, _evidence_refs, _request, _require,
     evaluate_document, test_jdm, validate_jdm, validate_source,
 )
+
+
+def _observation_scope(scene, value):
+    """Read explicit evidence references; a shared photo is not object identity."""
+    observations = {o["id"] for o in scene["observations"]}
+    annotations = {a["id"]: a for a in scene.get("annotations", [])}
+    found, visited = set(), set()
+
+    def visit(item):
+        if isinstance(item, list):
+            for child in item:
+                visit(child)
+        elif isinstance(item, str):
+            if item in observations:
+                found.add(item)
+            elif item in annotations and item not in visited:
+                visited.add(item)
+                visit(annotations[item].get("sourceRefs", []))
+        elif isinstance(item, dict):
+            if item.get("observationId") in observations:
+                found.add(item["observationId"])
+            for key in ("sourceRefs", "evidenceRefs", "annotationId"):
+                if key in item:
+                    visit(item[key])
+
+    visit(value)
+    return found
+
+
+def _identity_evidence_binding(source, scene, original, finding, refs, *, source_revision_id, ancestry_ids):
+    old_id, new_id = original.get("entityId"), finding.get("entityId")
+    old = next((e for e in source["entities"] if e["id"] == old_id), None)
+    new = next((e for e in scene["entities"] if e["id"] == new_id), None)
+    old_refs = set((old or {}).get("observationRefs", []))
+    new_refs = set((new or {}).get("observationRefs", []))
+    if old_id == new_id and old_refs == new_refs:
+        return None
+    _require(old is not None and new is not None and scene.get("schemaVersion") == 2 and source_revision_id in ancestry_ids, "evidence_identity_scope_mismatch")
+    original_facts = _observation_scope(source, original.get("facts", []))
+    scope = original_facts.intersection(old_refs) or old_refs
+    _require(bool(scope), "evidence_identity_scope_mismatch")
+    try:
+        targets = {resolve_entity_id(scene, old_id, observation_id=oid) for oid in scope}
+    except PlatformError:
+        raise PlatformError("evidence_identity_scope_mismatch", 422) from None
+    _require(targets == {new_id}, "evidence_identity_scope_mismatch")
+    current_facts = _observation_scope(scene, finding.get("facts", []))
+    _require(_observation_scope(scene, refs) == scope and current_facts.intersection(new_refs) == scope and current_facts - new_refs == original_facts - old_refs, "evidence_identity_scope_mismatch")
+    decisions = [d for d in scene["identityDecisions"] if d["baseRevisionId"] in ancestry_ids
+                 and (d["decision"] == "same" or (d["decision"] == "different" and len(d["entityIds"]) == 1))
+                 and scope.intersection(oid for group in d["observationGroups"] for oid in group)]
+    _require(any(old_id in d["entityIds"] and scope <= {oid for group in d["observationGroups"] for oid in group} for d in decisions), "evidence_identity_scope_mismatch")
+    return {"sourceSceneRevisionId": source_revision_id, "sourceFindingId": original["id"], "sourceEntityId": old_id,
+            "targetEntityId": new_id, "observationIds": sorted(scope), "identityDecisionIds": [d["id"] for d in decisions]}
 
 
 class PostgresPolicyRepository:
@@ -132,6 +187,7 @@ class PostgresPolicyRepository:
         evaluation = self.repo._one(c, "SELECT * FROM policy_evaluations WHERE project_id=%s AND id=%s", (project_id, evaluation_id))
         finding = next((f for f in evaluation["document"]["findings"] if f["id"] == str(finding_id)), None)
         _require(finding is not None, "evaluation_finding_mismatch")
+        _require(evaluation["document"]["sceneRevisionId"] == str(evaluation["scene_revision_id"]) and finding.get("sceneRevisionId") == str(evaluation["scene_revision_id"]) and finding.get("policyRevisionId") in evaluation["document"]["policyRevisionIds"], "evaluation_finding_mismatch")
         return evaluation, finding
 
     def review(self, project_id, finding_id, capability, body, *, evidence_request=False):
@@ -186,10 +242,21 @@ class PostgresPolicyRepository:
             original_evaluation, original_finding = self._finding(c, project_id, original["evaluation_id"], original["finding_id"])
             evaluation, finding = self._finding(c, project_id, body["evaluationId"], body["findingId"])
             _require(str(evaluation["id"]) != str(original["evaluation_id"]), "new_evaluation_required")
-            _require(evaluation["context"] == original_evaluation["context"] and all(finding.get(key) == original_finding.get(key) for key in ("entityId", "policyRevisionId")), "evidence_finding_mismatch")
-            scene = self.repo._revision(c, project_id, evaluation["scene_revision_id"])["document"]
+            _require(evaluation["context"] == original_evaluation["context"] and finding.get("policyRevisionId") == original_finding.get("policyRevisionId"), "evidence_finding_mismatch")
+            revision = self.repo._revision(c, project_id, evaluation["scene_revision_id"])
+            source = self.repo._revision(c, project_id, original_evaluation["scene_revision_id"])
+            scene = revision["document"]
             _require(isinstance(body["evidenceRefs"], list) and bool(body["evidenceRefs"]) and _evidence_refs(scene, body["evidenceRefs"]), "review_evidence_invalid")
+            ancestry = c.execute("""WITH RECURSIVE ancestry AS (
+                SELECT id,parent_revision_id FROM scene_revisions WHERE project_id=%s AND id=%s
+                UNION ALL SELECT r.id,r.parent_revision_id FROM scene_revisions r JOIN ancestry a ON r.id=a.parent_revision_id
+                WHERE r.project_id=%s AND a.id<>%s)
+                SELECT id FROM ancestry""", (project_id, revision["id"], project_id, source["id"])).fetchall()
+            ancestry_ids = {str(row["id"]) for row in ancestry} if revision["branch_id"] == source["branch_id"] else set()
+            binding = _identity_evidence_binding(source["document"], scene, original_finding, finding, body["evidenceRefs"], source_revision_id=str(source["id"]), ancestry_ids=ancestry_ids)
             doc = {"schemaVersion": 1, "status": "fulfilled", "evidenceRequestId": str(evidence_request_id), "evidenceRefs": body["evidenceRefs"], "sceneRevisionId": str(evaluation["scene_revision_id"]), "evaluationId": str(evaluation["id"]), "findingId": body["findingId"], "actor": "project_capability"}
+            if binding is not None:
+                doc["identityBinding"] = binding
             return _wire(c.execute("INSERT INTO policy_evidence_requests(id,project_id,evaluation_id,finding_id,request_id,request_sha256,document) VALUES(%s,%s,%s,%s,%s,%s,%s) RETURNING *", (uuid4(), project_id, evaluation["id"], body["findingId"], body["requestId"], digest(body), Jsonb(doc))).fetchone())
 
     def list_evaluations(self, project_id):

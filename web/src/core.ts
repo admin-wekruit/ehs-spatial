@@ -35,6 +35,46 @@ export function observationsFor(document: SceneDocument, entity: Entity) {
   const ids = new Set(refs(entity));
   return document.observations.filter((o) => ids.has(o.id));
 }
+export function cameraForImage(document: SceneDocument, imageId: string | null | undefined) {
+  if (!imageId) return null;
+  const binding = jsonObject(jsonObject(document.geometryBindings)?.[imageId]);
+  return binding && typeof binding.cameraId === "string"
+    ? document.cameras.find(camera => camera.id === binding.cameraId && camera.imageId === imageId) || null : null;
+}
+export function publicationReaderURL(schemaVersion: number, href: string): string | null {
+  if (schemaVersion === 2) return null;
+  if (schemaVersion !== 1) throw Error("unsupported_scene_schema");
+  const current = new URL(href);
+  if (current.pathname.includes("/readers/v1/")) return null;
+  const legacy = new URL("readers/v1/app.html", new URL(".", current));
+  legacy.search = current.search; legacy.hash = current.hash;
+  return legacy.href;
+}
+export function currentEntityId(document: SceneDocument, entityId: string): string | null {
+  if (document.entities.some(entity => entity.id === entityId)) return entityId;
+  const refs = new Set<string>();
+  for (const raw of Array.isArray(document.identityDecisions) ? document.identityDecisions : []) {
+    const decision = jsonObject(raw), ids = decision?.entityIds, groups = decision?.observationGroups;
+    if (!Array.isArray(ids) || !Array.isArray(groups) || !ids.includes(entityId)) continue;
+    const selected = ids.length === groups.length ? [groups[ids.indexOf(entityId)]] : groups;
+    for (const group of selected) if (Array.isArray(group)) for (const ref of group) if (typeof ref === "string") refs.add(ref);
+  }
+  const owners = new Set([...refs].flatMap(ref => { const owner = observationOwner(document, ref); return owner ? [owner.id] : []; }));
+  return owners.size === 1 ? [...owners][0] : null;
+}
+export function currentCameras(document: SceneDocument) {
+  return [...new Set(document.cameras.map(camera => camera.imageId))].flatMap(imageId => {
+    const camera = cameraForImage(document, imageId); return camera ? [camera] : [];
+  });
+}
+export function activeModel(entity: Entity) {
+  return (entity.representations || []).find(rep => rep.id === entity.activeModelRepresentationId &&
+    ["generated_mesh", "primitive"].includes(rep.kind)) || null;
+}
+export function observationOwner(document: SceneDocument, observationId: string) {
+  const owners = document.entities.filter(entity => entity.observationRefs?.includes(observationId));
+  return owners.length === 1 ? owners[0] : null;
+}
 export function photoHits(
   document: SceneDocument,
   imageId: string,
@@ -126,10 +166,9 @@ export function originalPixel(
     : ([x, y] as [number, number]);
 }
 export function editableTransform(entity: Entity): Transform | null {
-  const model = (entity.representations || []).find(
-    (r) => r.kind === "generated_mesh" || r.kind === "primitive",
-  );
-  return model ? entity.currentModelTransform || model.transform : null;
+  const model = activeModel(entity);
+  return model && model.sourceValidity !== "stale" && (model.placementState === "confirmed" || ["requires_alignment_confirmation", "imported_proposal"].includes(model.placementReason || ""))
+    ? entity.currentModelTransform || model.transform : null;
 }
 export function eulerQuaternion([x, y, z]: Vec3): [
   number,
@@ -171,7 +210,7 @@ export function previewOperations(
         }) as Transform,
       );
       (entity.representations || [])
-        .filter((r) => r.kind === "generated_mesh" || r.kind === "primitive")
+        .filter((r) => r.id === entity.activeModelRepresentationId)
         .forEach(
           (r) => (r.transform = structuredClone(entity.currentModelTransform!)),
         );
@@ -179,12 +218,21 @@ export function previewOperations(
       entity.visible = op.visible as boolean;
     else if (op.type === "setLabel" && entity)
       entity.label = op.label as string;
-    else if (op.type === "setMaterial" && entity)
-      entity.material = op.material as Record<string, unknown>;
+    else if (op.type === "setMaterial" && entity && activeModel(entity))
+      activeModel(entity)!.material = op.material as Record<string, unknown>;
+    else if (op.type === "setActiveModelRepresentation" && entity) {
+      entity.activeModelRepresentationId = typeof op.representationId === "string" ? op.representationId : null;
+      entity.currentModelTransform = activeModel(entity)?.transform || null;
+    }
+    else if (op.type === "selectMeasurementEvidence" && entity) {
+      const key = String(op.measurementKey), selectedId = typeof op.measurementEvidenceId === "string" ? op.measurementEvidenceId : null;
+      const evidence = entity.measurementEvidence?.find(item=>item.id===selectedId && item.measurementKey===key);
+      if (selectedId && !evidence) throw Error("measurement_evidence_not_found");
+      entity.measurementSelections = {...entity.measurementSelections,[key]:selectedId};
+      entity.measurements = {...entity.measurements,[key]:evidence ? structuredClone(evidence.originalMeasurement) : null};
+    }
     else if (op.type === "setPrimitive" && entity) {
-      let rep = (entity.representations || []).find(
-        (r) => r.kind === "primitive",
-      );
+      let rep = activeModel(entity)?.kind === "primitive" ? activeModel(entity)! : undefined;
       if (!rep) {
         const transform = op.transform as Transform;
         rep = {
@@ -196,6 +244,7 @@ export function previewOperations(
           placementState: "unconfirmed",
         };
         (entity.representations ??= []).push(rep);
+        entity.activeModelRepresentationId = rep.id;
         entity.currentModelTransform = transform;
       }
       rep.primitive = structuredClone(op.primitive as Record<string, unknown>);
@@ -223,17 +272,16 @@ export function sourceDimensions(entity: Entity) {
   };
 }
 export function sourceScale(document: SceneDocument, entity: Entity) {
-  const id =
-    (entity.representations || [])[0]?.coordinateFrameId ||
-    entity.currentModelTransform?.coordinateFrameId ||
-    entity.measurements?.coordinateFrameId;
+  const id = entity.measurements?.coordinateFrameId;
   return document.coordinateFrames.find((f) => f.id === id)?.scale || null;
 }
 
+export function modelScale(document: SceneDocument, entity: Entity) {
+  return document.coordinateFrames.find(frame => frame.id === editableTransform(entity)?.coordinateFrameId)?.scale || null;
+}
+
 export function modelGeometry(entity: Entity) {
-  const rep = (entity.representations || []).find(
-      (r) => r.kind === "primitive" || r.kind === "generated_mesh",
-    ),
+  const rep = activeModel(entity),
     transform = editableTransform(entity);
   if (!rep || !transform) return null;
   const spec = rep.primitive;
@@ -264,25 +312,33 @@ export function modelGeometry(entity: Entity) {
     frameId: transform.coordinateFrameId,
   };
 }
-export function observedGeometry(entity: Entity, frameId: string) {
-  const representations = (entity.representations || []).filter((rep) =>
-    ["observed_surface", "point_cloud"].includes(rep.kind) &&
-    rep.sourceValidity !== "stale" &&
-    rep.placementState === "confirmed" && !!rep.assetId &&
-    rep.coordinateFrameId === frameId && rep.transform.coordinateFrameId === frameId &&
-    isVec3(rep.bounds?.min) && isVec3(rep.bounds?.max) &&
-    rep.bounds.max.every((value, index) => value >= rep.bounds!.min[index]));
-  const corners = representations.flatMap((rep) =>
-    boundsCorners(rep.bounds!).map((p) => point(transformMatrix(rep.transform), p)));
-  return corners.length && corners.every(isVec3)
-    ? { corners, frameId, representationIds: representations.map((rep) => rep.id) }
-    : null;
-}
 export type GeometryLayer = "model" | "observed_surface" | "point_cloud";
-export type GeometryOptions = { layer: GeometryLayer; frameId: string; showCandidates?: boolean };
+export type GeometryOptions = { layer: GeometryLayer; frameId: string; showCandidates?: boolean; imageId?: string | null; observations?: Observation[] };
+
+export function representationInPhoto(entity: Entity, rep: Representation, imageId?: string | null, observations: Observation[] = []) {
+  if (entity.sourceContext || !["observed_surface", "point_cloud"].includes(rep.kind)) return true;
+  const explicitImages = (rep.sourceRefs || []).flatMap(ref => { const value = jsonObject(ref); return typeof value?.imageId === "string" ? [value.imageId] : []; });
+  if (explicitImages.length) return !!imageId && explicitImages.includes(imageId);
+  const sourceIds = (rep.sourceRefs || []).flatMap(ref => {
+    const value = jsonObject(ref); return typeof value?.observationId === "string" ? [value.observationId] : [];
+  });
+  const photoObservations = observations.filter(observation => entity.observationRefs?.includes(observation.id) && observation.imageId === imageId);
+  if (sourceIds.length) return !!imageId && photoObservations.some(observation => sourceIds.includes(observation.id));
+  // Imported evidence references a record within a frozen asset. Both fields
+  // identify the source; a shared label, asset alone or record ID alone cannot.
+  return !!imageId && (rep.sourceRefs || []).some(raw => {
+    const source = jsonObject(raw);
+    return typeof source?.assetId === "string" && typeof source.sourceRecordId === "string" &&
+      photoObservations.some(observation => (observation.sourceRefs || []).some(rawRef => {
+        const ref = jsonObject(rawRef);
+        return ref?.assetId === source.assetId && ref?.sourceRecordId === source.sourceRecordId;
+      }));
+  });
+}
 
 export function representationAvailable(entity: Entity, rep: Representation, frameId: string | null, showCandidates = false) {
   const modeled = ["generated_mesh", "primitive"].includes(rep.kind);
+  if (modeled && rep.id !== entity.activeModelRepresentationId) return false;
   const transform = modeled ? entity.currentModelTransform || rep.transform : rep.transform;
   return entity.visible !== false && rep.sourceValidity !== "stale" && !!frameId &&
     rep.coordinateFrameId === frameId && transform?.coordinateFrameId === frameId &&
@@ -291,10 +347,10 @@ export function representationAvailable(entity: Entity, rep: Representation, fra
 }
 
 /** One located geometry choice for source-photo axes, 3D bounds and plan views. */
-export function entityGeometryForLayer(entity: Entity, { layer, frameId, showCandidates = true }: GeometryOptions) {
+export function entityGeometryForLayer(entity: Entity, { layer, frameId, showCandidates = true, imageId, observations }: GeometryOptions) {
   if (entity.sourceContext || entity.visible === false) return null;
   const representations = (entity.representations || []).filter((rep) =>
-    representationAvailable(entity, rep, frameId, showCandidates) &&
+    representationAvailable(entity, rep, frameId, showCandidates) && representationInPhoto(entity, rep, imageId, observations) &&
     (rep.kind === "primitive" ? !!rep.primitive : !!rep.assetId));
   const identity: Transform = {coordinateFrameId: frameId, position: [0, 0, 0], quaternion: [0, 0, 0, 1], scale: [1, 1, 1]};
   function fromRepresentations(reps: Representation[], geometryKind: "model" | "observed" | "point_cloud") {
@@ -328,8 +384,15 @@ export function entityGeometryForLayer(entity: Entity, { layer, frameId, showCan
   const observed = fromRepresentations(representations.filter((r) => r.kind === "observed_surface"), "observed");
   if (observed) return observed;
   const measurements = entity.measurements || {};
-  const basis = jsonObject(measurements.basis)?.cornersNative;
-  const bounds = jsonObject(measurements.observedBounds);
+  const selectedMeasurement = (key: string) => {
+    const selection = jsonObject(entity.measurementSelections)?.[key];
+    const evidence = (Array.isArray(entity.measurementEvidence) ? entity.measurementEvidence : []).map(jsonObject).find(row => row?.id === selection);
+    const refs = evidence?.observationRefs;
+    return Array.isArray(refs) && !!imageId &&
+      (observations || []).some(observation => refs.includes(observation.id) && observation.imageId === imageId);
+  };
+  const basis = selectedMeasurement("basis") ? jsonObject(measurements.basis)?.cornersNative : null;
+  const bounds = selectedMeasurement("observedBounds") ? jsonObject(measurements.observedBounds) : null;
   const measuredBounds = bounds?.coordinateFrameId === frameId && bounds.source === "observed_measurement" &&
     bounds.sourceValidity !== "stale" && Array.isArray(bounds.sourceRefs) && bounds.sourceRefs.length > 0 &&
     isVec3(bounds.min) && isVec3(bounds.max) && bounds.max.every((value, k) => value >= (bounds.min as Vec3)[k]);
@@ -366,7 +429,7 @@ export function modelTilt(document: SceneDocument, entity: Entity) {
 export function planShapes(document: SceneDocument, options: Partial<GeometryOptions> = {}) {
   const frame = document.coordinateFrames.find(
     (f) =>
-      (!options.frameId || f.id === options.frameId) &&
+      (options.frameId === undefined || f.id === options.frameId) &&
       Array.isArray(f.ground?.normal) && f.ground.normal.every(Number.isFinite) && Math.hypot(...f.ground.normal) > 1e-8,
   );
   const normal = frame?.ground?.normal;
@@ -396,7 +459,7 @@ export function planShapes(document: SceneDocument, options: Partial<GeometryOpt
   return document.entities
     .filter((e) => e.visible !== false && !e.sourceContext)
     .flatMap((entity) => {
-      const geometry = entityGeometryForLayer(entity, {layer: options.layer || "model", frameId: frame.id, showCandidates: options.showCandidates});
+      const geometry = entityGeometryForLayer(entity, {layer: options.layer || "model", frameId: frame.id, showCandidates: options.showCandidates, imageId: options.imageId, observations: document.observations});
       if (!geometry) return [];
       const frameId = geometry?.frameId;
       const corners = geometry?.corners;

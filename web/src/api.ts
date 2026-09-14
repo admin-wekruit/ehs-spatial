@@ -7,9 +7,10 @@ export type PendingRequest = {
   createdAt: string;
 };
 type Owner = { id: string; capability: string };
+export type IdentitySuggestion = { decision: "same" | "different" | "undecided"; entityIds: [string, string]; observationGroups: string[][]; reason: string; shareForReview: true };
 export type FeedbackInput = {
   requestId: string; conversationId: string; message: string; language: "zh" | "en";
-  imageId?: string | null; observationId?: string | null;
+  imageId?: string | null; observationId?: string | null; identitySuggestion?: IdentitySuggestion;
 };
 type FeedbackSession = Owner & { conversationId: string; pending?: FeedbackInput };
 export const PUBLICATION_ID = import.meta.env?.VITE_PUBLICATION_ID?.trim() || "";

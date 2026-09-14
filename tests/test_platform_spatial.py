@@ -69,6 +69,22 @@ def test_tiny_missing_depth_different_frames_and_label_free_identity():
         associate_observations([MaskObservation("wrong","b",np.ones((5,5)))],{"b":b})
 
 
+def test_proven_same_photo_aliases_do_not_compete_with_their_own_identity():
+    frames = {name: frame(name) for name in ('a', 'b', 'c')}
+    observations = [MaskObservation(name, name, mask(0,5)) for name in frames]
+    observations.append(MaskObservation('a-source-copy', 'a', mask(0,5)))
+    result = associate_observations(observations, frames, confirmed_groups=[['a','a-source-copy']])
+    assert result['groups'] == [['a','a-source-copy','b','c']]
+    # Equal masks alone are not identity proof, and a third unknown competitor
+    # must still block automatic joining.
+    baseline = associate_observations(observations, frames)
+    assert not any({'a','a-source-copy'} <= set(g) for g in baseline['groups'])
+    observations.append(MaskObservation('a-unknown', 'a', mask(0,5)))
+    result = associate_observations(observations, frames, confirmed_groups=[['a','a-source-copy']])
+    assert ['a','a-source-copy'] in result['groups']
+    assert ['a-unknown'] in result['groups']
+
+
 def test_occlusion_depth_and_independent_support_do_not_create_identity():
     a,b = frame(),frame("b")
     b.points[:] *= .5  # nearer surface in same rays occludes object in frame a
@@ -76,6 +92,38 @@ def test_occlusion_depth_and_independent_support_do_not_create_identity():
     assert result["groups"] == [["a"],["b"]]
     with pytest.raises(PlatformError,match="invalid_association_config"):
         AssociationConfig(min_support=0)
+
+
+def test_confirmed_identity_extends_across_visible_views_but_not_unknown_chains():
+    frames = {name: frame(name, offset) for name, offset in [('a', 0), ('b', 1), ('c', 2)]}
+    observations = [MaskObservation(name, name, mask()) for name in frames]
+    # A/C have too little overlap. B is independently a view of the confirmed A/B object.
+    baseline = associate_observations(observations, frames)
+    assert len(baseline['groups']) == 2
+    result = associate_observations(observations, frames, confirmed_groups=[['a', 'b']])
+    assert result['groups'] == [['a', 'b', 'c']]
+    separated = associate_observations(observations, frames, confirmed_groups=[['a', 'b']],
+                                      excluded_groups=[[['a', 'b'], ['c']]])
+    assert separated['groups'] == [['a', 'b'], ['c']]
+    assert any(link.get('reason') == 'identity_exclusion' for link in separated['links'])
+
+
+def test_small_depth_consistent_fragment_is_not_complete_identity_support():
+    a, b = frame(), frame('b')
+    b.points[4:] *= 2
+    result = associate_observations([MaskObservation('a', 'a', mask()), MaskObservation('b', 'b', mask())], {'a': a, 'b': b})
+    assert result['groups'] == [['a'], ['b']]
+    direction = result['links'][0]['directions'][0]
+    assert direction['support'] == 48
+    assert direction['visibleSupport'] == 144
+    assert direction['depthAgreement'] == pytest.approx(1 / 3)
+
+
+def test_confirmed_group_cannot_absorb_a_verifiable_conflict():
+    frames = {name: frame(name) for name in ('a', 'b', 'c')}
+    observations = [MaskObservation('a', 'a', mask(0, 5)), MaskObservation('b', 'b', mask()), MaskObservation('c', 'c', mask(7, 12))]
+    result = associate_observations(observations, frames, confirmed_groups=[['a', 'b']])
+    assert result['groups'] == [['a', 'b'], ['c']]
 
 
 def test_camera_pixel_centres_skew_rotation_and_nonunit_scale():
@@ -374,3 +422,127 @@ def test_floor_abstains_without_semantic_support_or_consistent_planar_views():
         observation.mask[:,:] = False
         observation.mask[:,0] = True
     assert estimate_native_ground(frames,observations)[0] is None
+
+
+def test_shared_reference_registration_retains_native_camera_and_rejects_bad_geometry():
+    from ehs_spatial.platform.spatial import FrameGeometry, register_reference, registered_frame
+    from scipy.spatial.transform import Rotation
+    yy, xx = np.mgrid[:24,:32]
+    depth = 3 + .003 * xx + .005 * yy
+    k = np.array([[30.,0,15.5],[0,30.,11.5],[0,0,1]])
+    points = np.stack(((xx-15.5)*depth/30,(yy-11.5)*depth/30,depth),-1)
+    valid = np.ones(depth.shape,bool)
+    source = FrameGeometry('photo','native','same-hash',points,valid,k,np.eye(4))
+    expected = np.eye(4)
+    expected[:3,:3] = 2.7 * Rotation.from_euler('xyz',[.3,-.2,.8]).as_matrix()
+    expected[:3,3] = [4,-2,1]
+    target = registered_frame(source,expected,'project')
+    matrix, report = register_reference(source,target,valid, source_input_to_canonical=np.eye(3), target_input_to_canonical=np.eye(3))
+    assert np.allclose(matrix,expected,atol=1e-8)
+    assert report['holdoutCount'] > 32 and report['holdoutP95Relative'] < 1e-8
+    assert np.allclose(target.camera_to_world[:3,:3].T @ target.camera_to_world[:3,:3],np.eye(3))
+    assert np.array_equal(source.camera_to_world,np.eye(4))
+    with pytest.raises(PlatformError,match='background_insufficient'):
+        register_reference(source,target,np.zeros_like(valid), source_input_to_canonical=np.eye(3), target_input_to_canonical=np.eye(3))
+    warped = target.points.copy()
+    warped[::2] += [1,2,3]
+    with pytest.raises(PlatformError,match='registration_residual_failed'):
+        register_reference(source,FrameGeometry('photo','project','same-hash',warped,valid,k,target.camera_to_world),valid, source_input_to_canonical=np.eye(3), target_input_to_canonical=np.eye(3))
+    line = points.copy(); line[:] = np.stack((xx,np.zeros_like(xx),np.ones_like(xx)),-1)
+    with pytest.raises(PlatformError,match='registration_degenerate'):
+        from ehs_spatial.platform.spatial import similarity_transform
+        similarity_transform(line.reshape(-1,3),line.reshape(-1,3))
+
+
+def test_reference_registration_uses_pixel_mapping_and_cross_checks_reference_camera():
+    from ehs_spatial.platform.spatial import FrameGeometry, register_reference
+    yy, xx = np.mgrid[:32,:32]
+    valid = np.ones(xx.shape,bool)
+    def plane(focal, frame):
+        k = np.array([[focal,0,15.5],[0,focal,15.5],[0,0,1]])
+        points = np.stack(((xx-15.5)*2/focal,(yy-15.5)*2/focal,np.full_like(xx,2)),axis=-1)
+        return FrameGeometry('same-photo',frame,'same-hash',points,valid,k,np.eye(4))
+    # Identical input pixels, different predicted intrinsics. A plane alone lets
+    # a misleading similarity fit pass; the same reference camera disproves it.
+    with pytest.raises(PlatformError,match='registration_camera_reprojection_failed'):
+        register_reference(plane(20,'new'),plane(10,'old'),valid,
+            source_input_to_canonical=np.eye(3),target_input_to_canonical=np.eye(3))
+    # A real crop has an explicit pixel translation, including changed K.
+    target = plane(10,'old')
+    crop = np.array([[1.,0,-4],[0,1,0],[0,0,1]])
+    source = FrameGeometry('same-photo','new','same-hash',target.points[:,4:],valid[:,4:],crop@target.K,np.eye(4))
+    matrix, result = register_reference(source,target,valid,
+        source_input_to_canonical=crop,target_input_to_canonical=np.eye(3))
+    assert np.allclose(matrix,np.eye(4))
+    assert result['cameraReprojectionP95Pixels'] < 1e-8
+    assert result['referenceCameraPositionRelative'] < 1e-8
+
+
+def test_frozen_geometry_cannot_override_explicitly_unbound_or_wrong_solution():
+    from types import SimpleNamespace
+    from ehs_spatial.platform.reconstruction import _load_geometry
+    document = {'schemaVersion':2, 'assets':[], 'cameras':[{'id':'old-camera','imageId':'photo','coordinateFrameId':'frame'}],
+        'geometryBindings':{'photo':None},
+        'geometryEvidence':{'coordinateFrameId':'frame','manifestAssetId':'manifest',
+            'frames':[{'assets':{'input':'photo'},'cameraId':'old-camera'}]}}
+    with pytest.raises(PlatformError,match='geometry_evidence_unavailable'):
+        _load_geometry(document,[],SimpleNamespace())
+    document['geometryBindings']['photo'] = {'cameraId':'old-camera','geometrySolutionId':'different-solve'}
+    with pytest.raises(PlatformError,match='geometry_solution_binding_mismatch'):
+        _load_geometry(document,[],SimpleNamespace())
+
+
+@pytest.mark.skipif(not BLENDER.exists(), reason='real Blender executable not installed')
+def test_large_revision_source_text_preserves_full_document_on_reopen(tmp_path):
+    import time
+    from ehs_spatial.platform.contracts import digest
+    doc = scene_document()
+    # A real source revision carries large evidence tables. Single-line Text.write
+    # makes this CPU-bound before saving, independent of mesh size or UVs.
+    doc['reportEvidence'] = {'records': [{'observationId': f'observation-{i}', 'support': [0.25, 0.5, 0.75], 'reason': '保留完整原始来源'} for i in range(25000)]}
+    start = time.monotonic()
+    result = export_scene_revision('large-source-text', doc, lambda _: pytest.fail('no assets'), tmp_path/'large-source', BLENDER)
+    assert time.monotonic() - start < 30, 'Source text insertion regressed to the long-line slow path'
+    assert result['validation']['blender']['status'] == 'passed'
+    assert result['validation']['glb']['status'] == 'passed'
+    assert result['documentSha256'] == digest(doc)
+
+
+def test_v2_active_material_edit_exports_its_color_and_preserves_source_candidates(tmp_path):
+    from ehs_spatial.platform.blender_export import _read_glb
+    from ehs_spatial.platform.identity import migrate_document
+    from ehs_spatial.platform.repository import apply_operations
+    source = scene_document()
+    source['entities'] = [source['entities'][0]]
+    entity = source['entities'][0]
+    entity['material'] = {'baseColorFactor': [0.9, 0.8, 0.7, 1.0], 'roughness': 0.8}
+    active = entity['representations'][0]
+    shape = primitive_mesh(active['primitive'])
+    source_mesh = MeshData(shape.vertices, shape.faces, shape.colors, material={'baseColorFactor': [0.4, 0.6, 0.8, 0.7]})
+    asset_id = str(uuid4())
+    source['assets'].append({'id': asset_id, 'kind': 'generated_mesh'})
+    active.update(kind='generated_mesh', assetId=asset_id, primitive=None)
+    active['material'] = {'baseColorFactor': [0.4, 0.6, 0.8, 0.7], 'roughness': 0.2}
+    entity['currentModelTransform'] = deepcopy(active['transform'])
+    candidate = deepcopy(active)
+    candidate.update(id=str(uuid4()), material={'baseColorFactor': [0.1, 0.2, 0.3, 1.0]})
+    candidate['transform']['position'][0] += 10
+    entity['representations'].append(candidate)
+    base = str(uuid4())
+    doc = migrate_document(source, base_revision_id=base)
+    updated, _ = apply_operations(doc, [{'type': 'setMaterial', 'entityId': entity['id'], 'material': {'color': [0.5, 0.25, 1.0], 'roughness': 0.3}}], base_revision_id=base)
+    kept = updated['entities'][0]
+    assert kept['material'] == entity['material']
+    assert next(r for r in kept['representations'] if r['id'] == candidate['id']) == candidate
+    prepared = prepare_export('active-color', updated, lambda _: source_mesh)
+    assert len(prepared['objects']) == 1
+    assert prepared['objects'][0]['material'] == {'color': [0.5, 0.25, 1.0], 'roughness': 0.3}
+    assert prepared['objects'][0]['parts'][0]['material']['baseColorFactor'] == [0.2, 0.15, 0.8, 0.7]
+    assert prepared['objects'][0]['transform'] == kept['currentModelTransform'] == next(r for r in kept['representations'] if r['id'] == kept['activeModelRepresentationId'])['transform']
+    write_glb(prepared, tmp_path/'active.glb')
+    glb, _ = _read_glb((tmp_path/'active.glb').read_bytes())
+    assert glb['materials'][0]['pbrMetallicRoughness']['baseColorFactor'] == [0.2, 0.15, 0.8, 0.7]
+    assert glb['materials'][0]['pbrMetallicRoughness']['roughnessFactor'] == 0.3
+    legacy = prepare_export('legacy-color', source, lambda _: source_mesh)
+    assert all(p['material']['baseColorFactor'] == entity['material']['baseColorFactor'] for o in legacy['objects'] for p in o['parts'])
+    assert source['entities'][0]['material'] == entity['material'] and doc['entities'][0]['representations'][0]['material'] == active['material']

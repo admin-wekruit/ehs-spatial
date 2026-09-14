@@ -120,7 +120,7 @@ def test_explicit_report_views_share_entity_reuse_anchor_and_retain_unmapped_evi
     unknown = document['reportEvidence']['objects'][2]
     assert unknown['entityId'] is None and 'observationId' not in unknown['views'][0]
     assert import_document(path, put)[1]['documentSha256'] == manifest['documentSha256']
-    assert manifest['converter']['version'] == 'public-scene-v7'
+    assert manifest['converter']['version'] == 'public-scene-v9'
     report['frames'][1]['url'] = 'photo.png'
     (tmp_path/'report.json').write_text(json.dumps(report))
     with pytest.raises(PlatformError, match='import_report_image_mismatch'):

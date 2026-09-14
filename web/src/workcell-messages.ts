@@ -208,4 +208,6 @@ export const workcellMessages: Record<string, [string, string]> = {
     "发布快照 · 原始判定固定",
     "Published snapshot · findings frozen",
   ],
+  reportReassociateScene: ["跨照片对象核对", "Cross-photo object association"],
+  blender_export_timeout: ["Blender 导出超时；此任务未完成导出。", "Blender export timed out; this task did not finish the export."],
 };

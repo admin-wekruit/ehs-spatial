@@ -30,7 +30,8 @@ const entity = (id: string): Entity => ({
   measurements: {},
 });
 const doc: SceneDocument = {
-  schemaVersion: 1,
+  schemaVersion: 2,
+  geometrySolutions: [], geometryBindings: {}, identityDecisions: [], identitySchemaVersion: 1,
   captureId: "capture",
   target: "scene",
   assets: [],
@@ -99,6 +100,7 @@ const hidden = previewOperations(doc, [
 assert.equal(photoHits(hidden, "photo", 43, 43)[0].entity.id, "fence");
 assert.equal(doc.entities[1].visible, undefined);
 const modeled = structuredClone(doc);
+modeled.entities[1].activeModelRepresentationId = "rep";
 modeled.entities[1].representations = [
   {
     id: "rep",

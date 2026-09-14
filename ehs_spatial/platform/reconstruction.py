@@ -7,6 +7,7 @@ separate from this corrected, per-image cache protocol.
 from __future__ import annotations
 
 import base64
+from copy import deepcopy
 from dataclasses import dataclass
 import hashlib
 import io
@@ -23,10 +24,11 @@ from pydantic import BaseModel, Field
 
 from .contracts import PlatformError, canonical, digest
 from .spatial import (FrameGeometry, MaskObservation, MeshData, SAM3DMeshAdapter,
-                      GenerationRequest, associate_observations, camera_intrinsics,
+                      register_reference, registered_frame, GenerationRequest, associate_observations, camera_intrinsics,
                       stage_cache_key, transform_points, matrix_to_transform,estimate_native_ground)
 
 PIPELINE_VERSION = "capture-v1-per-image-cache"
+ASSOCIATION_VERSION = "workcell-identity-v2"
 MAP_PINS = {"model": "facebook/map-anything-apache", "modelRevision": "00f9c245bbcb60522d1ed7f9e9d88462c6e3f38a",
             "codeRevision": "3d10cf7a3016fc0f9bb13a071ee66c47b10be0d9", "adapter": PIPELINE_VERSION}
 MAX_MASK_POLYGON_RUNS = 100_000
@@ -175,16 +177,24 @@ def _capture(repository,blobs,job):
     capture = next((x for x in repository.list_project_records(job["projectId"],"captures")["items"] if x["id"] == capture_id),None)
     if capture is None or not 1 <= len(capture["images"]) <= 4:
         raise PlatformError("capture_not_found",404)
+    items = capture["images"]
+    if job["kind"] != "analyze_capture":
+        all_captures = repository.list_project_records(job["projectId"],"captures")["items"]
+        capture_ids = set(document.get("captureIds",[capture_id]))
+        items = list({image["id"]:image for c in all_captures if c["id"] in capture_ids for image in c["images"]}.values())
     images = []
-    for item in capture["images"]:
+    for item in items:
         asset = repository.get_asset(item["assetId"])
-        if asset["projectId"] != job["projectId"]:
-            raise PlatformError("asset_project_mismatch",403)
+        if asset["id"] not in {a["id"] for a in document["assets"]}:
+            raise PlatformError("asset_not_in_scene",403)
         raw = blobs.get(asset["storageKey"],asset["sha256"],asset["sizeBytes"])
         with Image.open(io.BytesIO(raw)) as im:
             rgb = np.asarray(im.convert("RGB"))
         images.append({**item,"sha256":asset["sha256"],"bytes":raw,"rgb":rgb,"width":rgb.shape[1],"height":rgb.shape[0]})
-    return capture,json.loads(canonical(document)),images
+    from .identity import migrate_document
+    document = migrate_document(document, base_revision_id=job["baseRevisionId"]) if document["schemaVersion"] == 1 else deepcopy(document)
+    document["captureId"] = capture_id
+    return capture,document,images
 
 
 def _id(capture_id,*parts):
@@ -220,20 +230,20 @@ def _discover(document,image,response,evidence):
         oid = _id(document["captureId"],"observation",image["id"],evidence["sha256"],i)
         if any(x["id"] == oid for x in document["observations"]):
             continue
-        document["observations"].append({"id":oid,"revision":1,"imageId":image["id"],"originalPixelBox":box.tolist(),"maskAssetId":None,
+        document["observations"].append({"id":oid,"revision":1,"captureId":document["captureId"],"imageId":image["id"],"originalPixelBox":box.tolist(),"maskAssetId":None,
             "pixelMapping":image.get("pixelMapping",[]),"labelEvidence":[{"label":label,"sourceRefs":[_ref(evidence)],"kind":"visual_hypothesis","geometryRole":geometry_role}],"geometrySupport":None,"sourceRefs":[_ref(evidence)]})
         document["entities"].append({"id":_id(document["captureId"],"entity",oid),"label":label,"observationRefs":[oid],
             "associationState":"association_pending","representations":[],"currentModelTransform":None,"measurements":{},
-            "groupId":None,"lineage":[]})
+            "groupId":None,"lineage":[],"activeModelRepresentationId":None,"measurementEvidence":[],"measurementSelections":{}})
 
 
-def _geometry(document,images,response,evidence):
+def _geometry(document,images,response,evidence, *, coordinate_frame_id=None):
     records = response.get("frames",[])
     if len(records) != len(images) or {x.get("imageId") for x in records} != {x["id"] for x in images}:
         raise PlatformError("geometry_frame_count_mismatch")
-    frame_id = _id(document["captureId"],"native")
+    frame_id = coordinate_frame_id or _id(evidence["id"],"native")
     existing = next((f for f in document["coordinateFrames"] if f["id"] == frame_id),None)
-    if existing is not None and existing.get("sourceRefs") != [_ref(evidence)]:
+    if coordinate_frame_id is None and existing is not None and existing.get("sourceRefs") != [_ref(evidence)]:
         raise PlatformError("capture_geometry_already_bound",409)
     frames,canonical = {},{}
     cameras = []
@@ -249,15 +259,17 @@ def _geometry(document,images,response,evidence):
         if rgb.shape != points.shape or rgb.dtype != np.uint8:
             raise PlatformError("canonical_rgb_mismatch")
         frames[image["id"]] = f
-        canonical[image["id"]] = {**record,"rgb":rgb,"inputToCanonical":a}
-        camera = {"id":_id(document["captureId"],"camera",image["id"]),"imageId":image["id"],"coordinateFrameId":frame_id,
+        canonical[image["id"]] = {**record,"rgb":rgb,"inputToCanonical":a,"originalShape":(image["height"],image["width"]),"geometrySolutionId":evidence["id"]}
+        camera = {"id":_id(evidence["id"],"camera",image["id"]),"imageId":image["id"],"coordinateFrameId":frame_id,
                   "width":image["width"],"height":image["height"],"K":camera_intrinsics(np.linalg.inv(a)@f.K).tolist(),"cameraToWorld":f.camera_to_world.tolist(),"sourceRefs":[_ref(evidence)]}
         cameras.append(camera)
     # Validate the entire joint solution before binding immutable capture cameras.
     _include(document,evidence)
     if existing is None:
         document["coordinateFrames"].append({"id":frame_id,"convention":"opencv","scale":{"status":"uncalibrated","nativeToMeters":None,"sourceRefs":[]},"ground":None,"sourceRefs":[_ref(evidence)]})
-    document["cameras"] = [c for c in document["cameras"] if c["imageId"] not in lookup] + cameras
+    document["cameras"] = [c for c in document["cameras"] if c["id"] not in {x["id"] for x in cameras}] + cameras
+    for camera in cameras:
+        document.setdefault("geometryBindings", {})[camera["imageId"]] = {"geometrySolutionId":evidence["id"],"cameraId":camera["id"]}
     return frames,canonical
 
 
@@ -304,6 +316,9 @@ def _save_observation_mask(document,observation,image,response,evidence,stages):
     polygons,polygonization = _original_mask_polygons(mask)
     observation.update(maskAssetId=asset["id"],maskStatus="present" if mask.any() else "empty",geometrySupport=None,
         maskPolygonization=polygonization,polygonCoordinateConvention="pixel_edges",fillRule="evenodd")
+    # This PNG is in original pixels. An imported canonical mask belongs to the
+    # previous observation revision and must not override this replacement.
+    observation.pop("maskEvidence", None)
     if polygons is None:
         observation.pop("originalPixelPolygons",None)
     else:
@@ -364,6 +379,7 @@ def _association_evidence(document, associations, frames, masks):
         if entity["associationState"] == "confirmed":
             # Explicit imported/manual ownership survives a later geometry attempt.
             if entity.get("associationEvidence", {}).get("method") != "bidirectional_depth_mask" and entity.get("associationEvidence"):
+                entity["associationEvidence"]["geometryVerification"] = {"config":(associations or {}).get("config"),"links":[link for link in (associations or {}).get("links",[]) if set(link["observationIds"]) & ids]}
                 continue
             status = "confirmed"
         elif len(scene_images) <= 1:
@@ -376,7 +392,7 @@ def _association_evidence(document, associations, frames, masks):
             status = "geometry_missing"
         elif any(set(link["observationIds"]) & ids for link in associations["ambiguous"]):
             status = "competing_candidates"
-        elif not any(lookup[oid].get("geometrySupport", {}).get("validPixelCount", 0) >= associations["config"]["min_support"] for oid in ids):
+        elif not any((lookup[oid].get("geometrySupport") or {}).get("validPixelCount", 0) >= associations["config"]["min_support"] for oid in ids):
             status = "insufficient_support"
         else:
             status = "no_supported_match"
@@ -387,20 +403,132 @@ def _association_evidence(document, associations, frames, masks):
             "meaning":"Geometric identity evidence; not semantic correctness or verified physical truth"}
 
 
-def _associate_and_surfaces(document,frames,canonical,masks,stages):
+def _associate_identities(document, frames, masks, stages):
+    from .repository import apply_operations
     observations = [MaskObservation(o["id"],o["imageId"],masks[o["id"]]) for o in document["observations"] if o["id"] in masks]
-    associations = associate_observations(observations,frames)
-    # Existing durable IDs survive merges; no identity is recomputed from a mask.
+    decisions = document.get("identityDecisions", [])
+    superseded = {d.get("supersedesDecisionId") for d in decisions}
+    excluded = [d["observationGroups"] for d in decisions if d["decision"] == "different" and d["id"] not in superseded]
+    seeds = [e["observationRefs"] for e in document["entities"] if e["associationState"] == "confirmed" and e.get("observationRefs")]
+    associations = associate_observations(observations, frames, confirmed_groups=seeds, excluded_groups=excluded)
+    operations = []
     for group in associations["groups"]:
         entities = [e for e in document["entities"] if set(e["observationRefs"]) & set(group)]
         if len(group) > 1 and len(entities) > 1:
-            survivor = entities[0]
-            if any(not set(e["observationRefs"]) <= set(group) for e in entities):
-                continue
-            survivor["observationRefs"] = list(group)
-            survivor["associationState"] = "confirmed"
-            survivor["lineage"] += [{"type":"merge","entityIds":[e["id"] for e in entities[1:]],"method":"bidirectional_depth_mask"}]
-            document["entities"] = [e for e in document["entities"] if e not in entities[1:]]
+            entities.sort(key=lambda e: (e["associationState"] != "confirmed", e["id"]))
+            survivor = entities[0]["id"]
+            entity_ids = [e["id"] for e in entities]
+            decision_id = _id(stages.job["baseRevisionId"], ASSOCIATION_VERSION, digest({"groups": [e["observationRefs"] for e in entities], "config": associations["config"]}))
+            lookup = {o["id"]:o for o in document["observations"]}
+            refs = [{"kind":"observation", "observationId":oid, "observationRevision":lookup[oid].get("revision",1)} for oid in sorted({oid for e in entities for oid in e["observationRefs"]})]
+            asset_ids = {lookup[oid].get("maskAssetId") for oid in group} - {None}
+            asset_ids.add((document.get("geometryEvidence") or {}).get("manifestAssetId"))
+            refs.extend({"kind":"asset","assetId":a["id"],"sha256":a["sha256"]} for a in document["assets"] if a["id"] in asset_ids)
+            refs.append({"kind":"method","name":"bidirectional_depth_mask","version":ASSOCIATION_VERSION,"configSha256":digest(associations["config"])})
+            decision = {"id":decision_id,"decision":"same","source":"geometry","baseRevisionId":stages.job["baseRevisionId"],
+                "entityIds":entity_ids,"observationGroups":[e["observationRefs"] for e in entities],"survivorId":survivor,
+                "evidenceRefs":refs,"reason":"Unique bidirectional mask and visible-depth support without identity conflicts","supersedesDecisionId":None}
+            operations.extend([{"type":"recordIdentityDecision","decision":decision}, {"type":"mergeEntities","entityIds":entity_ids,"survivorId":survivor,"decisionId":decision_id}])
+    if operations:
+        updated, _ = apply_operations(document, operations, base_revision_id=stages.job["baseRevisionId"])
+        document.clear()
+        document.update(updated)
+    associations["operationCount"] = len(operations)
+    associations["methodVersion"] = ASSOCIATION_VERSION
+    return associations
+
+
+def _verified_source_equivalences(document, masks, stages):
+    """Verify exact immutable source instances, never infer identity from overlap."""
+    from ..providers.sam3 import decode_coco_rle
+    from .contracts import SourceObservationEquivalence
+    observations = {o['id']:o for o in document['observations']}
+    assets = {a['id']:a for a in document['assets']}
+    loaded, verified, skipped = {}, [], []
+
+    def pointed(ref):
+        if assets.get(ref['assetId'], {}).get('sha256') != ref['sha256']:
+            raise PlatformError('source_equivalence_asset_mismatch', 409)
+        if ref['assetId'] not in loaded:
+            loaded[ref['assetId']] = json.loads(_scene_asset_bytes(document, ref['assetId'], stages))
+        value = loaded[ref['assetId']]
+        for token in ref.get('jsonPointer', '').split('/')[1:]:
+            token = token.replace('~1', '/').replace('~0', '~')
+            value = value[int(token)] if isinstance(value, list) else value[token]
+        return value
+
+    for proof_ref in document.get('sourceIdentityEvidence', []):
+        try:
+            proof = pointed(proof_ref)
+            if not isinstance(proof, dict) or proof.get('schemaVersion') != 1 or proof.get('kind') != 'same_source_observation_equivalences':
+                raise ValueError('unsupported source proof')
+            for index, raw in enumerate(proof['pairs']):
+                pair = SourceObservationEquivalence.model_validate(raw).model_dump(mode='json')
+                refs = pair['observationRefs']
+                if any(ref['observationId'] not in observations for ref in refs):
+                    raise ValueError('source observation absent')
+                if any(observations[r['observationId']].get('revision', 1) != r['revision'] for r in refs):
+                    skipped.append({'observationIds':[r['observationId'] for r in refs], 'code':'source_equivalence_observation_revised'})
+                    continue
+                if any(r['observationId'] not in masks for r in refs):
+                    skipped.append({'observationIds':[r['observationId'] for r in refs], 'code':'source_equivalence_mask_unavailable'})
+                    continue
+                if assets.get(pair['imageId'], {}).get('sha256') != pair['imageSha256'] or any(observations[r['observationId']]['imageId'] != pair['imageId'] for r in refs):
+                    raise ValueError('source image mismatch')
+                roles = {ref.get('role'):pointed(ref) for ref in pair['evidenceRefs']}
+                source, native = roles['raw_source_reference'], roles['native_mask_provenance']
+                owners = []
+                for ref in pair['evidenceRefs']:
+                    if ref.get('role') == 'raw_source_reference':
+                        suffix = '/provenance/source_record/source_mask/ref'
+                        if not ref['jsonPointer'].endswith(suffix):
+                            raise ValueError('invalid raw source location')
+                        record = pointed({**ref, 'jsonPointer':ref['jsonPointer'][:-len(suffix)]})
+                        if record['provenance']['source_image_sha256'] != pair['imageSha256'] or record['provenance']['source_record']['source_frame_id'] != native['source_frame']:
+                            raise ValueError('source photo mapping mismatch')
+                        matching = [r['observationId'] for r in refs if any(s.get('assetId') == ref['assetId'] and s.get('sourceRecordId') == record['id'] for s in observations[r['observationId']].get('sourceRefs', []) if isinstance(s, dict))]
+                    elif ref.get('role') == 'native_mask_provenance':
+                        if not ref['jsonPointer'].endswith('/provenance'):
+                            raise ValueError('invalid native source location')
+                        parent = ref['jsonPointer'][:-len('/provenance')]
+                        view = pointed({**ref, 'jsonPointer':parent})
+                        if view.get('image_sha256', pair['imageSha256']) != pair['imageSha256']:
+                            raise ValueError('native source image mismatch')
+                        matching = [r['observationId'] for r in refs if any(s.get('assetId') == ref['assetId'] and s.get('jsonPointer') == parent and s.get('imageSha256') == pair['imageSha256'] and s.get('sourceFrameId') == view['frame_id'] for s in (observations[r['observationId']].get('maskEvidence') or {}).get('sourceRefs', []) if isinstance(s, dict))]
+                    else:
+                        raise ValueError('unsupported source proof role')
+                    if len(matching) != 1:
+                        raise ValueError('source proof does not identify an observation')
+                    owners.extend(matching)
+                if len(owners) != 2 or set(owners) != {r['observationId'] for r in refs}:
+                    raise ValueError('source proof ownership mismatch')
+                instance = source['pointer']
+                if source['encoding'] != 'rle' or len(instance) != 2 or instance[0] != 'rle' or type(instance[1]) is not int or instance[1] < 0:
+                    raise ValueError('invalid source instance')
+                if source['sha256'] != pair['sourceRef']['sha256'] or native['source_sha256'] != source['sha256'] or native['source_instance'] != instance[1] or pair['sourceRef']['jsonPointer'] != f'/rle/{instance[1]}':
+                    raise ValueError('different source instances')
+                if source['shape_hw'] != pair['canonicalShape']:
+                    raise ValueError('source grid mismatch')
+                height, width = pair['canonicalShape']
+                encoded = pointed(pair['sourceRef'])
+                source_mask = decode_coco_rle(encoded if isinstance(encoded, str) else json.dumps(encoded), height=height, width=width).astype(bool)
+                if list(source_mask.shape) != pair['canonicalShape'] or hashlib.sha256(source_mask.tobytes(order='C')).hexdigest() != pair['canonicalMaskSha256']:
+                    raise ValueError('source mask hash mismatch')
+                if any(not np.array_equal(masks[r['observationId']], source_mask) for r in refs):
+                    raise ValueError('canonical mask differs from source instance')
+                pair['evidenceRefs'].append({**proof_ref, 'jsonPointer':f'/pairs/{index}'})
+                verified.append(pair)
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise PlatformError('invalid_source_identity_proof', 409, assetId=proof_ref['assetId']) from exc
+    return verified, skipped
+
+
+def _associate_and_surfaces(document,frames,canonical,masks,stages, *, rebuild_surfaces=True, new_observation_ids=None, refresh_observation_ids=None, invalidated_measurement_ids=()):
+    from .identity import apply_source_equivalences
+    verified, skipped = _verified_source_equivalences(document, masks, stages)
+    source_merges = apply_source_equivalences(document, verified, base_revision_id=stages.job['baseRevisionId']) if verified else []
+    associations = _associate_identities(document, frames, masks, stages)
+    associations['sourceEquivalences'] = {'verifiedPairCount':len(verified), 'merges':source_merges, 'skipped':skipped}
     lookup = {o["id"]:o for o in document["observations"]}
     for entity in document["entities"]:
         candidates = []
@@ -412,30 +540,40 @@ def _associate_and_surfaces(document,frames,canonical,masks,stages):
             support = masks[oid] & f.support()
             points = f.points[support]
             frame_record = next(x for x in document["coordinateFrames"] if x["id"] == f.coordinate_frame_id)
-            observation["geometrySupport"] = {"validPixelCount":len(points),"coordinateFrameId":f.coordinate_frame_id,"boundsNative":{"min":points.min(axis=0).tolist(),"max":points.max(axis=0).tolist()} if len(points) >= 8 else None,"sourceRefs":frame_record["sourceRefs"],
+            observation["geometrySupport"] = {"validPixelCount":len(points),"coordinateFrameId":f.coordinate_frame_id,"boundsNative":{"min":points.min(axis=0).tolist(),"max":points.max(axis=0).tolist()} if len(points) >= 8 else None,"sourceRefs":frame_record.get("sourceRefs") or [{"assetId":canonical[f.image_id]["geometryManifestAssetId"]}],
                 "coverage":"visible_support_only","uncertainty":{"status":"not_quantified","causes":["estimated_depth","occlusion","mask_boundary"]}}
-            if len(points) >= 8:
+            if len(points) >= 8 and (new_observation_ids is None or oid in new_observation_ids) and (refresh_observation_ids is None or oid in refresh_observation_ids):
                 candidates.append((len(points),oid,f,support))
         if not candidates:
             continue
+        if not rebuild_surfaces:
+            continue
         _,oid,f,support = max(candidates,key=lambda x:(x[0],x[1]))
         observation = lookup[oid]
-        entity["measurements"]["observedBounds"] = {**observation["geometrySupport"]["boundsNative"],"coordinateFrameId":f.coordinate_frame_id,
-            "source":"observed_measurement","sourceRefs":[{"observationId":oid,"revision":observation["revision"]}],"unit":"native","validPixelCount":int(support.sum()),
-            "coverage":"visible_support_only","uncertainty":{"status":"not_quantified","causes":["estimated_depth","occlusion","mask_boundary"]}}
-        bounds = observation["geometrySupport"]["boundsNative"]
-        dimensions = np.asarray(bounds["max"])-np.asarray(bounds["min"])
-        entity["measurements"].update({"dimensionsNative":dimensions.tolist(),
-            "coordinateFrameId":f.coordinate_frame_id,"dimensionBasis":"native_axes_not_ground_aligned"})
+        selected_bounds = entity['measurements'].get('observedBounds')
+        bounds_records = [r for r in entity['measurementEvidence'] if r['measurementKey'] == 'observedBounds']
+        refresh_measurement = refresh_observation_ids is None or (selected_bounds is None and (not bounds_records or any(r['id'] in invalidated_measurement_ids for r in bounds_records))) or (selected_bounds is not None and any(ref.get('observationId') in refresh_observation_ids for ref in selected_bounds.get('sourceRefs', []) if isinstance(ref,dict)))
+        if refresh_measurement and (new_observation_ids is None or not entity.get('measurementEvidence')):
+            entity["measurements"]["observedBounds"] = {**observation["geometrySupport"]["boundsNative"],"coordinateFrameId":f.coordinate_frame_id,
+                "source":"observed_measurement","sourceRefs":[{"observationId":oid,"revision":observation["revision"]}],"unit":"native","validPixelCount":int(support.sum()),
+                "coverage":"visible_support_only","uncertainty":{"status":"not_quantified","causes":["estimated_depth","occlusion","mask_boundary"]}}
+            bounds = observation["geometrySupport"]["boundsNative"]
+            dimensions = np.asarray(bounds["max"])-np.asarray(bounds["min"])
+            entity["measurements"].update({"dimensionsNative":dimensions.tolist(),
+                "coordinateFrameId":f.coordinate_frame_id,"dimensionBasis":"native_axes_not_ground_aligned"})
         mesh = _mesh(f.points,f.support(),canonical[f.image_id]["rgb"],masks[oid])
         if mesh is None:
             continue
         asset = _save_mesh(stages,mesh,{"kind":"observed_surface","entityId":entity["id"],"sourceObservationId":oid})
         if asset["id"] not in {a["id"] for a in document["assets"]}:
             document["assets"].append(asset)
-        rep = {"id":_id(document["captureId"],"observed",entity["id"],asset["sha256"]),"kind":"observed_surface","assetId":asset["id"],"coordinateFrameId":f.coordinate_frame_id,
+        rep = {"id":_id(document["captureId"],"observed",entity["id"],oid,str(observation["revision"]),asset["sha256"]),"kind":"observed_surface","assetId":asset["id"],"coordinateFrameId":f.coordinate_frame_id,
                "transform":{"coordinateFrameId":f.coordinate_frame_id,"position":[0.,0.,0.],"quaternion":[0.,0.,0.,1.],"scale":[1.,1.,1.]},"bounds":asset["metadata"]["bounds"],"primitive":None,"placementState":"confirmed","sourceRefs":[{"observationId":oid,"revision":observation["revision"]}]}
-        entity["representations"] = [r for r in entity["representations"] if r["kind"] != "observed_surface"] + [rep]
+        if not any(r["id"] == rep["id"] for r in entity["representations"]):
+            entity["representations"].append(rep)
+    from .identity import snapshot_measurements
+    for entity in document["entities"]:
+        snapshot_measurements(entity, source_revision_id=stages.job["baseRevisionId"], document=document)
     _association_evidence(document,associations,frames,masks)
     return associations
 
@@ -455,46 +593,130 @@ def _capture_context(document,frames,canonical,stages):
         "representations":[{"id":_id(document["captureId"],"context",asset["sha256"]),"kind":"observed_surface","assetId":asset["id"],"coordinateFrameId":anchor.coordinate_frame_id,
             "transform":{"coordinateFrameId":anchor.coordinate_frame_id,"position":[0.,0.,0.],"quaternion":[0.,0.,0.,1.],"scale":[1.,1.,1.]},
             "primitive":None,"bounds":asset["metadata"]["bounds"],"placementState":"confirmed","editable":False,"sourceRefs":[{"imageId":anchor.image_id},_ref(asset)],"coverage":"observed_camera_state_only"}],
-        "currentModelTransform":None,"measurements":{},"groupId":None,"lineage":[]}
+        "currentModelTransform":None,"measurements":{},"groupId":None,"lineage":[],"activeModelRepresentationId":None,"measurementEvidence":[],"measurementSelections":{}}
     document["entities"] = [e for e in document["entities"] if e["id"] != identity] + [entity]
 
 
-def _ground(document,frames,masks,stages):
-    observations = [o for o in document["observations"] if o["id"] in masks and any(e.get("geometryRole") == "floor" for e in o["labelEvidence"])]
-    ground,report = estimate_native_ground(frames,[MaskObservation(o["id"],o["imageId"],masks[o["id"]]) for o in observations])
-    refs = [{"observationId":o["id"],"revision":o["revision"],"maskAssetId":o["maskAssetId"]} for o in observations]
-    if ground is not None:
-        evidence = stages.put({"fit":report,"sourceRefs":refs,"coordinateFrameId":next(iter(frames.values())).coordinate_frame_id},
-            {"kind":"ground_fit_evidence","pipelineVersion":PIPELINE_VERSION})
-        _include(document,evidence)
-        ground["sourceRefs"] = refs+[_ref(evidence)]
-    for frame in document["coordinateFrames"]:
-        if frame["id"] in {f.coordinate_frame_id for f in frames.values()} and (frame.get("ground") or {}).get("source") not in ("manual","manual_assertion"):
-            frame["ground"],frame["groundFit"] = ground,report
+def _ground(document,frames,masks,stages, *, affected_observation_ids=None):
     lookup = {o["id"]:o for o in document["observations"]}
+    affected_frames = {f.coordinate_frame_id for f in frames.values()} if affected_observation_ids is None else {
+        frames[lookup[oid]["imageId"]].coordinate_frame_id for oid in affected_observation_ids if lookup[oid]["imageId"] in frames}
+    reports = []
+    for frame_record in document["coordinateFrames"]:
+        frame_id = frame_record["id"]
+        if frame_id not in affected_frames:
+            continue
+        local_frames = {image_id:frame for image_id,frame in frames.items() if frame.coordinate_frame_id == frame_id}
+        floors = [o for o in document["observations"] if o["imageId"] in local_frames and any(e.get("geometryRole") == "floor" for e in o.get("labelEvidence", []))]
+        changed_floor = affected_observation_ids is None or any(o["id"] in affected_observation_ids for o in floors)
+        ground = frame_record.get("ground")
+        manual = (ground or {}).get("source") in ("manual", "manual_assertion")
+        if changed_floor and not manual:
+            supported = [o for o in floors if o["id"] in masks]
+            ground,report = estimate_native_ground(local_frames,[MaskObservation(o["id"],o["imageId"],masks[o["id"]]) for o in supported])
+            refs = [{"observationId":o["id"],"revision":o["revision"],"maskAssetId":o["maskAssetId"]} for o in supported]
+            if ground is not None:
+                evidence = stages.put({"fit":report,"sourceRefs":refs,"coordinateFrameId":frame_id}, {"kind":"ground_fit_evidence","pipelineVersion":PIPELINE_VERSION})
+                _include(document,evidence)
+                ground["sourceRefs"] = refs+[_ref(evidence)]
+            frame_record["ground"],frame_record["groundFit"] = ground,report
+        else:
+            report = frame_record.get("groundFit") or {"status":"preserved_source_ground"}
+        reports.append({**report,"coordinateFrameId":frame_id})
+        for entity in document["entities"]:
+            measurement = entity["measurements"]
+            bounds = measurement.get("observedBounds")
+            if not bounds:
+                continue
+            oid = next((ref["observationId"] for ref in bounds.get("sourceRefs",[]) if "observationId" in ref),None)
+            observation = lookup.get(oid)
+            if observation is None or observation["imageId"] not in local_frames or (not changed_floor and oid not in (affected_observation_ids or set())):
+                continue
+            measurement["groundHeightNative"],measurement["groundSupportRangeNative"] = None,None
+            if ground is None or oid not in masks:
+                continue
+            frame = local_frames[observation["imageId"]]
+            points = frame.points[masks[oid] & frame.support()]
+            if not len(points):
+                continue
+            heights = points@np.asarray(ground["normal"])+ground["plane"][3]
+            measurement["groundHeightNative"] = float(heights.max())
+            measurement["groundSupportRangeNative"] = {"min":float(heights.min()),"max":float(heights.max()),"span":float(np.ptp(heights)),
+                "source":"observed_surface_only","meaning":"Visible support relative to estimated floor; not full object dimensions",
+                "sourceRefs":[{"observationId":oid,"revision":observation["revision"]}]+ground.get("sourceRefs",[]),"unit":"native","uncertainty":ground.get("uncertainty",{"status":"not_quantified"})}
+    from .identity import snapshot_measurements
     for entity in document["entities"]:
-        measurement = entity["measurements"]
-        if "observedBounds" not in measurement:
-            continue
-        measurement["groundHeightNative"],measurement["groundSupportRangeNative"] = None,None
-        if ground is None:
-            continue
-        oid = measurement["observedBounds"]["sourceRefs"][0]["observationId"]
-        observation = lookup[oid]
-        frame = frames[observation["imageId"]]
-        points = frame.points[masks[oid] & frame.support()]
-        heights = points@np.asarray(ground["normal"])+ground["plane"][3]
-        measurement["groundHeightNative"] = float(heights.max())
-        measurement["groundSupportRangeNative"] = {"min":float(heights.min()),"max":float(heights.max()),"span":float(np.ptp(heights)),
-            "source":"observed_surface_only","meaning":"Visible support relative to estimated floor; not full object dimensions",
-            "sourceRefs":[{"observationId":oid,"revision":observation["revision"]}]+ground["sourceRefs"],"unit":"native","uncertainty":ground["uncertainty"]}
-    return report
+        snapshot_measurements(entity, source_revision_id=stages.job["baseRevisionId"], document=document)
+    return reports[0] if len(reports) == 1 else {"status":"evaluated_per_coordinate_frame","frames":reports}
+
+
+def _append_geometry(document, images, stages):
+    """Fixed old reference + at most three new photos per provider workset."""
+    old_frames, old_records = _load_geometry(document,[],stages)
+    old_masks, _ = _load_masks(document,old_records,stages)
+    observations = {o['id']:o for o in document['observations']}
+    choices = []
+    for image_id, frame in old_frames.items():
+        background = frame.support().copy()
+        for oid,mask in old_masks.items():
+            observation = observations[oid]
+            if observation['imageId'] == image_id and not any(e.get('geometryRole')=='floor' for e in observation.get('labelEvidence',[])):
+                background &= ~mask
+        # A reference with no object masks has no verified background selection.
+        if any(observations[oid]['imageId']==image_id for oid in old_masks):
+            choices.append((int(background.sum()),image_id,background))
+    if not choices:
+        raise PlatformError('registration_reference_unavailable',409)
+    _,anchor_id,background = max(choices,key=lambda x:(x[0],x[1]))
+    asset = stages.repo.get_asset(anchor_id)
+    raw = _scene_asset_bytes(document,anchor_id,stages)
+    with Image.open(io.BytesIO(raw)) as image:
+        rgb = np.asarray(image.convert('RGB'))
+    anchor = {'id':anchor_id,'sha256':asset['sha256'],'bytes':raw,'rgb':rgb,'width':rgb.shape[1],'height':rgb.shape[0]}
+    worksets = [[anchor,*images[i:i+3]] for i in range(0,len(images),3)]
+    reports, errors = [], []
+    anchor_binding = deepcopy(document['geometryBindings'][anchor_id])
+    for workset in worksets:
+        response,evidence = stages.call('geometry',workset,{'images':[_image_payload(i) for i in workset]})
+        native,canonical = _geometry(document,workset,response,evidence)
+        try:
+            matrix,report = register_reference(native[anchor_id],old_frames[anchor_id],background,
+                source_input_to_canonical=canonical[anchor_id]['inputToCanonical'], target_input_to_canonical=old_records[anchor_id]['inputToCanonical'])
+            transformed = []
+            for image in workset:
+                frame = registered_frame(native[image['id']],matrix,old_frames[anchor_id].coordinate_frame_id)
+                transformed.append({**canonical[image['id']],'points':frame.points,'cameraToWorld':frame.camera_to_world})
+            proof = {'sourceGeometrySolutionId':evidence['id'],'sourceFrameId':native[anchor_id].coordinate_frame_id,
+                'targetFrameId':old_frames[anchor_id].coordinate_frame_id,'transform':matrix.tolist(),
+                'metrics':report,'sourceObservationRefs':[oid for oid in old_masks if observations[oid]['imageId']==anchor_id],
+                'baseRevisionId':stages.job['baseRevisionId']}
+            derived = stages.put({'stage':'registered_geometry','coordinateFrameId':old_frames[anchor_id].coordinate_frame_id,
+                'output':{'frames':transformed},'registration':proof}, {'kind':'registered_geometry','stage':'registered_geometry','sourceRefs':[_ref(evidence)]})
+            parsed,records = _geometry(document,workset,{'frames':transformed},derived,coordinate_frame_id=old_frames[anchor_id].coordinate_frame_id)
+            for image in workset[1:]:
+                old_frames[image['id']],old_records[image['id']] = parsed[image['id']],records[image['id']]
+            reports.append({**proof,'assetId':derived['id'],'status':'registered'})
+        except PlatformError as exc:
+            # Keep the new native evidence, but never pass an unregistered frame
+            # to cross-capture identity or present it as the original workcell.
+            for image in workset[1:]:
+                old_frames[image['id']],old_records[image['id']] = native[image['id']],canonical[image['id']]
+            errors.append({'stage':'registration','code':exc.code,'params':exc.params,'imageIds':[i['id'] for i in workset[1:]]})
+        # The reference stays pinned to its original camera/geometry in all cases.
+        document['geometryBindings'][anchor_id] = deepcopy(anchor_binding)
+    document['registrationEvidence'] = document.get('registrationEvidence',[]) + reports
+    return old_frames,old_records,errors
 
 
 def run_analysis(repository,blobs,job,providers):
     capture,document,images = _capture(repository,blobs,job)
     stages = _Stages(repository,blobs,job,providers)
     errors,frames,canonical,masks = [],{},{},{}
+    is_append = job.get('inputs',{}).get('captureMode') == 'append'
+    if is_append:
+        images = [i for i in images if i['id'] in job['inputs'].get('newImageIds',[])]
+        if not images:
+            return run_reassociation(repository,blobs,job)
     def attempt(stage,fn):
         try:
             return fn()
@@ -510,16 +732,26 @@ def run_analysis(repository,blobs,job,providers):
             response,evidence = output
             attempt("discovery",lambda:_discover(document,image,response,evidence))
             stages.checkpoint(document,"discovery")
-    geometry = attempt("geometry",lambda:stages.call("geometry",images,{"images":[_image_payload(i) for i in images]}))
-    if geometry:
-        parsed = attempt("geometry",lambda:_geometry(document,images,*geometry))
+    if is_append:
+        parsed = attempt('geometry',lambda:_append_geometry(document,images,stages))
         if parsed:
-            frames,canonical = parsed
+            frames,canonical,registration_errors = parsed
+            errors.extend(registration_errors)
+            masks,mask_errors = _load_masks(document,canonical,stages)
+            errors.extend(e for e in mask_errors if e['code'] != 'mask_missing')
+    else:
+        geometry = attempt("geometry",lambda:stages.call("geometry",images,{"images":[_image_payload(i) for i in images]}))
+        if geometry:
+            parsed = attempt("geometry",lambda:_geometry(document,images,*geometry))
+            if parsed:
+                frames,canonical = parsed
     for image in images:
         # Separate corrected product baseline: each call/cache sees one photo.
         attempt("depth",lambda:stages.call("depth",[image],{"image":_image_payload(image)}))
     lookup = {i["id"]:i for i in images}
     for observation in document["observations"]:
+        if observation['imageId'] not in lookup or (is_append and observation.get('maskAssetId')):
+            continue
         image = lookup[observation["imageId"]]
         output = attempt("segmentation",lambda:stages.call("segmentation",[image],{"image":_image_payload(image),"box":observation["originalPixelBox"]},observation["sourceRefs"]))
         if not output:
@@ -532,11 +764,12 @@ def run_analysis(repository,blobs,job,providers):
         if image["id"] in canonical:
             masks[observation["id"]] = _canonical_mask(mask,canonical[image["id"]])
         stages.checkpoint(document,"segmentation")
-    association = attempt("association",lambda:_associate_and_surfaces(document,frames,canonical,masks,stages)) if frames else None
+    association = attempt("association",lambda:_associate_and_surfaces(document,frames,canonical,masks,stages,new_observation_ids={o["id"] for o in document["observations"] if o["imageId"] in lookup} if is_append else None)) if frames else None
     if association is None:
         _association_evidence(document,None,frames,masks)
-    attempt("capture_context",lambda:_capture_context(document,frames,canonical,stages))
-    ground_report = attempt("ground",lambda:_ground(document,frames,masks,stages))
+    if not is_append:
+        attempt("capture_context",lambda:_capture_context(document,frames,canonical,stages))
+    ground_report = attempt("ground",lambda:_ground(document,frames,masks,stages)) if not is_append else {"status":"preserved_source_ground"}
     checkpoint = stages.checkpoint(document,"analysis_complete" if not errors else "analysis_incomplete")
     result = {"status":"incomplete" if errors else "succeeded","pipelineVersion":PIPELINE_VERSION,"stages":stages.records,"errors":errors,"checkpointAssetId":checkpoint["id"],
               "association":association,"entityCount":sum(e.get("kind") != "capture_context" for e in document["entities"]),"observationCount":len(document["observations"]),"generatedAssetCount":0,
@@ -546,16 +779,153 @@ def run_analysis(repository,blobs,job,providers):
 
 
 def _load_geometry(document,images,stages):
-    reference = next((r for frame in document["coordinateFrames"] for r in frame.get("sourceRefs",[]) if r.get("assetId")),None)
-    if not reference:
-        raise PlatformError("geometry_evidence_unavailable",409)
-    asset = stages.repo.get_asset(reference["assetId"])
-    if asset["projectId"] != stages.job["projectId"] or asset["sha256"] != reference["sha256"]:
-        raise PlatformError("geometry_evidence_mismatch",409)
-    envelope = stages.load(asset)
-    if envelope.get("stage") != "geometry":
-        raise PlatformError("geometry_evidence_mismatch",409)
-    return _geometry(document,images,envelope["output"],asset)
+    """Read the exact per-image binding, retaining all original solution assets."""
+    frames, records = {}, {}
+    frozen = document.get("geometryEvidence") or {}
+    cameras = {c['id']:c for c in document['cameras']}
+    bindings = deepcopy(document.get('geometryBindings',{}))
+    assets = {a['id']:a for a in document['assets']}
+    solutions = {}
+    for image_id, binding in bindings.items():
+        if binding and binding['geometrySolutionId'] in assets:
+            aid = binding['geometrySolutionId']
+            asset = stages.repo.get_asset(aid)
+            if asset.get('metadata',{}).get('stage') in ('geometry','registered_geometry'):
+                solutions[aid] = asset
+    image_lookup = {i['id']:i for i in images}
+    for aid, asset in solutions.items():
+        envelope = stages.load(asset)
+        response = envelope['output']
+        subset = []
+        for record in response['frames']:
+            image_id = record['imageId']
+            if image_id in image_lookup:
+                image = {**image_lookup[image_id], 'sha256':stages.repo.get_asset(image_id)['sha256']}
+            else:
+                camera = next(c for c in document['cameras'] if c['imageId']==image_id and any(r.get('assetId')==aid for r in c.get('sourceRefs',[])))
+                image = {'id':image_id,'sha256':stages.repo.get_asset(image_id)['sha256'],'width':camera['width'],'height':camera['height']}
+            subset.append(image)
+        scratch = deepcopy(document)
+        parsed, canonical = _geometry(scratch,subset,response,asset,coordinate_frame_id=envelope.get('coordinateFrameId'))
+        for image_id, frame in parsed.items():
+            if (bindings.get(image_id) or {}).get('geometrySolutionId') == aid:
+                camera = cameras.get(bindings[image_id]['cameraId'])
+                if camera is None or not np.allclose(camera['cameraToWorld'],frame.camera_to_world) or camera['coordinateFrameId'] != frame.coordinate_frame_id or not np.allclose(camera['K'], np.linalg.inv(canonical[image_id]['inputToCanonical']) @ frame.K):
+                    raise PlatformError('geometry_camera_binding_mismatch',409)
+                frames[image_id],records[image_id] = frame,canonical[image_id]
+    for saved in frozen.get('frames',[]):
+        source = saved['assets']
+        image_id = source['input']
+        if image_id in frames:
+            continue
+        binding = bindings.get(image_id)
+        if not binding:
+            # Explicitly unbound photos must not acquire an old camera implicitly.
+            continue
+        camera = cameras.get(binding['cameraId'])
+        if binding['geometrySolutionId'] not in (frozen.get('manifestAssetId'), frozen['coordinateFrameId']):
+            raise PlatformError('geometry_solution_binding_mismatch',409)
+        if camera is None or camera['imageId'] != image_id or camera['coordinateFrameId'] != frozen['coordinateFrameId']:
+            raise PlatformError('geometry_camera_binding_mismatch',409)
+        def array(name):
+            return np.load(io.BytesIO(_scene_asset_bytes(document,source[name],stages)),allow_pickle=False)
+        points,valid,k,c2w = array('pts3d.npy'),array('content_valid_mask.npy').astype(bool),array('intrinsics.npy'),array('camera_to_world.npy')
+        if not np.allclose(c2w,camera['cameraToWorld'],atol=1e-7):
+            raise PlatformError('geometry_camera_binding_mismatch',409)
+        frame = FrameGeometry(image_id,frozen['coordinateFrameId'],stages.repo.get_asset(image_id)['sha256'],points,valid,k,c2w)
+        with Image.open(io.BytesIO(_scene_asset_bytes(document,source['canonical.png'],stages))) as image:
+            rgb = np.asarray(image.convert('RGB'))
+        if rgb.shape != points.shape:
+            raise PlatformError('canonical_rgb_mismatch')
+        frames[image_id] = frame
+        records[image_id] = {'imageId':image_id,'points':points,'valid':valid,'K':k,'cameraToWorld':c2w,'rgb':rgb,
+            'inputToCanonical':k @ np.linalg.inv(camera['K']),'originalShape':(camera['height'],camera['width']),
+            'geometryManifestAssetId':frozen.get('manifestAssetId'),'geometrySolutionId':frozen.get('manifestAssetId')}
+    if not frames:
+        raise PlatformError('geometry_evidence_unavailable',409)
+    return frames,records
+
+
+def _scene_asset_bytes(document, identity, stages):
+    declared = next((a for a in document['assets'] if a['id'] == identity), None)
+    if declared is None:
+        raise PlatformError('unreferenced_scene_asset', 422, assetId=identity)
+    asset = stages.repo.get_asset(identity)
+    if declared.get('sha256') and declared['sha256'] != asset['sha256']:
+        raise PlatformError('scene_asset_hash_mismatch', 409, assetId=identity)
+    return stages.blobs.get(asset['storageKey'], asset['sha256'], asset['sizeBytes'])
+
+
+def _load_masks(document, canonical, stages):
+    masks, errors = {}, []
+    for observation in document['observations']:
+        oid, image_id = observation['id'], observation['imageId']
+        if image_id not in canonical:
+            errors.append({'observationId':oid, 'code':'geometry_missing'})
+            continue
+        record = canonical[image_id]
+        evidence = observation.get('maskEvidence') or {}
+        try:
+            if evidence.get('canonicalMaskAssetId'):
+                if evidence.get('geometryManifestAssetId') != record.get('geometryManifestAssetId') or not np.allclose(evidence['inputToCanonical'], record['inputToCanonical'], atol=1e-6):
+                    raise PlatformError('mask_geometry_mapping_mismatch', 409)
+                mask = np.load(io.BytesIO(_scene_asset_bytes(document, evidence['canonicalMaskAssetId'], stages)), allow_pickle=False).astype(bool)
+                if mask.shape != record['points'].shape[:2]:
+                    raise PlatformError('mask_geometry_grid_mismatch', 409)
+            elif observation.get('maskAssetId'):
+                with Image.open(io.BytesIO(_scene_asset_bytes(document, observation['maskAssetId'], stages))) as image:
+                    mask = np.asarray(image.convert('L')) > 0
+                original_shape = record.get('originalShape')
+                if original_shape and mask.shape == tuple(original_shape) or observation.get('maskPolygonization'):
+                    mask = _canonical_mask(mask, record)
+                else:
+                    mapping = [m['matrix'] for m in observation.get('pixelMapping', []) if m.get('source') == 'canonical_pixels' and m.get('target') == 'original_pixels']
+                    if len(mapping) != 1:
+                        raise PlatformError('mask_pixel_mapping_missing', 409)
+                    transform = np.asarray(record['inputToCanonical']) @ np.asarray(mapping[0])
+                    if not (mask.shape == record['points'].shape[:2] and np.allclose(transform, np.eye(3), atol=1e-6)):
+                        mask = _canonical_mask(mask, {**record, 'inputToCanonical':transform})
+            else:
+                raise PlatformError('mask_missing', 409)
+            masks[oid] = mask
+        except PlatformError as exc:
+            errors.append({'observationId':oid, 'code':exc.code})
+    return masks, errors
+
+
+def run_reassociation(repository, blobs, job, providers=None):
+    """Reprocess one fixed revision from immutable evidence, without model calls."""
+    from .identity import migrate_document, repair_measurement_sources
+    source = repository.get_revision(job['baseRevisionId'])['document']
+    stages = _Stages(repository, blobs, job, {})
+    prepared_id = job.get('inputs',{}).get('preparedDocumentAssetId')
+    if prepared_id:
+        asset = repository.get_asset(prepared_id)
+        inputs = job['inputs']
+        if asset['projectId'] != job['projectId'] or asset['sha256'] != inputs.get('preparedDocumentSha256') or digest(source) != inputs.get('baseDocumentSha256'):
+            raise PlatformError('prepared_identity_source_mismatch',409)
+        source = json.loads(blobs.get(asset['storageKey'],asset['sha256'],asset['sizeBytes']))
+        from .contracts import validate_document
+        validate_document(source)
+    document = migrate_document(source, base_revision_id=job['baseRevisionId']) if source['schemaVersion'] == 1 else deepcopy(source)
+    repair_measurement_sources(document, base_revision_id=job['baseRevisionId'])
+    images = [image for capture in repository.list_project_records(job['projectId'], 'captures')['items']
+              if capture['id'] in document.get('captureIds', []) for image in capture['images']]
+    errors, frames, records, masks, association = [], {}, {}, {}, None
+    try:
+        frames, records = _load_geometry(document, images, stages)
+        masks, errors = _load_masks(document, records, stages)
+        association = _associate_and_surfaces(document, frames, records, masks, stages, rebuild_surfaces=False)
+    except PlatformError as exc:
+        errors.append({'stage':'association', 'code':exc.code, 'params':exc.params})
+    _association_evidence(document, association, frames, masks)
+    evidence = stages.put({'methodVersion':ASSOCIATION_VERSION, 'baseRevisionId':job['baseRevisionId'],
+        'association':association, 'errors':errors, 'newModelCalls':0}, {'kind':'identity_evaluation', 'baseRevisionId':job['baseRevisionId']})
+    _include(document, evidence)
+    return document, {'status':'incomplete' if errors else 'succeeded', 'newModelCalls':0, 'association':association,
+        'errors':errors, 'evidenceAssetId':evidence['id'], 'beforeEntityCount':sum(not e.get('sourceContext') for e in source['entities']),
+        'afterEntityCount':sum(not e.get('sourceContext') for e in document['entities']), 'observationCount':len(document['observations']),
+        'evaluatedObservationCount':len(masks), 'methodVersion':ASSOCIATION_VERSION, 'qualityStatus':'requires_physical_identity_validation'}
 
 
 def run_segmentation(repository,blobs,job,providers):
@@ -565,7 +935,7 @@ def run_segmentation(repository,blobs,job,providers):
     observations = [o for o in document["observations"] if o["id"] in requested]
     if not observations or len(observations) != len(set(requested)):
         raise PlatformError("observation_not_found",404)
-    errors = []
+    errors, changed_observations, invalidated_measurements = [], set(), set()
     for observation in observations:
         image = next(x for x in images if x["id"] == observation["imageId"])
         try:
@@ -573,25 +943,31 @@ def run_segmentation(repository,blobs,job,providers):
             _include(document,evidence)
             _save_observation_mask(document,observation,image,response,evidence,stages)
             observation["revision"] += 1
+            changed_observations.add(observation["id"])
             for entity in document["entities"]:
                 if observation["id"] in entity["observationRefs"]:
                     # Retain old meshes as explicit stale evidence; never silently
                     # substitute them for this revised observation.
                     for rep in entity["representations"]:
-                        rep["sourceValidity"] = "stale"
-                    entity["measurements"] = {}
+                        if any(ref.get("observationId") == observation["id"] for ref in rep.get("sourceRefs",[]) if isinstance(ref,dict)):
+                            rep["sourceValidity"] = "stale"
+                    records = {r["id"]:r for r in entity["measurementEvidence"]}
+                    for key,selected in entity["measurementSelections"].items():
+                        if observation["id"] in records.get(selected,{}).get("observationRefs",[]):
+                            invalidated_measurements.add(selected)
+                            entity["measurements"][key] = None
+                            entity["measurementSelections"][key] = None
         except PlatformError as exc:
             errors.append({"observationId":observation["id"],"code":exc.code})
+    if not changed_observations:
+        stages.checkpoint(document,"segmentation")
+        return document,{"status":"incomplete","stages":stages.records,"errors":errors}
     try:
         frames,canonical = _load_geometry(document,images,stages)
-        masks = {}
-        for o in document["observations"]:
-            if o.get("maskAssetId"):
-                asset = repository.get_asset(o["maskAssetId"])
-                with Image.open(io.BytesIO(blobs.get(asset["storageKey"],asset["sha256"],asset["sizeBytes"]))) as im:
-                    masks[o["id"]] = _canonical_mask(np.asarray(im)>0,canonical[o["imageId"]])
-        _associate_and_surfaces(document,frames,canonical,masks,stages)
-        _ground(document,frames,masks,stages)
+        masks, mask_errors = _load_masks(document,canonical,stages)
+        errors.extend(mask_errors)
+        _associate_and_surfaces(document,frames,canonical,masks,stages,refresh_observation_ids=changed_observations,invalidated_measurement_ids=invalidated_measurements)
+        _ground(document,frames,masks,stages,affected_observation_ids=changed_observations)
     except PlatformError as exc:
         errors.append({"stage":"geometry_support","code":exc.code})
     stages.checkpoint(document,"segmentation")
@@ -611,6 +987,8 @@ def run_generation(repository,blobs,job,providers):
     except PlatformError as exc:
         return document,{"status":"incomplete","errors":[{"code":exc.code}],"shapeReadyEntityIds":[],"placementConfirmedEntityIds":[]}
     observations = {o["id"]:o for o in document["observations"]}
+    loaded_masks, mask_errors = _load_masks(document,canonical,stages)
+    mask_error_codes = {e['observationId']:e['code'] for e in mask_errors}
     for entity in entities:
         try:
             candidates = [observations[x] for x in entity["observationRefs"] if observations[x].get("maskAssetId")]
@@ -619,10 +997,9 @@ def run_generation(repository,blobs,job,providers):
             anchor = max(candidates,key=lambda x:((x.get("geometrySupport") or {}).get("validPixelCount",0),x["id"]))
             image = next(i for i in images if i["id"] == anchor["imageId"])
             asset = repository.get_asset(anchor["maskAssetId"])
-            if asset["projectId"] != job["projectId"]:
-                raise PlatformError("asset_project_mismatch",403)
-            with Image.open(io.BytesIO(blobs.get(asset["storageKey"],asset["sha256"],asset["sizeBytes"]))) as im:
-                mask = _canonical_mask(np.asarray(im)>0,canonical[image["id"]])
+            if anchor['id'] not in loaded_masks:
+                raise PlatformError(mask_error_codes.get(anchor['id'],'generation_mask_required'),409)
+            mask = loaded_masks[anchor['id']]
             f = frames[image["id"]]
             payload = {"entityId":entity["id"],"image":canonical[image["id"]]["rgb"],"mask":mask,"points":f.points,"valid":f.valid,"K":f.K,"cameraToWorld":f.camera_to_world,
                        "coordinateFrameId":f.coordinate_frame_id,"imageId":image["id"],"imageSha256":image["sha256"],"seed":job.get("config",{}).get("seed",0)}
@@ -633,18 +1010,14 @@ def run_generation(repository,blobs,job,providers):
             document["assets"] = [a for a in document["assets"] if a["id"] != mesh_asset["id"]] + [mesh_asset]
             proposed = response.get("proposedObjectToNative")
             transform = matrix_to_transform(np.asarray(proposed) if proposed is not None else np.eye(4),f.coordinate_frame_id)
-            rep = {"id":_id(document["captureId"],"generated",entity["id"],mesh_asset["sha256"]),"kind":"generated_mesh","assetId":mesh_asset["id"],"coordinateFrameId":f.coordinate_frame_id,
+            rep = {"id":_id(document["captureId"],"generated",entity["id"],anchor["id"],str(anchor["revision"]),evidence["sha256"],mesh_asset["sha256"]),"kind":"generated_mesh","assetId":mesh_asset["id"],"coordinateFrameId":f.coordinate_frame_id,
                    "transform":transform,"bounds":mesh_asset["metadata"]["bounds"],"primitive":None,"placementState":"unconfirmed","sourceRefs":[_ref(evidence),{"observationId":anchor["id"],"revision":anchor["revision"]}],
                    "placementReason":"requires_alignment_confirmation" if proposed is not None else "insufficient_observed_depth","shapeStatus":"ready"}
-            previous = entity["representations"]
-            # Clear only a copied, unconfirmed generated proposal. Manual/primitive
-            # edits and unattributed entity poses cannot be classified as stale.
-            if not any(r["kind"] == "primitive" or (r.get("placementSource") or {}).get("type") == "manual_assertion" for r in previous) and any(
-                r["kind"] == "generated_mesh" and r.get("placementState") == "unconfirmed" and
-                r.get("placementReason") in ("imported_proposal", "requires_alignment_confirmation", "insufficient_observed_depth") and
-                r["transform"] == entity.get("currentModelTransform") for r in previous):
-                entity["currentModelTransform"] = None
-            entity["representations"] = [r for r in entity["representations"] if r["kind"] != "generated_mesh"] + [rep]
+            if not any(r['id'] == rep['id'] for r in entity['representations']):
+                entity['representations'].append(rep)
+            if not entity.get('activeModelRepresentationId') and proposed is not None:
+                entity['activeModelRepresentationId'] = rep['id']
+                entity['currentModelTransform'] = dict(rep['transform'])
             ready.append(entity["id"])
         except PlatformError as exc:
             errors.append({"entityId":entity["id"],"code":exc.code})

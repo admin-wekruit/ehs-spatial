@@ -109,7 +109,7 @@ def test_generic_multiphoto_analysis_retains_tiny_objects_caches_frames_and_uses
     assert all(e["associationEvidence"]["status"] == "insufficient_support" for e in tiny)
     linked = [e for e in document["entities"] if e.get("associationEvidence", {}).get("status") == "confirmed"]
     assert len(linked) == 2 and all(len(e["observationRefs"]) == 2 for e in linked)
-    assert all(e["associationEvidence"]["candidates"][0]["accepted"] for e in linked)
+    assert all(any(link["accepted"] for link in e["associationEvidence"]["geometryVerification"]["links"]) for e in linked)
     assert len([r for e in document["entities"] for r in e["representations"]]) == 3
     context = next(e for e in document["entities"] if e.get("kind") == "capture_context")
     assert context["sourceContext"] is True
@@ -266,9 +266,13 @@ def test_capture_source_cameras_cannot_silently_rebind_to_different_geometry(tmp
     changed["frames"][0]["K"][0,0] *= 2
     changed_asset = stages.put(changed,{"kind":"test_only_different_geometry"})
     before = deepcopy(document)
-    with pytest.raises(PlatformError,match="capture_geometry_already_bound"):
-        _geometry(document,images,changed,changed_asset)
-    assert document == before
+    _geometry(document,images,changed,changed_asset)
+    assert all(c in document["cameras"] for c in before["cameras"])
+    assert all(f in document["coordinateFrames"] for f in before["coordinateFrames"])
+    assert len(document["cameras"]) == 2 * len(before["cameras"])
+    assert {b["geometrySolutionId"] for b in document["geometryBindings"].values()} == {changed_asset["id"]}
+    assert document["geometryBindings"] != before["geometryBindings"]
+    validate_document(document)
 
 
 def test_analysis_binds_estimated_native_ground_only_to_explicit_mask_evidence(tmp_path):
@@ -295,7 +299,7 @@ def test_analysis_binds_estimated_native_ground_only_to_explicit_mask_evidence(t
 
 
 @pytest.mark.parametrize("pose_source", ["imported_proposal", "requires_alignment_confirmation", "manual", "primitive", "unattributed"])
-def test_regeneration_replaces_stale_proposal_without_erasing_manual_or_unknown_pose(tmp_path, pose_source):
+def test_regeneration_retains_source_models_and_preserves_active_pose(tmp_path, pose_source):
     from ehs_spatial.platform.repository import apply_operations
     from ehs_spatial.platform.spatial import primitive_mesh
 
@@ -308,6 +312,7 @@ def test_regeneration_replaces_stale_proposal_without_erasing_manual_or_unknown_
     old.update(id=str(uuid4()), kind="generated_mesh", placementState="unconfirmed", placementReason=pose_source)
     old["transform"]["position"] = [8., 9., 10.]
     target["representations"].append(old)
+    target["activeModelRepresentationId"] = old["id"]
     target["currentModelTransform"] = deepcopy(old["transform"])
     if pose_source == "manual":
         document, _ = apply_operations(document, [{"type":"setTransform", "entityId":target["id"], "transform":old["transform"]}])
@@ -323,11 +328,12 @@ def test_regeneration_replaces_stale_proposal_without_erasing_manual_or_unknown_
     providers["generation"] = provider("generation", lambda _: {"vertices":mesh.vertices, "faces":mesh.faces, "proposedObjectToNative":proposed})
     generated, result = run_generation(repo, blobs, {**repo.job, "id":str(uuid4()), "kind":"generate_object", "inputs":{"entityId":target["id"]}}, providers)
     entity = next(e for e in generated["entities"] if e["id"] == target["id"])
-    new = next(r for r in entity["representations"] if r["kind"] == "generated_mesh")
+    new = next(r for r in entity["representations"] if r["kind"] == "generated_mesh" and r["id"] != old["id"])
     assert new["transform"]["position"] == pytest.approx([1., 2., 3.])
     assert new["placementState"] == "unconfirmed"
     assert result["placementConfirmedEntityIds"] == []
-    assert entity["currentModelTransform"] == (None if pose_source in ("imported_proposal", "requires_alignment_confirmation") else next(e for e in before["entities"] if e["id"] == target["id"])["currentModelTransform"])
+    assert entity["currentModelTransform"] == next(e for e in before["entities"] if e["id"] == target["id"])["currentModelTransform"]
+    assert next(r for r in entity["representations"] if r["id"] == old["id"]) == next(r for e in before["entities"] for r in e["representations"] if r["id"] == old["id"])
     assert repo.document == before
     validate_document(generated)
 
@@ -391,3 +397,281 @@ def test_original_mask_rings_survive_crop_resize_holes_single_pixels_and_resegme
     with Image.open(io.BytesIO(blobs.get(asset["storageKey"],asset["sha256"],asset["sizeBytes"]))) as image:
         np.testing.assert_array_equal(np.asarray(image)>0,mask)
     validate_document(limited)
+
+
+def test_append_photos_registers_new_solution_preserves_source_and_reuses_duplicates(tmp_path):
+    from ehs_spatial.platform.reconstruction import _load_geometry
+    from ehs_spatial.platform.spatial import transform_points
+    from scipy.spatial.transform import Rotation
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs,size=(24,32))
+    y,x = np.mgrid[:24,:32]
+    depth = 3+.003*x+.005*y
+    points = np.stack(((x-15.5)*depth/30,(y-11.5)*depth/30,depth),-1)
+    k = np.array([[30.,0,15.5],[0,30.,11.5],[0,0,1]])
+    providers = bundle(repo)
+    providers['discovery'] = provider('discovery',lambda _:{'items':[{'label':'independent fixture','box':[8,6,20,18]}]})
+    def segment(payload):
+        mask = np.zeros((24,32),bool); mask[6:18,8:20]=True
+        return {'mask':mask}
+    providers['segmentation'] = provider('segmentation',segment)
+    providers['geometry'] = provider('geometry',lambda payload:{'frames':[{'imageId':i['imageId'],'points':points,'valid':np.ones((24,32),bool),'K':k,'cameraToWorld':np.eye(4),'rgb':np.full((24,32,3),100,np.uint8),'inputToCanonical':np.eye(3)} for i in payload['images']]})
+    original,result = run_analysis(repo,blobs,repo.job,providers)
+    assert result['status']=='succeeded',result
+    before = deepcopy(original)
+    raw = io.BytesIO(); Image.fromarray(np.full((24,32,3),80,np.uint8)).save(raw,format='PNG')
+    asset = repo.register_asset(repo.pid,blobs.put(raw.getvalue(),'image/png'))
+    new_image = {'id':asset['id'],'assetId':asset['id'],'width':32,'height':24,'pixelMapping':[]}
+    new_capture = str(uuid4())
+    repo.capture = {'id':new_capture,'target':'standalone_object','images':[new_image]}
+    repo.document = deepcopy(original)
+    repo.document['captureId']=new_capture;repo.document['captureIds'].append(new_capture)
+    repo.document['assets'].append(asset)
+    repo.document['geometryBindings'][asset['id']]=None
+    # Each joint solve has a different scale/orientation. Native source remains frozen.
+    similarity = np.eye(4);similarity[:3,:3]=1.8*Rotation.from_euler('xyz',[.2,.3,-.4]).as_matrix();similarity[:3,3]=[2.,4.,-1.]
+    rotation = similarity[:3,:3]/1.8
+    c2w = np.eye(4);c2w[:3,:3]=rotation;c2w[:3,3]=similarity[:3,3]
+    geometry_calls=[]
+    def joint(payload):
+        geometry_calls.append([i['imageId'] for i in payload['images']])
+        return {'frames':[{'imageId':i['imageId'],'points':transform_points(points,similarity),'valid':np.ones((24,32),bool),'K':k,'cameraToWorld':c2w,'rgb':np.full((24,32,3),100,np.uint8),'inputToCanonical':np.eye(3)} for i in payload['images']]}
+    providers['geometry']=provider('geometry',joint)
+    job={**repo.job,'id':str(uuid4()),'inputs':{'captureMode':'append','captureId':new_capture,'newImageIds':[asset['id']],'reusedImageIds':[]}}
+    updated,result=run_analysis(repo,blobs,job,providers)
+    assert result['status']=='succeeded',result['errors']
+    assert geometry_calls and all(2<=len(ids)<=4 for ids in geometry_calls)
+    assert all(c in updated['cameras'] for c in before['cameras'])
+    assert all(o['id'] in {v['id'] for v in updated['observations']} for o in before['observations'])
+    assert len(updated['observations'])==3
+    objects=[e for e in updated['entities'] if not e.get('sourceContext')]
+    assert len(objects)==1 and len(objects[0]['observationRefs'])==3
+    old_entity=next(e for e in before['entities'] if not e.get('sourceContext'))
+    assert objects[0]['id']==old_entity['id']
+    assert objects[0]['measurementEvidence']==old_entity['measurementEvidence']
+    assert updated['registrationEvidence'][0]['metrics']['holdoutP95Relative']<1e-6
+    loaded,_=_load_geometry(updated,[],_Stages(repo,blobs,job,{}))
+    assert len({f.coordinate_frame_id for f in loaded.values()})==1
+    calls=len(repo.calls)
+    repo.document=updated
+    _,repeat=run_analysis(repo,blobs,{**job,'id':str(uuid4()),'inputs':{**job['inputs'],'newImageIds':[],'reusedImageIds':[asset['id']]}},{})
+    assert repeat['newModelCalls']==0 and len(repo.calls)==calls
+    validate_document(updated)
+
+
+def test_resegmentation_uses_replacement_mask_and_only_invalidates_its_observation_sources(tmp_path):
+    from ehs_spatial.platform.reconstruction import _load_geometry, _load_masks
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    providers = bundle(repo)
+    document, _ = run_analysis(repo, blobs, repo.job, providers)
+    target = next(e for e in document['entities'] if e['label'] == 'unlisted ceramic fixture')
+    oid, other_oid = target['observationRefs']
+    observation = next(o for o in document['observations'] if o['id'] == oid)
+    stages = _Stages(repo, blobs, repo.job, {})
+    _, canonical = _load_geometry(document, [], stages)
+    loaded, _ = _load_masks(document, canonical, stages)
+    old_mask = loaded[oid]
+    raw = io.BytesIO(); np.save(raw, old_mask, allow_pickle=False)
+    mask_asset = stages.put(raw.getvalue(), {'kind': 'canonical_mask'})
+    document['assets'].append(mask_asset)
+    observation['maskEvidence'] = {'canonicalMaskAssetId': mask_asset['id'], 'geometryManifestAssetId': canonical[observation['imageId']].get('geometryManifestAssetId'), 'inputToCanonical': canonical[observation['imageId']]['inputToCanonical'].tolist()}
+    source_rep = next(r for r in target['representations'] if r['kind'] == 'observed_surface')
+    source_rep['sourceRefs'] = [{'observationId': oid, 'revision': observation['revision']}]
+    alternative = deepcopy(source_rep)
+    alternative.update(id=str(uuid4()), sourceRefs=[{'observationId': other_oid, 'revision': 1}], kind='generated_mesh')
+    target['representations'].append(alternative)
+    target['activeModelRepresentationId'] = alternative['id']
+    target['currentModelTransform'] = deepcopy(alternative['transform'])
+    original_evidence = deepcopy(target['measurementEvidence'])
+    unrelated = {e['id']:deepcopy(e) for e in document['entities'] if e['id'] != target['id']}
+    repo.document = document
+    # A valid replacement with the same byte geometry must create a new source
+    # representation, while the original stays stale and the other view stays valid.
+    providers['segmentation'] = provider('segmentation', lambda _: {'mask': old_mask.copy()}, model='replacement-mask')
+    job = {**repo.job, 'id': str(uuid4()), 'kind': 'segment_observation', 'inputs': {'captureId': repo.cid, 'observationId': oid}}
+    updated, result = run_segmentation(repo, blobs, job, providers)
+    assert not result['errors'], result
+    revised = next(o for o in updated['observations'] if o['id'] == oid)
+    assert revised['revision'] == observation['revision'] + 1 and 'maskEvidence' not in revised
+    assert mask_asset['id'] in {a['id'] for a in updated['assets']}
+    kept = next(e for e in updated['entities'] if e['id'] == target['id'])
+    assert next(r for r in kept['representations'] if r['id'] == source_rep['id'])['sourceValidity'] == 'stale'
+    assert next(r for r in kept['representations'] if r['id'] == alternative['id']) == alternative
+    new_reps = [r for r in kept['representations'] if r['kind'] == 'observed_surface' and any(ref.get('observationId') == oid and ref.get('revision') == revised['revision'] for ref in r.get('sourceRefs', []))]
+    assert new_reps and all(r['id'] != source_rep['id'] and r.get('sourceValidity') != 'stale' for r in new_reps)
+    assert all(record in kept['measurementEvidence'] for record in original_evidence)
+    for eid, old in unrelated.items():
+        current = next(e for e in updated['entities'] if e['id'] == eid)
+        assert current['representations'] == old['representations'] and current['measurements'] == old['measurements']
+    # A genuinely different mask must bypass the retained old canonical bytes.
+    repo.document = updated
+    replacement = old_mask.copy(); replacement[:4] = False
+    providers['segmentation'] = provider('segmentation', lambda _: {'mask': replacement}, model='replacement-mask-2')
+    again, _ = run_segmentation(repo, blobs, {**job, 'id': str(uuid4())}, providers)
+    _, records = _load_geometry(again, [], _Stages(repo, blobs, job, {}))
+    masks, _ = _load_masks(again, records, _Stages(repo, blobs, job, {}))
+    assert np.array_equal(masks[oid], replacement) and not np.array_equal(masks[oid], old_mask)
+    validate_document(again)
+
+
+def test_resegmentation_ground_fit_stays_in_affected_coordinate_frame(tmp_path):
+    from ehs_spatial.platform.reconstruction import _ground
+    from ehs_spatial.platform.spatial import FrameGeometry
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    document, _ = run_analysis(repo, blobs, repo.job, bundle(repo))
+    old_frame = document['coordinateFrames'][0]
+    old_frame['ground'] = {'normal': [0., -1., 0.], 'plane': [0., -1., 0., 1.5], 'source': 'observed_floor_mask_and_estimated_depth', 'unit': 'native'}
+    old_frame['groundFit'] = {'status': 'estimated', 'source': 'old'}
+    old_snapshot = deepcopy(old_frame)
+    new_frame = {**deepcopy(old_frame), 'id': 'unregistered-new-frame', 'ground': None, 'groundFit': None}
+    document['coordinateFrames'].append(new_frame)
+    old_oid, new_oid = document['observations'][:2]
+    old_oid['labelEvidence'] = [{'geometryRole': 'floor'}]
+    new_oid['labelEvidence'] = [{'geometryRole': 'floor'}]
+    # Different image IDs are the important boundary; the geometry arrays are
+    # intentionally simple because no successful floor fit is required here.
+    new_oid['imageId'] = repo.capture['images'][1]['id']
+    y,x = np.mgrid[:12,:12]
+    points = np.stack((x*.1,y*.1,np.full_like(x,2,dtype=float)),-1)
+    k = np.array([[10.,0,5.5],[0,10.,5.5],[0,0,1.]])
+    frames = {old_oid['imageId']: FrameGeometry(old_oid['imageId'],old_frame['id'],'a'*64,points,np.ones((12,12),bool),k,np.eye(4)),
+              new_oid['imageId']: FrameGeometry(new_oid['imageId'],new_frame['id'],'b'*64,points,np.ones((12,12),bool),k,np.eye(4))}
+    _ground(document,frames,{new_oid['id']:np.ones((12,12),bool)},_Stages(repo,blobs,repo.job,{}),affected_observation_ids={new_oid['id']})
+    assert old_frame == old_snapshot and new_frame['ground'] is None
+    assert new_frame['groundFit']['reason'] != 'unregistered_coordinate_frames'
+
+
+def source_equivalence_case(tmp_path, *, native_image_sha256=None):
+    """Real immutable JSON/RLE blobs; no model provider or network needed."""
+    from ehs_spatial.platform.identity import migrate_document
+    from ehs_spatial.platform.spatial import FrameGeometry
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    stages = _Stages(repo, blobs, repo.job, {})
+    document = deepcopy(repo.document)
+    def asset(value):
+        saved = stages.put(json.dumps(value, sort_keys=True).encode(), {'kind':'source_identity_evidence'}, 'application/json')
+        if not any(a['id'] == saved['id'] for a in document['assets']):
+            document['assets'].append(saved)
+        return {'assetId':saved['id'], 'sha256':saved['sha256']}
+    image_id, other_image = [i['id'] for i in repo.capture['images']]
+    image_sha = next(a['sha256'] for a in document['assets'] if a['id'] == image_id)
+    mask = np.zeros((12,12), bool); mask[:,2:10] = True
+    sam = asset({'rle':[{'size':[12,12], 'counts':[24,96,24]}, {'size':[12,12], 'counts':[144]}]})
+    source_ref = {'encoding':'rle', 'sha256':sam['sha256'], 'pointer':['rle',0], 'shape_hw':[12,12]}
+    native = {'source_sha256':sam['sha256'], 'source_instance':0, 'source_frame':'original-frame'}
+    provenance = {'objects':[{'id':'native-object', 'views':[{'frame_id':'mapped-frame', 'provenance':native}]},
+                             {'id':'unrelated-object', 'views':[{'frame_id':'mapped-frame', 'provenance':deepcopy(native)}]}],
+                  'observed_regions':[{'id':'raw-object', 'provenance':{'source_image_sha256':image_sha,'source_record':{'source_frame_id':'original-frame','source_mask':{'ref':source_ref}}}}]}
+    if native_image_sha256 is not None:
+        provenance['objects'][0]['views'][0]['image_sha256'] = native_image_sha256
+    evidence = asset(provenance)
+    pair = {'kind':'canonical_sam_rle', 'observationRefs':[{'observationId':'native-observation','revision':1},{'observationId':'raw-observation','revision':1}],
+            'imageId':image_id, 'imageSha256':image_sha, 'sourceRef':{**sam, 'jsonPointer':'/rle/0'},
+            'canonicalShape':[12,12], 'canonicalMaskSha256':hashlib.sha256(mask.tobytes(order='C')).hexdigest(),
+            'evidenceRefs':[{**evidence, 'jsonPointer':'/objects/0/views/0/provenance', 'role':'native_mask_provenance'},
+                            {**evidence, 'jsonPointer':'/observed_regions/0/provenance/source_record/source_mask/ref', 'role':'raw_source_reference'}]}
+    document['coordinateFrames'] = [{'id':'frame','convention':'opencv','scale':{'status':'uncalibrated','nativeToMeters':None},'ground':None,'sourceRefs':[{'assetId':sam['assetId']}]}]
+    k = [[10.,0,5.5],[0,10.,5.5],[0,0,1]]
+    for index, image in enumerate((image_id, other_image)):
+        document['cameras'].append({'id':f'camera-{index}','imageId':image,'coordinateFrameId':'frame','width':12,'height':12,'K':k,'cameraToWorld':np.eye(4).tolist()})
+    for oid, image, record in [('native-observation',image_id,'native-object'),('raw-observation',image_id,'raw-object'),('other-photo-observation',other_image,'other-object')]:
+        document['observations'].append({'id':oid,'revision':1,'imageId':image,'originalPixelBox':[2,0,10,12],'maskAssetId':None,
+                                        'sourceRefs':[{'assetId':evidence['assetId'],'sourceRecordId':record,'imageSha256':next(a['sha256'] for a in document['assets'] if a['id']==image)}]})
+        document['entities'].append({'id':f'entity-{oid}','label':'not used as evidence','observationRefs':[oid],'representations':[],
+                                    'associationState':'association_pending','measurements':{},'currentModelTransform':None})
+    document['observations'][0]['maskEvidence'] = {'sourceRefs':[{**evidence,'jsonPointer':'/objects/0/views/0','imageSha256':image_sha,'sourceFrameId':'mapped-frame'}]}
+    document = migrate_document(document, base_revision_id=repo.rid)
+    masks = {o['id']:mask.copy() for o in document['observations']}
+    yy,xx = np.mgrid[:12,:12]
+    points = np.stack(((xx-5.5)*.2,(yy-5.5)*.2,np.full_like(xx,2,dtype=float)),-1)
+    frames = {image:FrameGeometry(image,'frame',next(a['sha256'] for a in document['assets'] if a['id']==image),points,np.ones((12,12),bool),np.array(k),np.eye(4)) for image in (image_id,other_image)}
+    def save_proof(value):
+        proof = {'schemaVersion':1,'kind':'same_source_observation_equivalences','pairs':[value]}
+        document['sourceIdentityEvidence'] = [asset(proof)]
+    save_proof(pair)
+    return document, masks, stages, pair, save_proof, frames
+
+
+def test_source_equivalence_verifier_reads_exact_source_rle_and_seeds_geometry(tmp_path):
+    from ehs_spatial.platform.reconstruction import _verified_source_equivalences, _associate_and_surfaces
+    document, masks, stages, pair, _, frames = source_equivalence_case(tmp_path)
+    before = deepcopy(document)
+    verified, skipped = _verified_source_equivalences(document, masks, stages)
+    assert len(verified) == 1 and skipped == []
+    assert document == before and not stages.repo.calls
+    assert verified[0]['evidenceRefs'][-1] == {**document['sourceIdentityEvidence'][0], 'jsonPointer':'/pairs/0'}
+    unseeded = deepcopy(document)
+    unseeded.pop('sourceIdentityEvidence')
+    _associate_and_surfaces(unseeded, frames, {}, masks, stages, rebuild_surfaces=False)
+    assert len(unseeded['entities']) == 3
+    result = _associate_and_surfaces(document, frames, {}, masks, stages, rebuild_surfaces=False)
+    assert result['sourceEquivalences']['verifiedPairCount'] == 1
+    assert len(result['sourceEquivalences']['merges']) == 1
+    assert len(document['entities']) == 1
+    assert set(document['entities'][0]['observationRefs']) == set(masks)
+    assert sorted(o['id'] for o in document['observations']) == sorted(o['id'] for o in before['observations'])
+    assert document['assets'] == before['assets'] and not stages.repo.calls
+    validate_document(document)
+
+
+@pytest.mark.parametrize('changed', ['sha','pointer','instance','mask','image','native_image'])
+def test_source_equivalence_verifier_rejects_mismatched_proof_inputs(tmp_path, changed):
+    from ehs_spatial.platform.reconstruction import _verified_source_equivalences
+    document, masks, stages, pair, save_proof, _ = source_equivalence_case(tmp_path, native_image_sha256='f'*64 if changed == 'native_image' else None)
+    if changed == 'sha':
+        pair['sourceRef']['sha256'] = 'f'*64
+    elif changed == 'pointer':
+        pair['evidenceRefs'][0]['jsonPointer'] = '/objects/999/views/0/provenance'
+    elif changed == 'instance':
+        pair['sourceRef']['jsonPointer'] = '/rle/1'
+    elif changed == 'image':
+        pair['imageSha256'] = 'f'*64
+    elif changed == 'mask':
+        masks['raw-observation'][0,2] = False
+    save_proof(pair)
+    before = deepcopy(document)
+    with pytest.raises(PlatformError):
+        _verified_source_equivalences(document, masks, stages)
+    assert document == before and not stages.repo.calls
+
+
+def test_source_equivalence_verifier_skips_revised_or_missing_observation_masks(tmp_path):
+    from ehs_spatial.platform.reconstruction import _verified_source_equivalences
+    document, masks, stages, _, _, _ = source_equivalence_case(tmp_path)
+    document['observations'][0]['revision'] += 1
+    verified, skipped = _verified_source_equivalences(document, masks, stages)
+    assert not verified and skipped == [{'observationIds':['native-observation','raw-observation'],'code':'source_equivalence_observation_revised'}]
+    document['observations'][0]['revision'] -= 1
+    del masks['raw-observation']
+    verified, skipped = _verified_source_equivalences(document, masks, stages)
+    assert not verified and skipped[0]['code'] == 'source_equivalence_mask_unavailable'
+    assert not stages.repo.calls
+
+
+def test_source_equivalence_verifier_rejects_provenance_from_an_unrelated_object(tmp_path):
+    from ehs_spatial.platform.reconstruction import _verified_source_equivalences
+    document, masks, stages, pair, save_proof, _ = source_equivalence_case(tmp_path)
+    # This pointer exists and repeats exactly the same SHA/instance/mask. It is
+    # still not a provenance edge from either named observation.
+    pair['evidenceRefs'][0]['jsonPointer'] = '/objects/1/views/0/provenance'
+    save_proof(pair)
+    with pytest.raises(PlatformError):
+        _verified_source_equivalences(document, masks, stages)
+    pair['evidenceRefs'][0]['jsonPointer'] = '/objects/0/views/0/provenance'
+    save_proof(pair)
+    document['observations'][1]['sourceRefs'][0]['sourceRecordId'] = 'different-raw-source-owner'
+    with pytest.raises(PlatformError):
+        _verified_source_equivalences(document, masks, stages)
+
+
+def test_source_equivalence_verifier_rejects_nonobject_proof_document(tmp_path):
+    from ehs_spatial.platform.reconstruction import _verified_source_equivalences
+    document, masks, stages, _, _, _ = source_equivalence_case(tmp_path)
+    asset = stages.put(b'[]', {'kind':'source_identity_evidence'}, 'application/json')
+    document['assets'].append(asset)
+    document['sourceIdentityEvidence'] = [{'assetId':asset['id'], 'sha256':asset['sha256']}]
+    with pytest.raises(PlatformError, match='invalid_source_identity_proof'):
+        _verified_source_equivalences(document, masks, stages)

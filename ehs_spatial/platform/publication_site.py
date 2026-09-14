@@ -20,6 +20,7 @@ from .feedback import FeedbackRequest
 
 
 FEEDBACK_PATH = re.compile(r"/api/publications/[^/]+/entities/[^/]+/feedback")
+IDENTITY_SUGGESTIONS_PATH = re.compile(r"/api/publications/[^/]+/identity-suggestions")
 
 
 def immutable_route(path: str):
@@ -151,6 +152,13 @@ def create_app(catalog_dir: str | Path, *, allowed_origins: list[str], feedback=
             publication, capability = feedback_scope(publication_id, request)
             return JSONResponse(feedback.submit(publication, entity_id, capability, body.model_dump(mode="json")), headers={"Cache-Control": "no-store"})
 
+        @app.get("/api/publications/{publication_id}/identity-suggestions")
+        def identity_suggestions(publication_id: UUID):
+            publication = responses.get("/api/publications/" + str(publication_id))
+            if publication is None:
+                raise PlatformError("publication_not_found", 404)
+            return JSONResponse(feedback.identity_suggestions(publication), headers={"Cache-Control": "no-store"})
+
     @app.api_route("/api/assets/{asset_id}/content", methods=["GET", "HEAD"])
     def content(asset_id: str):
         if asset_id not in files:
@@ -179,7 +187,7 @@ def create_app(catalog_dir: str | Path, *, allowed_origins: list[str], feedback=
                 allow_headers=["Authorization", "Content-Type"], allow_credentials=False)
 
         async def __call__(self, scope, receive, send):
-            feedback_path = feedback is not None and FEEDBACK_PATH.fullmatch(scope.get("path", ""))
+            feedback_path = feedback is not None and (FEEDBACK_PATH.fullmatch(scope.get("path", "")) or IDENTITY_SUGGESTIONS_PATH.fullmatch(scope.get("path", "")))
             target = self.feedback if feedback_path else self.read
             if feedback_path and scope.get("method") == "OPTIONS":
                 headers = {key.decode("latin1").lower(): value.decode("latin1") for key, value in scope.get("headers", [])}

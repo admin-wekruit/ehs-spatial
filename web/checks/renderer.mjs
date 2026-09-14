@@ -22,18 +22,18 @@ for(const aspect of [.4,1,2.5])for(const ortho of [false,true]){
   const corners=boundsCorners({min:[-3,-1,0],max:[4,2,6]}),c=fitCamera(corners,[1,-2,1],[0,0,1],aspect,ortho),matrix=cameraMatrix(c,aspect,10);
   for(const p of corners){const xy=projected(matrix,p,1000*aspect,1000);assert.ok(xy&&xy[0]>0&&xy[0]<1000*aspect&&xy[1]>0&&xy[1]<1000,'camera fit clips scene');}
 }
-const scene={observations:[],coordinateFrames:[]};
-const pose={coordinateFrameId:'native',position:[2,3,4],quaternion:[0,0,0,1],scale:[1,1,1]},rep={id:'observed',kind:'observed_surface',coordinateFrameId:'native',transform:pose,placementState:'confirmed',assetId:'mesh',bounds:meshes[0].bounds},e={id:'button',representations:[rep]},layers={point_cloud:true,observed_surface:false,generated_mesh:false,primitive:false,showCandidates:true,editable:false};
+const observations=[{id:'obs',imageId:'photo'}], scene={observations,coordinateFrames:[]};
+const pose={coordinateFrameId:'native',position:[2,3,4],quaternion:[0,0,0,1],scale:[1,1,1]},rep={id:'observed',sourceRefs:[{observationId:'obs'}],kind:'observed_surface',coordinateFrameId:'native',transform:pose,placementState:'confirmed',assetId:'mesh',bounds:meshes[0].bounds},e={id:'button',observationRefs:['obs'],representations:[rep]},layers={imageId:'photo',observations,point_cloud:true,observed_surface:false,generated_mesh:false,primitive:false,showCandidates:true,editable:false};
 const geometry=selectionGeometry(scene,e,'native',layers);
 assert.equal(geometry.corners.length,8,'Selecting an object in the tree/photo retains its bounds while its mesh layer is off');
 assert.deepEqual(geometry.transform,pose,'XYZ uses the verified observed transform');
 assert.equal(geometry.axisSpace,'native','Observed mesh storage rotation does not establish object structural axes');
 assert.equal(geometry.editable,false,'Observation axes cannot mutate measured evidence');
 assert.deepEqual(representationPass(e,rep,'native',layers),{available:true,visible:false,pick:true,selectable:true},'Cloud picking uses the exact observed triangles, not a synthetic box');
-const modelRep={...rep,id:'model',kind:'generated_mesh'},modelEntity={...e,representations:[modelRep],currentModelTransform:pose};
+const modelRep={...rep,id:'model',kind:'generated_mesh'},modelEntity={...e,activeModelRepresentationId:'model',representations:[modelRep],currentModelTransform:pose};
 assert.equal(representationPass(modelEntity,modelRep,'native',layers).pick,false,'Invisible generated geometry never draws into the pick/depth pass');
 assert.equal(selectionGeometry(scene,modelEntity,'native',layers).corners.length,0,'A cloud view cannot borrow a model-only location');
-const modelPose={...pose,position:[50,50,50]},both={...e,representations:[modelRep,rep],currentModelTransform:modelPose};
+const modelPose={...pose,position:[50,50,50]},both={...e,activeModelRepresentationId:'model',representations:[modelRep,rep],currentModelTransform:modelPose};
 assert.deepEqual(selectionGeometry(scene,both,'native',layers).transform,pose,'Cloud selection bounds use observed geometry, not a hidden model pose');
 assert.equal(representationPass({...modelEntity,currentModelTransform:{...pose,coordinateFrameId:'other'}},modelRep,'native',{...layers,generated_mesh:true}).pick,false,'A model pose in another frame cannot be picked or drawn in this scene');
 const context={...e,sourceContext:true},cloudRep={...rep,kind:'point_cloud'};
@@ -42,7 +42,7 @@ assert.equal(selectionGeometry(scene,context,'native',layers).corners.length,0,'
 assert.equal(representationPass(e,{...rep,coordinateFrameId:'unregistered'},'native',layers).pick,false);
 assert.equal(representationPass({...e,visible:false},rep,'native',layers).pick,false);
 assert.equal(representationPass(e,{...rep,placementState:'unconfirmed',placementReason:'no_depth'},'native',layers).pick,false);
-const measured={id:'measured',representations:[],measurements:{coordinateFrameId:'native',basis:{cornersNative:boundsCorners({min:[1,2,3],max:[2,4,6]})}}};
+const measured={id:'measured',measurementSelections:{basis:'basis'},measurementEvidence:[{id:'basis',observationRefs:['obs']}],representations:[],measurements:{coordinateFrameId:'native',basis:{cornersNative:boundsCorners({min:[1,2,3],max:[2,4,6]})}}};
 assert.equal(selectionGeometry(scene,measured,'native',layers).corners.length,8,'Verified observed corners remain visible without a mesh');
 assert.deepEqual(selectionGeometry(scene,measured,'native',layers).transform.position,[0,0,0],'A measured native range uses the native frame, not an invented structural pose');
 assert.equal(selectionGeometry(scene,measured,'other',layers).corners.length,0);
