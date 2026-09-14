@@ -1876,7 +1876,7 @@ export function PlanView({
     svg = useRef<SVGSVGElement>(null),
     picker = useRef<HTMLDivElement>(null),
     pointer = useRef<{ x: number; y: number; moved: boolean } | null>(null);
-  useEffect(() => { setCandidates([]); pointer.current = null; }, [document, selectedId, zoom, geometryOptions?.layer, geometryOptions?.frameId]);
+  useEffect(() => { setCandidates([]); pointer.current = null; }, [document, selectedId, zoom, geometryOptions?.layer, geometryOptions?.frameId, geometryOptions?.imageId]);
   useEffect(() => { if (candidates.length) picker.current?.querySelector<HTMLButtonElement>("button[data-candidate]")?.focus(); }, [candidates]);
   function choose(id: string) {
     setCandidates([]);

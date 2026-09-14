@@ -62,6 +62,23 @@ assert.ok(source.includes("planHits(shapes, world[0], world[1])"), "Overlap pick
 assert.ok(!source.includes("onWheel="), "Reading the report must not trap wheel scrolling");
 assert.ok(source.includes("suppressClick.current = !!pointer.current?.moved"), "Dragging must not trigger selection");
 
+// Execute the real memo initializer across two photographs in the same frame.
+let memoExpression;
+function findMemo(node) { if (ts.isVariableDeclaration(node) && node.name.getText(parsed) === "shapes") memoExpression = node.initializer.getText(parsed); ts.forEachChild(node, findMemo); }
+findMemo(parsed);
+const transform = x => ({coordinateFrameId:"frame",position:[x,0,0],quaternion:[0,0,0,1],scale:[1,1,1]});
+const observations = [{id:"a",imageId:"photo-a"},{id:"b",imageId:"photo-b"}];
+const photographed = {entities:[{id:"object",observationRefs:["a","b"],representations:observations.map((observation,i)=>({id:observation.id,kind:"observed_surface",assetId:observation.id,coordinateFrameId:"frame",transform:transform(i*10),placementState:"confirmed",bounds:{min:[0,0,0],max:[1,1,1]},sourceRefs:[{observationId:observation.id}]}))}],observations,coordinateFrames:[{id:"frame",ground:{normal:[0,0,1]}}]};
+let cache;
+const memoContext = vm.createContext({document:photographed,geometryOptions:{layer:"observed_surface",frameId:"frame",imageId:"photo-a"},planShapes,
+  useMemo:(make,deps)=>{if(!cache || deps.some((value,i)=>value!==cache.deps[i])) cache={deps,result:make()};return cache.result;}});
+const memoCode = ts.transpileModule(`globalThis.result = ${memoExpression}`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+vm.runInContext(memoCode,memoContext);
+assert.equal(memoContext.result[0].representationIds[0],"a");
+memoContext.geometryOptions={...memoContext.geometryOptions,imageId:"photo-b"};vm.runInContext(memoCode,memoContext);
+assert.equal(memoContext.result[0].representationIds[0],"b","Changing only the photograph must recompute CAD geometry and its dimension labels");
+assert.ok(source.includes("[selectedId, document, geometryOptions?.layer, geometryOptions?.imageId]"),"Changing photo must dismiss stale overlap candidates");
+
 // Execute the component's actual pointer handlers, including a release outside
 // before capture starts. A later button-up hover must not resume that gesture.
 const handlers = {};
