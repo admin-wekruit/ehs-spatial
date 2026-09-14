@@ -741,9 +741,14 @@ export function WorkcellReport({
           cameraId={selection.cameraId}
           onCamera={changeCamera}
           objectListRequest={objectListRequest}
+          onFeedback={() => { setReviewMode(true); setAgentOpen(true); }}
+          onClearSelection={() => {
+            setSelection((value) => ({ ...value, entityId: null, observationId: null }));
+            setBox(null); setAgentOpen(false); setReviewMode(false);
+          }}
           onOpenSourceCad={jsonObject(jsonObject(doc.reportEvidence)?.historical)?.cad ? () => jump("original-cad") : undefined}
           inspector={<>
-            <div className="report-selection-details">
+            {!(reviewMode && agentOpen) && <div className="report-selection-details">
               {entity ? <>
                 <ObjectFacts entity={entity} document={doc} />
                 <ReportObjectFindings revision={revision} publication={publication} entityId={entity.id}
@@ -752,21 +757,23 @@ export function WorkcellReport({
                   loading={assessmentState === "loading"}
                   onReview={() => { if (!readOnly) setReviewMode(true); jump("safety"); }} />
               </> : <div className="report-inspector-empty"><h3>{t("reportSelectObject")}</h3><p>{t("reportSelectDetails")}</p><strong>{t("reportAssessment_" + assessmentState)}</strong><p>{t("reportAssessmentScopeHint")}</p></div>}
-            </div>
-            {!readOnly && <button className="report-inspector-agent" aria-expanded={reviewMode && agentOpen} onClick={() => { setReviewMode(true); setAgentOpen(v => !v); }}>{t(agentOpen && reviewMode ? "reportCloseAgent" : "reportOpenAgent")}</button>}
-        {!readOnly && reviewMode && agentOpen && (
+            </div>}
+            {entity && !(reviewMode && agentOpen) && <button className="report-inspector-agent" onClick={() => { setReviewMode(true); setAgentOpen(true); }}>{t("sceneFeedbackTitle")}</button>}
+        {reviewMode && agentOpen && (
           <div className="report-correction" id="report-correction">
-            <div>
-              <p>{t("reportReviewHint")}</p>
+            <header className="report-feedback-header"><h3>{t("sceneFeedbackTitle")}</h3><button onClick={() => setAgentOpen(false)}>{t("sceneBackDetails")}</button></header>
+            {(!readOnly || box) && <div>
+              {!readOnly && <p>{t("reportReviewHint")}</p>}
               {box && (
                 <p>
                   {t("selectedBox")}: {box.map(Math.round).join(", ")}
                 </p>
               )}
-            </div>
+            </div>}
             {agentOpen &&
-              (canWrite ? (
+              (canWrite || (readOnly && publication && entity) ? (
                 <AgentPanel
+                  feedbackPublicationId={readOnly ? publication?.id : undefined}
                   projectId={project.id}
                   revision={revision}
                   branch={detail.branch}
@@ -774,7 +781,7 @@ export function WorkcellReport({
                   observationId={selection.observationId}
                   imageId={imageId}
                   box={box}
-                  canWrite={!busy}
+                  canWrite={canWrite && !busy}
                   onApply={apply}
                 />
               ) : (

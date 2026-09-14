@@ -225,7 +225,7 @@ const uiDocument = { ...objectOnlyDocument,
     { id: "background", sourceContext: true, representations: [] }],
   observations: [{ id: "observation", imageId: "photo" }, { id: "observation-2", imageId: "photo-2" }],
 };
-let uiSelection = { entityId: "object", cameraId: "camera" }, uiImageId = "photo", calls = [], objectListRequest = 0;
+let uiSelection = { entityId: "object", cameraId: "camera" }, uiImageId = "photo", calls = [], objectListRequest = 0, feedbackEnabled = false, feedbackCalls = [];
 const inspector = React.createElement("div", { id: "inspector-content" }, "real host inspector");
 const ui = vm.createContext({ React, useState, useRef, useEffect, useId: () => "workspace-check",
   useI18n: () => ({ t: (key) => key }), jsonObject, observationsFor, entityGeometryForLayer,
@@ -245,6 +245,7 @@ function renderWorkspace() {
     cursor = 0; effects = []; dirty = false;
     tree = ui.ReportScene({ revision: { id: "revision", document: uiDocument }, selection: uiSelection, imageId: uiImageId,
       cameraId: uiSelection.cameraId, inspector, objectListRequest,
+      onFeedback: feedbackEnabled ? (id) => feedbackCalls.push(id) : undefined,
       onSelect: (id) => { uiSelection = { ...uiSelection, entityId: id }; calls.push(id); },
       onCamera: (imageId, cameraId) => { uiImageId = imageId; uiSelection = { ...uiSelection, cameraId }; },
     });
@@ -258,6 +259,14 @@ const rail = () => nodes(tree).find((node) => node.props.className === "report-s
 const switcher = () => nodes(tree).find((node) => node.props.className === "report-scene-view-switch");
 const spatialHost = () => nodes(tree).filter((node) => node.type === SpatialView);
 assert.equal(tree.props["data-view"], "quad");
+assert.equal(nodes(tree).find((node) => node.type === PhotoView).props.showBounds, false, "Photo borders start hidden even with an explicit selected object");
+assert.equal(spatialHost()[0].props.layers.showBounds, false, "3D bounds and axes start hidden without changing the selected entity");
+assert.equal(nodes(tree).some((node) => node.type === PhotoAxes), false);
+const borderToggle = nodes(tree).find((node) => node.type === "input" && node.props.type === "checkbox");
+borderToggle.props.onChange({ target: { checked: true } }); tree = renderWorkspace();
+assert.equal(nodes(tree).find((node) => node.type === PhotoView).props.showBounds, true);
+assert.equal(spatialHost()[0].props.layers.showBounds, true);
+borderToggle.props.onChange({ target: { checked: false } }); tree = renderWorkspace();
 assert.equal(nodes(rail()).filter((node) => node.type === "button").length, 2, "All non-context entities have permanent selectable rows, including no-geometry objects");
 assert.equal(nodes(tree).some((node) => node.type === "details" && node.props.className === "report-scene-objects"), false, "Objects are not hidden in a bottom disclosure");
 assert.ok(nodes(tree).includes(inspector), "The host inspector is rendered inside the right rail");
@@ -337,6 +346,15 @@ const lastRow = nodes(rail()).find((node) => node.type === "button" && node.prop
 assert.ok(lastRow, "Search reaches the last object even without geometry");
 lastRow.props.onClick(); tree = renderWorkspace();
 assert.equal(spatialHost()[0].props.selection.entityId, "extra-65", "Inventory selection still drives the existing four-view selection");
+feedbackEnabled = true;
+objectListRequest++;
+tree = renderWorkspace();
+assert.equal(nodes(rail()).filter((node) => node.props.className === "report-object-feedback").length, 68, "Every object, including no-geometry objects, has feedback");
+nodes(rail()).find((node) => node.props["aria-label"] === "sceneFeedback · small button").props.onClick(); tree = renderWorkspace();
+assert.deepEqual(feedbackCalls, ["no-geometry"]);
+assert.equal(uiSelection.entityId, "no-geometry");
+assert.equal(uiImageId, "photo-2", "Feedback uses the same entity/photo selection as all views");
+assert.equal(tree.props["data-mobile-section"], "inspector", "Feedback opens the right pane on mobile as well");
 const css = await readFile(new URL("../src/report-scene.css", import.meta.url), "utf8");
 assert.match(css, /grid-template-columns:\s*232px minmax\(0, 1fr\) 300px/);
 assert.match(css, /\.report-scene-object-list\s*\{[^}]*overflow-y:\s*auto/);

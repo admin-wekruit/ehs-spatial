@@ -16,6 +16,7 @@ export function PhotoView({
   onSelect,
   onBox,
   draw = false,
+  showBounds = false,
 }: {
   document: SceneDocument;
   imageId: string | null;
@@ -23,6 +24,7 @@ export function PhotoView({
   onSelect: (id: string, observationId?: string) => void;
   onBox?: (box: number[] | null) => void;
   draw?: boolean;
+  showBounds?: boolean;
 }) {
   const { t } = useI18n(),
     [url, setURL] = useState<string>(),
@@ -86,7 +88,7 @@ export function PhotoView({
   if (!imageId || error)
     return <div className="empty-stage">{t("noPhoto")}</div>;
   return (
-    <div className={"photo-view " + (draw ? "draw-mode" : "")}>
+    <div className={"photo-view " + (draw ? "draw-mode " : "") + (showBounds ? "show-bounds" : "")}>
       {!url ? (
         <p className="stage-status">{t("loading")}</p>
       ) : (

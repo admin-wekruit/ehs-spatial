@@ -31,6 +31,11 @@ export const reportSceneMessages: Record<string, [string, string]> = {
   sceneNoPoints: ["点云（未附点云）", "Point cloud (not attached)"],
   scenePoints: ["点云", "Point cloud"],
   sceneAllBounds: ["所有对象范围", "All object bounds"],
+  sceneShowBorders: ["物体边框", "Object outlines"],
+  sceneClearSelection: ["清除选择", "Clear selection"],
+  sceneFeedback: ["反馈", "Feedback"],
+  sceneFeedbackTitle: ["对象反馈 · Agent", "Object feedback · Agent"],
+  sceneBackDetails: ["返回详情", "Back to details"],
   sceneFullscreen: ["全屏查看", "View fullscreen"],
   sceneCloseFullscreen: ["返回四视图", "Return to four views"],
   sceneFullscreenUnavailable: [

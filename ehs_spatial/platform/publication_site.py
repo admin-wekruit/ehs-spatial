@@ -1,4 +1,4 @@
-"""Serve verified immutable publication history without database or write credentials."""
+"""Verified immutable publications and optionally isolated visitor feedback."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -13,13 +13,20 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.exceptions import RequestValidationError
+
+from .contracts import PlatformError
+from .feedback import FeedbackRequest
+
+
+FEEDBACK_PATH = re.compile(r"/api/publications/[^/]+/entities/[^/]+/feedback")
 
 
 def immutable_route(path: str):
     return path.startswith(("/api/publications/", "/api/revisions/", "/api/assets/"))
 
 
-def create_app(catalog_dir: str | Path, *, allowed_origins: list[str]):
+def create_app(catalog_dir: str | Path, *, allowed_origins: list[str], feedback=None):
     """Each immediate publication-ID directory contains one unchanged export."""
     for origin in allowed_origins:
         parsed = urlsplit(origin)
@@ -108,13 +115,41 @@ def create_app(catalog_dir: str | Path, *, allowed_origins: list[str]):
     app = FastAPI(title="Panoptes published report", docs_url=None, redoc_url=None, openapi_url=None)
 
     def error(status, code):
-        return JSONResponse({"error": {"code": code, "params": {}}}, status_code=status)
+        return JSONResponse({"error": {"code": code, "params": {}}}, status_code=status, headers={"Cache-Control": "no-store"})
+
+    @app.exception_handler(PlatformError)
+    async def feedback_error(request, exc):
+        return error(exc.status, exc.code)
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(request, exc):
+        return error(422, "invalid_request")
 
     @app.middleware("http")
     async def read_only(request: Request, call_next):
-        if request.method not in ("GET", "HEAD", "OPTIONS"):
+        if request.method not in ("GET", "HEAD", "OPTIONS") and not (feedback is not None and request.method == "POST" and FEEDBACK_PATH.fullmatch(request.url.path)):
             return error(403, "publication_read_only")
         return await call_next(request)
+
+    if feedback is not None:
+        def feedback_scope(publication_id, request):
+            publication = responses.get("/api/publications/" + str(publication_id))
+            if publication is None:
+                raise PlatformError("publication_not_found", 404)
+            authorization = request.headers.get("authorization", "")
+            if not authorization.startswith("Feedback "):
+                raise PlatformError("feedback_capability_required", 401)
+            return publication, authorization.removeprefix("Feedback ")
+
+        @app.get("/api/publications/{publication_id}/entities/{entity_id}/feedback")
+        def feedback_history(publication_id: UUID, entity_id: str, conversationId: UUID, request: Request):
+            publication, capability = feedback_scope(publication_id, request)
+            return JSONResponse(feedback.history(publication, entity_id, capability, str(conversationId)), headers={"Cache-Control": "no-store"})
+
+        @app.post("/api/publications/{publication_id}/entities/{entity_id}/feedback")
+        def feedback_turn(publication_id: UUID, entity_id: str, body: FeedbackRequest, request: Request):
+            publication, capability = feedback_scope(publication_id, request)
+            return JSONResponse(feedback.submit(publication, entity_id, capability, body.model_dump(mode="json")), headers={"Cache-Control": "no-store"})
 
     @app.api_route("/api/assets/{asset_id}/content", methods=["GET", "HEAD"])
     def content(asset_id: str):
@@ -136,6 +171,16 @@ def create_app(catalog_dir: str | Path, *, allowed_origins: list[str]):
         return JSONResponse(value, headers={"Cache-Control": "public,max-age=31536000,immutable" if immutable else "no-cache", "X-Content-Type-Options": "nosniff"})
 
     app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=3)
-    app.add_middleware(CORSMiddleware, allow_origins=allowed_origins, allow_methods=["GET", "HEAD", "OPTIONS"],
-                       allow_headers=["Range", "If-Range", "If-None-Match"], expose_headers=["ETag", "Content-Length", "Content-Range"], allow_credentials=False)
+    class PublicationCORS:
+        def __init__(self, app):
+            self.read = CORSMiddleware(app, allow_origins=allowed_origins, allow_methods=["GET", "HEAD", "OPTIONS"],
+                allow_headers=["Range", "If-Range", "If-None-Match"], expose_headers=["ETag", "Content-Length", "Content-Range"], allow_credentials=False)
+            self.feedback = CORSMiddleware(app, allow_origins=allowed_origins, allow_methods=["GET", "POST", "OPTIONS"],
+                allow_headers=["Authorization", "Content-Type"], allow_credentials=False)
+
+        async def __call__(self, scope, receive, send):
+            target = self.feedback if feedback is not None and FEEDBACK_PATH.fullmatch(scope.get("path", "")) else self.read
+            await target(scope, receive, send)
+
+    app.add_middleware(PublicationCORS)
     return app

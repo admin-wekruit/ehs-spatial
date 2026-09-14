@@ -39,7 +39,7 @@ function load(filename){
 }
 const {PhotoView}=load(path.join(root,'src/PhotoView.tsx'));
 const document={cameras:[{imageId:'photo',width:800,height:600}],entities:[{id:'button',label:'Button',observationRefs:['button-photo']}],observations:[{id:'button-photo',imageId:'photo',originalPixelBox:[0,0,800,600]}]};
-let draw=true,hostBox=null;const selections=[],boxes=[],captured=[];
+let draw=true,hostBox=null,showBounds;const selections=[],boxes=[],captured=[];
 const surface={getBoundingClientRect:()=>({left:100,top:50,width:400,height:300}),setPointerCapture:id=>captured.push(id)};
 function findSVG(node){
   if(!React.isValidElement(node))return null;
@@ -49,9 +49,10 @@ function findSVG(node){
 }
 function render(){
   cursor=0;
-  const tree=PhotoView({document,imageId:'photo',selectedId:null,draw,onSelect:(...selection)=>{selections.push(selection);hostBox=null;},onBox:box=>{boxes.push(box);hostBox=box;draw=false;}});
+  const tree=PhotoView({document,imageId:'photo',selectedId:null,draw,showBounds,onSelect:(...selection)=>{selections.push(selection);hostBox=null;},onBox:box=>{boxes.push(box);hostBox=box;draw=false;}});
   for(const effect of effects.splice(0))effect();
   const svg=findSVG(tree);if(svg)svg.props.ref.current=surface;
+  if(svg)assert.equal(tree.props.className.includes('show-bounds'),showBounds === true);
   return svg;
 }
 assert.equal(render(),null,'the source asset resolves before pointer interaction');
@@ -76,4 +77,6 @@ svg.props.onPointerUp(pointer(260,210));
 svg.props.onClick(pointer(260,210));
 assert.deepEqual(selections,[['button','button-photo']]);
 assert.equal(boxes.length,1,'an ordinary click must not emit a second drawing');
+showBounds=true;render();
+showBounds=false;render();
 console.log('Photo draw regression passed: pointer-up coordinates, host draw=false rerender, suppressed synthetic click, and subsequent ordinary selection.');

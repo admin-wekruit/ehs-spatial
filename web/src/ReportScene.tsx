@@ -205,7 +205,7 @@ export function Extent({ entity, document }: { entity: Entity; document: SceneDo
 
 export function ReportScene({
   revision, selection, onSelect, imageId, cameraId, onCamera,
-  draw = false, onBox, onOpenSourceCad, inspector, objectListRequest = 0,
+  draw = false, onBox, onOpenSourceCad, inspector, objectListRequest = 0, onFeedback, onClearSelection,
 }: {
   revision: Revision;
   selection: Selection;
@@ -218,6 +218,8 @@ export function ReportScene({
   onOpenSourceCad?: () => void;
   inspector?: ReactNode;
   objectListRequest?: number;
+  onFeedback?: (entityId: string) => void;
+  onClearSelection?: () => void;
 }) {
   const { t } = useI18n(), container = useRef<HTMLElement>(null),
     objectList = useRef<HTMLDivElement>(null), objectSearch = useRef<HTMLInputElement>(null), panePrefix = useId();
@@ -317,7 +319,8 @@ export function ReportScene({
             <option value="model">{t("sceneModel")}</option><option value="observed_surface">{t("sceneObserved")}</option>
             <option value="point_cloud" disabled={!hasPointCloud}>{t(hasPointCloud ? "scenePoints" : "sceneNoPoints")}</option>
           </select></label>
-          <label className="report-scene-check"><input type="checkbox" checked={allBounds} onChange={(e) => setAllBounds(e.target.checked)} />{t("sceneAllBounds")}</label>
+          <label className="report-scene-check"><input type="checkbox" checked={allBounds} onChange={(e) => setAllBounds(e.target.checked)} />{t("sceneShowBorders")}</label>
+          {selected && onClearSelection && <button onClick={onClearSelection}>{t("sceneClearSelection")}</button>}
           <button className="report-scene-fullscreen" onClick={fullscreen} aria-pressed={isFullscreen} aria-label={t(isFullscreen ? "sceneExitFullscreen" : "sceneFullscreen")}>⛶ <span>{t(isFullscreen ? "sceneExitFullscreen" : "sceneFullscreen")}</span></button>
         </div>
       </header>
@@ -344,14 +347,14 @@ export function ReportScene({
                 representations = entity.representations || [],
                 kinds = [...new Set(representations.map((representation) => t(representation.kind)))],
                 candidate = representations.some((representation) => representation.placementState === "unconfirmed");
-              return <button key={entity.id} aria-pressed={entity.id === selection.entityId} onClick={() => selectEntity(entity.id)}>
+              return <div key={entity.id} className="report-scene-object-row"><button key={entity.id} aria-pressed={entity.id === selection.entityId} onClick={() => selectEntity(entity.id)}>
                 <strong><b className="report-scene-object-number">{objectNumbers.get(entity.id)}</b>{entity.label || entity.id}</strong>
                 <span className="report-scene-object-source">{indices.length ? `${t("scenePhotoNumber")} ${indices.join(" / ")}` : t("sceneNoPhotoLink")}<small>{entity.id.slice(0, 8)}</small></span>
                 <span className="report-scene-object-evidence">{t(evidence.photoKey)}{observations.length > 0 && ` · ${observations.length} ${t("observations")}`}</span>
                 {evidence.identityKey && <span className="report-scene-object-identity"><span>{t("entityIdentity")}</span>{t(evidence.identityKey)}</span>}
                 <span className="report-scene-object-model"><span>{t("model")}</span>{kinds.length ? kinds.join(" · ") : t(entityGeometryForLayer(entity, geometryOptions) ? "sceneBoundsOnly" : "reportMissingGeometry")}{candidate && <em>{t("sceneCandidate")}</em>}</span>
                 <span className="report-scene-object-extent"><span>{t("reportObservedExtent")}</span><Extent entity={entity} document={document} /></span>
-              </button>;
+              </button>{onFeedback && <button className="report-object-feedback" aria-label={`${t("sceneFeedback")} · ${entity.label || entity.id}`} onClick={() => { selectEntity(entity.id); onFeedback(entity.id); setMobileSection("inspector"); }}>{t("sceneFeedback")} ↗</button>}</div>;
             })}
             {!filtered.length && <p className="report-scene-list-empty">{t(objects.length ? "sceneNoMatches" : "sceneNoObjects")}</p>}
           </div>
@@ -377,10 +380,10 @@ export function ReportScene({
                     title={t(focused === pane ? "sceneQuad" : "sceneSingleView")} onClick={() => chooseView(focused === pane ? null : pane)}>{focused === pane ? "⊞" : "↗"}</button>
                 </header>
                 <div className="report-scene-pane-body">
-                  {pane === "photo" && <><PhotoView document={document} imageId={imageId} selectedId={selection.entityId} onSelect={selectEntity} draw={draw} onBox={onBox} />
-                    {camera && <PhotoAxes revision={revision} camera={camera} layer={layer} selectedId={selection.entityId} allBounds={allBounds} />}</>}
+                  {pane === "photo" && <><PhotoView document={document} imageId={imageId} selectedId={selection.entityId} onSelect={selectEntity} draw={draw} onBox={onBox} showBounds={allBounds} />
+                    {camera && allBounds && <PhotoAxes revision={revision} camera={camera} layer={layer} selectedId={selection.entityId} allBounds={allBounds} />}</>}
                   {pane === "spatial" && <><SpatialView revision={revision} selection={selection} onSelect={selectEntity} onCommit={noEdit} mode="free" cameraId={cameraId}
-                    layers={{ observed_surface: layer !== "point_cloud", generated_mesh: layer === "model", primitive: layer === "model", point_cloud: layer === "point_cloud", allBounds, showCandidates: true, editable: false, opacity: 1 }} />
+                    layers={{ observed_surface: layer !== "point_cloud", generated_mesh: layer === "model", primitive: layer === "model", point_cloud: layer === "point_cloud", allBounds, showBounds: allBounds, showCandidates: true, editable: false, opacity: 1 }} />
                     {!hasRepresentation && <div className="report-scene-stage-note">{t("sceneNoRepresentation")}</div>}</>}
                   {(pane === "plan" || pane === "cad") && availability.planEmpty && <div className="report-scene-plan-empty" role="status"><strong>{t("scenePlanUnavailable")}</strong><p>{t(availability.planEmpty)}</p><small>{t("sceneSelectionRetained")}</small></div>}
                   {pane === "cad" && !availability.planEmpty && <CadView key={revision.id} document={document} selectedId={selection.entityId} onSelect={selectEntity} geometryOptions={geometryOptions} />}

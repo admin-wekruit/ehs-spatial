@@ -7,6 +7,11 @@ export type PendingRequest = {
   createdAt: string;
 };
 type Owner = { id: string; capability: string };
+export type FeedbackInput = {
+  requestId: string; conversationId: string; message: string; language: "zh" | "en";
+  imageId?: string | null; observationId?: string | null;
+};
+type FeedbackSession = Owner & { conversationId: string; pending?: FeedbackInput };
 export const PUBLICATION_ID = import.meta.env?.VITE_PUBLICATION_ID?.trim() || "";
 const DB = "panoptes-platform",
   API_ORIGIN = (import.meta.env?.VITE_API_ORIGIN || "").replace(/\/$/, "");
@@ -44,8 +49,26 @@ async function put(store: string, value: unknown) {
 }
 export const owner = async (id: string) =>
   (await read<Owner | undefined>("owners", id))?.capability;
+export async function feedbackSession(publicationId: string, entityId: string, pending?: FeedbackInput | null): Promise<FeedbackSession> {
+  const db = await database(), key = `feedback:${publicationId}:${entityId}`;
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("owners", "readwrite"), store = tx.objectStore("owners"), found = store.get(key);
+    let session: FeedbackSession;
+    found.onsuccess = () => {
+      session = found.result;
+      if (!session) {
+        const bytes = crypto.getRandomValues(new Uint8Array(32));
+        session = { id: key, capability: btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""), conversationId: crypto.randomUUID() };
+      }
+      if (pending !== undefined) session = { ...session, pending: pending || undefined };
+      store.put(session);
+    };
+    tx.oncomplete = () => resolve(session);
+    tx.onerror = tx.onabort = () => reject(new Error("browser_storage_unavailable"));
+  });
+}
 export const ownedIds = async () =>
-  new Set((await read<Owner[]>("owners")).map((o) => o.id));
+  new Set((await read<Owner[]>("owners")).filter((o) => !o.id.startsWith("feedback:")).map((o) => o.id));
 export const pendingRequests = () => read<PendingRequest[]>("pending");
 export class ApiError extends Error {
   status: number;
@@ -63,12 +86,14 @@ export async function request<T>(
     body?: unknown;
     projectId?: string;
     capability?: string;
+    feedbackCapability?: string;
     signal?: AbortSignal;
   } = {},
 ): Promise<T> {
   if (!path.startsWith("/api/")) throw new Error("invalid_api_path");
   const method = options.method || "GET",
     headers = new Headers();
+  if (options.feedbackCapability && (options.projectId || options.capability)) throw new Error("mixed_capability_context");
   const capability =
     options.capability ||
     (options.projectId ? await owner(options.projectId) : undefined);
@@ -76,6 +101,7 @@ export async function request<T>(
     throw new ApiError(403, "owner_capability_required");
   if (capability && method !== "GET")
     headers.set("Authorization", "Capability " + capability);
+  if (options.feedbackCapability) headers.set("Authorization", "Feedback " + options.feedbackCapability);
   const multipart = options.body instanceof FormData;
   if (options.body !== undefined && !multipart)
     headers.set("Content-Type", "application/json");

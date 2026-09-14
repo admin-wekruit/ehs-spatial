@@ -1,28 +1,17 @@
 import { createElement, useEffect, useRef, useState } from "react";
-import { ApiError, id, request } from "./api";
+import { ApiError, feedbackSession, id, request, type FeedbackInput } from "./api";
 import { useI18n } from "./i18n";
+import { observationsFor } from "./core";
 import { ErrorNotice } from "./App";
-import type { AgentRequest, Branch, Operation, Revision } from "./types";
+import type { AgentRequest, AgentTurn, Branch, Operation, Revision } from "./types";
 type Proposal = {
   operations: Operation[];
   baseRevisionId: string;
   agentTurnId: string;
   policyDraft?: any;
 };
-export function AgentPanel({
-  projectId,
-  revision,
-  branch,
-  entityId,
-  observationId,
-  imageId,
-  box,
-  canWrite,
-  onApply,
-  policyId,
-  policyRevisionId,
-  onPolicyApply,
-}: {
+type AgentPanelProps = {
+  feedbackPublicationId?: string;
   projectId: string;
   revision: Revision;
   branch: Pick<Branch, "id">;
@@ -38,7 +27,55 @@ export function AgentPanel({
     ops: Operation[],
     context?: { baseRevisionId: string; agentTurnId?: string },
   ) => unknown;
-}) {
+};
+type FeedbackTurn = {
+  id: string; requestId: string; conversationId: string; publicationId: string; revisionId: string; entityId: string;
+  message: string; language: "zh" | "en"; status: "saved" | "succeeded" | "failed" | "outcome_unknown";
+  assistantMessage: string | null; errorCode: string | null; createdAt: string;
+};
+function feedbackReply(turn: FeedbackTurn, t: (key: string) => string) {
+  return turn.assistantMessage || t(turn.status === "outcome_unknown" ? "feedbackOutcomeUnknown" :
+    turn.status === "failed" ? "feedbackReplyFailed" : turn.errorCode === "feedback_budget_exceeded" ? "feedbackBudgetExceeded" : "feedbackSavedNoAgent");
+}
+function feedbackEvidence({ revision, entityId, imageId, observationId }: Pick<AgentPanelProps, "revision" | "entityId" | "imageId" | "observationId">) {
+  const entity = revision.document.entities.find((item) => item.id === entityId);
+  const observations = entity ? observationsFor(revision.document, entity) : [];
+  const observation = observations.find((item) => item.id === observationId && (!imageId || item.imageId === imageId));
+  const image = observations.some((item) => item.imageId === imageId) ? imageId : observation?.imageId;
+  return { ...(image ? { imageId: image } : {}), ...(observation ? { observationId: observation.id } : {}) };
+}
+
+function conversationScope(projectId: string, branchId: string, revisionId: string, entityId?: string | null, policyId?: string | null) {
+  return JSON.stringify(policyId ? ["policy", projectId, policyId] : ["scene", projectId, branchId, revisionId, entityId || null]);
+}
+
+function turnScope(turn: AgentTurn) {
+  return conversationScope(turn.projectId, turn.branchId, turn.baseRevisionId, turn.request.entityId, turn.request.policyId);
+}
+
+async function agentHistory(projectId: string, signal: AbortSignal) {
+  const turns: AgentTurn[] = [];
+  let after = 0;
+  while (true) {
+    const page = await request<{ items: AgentTurn[] }>(`/api/projects/${projectId}/agent-turns?afterSequence=${after}`, { signal });
+    turns.push(...page.items);
+    if (page.items.length < 500) return turns;
+    const next = page.items.at(-1)!.sequence;
+    if (next <= after) throw new Error("invalid_agent_history_sequence");
+    after = next;
+  }
+}
+
+export function AgentPanel(props: AgentPanelProps) {
+  const scope = props.feedbackPublicationId ? JSON.stringify(["feedback", props.feedbackPublicationId, props.entityId]) :
+    conversationScope(props.projectId, props.branch.id, props.revision.id, props.entityId, props.policyId);
+  return <AgentConversation key={scope} {...props} />;
+}
+
+function AgentConversation({
+  projectId, revision, branch, entityId, observationId, imageId, box,
+  canWrite, onApply, policyId, policyRevisionId, onPolicyApply, feedbackPublicationId,
+}: AgentPanelProps) {
   const { t, language } = useI18n(),
     chat = useRef<any>(null),
     context = useRef<any>(null),
@@ -46,6 +83,8 @@ export function AgentPanel({
     [proposal, setProposal] = useState<Proposal | null>(null),
     [error, setError] = useState<unknown>(),
     [ready, setReady] = useState(false),
+    [historyReady, setHistoryReady] = useState(false),
+    [feedbackRetry, setFeedbackRetry] = useState<FeedbackInput | null>(null),
     [working, setWorking] = useState(false);
   context.current = {
     revision,
@@ -58,8 +97,45 @@ export function AgentPanel({
     language,
     policyId,
     policyRevisionId,
+    historyReady,
+    feedbackPublicationId,
   };
-  const conversation = useRef(id());
+  const conversation = useRef<string>(id());
+  const feedbackRoute = feedbackPublicationId && entityId ? `/api/publications/${feedbackPublicationId}/entities/${encodeURIComponent(entityId)}/feedback` : null;
+  async function publicHistory(signal?: AbortSignal) {
+    if (!feedbackPublicationId || !entityId || !feedbackRoute) return;
+    const session = await feedbackSession(feedbackPublicationId, entityId);
+    const result = await request<{ items: FeedbackTurn[] }>(`${feedbackRoute}?conversationId=${session.conversationId}`, { feedbackCapability: session.capability, signal });
+    if (!alive.current) return;
+    conversation.current = session.conversationId;
+    const pending = session.pending && !result.items.some((turn) => turn.requestId === session.pending!.requestId) ? session.pending : null;
+    if (session.pending && !pending) await feedbackSession(feedbackPublicationId, entityId, null);
+    if (!alive.current) return;
+    chat.current.history = [...result.items.flatMap((turn) => [
+      { role: "user", text: turn.message }, { role: "ai", text: feedbackReply(turn, t) },
+    ]), ...(pending ? [{ role: "user", text: pending.message }] : [])];
+    setFeedbackRetry(pending);
+  }
+  async function sendFeedback(input: FeedbackInput, signals?: { onResponse: (response: { text: string }) => Promise<unknown> }) {
+    if (!feedbackPublicationId || !entityId || !feedbackRoute) return;
+    setWorking(true); setError(undefined);
+    try {
+      const session = await feedbackSession(feedbackPublicationId, entityId, input);
+      const turn = await request<FeedbackTurn>(feedbackRoute, { method: "POST", body: input, feedbackCapability: session.capability });
+      await feedbackSession(feedbackPublicationId, entityId, null);
+      if (!alive.current) return;
+      setFeedbackRetry(null);
+      if (signals) await signals.onResponse({ text: feedbackReply(turn, t) });
+      else await publicHistory();
+    } catch (error) {
+      if (error instanceof ApiError && error.status < 500) await feedbackSession(feedbackPublicationId, entityId, null);
+      if (alive.current) {
+        setFeedbackRetry(error instanceof ApiError && error.status < 500 ? null : input);
+        setError(error);
+        if (signals) await signals.onResponse({ text: t(error instanceof ApiError && error.status < 500 ? "feedbackSendRejected" : "feedbackSendUnconfirmed") });
+      }
+    } finally { if (alive.current) setWorking(false); }
+  }
   useEffect(() => {
     alive.current = true;
     import("deep-chat")
@@ -74,14 +150,17 @@ export function AgentPanel({
   }, []);
   useEffect(() => {
     if (!ready || !chat.current) return;
-    request<{ items: any[] }>(`/api/projects/${projectId}/agent-turns`)
-      .then((result) => {
+    const abort = new AbortController();
+    if (feedbackPublicationId) {
+      publicHistory(abort.signal).then(() => { if (alive.current) setHistoryReady(true); })
+        .catch((error) => { if (alive.current && error.name !== "AbortError") setError(error); });
+      return () => abort.abort();
+    }
+    const scope = conversationScope(projectId, branch.id, revision.id, entityId, policyId);
+    agentHistory(projectId, abort.signal)
+      .then((history) => {
         if (!alive.current) return;
-        const turns = result.items.filter((turn) =>
-          policyId
-            ? turn.request.policyId === policyId
-            : !turn.request.policyId,
-        );
+        const turns = history.filter((turn) => turnScope(turn) === scope);
         chat.current.history = turns.flatMap((turn) => [
           { role: "user", text: turn.request.message },
           ...(turn.response?.message
@@ -89,7 +168,11 @@ export function AgentPanel({
             : []),
         ]);
         const latest = turns.at(-1);
-        if (latest) conversation.current = latest.conversationId;
+        // Old UI versions mixed objects in a conversation. Preserve matching
+        // history, but never send that mixed transcript back to the model.
+        if (latest && !history.some((turn) => turn.conversationId === latest.conversationId && turnScope(turn) !== scope))
+          conversation.current = latest.conversationId;
+        setProposal(null);
         if (
           !latest?.appliedEditBatchId &&
           !latest?.appliedPolicyRevisionId &&
@@ -104,12 +187,14 @@ export function AgentPanel({
                 ? latest.response
                 : undefined,
           });
+        setHistoryReady(true);
       })
-      .catch(setError);
-  }, [ready, projectId, policyId]);
+      .catch((error) => { if (alive.current && error.name !== "AbortError") setError(error); });
+    return () => abort.abort();
+  }, [ready, projectId, policyId, feedbackPublicationId]);
   useEffect(() => {
     if (!ready || !chat.current) return;
-    chat.current.textInput = { placeholder: { text: t("ask") } };
+    chat.current.textInput = { disabled: !historyReady || !!feedbackRetry || (feedbackPublicationId ? !entityId : !canWrite), placeholder: { text: t(feedbackPublicationId ? "feedbackAsk" : "ask") } };
     chat.current.messageStyles = {
       default: {
         shared: {
@@ -128,11 +213,18 @@ export function AgentPanel({
         setWorking(true);
         try {
           const ctx = context.current;
-          if (!ctx.canWrite)
-            throw new ApiError(403, "owner_capability_required");
+          if (!ctx.historyReady) throw new Error(t("loading"));
           const message = body.messages
             .filter((m: any) => m.role === "user")
             .at(-1)?.text;
+          if (ctx.feedbackPublicationId) {
+            if (!ctx.entityId || typeof message !== "string" || !message.trim() || message.length > 8000) throw new Error(t("feedbackMessageInvalid"));
+            await sendFeedback({ requestId: id(), conversationId: conversation.current, message: message.trim(), language: ctx.language,
+              ...feedbackEvidence(ctx),
+            }, signals);
+            return;
+          }
+          if (!ctx.canWrite) throw new ApiError(403, "owner_capability_required");
           const input: AgentRequest = {
             requestId: id(),
             conversationId: conversation.current,
@@ -151,15 +243,15 @@ export function AgentPanel({
                 }
               : {}),
           };
-          let turn = await request<any>(
+          let turn = await request<AgentTurn>(
             `/api/projects/${projectId}/agent-turns`,
             { method: "POST", projectId, body: input },
           );
           while (["pending", "running"].includes(turn.status)) {
             await new Promise((resolve) => setTimeout(resolve, 1500));
             if (!alive.current) return;
-            const list = await request<{ items: any[] }>(
-              `/api/projects/${projectId}/agent-turns`,
+            const list = await request<{ items: AgentTurn[] }>(
+              `/api/projects/${projectId}/agent-turns?conversationId=${turn.conversationId}&afterSequence=${turn.sequence - 1}`,
             );
             const updated = list.items.find((item) => item.id === turn.id);
             if (updated) turn = updated;
@@ -176,7 +268,7 @@ export function AgentPanel({
             });
           else setProposal(null);
           if (!response?.message)
-            throw new Error(response?.code || "agent_response_missing");
+            throw new Error(typeof response?.code === "string" ? response.code : "agent_response_missing");
           await signals.onResponse({ text: response.message });
         } catch (e) {
           if (alive.current) {
@@ -188,7 +280,7 @@ export function AgentPanel({
         }
       },
     };
-  }, [ready, projectId, language]);
+  }, [ready, historyReady, canWrite, feedbackRetry, feedbackPublicationId, projectId, language]);
   async function apply() {
     if (!proposal) return;
     setError(undefined);
@@ -216,7 +308,7 @@ export function AgentPanel({
   }
   return (
     <div className="agent-panel">
-      <p className="subtle">{t("agentCopy")}</p>
+      <p className="subtle">{t(feedbackPublicationId ? "feedbackCopy" : "agentCopy")}</p>
       <div className="context-chips">
         <span>{revision.id.slice(0, 8)}</span>
         {entityId && (
@@ -225,11 +317,13 @@ export function AgentPanel({
           </span>
         )}
         {box && <span>{t("selectedBox")}</span>}
+        {feedbackPublicationId && !feedbackEvidence({ revision, entityId, imageId, observationId }).imageId && <span>{t("feedbackNoPhotoEvidence")}</span>}
       </div>
-      {createElement("deep-chat", { ref: chat, className: "deep-chat" })}
+      {createElement("deep-chat", { ref: chat, className: "deep-chat", auxiliaryStyle: "#container { height: 100%; width: 100%; }" })}
       {working && <p role="status">{t("running")}</p>}
       <ErrorNotice error={error} />
-      {proposal && (
+      {feedbackRetry && <div className="feedback-retry"><p>{t("feedbackSendUnconfirmed")}</p><button disabled={working} onClick={() => sendFeedback(feedbackRetry)}>{t("feedbackRetrySameRequest")}</button></div>}
+      {proposal && !feedbackPublicationId && (
         <div className="proposal">
           <h3>{t("proposal")}</h3>
           {proposal.policyDraft && (

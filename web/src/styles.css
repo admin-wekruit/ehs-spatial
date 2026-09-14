@@ -977,6 +977,18 @@ small,
   stroke-width: 3;
   fill: #e58d2322;
 }
+.photo-view:not(.show-bounds) .photo-bound:not(:focus-visible) {
+  stroke: none;
+  fill: transparent;
+}
+.entity-row > button.entity-feedback {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #355e47;
+  border: 1px solid #b7c4b6;
+}
 
 .spatial-fit {
   position: absolute;

@@ -61,13 +61,14 @@ class GeminiAgentProvider:
     name = "google"
     paid = True
 
-    def __init__(self, *, model: str, max_call_cost: float, client=None):
+    def __init__(self, *, model: str, max_call_cost: float, client=None, instruction: str = INSTRUCTION, http_options=None):
         if not model or max_call_cost <= 0:
             raise ValueError("Explicit agent model and per-call budget reservation required")
         self.model, self.max_call_cost = model, max_call_cost
+        self.instruction = instruction
         if client is None:
             from google import genai
-            client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+            client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"), **({"http_options": http_options} if http_options is not None else {}))
         self.client = client
 
     def respond(self, messages, context):
@@ -75,7 +76,7 @@ class GeminiAgentProvider:
         # dispatcher, which has no unrestricted shell or filesystem tool.
         response = self.client.models.generate_content(model=self.model,
             contents=json.dumps({"context": context, "conversation": messages}, ensure_ascii=False),
-            config={"system_instruction": INSTRUCTION, "response_mime_type": "application/json", "max_output_tokens": 2400})
+            config={"system_instruction": self.instruction, "response_mime_type": "application/json", "max_output_tokens": 2400})
         value = json.loads(response.text)
         if not isinstance(value, dict):
             raise ValueError("invalid_agent_output")

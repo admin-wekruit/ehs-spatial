@@ -1221,6 +1221,7 @@ function Workspace({
       primitive: representation === "model",
       point_cloud: representation === "point_cloud",
       allBounds,
+      showBounds: allBounds,
       opacity,
       showCandidates: !report,
       editable: !busy,
@@ -1273,6 +1274,8 @@ function Workspace({
                       : t("noGeometry")}
                   </span>
                 </button>
+                <button className="entity-feedback" aria-label={`${t("sceneFeedback")} · ${entity.label || entity.id}`}
+                  onClick={() => { select(entity.id); setCreatingModel(false); setPanel("agent"); }}>{t("sceneFeedback")}</button>
                 <input
                   type="checkbox"
                   aria-label={t("visible") + " " + (entity.label || entity.id)}
@@ -1357,7 +1360,7 @@ function Workspace({
               checked={allBounds}
               onChange={(e) => setAllBounds(e.target.checked)}
             />
-            {t("allBounds")}
+            {t("sceneShowBorders")}
           </label>
           <select
             aria-label={t("camera")}
@@ -1398,6 +1401,7 @@ function Workspace({
                 onSelect={select}
                 onBox={setBox}
                 draw={draw}
+                showBounds={allBounds}
               />
             </div>
           )}
@@ -1421,6 +1425,7 @@ function Workspace({
                   onSelect={select}
                   onBox={setBox}
                   draw={draw}
+                  showBounds={allBounds}
                 />
               </div>
             )}
