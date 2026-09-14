@@ -7,7 +7,7 @@ import ts from "typescript";
 import { observationsFor } from "../src/core.ts";
 
 const require = createRequire(import.meta.url);
-let active, instance, language = "en", serial = 0, postHandler;
+let active, instance, language = "en", serial = 0, postHandler, feedbackHistoryHandler;
 const requests = [], sessions = new Map(), feedbackTurns = [];
 const turn = (sequence, entityId, extra = {}) => ({ id: `turn-${sequence}`, projectId: "project", branchId: "branch", baseRevisionId: "revision",
   conversationId: `conversation-${entityId}`, sequence, status: "succeeded", request: { entityId, message: `question-${sequence}` },
@@ -34,7 +34,10 @@ const api = { ApiError, id: () => `fresh-${++serial}`,
   async request(url, options = {}) {
     requests.push({ url, options });
     if (options.method === "POST") return postHandler(url, options);
-    if (url.includes("/feedback")) return { items: feedbackTurns.filter(row => url.includes(encodeURIComponent(row.entityId))) };
+    if (url.includes("/feedback")) {
+      if (feedbackHistoryHandler) return feedbackHistoryHandler(url, options);
+      return { items: feedbackTurns.filter(row => url.includes(encodeURIComponent(row.entityId))) };
+    }
     const params = new URLSearchParams(url.split("?")[1]);
     return { items: history.filter(row => row.sequence > Number(params.get("afterSequence") || 0) &&
       (!params.has("conversationId") || row.conversationId === params.get("conversationId"))).slice(0, 500) };
@@ -90,7 +93,26 @@ assert.deepEqual(policy.chat.history.map(row => row.text), ["old-policy", "answe
 const publicProps = { ...props, entityId: "object/one", feedbackPublicationId: "publication", canWrite: false,
   revision: { id: "revision", document: { entities: [{ id: "object/one", label: "One", observationRefs: ["obs-a", "obs-b"] }, { id: "object/two", label: "Unphotographed model", observationRefs: [] }],
     observations: [{ id: "obs-a", imageId: "photo-a" }, { id: "obs-b", imageId: "photo-b" }, { id: "foreign-obs", imageId: "foreign-photo" }] } } };
+const failedHistoryRequests = [];
+feedbackHistoryHandler = (url, options) => {
+  failedHistoryRequests.push({ url, options });
+  if (failedHistoryRequests.length === 1) throw new TypeError("temporary preflight failure");
+  return { items: [] };
+};
 let publicChat = await render(publicProps);
+assert.equal(publicChat.chat.textInput.disabled, true, "A failed history load must not allow messages in an unknown conversation");
+assert.equal(failedHistoryRequests.length, 1, "A history failure does not automatically retry");
+const savedSession = { ...sessions.get("publication:object/one") };
+const beforeHistoryRetry = requests.length;
+await nodes(publicChat.tree).find(node => node.type === "button" && node.props.children === "retry").props.onClick();
+publicChat = await render(publicProps);
+assert.equal(failedHistoryRequests.length, 2, "An explicit Retry action reloads feedback history");
+assert.equal(failedHistoryRequests[0].url, failedHistoryRequests[1].url, "History recovery preserves publication, entity and conversation");
+assert.deepEqual(sessions.get("publication:object/one"), savedSession, "History recovery never resets the browser capability or conversation");
+assert.ok(requests.slice(beforeHistoryRetry).every(({ options }) => !options.method || options.method === "GET"), "History recovery can only read; it cannot send feedback or run a model");
+assert.equal(failedHistoryRequests[1].options.feedbackCapability, savedSession.capability);
+assert.equal(nodes(publicChat.tree).some(node => node.type === "button" && node.props.children === "retry"), false);
+feedbackHistoryHandler = undefined;
 assert.equal(publicChat.chat.textInput.disabled, false, "Public feedback does not require project ownership");
 const publicKey = publicChat.key, publicConversation = sessions.get("publication:object/one").conversationId;
 publicChat = await render({ ...publicProps, imageId: "photo-b", observationId: null });
@@ -148,4 +170,4 @@ globalThis.fetch = async (url, options) => {
 await realApi.request(feedbackUrl, { feedbackCapability: capability });
 await realApi.request(feedbackUrl, { method: "POST", feedbackCapability: capability, body: { message: "test" } });
 await assert.rejects(realApi.request(feedbackUrl, { feedbackCapability: capability, projectId: "project" }), /mixed_capability_context/);
-console.log("Agent panel: exact object/branch/version history, pagination, A→B pending isolation, mixed-transcript prevention, policy continuity, public feedback, persisted same-request retry and no Apply passed.");
+console.log("Agent panel: exact object/branch/version history, pagination, A→B pending isolation, mixed-transcript prevention, policy continuity, public feedback, explicit GET-only history recovery, persisted same-request retry and no Apply passed.");

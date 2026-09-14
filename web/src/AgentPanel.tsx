@@ -116,6 +116,16 @@ function AgentConversation({
     ]), ...(pending ? [{ role: "user", text: pending.message }] : [])];
     setFeedbackRetry(pending);
   }
+  async function loadPublicHistory(signal?: AbortSignal) {
+    setWorking(true); setError(undefined);
+    try {
+      await publicHistory(signal);
+      if (alive.current) setHistoryReady(true);
+    } catch (error) {
+      if (error instanceof TypeError) console.error("[public-feedback history]", error.name, error.message);
+      if (alive.current && !(error instanceof Error && error.name === "AbortError")) setError(error);
+    } finally { if (alive.current) setWorking(false); }
+  }
   async function sendFeedback(input: FeedbackInput, signals?: { onResponse: (response: { text: string }) => Promise<unknown> }) {
     if (!feedbackPublicationId || !entityId || !feedbackRoute) return;
     setWorking(true); setError(undefined);
@@ -128,6 +138,7 @@ function AgentConversation({
       if (signals) await signals.onResponse({ text: feedbackReply(turn, t) });
       else await publicHistory();
     } catch (error) {
+      if (error instanceof TypeError) console.error("[public-feedback send]", error.name, error.message);
       if (error instanceof ApiError && error.status < 500) await feedbackSession(feedbackPublicationId, entityId, null);
       if (alive.current) {
         setFeedbackRetry(error instanceof ApiError && error.status < 500 ? null : input);
@@ -152,8 +163,7 @@ function AgentConversation({
     if (!ready || !chat.current) return;
     const abort = new AbortController();
     if (feedbackPublicationId) {
-      publicHistory(abort.signal).then(() => { if (alive.current) setHistoryReady(true); })
-        .catch((error) => { if (alive.current && error.name !== "AbortError") setError(error); });
+      void loadPublicHistory(abort.signal);
       return () => abort.abort();
     }
     const scope = conversationScope(projectId, branch.id, revision.id, entityId, policyId);
@@ -322,6 +332,7 @@ function AgentConversation({
       {createElement("deep-chat", { ref: chat, className: "deep-chat", auxiliaryStyle: "#container { height: 100%; width: 100%; }" })}
       {working && <p role="status">{t("running")}</p>}
       <ErrorNotice error={error} />
+      {feedbackPublicationId && !historyReady && !!error && <button disabled={working} onClick={() => loadPublicHistory()}>{t("retry")}</button>}
       {feedbackRetry && <div className="feedback-retry"><p>{t("feedbackSendUnconfirmed")}</p><button disabled={working} onClick={() => sendFeedback(feedbackRetry)}>{t("feedbackRetrySameRequest")}</button></div>}
       {proposal && !feedbackPublicationId && (
         <div className="proposal">

@@ -179,8 +179,22 @@ def create_app(catalog_dir: str | Path, *, allowed_origins: list[str], feedback=
                 allow_headers=["Authorization", "Content-Type"], allow_credentials=False)
 
         async def __call__(self, scope, receive, send):
-            target = self.feedback if feedback is not None and FEEDBACK_PATH.fullmatch(scope.get("path", "")) else self.read
-            await target(scope, receive, send)
+            feedback_path = feedback is not None and FEEDBACK_PATH.fullmatch(scope.get("path", ""))
+            target = self.feedback if feedback_path else self.read
+            if feedback_path and scope.get("method") == "OPTIONS":
+                headers = {key.decode("latin1").lower(): value.decode("latin1") for key, value in scope.get("headers", [])}
+
+                async def diagnostic_send(message):
+                    if message["type"] == "http.response.start":
+                        print(json.dumps({"event": "feedback_cors_preflight", "request": {
+                            key: headers.get(key) for key in ("origin", "access-control-request-method", "access-control-request-headers")},
+                            "response": {key.decode("latin1"): value.decode("latin1") for key, value in message.get("headers", [])
+                                         if key.lower().startswith(b"access-control-")}}, ensure_ascii=False), flush=True)
+                    await send(message)
+
+                await target(scope, receive, diagnostic_send)
+            else:
+                await target(scope, receive, send)
 
     app.add_middleware(PublicationCORS)
     return app

@@ -10,8 +10,8 @@ Public feedback is persisted separately from the published scene. It cannot appl
 
 ## Executable checks
 
-- `.venv/bin/python -m pytest tests/test_publication_feedback.py -q` — 16 passed; authorization, CORS, immutable routes, scope, idempotency, disabled budgets, reservation races, unknown calls, cancellation and persistence.
-- `node --experimental-strip-types web/checks/agent-panel.mjs` — actual handlers: A→B delayed replies, history paging, mixed old conversations, fixed revisions, same-request retry, public scope and zero-observation objects.
+- `.venv/bin/python -m pytest tests/test_publication_feedback.py -q` — 17 passed; authorization, CORS, immutable routes, scope, idempotency, disabled budgets, reservation races, unknown calls, cancellation and persistence.
+- `node --experimental-strip-types web/checks/agent-panel.mjs` — actual handlers: A→B delayed replies, history paging, mixed old conversations, fixed revisions, same-request retry, public scope, zero-observation objects, and same-conversation GET history retry without POST or model calls.
 - `node --experimental-strip-types web/checks/report-scene.mjs` — default outline state, linked 68-row feedback selection, mobile pane change, retained CAD/3D geometry and camera behavior.
 - `node web/tests/photo-draw-check.mjs` — invisible outlines still allow normal selection and drawing.
 - `node --experimental-strip-types web/tests/report-context-check.mjs` — feedback/clear context, preserved publication isolation and original downloads.
@@ -22,6 +22,12 @@ Public feedback is persisted separately from the published scene. It cannot appl
 Computer Use exercised the real publication f4e5ca43-543d-4624-8ea0-27aa2843e6e4 against a local public-mode API at 8793 and the full local app at 8792. Desktop 1440×900 and mobile 390×844 were checked. A plain report had no selected object and no photo/3D outline. The outline toggle restored contours and projected bounds; Clear selection removed the object query. A cart feedback message was saved; selecting the right bollard showed a separate empty conversation, and returning to the cart restored its saved feedback. Reload retained it. Mobile feedback switched directly to the detail pane.
 
 The first mobile pass found a clipped input. The corrected flex layout sizes the actual Deep Chat shadow container to the host rather than inheriting its CSS height. The final measured input bottom was 617 px inside the 646 px panel bottom at 390×844.
+
+## Public deployment verification
+
+Pages commit 829bcf9 served the exact locally built JavaScript and CSS hashes. The public Modal API retained the fixed report revision. Real Chrome feedback submission returned the saved/no-model-reply state; another object showed its own empty conversation. The in-app browser also persisted a feedback message using the same-request retry and subsequently retrieved it.
+
+The in-app browser intermittently stopped after a successful OPTIONS preflight, before the GET/POST reached the API. Chrome worked with the same CORS response. Server diagnostics contain only the origin, preflight method/header names and CORS response headers; old/new responses were byte-equivalent. A deployment/retry changed behavior, but this does not establish a CORS configuration root cause. Keep this intermittent connection issue open; do not describe retry as a proven transport fix. Both history loading and message submission now have explicit recovery with stable conversation/request identity.
 
 ## Runtime boundary
 

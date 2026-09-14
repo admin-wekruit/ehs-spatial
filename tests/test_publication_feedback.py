@@ -151,6 +151,22 @@ def test_capability_and_publication_entity_scope(catalog, tmp_path):
         assert history(client, path, body).json()["items"][0]["conversationId"] != other["conversationId"]
 
 
+def test_preflight_diagnostics_exclude_capability_and_body(catalog, tmp_path, capsys):
+    root, publications = catalog
+    with client_for(root, tmp_path / "feedback.sqlite") as client:
+        response = client.request("OPTIONS", route(publications[0]), headers={
+            **HEADERS, "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "authorization"}, content="never-log-feedback-body")
+        assert response.status_code == 200
+    output = capsys.readouterr().out
+    assert CAPABILITY not in output and "never-log-feedback-body" not in output
+    event = json.loads(output.strip())
+    assert event["event"] == "feedback_cors_preflight"
+    assert set(event["request"]) == {"origin", "access-control-request-method", "access-control-request-headers"}
+    assert event["response"]["access-control-allow-origin"] == ORIGIN
+    assert all(key.startswith("access-control-") for key in event["response"])
+
+
 def test_paid_call_is_idempotent_and_budget_is_global_across_reopen(catalog, tmp_path):
     root, publications = catalog
     path, body, provider = route(publications[0]), request(), Provider()
