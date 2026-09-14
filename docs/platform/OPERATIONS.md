@@ -27,8 +27,9 @@ Host the API behind the website's `/api` path. `PANOPTES_WEB_ROOT` may select th
 The public feedback site serves a frozen publication, independently of the local
 database and workers. It uses the same React report and asset-ID contracts.
 Selection, CAD, 3D, language switching, evidence, history and existing downloads
-remain interactive. Creating projects, editing, Agent actions, forks and new jobs
-remain in the full platform; the public build does not advertise those actions.
+remain interactive. Per-object private feedback and explicitly shared identity
+suggestions use a separate feedback store. Creating projects, applying edits,
+forks and new model jobs remain in the full platform.
 
 1. Export a selected publication using public read endpoints. Each original file
    must match its frozen hash and byte count before the export becomes visible:
@@ -42,11 +43,13 @@ remain in the full platform; the public build does not advertise those actions.
      --source-api http://127.0.0.1:8792
    ```
 
-2. Deploy the independent read-only service. It has no model, database or project
-   credentials. Original project writes and all non-read HTTP methods are rejected.
+2. Deploy the independent publication service. It has no platform database or
+   project credentials. Scene/publication writes are rejected. Its only write
+   routes are separately scoped feedback and identity suggestions; those cannot
+   modify a report. Model calls require an explicit model and reserved budget.
 
    ```sh
-   PANOPTES_PUBLICATION_BUNDLE="$PWD/.platform/publications/PUBLICATION_UUID" \
+   PANOPTES_PUBLICATION_CATALOG="$PWD/.platform/publication-catalog" \
      .venv/bin/modal deploy modal_apps/publication_site.py
    ```
 
@@ -60,13 +63,15 @@ remain in the full platform; the public build does not advertise those actions.
      npm run build -- --outDir ../.platform/public-web
    ```
 
-4. Copy that build's `app.html` and `assets/` into the Pages artifact repository;
+4. Preserve the frozen v1 reader under `readers/v1/` for v1 reports. Copy the new
+   build's `app.html` and `assets/` into the Pages artifact repository;
    use the same `app.html` contents for `index.html`. Commit and push its `main`
    branch, then verify the Pages deployment's exact commit and the public browser
    route. Navigation stays on the website; the API origin is background transport.
 
-The bundle includes only the selected publication and its referenced project and
-assets. This sharing deployment does not constitute the full SaaS/model release.
+Each catalog directory contains one verified publication and its referenced
+assets. Preserve existing published directories. This sharing deployment does
+not constitute the full SaaS/model release.
 The bundle itself is portable: `create_app(bundle_dir, allowed_origins=[...])`
 can run under any ASGI host, without Modal-specific domain code. Keep exported
 bundles outside Git. Exporting into an existing directory is refused.
