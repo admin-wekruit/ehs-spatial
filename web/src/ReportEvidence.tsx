@@ -58,6 +58,8 @@ type InterpretationItem = {
   sourceFrameId?: string;
   targetSourceFrameId?: string;
   sourceCandidateIds?: string[];
+  sourceImageId?: string | null;
+  sourcePixelBox?: number[] | null;
   imageId?: string | null;
   cameraId?: string | null;
   entityIds: string[];
@@ -190,6 +192,7 @@ export function partitionInterpretationItems(
 ) {
   const rows = items.map((item) => ({
     item,
+    sourcePhoto: interpretationSourcePhoto(document, item),
     contexts: item.entityIds
       .map((id) => interpretationSelection(document, item, id))
       .filter((value): value is ReportEvidenceSelection => !!value?.imageId),
@@ -201,7 +204,62 @@ export function partitionInterpretationItems(
         Number(b.contexts.some((c) => c.imageId === currentImageId)) -
         Number(a.contexts.some((c) => c.imageId === currentImageId)),
     );
-  return { linked, unassociated: rows.filter((row) => !row.contexts.length) };
+  return {
+    linked,
+    sourceOnly: rows.filter((row) => !row.contexts.length && row.sourcePhoto),
+    unbound: rows.filter((row) => !row.contexts.length && !row.sourcePhoto),
+  };
+}
+
+export function interpretationSourcePhoto(document: SceneDocument, item: InterpretationItem) {
+  const asset = document.assets.find((a) => a.id === item.sourceImageId);
+  const metadata = jsonObject(asset?.metadata);
+  const width = Number(asset?.width ?? metadata?.width), height = Number(asset?.height ?? metadata?.height);
+  if (!asset || typeof asset.mediaType !== "string" || !["image/png", "image/jpeg", "image/webp"].includes(asset.mediaType)
+      || !Number.isSafeInteger(width) || width <= 0 || !Number.isSafeInteger(height) || height <= 0) return null;
+  const raw = item.sourcePixelBox;
+  const box = Array.isArray(raw) && raw.length === 4 && raw.every(Number.isFinite)
+    && raw[0] >= 0 && raw[1] >= 0 && raw[2] > raw[0] && raw[3] > raw[1]
+    && raw[2] <= width && raw[3] <= height ? raw : null;
+  const padX = box ? Math.max(10, (box[2] - box[0]) * .2) : 0;
+  const padY = box ? Math.max(10, (box[3] - box[1]) * .2) : 0;
+  const left = box ? Math.max(0, box[0] - padX) : 0, top = box ? Math.max(0, box[1] - padY) : 0;
+  const crop = box ? [left, top, Math.min(width, box[2] + padX) - left, Math.min(height, box[3] + padY) - top] : [0, 0, width, height];
+  return { assetId: asset.id, width, height, box, crop };
+}
+
+function InterpretationPhoto({ source, label }: {
+  source: NonNullable<ReturnType<typeof interpretationSourcePhoto>>;
+  label: string;
+}) {
+  const { language, t: globalT } = useI18n();
+  const t = (key: string) => reportEvidenceMessages[key]?.[language === "zh" ? 0 : 1] || globalT(key);
+  const [open, setOpen] = useState(false), [full, setFull] = useState(false);
+  const [url, setURL] = useState<string>(), [error, setError] = useState(false), [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    setURL(undefined); setError(false);
+    resolveAsset(source.assetId).then(value => { if (live) setURL(value); }).catch(() => { if (live) setError(true); });
+    return () => { live = false; };
+  }, [open, source.assetId, attempt]);
+  return <details className="report-source-photo" data-source-image-id={source.assetId}
+    onToggle={event => setOpen(event.currentTarget.open)}>
+    <summary>{t("reViewSourcePhoto")}</summary>
+    {open && <figure>
+      {error ? <p role="alert">{t("rePhotoLoadError")} <button type="button" onClick={() => setAttempt(value => value + 1)}>{t("reCadRetry")}</button></p>
+        : !url ? <p role="status">{t("loading")}</p>
+        : <svg viewBox={(full ? [0, 0, source.width, source.height] : source.crop).join(" ")}
+            role="img" aria-label={`${label} · ${t("reOriginalPhoto")}`}>
+            <image href={url} width={source.width} height={source.height} onError={() => setError(true)} />
+            {source.box && <rect x={source.box[0]} y={source.box[1]} width={source.box[2] - source.box[0]} height={source.box[3] - source.box[1]}
+              className="report-source-photo-box" vectorEffect="non-scaling-stroke" />}
+          </svg>}
+      <figcaption>{label} · {source.box ? t("reSourceBoxMeaning") : t("reSourceBoxMissing")}</figcaption>
+      {source.box && <button type="button" onClick={() => setFull(value => !value)}>{t(full ? "rePhotoCrop" : "rePhotoFull")}</button>}
+      <ReportDownload assetId={source.assetId}>{t("reOriginalPhoto")}</ReportDownload>
+    </figure>}
+  </details>;
 }
 export function exactHistoricalPolicy(
   policies: HistoricalPolicy[],
@@ -493,14 +551,14 @@ export function ReportEvidence({
           bundle?.imageInterpretations || [],
           historical?.runId,
         ).map((analysis, index) => {
-          const { linked, unassociated } = partitionInterpretationItems(
+          const { linked, sourceOnly, unbound } = partitionInterpretationItems(
             document,
             analysis.items,
             currentImageId,
           );
           const rows = (items: typeof linked) => (
             <div className="report-detection-notes">
-              {items.map(({ item, contexts }, i) => {
+              {items.map(({ item, contexts, sourcePhoto }, i) => {
                 const label =
                   language === "zh" && item.labelZh ? item.labelZh : item.label;
                 return (
@@ -544,10 +602,8 @@ export function ReportEvidence({
                             </>
                           )}{" "}
                           ·{" "}
-                          {contexts.length
-                            ? t("sourceEvidence")
-                            : t("reportUnassociated")}
-                          {item.mappingLimitation && (
+                          {t(contexts.length ? "reCurrentObjectLocated" : sourcePhoto ? "reSourcePhotoAvailable" : "rePhotoUnbound")}
+                          {contexts.length > 0 && item.mappingLimitation && (
                             <>
                               <br />
                               {item.mappingLimitation}
@@ -555,6 +611,7 @@ export function ReportEvidence({
                           )}
                         </small>
                       </details>
+                      {sourcePhoto && <InterpretationPhoto key={sourcePhoto.assetId} source={sourcePhoto} label={label || t("reSourceRecord")} />}
                     </div>
                   </div>
                 );
@@ -568,26 +625,36 @@ export function ReportEvidence({
             >
               <summary>
                 {analysis.runId === historical?.runId
-                  ? t("reportHistorical")
-                  : t("reportUnderstanding")}{" "}
-                · {linked.length} {t("reLinkedRecords")} /{" "}
-                {analysis.items.length} {t("reSourceRecords")}
+                  ? <>{t("reHistoricalArchive")} · {analysis.items.length} {t("reSourceRecords")}</>
+                  : <>{t("reportUnderstanding")} · {linked.length} {t("reLinkedRecords")} / {analysis.items.length} {t("reSourceRecords")}</>}
               </summary>
               <p className="report-evidence-note">
                 {analysis.runId === historical?.runId
-                  ? t("reportHistoricalHint")
+                  ? t("reHistoricalArchiveMeaning")
                   : t("reportDetectionMeaning")}
               </p>
+              <p className="report-interpretation-counts">
+                <span>{linked.length} · {t("reCurrentObjectLocated")}</span>
+                <span>{sourceOnly.length} · {t("reSourceOnlyCount")}</span>
+                <span>{unbound.length} · {t("rePhotoUnbound")}</span>
+              </p>
               {!!linked.length && rows(linked)}
-              {!!unassociated.length && (
-                <details className="report-source-details report-unassociated-records">
+              {!!sourceOnly.length && (
+                <details className="report-source-details report-source-only-records">
                   <summary>
-                    {t("reUnassociatedRecords")} · {unassociated.length}
+                    {t("reSourceOnlyRecords")} · {sourceOnly.length}
                   </summary>
                   <p className="report-evidence-note">
-                    {t("reUnassociatedMeaning")}
+                    {t("reSourceOnlyMeaning")}
                   </p>
-                  {rows(unassociated)}
+                  {rows(sourceOnly)}
+                </details>
+              )}
+              {!!unbound.length && (
+                <details className="report-source-details report-unbound-records">
+                  <summary>{t("reUnboundRecords")} · {unbound.length}</summary>
+                  <p className="report-evidence-note">{t("reUnboundMeaning")}</p>
+                  {rows(unbound)}
                 </details>
               )}
               {!!analysis.missing.length && (

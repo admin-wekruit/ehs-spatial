@@ -353,6 +353,40 @@ def _save_mesh(stages,mesh,metadata):
     return {**asset,"format":"panoptes-mesh-v1","byteLayout":layout}
 
 
+def _association_evidence(document, associations, frames, masks):
+    """Record why identity is unresolved without conflating it with object discovery."""
+    lookup = {o["id"]:o for o in document["observations"]}
+    scene_images = {o["imageId"] for o in lookup.values()} | {c["imageId"] for c in document["cameras"]}
+    for entity in document["entities"]:
+        ids = set(entity.get("observationRefs", []))
+        if not ids or entity.get("sourceContext"):
+            continue
+        if entity["associationState"] == "confirmed":
+            # Explicit imported/manual ownership survives a later geometry attempt.
+            if entity.get("associationEvidence", {}).get("method") != "bidirectional_depth_mask" and entity.get("associationEvidence"):
+                continue
+            status = "confirmed"
+        elif len(scene_images) <= 1:
+            status = "single_view"
+        elif not associations:
+            status = "geometry_missing" if any(lookup[oid]["imageId"] not in frames for oid in ids) else "not_evaluated"
+        elif any(oid not in masks for oid in ids):
+            status = "mask_missing"
+        elif any(lookup[oid]["imageId"] not in frames for oid in ids):
+            status = "geometry_missing"
+        elif any(set(link["observationIds"]) & ids for link in associations["ambiguous"]):
+            status = "competing_candidates"
+        elif not any(lookup[oid].get("geometrySupport", {}).get("validPixelCount", 0) >= associations["config"]["min_support"] for oid in ids):
+            status = "insufficient_support"
+        else:
+            status = "no_supported_match"
+        links = [link for link in (associations or {}).get("links", []) if set(link["observationIds"]) & ids and link["eligible"]]
+        entity["associationEvidence"] = {"method":"bidirectional_depth_mask", "status":status,
+            "observationIds":sorted(ids), "candidates":links, "config":(associations or {}).get("config"),
+            "sourceRefs":[{"observationId":oid,"revision":lookup[oid].get("revision")} for oid in sorted(ids)],
+            "meaning":"Geometric identity evidence; not semantic correctness or verified physical truth"}
+
+
 def _associate_and_surfaces(document,frames,canonical,masks,stages):
     observations = [MaskObservation(o["id"],o["imageId"],masks[o["id"]]) for o in document["observations"] if o["id"] in masks]
     associations = associate_observations(observations,frames)
@@ -402,6 +436,7 @@ def _associate_and_surfaces(document,frames,canonical,masks,stages):
         rep = {"id":_id(document["captureId"],"observed",entity["id"],asset["sha256"]),"kind":"observed_surface","assetId":asset["id"],"coordinateFrameId":f.coordinate_frame_id,
                "transform":{"coordinateFrameId":f.coordinate_frame_id,"position":[0.,0.,0.],"quaternion":[0.,0.,0.,1.],"scale":[1.,1.,1.]},"bounds":asset["metadata"]["bounds"],"primitive":None,"placementState":"confirmed","sourceRefs":[{"observationId":oid,"revision":observation["revision"]}]}
         entity["representations"] = [r for r in entity["representations"] if r["kind"] != "observed_surface"] + [rep]
+    _association_evidence(document,associations,frames,masks)
     return associations
 
 
@@ -498,6 +533,8 @@ def run_analysis(repository,blobs,job,providers):
             masks[observation["id"]] = _canonical_mask(mask,canonical[image["id"]])
         stages.checkpoint(document,"segmentation")
     association = attempt("association",lambda:_associate_and_surfaces(document,frames,canonical,masks,stages)) if frames else None
+    if association is None:
+        _association_evidence(document,None,frames,masks)
     attempt("capture_context",lambda:_capture_context(document,frames,canonical,stages))
     ground_report = attempt("ground",lambda:_ground(document,frames,masks,stages))
     checkpoint = stages.checkpoint(document,"analysis_complete" if not errors else "analysis_incomplete")

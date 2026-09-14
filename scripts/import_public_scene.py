@@ -24,7 +24,7 @@ from ehs_spatial.platform.contracts import PlatformError, canonical, digest, emp
 from ehs_spatial.platform.spatial import MeshData, camera_intrinsics, transform_matrix
 from scripts.import_report_evidence import canonical_measurements, import_report_evidence, original_box, original_polygons, report_dependencies
 
-CONVERTER_VERSION = "public-scene-v6"
+CONVERTER_VERSION = "public-scene-v7"
 
 
 def converter_identity():
@@ -228,6 +228,9 @@ def import_document(scene_path, put_asset, *, legacy_root=None, observation_root
             raise PlatformError("import_image_dimensions_mismatch", 422)
         k = camera["original_K"] if use_original else camera["K"]
         mapping = camera_intrinsics(camera["K"]) @ np.linalg.inv(camera_intrinsics(k))
+        declared_mapping = camera.get("input_to_canonical_pixel_centres") if use_original else None
+        if declared_mapping is not None and (np.asarray(declared_mapping).shape != (3, 3) or not np.allclose(mapping, declared_mapping, rtol=1e-10, atol=1e-10)):
+            raise PlatformError("import_pixel_mapping_mismatch", 422)
         image_id = include(data, media_type, {"kind": "source_image", "width": width, "height": height, "pixelMapping": [{"source": "original_pixels", "target": "canonical_pixels", "coordinateConvention": "pixel_centers", "matrix": mapping.tolist()}]}, image_path)
         camera_id = ident("camera", camera["id"])
         document["cameras"].append({"id": camera_id, "imageId": image_id, "coordinateFrameId": frame_id, "width": width, "height": height,
@@ -398,9 +401,9 @@ def import_document(scene_path, put_asset, *, legacy_root=None, observation_root
         document["entities"].append(item)
     document["annotations"].append({"id": ident("annotation", "provenance"), "kind": "import_provenance", "sourceAssetId": source_asset,
         "sourceSha256": source_sha, "converter": converter_identity(), "sourceRunId": source.get("run_id"), "sourceUnits": source.get("units"), "limitations": source.get("limitations", []),
-        "identityPolicy": "Existing source IDs retained; labels and cross-view observations never merged", "measurementsPolicy": "Observed native extents retain source provenance; metric scale and physical PCA-axis meanings are not promoted",
+        "identityPolicy": "Existing source IDs retained; explicit source-object views share an entity; labels never merge identities", "measurementsPolicy": "Observed native extents retain source provenance; metric scale and physical PCA-axis meanings are not promoted",
         "missingArtifacts": ["native_pointmaps", "native_depth", "native_confidence"], "recomputeRequiresNewCapture": True})
-    report = import_report_evidence(scene_path, source, document, manifest, include, cameras, camera_images, legacy_root, observation_root)
+    report = import_report_evidence(scene_path, source, document, manifest, include, cameras, camera_images, ident, legacy_root, observation_root)
     if report:
         document["reportEvidence"] = report
     if geometry_root:

@@ -13,6 +13,14 @@
   padding: 6px 0;
   overflow-wrap: anywhere;
 }
+.report-interpretation-counts { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 10px 0; font-size: 12px; color: var(--report-muted); }
+.report-source-photo { margin: 8px 0; font-size: 12px; }
+.report-source-photo > summary { cursor: pointer; width: fit-content; color: var(--report-ink); }
+.report-source-photo figure { margin: 8px 0; }
+.report-source-photo svg { display: block; width: 100%; height: 320px; background: #f2f1ed; }
+.report-source-photo-box { fill: none; stroke: #b85612; stroke-width: 2; }
+.report-source-photo figcaption { margin: 6px 0; color: var(--report-muted); font-size: 11px; }
+.report-detection-note .report-source-photo button { padding: 4px 8px; margin-right: 8px; border: 1px solid var(--line); }
 
 .report-cad-evidence .report-cad-tools {
   display: flex;

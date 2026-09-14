@@ -68,7 +68,7 @@ import type {
   Vec3,
 } from "./types";
 import { mountSceneViewer } from "./viewer/native-viewer";
-import { isReferenceSurface } from "./scene-semantics";
+import { entityEvidenceStatus, isReferenceSurface } from "./scene-semantics";
 import "./styles.css";
 const PolicyPage = lazy(() => import("./PolicyPage"));
 const path = (value: string) => "#" + value;
@@ -1583,6 +1583,7 @@ function EntityInspector({
       ),
   );
   const referenceSurface = isReferenceSurface(document, entity),
+    evidenceStatus = entityEvidenceStatus(document, entity),
     transform = referenceSurface ? null : editableTransform(entity),
     dimensions = sourceDimensions(entity),
     scale = sourceScale(document, entity),
@@ -1597,13 +1598,8 @@ function EntityInspector({
       <p className="eyebrow">{t("selection")}</p>
       <h2>{entity.label || entity.id}</h2>
       {referenceSurface && <p className="evidence-note">{t("sceneReferenceSurface")}</p>}
-      <Badge
-        value={
-          entity.associationState === "confirmed"
-            ? "confirmed"
-            : "pendingAssociation"
-        }
-      />
+      <Badge value={evidenceStatus.photoKey} />
+      {evidenceStatus.identityKey && <p className="evidence-note">{t(evidenceStatus.identityKey)}</p>}
       <label className="field-label">
         {t("label")}
         <input

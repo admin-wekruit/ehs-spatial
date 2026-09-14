@@ -106,6 +106,10 @@ def test_generic_multiphoto_analysis_retains_tiny_objects_caches_frames_and_uses
     assert document["target"] == "standalone_object"
     tiny = [e for e in document["entities"] if e["label"] == "tiny control"]
     assert len(tiny) == 2 and all(not e["representations"] for e in tiny)
+    assert all(e["associationEvidence"]["status"] == "insufficient_support" for e in tiny)
+    linked = [e for e in document["entities"] if e.get("associationEvidence", {}).get("status") == "confirmed"]
+    assert len(linked) == 2 and all(len(e["observationRefs"]) == 2 for e in linked)
+    assert all(e["associationEvidence"]["candidates"][0]["accepted"] for e in linked)
     assert len([r for e in document["entities"] for r in e["representations"]]) == 3
     context = next(e for e in document["entities"] if e.get("kind") == "capture_context")
     assert context["sourceContext"] is True
@@ -145,6 +149,7 @@ def test_discovery_persisted_even_if_geometry_fails_no_retry_on_unknown_outcome(
     document,result = run_analysis(repo,blobs,repo.job,providers)
     assert result["status"] == "incomplete" and len(document["observations"]) == 6
     assert len(document["entities"]) == 6
+    assert all(e["associationEvidence"]["status"] == "geometry_missing" for e in document["entities"])
     assert any(c["status"] == "outcome_unknown" for c in repo.calls)
     assert "private endpoint" not in str(result)
     calls = len(repo.calls)

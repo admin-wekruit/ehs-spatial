@@ -62,6 +62,75 @@ def test_generic_import_retains_context_small_masks_missing_mesh_and_native_came
     assert len(set(manifest['entityIds'].values()))==30
 
 
+def test_explicit_report_views_share_entity_reuse_anchor_and_retain_unmapped_evidence(tmp_path):
+    path = make_public_scene(tmp_path)
+    source = json.loads(path.read_text())
+    Image.new('RGB', (8, 6), 'blue').save(tmp_path/'second-canonical.png')
+    Image.new('RGB', (16, 12), 'blue').save(tmp_path/'second-original.png')
+    mapping = np.array([[.5, 0, -.25], [0, .5, -.25], [0, 0, 1]])
+    source['cameras'].append({**source['cameras'][0], 'id': 'camera-b', 'image': 'second-canonical.png',
+        'original_image': 'second-original.png', 'original_width': 16, 'original_height': 12,
+        'original_K': (np.linalg.inv(mapping) @ np.asarray(source['cameras'][0]['K'])).tolist(),
+        'input_to_canonical_pixel_centres': mapping.tolist()})
+    source['objects'].append({**source['objects'][0], 'id': 'floor-observed', 'label': 'Observed floor', 'role': None})
+    path.write_text(json.dumps(source))
+    def put(data, media_type, metadata):
+        sha = hashlib.sha256(data).hexdigest()
+        return {'id': str(uuid5(NAMESPACE_URL, sha)), 'sha256': sha, 'sizeBytes': len(data), 'mediaType': media_type, 'metadata': metadata}
+    baseline, before = import_document(path, put)
+    anchor = next(o for o in baseline['observations'] if o['id'] == before['observationIds']['tiny'])
+    view = {'frame_id': 'camera-a', 'bbox': [1, 1, 2, 2], 'polygons': [[[1, 1], [1, 2], [2, 2]]]}
+    report = {'reconstruction_run_id': source['run_id'], 'scene_url': path.name,
+        'frames': [{'id': 'camera-a', 'url': 'photo.png'}, {'id': 'camera-b', 'url': 'second-canonical.png'}],
+        'objects': [
+            {'id': 'report-row', 'scene_object_id': 'tiny', 'views': [view, {**view, 'frame_id': 'camera-b'}, view]},
+            {'id': 'floor-row', 'scene_object_id': 'floor-observed', 'views': [view]},
+            {'id': 'unmapped-row', 'scene_object_id': 'absent', 'label': 'Tiny object', 'views': [view]},
+        ], 'plan': {}}
+    (tmp_path/'report.json').write_text(json.dumps(report))
+    document, manifest = import_document(path, put)
+    entities = {entity['id']: entity for entity in document['entities']}
+    tiny = entities[manifest['entityIds']['tiny']]
+    observations = {o['id']: o for o in document['observations']}
+    assert manifest['entityIds'] == before['entityIds']
+    assert manifest['observationIds']['tiny'] == anchor['id']
+    assert len(document['observations']) == 3 and len(tiny['observationRefs']) == 2
+    reused = observations[anchor['id']]
+    assert reused['maskAssetId'] == anchor['maskAssetId'] and reused['originalPixelBox'] == anchor['originalPixelBox']
+    second = next(observations[oid] for oid in tiny['observationRefs'] if oid != anchor['id'])
+    assert second['originalPixelBox'] == [2, 2, 4, 4]
+    assert second['originalPixelPolygons'] == [[[2.5, 2.5], [2.5, 4.5], [4.5, 4.5]]]
+    assert second['maskAssetId'] is None and second['geometrySupport'] is None
+    assert second['missingEvidence'] == ['source_mask_not_packaged']
+    binding = second['sourceRefs'][0]
+    assert binding['sourceRecordId'] == 'tiny' and binding['sourceFrameId'] == 'camera-b'
+    assert binding['imageSha256'] == hashlib.sha256((tmp_path/'second-original.png').read_bytes()).hexdigest()
+    assert binding['canonicalImageSha256'] == hashlib.sha256((tmp_path/'second-canonical.png').read_bytes()).hexdigest()
+    assert binding['jsonPointer'] == '/objects/0/views/1'
+    assert tiny['associationState'] == 'confirmed'
+    assert tiny['associationEvidence']['method'] == 'explicit_source_id'
+    assert tiny['associationEvidence']['observationIds'] == tiny['observationRefs']
+    assert tiny['lineage'][0] == next(e for e in baseline['entities'] if e['id'] == tiny['id'])['lineage'][0]
+    assert tiny['lineage'][-1]['observationIds'] == tiny['observationRefs']
+    views = document['reportEvidence']['objects'][0]['views']
+    assert [v['observationId'] for v in views] == [anchor['id'], second['id'], anchor['id']]
+    floor = entities[manifest['entityIds']['floor-observed']]
+    assert len(floor['observationRefs']) == 1 and floor['associationState'] == 'association_pending'
+    assert len(floor['representations']) == 1 and 'associationEvidence' not in floor
+    unknown = document['reportEvidence']['objects'][2]
+    assert unknown['entityId'] is None and 'observationId' not in unknown['views'][0]
+    assert import_document(path, put)[1]['documentSha256'] == manifest['documentSha256']
+    assert manifest['converter']['version'] == 'public-scene-v7'
+    report['frames'][1]['url'] = 'photo.png'
+    (tmp_path/'report.json').write_text(json.dumps(report))
+    with pytest.raises(PlatformError, match='import_report_image_mismatch'):
+        import_document(path, put)
+    source['cameras'][1]['input_to_canonical_pixel_centres'] = np.eye(3).tolist()
+    path.write_text(json.dumps(source))
+    with pytest.raises(PlatformError, match='import_pixel_mapping_mismatch'):
+        import_document(path, put)
+
+
 def test_native_euler_exact_order_and_content_hash_validation(tmp_path):
     value={"position":[1,2,3],"rotation_deg":[17,-23,31],"scale":[2,3,4]}
     x,y,z=np.deg2rad(value['rotation_deg'])

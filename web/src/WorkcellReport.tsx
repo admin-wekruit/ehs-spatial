@@ -26,7 +26,7 @@ import { AgentPanel } from "./AgentPanel";
 import { ReportScene } from "./ReportScene";
 import { ReportObjectFindings } from "./ReportObjectFindings";
 import { ReportReview, type AssessmentSummary } from "./ReportReview";
-import { isReferenceSurface } from "./scene-semantics";
+import { entityEvidenceStatus, isReferenceSurface } from "./scene-semantics";
 import { ReportEvidence } from "./ReportEvidence";
 import type {
   Commit,
@@ -884,11 +884,10 @@ export function WorkcellReport({
                   <td>
                     {observationsFor(doc, e).length} {t("observations")}
                     <small>
-                      {t(
-                        e.associationState === "confirmed"
-                          ? "confirmed"
-                          : "pendingAssociation",
-                      )}
+                      {t(entityEvidenceStatus(doc, e).photoKey)}
+                    </small>
+                    <small>
+                      {entityEvidenceStatus(doc, e).identityKey && t(entityEvidenceStatus(doc, e).identityKey!)}
                     </small>
                   </td>
                   <td>
@@ -1196,6 +1195,7 @@ function ObjectFacts({
     transform = editableTransform(entity),
     tilt = modelTilt(document, entity);
   const referenceSurface = isReferenceSurface(document, entity);
+  const evidenceStatus = entityEvidenceStatus(document, entity);
   const f = (n: number | undefined | null) =>
     typeof n === "number" && Number.isFinite(n)
       ? (n * (scale?.nativeToMeters || 1)).toFixed(3)
@@ -1212,6 +1212,14 @@ function ObjectFacts({
         </small>
       </div>
       <dl className="report-measurements">
+        <div>
+          <dt>{t("sourceEvidence")}</dt>
+          <dd>{t(evidenceStatus.photoKey)}{evidenceStatus.photoCount > 0 && ` · ${evidenceStatus.photoCount}`}</dd>
+        </div>
+        {evidenceStatus.identityKey && <div>
+          <dt>{t("entityIdentity")}</dt>
+          <dd>{t(evidenceStatus.identityKey)}</dd>
+        </div>}
         <div>
           <dt>{t(referenceSurface ? "reportObservedExtent" : [dimensions.widthNative, dimensions.depthNative, dimensions.groundHeight].every(Number.isFinite) ? "reportGroundExtents" : "reportNativeExtents")}</dt>
           <dd>

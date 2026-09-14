@@ -123,7 +123,7 @@ def report_dependencies(scene_path, source, legacy_root=None, observation_root=N
     return sorted(files)
 
 
-def import_report_evidence(scene_path, source, document, manifest, include, cameras, camera_images, legacy_root=None, observation_root=None):
+def import_report_evidence(scene_path, source, document, manifest, include, cameras, camera_images, ident, legacy_root=None, observation_root=None):
     matches = report_documents(scene_path, source)
     if not matches:
         return None
@@ -137,27 +137,58 @@ def import_report_evidence(scene_path, source, document, manifest, include, came
               "frames": [], "objects": [], "resources": [], "imageInterpretations": [],
               "quality": {"metricMeaning": "Input-view consistency, not held-out reconstruction accuracy or physical calibration",
                           "scale": _camel(saved.get("scale", {})), "limitations": deepcopy(source.get("limitations", []))}}
+    canonical_hashes = {fid: hashlib.sha256(_read(_path(Path(scene_path).parent, camera["image"]))).hexdigest() for fid, camera in cameras.items()}
     for frame in saved.get("frames", []):
         fid = frame["id"]
         if fid not in cameras:
             raise PlatformError("import_report_camera_missing", 422)
+        if frame.get("url") and hashlib.sha256(_read(_path(root, frame["url"]))).hexdigest() != canonical_hashes[fid]:
+            raise PlatformError("import_report_image_mismatch", 422)
         result["frames"].append({"runId": run_id, "sourceFrameId": fid, "imageId": camera_images[fid], "cameraId": manifest["cameraIds"][fid]})
     entities = {entity["id"]: entity for entity in document["entities"]}
+    observations = {observation["id"]: observation for observation in document["observations"]}
+    assets = {asset["id"]: asset for asset in document["assets"]}
+    association_refs = {}
     for index, obj in enumerate(saved.get("objects", [])):
         source_record = obj.get("scene_object_id", obj["id"])
         entity_id = manifest["entityIds"].get(source_record)
         item = {"entityId": entity_id, "sourceRecordId": source_record, "sourceKind": obj.get("source"),
                 "mappingStatus": "explicit_source_id" if entity_id else "unassociated", "views": [],
                 "metricsMeaning": obj.get("metrics_source") or result["quality"]["metricMeaning"], "sourceRefs": refs(f"/objects/{index}")}
-        for view in obj.get("views", []):
+        for view_index, view in enumerate(obj.get("views", [])):
             fid = view["frame_id"]
             if fid not in cameras:
                 raise PlatformError("import_report_camera_missing", 422)
             camera = cameras[fid]
-            item["views"].append({"sourceFrameId": fid, "imageId": camera_images[fid], "cameraId": manifest["cameraIds"][fid],
+            converted = {"sourceFrameId": fid, "imageId": camera_images[fid], "cameraId": manifest["cameraIds"][fid],
                 "originalPixelBox": original_box(view["bbox"], camera["canonicalToOriginal"], camera["chosenWidth"], camera["chosenHeight"]),
                 "originalPixelPolygons": original_polygons(view.get("polygons", []), camera["canonicalToOriginal"]),
-                "coordinateConvention": "pixel_centers", "boxConvention": "edges_xyxy_right_bottom_exclusive", "fillRule": view.get("fill_rule", "evenodd")})
+                "coordinateConvention": "pixel_centers", "boxConvention": "edges_xyxy_right_bottom_exclusive", "fillRule": view.get("fill_rule", "evenodd")}
+            if entity_id:
+                entity = entities[entity_id]
+                binding = {"assetId": source_id, "jsonPointer": f"/objects/{index}/views/{view_index}",
+                    "sourceRecordId": source_record, "sourceFrameId": fid, "cameraId": converted["cameraId"],
+                    "imageSha256": assets[converted["imageId"]]["sha256"], "canonicalImageSha256": canonical_hashes[fid],
+                    "binding": "explicit_source_id_and_camera_pixel_mapping"}
+                observation = next((observations[oid] for oid in entity["observationRefs"] if observations[oid]["imageId"] == converted["imageId"]), None)
+                if observation is None:
+                    oid = ident("observation", source_record + ":" + fid)
+                    observation = {"id": oid, "revision": 1, "imageId": converted["imageId"], "maskAssetId": None,
+                        "originalPixelBox": deepcopy(converted["originalPixelBox"]), "originalPixelPolygons": deepcopy(converted["originalPixelPolygons"]),
+                        "polygonCoordinateConvention": "pixel_centers", "boxConvention": converted["boxConvention"], "fillRule": converted["fillRule"],
+                        "pixelMapping": [{"source": "canonical_pixels", "target": "original_pixels", "coordinateConvention": "pixel_centers", "matrix": camera["canonicalToOriginal"].tolist()}],
+                        "labelEvidence": [{"label": entity["label"], "source": "imported_report_observation", "sourceRefs": [deepcopy(binding)]}],
+                        "geometrySupport": None, "sourceRefs": [], "missingEvidence": ["source_mask_not_packaged"]}
+                    observations[oid] = observation
+                    document["observations"].append(observation)
+                    entity["observationRefs"].append(oid)
+                    manifest["observationIds"].setdefault(source_record, oid)
+                observation["sourceRefs"].append(binding)
+                converted["observationId"] = observation["id"]
+                association_refs.setdefault(entity_id, []).append(deepcopy(binding))
+                if "source_observation_binding_pending" in entity.get("missingEvidence", []):
+                    entity["missingEvidence"].remove("source_observation_binding_pending")
+            item["views"].append(converted)
         item["plan"] = _camel(obj.get("plan"))
         if entity_id and item["plan"] and item["plan"].get("hull"):
             entity = entities[entity_id]
@@ -171,6 +202,14 @@ def import_report_evidence(scene_path, source, document, manifest, include, came
             for view in item["metrics"].get("views", []):
                 view["sourceFrameId"] = view.pop("frameId")
         result["objects"].append(item)
+    for entity_id, bindings in association_refs.items():
+        entity = entities[entity_id]
+        if len({observations[oid]["imageId"] for oid in entity["observationRefs"]}) > 1:
+            entity["associationState"] = "confirmed"
+            entity["associationEvidence"] = {"method": "explicit_source_id", "status": "confirmed",
+                "observationIds": list(entity["observationRefs"]), "sourceRefs": deepcopy(bindings)}
+            entity["lineage"].append({"operation": "associate_observations", "method": "explicit_source_id_and_camera_pixel_mapping",
+                "observationIds": list(entity["observationRefs"]), "sourceRefs": bindings})
     result["plan"] = {**_camel(saved.get("plan", {})), "coordinateFrameId": document["coordinateFrames"][0]["id"],
                       "meaning": "Saved native geometry projected onto the saved floor; convex hull is not a measured CAD/contact footprint"}
 

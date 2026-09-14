@@ -1,11 +1,13 @@
-"""Serve a verified publication export; no database, provider, or write credentials."""
+"""Serve verified immutable publication history without database or write credentials."""
 from __future__ import annotations
 
+from datetime import datetime
 import hashlib
 import json
 from pathlib import Path
 import re
 from urllib.parse import urlsplit
+from uuid import UUID
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,37 +15,96 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
 
-def create_app(bundle_dir: str | Path, *, allowed_origins: list[str]):
-    """Load an immutable bundle and expose only its saved public GET responses."""
+def immutable_route(path: str):
+    return path.startswith(("/api/publications/", "/api/revisions/", "/api/assets/"))
+
+
+def create_app(catalog_dir: str | Path, *, allowed_origins: list[str]):
+    """Each immediate publication-ID directory contains one unchanged export."""
     for origin in allowed_origins:
         parsed = urlsplit(origin)
         if parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment:
             raise ValueError("CORS requires explicit HTTP(S) origins without paths")
-    root = Path(bundle_dir).resolve()
-    bundle = json.loads((root / "bundle.json").read_text(encoding="utf-8"))
-    if bundle["schemaVersion"] != 1:
-        raise ValueError("Unsupported publication bundle schema")
-    responses = bundle["responses"]
-    publication = responses["/api/publications/" + bundle["publicationId"]]
-    if publication["id"] != bundle["publicationId"] or publication["projectId"] != bundle["projectId"]:
-        raise ValueError("Publication bundle identity mismatch")
-    files, checked = {}, set()
-    for entry in publication["snapshot"]["assetManifest"]:
-        asset_id, sha = entry["assetId"], entry["sha256"]
-        if asset_id in files or not re.fullmatch(r"[0-9a-f]{64}", sha):
-            raise ValueError("Invalid publication asset manifest")
-        record = responses["/api/assets/" + asset_id]
-        if record["id"] != asset_id or record["projectId"] != bundle["projectId"] or record["url"] != f"/api/assets/{asset_id}/content" or any(record[key] != entry[key] for key in ("sha256", "sizeBytes", "mediaType")):
-            raise ValueError("Publication asset metadata mismatch")
-        path = root / "blobs" / sha
-        if path.stat().st_size != entry["sizeBytes"]:
-            raise ValueError(f"Publication asset size mismatch: {asset_id}")
-        if sha not in checked:
-            with path.open("rb") as source:
-                if hashlib.file_digest(source, "sha256").hexdigest() != sha:
-                    raise ValueError(f"Publication asset hash mismatch: {asset_id}")
-            checked.add(sha)
-        files[asset_id] = (path, record)
+    root = Path(catalog_dir).resolve()
+    if (root / "bundle.json").exists():
+        raise ValueError("Expected a publication catalog, not a single bundle")
+    directories = sorted(path for path in root.iterdir() if path.is_dir())
+    if not directories:
+        raise ValueError("Publication catalog is empty")
+    responses, files, bundles = {}, {}, []
+    for directory in directories:
+        if str(UUID(directory.name)) != directory.name:
+            raise ValueError("Catalog directories must be publication IDs")
+        bundle = json.loads((directory / "bundle.json").read_text(encoding="utf-8"))
+        if bundle["schemaVersion"] != 1:
+            raise ValueError("Unsupported publication bundle schema")
+        saved = bundle["responses"]
+        publication = saved["/api/publications/" + bundle["publicationId"]]
+        if directory.name != bundle["publicationId"] or publication["id"] != bundle["publicationId"] or publication["projectId"] != bundle["projectId"]:
+            raise ValueError("Publication bundle identity mismatch")
+        created_at = datetime.fromisoformat(publication["createdAt"])
+        if created_at.tzinfo is None:
+            raise ValueError("Publication createdAt must contain a timezone")
+        revision = publication["snapshot"]["revision"]
+        if revision["id"] != publication["sceneRevisionId"] or revision["projectId"] != bundle["projectId"] or saved["/api/revisions/" + revision["id"]] != revision:
+            raise ValueError("Publication revision mismatch")
+        summaries = saved["/api/publications"]["items"]
+        if len(summaries) != 1 or any(summaries[0][key] != publication[key] for key in ("id", "projectId", "sceneRevisionId", "createdAt")):
+            raise ValueError("Publication summary mismatch")
+        manifest_ids, checked = set(), set()
+        for entry in publication["snapshot"]["assetManifest"]:
+            asset_id, sha = entry["assetId"], entry["sha256"]
+            if asset_id in manifest_ids or not re.fullmatch(r"[0-9a-f]{64}", sha) or type(entry["sizeBytes"]) is not int or entry["sizeBytes"] < 0:
+                raise ValueError("Invalid publication asset manifest")
+            manifest_ids.add(asset_id)
+            record = saved["/api/assets/" + asset_id]
+            if record["id"] != asset_id or record["projectId"] != bundle["projectId"] or record["url"] != f"/api/assets/{asset_id}/content" or any(record[key] != entry[key] for key in ("sha256", "sizeBytes", "mediaType")):
+                raise ValueError("Publication asset metadata mismatch")
+            path = directory / "blobs" / sha
+            if path.stat().st_size != entry["sizeBytes"]:
+                raise ValueError(f"Publication asset size mismatch: {asset_id}")
+            if sha not in checked:
+                with path.open("rb") as source:
+                    if hashlib.file_digest(source, "sha256").hexdigest() != sha:
+                        raise ValueError(f"Publication asset hash mismatch: {asset_id}")
+                checked.add(sha)
+            files.setdefault(asset_id, (path, record))
+        if {path.removeprefix("/api/assets/") for path in saved if path.startswith("/api/assets/")} != manifest_ids:
+            raise ValueError("Publication asset routes differ from its manifest")
+        for path, value in saved.items():
+            if immutable_route(path):
+                if path in responses and responses[path] != value:
+                    raise ValueError(f"Conflicting immutable route payload: {path}")
+                responses[path] = value
+        bundles.append((created_at, publication["id"], bundle))
+
+    # Choose a whole project projection by publication time, never filesystem
+    # order or a mix of metadata from different releases. UUID breaks exact ties.
+    bundles.sort(key=lambda item: item[:2], reverse=True)
+    latest = {}
+    for _, _, bundle in bundles:
+        latest.setdefault(bundle["projectId"], bundle)
+    projects, policies = [], {}
+    for project_id, bundle in latest.items():
+        saved = bundle["responses"]
+        detail = saved["/api/projects/" + project_id]
+        project = detail["project"]
+        if project["id"] != project_id or saved["/api/projects"]["items"] != [project]:
+            raise ValueError("Publication project catalog mismatch")
+        projects.append(project)
+        for policy in saved["/api/policies"]["items"]:
+            if policy["projectId"] != project_id or policy["id"] in policies:
+                raise ValueError("Publication policy catalog mismatch")
+            policies[policy["id"]] = policy
+        for path, value in saved.items():
+            if immutable_route(path) or path in ("/api/publications", "/api/projects", "/api/policies"):
+                continue
+            if path in responses and responses[path] != value:
+                raise ValueError(f"Conflicting project route payload: {path}")
+            responses[path] = value
+    responses["/api/publications"] = {"items": [bundle["responses"]["/api/publications"]["items"][0] for _, _, bundle in bundles]}
+    responses["/api/projects"] = {"items": projects}
+    responses["/api/policies"] = {"items": list(policies.values())}
     app = FastAPI(title="Panoptes published report", docs_url=None, redoc_url=None, openapi_url=None)
 
     def error(status, code):
@@ -71,7 +132,7 @@ def create_app(bundle_dir: str | Path, *, allowed_origins: list[str]):
         value = responses.get("/api/" + path)
         if value is None:
             return error(404, "record_not_found")
-        immutable = path.startswith(("publications/", "revisions/", "assets/"))
+        immutable = immutable_route("/api/" + path)
         return JSONResponse(value, headers={"Cache-Control": "public,max-age=31536000,immutable" if immutable else "no-cache", "X-Content-Type-Options": "nosniff"})
 
     app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=3)
