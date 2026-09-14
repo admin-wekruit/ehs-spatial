@@ -977,7 +977,7 @@ small,
   stroke-width: 3;
   fill: #e58d2322;
 }
-.photo-view:not(.show-bounds) .photo-bound:not(:focus-visible) {
+.photo-view:not(.show-bounds) .photo-bound:not(.selected):not(:focus-visible) {
   stroke: none;
   fill: transparent;
 }
