@@ -1,0 +1,2622 @@
+{
+  "schemaVersion": 1,
+  "recordType": "visual_identity_review",
+  "reviewer": "Codex",
+  "humanGroundTruth": false,
+  "fieldGroundTruth": false,
+  "baseRevisionId": "b638e847-7b30-4443-b811-0b4349c07d5a",
+  "baseDocumentSha256": "5f52502be3c13247126b1cc61d5793c10fc587009d24ece17a7da8c4f3a2fba2",
+  "sourceReviewSha256": "f73396691acba51ee79e2186b25f2e8cff322c97c198ca43b9ed5f83101b61f0",
+  "groups": [
+    {
+      "id": "454db0b5-4816-5d21-be75-c92466468706",
+      "decision": "same",
+      "label": "料车后方黄黑折叠防护板",
+      "entityIds": [
+        "0bc9608d-041f-516b-892d-cee0eb174aeb",
+        "37e1203b-fdd6-506e-bfd7-847438a65d3f",
+        "2fae17c7-bf08-5d1b-8cc7-6791a403c7f1"
+      ],
+      "survivorId": "0bc9608d-041f-516b-892d-cee0eb174aeb",
+      "observationIds": [
+        "7575d497-f882-52bc-b580-038417b9c41a",
+        "ae058743-988f-50d2-a96c-6cc0c8cb0adc",
+        "b6cee784-2cd2-543e-8605-f1f919e9e073",
+        "bfdd8473-22ec-5d16-91c2-2223035cbd94",
+        "21c3a65c-26a6-5848-8d1f-52fbdf99b351"
+      ],
+      "evidenceRefs": [
+        {
+          "kind": "observation",
+          "observationId": "7575d497-f882-52bc-b580-038417b9c41a",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "sha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3"
+        },
+        {
+          "kind": "asset",
+          "assetId": "720dba8b-756d-58e2-b8d0-21e8f5b915d8",
+          "sha256": "eaab88d1d175cb24407a6ab2ea8b203d9ff66102aacff586ae3eda3037cb5953"
+        },
+        {
+          "kind": "observation",
+          "observationId": "ae058743-988f-50d2-a96c-6cc0c8cb0adc",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "sha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7"
+        },
+        {
+          "kind": "asset",
+          "assetId": "eca38835-a5f2-595e-af12-3bd0a70205aa",
+          "sha256": "451754ba40059125c8d088d6722eb4cb1b2738f108317b4071ce3166e3bd8fbc"
+        },
+        {
+          "kind": "observation",
+          "observationId": "b6cee784-2cd2-543e-8605-f1f919e9e073",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "09b3b8ab-a541-4f88-ac22-94723d2f4938",
+          "sha256": "d66fddffbe568902e25f1546430da151ee03813fbc8c07324d79e146c5d43107"
+        },
+        {
+          "kind": "asset",
+          "assetId": "b411b395-5418-52a6-b804-1e23a565a94e",
+          "sha256": "3a5fb01bf1e7f93a033c456b38d5db5b15bed8f7f1bcc14ae72aa928969fee7a"
+        },
+        {
+          "kind": "observation",
+          "observationId": "bfdd8473-22ec-5d16-91c2-2223035cbd94",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "6029b2d6-19c6-4d1a-917e-11a7ccea618e",
+          "sha256": "70ddcbbe7eddf644aa523253d24b283c8d054436e88a82f2e269a6fd3a7a0eb0"
+        },
+        {
+          "kind": "observation",
+          "observationId": "21c3a65c-26a6-5848-8d1f-52fbdf99b351",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "26e47cbe-fc17-4016-9a85-edc57b052871",
+          "sha256": "70c6e31fdab812b3df31eaa7125834fcaa8da8d5f85fcae286d576b25b8f9b2b"
+        }
+      ],
+      "reason": "Same gate-centre folded guard: matching top stripe run, left/right folds, bolt positions and cart occlusion. Both raw masks target the guard rather than the floor or cart.",
+      "observationRefs": [
+        {
+          "observationId": "7575d497-f882-52bc-b580-038417b9c41a",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "720dba8b-756d-58e2-b8d0-21e8f5b915d8",
+          "maskSha256": "eaab88d1d175cb24407a6ab2ea8b203d9ff66102aacff586ae3eda3037cb5953"
+        },
+        {
+          "observationId": "ae058743-988f-50d2-a96c-6cc0c8cb0adc",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "eca38835-a5f2-595e-af12-3bd0a70205aa",
+          "maskSha256": "451754ba40059125c8d088d6722eb4cb1b2738f108317b4071ce3166e3bd8fbc"
+        },
+        {
+          "observationId": "b6cee784-2cd2-543e-8605-f1f919e9e073",
+          "observationRevision": 1,
+          "imageId": "09b3b8ab-a541-4f88-ac22-94723d2f4938",
+          "imageSha256": "d66fddffbe568902e25f1546430da151ee03813fbc8c07324d79e146c5d43107",
+          "maskAssetId": "b411b395-5418-52a6-b804-1e23a565a94e",
+          "maskSha256": "3a5fb01bf1e7f93a033c456b38d5db5b15bed8f7f1bcc14ae72aa928969fee7a"
+        },
+        {
+          "observationId": "bfdd8473-22ec-5d16-91c2-2223035cbd94",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "6029b2d6-19c6-4d1a-917e-11a7ccea618e",
+          "maskSha256": "70ddcbbe7eddf644aa523253d24b283c8d054436e88a82f2e269a6fd3a7a0eb0"
+        },
+        {
+          "observationId": "21c3a65c-26a6-5848-8d1f-52fbdf99b351",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "26e47cbe-fc17-4016-9a85-edc57b052871",
+          "maskSha256": "70c6e31fdab812b3df31eaa7125834fcaa8da8d5f85fcae286d576b25b8f9b2b"
+        }
+      ]
+    },
+    {
+      "id": "0787da0f-2415-590c-98a0-2cf903e06f10",
+      "decision": "same",
+      "label": "0001 B 载料小车",
+      "entityIds": [
+        "a719e41c-bc9f-5963-b9f8-2caa031a8c09",
+        "c036e1c3-cfb8-53c5-a643-a939623435ef",
+        "0ed857a2-3a29-534a-af01-243471fd0a2e"
+      ],
+      "survivorId": "a719e41c-bc9f-5963-b9f8-2caa031a8c09",
+      "observationIds": [
+        "78e80b4a-56bc-5c70-9181-30e4ec9957bf",
+        "f98dd73a-5a57-5a77-a83a-4cf66587c5d7",
+        "d61affcf-97bd-5c70-bc56-c72d77bbf097",
+        "3e2d41c3-4d69-5734-878b-c0426a2c6d1a",
+        "de93bab1-6aa8-5887-a7c4-3aed88e3089f"
+      ],
+      "evidenceRefs": [
+        {
+          "kind": "observation",
+          "observationId": "78e80b4a-56bc-5c70-9181-30e4ec9957bf",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "sha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3"
+        },
+        {
+          "kind": "asset",
+          "assetId": "22480ead-3b1e-575c-ad60-1c16c9adf1b5",
+          "sha256": "12c7c34517db97ebac9db689c896217d6874689148f2b2bb75783fd9315fb291"
+        },
+        {
+          "kind": "observation",
+          "observationId": "f98dd73a-5a57-5a77-a83a-4cf66587c5d7",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "sha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7"
+        },
+        {
+          "kind": "asset",
+          "assetId": "651008a0-6e7d-51f5-9005-7a5e80423985",
+          "sha256": "485e42076d8588f27b4838f4923b8c13914ba990f3376792aa0b51df530a6296"
+        },
+        {
+          "kind": "observation",
+          "observationId": "d61affcf-97bd-5c70-bc56-c72d77bbf097",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "09b3b8ab-a541-4f88-ac22-94723d2f4938",
+          "sha256": "d66fddffbe568902e25f1546430da151ee03813fbc8c07324d79e146c5d43107"
+        },
+        {
+          "kind": "asset",
+          "assetId": "7c4d54ac-9283-51ee-b0e0-6879e6f0973f",
+          "sha256": "7b527fb8be4de834173bb916dffe608fd084f3b7a42291b072c309e8ff29f303"
+        },
+        {
+          "kind": "observation",
+          "observationId": "3e2d41c3-4d69-5734-878b-c0426a2c6d1a",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "43f981df-5d8e-4965-b960-faf681c5e21f",
+          "sha256": "d74cf7dd6a9309e71c09bea2a6f006ef42afd6289432b11a8395bb90a415a293"
+        },
+        {
+          "kind": "observation",
+          "observationId": "de93bab1-6aa8-5887-a7c4-3aed88e3089f",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "3207b55b-ea10-41aa-9776-6cea0d7f9212",
+          "sha256": "f2ae163241f6e4e0b2b0e95af8d0c349caa31b6f66a43ac7957dce391151b79a"
+        }
+      ],
+      "reason": "Same marked loaded cart: 0001/B corner upright, RGFT131/front lettering, red triangular handle, wheel/base arrangement and matching load; observations target the complete cart.",
+      "observationRefs": [
+        {
+          "observationId": "78e80b4a-56bc-5c70-9181-30e4ec9957bf",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "22480ead-3b1e-575c-ad60-1c16c9adf1b5",
+          "maskSha256": "12c7c34517db97ebac9db689c896217d6874689148f2b2bb75783fd9315fb291"
+        },
+        {
+          "observationId": "f98dd73a-5a57-5a77-a83a-4cf66587c5d7",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "651008a0-6e7d-51f5-9005-7a5e80423985",
+          "maskSha256": "485e42076d8588f27b4838f4923b8c13914ba990f3376792aa0b51df530a6296"
+        },
+        {
+          "observationId": "d61affcf-97bd-5c70-bc56-c72d77bbf097",
+          "observationRevision": 1,
+          "imageId": "09b3b8ab-a541-4f88-ac22-94723d2f4938",
+          "imageSha256": "d66fddffbe568902e25f1546430da151ee03813fbc8c07324d79e146c5d43107",
+          "maskAssetId": "7c4d54ac-9283-51ee-b0e0-6879e6f0973f",
+          "maskSha256": "7b527fb8be4de834173bb916dffe608fd084f3b7a42291b072c309e8ff29f303"
+        },
+        {
+          "observationId": "3e2d41c3-4d69-5734-878b-c0426a2c6d1a",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "43f981df-5d8e-4965-b960-faf681c5e21f",
+          "maskSha256": "d74cf7dd6a9309e71c09bea2a6f006ef42afd6289432b11a8395bb90a415a293"
+        },
+        {
+          "observationId": "de93bab1-6aa8-5887-a7c4-3aed88e3089f",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "3207b55b-ea10-41aa-9776-6cea0d7f9212",
+          "maskSha256": "f2ae163241f6e4e0b2b0e95af8d0c349caa31b6f66a43ac7957dce391151b79a"
+        }
+      ]
+    },
+    {
+      "id": "7528f94a-d449-5cd0-bc9d-3883f5ee4ed4",
+      "decision": "same",
+      "label": "入口左侧黑色防撞柱",
+      "entityIds": [
+        "27d00998-2702-547e-97b2-d200cd92264a",
+        "2c05872d-6426-57af-9e8d-ad4fefc67d9f",
+        "14586a1b-8b17-5ee1-a270-1678999df537"
+      ],
+      "survivorId": "27d00998-2702-547e-97b2-d200cd92264a",
+      "observationIds": [
+        "5927dc03-d972-5ae9-8b9b-8e7de662e11d",
+        "fa88542c-3dba-56e5-a5e1-e95ff9a10c94",
+        "e6b5805c-fc3c-5718-aca8-b181fac55539",
+        "32526693-3316-529e-ad23-763ae4db8f28",
+        "1e5fa7de-439c-51fc-9527-57c61a265c8a",
+        "1742ed68-dff3-53f1-b376-daf5563ac790",
+        "e073d552-1e61-5af1-ac62-b5dd93408882"
+      ],
+      "evidenceRefs": [
+        {
+          "kind": "observation",
+          "observationId": "5927dc03-d972-5ae9-8b9b-8e7de662e11d",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "sha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3"
+        },
+        {
+          "kind": "asset",
+          "assetId": "51a29f9a-8a55-525c-b3d9-800af79c950e",
+          "sha256": "9e4eebea506d3bd5d3fb6417708d6be392bdc28b812e4988038a33aff7334eb3"
+        },
+        {
+          "kind": "observation",
+          "observationId": "fa88542c-3dba-56e5-a5e1-e95ff9a10c94",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "sha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7"
+        },
+        {
+          "kind": "asset",
+          "assetId": "6d4a16d6-d563-5e3d-829d-fbee6ceddf81",
+          "sha256": "57e8525933ca3fad5cb2173af2bd445dcfbb6306150e5818f59c8883314d2e51"
+        },
+        {
+          "kind": "observation",
+          "observationId": "e6b5805c-fc3c-5718-aca8-b181fac55539",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "09b3b8ab-a541-4f88-ac22-94723d2f4938",
+          "sha256": "d66fddffbe568902e25f1546430da151ee03813fbc8c07324d79e146c5d43107"
+        },
+        {
+          "kind": "asset",
+          "assetId": "12415e52-db8c-58a8-b742-849396104ae1",
+          "sha256": "cd28026074ee380e65e71ce967b3dfe3fc9178e5ffe24912685861db5c39c6e6"
+        },
+        {
+          "kind": "observation",
+          "observationId": "32526693-3316-529e-ad23-763ae4db8f28",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "a80d186d-3955-4fbf-8686-b43fa7ea61cb",
+          "sha256": "717ae712b3e78fba4ceff0cf18d34dd87589874b3273c7fb98ebd49011b8d37f"
+        },
+        {
+          "kind": "observation",
+          "observationId": "1e5fa7de-439c-51fc-9527-57c61a265c8a",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "8b24cbfe-9726-40c8-b8c5-68ca0b83ce7c",
+          "sha256": "18dcf98a6e380744764bb828454b0b653574155a4d047f69266583bf3e8e5c34"
+        },
+        {
+          "kind": "observation",
+          "observationId": "1742ed68-dff3-53f1-b376-daf5563ac790",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "473fafd8-805b-485f-84e6-7747df545cd2",
+          "sha256": "7b20696d1c95ff8849db37540d6fde9ecbf85bd6b459ee77ba0cfc74701012e8"
+        },
+        {
+          "kind": "observation",
+          "observationId": "e073d552-1e61-5af1-ac62-b5dd93408882",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "4782f0b0-2720-4156-abd7-329032680a9c",
+          "sha256": "4bb420471884e0698b31e1780fa755d5b8f816ef73801045f036e107766fa639"
+        }
+      ],
+      "reason": "Same left-front bollard with matching base scuffs and bolt plate, beside left yellow light-curtain column; right bollard excluded.",
+      "observationRefs": [
+        {
+          "observationId": "5927dc03-d972-5ae9-8b9b-8e7de662e11d",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "51a29f9a-8a55-525c-b3d9-800af79c950e",
+          "maskSha256": "9e4eebea506d3bd5d3fb6417708d6be392bdc28b812e4988038a33aff7334eb3"
+        },
+        {
+          "observationId": "fa88542c-3dba-56e5-a5e1-e95ff9a10c94",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "6d4a16d6-d563-5e3d-829d-fbee6ceddf81",
+          "maskSha256": "57e8525933ca3fad5cb2173af2bd445dcfbb6306150e5818f59c8883314d2e51"
+        },
+        {
+          "observationId": "e6b5805c-fc3c-5718-aca8-b181fac55539",
+          "observationRevision": 1,
+          "imageId": "09b3b8ab-a541-4f88-ac22-94723d2f4938",
+          "imageSha256": "d66fddffbe568902e25f1546430da151ee03813fbc8c07324d79e146c5d43107",
+          "maskAssetId": "12415e52-db8c-58a8-b742-849396104ae1",
+          "maskSha256": "cd28026074ee380e65e71ce967b3dfe3fc9178e5ffe24912685861db5c39c6e6"
+        },
+        {
+          "observationId": "32526693-3316-529e-ad23-763ae4db8f28",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "a80d186d-3955-4fbf-8686-b43fa7ea61cb",
+          "maskSha256": "717ae712b3e78fba4ceff0cf18d34dd87589874b3273c7fb98ebd49011b8d37f"
+        },
+        {
+          "observationId": "1e5fa7de-439c-51fc-9527-57c61a265c8a",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "8b24cbfe-9726-40c8-b8c5-68ca0b83ce7c",
+          "maskSha256": "18dcf98a6e380744764bb828454b0b653574155a4d047f69266583bf3e8e5c34"
+        },
+        {
+          "observationId": "1742ed68-dff3-53f1-b376-daf5563ac790",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "473fafd8-805b-485f-84e6-7747df545cd2",
+          "maskSha256": "7b20696d1c95ff8849db37540d6fde9ecbf85bd6b459ee77ba0cfc74701012e8"
+        },
+        {
+          "observationId": "e073d552-1e61-5af1-ac62-b5dd93408882",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "4782f0b0-2720-4156-abd7-329032680a9c",
+          "maskSha256": "4bb420471884e0698b31e1780fa755d5b8f816ef73801045f036e107766fa639"
+        }
+      ]
+    },
+    {
+      "id": "15f67522-e52a-5008-9063-94d5a95bc140",
+      "decision": "same",
+      "label": "入口右侧黑色防撞柱",
+      "entityIds": [
+        "da0a50da-6459-5471-b25b-d299129c354a",
+        "81b9df0c-432b-5e97-9030-635c7022c22c",
+        "6310035c-5008-52c0-9191-9a1997c5e360"
+      ],
+      "survivorId": "da0a50da-6459-5471-b25b-d299129c354a",
+      "observationIds": [
+        "f1d3cb07-f16f-59fc-ab5e-bd90ba94740f",
+        "b5c85233-e3da-5de3-928c-01b956f215bd",
+        "4836fe5d-c5ae-56d1-be89-a1edc26c1d7b",
+        "5052f3fc-d5f0-533c-94ea-d29e36cf5339",
+        "06a08f48-5c25-5f73-9043-b1d8449ef756",
+        "c1c2b28e-7ea4-5e75-896f-ecf4ecd5d2a5",
+        "0ac3951f-803f-56c0-86ae-9da0b923c9ef"
+      ],
+      "evidenceRefs": [
+        {
+          "kind": "observation",
+          "observationId": "f1d3cb07-f16f-59fc-ab5e-bd90ba94740f",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "sha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3"
+        },
+        {
+          "kind": "asset",
+          "assetId": "5dfa0eec-dea8-535c-88be-b56c3f1ce463",
+          "sha256": "ad79df84a04b3ca51efd35f01cc123511c4948dd8c5c6e893e0f3d5ae45096d0"
+        },
+        {
+          "kind": "observation",
+          "observationId": "b5c85233-e3da-5de3-928c-01b956f215bd",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "sha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7"
+        },
+        {
+          "kind": "asset",
+          "assetId": "a2ed6cbe-0066-5c66-9faa-db3d29f35ba9",
+          "sha256": "ddbbf2616b211f9405a59a4024545d56d4210a6986aaeda49b56840e2f80f8dd"
+        },
+        {
+          "kind": "observation",
+          "observationId": "4836fe5d-c5ae-56d1-be89-a1edc26c1d7b",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "09b3b8ab-a541-4f88-ac22-94723d2f4938",
+          "sha256": "d66fddffbe568902e25f1546430da151ee03813fbc8c07324d79e146c5d43107"
+        },
+        {
+          "kind": "asset",
+          "assetId": "46406d95-2aa4-5f9a-b513-5ea6ebccfe44",
+          "sha256": "35d8b17736079431078a69bfb7caf2a3349dbeffa6e8ffa5427f79c2cac86cfe"
+        },
+        {
+          "kind": "observation",
+          "observationId": "5052f3fc-d5f0-533c-94ea-d29e36cf5339",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "9d462379-49dd-42ff-95db-52149caf3f02",
+          "sha256": "ab357065ca900de94e7a0985365ecacbb7b443b1b5d422b52ac83b06f77e7a89"
+        },
+        {
+          "kind": "observation",
+          "observationId": "06a08f48-5c25-5f73-9043-b1d8449ef756",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "d2d00489-fede-4d45-9843-4c3f1ed348d1",
+          "sha256": "2803d9ed1feb913f8ba8a27fe5c29d36e63918f0d39bdb2d8031ced2fd0d773e"
+        },
+        {
+          "kind": "observation",
+          "observationId": "c1c2b28e-7ea4-5e75-896f-ecf4ecd5d2a5",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "45e3e71d-683a-496b-9ffa-76d0718cf20b",
+          "sha256": "40fb3011cf15325c0719ac242ab96a37f7831b3ad9a571478771716b3b8a81ad"
+        },
+        {
+          "kind": "observation",
+          "observationId": "0ac3951f-803f-56c0-86ae-9da0b923c9ef",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "eee2e6e0-f8ef-429b-8279-005977b9fd0a",
+          "sha256": "5dba5e0b6c3a0d25e29fc6ce0c1eaa4a95cb1fc6fb45ffdf653d0b3da7859dba"
+        }
+      ],
+      "reason": "Same right-front bollard with matching tall scratch pattern and base plate, beside right control/button and yellow light-curtain column; left bollard excluded.",
+      "observationRefs": [
+        {
+          "observationId": "f1d3cb07-f16f-59fc-ab5e-bd90ba94740f",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "5dfa0eec-dea8-535c-88be-b56c3f1ce463",
+          "maskSha256": "ad79df84a04b3ca51efd35f01cc123511c4948dd8c5c6e893e0f3d5ae45096d0"
+        },
+        {
+          "observationId": "b5c85233-e3da-5de3-928c-01b956f215bd",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "a2ed6cbe-0066-5c66-9faa-db3d29f35ba9",
+          "maskSha256": "ddbbf2616b211f9405a59a4024545d56d4210a6986aaeda49b56840e2f80f8dd"
+        },
+        {
+          "observationId": "4836fe5d-c5ae-56d1-be89-a1edc26c1d7b",
+          "observationRevision": 1,
+          "imageId": "09b3b8ab-a541-4f88-ac22-94723d2f4938",
+          "imageSha256": "d66fddffbe568902e25f1546430da151ee03813fbc8c07324d79e146c5d43107",
+          "maskAssetId": "46406d95-2aa4-5f9a-b513-5ea6ebccfe44",
+          "maskSha256": "35d8b17736079431078a69bfb7caf2a3349dbeffa6e8ffa5427f79c2cac86cfe"
+        },
+        {
+          "observationId": "5052f3fc-d5f0-533c-94ea-d29e36cf5339",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "9d462379-49dd-42ff-95db-52149caf3f02",
+          "maskSha256": "ab357065ca900de94e7a0985365ecacbb7b443b1b5d422b52ac83b06f77e7a89"
+        },
+        {
+          "observationId": "06a08f48-5c25-5f73-9043-b1d8449ef756",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "d2d00489-fede-4d45-9843-4c3f1ed348d1",
+          "maskSha256": "2803d9ed1feb913f8ba8a27fe5c29d36e63918f0d39bdb2d8031ced2fd0d773e"
+        },
+        {
+          "observationId": "c1c2b28e-7ea4-5e75-896f-ecf4ecd5d2a5",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "45e3e71d-683a-496b-9ffa-76d0718cf20b",
+          "maskSha256": "40fb3011cf15325c0719ac242ab96a37f7831b3ad9a571478771716b3b8a81ad"
+        },
+        {
+          "observationId": "0ac3951f-803f-56c0-86ae-9da0b923c9ef",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "eee2e6e0-f8ef-429b-8279-005977b9fd0a",
+          "maskSha256": "5dba5e0b6c3a0d25e29fc6ce0c1eaa4a95cb1fc6fb45ffdf653d0b3da7859dba"
+        }
+      ]
+    },
+    {
+      "id": "945da3f2-e2de-5ce8-9ef8-aa143e5009e4",
+      "decision": "same",
+      "label": "入口左侧黄色光幕立柱",
+      "entityIds": [
+        "5163a9b0-0bb6-5bb5-a9bc-927cb94f8d08",
+        "5fdd01a4-1fb5-5f45-8d3c-f721a0a00513",
+        "21eebd8a-107f-5132-9db1-e75a88630c7c"
+      ],
+      "survivorId": "5163a9b0-0bb6-5bb5-a9bc-927cb94f8d08",
+      "observationIds": [
+        "c02d62c9-640d-5a64-9b60-6734ec295080",
+        "31412751-b04e-5107-a5d6-6b9de73b97af",
+        "d6157da1-5723-592b-9111-3bb498318142",
+        "27ba38cd-0932-5c83-bdff-8cbf4e9b6089",
+        "8899d2bb-c775-5040-88fe-cc7782f428d1"
+      ],
+      "evidenceRefs": [
+        {
+          "kind": "observation",
+          "observationId": "c02d62c9-640d-5a64-9b60-6734ec295080",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "sha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3"
+        },
+        {
+          "kind": "asset",
+          "assetId": "38a619d7-5bfc-502e-9b25-11ea17b9b6ce",
+          "sha256": "02fa45cd2c14fdb792f1edd8b366aa0ffab18f6ce54495affd44963cc8ac70ad"
+        },
+        {
+          "kind": "observation",
+          "observationId": "31412751-b04e-5107-a5d6-6b9de73b97af",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "sha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7"
+        },
+        {
+          "kind": "asset",
+          "assetId": "c8964be9-3406-5e61-b7fe-aff5c9da67c8",
+          "sha256": "536570147fa51250f372c2098091498069a664b6a8b5442457b668b992079dce"
+        },
+        {
+          "kind": "observation",
+          "observationId": "d6157da1-5723-592b-9111-3bb498318142",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "09b3b8ab-a541-4f88-ac22-94723d2f4938",
+          "sha256": "d66fddffbe568902e25f1546430da151ee03813fbc8c07324d79e146c5d43107"
+        },
+        {
+          "kind": "asset",
+          "assetId": "3ba61792-93cb-5855-8829-f56e574feef0",
+          "sha256": "052f5dcca1a5b5320157860b9ac9ded9f7c5fb90bbb69a84118a18f323573f27"
+        },
+        {
+          "kind": "observation",
+          "observationId": "27ba38cd-0932-5c83-bdff-8cbf4e9b6089",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "78f73152-d15f-4bef-899e-f77eacfed51e",
+          "sha256": "a94631ffc52645bd0c31a7afaf4a06cfa2e81a32f7b11499e0057c5c9c02bda6"
+        },
+        {
+          "kind": "observation",
+          "observationId": "8899d2bb-c775-5040-88fe-cc7782f428d1",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "0f1f2657-9dc6-4cd2-ba0c-93c473425e22",
+          "sha256": "7fb78f4a8c14cf47ef1282ee3c8389dcd6c82f48a86d6cd369b858c4951af432"
+        }
+      ],
+      "reason": "Same complete left light-curtain housing: same yellow channel, narrow optical strip and mount on left white upright beside instruction sheet; not its upper beacon.",
+      "observationRefs": [
+        {
+          "observationId": "c02d62c9-640d-5a64-9b60-6734ec295080",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "38a619d7-5bfc-502e-9b25-11ea17b9b6ce",
+          "maskSha256": "02fa45cd2c14fdb792f1edd8b366aa0ffab18f6ce54495affd44963cc8ac70ad"
+        },
+        {
+          "observationId": "31412751-b04e-5107-a5d6-6b9de73b97af",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "c8964be9-3406-5e61-b7fe-aff5c9da67c8",
+          "maskSha256": "536570147fa51250f372c2098091498069a664b6a8b5442457b668b992079dce"
+        },
+        {
+          "observationId": "d6157da1-5723-592b-9111-3bb498318142",
+          "observationRevision": 1,
+          "imageId": "09b3b8ab-a541-4f88-ac22-94723d2f4938",
+          "imageSha256": "d66fddffbe568902e25f1546430da151ee03813fbc8c07324d79e146c5d43107",
+          "maskAssetId": "3ba61792-93cb-5855-8829-f56e574feef0",
+          "maskSha256": "052f5dcca1a5b5320157860b9ac9ded9f7c5fb90bbb69a84118a18f323573f27"
+        },
+        {
+          "observationId": "27ba38cd-0932-5c83-bdff-8cbf4e9b6089",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "78f73152-d15f-4bef-899e-f77eacfed51e",
+          "maskSha256": "a94631ffc52645bd0c31a7afaf4a06cfa2e81a32f7b11499e0057c5c9c02bda6"
+        },
+        {
+          "observationId": "8899d2bb-c775-5040-88fe-cc7782f428d1",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "0f1f2657-9dc6-4cd2-ba0c-93c473425e22",
+          "maskSha256": "7fb78f4a8c14cf47ef1282ee3c8389dcd6c82f48a86d6cd369b858c4951af432"
+        }
+      ]
+    },
+    {
+      "id": "cd9ccbce-cac0-5629-a3f8-e5c4966f96ed",
+      "decision": "same",
+      "label": "入口右侧黄色光幕立柱",
+      "entityIds": [
+        "169518d8-4f3a-5f67-a565-3180539acad3",
+        "c8de712d-db34-5c0a-a554-56d00cdce20b",
+        "a3d5ed2d-1e47-5361-a77a-5f899dabff21"
+      ],
+      "survivorId": "169518d8-4f3a-5f67-a565-3180539acad3",
+      "observationIds": [
+        "bd07809d-66e7-567c-a963-11867dcafc6b",
+        "7e77c02f-6259-52ae-b3dd-9a0648afa98c",
+        "fae379d8-8ce6-57c9-ace8-251c970a667f",
+        "9bcd92a5-0734-5805-b013-88be3cf7354b",
+        "b46256e8-6560-592e-9e95-850e5484af9b"
+      ],
+      "evidenceRefs": [
+        {
+          "kind": "observation",
+          "observationId": "bd07809d-66e7-567c-a963-11867dcafc6b",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "sha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3"
+        },
+        {
+          "kind": "asset",
+          "assetId": "70f389ac-f263-5ee6-913d-862ffb20b08b",
+          "sha256": "58773cc70f8545623596670334bfa9e9d2a1fe9cf3811db53a4ce82b3519ac79"
+        },
+        {
+          "kind": "observation",
+          "observationId": "7e77c02f-6259-52ae-b3dd-9a0648afa98c",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "sha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7"
+        },
+        {
+          "kind": "asset",
+          "assetId": "b66050a4-0543-585d-970d-9f3388855ab9",
+          "sha256": "8322e6bb0cebd5f52917779cbdb4bad06cb807cc3f8b0df72aefc1fd884f08a0"
+        },
+        {
+          "kind": "observation",
+          "observationId": "fae379d8-8ce6-57c9-ace8-251c970a667f",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "09b3b8ab-a541-4f88-ac22-94723d2f4938",
+          "sha256": "d66fddffbe568902e25f1546430da151ee03813fbc8c07324d79e146c5d43107"
+        },
+        {
+          "kind": "asset",
+          "assetId": "cc797b62-d47a-5705-a00c-1e25c32039b9",
+          "sha256": "023e4dc228cb7da261de57fc5f9b5872929b852ffeb246fd02c09f51159c539e"
+        },
+        {
+          "kind": "observation",
+          "observationId": "9bcd92a5-0734-5805-b013-88be3cf7354b",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "f34eb74d-bcbb-46f6-98f3-5cf72c339c36",
+          "sha256": "a0b69e0001da83b117e0d9d827fa5cf223e6ef7b885919abcde7e633b57db174"
+        },
+        {
+          "kind": "observation",
+          "observationId": "b46256e8-6560-592e-9e95-850e5484af9b",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "eda8780b-f755-459d-8f4c-538761656f5e",
+          "sha256": "7eb970e3fe07ebfb5a6dc9b7eda95808d6039bcc00af026e2965cc5efb8265ad"
+        }
+      ],
+      "reason": "Same complete right light-curtain housing: same yellow channel, narrow optical strip and base mount beside warning card and red/yellow button; separate control/button excluded.",
+      "observationRefs": [
+        {
+          "observationId": "bd07809d-66e7-567c-a963-11867dcafc6b",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "70f389ac-f263-5ee6-913d-862ffb20b08b",
+          "maskSha256": "58773cc70f8545623596670334bfa9e9d2a1fe9cf3811db53a4ce82b3519ac79"
+        },
+        {
+          "observationId": "7e77c02f-6259-52ae-b3dd-9a0648afa98c",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "b66050a4-0543-585d-970d-9f3388855ab9",
+          "maskSha256": "8322e6bb0cebd5f52917779cbdb4bad06cb807cc3f8b0df72aefc1fd884f08a0"
+        },
+        {
+          "observationId": "fae379d8-8ce6-57c9-ace8-251c970a667f",
+          "observationRevision": 1,
+          "imageId": "09b3b8ab-a541-4f88-ac22-94723d2f4938",
+          "imageSha256": "d66fddffbe568902e25f1546430da151ee03813fbc8c07324d79e146c5d43107",
+          "maskAssetId": "cc797b62-d47a-5705-a00c-1e25c32039b9",
+          "maskSha256": "023e4dc228cb7da261de57fc5f9b5872929b852ffeb246fd02c09f51159c539e"
+        },
+        {
+          "observationId": "9bcd92a5-0734-5805-b013-88be3cf7354b",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "f34eb74d-bcbb-46f6-98f3-5cf72c339c36",
+          "maskSha256": "a0b69e0001da83b117e0d9d827fa5cf223e6ef7b885919abcde7e633b57db174"
+        },
+        {
+          "observationId": "b46256e8-6560-592e-9e95-850e5484af9b",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "eda8780b-f755-459d-8f4c-538761656f5e",
+          "maskSha256": "7eb970e3fe07ebfb5a6dc9b7eda95808d6039bcc00af026e2965cc5efb8265ad"
+        }
+      ]
+    },
+    {
+      "id": "f35121c9-2acf-5978-8ae7-2deff7617aa2",
+      "decision": "same",
+      "label": "入口右侧完整安全围栏",
+      "entityIds": [
+        "ce9516a5-a385-5ecb-b6f5-3d543f3ec941",
+        "49637bd6-d4aa-5608-b313-65b0aff301af",
+        "9d055e08-a5a8-546e-9f82-8ead2e5c8af3",
+        "94df2397-80a4-529c-9c41-85a746d4f420",
+        "f4bce8c0-2756-53f1-ad2b-4e67162415ca",
+        "a7bbff43-8416-53a6-b0a8-ba210e1ad284",
+        "82c02133-9b24-5be9-a9a4-f936b184af3f"
+      ],
+      "survivorId": "ce9516a5-a385-5ecb-b6f5-3d543f3ec941",
+      "observationIds": [
+        "034c0234-ea8d-5dee-a7de-570ed3bed0c9",
+        "d698e0b3-5dc4-5cb8-bca6-dfe9171ba6a0",
+        "c4978cf2-31fe-54c4-bce8-c52c7d956350",
+        "68d7f25a-88f3-515c-8656-56b8cd142542",
+        "de1adf2a-20c4-583d-a1e9-9405c7cd54d0",
+        "d8f99f1e-d85a-5f5b-a922-936e0fc9b67b",
+        "bb74da55-4fca-5c95-8dfe-0b227616249f",
+        "160d008f-2b71-57ae-acf8-7bd76cb81f00",
+        "d0300d40-587c-53d4-8ed2-47d4f74cea01",
+        "140987d7-43bc-5791-b456-d40fa0b9f338"
+      ],
+      "evidenceRefs": [
+        {
+          "kind": "observation",
+          "observationId": "034c0234-ea8d-5dee-a7de-570ed3bed0c9",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "sha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7"
+        },
+        {
+          "kind": "asset",
+          "assetId": "d3c8229a-b4b7-5f7a-904d-485b7dd33d29",
+          "sha256": "6688bd990fd68ff77c64f4d519f10df4ea0eca46054edaa28f0e969d2c1e9b2b"
+        },
+        {
+          "kind": "observation",
+          "observationId": "d698e0b3-5dc4-5cb8-bca6-dfe9171ba6a0",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "sha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3"
+        },
+        {
+          "kind": "asset",
+          "assetId": "f159a6cf-dadf-5968-86a4-563309f95f7d",
+          "sha256": "347ba62971fd45212d24d254560ab02fe32bf4f1a54631e26e5995a1fe1678ae"
+        },
+        {
+          "kind": "observation",
+          "observationId": "c4978cf2-31fe-54c4-bce8-c52c7d956350",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "481b7833-351b-4c1e-8b36-10ee546f0b01",
+          "sha256": "d1d10de899f8d6bd133b5d7a6e1e5db7c3d13b66b5e95226bd3a47430329b03b"
+        },
+        {
+          "kind": "observation",
+          "observationId": "68d7f25a-88f3-515c-8656-56b8cd142542",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "4f468f76-43f0-47d7-9454-107e114c0857",
+          "sha256": "2a6c99948425afab7947ec8251751972d4a929f2c7e9d23f366d02957f72755c"
+        },
+        {
+          "kind": "observation",
+          "observationId": "de1adf2a-20c4-583d-a1e9-9405c7cd54d0",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "9848be92-175c-4057-85d8-a3e43d7f1d1b",
+          "sha256": "c3f11d528d98c919b255b4ce1735114b91832f0c9495be4b6b856d8f16351576"
+        },
+        {
+          "kind": "observation",
+          "observationId": "d8f99f1e-d85a-5f5b-a922-936e0fc9b67b",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "5d1be393-e126-41e0-a358-3bc7cc0374df",
+          "sha256": "2d93e24a310e9928b117fbddcb22382d38602a679d39cb53ff043de3ed1ceb34"
+        },
+        {
+          "kind": "observation",
+          "observationId": "bb74da55-4fca-5c95-8dfe-0b227616249f",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "08e43ba4-992e-4054-a3ad-4cd8c6b06341",
+          "sha256": "1d2c5ea67c23c545889910849d00ec4eb4481d987b76a867f701583aea7fd568"
+        },
+        {
+          "kind": "observation",
+          "observationId": "160d008f-2b71-57ae-acf8-7bd76cb81f00",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "c8fd2280-c49b-4342-9aae-bf8f402d00e9",
+          "sha256": "da9e9d7fde540e8b7ae1e559ee308e8b479f4a191e76cd0cbb44ea944562353d"
+        },
+        {
+          "kind": "observation",
+          "observationId": "d0300d40-587c-53d4-8ed2-47d4f74cea01",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "b3101cba-4d38-4ee3-aaae-3b8450b362b0",
+          "sha256": "0f434e059b06f9fd2338b15ff4d89300531defa9bb8036dd751d9e4a269771fa"
+        },
+        {
+          "kind": "observation",
+          "observationId": "140987d7-43bc-5791-b456-d40fa0b9f338",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "7b447ef1-c83c-42e3-979a-91730e8eb08c",
+          "sha256": "3cc13e7be7617f34c12591d4ac7f71db0192117c54becf5ee5ca1663882c6b3b"
+        }
+      ],
+      "reason": "Same complete front-right gate/fence assembly: matching upper crossbar, horizontal divider, vertical bars, yellow-column/control mount and rear guard occlusion. Raw full-assembly masks match those landmarks in the two photos; individual upper/lower/rear inserts are excluded.",
+      "observationRefs": [
+        {
+          "observationId": "034c0234-ea8d-5dee-a7de-570ed3bed0c9",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "d3c8229a-b4b7-5f7a-904d-485b7dd33d29",
+          "maskSha256": "6688bd990fd68ff77c64f4d519f10df4ea0eca46054edaa28f0e969d2c1e9b2b"
+        },
+        {
+          "observationId": "d698e0b3-5dc4-5cb8-bca6-dfe9171ba6a0",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "f159a6cf-dadf-5968-86a4-563309f95f7d",
+          "maskSha256": "347ba62971fd45212d24d254560ab02fe32bf4f1a54631e26e5995a1fe1678ae"
+        },
+        {
+          "observationId": "c4978cf2-31fe-54c4-bce8-c52c7d956350",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "481b7833-351b-4c1e-8b36-10ee546f0b01",
+          "maskSha256": "d1d10de899f8d6bd133b5d7a6e1e5db7c3d13b66b5e95226bd3a47430329b03b"
+        },
+        {
+          "observationId": "68d7f25a-88f3-515c-8656-56b8cd142542",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "4f468f76-43f0-47d7-9454-107e114c0857",
+          "maskSha256": "2a6c99948425afab7947ec8251751972d4a929f2c7e9d23f366d02957f72755c"
+        },
+        {
+          "observationId": "de1adf2a-20c4-583d-a1e9-9405c7cd54d0",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "9848be92-175c-4057-85d8-a3e43d7f1d1b",
+          "maskSha256": "c3f11d528d98c919b255b4ce1735114b91832f0c9495be4b6b856d8f16351576"
+        },
+        {
+          "observationId": "d8f99f1e-d85a-5f5b-a922-936e0fc9b67b",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "5d1be393-e126-41e0-a358-3bc7cc0374df",
+          "maskSha256": "2d93e24a310e9928b117fbddcb22382d38602a679d39cb53ff043de3ed1ceb34"
+        },
+        {
+          "observationId": "bb74da55-4fca-5c95-8dfe-0b227616249f",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "08e43ba4-992e-4054-a3ad-4cd8c6b06341",
+          "maskSha256": "1d2c5ea67c23c545889910849d00ec4eb4481d987b76a867f701583aea7fd568"
+        },
+        {
+          "observationId": "160d008f-2b71-57ae-acf8-7bd76cb81f00",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "c8fd2280-c49b-4342-9aae-bf8f402d00e9",
+          "maskSha256": "da9e9d7fde540e8b7ae1e559ee308e8b479f4a191e76cd0cbb44ea944562353d"
+        },
+        {
+          "observationId": "d0300d40-587c-53d4-8ed2-47d4f74cea01",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "b3101cba-4d38-4ee3-aaae-3b8450b362b0",
+          "maskSha256": "0f434e059b06f9fd2338b15ff4d89300531defa9bb8036dd751d9e4a269771fa"
+        },
+        {
+          "observationId": "140987d7-43bc-5791-b456-d40fa0b9f338",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "7b447ef1-c83c-42e3-979a-91730e8eb08c",
+          "maskSha256": "3cc13e7be7617f34c12591d4ac7f71db0192117c54becf5ee5ca1663882c6b3b"
+        }
+      ]
+    },
+    {
+      "id": "1bcc71f5-1f86-5cb9-99d3-46c25a9411b3",
+      "decision": "same",
+      "label": "入口左侧完整安全围栏",
+      "entityIds": [
+        "929b5b7e-17cb-5e05-bbf9-7767114ddd1e",
+        "a6946301-c40c-525c-b731-f0dd95ae164e",
+        "41b4ed25-6de2-58a2-9669-47ad5e392bf7",
+        "9dd85edd-2dad-5c47-b123-f4b29ac60153",
+        "37deeae6-6d88-50f8-b546-e606b8f38d28"
+      ],
+      "survivorId": "929b5b7e-17cb-5e05-bbf9-7767114ddd1e",
+      "observationIds": [
+        "cc15f27c-f40c-59b7-87e5-4273edf739c9",
+        "e8acefa3-3fa2-5677-9f6a-d94e2901c8e3",
+        "435f82c8-b26b-5285-9edf-22c28542a519",
+        "ad8ad0b1-620b-5b85-aa12-5e25c5bb8dfc",
+        "0044c9ac-1ede-52a9-b5e5-d86590ba9fd2",
+        "9500ba6e-b87f-5b9f-adff-e26810d2392d"
+      ],
+      "evidenceRefs": [
+        {
+          "kind": "observation",
+          "observationId": "cc15f27c-f40c-59b7-87e5-4273edf739c9",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "09b3b8ab-a541-4f88-ac22-94723d2f4938",
+          "sha256": "d66fddffbe568902e25f1546430da151ee03813fbc8c07324d79e146c5d43107"
+        },
+        {
+          "kind": "asset",
+          "assetId": "6155f0b7-d425-5dcd-878a-14c3cf8e24a1",
+          "sha256": "3e6183a1c166b50fb567838871e38ae6277cd37f7f66869a186d94f726f25d61"
+        },
+        {
+          "kind": "observation",
+          "observationId": "e8acefa3-3fa2-5677-9f6a-d94e2901c8e3",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "sha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3"
+        },
+        {
+          "kind": "asset",
+          "assetId": "30039f91-ca38-5e33-a60f-08a660ee7f89",
+          "sha256": "7da0b4f13911fa8d5bc1250d13d20890acab1479d8f89468e9e4072f6cb7d9fa"
+        },
+        {
+          "kind": "observation",
+          "observationId": "435f82c8-b26b-5285-9edf-22c28542a519",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "9f69a30f-07f5-4005-9c98-585b4d4840d2",
+          "sha256": "9766534258acb18b8b964cf7826c4651c9deb55de823c3586ee9f068785d19c5"
+        },
+        {
+          "kind": "observation",
+          "observationId": "ad8ad0b1-620b-5b85-aa12-5e25c5bb8dfc",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "3af856bf-0a32-4757-aeb1-934136fb45e9",
+          "sha256": "0d3b1ad5d2ff566b5f67c98c01da6b51fb80d351d903a9c8dc7efb3e565f16a9"
+        },
+        {
+          "kind": "observation",
+          "observationId": "0044c9ac-1ede-52a9-b5e5-d86590ba9fd2",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "f0e46b13-8b0d-4fd4-8e00-0046a7de8af9",
+          "sha256": "cb3bb0d8a7b80358a22014af294478f3763f77be07466a6ece17f5fd28e00e2c"
+        },
+        {
+          "kind": "observation",
+          "observationId": "9500ba6e-b87f-5b9f-adff-e26810d2392d",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "79469cb7-21c4-44fd-9b78-c33271523294",
+          "sha256": "2a4075eb3ab7aa7ab08a4913af78fcec6cad41c40b8838448fa63ab3c4efeb45"
+        }
+      ],
+      "reason": "Same complete left gate/fence assembly in frame3: shared upper boundary, horizontal division, blue-white instruction sheet, front upright and guard occlusion. Narrow rear-panel-only record is excluded.",
+      "observationRefs": [
+        {
+          "observationId": "cc15f27c-f40c-59b7-87e5-4273edf739c9",
+          "observationRevision": 1,
+          "imageId": "09b3b8ab-a541-4f88-ac22-94723d2f4938",
+          "imageSha256": "d66fddffbe568902e25f1546430da151ee03813fbc8c07324d79e146c5d43107",
+          "maskAssetId": "6155f0b7-d425-5dcd-878a-14c3cf8e24a1",
+          "maskSha256": "3e6183a1c166b50fb567838871e38ae6277cd37f7f66869a186d94f726f25d61"
+        },
+        {
+          "observationId": "e8acefa3-3fa2-5677-9f6a-d94e2901c8e3",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "30039f91-ca38-5e33-a60f-08a660ee7f89",
+          "maskSha256": "7da0b4f13911fa8d5bc1250d13d20890acab1479d8f89468e9e4072f6cb7d9fa"
+        },
+        {
+          "observationId": "435f82c8-b26b-5285-9edf-22c28542a519",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "9f69a30f-07f5-4005-9c98-585b4d4840d2",
+          "maskSha256": "9766534258acb18b8b964cf7826c4651c9deb55de823c3586ee9f068785d19c5"
+        },
+        {
+          "observationId": "ad8ad0b1-620b-5b85-aa12-5e25c5bb8dfc",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "3af856bf-0a32-4757-aeb1-934136fb45e9",
+          "maskSha256": "0d3b1ad5d2ff566b5f67c98c01da6b51fb80d351d903a9c8dc7efb3e565f16a9"
+        },
+        {
+          "observationId": "0044c9ac-1ede-52a9-b5e5-d86590ba9fd2",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "f0e46b13-8b0d-4fd4-8e00-0046a7de8af9",
+          "maskSha256": "cb3bb0d8a7b80358a22014af294478f3763f77be07466a6ece17f5fd28e00e2c"
+        },
+        {
+          "observationId": "9500ba6e-b87f-5b9f-adff-e26810d2392d",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "79469cb7-21c4-44fd-9b78-c33271523294",
+          "maskSha256": "2a4075eb3ab7aa7ab08a4913af78fcec6cad41c40b8838448fa63ab3c4efeb45"
+        }
+      ]
+    },
+    {
+      "id": "b5ce772e-fb9b-5b41-876f-af8fa2d68520",
+      "decision": "same",
+      "label": "工位入口混凝土地面（参考面）",
+      "entityIds": [
+        "ed46d9e5-8146-567b-9253-2a554046e144",
+        "637852a5-51b5-53cc-8e27-01b34e1fcbf2",
+        "1ec981e4-10f0-573d-a8ee-75c79aeaead4",
+        "f138f2cd-9cfe-5db0-85d0-394798588694",
+        "ede664b5-0b39-56be-a8a6-080ebe1b1cd3"
+      ],
+      "survivorId": "ed46d9e5-8146-567b-9253-2a554046e144",
+      "observationIds": [
+        "622ac0a8-35bc-5b73-8413-30b0d1fa2407",
+        "cd629232-db84-5d49-8c40-44629d78b6cf",
+        "f89c53a6-a8b3-5ddb-b82c-9bd591bcc366",
+        "c46909e7-a024-5d2b-bf57-701faed8171a",
+        "f1c23763-2599-5590-b33a-830569f710d5"
+      ],
+      "evidenceRefs": [
+        {
+          "kind": "observation",
+          "observationId": "622ac0a8-35bc-5b73-8413-30b0d1fa2407",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "sha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3"
+        },
+        {
+          "kind": "asset",
+          "assetId": "0f5b05f9-a230-5f07-89a0-e5b235c0f63c",
+          "sha256": "687fa33ea254c739ba46931f8ca1c6dde789ce9344cacc1b8ca2e776f96012d4"
+        },
+        {
+          "kind": "observation",
+          "observationId": "cd629232-db84-5d49-8c40-44629d78b6cf",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "sha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7"
+        },
+        {
+          "kind": "asset",
+          "assetId": "f7f66450-036f-4972-94f9-8e39e1adcb7c",
+          "sha256": "89568c739e7882dca5b6a33cc884cca82b2e446bdb2629ca0fa360561911df28"
+        },
+        {
+          "kind": "observation",
+          "observationId": "f89c53a6-a8b3-5ddb-b82c-9bd591bcc366",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "1be5dbf6-7cea-4cfe-a246-e35f181acf61",
+          "sha256": "61d364b502b675720ac47a016e52e5f238dc2067f82d2b58c6936d8365ca785f"
+        },
+        {
+          "kind": "observation",
+          "observationId": "c46909e7-a024-5d2b-bf57-701faed8171a",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "fa7a46b6-1641-47a9-bbea-56e5a12a7185",
+          "sha256": "31f5355d7afa9a0392e7258385f677748a433c98f8aaf297dcd5eae5e8fab96b"
+        },
+        {
+          "kind": "observation",
+          "observationId": "f1c23763-2599-5590-b33a-830569f710d5",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "364c5a25-58ff-40b3-b3eb-34d616cfb703",
+          "sha256": "84ea72b5d51a9815169baf8ad68d7b2d6f1fec9ffb6791935776c082cf9b74fa"
+        }
+      ],
+      "reason": "Same continuous concrete entrance floor: two white floor guides, same yellow-black entry tape, cart feet and scuff context. observed_floor is a restricted interior ROI; other masks cover more of the same slab. No portable or raised platform is visible. Keep tape as a separate marking. Preserve geometryRole=floor.",
+      "observationRefs": [
+        {
+          "observationId": "622ac0a8-35bc-5b73-8413-30b0d1fa2407",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "0f5b05f9-a230-5f07-89a0-e5b235c0f63c",
+          "maskSha256": "687fa33ea254c739ba46931f8ca1c6dde789ce9344cacc1b8ca2e776f96012d4"
+        },
+        {
+          "observationId": "cd629232-db84-5d49-8c40-44629d78b6cf",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "f7f66450-036f-4972-94f9-8e39e1adcb7c",
+          "maskSha256": "89568c739e7882dca5b6a33cc884cca82b2e446bdb2629ca0fa360561911df28"
+        },
+        {
+          "observationId": "f89c53a6-a8b3-5ddb-b82c-9bd591bcc366",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "1be5dbf6-7cea-4cfe-a246-e35f181acf61",
+          "maskSha256": "61d364b502b675720ac47a016e52e5f238dc2067f82d2b58c6936d8365ca785f"
+        },
+        {
+          "observationId": "c46909e7-a024-5d2b-bf57-701faed8171a",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "fa7a46b6-1641-47a9-bbea-56e5a12a7185",
+          "maskSha256": "31f5355d7afa9a0392e7258385f677748a433c98f8aaf297dcd5eae5e8fab96b"
+        },
+        {
+          "observationId": "f1c23763-2599-5590-b33a-830569f710d5",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "364c5a25-58ff-40b3-b3eb-34d616cfb703",
+          "maskSha256": "84ea72b5d51a9815169baf8ad68d7b2d6f1fec9ffb6791935776c082cf9b74fa"
+        }
+      ]
+    },
+    {
+      "id": "a94a7e6d-9314-5101-a872-d6ef4f790b29",
+      "decision": "same",
+      "label": "入口右上方信号灯",
+      "entityIds": [
+        "f0e43dd1-735c-577a-a9db-67e24c93616e",
+        "90e47a0f-69df-5684-a130-55f671355511",
+        "ca38d2b3-6807-57c1-89a5-fd4b64358a89",
+        "f9e1ad9d-2418-5a35-8914-3087a0cd4514"
+      ],
+      "survivorId": "f0e43dd1-735c-577a-a9db-67e24c93616e",
+      "observationIds": [
+        "d791e31d-e71b-50f1-90b5-e9a5195fe067",
+        "e27460b6-e3a4-58a0-b768-41b20cf501d0",
+        "22e182ea-5dfc-5d57-bbb6-7c558295e6ae",
+        "ae611d99-7e41-5d5b-9f54-da4618c60c42"
+      ],
+      "evidenceRefs": [
+        {
+          "kind": "observation",
+          "observationId": "d791e31d-e71b-50f1-90b5-e9a5195fe067",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "sha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7"
+        },
+        {
+          "kind": "asset",
+          "assetId": "57027f84-d1f7-42c2-ba16-8a13642ef468",
+          "sha256": "a35ab7b4e3459353e94af63f64df515ce891a04ed75188f5015e0334b9c31701"
+        },
+        {
+          "kind": "observation",
+          "observationId": "e27460b6-e3a4-58a0-b768-41b20cf501d0",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "5966b1de-51a3-48d9-8e90-ffc4df9d01d7",
+          "sha256": "6201ef09fbb679d7c9f6b2d7093dc6982e6ef32c57c966eb2129634c530ff195"
+        },
+        {
+          "kind": "observation",
+          "observationId": "22e182ea-5dfc-5d57-bbb6-7c558295e6ae",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "sha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3"
+        },
+        {
+          "kind": "asset",
+          "assetId": "073589e1-22e4-48c8-ad03-dac97a2ed255",
+          "sha256": "844ab82fb0fbf9c30a7b61342e78df4530f373381cc3d4f56a8d7f7a52366fda"
+        },
+        {
+          "kind": "observation",
+          "observationId": "ae611d99-7e41-5d5b-9f54-da4618c60c42",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "776c88be-3c16-4577-a1a9-7bbd7e95b093",
+          "sha256": "77a9db8e9f957dc1a97cb8ba5261bc2bbce20888ca6cce6df70bb59a1cbd05ec"
+        }
+      ],
+      "reason": "Same upper-right beacon across frame1/frame3: grey cap, ribbed red lens, yellow base and bracket on right entrance upright beside overhead blue pipe. Smaller masks are partial lens observations of the same lamp.",
+      "observationRefs": [
+        {
+          "observationId": "d791e31d-e71b-50f1-90b5-e9a5195fe067",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "57027f84-d1f7-42c2-ba16-8a13642ef468",
+          "maskSha256": "a35ab7b4e3459353e94af63f64df515ce891a04ed75188f5015e0334b9c31701"
+        },
+        {
+          "observationId": "e27460b6-e3a4-58a0-b768-41b20cf501d0",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "5966b1de-51a3-48d9-8e90-ffc4df9d01d7",
+          "maskSha256": "6201ef09fbb679d7c9f6b2d7093dc6982e6ef32c57c966eb2129634c530ff195"
+        },
+        {
+          "observationId": "22e182ea-5dfc-5d57-bbb6-7c558295e6ae",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "073589e1-22e4-48c8-ad03-dac97a2ed255",
+          "maskSha256": "844ab82fb0fbf9c30a7b61342e78df4530f373381cc3d4f56a8d7f7a52366fda"
+        },
+        {
+          "observationId": "ae611d99-7e41-5d5b-9f54-da4618c60c42",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "776c88be-3c16-4577-a1a9-7bbd7e95b093",
+          "maskSha256": "77a9db8e9f957dc1a97cb8ba5261bc2bbce20888ca6cce6df70bb59a1cbd05ec"
+        }
+      ]
+    },
+    {
+      "id": "3c422f25-e60a-5ad9-846a-56d650535793",
+      "decision": "same",
+      "label": "入口左上方信号灯",
+      "entityIds": [
+        "5af975cb-fd5d-5989-8d60-cbf2ba543bfc",
+        "706f731a-a42e-5520-90de-4d4fb4b2cf77"
+      ],
+      "survivorId": "5af975cb-fd5d-5989-8d60-cbf2ba543bfc",
+      "observationIds": [
+        "0911287e-62ad-5b69-bcc0-bb9034235d8c",
+        "8103fd4f-4b0e-5ebc-91d0-2768e63a8a98"
+      ],
+      "evidenceRefs": [
+        {
+          "kind": "observation",
+          "observationId": "0911287e-62ad-5b69-bcc0-bb9034235d8c",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "sha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3"
+        },
+        {
+          "kind": "asset",
+          "assetId": "9b7f3e34-ef82-40bd-b964-79ee3e1f7a14",
+          "sha256": "e05d283abec489d1a77c160b00b7bccc299458be9c3d18db7f0960ebc68ad0e1"
+        },
+        {
+          "kind": "observation",
+          "observationId": "8103fd4f-4b0e-5ebc-91d0-2768e63a8a98",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "bd229618-d7f6-44ac-bacf-9d2853328c36",
+          "sha256": "84886ac7829aec5e1b54f96a8479d413354435b220a96ff42a7b156d7c91caf2"
+        }
+      ],
+      "reason": "Two same-photo masks of the same upper-left beacon in frame3: identical grey cap, red ribbed lens, yellow foot and mounting bracket.",
+      "observationRefs": [
+        {
+          "observationId": "0911287e-62ad-5b69-bcc0-bb9034235d8c",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "9b7f3e34-ef82-40bd-b964-79ee3e1f7a14",
+          "maskSha256": "e05d283abec489d1a77c160b00b7bccc299458be9c3d18db7f0960ebc68ad0e1"
+        },
+        {
+          "observationId": "8103fd4f-4b0e-5ebc-91d0-2768e63a8a98",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "bd229618-d7f6-44ac-bacf-9d2853328c36",
+          "maskSha256": "84886ac7829aec5e1b54f96a8479d413354435b220a96ff42a7b156d7c91caf2"
+        }
+      ]
+    },
+    {
+      "id": "bdd66b01-35a9-5d73-9ce5-ababd299a9c1",
+      "decision": "same",
+      "label": "右侧相邻工位围栏板",
+      "entityIds": [
+        "d22e72d1-ca73-5ea4-a5f3-68057d7af6dd",
+        "9ae374a6-238b-5778-b188-e1863a695186"
+      ],
+      "survivorId": "d22e72d1-ca73-5ea4-a5f3-68057d7af6dd",
+      "observationIds": [
+        "4f1ca748-4a97-50a7-a699-12f539fb1f2d",
+        "7b355042-4a58-5c7d-ad1f-c98e9095a787"
+      ],
+      "evidenceRefs": [
+        {
+          "kind": "observation",
+          "observationId": "4f1ca748-4a97-50a7-a699-12f539fb1f2d",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "sha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7"
+        },
+        {
+          "kind": "asset",
+          "assetId": "b5c89749-5b92-4ee0-9d0e-e983f4c8acc9",
+          "sha256": "72e4abca4b81a69ebec91b392de9c41d30f8dede806c91951281822d88e1cda4"
+        },
+        {
+          "kind": "observation",
+          "observationId": "7b355042-4a58-5c7d-ad1f-c98e9095a787",
+          "observationRevision": 1
+        },
+        {
+          "kind": "asset",
+          "assetId": "898a8fec-0e39-4a55-a01f-babbf670196f",
+          "sha256": "af0d7406963f41271f39a83a389441f3cb36807d96efc03d5dcd99c23466c3a6"
+        }
+      ],
+      "reason": "Same barred panel in the identical frame1 photo behind the cable-bearing outer mesh: identical horizontal rails, red equipment and yellow edge post. Near-camera frame3 wire strip is excluded because shared identity is not established.",
+      "observationRefs": [
+        {
+          "observationId": "4f1ca748-4a97-50a7-a699-12f539fb1f2d",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "b5c89749-5b92-4ee0-9d0e-e983f4c8acc9",
+          "maskSha256": "72e4abca4b81a69ebec91b392de9c41d30f8dede806c91951281822d88e1cda4"
+        },
+        {
+          "observationId": "7b355042-4a58-5c7d-ad1f-c98e9095a787",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "898a8fec-0e39-4a55-a01f-babbf670196f",
+          "maskSha256": "af0d7406963f41271f39a83a389441f3cb36807d96efc03d5dcd99c23466c3a6"
+        }
+      ]
+    }
+  ],
+  "pendingReviews": [
+    {
+      "entityId": "ed46d9e5-8146-567b-9253-2a554046e144",
+      "decision": "same",
+      "decisionId": "b5ce772e-fb9b-5b41-876f-af8fa2d68520",
+      "comparisonEntityIds": [
+        "ed46d9e5-8146-567b-9253-2a554046e144",
+        "637852a5-51b5-53cc-8e27-01b34e1fcbf2",
+        "1ec981e4-10f0-573d-a8ee-75c79aeaead4",
+        "f138f2cd-9cfe-5db0-85d0-394798588694",
+        "ede664b5-0b39-56be-a8a6-080ebe1b1cd3"
+      ],
+      "reason": "Same continuous concrete entrance floor: two white floor guides, same yellow-black entry tape, cart feet and scuff context. observed_floor is a restricted interior ROI; other masks cover more of the same slab. No portable or raised platform is visible. Keep tape as a separate marking. Preserve geometryRole=floor.",
+      "observationRefs": [
+        {
+          "observationId": "622ac0a8-35bc-5b73-8413-30b0d1fa2407",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "0f5b05f9-a230-5f07-89a0-e5b235c0f63c",
+          "maskSha256": "687fa33ea254c739ba46931f8ca1c6dde789ce9344cacc1b8ca2e776f96012d4"
+        }
+      ]
+    },
+    {
+      "entityId": "37e1203b-fdd6-506e-bfd7-847438a65d3f",
+      "decision": "same",
+      "decisionId": "454db0b5-4816-5d21-be75-c92466468706",
+      "comparisonEntityIds": [
+        "0bc9608d-041f-516b-892d-cee0eb174aeb",
+        "37e1203b-fdd6-506e-bfd7-847438a65d3f",
+        "2fae17c7-bf08-5d1b-8cc7-6791a403c7f1"
+      ],
+      "reason": "Same gate-centre folded guard: matching top stripe run, left/right folds, bolt positions and cart occlusion. Both raw masks target the guard rather than the floor or cart.",
+      "observationRefs": [
+        {
+          "observationId": "bfdd8473-22ec-5d16-91c2-2223035cbd94",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "6029b2d6-19c6-4d1a-917e-11a7ccea618e",
+          "maskSha256": "70ddcbbe7eddf644aa523253d24b283c8d054436e88a82f2e269a6fd3a7a0eb0"
+        }
+      ]
+    },
+    {
+      "entityId": "49637bd6-d4aa-5608-b313-65b0aff301af",
+      "decision": "same",
+      "decisionId": "f35121c9-2acf-5978-8ae7-2deff7617aa2",
+      "comparisonEntityIds": [
+        "ce9516a5-a385-5ecb-b6f5-3d543f3ec941",
+        "49637bd6-d4aa-5608-b313-65b0aff301af",
+        "9d055e08-a5a8-546e-9f82-8ead2e5c8af3",
+        "94df2397-80a4-529c-9c41-85a746d4f420",
+        "f4bce8c0-2756-53f1-ad2b-4e67162415ca",
+        "a7bbff43-8416-53a6-b0a8-ba210e1ad284",
+        "82c02133-9b24-5be9-a9a4-f936b184af3f"
+      ],
+      "reason": "Same complete front-right gate/fence assembly: matching upper crossbar, horizontal divider, vertical bars, yellow-column/control mount and rear guard occlusion. Raw full-assembly masks match those landmarks in the two photos; individual upper/lower/rear inserts are excluded.",
+      "observationRefs": [
+        {
+          "observationId": "de1adf2a-20c4-583d-a1e9-9405c7cd54d0",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "9848be92-175c-4057-85d8-a3e43d7f1d1b",
+          "maskSha256": "c3f11d528d98c919b255b4ce1735114b91832f0c9495be4b6b856d8f16351576"
+        }
+      ]
+    },
+    {
+      "entityId": "7b9004a8-5314-524b-976a-bf645e6597f8",
+      "decision": "different",
+      "decisionId": "edf11e8c-cf83-5a1f-90f5-51f6e1e20d74",
+      "comparisonEntityIds": [
+        "7b9004a8-5314-524b-976a-bf645e6597f8",
+        "33188399-aa51-5e81-9d46-8f22ff399b93"
+      ],
+      "reason": "First mask targets the framed upper transparent/barred insert, second the lower insert below the horizontal rail. Physically distinct panel regions, not repeated observations of one insert.",
+      "observationRefs": [
+        {
+          "observationId": "67f3f954-163f-520f-9cc4-77cd13f0f4ff",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "c81a5065-0270-43a5-b5d6-04ee7862de5d",
+          "maskSha256": "5a9185dc9249a970335df52587ff2f008963091a8c2923e5dbdff0bcc8431813"
+        }
+      ]
+    },
+    {
+      "entityId": "5fdd01a4-1fb5-5f45-8d3c-f721a0a00513",
+      "decision": "same",
+      "decisionId": "945da3f2-e2de-5ce8-9ef8-aa143e5009e4",
+      "comparisonEntityIds": [
+        "5163a9b0-0bb6-5bb5-a9bc-927cb94f8d08",
+        "5fdd01a4-1fb5-5f45-8d3c-f721a0a00513",
+        "21eebd8a-107f-5132-9db1-e75a88630c7c"
+      ],
+      "reason": "Same complete left light-curtain housing: same yellow channel, narrow optical strip and mount on left white upright beside instruction sheet; not its upper beacon.",
+      "observationRefs": [
+        {
+          "observationId": "27ba38cd-0932-5c83-bdff-8cbf4e9b6089",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "78f73152-d15f-4bef-899e-f77eacfed51e",
+          "maskSha256": "a94631ffc52645bd0c31a7afaf4a06cfa2e81a32f7b11499e0057c5c9c02bda6"
+        }
+      ]
+    },
+    {
+      "entityId": "c036e1c3-cfb8-53c5-a643-a939623435ef",
+      "decision": "same",
+      "decisionId": "0787da0f-2415-590c-98a0-2cf903e06f10",
+      "comparisonEntityIds": [
+        "a719e41c-bc9f-5963-b9f8-2caa031a8c09",
+        "c036e1c3-cfb8-53c5-a643-a939623435ef",
+        "0ed857a2-3a29-534a-af01-243471fd0a2e"
+      ],
+      "reason": "Same marked loaded cart: 0001/B corner upright, RGFT131/front lettering, red triangular handle, wheel/base arrangement and matching load; observations target the complete cart.",
+      "observationRefs": [
+        {
+          "observationId": "3e2d41c3-4d69-5734-878b-c0426a2c6d1a",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "43f981df-5d8e-4965-b960-faf681c5e21f",
+          "maskSha256": "d74cf7dd6a9309e71c09bea2a6f006ef42afd6289432b11a8395bb90a415a293"
+        }
+      ]
+    },
+    {
+      "entityId": "637852a5-51b5-53cc-8e27-01b34e1fcbf2",
+      "decision": "same",
+      "decisionId": "b5ce772e-fb9b-5b41-876f-af8fa2d68520",
+      "comparisonEntityIds": [
+        "ed46d9e5-8146-567b-9253-2a554046e144",
+        "637852a5-51b5-53cc-8e27-01b34e1fcbf2",
+        "1ec981e4-10f0-573d-a8ee-75c79aeaead4",
+        "f138f2cd-9cfe-5db0-85d0-394798588694",
+        "ede664b5-0b39-56be-a8a6-080ebe1b1cd3"
+      ],
+      "reason": "Same continuous concrete entrance floor: two white floor guides, same yellow-black entry tape, cart feet and scuff context. observed_floor is a restricted interior ROI; other masks cover more of the same slab. No portable or raised platform is visible. Keep tape as a separate marking. Preserve geometryRole=floor.",
+      "observationRefs": [
+        {
+          "observationId": "cd629232-db84-5d49-8c40-44629d78b6cf",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "f7f66450-036f-4972-94f9-8e39e1adcb7c",
+          "maskSha256": "89568c739e7882dca5b6a33cc884cca82b2e446bdb2629ca0fa360561911df28"
+        }
+      ]
+    },
+    {
+      "entityId": "90e47a0f-69df-5684-a130-55f671355511",
+      "decision": "same",
+      "decisionId": "a94a7e6d-9314-5101-a872-d6ef4f790b29",
+      "comparisonEntityIds": [
+        "f0e43dd1-735c-577a-a9db-67e24c93616e",
+        "90e47a0f-69df-5684-a130-55f671355511",
+        "ca38d2b3-6807-57c1-89a5-fd4b64358a89",
+        "f9e1ad9d-2418-5a35-8914-3087a0cd4514"
+      ],
+      "reason": "Same upper-right beacon across frame1/frame3: grey cap, ribbed red lens, yellow base and bracket on right entrance upright beside overhead blue pipe. Smaller masks are partial lens observations of the same lamp.",
+      "observationRefs": [
+        {
+          "observationId": "e27460b6-e3a4-58a0-b768-41b20cf501d0",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "5966b1de-51a3-48d9-8e90-ffc4df9d01d7",
+          "maskSha256": "6201ef09fbb679d7c9f6b2d7093dc6982e6ef32c57c966eb2129634c530ff195"
+        }
+      ]
+    },
+    {
+      "entityId": "c8de712d-db34-5c0a-a554-56d00cdce20b",
+      "decision": "same",
+      "decisionId": "cd9ccbce-cac0-5629-a3f8-e5c4966f96ed",
+      "comparisonEntityIds": [
+        "169518d8-4f3a-5f67-a565-3180539acad3",
+        "c8de712d-db34-5c0a-a554-56d00cdce20b",
+        "a3d5ed2d-1e47-5361-a77a-5f899dabff21"
+      ],
+      "reason": "Same complete right light-curtain housing: same yellow channel, narrow optical strip and base mount beside warning card and red/yellow button; separate control/button excluded.",
+      "observationRefs": [
+        {
+          "observationId": "9bcd92a5-0734-5805-b013-88be3cf7354b",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "f34eb74d-bcbb-46f6-98f3-5cf72c339c36",
+          "maskSha256": "a0b69e0001da83b117e0d9d827fa5cf223e6ef7b885919abcde7e633b57db174"
+        }
+      ]
+    },
+    {
+      "entityId": "d22e72d1-ca73-5ea4-a5f3-68057d7af6dd",
+      "decision": "same",
+      "decisionId": "bdd66b01-35a9-5d73-9ce5-ababd299a9c1",
+      "comparisonEntityIds": [
+        "d22e72d1-ca73-5ea4-a5f3-68057d7af6dd",
+        "9ae374a6-238b-5778-b188-e1863a695186"
+      ],
+      "reason": "Same barred panel in the identical frame1 photo behind the cable-bearing outer mesh: identical horizontal rails, red equipment and yellow edge post. Near-camera frame3 wire strip is excluded because shared identity is not established.",
+      "observationRefs": [
+        {
+          "observationId": "4f1ca748-4a97-50a7-a699-12f539fb1f2d",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "b5c89749-5b92-4ee0-9d0e-e983f4c8acc9",
+          "maskSha256": "72e4abca4b81a69ebec91b392de9c41d30f8dede806c91951281822d88e1cda4"
+        }
+      ]
+    },
+    {
+      "entityId": "2c05872d-6426-57af-9e8d-ad4fefc67d9f",
+      "decision": "same",
+      "decisionId": "7528f94a-d449-5cd0-bc9d-3883f5ee4ed4",
+      "comparisonEntityIds": [
+        "27d00998-2702-547e-97b2-d200cd92264a",
+        "2c05872d-6426-57af-9e8d-ad4fefc67d9f",
+        "14586a1b-8b17-5ee1-a270-1678999df537"
+      ],
+      "reason": "Same left-front bollard with matching base scuffs and bolt plate, beside left yellow light-curtain column; right bollard excluded.",
+      "observationRefs": [
+        {
+          "observationId": "1742ed68-dff3-53f1-b376-daf5563ac790",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "473fafd8-805b-485f-84e6-7747df545cd2",
+          "maskSha256": "7b20696d1c95ff8849db37540d6fde9ecbf85bd6b459ee77ba0cfc74701012e8"
+        }
+      ]
+    },
+    {
+      "entityId": "1ec981e4-10f0-573d-a8ee-75c79aeaead4",
+      "decision": "same",
+      "decisionId": "b5ce772e-fb9b-5b41-876f-af8fa2d68520",
+      "comparisonEntityIds": [
+        "ed46d9e5-8146-567b-9253-2a554046e144",
+        "637852a5-51b5-53cc-8e27-01b34e1fcbf2",
+        "1ec981e4-10f0-573d-a8ee-75c79aeaead4",
+        "f138f2cd-9cfe-5db0-85d0-394798588694",
+        "ede664b5-0b39-56be-a8a6-080ebe1b1cd3"
+      ],
+      "reason": "Same continuous concrete entrance floor: two white floor guides, same yellow-black entry tape, cart feet and scuff context. observed_floor is a restricted interior ROI; other masks cover more of the same slab. No portable or raised platform is visible. Keep tape as a separate marking. Preserve geometryRole=floor.",
+      "observationRefs": [
+        {
+          "observationId": "f89c53a6-a8b3-5ddb-b82c-9bd591bcc366",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "1be5dbf6-7cea-4cfe-a246-e35f181acf61",
+          "maskSha256": "61d364b502b675720ac47a016e52e5f238dc2067f82d2b58c6936d8365ca785f"
+        }
+      ]
+    },
+    {
+      "entityId": "33188399-aa51-5e81-9d46-8f22ff399b93",
+      "decision": "different",
+      "decisionId": "edf11e8c-cf83-5a1f-90f5-51f6e1e20d74",
+      "comparisonEntityIds": [
+        "7b9004a8-5314-524b-976a-bf645e6597f8",
+        "33188399-aa51-5e81-9d46-8f22ff399b93"
+      ],
+      "reason": "First mask targets the framed upper transparent/barred insert, second the lower insert below the horizontal rail. Physically distinct panel regions, not repeated observations of one insert.",
+      "observationRefs": [
+        {
+          "observationId": "013786d5-57d2-51b0-b1e4-1aa214de4354",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "14d3a77c-e4ea-45b0-9e1d-aafe3f891b87",
+          "maskSha256": "565e9d87fbd365fdc0006772b6930dbd716202f0b59fc8679cb7fe6ed803e6d8"
+        }
+      ]
+    },
+    {
+      "entityId": "0f73b37a-d2e4-5819-8390-c959e0cfe29f",
+      "decision": "undecided",
+      "decisionId": "5f6e635f-bcfd-5463-a690-e3efa8884d26",
+      "comparisonEntityIds": [
+        "0f73b37a-d2e4-5819-8390-c959e0cfe29f",
+        "ce9516a5-a385-5ecb-b6f5-3d543f3ec941"
+      ],
+      "reason": "Raw mask selects only a farther upper panel. Crop does not establish whether intended identity is a distinct rear panel or partial assembly observation; do not merge from containment.",
+      "observationRefs": [
+        {
+          "observationId": "69e60911-188b-529f-aef0-65dc28867620",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "d9ad7552-11a3-44b9-a1a2-0a8e22f964cd",
+          "maskSha256": "dd99a3ab12c1d4ae5a07c4239f447352ca2c2a46e4a6447edd577b5add4e1518"
+        }
+      ]
+    },
+    {
+      "entityId": "81b9df0c-432b-5e97-9030-635c7022c22c",
+      "decision": "same",
+      "decisionId": "15f67522-e52a-5008-9063-94d5a95bc140",
+      "comparisonEntityIds": [
+        "da0a50da-6459-5471-b25b-d299129c354a",
+        "81b9df0c-432b-5e97-9030-635c7022c22c",
+        "6310035c-5008-52c0-9191-9a1997c5e360"
+      ],
+      "reason": "Same right-front bollard with matching tall scratch pattern and base plate, beside right control/button and yellow light-curtain column; left bollard excluded.",
+      "observationRefs": [
+        {
+          "observationId": "c1c2b28e-7ea4-5e75-896f-ecf4ecd5d2a5",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "45e3e71d-683a-496b-9ffa-76d0718cf20b",
+          "maskSha256": "40fb3011cf15325c0719ac242ab96a37f7831b3ad9a571478771716b3b8a81ad"
+        }
+      ]
+    },
+    {
+      "entityId": "f0e43dd1-735c-577a-a9db-67e24c93616e",
+      "decision": "same",
+      "decisionId": "a94a7e6d-9314-5101-a872-d6ef4f790b29",
+      "comparisonEntityIds": [
+        "f0e43dd1-735c-577a-a9db-67e24c93616e",
+        "90e47a0f-69df-5684-a130-55f671355511",
+        "ca38d2b3-6807-57c1-89a5-fd4b64358a89",
+        "f9e1ad9d-2418-5a35-8914-3087a0cd4514"
+      ],
+      "reason": "Same upper-right beacon across frame1/frame3: grey cap, ribbed red lens, yellow base and bracket on right entrance upright beside overhead blue pipe. Smaller masks are partial lens observations of the same lamp.",
+      "observationRefs": [
+        {
+          "observationId": "d791e31d-e71b-50f1-90b5-e9a5195fe067",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "57027f84-d1f7-42c2-ba16-8a13642ef468",
+          "maskSha256": "a35ab7b4e3459353e94af63f64df515ce891a04ed75188f5015e0334b9c31701"
+        }
+      ]
+    },
+    {
+      "entityId": "9ae374a6-238b-5778-b188-e1863a695186",
+      "decision": "same",
+      "decisionId": "bdd66b01-35a9-5d73-9ce5-ababd299a9c1",
+      "comparisonEntityIds": [
+        "d22e72d1-ca73-5ea4-a5f3-68057d7af6dd",
+        "9ae374a6-238b-5778-b188-e1863a695186"
+      ],
+      "reason": "Same barred panel in the identical frame1 photo behind the cable-bearing outer mesh: identical horizontal rails, red equipment and yellow edge post. Near-camera frame3 wire strip is excluded because shared identity is not established.",
+      "observationRefs": [
+        {
+          "observationId": "7b355042-4a58-5c7d-ad1f-c98e9095a787",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "898a8fec-0e39-4a55-a01f-babbf670196f",
+          "maskSha256": "af0d7406963f41271f39a83a389441f3cb36807d96efc03d5dcd99c23466c3a6"
+        }
+      ]
+    },
+    {
+      "entityId": "9d055e08-a5a8-546e-9f82-8ead2e5c8af3",
+      "decision": "same",
+      "decisionId": "f35121c9-2acf-5978-8ae7-2deff7617aa2",
+      "comparisonEntityIds": [
+        "ce9516a5-a385-5ecb-b6f5-3d543f3ec941",
+        "49637bd6-d4aa-5608-b313-65b0aff301af",
+        "9d055e08-a5a8-546e-9f82-8ead2e5c8af3",
+        "94df2397-80a4-529c-9c41-85a746d4f420",
+        "f4bce8c0-2756-53f1-ad2b-4e67162415ca",
+        "a7bbff43-8416-53a6-b0a8-ba210e1ad284",
+        "82c02133-9b24-5be9-a9a4-f936b184af3f"
+      ],
+      "reason": "Same complete front-right gate/fence assembly: matching upper crossbar, horizontal divider, vertical bars, yellow-column/control mount and rear guard occlusion. Raw full-assembly masks match those landmarks in the two photos; individual upper/lower/rear inserts are excluded.",
+      "observationRefs": [
+        {
+          "observationId": "d8f99f1e-d85a-5f5b-a922-936e0fc9b67b",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "5d1be393-e126-41e0-a358-3bc7cc0374df",
+          "maskSha256": "2d93e24a310e9928b117fbddcb22382d38602a679d39cb53ff043de3ed1ceb34"
+        }
+      ]
+    },
+    {
+      "entityId": "a214c225-ba7a-5550-9af8-5bea16c2cfe4",
+      "decision": "different",
+      "decisionId": "13cb33c0-399b-56b8-8ce8-7fae0b9f4e44",
+      "comparisonEntityIds": [
+        "a214c225-ba7a-5550-9af8-5bea16c2cfe4",
+        "f0e43dd1-735c-577a-a9db-67e24c93616e",
+        "5af975cb-fd5d-5989-8d60-cbf2ba543bfc"
+      ],
+      "reason": "a214c225 is a small illuminated fixture deep beside the robot (frame1 x1183..1220,y1238..1312), physically separate from the two foreground entrance beacons. Its fine type is uncertain, not its distinct location.",
+      "observationRefs": [
+        {
+          "observationId": "bdb03150-e5a3-52e6-89ba-da6615516fac",
+          "observationRevision": 1,
+          "imageId": "97d7c64f-dd4b-4d72-a5a7-128d2d75a095",
+          "imageSha256": "4c6b1e0f0d7ddc82d343d5952789303a96775fc7723380cc37d68e2b07ae0bf7",
+          "maskAssetId": "5b39b6d1-efff-4282-867c-40b25bea3ebd",
+          "maskSha256": "a4d9a615130b527a8d6aa3912ec14d01c9a413e3232f266737887e1f4340fb1a"
+        }
+      ]
+    },
+    {
+      "entityId": "94df2397-80a4-529c-9c41-85a746d4f420",
+      "decision": "same",
+      "decisionId": "f35121c9-2acf-5978-8ae7-2deff7617aa2",
+      "comparisonEntityIds": [
+        "ce9516a5-a385-5ecb-b6f5-3d543f3ec941",
+        "49637bd6-d4aa-5608-b313-65b0aff301af",
+        "9d055e08-a5a8-546e-9f82-8ead2e5c8af3",
+        "94df2397-80a4-529c-9c41-85a746d4f420",
+        "f4bce8c0-2756-53f1-ad2b-4e67162415ca",
+        "a7bbff43-8416-53a6-b0a8-ba210e1ad284",
+        "82c02133-9b24-5be9-a9a4-f936b184af3f"
+      ],
+      "reason": "Same complete front-right gate/fence assembly: matching upper crossbar, horizontal divider, vertical bars, yellow-column/control mount and rear guard occlusion. Raw full-assembly masks match those landmarks in the two photos; individual upper/lower/rear inserts are excluded.",
+      "observationRefs": [
+        {
+          "observationId": "bb74da55-4fca-5c95-8dfe-0b227616249f",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "08e43ba4-992e-4054-a3ad-4cd8c6b06341",
+          "maskSha256": "1d2c5ea67c23c545889910849d00ec4eb4481d987b76a867f701583aea7fd568"
+        }
+      ]
+    },
+    {
+      "entityId": "0ed857a2-3a29-534a-af01-243471fd0a2e",
+      "decision": "same",
+      "decisionId": "0787da0f-2415-590c-98a0-2cf903e06f10",
+      "comparisonEntityIds": [
+        "a719e41c-bc9f-5963-b9f8-2caa031a8c09",
+        "c036e1c3-cfb8-53c5-a643-a939623435ef",
+        "0ed857a2-3a29-534a-af01-243471fd0a2e"
+      ],
+      "reason": "Same marked loaded cart: 0001/B corner upright, RGFT131/front lettering, red triangular handle, wheel/base arrangement and matching load; observations target the complete cart.",
+      "observationRefs": [
+        {
+          "observationId": "de93bab1-6aa8-5887-a7c4-3aed88e3089f",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "3207b55b-ea10-41aa-9776-6cea0d7f9212",
+          "maskSha256": "f2ae163241f6e4e0b2b0e95af8d0c349caa31b6f66a43ac7957dce391151b79a"
+        }
+      ]
+    },
+    {
+      "entityId": "f4bce8c0-2756-53f1-ad2b-4e67162415ca",
+      "decision": "same",
+      "decisionId": "f35121c9-2acf-5978-8ae7-2deff7617aa2",
+      "comparisonEntityIds": [
+        "ce9516a5-a385-5ecb-b6f5-3d543f3ec941",
+        "49637bd6-d4aa-5608-b313-65b0aff301af",
+        "9d055e08-a5a8-546e-9f82-8ead2e5c8af3",
+        "94df2397-80a4-529c-9c41-85a746d4f420",
+        "f4bce8c0-2756-53f1-ad2b-4e67162415ca",
+        "a7bbff43-8416-53a6-b0a8-ba210e1ad284",
+        "82c02133-9b24-5be9-a9a4-f936b184af3f"
+      ],
+      "reason": "Same complete front-right gate/fence assembly: matching upper crossbar, horizontal divider, vertical bars, yellow-column/control mount and rear guard occlusion. Raw full-assembly masks match those landmarks in the two photos; individual upper/lower/rear inserts are excluded.",
+      "observationRefs": [
+        {
+          "observationId": "160d008f-2b71-57ae-acf8-7bd76cb81f00",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "c8fd2280-c49b-4342-9aae-bf8f402d00e9",
+          "maskSha256": "da9e9d7fde540e8b7ae1e559ee308e8b479f4a191e76cd0cbb44ea944562353d"
+        }
+      ]
+    },
+    {
+      "entityId": "9b77a5b8-8eb2-5235-ba09-35678a26f60d",
+      "decision": "different",
+      "decisionId": "43df479d-ad08-5e82-91dd-3dfbc2249940",
+      "comparisonEntityIds": [
+        "9b77a5b8-8eb2-5235-ba09-35678a26f60d",
+        "7ed570b4-f194-5c53-b374-1cb85a1edb86"
+      ],
+      "reason": "Overhead BL4-BOR1-090 station placard with QR code versus small right-upright warning card: different printed contents and physical mounting locations.",
+      "observationRefs": [
+        {
+          "observationId": "1186b756-8059-58a1-ae98-2d65cbc68219",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "1bbb9bdb-6867-4568-83e9-402f75ae34d5",
+          "maskSha256": "69b9201bbc27cb6897d172819fa1a5ddb468bb6c6337d90d02c51f76087b390c"
+        }
+      ]
+    },
+    {
+      "entityId": "a6946301-c40c-525c-b731-f0dd95ae164e",
+      "decision": "same",
+      "decisionId": "1bcc71f5-1f86-5cb9-99d3-46c25a9411b3",
+      "comparisonEntityIds": [
+        "929b5b7e-17cb-5e05-bbf9-7767114ddd1e",
+        "a6946301-c40c-525c-b731-f0dd95ae164e",
+        "41b4ed25-6de2-58a2-9669-47ad5e392bf7",
+        "9dd85edd-2dad-5c47-b123-f4b29ac60153",
+        "37deeae6-6d88-50f8-b546-e606b8f38d28"
+      ],
+      "reason": "Same complete left gate/fence assembly in frame3: shared upper boundary, horizontal division, blue-white instruction sheet, front upright and guard occlusion. Narrow rear-panel-only record is excluded.",
+      "observationRefs": [
+        {
+          "observationId": "435f82c8-b26b-5285-9edf-22c28542a519",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "9f69a30f-07f5-4005-9c98-585b4d4840d2",
+          "maskSha256": "9766534258acb18b8b964cf7826c4651c9deb55de823c3586ee9f068785d19c5"
+        }
+      ]
+    },
+    {
+      "entityId": "5c16a2fb-44b8-5961-8faa-b2d24d229ffc",
+      "decision": "undecided",
+      "decisionId": "77deb561-fe70-50c3-b516-38152dad29d3",
+      "comparisonEntityIds": [
+        "5c16a2fb-44b8-5961-8faa-b2d24d229ffc",
+        "0bc9608d-041f-516b-892d-cee0eb174aeb",
+        "a719e41c-bc9f-5963-b9f8-2caa031a8c09"
+      ],
+      "reason": "Raw mask spans guard and also fills cart/load/front-handle area. This mixed foreground/background region cannot be assigned wholly to guard or cart without observation correction.",
+      "observationRefs": [
+        {
+          "observationId": "bd42bdde-6695-597e-aa5f-10a29490a09d",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "67e96f91-a130-4b84-a2c7-541c728a7535",
+          "maskSha256": "9de94b3aefc7cebd99f44d909a4a1c0dbf85c5700b17edffb6916482a683904d"
+        }
+      ]
+    },
+    {
+      "entityId": "6310035c-5008-52c0-9191-9a1997c5e360",
+      "decision": "same",
+      "decisionId": "15f67522-e52a-5008-9063-94d5a95bc140",
+      "comparisonEntityIds": [
+        "da0a50da-6459-5471-b25b-d299129c354a",
+        "81b9df0c-432b-5e97-9030-635c7022c22c",
+        "6310035c-5008-52c0-9191-9a1997c5e360"
+      ],
+      "reason": "Same right-front bollard with matching tall scratch pattern and base plate, beside right control/button and yellow light-curtain column; left bollard excluded.",
+      "observationRefs": [
+        {
+          "observationId": "0ac3951f-803f-56c0-86ae-9da0b923c9ef",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "eee2e6e0-f8ef-429b-8279-005977b9fd0a",
+          "maskSha256": "5dba5e0b6c3a0d25e29fc6ce0c1eaa4a95cb1fc6fb45ffdf653d0b3da7859dba"
+        }
+      ]
+    },
+    {
+      "entityId": "a98cf4c5-6c84-5b8c-b27b-93fc17e56d3d",
+      "decision": "different",
+      "decisionId": "3906d2dc-689c-5809-abae-2aca4fef0480",
+      "comparisonEntityIds": [
+        "a98cf4c5-6c84-5b8c-b27b-93fc17e56d3d",
+        "82f289b3-1be2-5afe-8305-5ff3f668ae4a",
+        "965e797a-54db-574a-8ebf-d44452af59d1"
+      ],
+      "reason": "Three masks select different folded-guard sections: central upper plate, right angled wing, left angled wing. Fold seams and stripe directions distinguish these simultaneously visible parts.",
+      "observationRefs": [
+        {
+          "observationId": "554d9390-e612-5723-8289-4dc7fefbc714",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "2ff6bfa2-f667-4954-bf9c-3821438341d7",
+          "maskSha256": "1b38e2bec82d45a30694c27b9ba0eea6a2861af8cff2075140b4817298fdfd08"
+        }
+      ]
+    },
+    {
+      "entityId": "41b4ed25-6de2-58a2-9669-47ad5e392bf7",
+      "decision": "same",
+      "decisionId": "1bcc71f5-1f86-5cb9-99d3-46c25a9411b3",
+      "comparisonEntityIds": [
+        "929b5b7e-17cb-5e05-bbf9-7767114ddd1e",
+        "a6946301-c40c-525c-b731-f0dd95ae164e",
+        "41b4ed25-6de2-58a2-9669-47ad5e392bf7",
+        "9dd85edd-2dad-5c47-b123-f4b29ac60153",
+        "37deeae6-6d88-50f8-b546-e606b8f38d28"
+      ],
+      "reason": "Same complete left gate/fence assembly in frame3: shared upper boundary, horizontal division, blue-white instruction sheet, front upright and guard occlusion. Narrow rear-panel-only record is excluded.",
+      "observationRefs": [
+        {
+          "observationId": "ad8ad0b1-620b-5b85-aa12-5e25c5bb8dfc",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "3af856bf-0a32-4757-aeb1-934136fb45e9",
+          "maskSha256": "0d3b1ad5d2ff566b5f67c98c01da6b51fb80d351d903a9c8dc7efb3e565f16a9"
+        }
+      ]
+    },
+    {
+      "entityId": "14586a1b-8b17-5ee1-a270-1678999df537",
+      "decision": "same",
+      "decisionId": "7528f94a-d449-5cd0-bc9d-3883f5ee4ed4",
+      "comparisonEntityIds": [
+        "27d00998-2702-547e-97b2-d200cd92264a",
+        "2c05872d-6426-57af-9e8d-ad4fefc67d9f",
+        "14586a1b-8b17-5ee1-a270-1678999df537"
+      ],
+      "reason": "Same left-front bollard with matching base scuffs and bolt plate, beside left yellow light-curtain column; right bollard excluded.",
+      "observationRefs": [
+        {
+          "observationId": "e073d552-1e61-5af1-ac62-b5dd93408882",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "4782f0b0-2720-4156-abd7-329032680a9c",
+          "maskSha256": "4bb420471884e0698b31e1780fa755d5b8f816ef73801045f036e107766fa639"
+        }
+      ]
+    },
+    {
+      "entityId": "f138f2cd-9cfe-5db0-85d0-394798588694",
+      "decision": "same",
+      "decisionId": "b5ce772e-fb9b-5b41-876f-af8fa2d68520",
+      "comparisonEntityIds": [
+        "ed46d9e5-8146-567b-9253-2a554046e144",
+        "637852a5-51b5-53cc-8e27-01b34e1fcbf2",
+        "1ec981e4-10f0-573d-a8ee-75c79aeaead4",
+        "f138f2cd-9cfe-5db0-85d0-394798588694",
+        "ede664b5-0b39-56be-a8a6-080ebe1b1cd3"
+      ],
+      "reason": "Same continuous concrete entrance floor: two white floor guides, same yellow-black entry tape, cart feet and scuff context. observed_floor is a restricted interior ROI; other masks cover more of the same slab. No portable or raised platform is visible. Keep tape as a separate marking. Preserve geometryRole=floor.",
+      "observationRefs": [
+        {
+          "observationId": "c46909e7-a024-5d2b-bf57-701faed8171a",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "fa7a46b6-1641-47a9-bbea-56e5a12a7185",
+          "maskSha256": "31f5355d7afa9a0392e7258385f677748a433c98f8aaf297dcd5eae5e8fab96b"
+        }
+      ]
+    },
+    {
+      "entityId": "2fae17c7-bf08-5d1b-8cc7-6791a403c7f1",
+      "decision": "same",
+      "decisionId": "454db0b5-4816-5d21-be75-c92466468706",
+      "comparisonEntityIds": [
+        "0bc9608d-041f-516b-892d-cee0eb174aeb",
+        "37e1203b-fdd6-506e-bfd7-847438a65d3f",
+        "2fae17c7-bf08-5d1b-8cc7-6791a403c7f1"
+      ],
+      "reason": "Same gate-centre folded guard: matching top stripe run, left/right folds, bolt positions and cart occlusion. Both raw masks target the guard rather than the floor or cart.",
+      "observationRefs": [
+        {
+          "observationId": "21c3a65c-26a6-5848-8d1f-52fbdf99b351",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "26e47cbe-fc17-4016-9a85-edc57b052871",
+          "maskSha256": "70c6e31fdab812b3df31eaa7125834fcaa8da8d5f85fcae286d576b25b8f9b2b"
+        }
+      ]
+    },
+    {
+      "entityId": "a3d5ed2d-1e47-5361-a77a-5f899dabff21",
+      "decision": "same",
+      "decisionId": "cd9ccbce-cac0-5629-a3f8-e5c4966f96ed",
+      "comparisonEntityIds": [
+        "169518d8-4f3a-5f67-a565-3180539acad3",
+        "c8de712d-db34-5c0a-a554-56d00cdce20b",
+        "a3d5ed2d-1e47-5361-a77a-5f899dabff21"
+      ],
+      "reason": "Same complete right light-curtain housing: same yellow channel, narrow optical strip and base mount beside warning card and red/yellow button; separate control/button excluded.",
+      "observationRefs": [
+        {
+          "observationId": "b46256e8-6560-592e-9e95-850e5484af9b",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "eda8780b-f755-459d-8f4c-538761656f5e",
+          "maskSha256": "7eb970e3fe07ebfb5a6dc9b7eda95808d6039bcc00af026e2965cc5efb8265ad"
+        }
+      ]
+    },
+    {
+      "entityId": "21eebd8a-107f-5132-9db1-e75a88630c7c",
+      "decision": "same",
+      "decisionId": "945da3f2-e2de-5ce8-9ef8-aa143e5009e4",
+      "comparisonEntityIds": [
+        "5163a9b0-0bb6-5bb5-a9bc-927cb94f8d08",
+        "5fdd01a4-1fb5-5f45-8d3c-f721a0a00513",
+        "21eebd8a-107f-5132-9db1-e75a88630c7c"
+      ],
+      "reason": "Same complete left light-curtain housing: same yellow channel, narrow optical strip and mount on left white upright beside instruction sheet; not its upper beacon.",
+      "observationRefs": [
+        {
+          "observationId": "8899d2bb-c775-5040-88fe-cc7782f428d1",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "0f1f2657-9dc6-4cd2-ba0c-93c473425e22",
+          "maskSha256": "7fb78f4a8c14cf47ef1282ee3c8389dcd6c82f48a86d6cd369b858c4951af432"
+        }
+      ]
+    },
+    {
+      "entityId": "a7bbff43-8416-53a6-b0a8-ba210e1ad284",
+      "decision": "same",
+      "decisionId": "f35121c9-2acf-5978-8ae7-2deff7617aa2",
+      "comparisonEntityIds": [
+        "ce9516a5-a385-5ecb-b6f5-3d543f3ec941",
+        "49637bd6-d4aa-5608-b313-65b0aff301af",
+        "9d055e08-a5a8-546e-9f82-8ead2e5c8af3",
+        "94df2397-80a4-529c-9c41-85a746d4f420",
+        "f4bce8c0-2756-53f1-ad2b-4e67162415ca",
+        "a7bbff43-8416-53a6-b0a8-ba210e1ad284",
+        "82c02133-9b24-5be9-a9a4-f936b184af3f"
+      ],
+      "reason": "Same complete front-right gate/fence assembly: matching upper crossbar, horizontal divider, vertical bars, yellow-column/control mount and rear guard occlusion. Raw full-assembly masks match those landmarks in the two photos; individual upper/lower/rear inserts are excluded.",
+      "observationRefs": [
+        {
+          "observationId": "d0300d40-587c-53d4-8ed2-47d4f74cea01",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "b3101cba-4d38-4ee3-aaae-3b8450b362b0",
+          "maskSha256": "0f434e059b06f9fd2338b15ff4d89300531defa9bb8036dd751d9e4a269771fa"
+        }
+      ]
+    },
+    {
+      "entityId": "ca38d2b3-6807-57c1-89a5-fd4b64358a89",
+      "decision": "same",
+      "decisionId": "a94a7e6d-9314-5101-a872-d6ef4f790b29",
+      "comparisonEntityIds": [
+        "f0e43dd1-735c-577a-a9db-67e24c93616e",
+        "90e47a0f-69df-5684-a130-55f671355511",
+        "ca38d2b3-6807-57c1-89a5-fd4b64358a89",
+        "f9e1ad9d-2418-5a35-8914-3087a0cd4514"
+      ],
+      "reason": "Same upper-right beacon across frame1/frame3: grey cap, ribbed red lens, yellow base and bracket on right entrance upright beside overhead blue pipe. Smaller masks are partial lens observations of the same lamp.",
+      "observationRefs": [
+        {
+          "observationId": "22e182ea-5dfc-5d57-bbb6-7c558295e6ae",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "073589e1-22e4-48c8-ad03-dac97a2ed255",
+          "maskSha256": "844ab82fb0fbf9c30a7b61342e78df4530f373381cc3d4f56a8d7f7a52366fda"
+        }
+      ]
+    },
+    {
+      "entityId": "f9e1ad9d-2418-5a35-8914-3087a0cd4514",
+      "decision": "same",
+      "decisionId": "a94a7e6d-9314-5101-a872-d6ef4f790b29",
+      "comparisonEntityIds": [
+        "f0e43dd1-735c-577a-a9db-67e24c93616e",
+        "90e47a0f-69df-5684-a130-55f671355511",
+        "ca38d2b3-6807-57c1-89a5-fd4b64358a89",
+        "f9e1ad9d-2418-5a35-8914-3087a0cd4514"
+      ],
+      "reason": "Same upper-right beacon across frame1/frame3: grey cap, ribbed red lens, yellow base and bracket on right entrance upright beside overhead blue pipe. Smaller masks are partial lens observations of the same lamp.",
+      "observationRefs": [
+        {
+          "observationId": "ae611d99-7e41-5d5b-9f54-da4618c60c42",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "776c88be-3c16-4577-a1a9-7bbd7e95b093",
+          "maskSha256": "77a9db8e9f957dc1a97cb8ba5261bc2bbce20888ca6cce6df70bb59a1cbd05ec"
+        }
+      ]
+    },
+    {
+      "entityId": "706f731a-a42e-5520-90de-4d4fb4b2cf77",
+      "decision": "same",
+      "decisionId": "3c422f25-e60a-5ad9-846a-56d650535793",
+      "comparisonEntityIds": [
+        "5af975cb-fd5d-5989-8d60-cbf2ba543bfc",
+        "706f731a-a42e-5520-90de-4d4fb4b2cf77"
+      ],
+      "reason": "Two same-photo masks of the same upper-left beacon in frame3: identical grey cap, red ribbed lens, yellow foot and mounting bracket.",
+      "observationRefs": [
+        {
+          "observationId": "8103fd4f-4b0e-5ebc-91d0-2768e63a8a98",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "bd229618-d7f6-44ac-bacf-9d2853328c36",
+          "maskSha256": "84886ac7829aec5e1b54f96a8479d413354435b220a96ff42a7b156d7c91caf2"
+        }
+      ]
+    },
+    {
+      "entityId": "82c02133-9b24-5be9-a9a4-f936b184af3f",
+      "decision": "same",
+      "decisionId": "f35121c9-2acf-5978-8ae7-2deff7617aa2",
+      "comparisonEntityIds": [
+        "ce9516a5-a385-5ecb-b6f5-3d543f3ec941",
+        "49637bd6-d4aa-5608-b313-65b0aff301af",
+        "9d055e08-a5a8-546e-9f82-8ead2e5c8af3",
+        "94df2397-80a4-529c-9c41-85a746d4f420",
+        "f4bce8c0-2756-53f1-ad2b-4e67162415ca",
+        "a7bbff43-8416-53a6-b0a8-ba210e1ad284",
+        "82c02133-9b24-5be9-a9a4-f936b184af3f"
+      ],
+      "reason": "Same complete front-right gate/fence assembly: matching upper crossbar, horizontal divider, vertical bars, yellow-column/control mount and rear guard occlusion. Raw full-assembly masks match those landmarks in the two photos; individual upper/lower/rear inserts are excluded.",
+      "observationRefs": [
+        {
+          "observationId": "140987d7-43bc-5791-b456-d40fa0b9f338",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "7b447ef1-c83c-42e3-979a-91730e8eb08c",
+          "maskSha256": "3cc13e7be7617f34c12591d4ac7f71db0192117c54becf5ee5ca1663882c6b3b"
+        }
+      ]
+    },
+    {
+      "entityId": "3a875626-ce97-5f04-a3d0-24f207ce6243",
+      "decision": "undecided",
+      "decisionId": "b179bded-a782-5fba-ae5d-0cb11ef51f82",
+      "comparisonEntityIds": [
+        "3a875626-ce97-5f04-a3d0-24f207ce6243",
+        "d22e72d1-ca73-5ea4-a5f3-68057d7af6dd"
+      ],
+      "reason": "Narrow near-camera wire-mesh/cable strip at frame3 right edge versus broad barred panel behind it in frame1. Cable/frame occlusion prevents proving shared physical extent.",
+      "observationRefs": [
+        {
+          "observationId": "4f71c44a-0840-516f-af39-7f4a181f05f4",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "8ac01e7c-1075-4a72-b5c9-3342fbdb25a1",
+          "maskSha256": "36e220d4965eda5a7b0191cbf5ce9856ca170f184ba3a196825709daaaf756a8"
+        }
+      ]
+    },
+    {
+      "entityId": "82f289b3-1be2-5afe-8305-5ff3f668ae4a",
+      "decision": "different",
+      "decisionId": "3906d2dc-689c-5809-abae-2aca4fef0480",
+      "comparisonEntityIds": [
+        "a98cf4c5-6c84-5b8c-b27b-93fc17e56d3d",
+        "82f289b3-1be2-5afe-8305-5ff3f668ae4a",
+        "965e797a-54db-574a-8ebf-d44452af59d1"
+      ],
+      "reason": "Three masks select different folded-guard sections: central upper plate, right angled wing, left angled wing. Fold seams and stripe directions distinguish these simultaneously visible parts.",
+      "observationRefs": [
+        {
+          "observationId": "ebec0489-46d6-5421-9223-ba236914b7d4",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "a2546cbb-bfbd-4434-91db-ff3221222ebe",
+          "maskSha256": "c2246d98cd60bba40e3c81ef8cddb12317b6bb123bd48c41c76bb5cb803a0ae5"
+        }
+      ]
+    },
+    {
+      "entityId": "965e797a-54db-574a-8ebf-d44452af59d1",
+      "decision": "different",
+      "decisionId": "3906d2dc-689c-5809-abae-2aca4fef0480",
+      "comparisonEntityIds": [
+        "a98cf4c5-6c84-5b8c-b27b-93fc17e56d3d",
+        "82f289b3-1be2-5afe-8305-5ff3f668ae4a",
+        "965e797a-54db-574a-8ebf-d44452af59d1"
+      ],
+      "reason": "Three masks select different folded-guard sections: central upper plate, right angled wing, left angled wing. Fold seams and stripe directions distinguish these simultaneously visible parts.",
+      "observationRefs": [
+        {
+          "observationId": "317f1a84-3151-5ae0-8d0b-411f1cbdc4ce",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "247d3416-0ed3-41fc-82ef-a148ce576a1a",
+          "maskSha256": "af4df713a374ca2427954b49ef03f7b79e5fc57b79aba6cf2dcc57d519137d8c"
+        }
+      ]
+    },
+    {
+      "entityId": "ede664b5-0b39-56be-a8a6-080ebe1b1cd3",
+      "decision": "same",
+      "decisionId": "b5ce772e-fb9b-5b41-876f-af8fa2d68520",
+      "comparisonEntityIds": [
+        "ed46d9e5-8146-567b-9253-2a554046e144",
+        "637852a5-51b5-53cc-8e27-01b34e1fcbf2",
+        "1ec981e4-10f0-573d-a8ee-75c79aeaead4",
+        "f138f2cd-9cfe-5db0-85d0-394798588694",
+        "ede664b5-0b39-56be-a8a6-080ebe1b1cd3"
+      ],
+      "reason": "Same continuous concrete entrance floor: two white floor guides, same yellow-black entry tape, cart feet and scuff context. observed_floor is a restricted interior ROI; other masks cover more of the same slab. No portable or raised platform is visible. Keep tape as a separate marking. Preserve geometryRole=floor.",
+      "observationRefs": [
+        {
+          "observationId": "f1c23763-2599-5590-b33a-830569f710d5",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "364c5a25-58ff-40b3-b3eb-34d616cfb703",
+          "maskSha256": "84ea72b5d51a9815169baf8ad68d7b2d6f1fec9ffb6791935776c082cf9b74fa"
+        }
+      ]
+    },
+    {
+      "entityId": "5af975cb-fd5d-5989-8d60-cbf2ba543bfc",
+      "decision": "same",
+      "decisionId": "3c422f25-e60a-5ad9-846a-56d650535793",
+      "comparisonEntityIds": [
+        "5af975cb-fd5d-5989-8d60-cbf2ba543bfc",
+        "706f731a-a42e-5520-90de-4d4fb4b2cf77"
+      ],
+      "reason": "Two same-photo masks of the same upper-left beacon in frame3: identical grey cap, red ribbed lens, yellow foot and mounting bracket.",
+      "observationRefs": [
+        {
+          "observationId": "0911287e-62ad-5b69-bcc0-bb9034235d8c",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "9b7f3e34-ef82-40bd-b964-79ee3e1f7a14",
+          "maskSha256": "e05d283abec489d1a77c160b00b7bccc299458be9c3d18db7f0960ebc68ad0e1"
+        }
+      ]
+    },
+    {
+      "entityId": "9dd85edd-2dad-5c47-b123-f4b29ac60153",
+      "decision": "same",
+      "decisionId": "1bcc71f5-1f86-5cb9-99d3-46c25a9411b3",
+      "comparisonEntityIds": [
+        "929b5b7e-17cb-5e05-bbf9-7767114ddd1e",
+        "a6946301-c40c-525c-b731-f0dd95ae164e",
+        "41b4ed25-6de2-58a2-9669-47ad5e392bf7",
+        "9dd85edd-2dad-5c47-b123-f4b29ac60153",
+        "37deeae6-6d88-50f8-b546-e606b8f38d28"
+      ],
+      "reason": "Same complete left gate/fence assembly in frame3: shared upper boundary, horizontal division, blue-white instruction sheet, front upright and guard occlusion. Narrow rear-panel-only record is excluded.",
+      "observationRefs": [
+        {
+          "observationId": "0044c9ac-1ede-52a9-b5e5-d86590ba9fd2",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "f0e46b13-8b0d-4fd4-8e00-0046a7de8af9",
+          "maskSha256": "cb3bb0d8a7b80358a22014af294478f3763f77be07466a6ece17f5fd28e00e2c"
+        }
+      ]
+    },
+    {
+      "entityId": "59b6410a-a3d6-5e4b-86b7-afe1e0c1c1f8",
+      "decision": "different",
+      "decisionId": "f2367ff6-9007-54e5-a541-8034cd8d773c",
+      "comparisonEntityIds": [
+        "59b6410a-a3d6-5e4b-86b7-afe1e0c1c1f8",
+        "7ed570b4-f194-5c53-b374-1cb85a1edb86"
+      ],
+      "reason": "Long blue-white instruction poster on left gate versus small warning card on right control upright. Different printed layouts and mounting sides.",
+      "observationRefs": [
+        {
+          "observationId": "ce7d851c-3f25-55a4-a87b-64de74a09b41",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "c980a492-8621-4c2b-b5d3-5c484fc6596a",
+          "maskSha256": "e61fb0aa6d1cf3648db44894340dbc5239343a073f24911e32bcdc79f23ab924"
+        }
+      ]
+    },
+    {
+      "entityId": "5a62a2d3-0216-512d-b384-3eadd69d3e9e",
+      "decision": "undecided",
+      "decisionId": "94ebe4b4-0135-5296-8168-5441faac7e0e",
+      "comparisonEntityIds": [
+        "5a62a2d3-0216-512d-b384-3eadd69d3e9e",
+        "929b5b7e-17cb-5e05-bbf9-7767114ddd1e"
+      ],
+      "reason": "Narrow rear vertical section of left fence. Visible joint suggests a subpanel, but no matching second view establishes panel identity versus incomplete assembly observation.",
+      "observationRefs": [
+        {
+          "observationId": "498ae5af-23ba-593c-bb45-c0eca3f2f695",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "b0b7437d-d8c2-415d-8115-a53cc8b54f97",
+          "maskSha256": "d323c02b8ecab8c59c4b1c5b5fd1d11fb3596c1892d721959e1bfc6272a425ed"
+        }
+      ]
+    },
+    {
+      "entityId": "37deeae6-6d88-50f8-b546-e606b8f38d28",
+      "decision": "same",
+      "decisionId": "1bcc71f5-1f86-5cb9-99d3-46c25a9411b3",
+      "comparisonEntityIds": [
+        "929b5b7e-17cb-5e05-bbf9-7767114ddd1e",
+        "a6946301-c40c-525c-b731-f0dd95ae164e",
+        "41b4ed25-6de2-58a2-9669-47ad5e392bf7",
+        "9dd85edd-2dad-5c47-b123-f4b29ac60153",
+        "37deeae6-6d88-50f8-b546-e606b8f38d28"
+      ],
+      "reason": "Same complete left gate/fence assembly in frame3: shared upper boundary, horizontal division, blue-white instruction sheet, front upright and guard occlusion. Narrow rear-panel-only record is excluded.",
+      "observationRefs": [
+        {
+          "observationId": "9500ba6e-b87f-5b9f-adff-e26810d2392d",
+          "observationRevision": 1,
+          "imageId": "6d69d290-2cea-410b-8c96-73b377ff5917",
+          "imageSha256": "816df6592ffe897a5ff31faa7b97863d6cf6860bf9f7ff954d3fade3be5d26e3",
+          "maskAssetId": "79469cb7-21c4-44fd-9b78-c33271523294",
+          "maskSha256": "2a4075eb3ab7aa7ab08a4913af78fcec6cad41c40b8838448fa63ab3c4efeb45"
+        }
+      ]
+    }
+  ],
+  "application": {
+    "publicationId": "e38008a7-41e2-451a-aa10-2154962617cf",
+    "baseRevisionId": "b638e847-7b30-4443-b811-0b4349c07d5a",
+    "editRevisionId": "262f1805-7315-497c-b847-4720a80503dc",
+    "sceneRevisionId": "492b89f8-30b2-4739-b8f1-4bba0236699f",
+    "sceneDocumentSha256": "213544eb3ec11542035da5b02e2c76a120e096f8f11b81eb8b1c9df8f53e0c24",
+    "beforeRecords": 59,
+    "afterRecords": 28,
+    "observations": 84,
+    "newModelCalls": 0,
+    "reassociationOperations": 0,
+    "reassociationSeconds": 5.519576166989282,
+    "identityStateCounts": {
+      "confirmed": 16,
+      "association_pending": 12
+    },
+    "exportStatus": "incomplete",
+    "glbValidation": "passed",
+    "blenderReopenValidation": "passed",
+    "unplacedEntities": 10,
+    "checks": {
+      "observationsUnchanged": true,
+      "representationsUnchanged": true,
+      "measurementEvidenceUnchanged": true
+    }
+  }
+}

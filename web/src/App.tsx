@@ -39,6 +39,8 @@ import {
   activeModel,
   cameraForImage,
   currentCameras,
+  currentEntityId,
+  observationOwner,
   modelGeometry,
   modelTilt,
   planShapes,
@@ -1166,9 +1168,8 @@ function Workspace({
     objects = document.entities.filter(entity => !entity.sourceContext),
     { t } = useI18n();
   const query = new URLSearchParams(location.hash.split("?")[1] || ""),
-    [selectedId, setSelected] = useState<string | null>(query.get("object")),
-    [observationId, setObservation] = useState<string | null>(
-      document.observations.find(o => o.id === query.get("observation") && document.entities.find(e => e.id === query.get("object"))?.observationRefs?.includes(o.id))?.id || null),
+    [requestedEntityId, setSelected] = useState<string | null>(query.get("object")),
+    [requestedObservationId, setObservation] = useState<string | null>(query.get("observation")),
     [cameraId, setCamera] = useState<string | null>(
       cameraForImage(document, query.get("image"))?.id || currentCameras(document)[0]?.id || null,
     ),
@@ -1186,7 +1187,10 @@ function Workspace({
     [creatingModel, setCreatingModel] = useState(false),
     [appending, setAppending] = useState(false), [appendFiles, setAppendFiles] = useState<File[]>([]), [captureError, setCaptureError] = useState<unknown>();
   const appendRequest = useRef({id:id(),baseRevisionId:revision.id});
-  const selected = objects.find((e) => e.id === selectedId) || null,
+  const selectionEpoch = useRef(0);
+  const selectedId = requestedEntityId ? currentEntityId(document, requestedEntityId) : null,
+    observationId = selectedId && observationOwner(document, requestedObservationId || "")?.id === selectedId ? requestedObservationId : null,
+    selected = objects.find((e) => e.id === selectedId) || null,
     camera =
       currentCameras(document).find((c) => c.id === cameraId),
     imageId =
@@ -1197,13 +1201,20 @@ function Workspace({
       document.assets.find((a) => a.kind === "source_image")?.id ||
       null;
   useEffect(() => {
+    // Resolve before rendering children; normalization must not overwrite a newer click.
+    setSelected(current => current === requestedEntityId ? selectedId : current);
+    setObservation(current => current === requestedObservationId ? observationId : current);
+  }, [requestedEntityId, requestedObservationId, selectedId, observationId]);
+  useEffect(() => {
     const next = cameraForImage(document, imageId)?.id || null;
     if (next !== cameraId) setCamera(next);
   }, [document.geometryBindings, document.cameras, imageId, cameraId]);
   function select(entityId: string, obsId?: string) {
-    setSelected(entityId);
+    const currentId = currentEntityId(document, entityId);
+    selectionEpoch.current++;
+    setSelected(currentId);
     setBox(null);
-    const entity = document.entities.find((e) => e.id === entityId);
+    const entity = document.entities.find((e) => e.id === currentId);
     const observations = entity ? observationsFor(document, entity) : [];
     const next =
       observations.find((o) => o.id === obsId) ||
@@ -1216,7 +1227,8 @@ function Workspace({
     const url = new URL(location.href);
     const [hashPath, hashQuery = ""] = url.hash.slice(1).split("?");
     const params = new URLSearchParams(hashQuery);
-    params.set("object", entityId);
+    if (currentId) params.set("object", currentId);
+    else params.delete("object");
     history.replaceState(null, "", "#" + hashPath + "?" + params);
   }
   const selection: Selection = {
@@ -1525,8 +1537,9 @@ function Workspace({
             document={document}
             selected={selected}
             onCommit={async (ops) => {
+              const epoch = selectionEpoch.current;
               const result = await onCommit(ops);
-              if (result !== false) {
+              if (result !== false && epoch === selectionEpoch.current) {
                 const entityId =
                   ops
                     .slice()

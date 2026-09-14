@@ -182,7 +182,7 @@ def repair_measurement_sources(document, *, base_revision_id):
 
 def _select_measurements(entity, previous=None, *, eligible_ids=None):
     previous = previous or {}
-    by_key = {}
+    by_key = {key: [] for key, selected in previous.items() if selected is None}
     for record in entity["measurementEvidence"]:
         by_key.setdefault(record["measurementKey"], []).append(record)
     values, selections = {}, {}
@@ -505,7 +505,7 @@ def apply_identity_operation(document, operation, *, base_revision_id):
         entities = {e["id"]: e for e in document["entities"]}
         _require(len(ids) >= 2 and len(ids) == len(set(ids)) and set(ids) <= set(entities), "invalid_merge")
         kept = entities[survivor]
-        old_selection = kept["measurementSelections"]
+        old_selection = {key: None for eid in ids for key in entities[eid]["measurementSelections"]} | kept["measurementSelections"]
         eligible_measurements = {selected for eid in ids for selected in entities[eid]["measurementSelections"].values() if selected is not None}
         source_fields = [{"operation": "merge", "entityId": eid, "sourceRevisionId": base_revision_id, "decisionId": decision["id"],
                           "sourceFields": {k: deepcopy(v) for k, v in entities[eid].items() if k not in {"observationRefs", "representations", "measurementEvidence", "measurementSelections", "measurements", "lineage"}}} for eid in ids]

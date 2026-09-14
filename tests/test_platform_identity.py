@@ -369,3 +369,29 @@ def test_unselected_historical_measurement_never_becomes_current_during_merge():
     kept = merged['entities'][0]
     assert kept['measurements']['height'] == doc['entities'][1]['measurements']['height']
     assert all(record in kept['measurementEvidence'] for record in old_evidence)
+
+
+def test_explicit_null_measurement_keys_survive_merge_split_and_selection():
+    source = source_scene()
+    for i, entity in enumerate(source['entities'], 1):
+        entity['measurements'][f'unknown-{i}'] = None
+    doc = migrate_document(source, base_revision_id=BASE)
+    merged, inverse = merge(doc)
+    assert inverse[0]['document'] == doc
+    item = merged['entities'][0]
+    for key in ('unknown-1', 'unknown-2'):
+        assert key in item['measurements'] and item['measurements'][key] is None
+        assert key in item['measurementSelections'] and item['measurementSelections'][key] is None
+    d = decision(merged, 'different', ids=[item['id']], supersedes=merged['identityDecisions'][-1]['id'])
+    d['observationGroups'] = [[f'observation-{i}'] for i in (1, 2)]
+    groups = [{'id': f'child-{i}', 'observationRefs': [f'observation-{i}'], 'representationIds': [f'model-{i}'],
+               'measurementEvidenceIds': [r['id'] for r in item['measurementEvidence'] if r['sourceEntityId'] == f'entity-{i}']} for i in (1, 2)]
+    split, _ = apply_operations(merged, [{'type': 'recordIdentityDecision', 'decision': d},
+                                       {'type': 'splitEntity', 'entityId': item['id'], 'decisionId': d['id'], 'groups': groups}], base_revision_id=BASE)
+    for current in (merged, split):
+        selections = [{'type': 'selectMeasurementEvidence', 'entityId': e['id'], 'measurementKey': key, 'measurementEvidenceId': None}
+                      for e in current['entities'] for key in ('unknown-1', 'unknown-2')]
+        selected, _ = apply_operations(current, selections, base_revision_id=BASE)
+        assert selected == current
+        assert selected['observations'] == doc['observations'] and selected['assets'] == doc['assets']
+        assert {r['id']: r for e in selected['entities'] for r in e['measurementEvidence']} == {r['id']: r for e in doc['entities'] for r in e['measurementEvidence']}
