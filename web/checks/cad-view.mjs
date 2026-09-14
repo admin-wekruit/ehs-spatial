@@ -24,12 +24,16 @@ if (process.argv[2]) {
   assert.ok(shapes.length > 0);
 }
 const original = JSON.stringify(shapes);
-for (const size of [{ width: 360, height: 260 }, { width: 900, height: 700 }]) {
+for (const size of [{ width: 436.5, height: 47.65625 }, { width: 360, height: 260 }, { width: 900, height: 700 }]) {
   const camera = cadFit(shapes, size);
+  const extents = shapes.flatMap(shape => shape.polygon.map(point => cadScreen(point, camera, size)));
+  const occupied = [0, 1].map(k => Math.max(...extents.map(p => p[k])) - Math.min(...extents.map(p => p[k])));
+  assert.ok(occupied[0] >= size.width * .79 || occupied[1] >= size.height * .79,
+    "Automatic fit must fill at least 79% of one canvas dimension, including compact panes");
   for (const shape of shapes) for (const point of shape.polygon) {
     const screen = cadScreen(point, camera, size);
-    assert.ok(screen[0] >= 43.99 && screen[0] <= size.width - 43.99);
-    assert.ok(screen[1] >= 39.99 && screen[1] <= size.height - 39.99);
+    assert.ok(screen[0] >= 0 && screen[0] <= size.width);
+    assert.ok(screen[1] >= 0 && screen[1] <= size.height);
     const roundTrip = cadWorld(screen, camera, size);
     assert.ok(roundTrip.every((value, index) => Math.abs(value - point[index]) < 1e-9));
   }
@@ -49,6 +53,9 @@ const focusedSize = { width: 450, height: 280 }, focusedShape = shape("selected"
 const focusedCamera = cadFit([focusedShape], focusedSize, 160);
 assert.ok(cadScreen(focusedShape.max, focusedCamera, focusedSize)[0] <= focusedSize.width - 80,
   "Focus mode must reserve space for the projected-depth dimension");
+const narrowSize = { width: 100, height: 40 }, narrowFocus = cadFit([focusedShape], narrowSize, 160);
+assert.ok(cadScreen(focusedShape.max, narrowFocus, narrowSize)[0] - cadScreen(focusedShape.min, narrowFocus, narrowSize)[0] >= 60,
+  "Explicit focus padding must also shrink on narrow panes instead of compressing the object to one pixel");
 assert.deepEqual(Array.from(cadWorld([120, 70], { center: [2, -3], scale: 20 }, { width: 200, height: 100 })), [3, -4]);
 assert.ok(source.includes("shape.polygon.map(p => cadScreen(p, view, size)"), "Render the shared detailed polygons directly");
 assert.ok(source.includes("planHits(shapes, world[0], world[1])"), "Overlap picking uses the same geometry as the drawing");

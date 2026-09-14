@@ -39,6 +39,8 @@ export const reportSceneMessages: Record<string, [string, string]> = {
   ],
   scenePhotoNumber: ["照片", "Photo"],
   sceneObjects: ["场景对象", "Scene objects"],
+  sceneOpenObjectList: ["查看全部对象", "View all objects"],
+  sceneRecordNote: ["记录与对象的区别", "Records and objects"],
   sceneSearch: ["搜索物体名称或编号", "Search object name or ID"],
   sceneNoMatches: ["没有匹配的物体。", "No matching objects."],
   sceneNoObjects: [

@@ -3,8 +3,8 @@ import { SpatialView, PlanView } from "./App";
 import { PhotoView } from "./PhotoView";
 import { CadView } from "./CadView";
 import { useI18n } from "./i18n";
-import { observationsFor, entityGeometryForLayer, jsonObject, planShapes, type GeometryOptions } from "./core";
-import { isReferenceSurface } from "./scene-semantics";
+import { observationsFor, entityGeometryForLayer, jsonObject, planShapes, sourceDimensions, sourceScale, type GeometryOptions } from "./core";
+import { entityEvidenceStatus, isReferenceSurface } from "./scene-semantics";
 import {
   add,
   cameraMatrix,
@@ -192,9 +192,20 @@ function PhotoAxes({
   );
 }
 
+export function Extent({ entity, document }: { entity: Entity; document: SceneDocument }) {
+  const { t } = useI18n(), d = sourceDimensions(entity), scale = sourceScale(document, entity),
+    groundDimensions = [d.widthNative, d.depthNative, d.groundHeight],
+    values = isReferenceSurface(document, entity) ? [d.widthNative, d.depthNative] :
+      groundDimensions.every(Number.isFinite) ? groundDimensions : [d.extentX, d.extentY, d.extentZ];
+  return values.some(Number.isFinite) ? <span className="report-numeric">
+    {values.map((value) => Number.isFinite(value) ? (value! * (scale?.nativeToMeters || 1)).toFixed(2) : "—").join(" × ")}
+    <small>{scale?.nativeToMeters ? "m" : t("uncalibrated")}</small>
+  </span> : <span>—</span>;
+}
+
 export function ReportScene({
   revision, selection, onSelect, imageId, cameraId, onCamera,
-  draw = false, onBox, onOpenSourceCad, inspector,
+  draw = false, onBox, onOpenSourceCad, inspector, objectListRequest = 0,
 }: {
   revision: Revision;
   selection: Selection;
@@ -206,9 +217,10 @@ export function ReportScene({
   onBox?: (box: number[] | null) => void;
   onOpenSourceCad?: () => void;
   inspector?: ReactNode;
+  objectListRequest?: number;
 }) {
   const { t } = useI18n(), container = useRef<HTMLElement>(null),
-    objectList = useRef<HTMLDivElement>(null), panePrefix = useId();
+    objectList = useRef<HTMLDivElement>(null), objectSearch = useRef<HTMLInputElement>(null), panePrefix = useId();
   const [layer, setLayer] = useState<Layer>("model"),
     [allBounds, setAllBounds] = useState(false),
     [focused, setFocused] = useState<Pane | null>(null),
@@ -250,6 +262,12 @@ export function ReportScene({
   }
   useEffect(() => { if (layer === "point_cloud" && !hasPointCloud) setLayer("model"); }, [hasPointCloud, layer]);
   useEffect(() => { if (draw) { setFocused("photo"); setMobileSection("views"); } }, [draw]);
+  useEffect(() => {
+    if (!objectListRequest) return;
+    setSearch(""); setMobileSection("objects");
+    const frame = window.requestAnimationFrame(() => objectSearch.current?.focus({ preventScroll: true }));
+    return () => window.cancelAnimationFrame(frame);
+  }, [objectListRequest]);
   useEffect(() => {
     const changed = () => {
       const active = window.document.fullscreenElement === container.current;
@@ -314,7 +332,7 @@ export function ReportScene({
       <div className="report-scene-shell">
         <aside className="report-scene-object-rail" id={`${panePrefix}-objects`} aria-label={t("sceneObjects")}>
           <header><h3>{t("sceneObjects")}</h3><span className="report-scene-count">{objects.length}</span></header>
-          <div className="report-scene-object-search"><input type="search" aria-label={t("sceneSearch")} placeholder={t("sceneSearch")} value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+          <div className="report-scene-object-search"><input ref={objectSearch} type="search" aria-label={t("sceneSearch")} placeholder={t("sceneSearch")} value={search} onChange={(e) => setSearch(e.target.value)} /></div>
           <div className="report-scene-current-object" aria-live="polite">
             <span>{t("sceneSelected")}</span><strong>{selected?.label || selected?.id || t("sceneNoSelection")}</strong>
             {selected && <small>{selected.id.slice(0, 8)}</small>}
@@ -322,16 +340,24 @@ export function ReportScene({
           <div ref={objectList} className="report-scene-object-list">
             {filtered.map((entity) => {
               const indices = images.flatMap((image, index) => photoIds.get(entity.id)?.has(image.imageId) ? [index + 1] : []);
+              const evidence = entityEvidenceStatus(document, entity), observations = observationsFor(document, entity),
+                representations = entity.representations || [],
+                kinds = [...new Set(representations.map((representation) => t(representation.kind)))],
+                candidate = representations.some((representation) => representation.placementState === "unconfirmed");
               return <button key={entity.id} aria-pressed={entity.id === selection.entityId} onClick={() => selectEntity(entity.id)}>
                 <strong><b className="report-scene-object-number">{objectNumbers.get(entity.id)}</b>{entity.label || entity.id}</strong>
-                <span>{indices.length ? `${t("scenePhotoNumber")} ${indices.join(" / ")}` : t("sceneNoPhotoLink")}<small>{entity.id.slice(0, 8)}</small></span>
-                {!(entity.representations || []).length ? <em>{t(entityGeometryForLayer(entity, geometryOptions) ? "sceneBoundsOnly" : "sceneNoGeometry")}</em> :
-                  (entity.representations || []).some((r) => r.placementState === "unconfirmed") && <em>{t("sceneCandidate")}</em>}
+                <span className="report-scene-object-source">{indices.length ? `${t("scenePhotoNumber")} ${indices.join(" / ")}` : t("sceneNoPhotoLink")}<small>{entity.id.slice(0, 8)}</small></span>
+                <span className="report-scene-object-evidence">{t(evidence.photoKey)}{observations.length > 0 && ` · ${observations.length} ${t("observations")}`}</span>
+                {evidence.identityKey && <span className="report-scene-object-identity"><span>{t("entityIdentity")}</span>{t(evidence.identityKey)}</span>}
+                <span className="report-scene-object-model"><span>{t("model")}</span>{kinds.length ? kinds.join(" · ") : t(entityGeometryForLayer(entity, geometryOptions) ? "sceneBoundsOnly" : "reportMissingGeometry")}{candidate && <em>{t("sceneCandidate")}</em>}</span>
+                <span className="report-scene-object-extent"><span>{t("reportObservedExtent")}</span><Extent entity={entity} document={document} /></span>
               </button>;
             })}
             {!filtered.length && <p className="report-scene-list-empty">{t(objects.length ? "sceneNoMatches" : "sceneNoObjects")}</p>}
           </div>
-          <footer>{filtered.length} / {objects.length} · {t("sceneObjects")}</footer>
+          <footer><span>{filtered.length} / {objects.length} · {t("sceneObjects")}</span>
+            <details><summary>{t("sceneRecordNote")}</summary><p>{t("reportAssociationHint")}</p></details>
+          </footer>
         </aside>
         <div className="report-scene-center" id={`${panePrefix}-views`}>
           <nav className="report-scene-view-switch" aria-label={t("sceneViews")}>

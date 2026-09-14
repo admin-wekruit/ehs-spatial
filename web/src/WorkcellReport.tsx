@@ -23,7 +23,7 @@ import {
 import { useI18n } from "./i18n";
 import { ErrorNotice } from "./App";
 import { AgentPanel } from "./AgentPanel";
-import { ReportScene } from "./ReportScene";
+import { Extent, ReportScene } from "./ReportScene";
 import { ReportObjectFindings } from "./ReportObjectFindings";
 import { ReportReview, type AssessmentSummary } from "./ReportReview";
 import { entityEvidenceStatus, isReferenceSurface } from "./scene-semantics";
@@ -168,8 +168,7 @@ export function WorkcellReport({
     [jobs, setJobs] = useState<Job[]>([]),
     [history, setHistory] = useState<PublicationSummary[]>([]),
     [events, setEvents] = useState<EditBatch[]>([]);
-  const [allObjects, setAllObjects] = useState(false),
-    [search, setSearch] = useState(""),
+  const [objectListRequest, setObjectListRequest] = useState(0),
     [generation, setGeneration] = useState(0);
   const [assessment, setAssessment] = useState<AssessmentSummary>();
   const [evaluationRecords, setEvaluationRecords] = useState<{ revisionId: string; evaluations: Evaluation[] | null }>();
@@ -626,9 +625,6 @@ export function WorkcellReport({
       jobResultSummary(j.result).assets.length,
   );
   const objects = doc.entities.filter((e) => !e.sourceContext);
-  const filteredObjects = objects.filter((e) =>
-    (e.label || e.id).toLowerCase().includes(search.toLowerCase()),
-  );
   const sourceImages = doc.assets.filter((a) => a.kind === "source_image");
   const modelWorkbenchURL = contextURL("#/projects/" + project.id + "/workbench?revision=" + revision.id, { selection, imageId, box: null, reviewMode: false, agentOpen: false });
   const pendingGeometry = objects.filter(e => !e.representations?.length || e.representations.some(r => r.placementState === "unconfirmed")).length;
@@ -744,6 +740,7 @@ export function WorkcellReport({
           imageId={imageId}
           cameraId={selection.cameraId}
           onCamera={changeCamera}
+          objectListRequest={objectListRequest}
           onOpenSourceCad={jsonObject(jsonObject(doc.reportEvidence)?.historical)?.cad ? () => jump("original-cad") : undefined}
           inspector={<>
             <div className="report-selection-details">
@@ -835,13 +832,9 @@ export function WorkcellReport({
             <span className="report-kicker">02 / {t("sourceEvidence")}</span>
             <h2>{t("reportUnderstanding")}</h2>
           </div>
-          <input
-            aria-label={t("search")}
-            type="search"
-            placeholder={t("search")}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          <button className="report-open-objects" onClick={() => { setObjectListRequest((request) => request + 1); jump("spatial"); }}>
+            {t("sceneOpenObjectList")} · {objects.length} ↑
+          </button>
         </div>
         <ReportEvidence
           document={doc}
@@ -850,76 +843,9 @@ export function WorkcellReport({
           onSelect={select}
           onSelectEvidence={selectEvidence}
         />
-        <p className="report-section-intro">{t("reportUnderstandingHint")}</p>
-        <div className="report-table-scroll">
-          <table className="report-inventory">
-            <thead>
-              <tr>
-                <th>{t("objects")}</th>
-                <th>{t("sourceEvidence")}</th>
-                <th>{t("model")}</th>
-                <th>{t("reportObservedExtent")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(allObjects
-                ? filteredObjects
-                : filteredObjects.slice(0, 10)
-              ).map((e) => (
-                <tr
-                  key={e.id}
-                  className={selection.entityId === e.id ? "is-selected" : ""}
-                >
-                  <td>
-                    <button
-                      onClick={() => {
-                        select(e.id);
-                        jump("spatial");
-                      }}
-                    >
-                      {e.label || e.id}
-                      <span>↗</span>
-                    </button>
-                  </td>
-                  <td>
-                    {observationsFor(doc, e).length} {t("observations")}
-                    <small>
-                      {t(entityEvidenceStatus(doc, e).photoKey)}
-                    </small>
-                    <small>
-                      {entityEvidenceStatus(doc, e).identityKey && t(entityEvidenceStatus(doc, e).identityKey!)}
-                    </small>
-                  </td>
-                  <td>
-                    {(e.representations || []).length
-                      ? Array.from(
-                          new Set(
-                            (e.representations || []).map((r) => t(r.kind)),
-                          ),
-                        ).join(" · ")
-                      : t("reportMissingGeometry")}
-                  </td>
-                  <td>
-                    <Extent entity={e} document={doc} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
         {!objects.length && (
           <p className="report-notice">{t("reportNoAnalysis")}</p>
         )}
-        {filteredObjects.length > 10 && (
-          <button
-            className="report-expand"
-            onClick={() => setAllObjects((v) => !v)}
-          >
-            {t(allObjects ? "reportShowLess" : "reportShowAll")} ·{" "}
-            {filteredObjects.length}
-          </button>
-        )}
-        <p className="report-footnote">{t("reportAssociationHint")}</p>
       </section>
       <section id="workcell-safety" className="workcell-section">
       <section className="report-overview" aria-label={t("reportSituation")}>
@@ -1151,34 +1077,6 @@ export function WorkcellReport({
         </button>
       </footer>
     </article>
-  );
-}
-function Extent({
-  entity,
-  document,
-}: {
-  entity: Entity;
-  document: SceneDocument;
-}) {
-  const { t } = useI18n(),
-    d = sourceDimensions(entity),
-    scale = sourceScale(document, entity),
-    groundDimensions = [d.widthNative, d.depthNative, d.groundHeight],
-    values = isReferenceSurface(document, entity) ? [d.widthNative, d.depthNative] :
-      groundDimensions.every(Number.isFinite) ? groundDimensions : [d.extentX, d.extentY, d.extentZ];
-  return values.some(Number.isFinite) ? (
-    <span className="report-numeric">
-      {values
-        .map((v) =>
-          Number.isFinite(v)
-            ? (v! * (scale?.nativeToMeters || 1)).toFixed(2)
-            : "—",
-        )
-        .join(" × ")}
-      <small>{scale?.nativeToMeters ? "m" : t("uncalibrated")}</small>
-    </span>
-  ) : (
-    <span>—</span>
   );
 }
 function ObjectFacts({

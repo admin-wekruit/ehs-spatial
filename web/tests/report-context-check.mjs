@@ -78,6 +78,12 @@ assert.deepEqual(find(n=>n.type===AgentPanel).props.box,[1,2,30,40],'copy/deep-l
 assert.ok(find(n=>n.type==='strong'&&n.props.children==='setLabel'),'the edit producing this exact revision is shown');
 assert.equal(find(n=>n.type==='strong'&&n.props.children==='setVisibility'),null,'revision A cannot show a future A→B edit');
 const initialRequests=requests.slice();
+globalThis.document={getElementById(){return {scrollIntoView(){}};}};
+const inventoryRequest=find(n=>n.type===ReportScene).props.objectListRequest;
+find(n=>n.type==='button'&&n.props.className==='report-open-objects').props.onClick();await render();
+assert.equal(find(n=>n.type===ReportScene).props.objectListRequest,inventoryRequest+1,'the understanding section opens the single workspace inventory');
+assert.equal(find(n=>n.type===ReportScene).props.selection.entityId,'a','inventory navigation keeps object context');
+assert.equal(find(n=>n.type==='table'&&n.props.className==='report-inventory'),null,'no duplicate object table below the scene');
 find(n=>n.type===ReportScene).props.onSelect('b','observation-b');await render();
 assert.equal(params().get('object'),'b');assert.equal(params().get('image'),'image-b');
 assert.equal(params().get('observation'),'observation-b');assert.equal(params().has('box'),false);

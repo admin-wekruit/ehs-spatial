@@ -4,8 +4,8 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import ts from "typescript";
 import * as math from "../src/viewer/native-math.ts";
-import { isReferenceSurface } from "../src/scene-semantics.ts";
-import { entityGeometryForLayer, observationsFor, jsonObject, planShapes } from "../src/core.ts";
+import { entityEvidenceStatus, isReferenceSurface } from "../src/scene-semantics.ts";
+import { entityGeometryForLayer, observationsFor, jsonObject, planShapes, sourceDimensions, sourceScale } from "../src/core.ts";
 
 // Exercise the actual two pure functions without importing the browser app.
 const source = await readFile(
@@ -225,14 +225,18 @@ const uiDocument = { ...objectOnlyDocument,
     { id: "background", sourceContext: true, representations: [] }],
   observations: [{ id: "observation", imageId: "photo" }, { id: "observation-2", imageId: "photo-2" }],
 };
-let uiSelection = { entityId: "object", cameraId: "camera" }, uiImageId = "photo", calls = [];
+let uiSelection = { entityId: "object", cameraId: "camera" }, uiImageId = "photo", calls = [], objectListRequest = 0;
 const inspector = React.createElement("div", { id: "inspector-content" }, "real host inspector");
 const ui = vm.createContext({ React, useState, useRef, useEffect, useId: () => "workspace-check",
   useI18n: () => ({ t: (key) => key }), jsonObject, observationsFor, entityGeometryForLayer,
-  photoOverlay, sceneAvailability, isReferenceSurface, SpatialView, PlanView, PhotoView, PhotoAxes, CadView,
+  photoOverlay, sceneAvailability, isReferenceSurface, entityEvidenceStatus, sourceDimensions, sourceScale, SpatialView, PlanView, PhotoView, PhotoAxes, CadView,
   paneOrder: ["photo", "spatial", "cad", "plan"], paneNames: { photo: "scenePhoto", spatial: "scene3D", cad: "sceneCAD", plan: "scenePlan" }, noEdit: () => {},
-  window: { document: { fullscreenElement: null, addEventListener() {}, removeEventListener() {} }, scrollTo() { throw Error("Selecting an object must not scroll the report"); } },
+  window: { document: { fullscreenElement: null, addEventListener() {}, removeEventListener() {} }, requestAnimationFrame(callback) { callback(); return 1; }, cancelAnimationFrame() {}, scrollTo() { throw Error("Selecting an object must not scroll the report"); } },
 });
+const extent = parsed.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "Extent");
+vm.runInContext(ts.transpileModule(extent.getText(parsed).replace("export function", "function"), {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, module: ts.ModuleKind.None },
+}).outputText, ui);
 vm.runInContext(componentCode, ui);
 const nodes = (root) => [root, ...root.children.filter((child) => typeof child === "object").flatMap(nodes)];
 function renderWorkspace() {
@@ -240,7 +244,7 @@ function renderWorkspace() {
   for (let n = 0; n < 5; n++) {
     cursor = 0; effects = []; dirty = false;
     tree = ui.ReportScene({ revision: { id: "revision", document: uiDocument }, selection: uiSelection, imageId: uiImageId,
-      cameraId: uiSelection.cameraId, inspector,
+      cameraId: uiSelection.cameraId, inspector, objectListRequest,
       onSelect: (id) => { uiSelection = { ...uiSelection, entityId: id }; calls.push(id); },
       onCamera: (imageId, cameraId) => { uiImageId = imageId; uiSelection = { ...uiSelection, cameraId }; },
     });
@@ -257,6 +261,18 @@ assert.equal(tree.props["data-view"], "quad");
 assert.equal(nodes(rail()).filter((node) => node.type === "button").length, 2, "All non-context entities have permanent selectable rows, including no-geometry objects");
 assert.equal(nodes(tree).some((node) => node.type === "details" && node.props.className === "report-scene-objects"), false, "Objects are not hidden in a bottom disclosure");
 assert.ok(nodes(tree).includes(inspector), "The host inspector is rendered inside the right rail");
+const objectRow = nodes(rail()).find((node) => node.type === "button" && node.props.key === "object");
+for (const field of ["evidence", "identity", "model", "extent"])
+  assert.ok(nodes(objectRow).some((node) => node.props.className === `report-scene-object-${field}`), `The left inventory retains ${field}`);
+assert.ok(nodes(objectRow).some((node) => node.type === ui.Extent), "Left inventory reuses the observed extent renderer");
+assert.ok(nodes(objectRow).some((node) => node.type === "em" && node.children.includes("sceneCandidate")), "Unconfirmed placement is explicitly shown");
+const measured = { ...entity, measurements: { widthNative: 2, depthNative: 3, groundHeightNative: 4 } };
+const nativeExtent = ui.Extent({ entity: measured, document: uiDocument });
+assert.equal(nativeExtent.children[0], "2.00 × 3.00 × 4.00");
+assert.ok(nodes(nativeExtent).some((node) => node.children.includes("uncalibrated")), "Native values are never shown as metres without scale");
+const scaledDocument = { ...uiDocument, coordinateFrames: [{ id: "f", scale: { nativeToMeters: 0.5 } }] };
+assert.equal(ui.Extent({ entity: measured, document: scaledDocument }).children[0], "1.00 × 1.50 × 2.00");
+assert.equal(ui.Extent({ entity: { ...measured, geometryRole: "floor" }, document: uiDocument }).children[0], "2.00 × 3.00", "Floor extent excludes equipment height");
 for (const pane of ["photo", "spatial", "cad", "plan"]) {
   nodes(switcher()).find((node) => node.type === "button" && node.props["aria-controls"] === `workspace-check-${pane}`).props.onClick();
   tree = renderWorkspace();
@@ -309,10 +325,27 @@ uiDocument.coordinateFrames[0].ground = null;
 tree = renderWorkspace();
 assert.equal(nodes(tree).some((node) => node.type === CadView), false, "No inferred projection without a shared ground reference, even when source CAD exists");
 assert.ok(nodes(tree).some((node) => node.props.className === "report-scene-plan-empty"));
+uiDocument.entities.push(...Array.from({ length: 66 }, (_, index) => ({ id: `extra-${index}`, label: `record ${index}`, representations: [], observationRefs: [] })));
+objectListRequest++;
+tree = renderWorkspace();
+assert.equal(tree.props["data-mobile-section"], "objects", "The understanding section opens the same complete inventory on mobile");
+assert.equal(nodes(rail()).filter((node) => node.type === "button").length, 68, "All 68 records remain accessible; there is no first-ten truncation");
+assert.equal(nodes(tree).find((node) => node.type === "input" && node.props.type === "search").props.value, "", "View all clears the inventory search");
+nodes(tree).find((node) => node.type === "input" && node.props.type === "search").props.onChange({ target: { value: "record 65" } });
+tree = renderWorkspace();
+const lastRow = nodes(rail()).find((node) => node.type === "button" && node.props.key === "extra-65");
+assert.ok(lastRow, "Search reaches the last object even without geometry");
+lastRow.props.onClick(); tree = renderWorkspace();
+assert.equal(spatialHost()[0].props.selection.entityId, "extra-65", "Inventory selection still drives the existing four-view selection");
 const css = await readFile(new URL("../src/report-scene.css", import.meta.url), "utf8");
 assert.match(css, /grid-template-columns:\s*232px minmax\(0, 1fr\) 300px/);
 assert.match(css, /\.report-scene-object-list\s*\{[^}]*overflow-y:\s*auto/);
 assert.match(css, /\.report-scene-inspector-content\s*\{[^}]*overflow-y:\s*auto/);
+assert.match(css, /\.report-scene\[data-view="quad"\]\s*\{\s*height:\s*max\(760px/, "Desktop four-view height permits usable CAD panes on short screens");
+const report = await readFile(new URL("../src/WorkcellReport.tsx", import.meta.url), "utf8");
+assert.doesNotMatch(report, /className="report-inventory"|filteredObjects|setAllObjects/, "No second object inventory or search state remains below the workspace");
+assert.match(report, /section="understanding"/, "Image interpretation and its source history remain in the report");
+assert.match(report, /objectListRequest=\{objectListRequest\}/, "The lower section opens the workspace inventory");
 console.log(
-  "report scene: shared geometry, exact photo projection, floor semantics, permanent three rails, no-geometry selection, view/Esc/mobile/fullscreen handlers and one WebGL passed",
+  "report scene: 68-record unified evidence inventory, observed extents/scale, no duplicate table, linked no-geometry selection, mobile navigation, photo projection, floor semantics and one WebGL passed",
 );

@@ -65,7 +65,7 @@ export const workcellMessages: Record<string, [string, string]> = {
     "点选原图、3D、平面或对象，查看同一物体的位置和证据。",
     "Select an object in the photo, 3D, plan or inventory to follow its position and evidence.",
   ],
-  reportUnderstanding: ["图片理解与对象清单", "Image understanding & objects"],
+  reportUnderstanding: ["图片理解与来源证据", "Image understanding & source evidence"],
   reportSafety: ["安全评估与待复核事项", "Safety assessments & review"],
   reportAssets: ["模型、CAD 与下载", "Models, CAD & downloads"],
   reportHistory: ["分析结果与版本记录", "Analysis outcomes & revisions"],
