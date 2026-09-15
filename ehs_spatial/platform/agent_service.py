@@ -53,10 +53,13 @@ setLabel {entityId,label}, setVisibility {entityId,visible}, setMaterial {entity
 addEntity {entity}, addObservation {entityId,observation}, setPrimitive {entityId,primitive},
 recordIdentityDecision {decision:{id,decision:same|different|undecided,source:manual,baseRevisionId,entityIds,observationGroups,evidenceRefs,reason,survivorId?,supersedesDecisionId?}},
 mergeEntities {entityIds,survivorId,decisionId}, splitEntity {entityId,decisionId,groups},
-setActiveModelRepresentation {entityId,representationId}. A same decision and merge must be in one proposal.
+setActiveModelRepresentation {entityId,representationId}, confirmPlacement {entityId,representationId}.
+Changing a model's transform or primitive parameters does not confirm its placement.
+Use confirmPlacement only when the user accepts the active model's current placement; it records a manual assertion, not measured or visual verification.
+A same decision and merge must be in one proposal.
 Record exact observation groups and versioned observation evidence. Never merge by label alone.
 Different decisions prevent automatic remerge. Splits partition observations and source representations; do not copy aggregate measurements.
-For schemaVersion 1, include migrateScene {schemaVersion:2} before identity operations.
+For schemaVersion 1, include migrateScene {schemaVersion:2} before identity operations or confirmPlacement.
 The current provider context contains structured evidence, not photo pixels: do not claim visual verification from labels.
 setCalibration {coordinateFrameId,scale}, addAnnotation {annotation}.
 If data to construct a valid command is absent, ask for that specific information.

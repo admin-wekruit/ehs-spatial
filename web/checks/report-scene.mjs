@@ -181,14 +181,14 @@ const objectOnlyDocument = { schemaVersion: 1, cameras: [], assets: [{ id: "mode
   observations: [], annotations: [], coordinateFrames: [{ id: "f", convention: "opencv", ground: null }],
   entities: [{ ...entity, representations: [{ ...rep, assetId: "model-asset" }] }, { id: "unmodeled", representations: [] }] };
 const unchanged = structuredClone(objectOnlyDocument);
-assert.equal(sceneAvailability(objectOnlyDocument, geometryOptions).spatialTitle, "sceneObjectModels",
+assert.equal(sceneAvailability(objectOnlyDocument, geometryOptions).spatialTitle, "sceneModelScene",
   "Individual model assets must not imply an observed scene reconstruction");
 assert.equal(sceneAvailability(objectOnlyDocument, geometryOptions).planEmpty, "sceneNoPlanGround");
 assert.deepEqual(objectOnlyDocument, unchanged, "Presentation must preserve no-geometry entities");
 const sceneDocument = structuredClone(objectOnlyDocument);
 sceneDocument.entities.push({ id: "context", sourceContext: true, representations: [{ ...observed, kind: "point_cloud", assetId: "cloud" }] });
 sceneDocument.assets.push({ id: "cloud" });
-assert.equal(sceneAvailability(sceneDocument, geometryOptions).spatialTitle, "scene3D",
+assert.equal(sceneAvailability(sceneDocument, { ...geometryOptions, layer: "observed_surface" }).spatialTitle, "scene3D",
   "Confirmed registered observed geometry uses a neutral scene title, without asserting completeness");
 sceneDocument.coordinateFrames[0].ground = { normal: [0, 0, 1] };
 assert.equal(sceneAvailability(sceneDocument, geometryOptions).planEmpty, "sceneNoPlanProjection", "Model corners without a true mesh contour remain 3D evidence, not CAD");
@@ -270,6 +270,21 @@ assert.equal(nodes(tree).find(node => node.type === "select").props.value, "mode
 const rail = () => nodes(tree).find((node) => node.props.className === "report-scene-object-rail");
 const switcher = () => nodes(tree).find((node) => node.props.className === "report-scene-view-switch");
 const spatialHost = () => nodes(tree).filter((node) => node.type === SpatialView);
+assert.equal(nodes(tree).some(node => node.type === PlanView), false, "The fourth report pane no longer duplicates CAD footprints");
+assert.equal(spatialHost()[0].props.layers.modelOnly, true);
+assert.equal(spatialHost()[0].props.layers.observed_surface, false, "Current models never include the observed background");
+assert.equal(nodes(tree).find(node => node.props['data-model-coverage'] !== undefined).props['data-model-coverage'], 1, "Missing models are not counted from observed geometry");
+const firstPreview = spatialHost()[0].props;
+firstPreview.onModelPreview(firstPreview.modelPreview.requestKey, "data:image/png;base64,model-a");tree = renderWorkspace();
+assert.ok(nodes(tree).some(node => node.type === "img" && node.props.src.endsWith("model-a")));
+uiSelection = { ...uiSelection, entityId: "no-geometry" };tree = renderWorkspace();
+firstPreview.onModelPreview(firstPreview.modelPreview.requestKey, "data:image/png;base64,late-model-a");tree = renderWorkspace();
+assert.equal(nodes(tree).some(node => node.type === "img"), false, "A late model-A preview cannot appear for the newer missing-model selection");
+uiSelection = { ...uiSelection, entityId: "object" };tree = renderWorkspace();
+uiSelection = { ...uiSelection, entityId: null };tree = renderWorkspace();
+assert.equal(spatialHost()[0].props.modelPreview, undefined, "No selection never starts a model preview for an arbitrary object");
+assert.ok(nodes(tree).some(node => node.children.includes("sceneSelectModel")), "The empty model pane asks the user to select an object");
+uiSelection = { ...uiSelection, entityId: "object" };tree = renderWorkspace();
 assert.equal(tree.props["data-view"], "quad");
 assert.equal(nodes(tree).find((node) => node.type === PhotoView).props.showBounds, false, "Photo borders start hidden even with an explicit selected object");
 assert.equal(spatialHost()[0].props.layers.showBounds, false, "3D bounds and axes start hidden without changing the selected entity");
@@ -412,7 +427,7 @@ assert.match(report, /objectListRequest=\{objectListRequest\}/, "The lower secti
 uiDocument.entities.find(entity => entity.id === "background").representations = [{...observed, coverage: "observed_camera_state_only"}];
 hooks.length = 0;
 tree = renderWorkspace();
-assert.equal(nodes(tree).find(node => node.type === "select").props.value, "observed_surface", "A complete observed camera scene starts with its object-owned evidence, not unpartitioned generated candidates");
+assert.equal(nodes(tree).find(node => node.type === "select").props.value, "model", "An available active model is the default even when complete photo evidence is attached");
 console.log(
   "report scene: 68-record unified evidence inventory, observed extents/scale, no duplicate table, linked no-geometry selection, mobile navigation, photo projection, floor semantics and one WebGL passed",
 );

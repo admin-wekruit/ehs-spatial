@@ -210,7 +210,7 @@ def test_synthetic_sam3d_contract_is_shape_ready_but_never_placement_proof():
     assert calls[0]["decode_formats"] == ["mesh"] and not calls[0]["with_texture_baking"]
 
 
-def scene_document():
+def scene_document(*, schema_version=2):
     document = empty_document()
     g = str(uuid4())
     document.update(captureId=str(uuid4()),target="standalone_object",
@@ -225,6 +225,9 @@ def scene_document():
     c2w = transform_matrix({"coordinateFrameId":g,"position":[1.,.2,-.3],"quaternion":[0.,math.sin(.1),0.,math.cos(.1)],"scale":[1.,1.,1.]})
     document["cameras"] = [{"id":str(uuid4()),"imageId":str(uuid4()),"coordinateFrameId":g,"width":640,"height":480,"K":[[600.,0.,260.],[0.,550.,210.],[0.,0.,1.]],"cameraToWorld":c2w.tolist()}]
     document["assets"].append({"id":document["cameras"][0]["imageId"],"kind":"source_image","mediaType":"image/png"})
+    if schema_version == 2:
+        from ehs_spatial.platform.identity import migrate_document
+        return migrate_document(document, base_revision_id=str(uuid4()))
     return document
 
 
@@ -260,8 +263,7 @@ def test_export_asset_allowlist_hash_and_unconfirmed_placement(tmp_path):
 
 @pytest.mark.parametrize('kind', ['observed_surface', 'generated_mesh', 'primitive'])
 def test_export_excludes_stale_before_loading_but_retains_frozen_source(kind, tmp_path):
-    from ehs_spatial.platform.identity import migrate_document
-    doc = migrate_document(scene_document(), base_revision_id=str(uuid4()))
+    doc = scene_document()
     entity = doc['entities'][0]
     rep = entity['representations'][0]
     rep.update(kind=kind, sourceValidity='stale')
@@ -282,10 +284,142 @@ def test_export_excludes_stale_before_loading_but_retains_frozen_source(kind, tm
 BLENDER = Path(os.environ.get("BLENDER_EXECUTABLE","/Users/adam/Desktop/panoptes-public/.tools/blender-4.5.9/Blender.app/Contents/MacOS/Blender"))
 
 
+def candidate_scene():
+    doc = scene_document()
+    meshes = {}
+    first, second, observed, context, _ = doc['entities']
+    for entity in (first, second):
+        rep = entity['representations'][0]
+        rep.update(placementState='unconfirmed', placementReason='imported_proposal' if entity is first else 'requires_alignment_confirmation',
+                   coverage='shape_proposal', sourceValidity='current', shapeStatus='ready',
+                   sourceRefs=[{'assetId':doc['cameras'][0]['imageId'], 'sourceRecordId':entity['id']}],
+                   placementSource={'type':'source_alignment_proposal'})
+    first['currentModelTransform'] = {**deepcopy(first['currentModelTransform']), 'position':[9.,8.,7.]}
+    alternative = deepcopy(first['representations'][0])
+    alternative['id'] = str(uuid4())
+    first['representations'].append(alternative)
+    evidence = deepcopy(first['representations'][0])
+    evidence['id'] = str(uuid4())
+    first['representations'].append(evidence)
+    for rep, kind in ((second['representations'][0], 'generated_mesh'), (evidence, 'observed_surface'),
+                      (observed['representations'][0], 'observed_surface'), (context['representations'][0], 'observed_surface')):
+        aid = str(uuid4())
+        meshes[aid] = primitive_mesh(rep['primitive'])
+        doc['assets'].append({'id':aid, 'kind':kind})
+        rep.update(kind=kind, assetId=aid, primitive=None)
+        if kind == 'observed_surface':
+            rep.update(placementState='confirmed', placementReason='observed_surface', coverage='observed_partial')
+    for entity in (observed, context):
+        entity.update(activeModelRepresentationId=None, currentModelTransform=None)
+    context['sourceContext'] = True
+    return doc, meshes
+
+
+def test_model_scene_exports_active_candidates_without_promoting_observed_evidence(tmp_path):
+    from ehs_spatial.platform.blender_export import _read_glb
+    doc, meshes = candidate_scene()
+    before, calls = deepcopy(doc), []
+    def resolve(aid):
+        calls.append(aid)
+        return meshes[aid]
+    prepared = prepare_export('candidate-scene', doc, resolve)
+    assert prepared['sceneMode'] == 'models' and prepared['status'] == 'incomplete'
+    assert prepared['exportedModelCount'] == 2 and prepared['exportedObservedRepresentationCount'] == 0
+    assert [item['id'] for item in prepared['objects']] == [entity['activeModelRepresentationId'] for entity in doc['entities'][:2]]
+    assert calls == [doc['entities'][1]['representations'][0]['assetId']]
+    assert prepared['missingModelEntities'] == [{'entityId':doc['entities'][2]['id'], 'reason':'active_model_missing'},
+                                               {'entityId':doc['entities'][4]['id'], 'reason':'no_representation'}]
+    assert len(prepared['placementPendingEntities']) == 2
+    assert prepared['objects'][0]['transform'] == before['entities'][0]['currentModelTransform']
+    for item in prepared['objects']:
+        assert item['placementState'] == 'unconfirmed' and item['editable']
+        assert item['coordinateFrameScale']['status'] == 'uncalibrated' and item['coordinateFrameScale']['nativeToMeters'] is None
+        assert item['coverage'] == 'shape_proposal' and item['placementSource'] == {'type':'source_alignment_proposal'}
+    validation = write_glb(prepared, tmp_path/'models.glb')
+    glb, _ = _read_glb((tmp_path/'models.glb').read_bytes())
+    assert validation['status'] == 'passed' and validation['objects'] == 2
+    assert glb['extras']['sourceDocument'] == before
+    assert glb['extras']['placementPendingEntities'] == prepared['placementPendingEntities']
+    assert all(node['extras']['placementState'] == 'unconfirmed' for node in glb['nodes'])
+    observed = prepare_export('candidate-scene', doc, meshes.__getitem__, scene_mode='observed')
+    assert len(observed['objects']) == 3 and all(item['kind'] == 'observed_surface' and not item['editable'] for item in observed['objects'])
+    assert doc == before and prepared['manifest']['sourceDocument'] == before
+    with pytest.raises(PlatformError, match='invalid_export_scene_mode'):
+        prepare_export('candidate-scene', doc, resolve, scene_mode='combined')
+
+
+def test_model_scene_never_uses_unplaced_or_inactive_geometry():
+    doc, _ = candidate_scene()
+    doc['entities'][0]['representations'][0]['sourceValidity'] = 'stale'
+    doc['entities'][1]['representations'][0]['placementReason'] = 'insufficient_observed_depth'
+    prepared = prepare_export('unplaced', doc, lambda _:pytest.fail('No eligible model asset can be loaded'))
+    assert prepared['objects'] == [] and prepared['placementPendingEntities'] == []
+    assert {row['entityId'] for row in prepared['missingModelEntities']} == {entity['id'] for entity in doc['entities'] if not entity.get('sourceContext')}
+    assert prepared['status'] == 'incomplete'
+
+
+def test_model_scene_exempts_explicit_floor_evidence_but_never_uses_display_labels():
+    doc, meshes = candidate_scene()
+    floor = doc['entities'][2]
+    floor.update(geometryRole='floor', geometryRoleSourceRefs=[{'assetId':doc['assets'][0]['id'], 'sourceRecordId':'verified-floor'}])
+    doc['entities'][4]['label'] = 'floor'
+    prepared = prepare_export('floor-reference', doc, meshes.__getitem__)
+    assert prepared['missingModelEntities'] == [{'entityId':doc['entities'][4]['id'], 'reason':'no_representation'}]
+    assert prepared['modelNotRequiredEntities'] == [{'entityId':floor['id'], 'reason':'reference_surface'}]
+    assert prepared['manifest']['sourceDocument']['entities'][2] == floor
+    assert all(item['entityId'] != floor['id'] for item in prepared['objects'])
+    floor_only = prepare_export('floor-only', {**doc, 'entities':[floor]}, lambda _:pytest.fail('Reference evidence is retained without loading a model'))
+    assert floor_only['status'] == 'succeeded' and floor_only['missingModelEntities'] == [] and floor_only['exportedModelCount'] == 0
+
+
+@pytest.mark.parametrize('inputs', [{}, {'sceneMode':'observed'}])
+def test_export_worker_forwards_scene_mode_and_keeps_candidate_status_separate(monkeypatch, inputs):
+    from types import SimpleNamespace
+    from ehs_spatial.platform import blender_export
+    from panoptes_worker.__main__ import export_job
+    doc, meshes = candidate_scene()
+    doc['entities'] = doc['entities'][:2]
+    mode = inputs.get('sceneMode', 'models')
+    def fake_blender(revision_id, document, resolve, output_dir, executable, *, scene_mode):
+        assert scene_mode == mode and document == doc
+        output_dir.mkdir()
+        return {**prepare_export(revision_id, document, meshes.__getitem__, scene_mode=scene_mode)['manifest'], 'validation':{'blender':{'status':'passed'}}}
+    monkeypatch.setattr(blender_export, 'export_scene_revision', fake_blender)
+    repository = SimpleNamespace(get_revision=lambda _: {'id':'fixed-revision', 'document':doc})
+    result = export_job(repository, None, {'baseRevisionId':'fixed-revision', 'kind':'export_blender', 'inputs':inputs})
+    assert result['sceneMode'] == mode and result['unplacedEntities'] == []
+    assert result['validation']['validation']['blender']['status'] == 'passed'
+    assert result['status'] == ('incomplete' if mode == 'models' else 'succeeded')
+    assert len(result['placementPendingEntities']) == (2 if mode == 'models' else 0)
+
+
+@pytest.mark.skipif(not BLENDER.exists(), reason='real Blender executable not installed')
+def test_real_blender_candidate_scene_retains_status_source_and_parametric_editability(tmp_path):
+    doc, meshes = candidate_scene()
+    before = deepcopy(doc)
+    result = export_scene_revision('candidate-scene', doc, meshes.__getitem__, tmp_path/'candidate', BLENDER)
+    assert result['status'] == 'incomplete' and result['exportedModelCount'] == 2
+    assert len(result['missingModelEntities']) == 2 and len(result['placementPendingEntities']) == 2
+    assert result['sourceDocument'] == before and doc == before
+    validation = result['validation']['blender']
+    assert validation['status'] == 'passed' and result['validation']['glb']['status'] == 'passed'
+    assert len(validation['objects']) == 2 and len(validation['parameters']) == 1
+    assert all(item['editable'] and item['placementState'] == 'unconfirmed' and item['metadataReopened'] == 'passed' for item in validation['objects'])
+    assert json.loads((tmp_path/'candidate/manifest.json').read_text()) == result
+
+
 def test_export_point_cloud_context_excluded_but_object_stays_unplaced(tmp_path):
     doc = scene_document()
+    meshes = {}
+    for entity in doc['entities']:
+        for rep in entity['representations']:
+            aid = str(uuid4())
+            meshes[aid] = primitive_mesh(rep['primitive'])
+            doc['assets'].append({'id':aid,'kind':'observed_surface'})
+            rep.update(kind='observed_surface', assetId=aid, primitive=None)
+        entity.update(activeModelRepresentationId=None, currentModelTransform=None)
     doc["entities"][0]["sourceContext"] = True  # Mesh context still exports normally.
-    original = prepare_export("revision", doc, lambda _: pytest.fail("no mesh asset needed"))
+    original = prepare_export("revision", doc, meshes.__getitem__, scene_mode='observed')
     cloud = deepcopy(doc["entities"][0])
     cloud.update(id=str(uuid4()), sourceContext=True)
     rep = cloud["representations"][0]
@@ -293,7 +427,7 @@ def test_export_point_cloud_context_excluded_but_object_stays_unplaced(tmp_path)
     rep.update(id=str(uuid4()), kind="point_cloud", assetId=asset_id, primitive=None)
     doc["assets"].append({"id":asset_id, "kind":"point_cloud"})
     doc["entities"].append(cloud)
-    context = prepare_export("revision", doc, lambda _: pytest.fail("point cloud must not be read as mesh"))
+    context = prepare_export("revision", doc, meshes.__getitem__, scene_mode='observed')
     expected = [{"entityId":cloud["id"], "representationId":rep["id"], "reason":"point_cloud_context"}]
     assert context["unplacedEntities"] == original["unplacedEntities"]
     assert context["excludedRepresentations"] == expected
@@ -302,15 +436,17 @@ def test_export_point_cloud_context_excluded_but_object_stays_unplaced(tmp_path)
     object_cloud.update(id=str(uuid4()), sourceContext=False)
     object_cloud["representations"][0]["id"] = str(uuid4())
     doc["entities"].append(object_cloud)
-    prepared = prepare_export("revision", doc, lambda _: pytest.fail("point cloud must not be read as mesh"))
+    prepared = prepare_export("revision", doc, meshes.__getitem__, scene_mode='observed')
     assert prepared["unplacedEntities"] == original["unplacedEntities"] + [{"entityId":object_cloud["id"], "representationId":object_cloud["representations"][0]["id"], "reason":"not_a_mesh"}]
     assert prepared["excludedRepresentations"] == expected
     if BLENDER.exists():
-        result = export_scene_revision("revision", doc, lambda _: pytest.fail("no mesh asset needed"), tmp_path/"export", BLENDER)
+        result = export_scene_revision("revision", doc, meshes.__getitem__, tmp_path/"export", BLENDER, scene_mode='observed')
         assert result["excludedRepresentations"] == expected
         assert result["unplacedEntities"] == prepared["unplacedEntities"] and result["status"] == "incomplete"
         assert len(result["validation"]["blender"]["objects"]) == len(original["objects"])
         assert len(result["validation"]["blender"]["cameras"]) == len(original["cameras"])
+        assert all(not item['editable'] for item in result['validation']['blender']['objects'])
+        assert result['sceneMode'] == 'observed' and result['exportedModelCount'] == 0
         assert json.loads((tmp_path/"export/manifest.json").read_text())["excludedRepresentations"] == expected
 
 
@@ -533,7 +669,7 @@ def test_v2_active_material_edit_exports_its_color_and_preserves_source_candidat
     from ehs_spatial.platform.blender_export import _read_glb
     from ehs_spatial.platform.identity import migrate_document
     from ehs_spatial.platform.repository import apply_operations
-    source = scene_document()
+    source = scene_document(schema_version=1)
     source['entities'] = [source['entities'][0]]
     entity = source['entities'][0]
     entity['material'] = {'baseColorFactor': [0.9, 0.8, 0.7, 1.0], 'roughness': 0.8}
@@ -565,5 +701,5 @@ def test_v2_active_material_edit_exports_its_color_and_preserves_source_candidat
     assert glb['materials'][0]['pbrMetallicRoughness']['baseColorFactor'] == [0.2, 0.15, 0.8, 0.7]
     assert glb['materials'][0]['pbrMetallicRoughness']['roughnessFactor'] == 0.3
     legacy = prepare_export('legacy-color', source, lambda _: source_mesh)
-    assert all(p['material']['baseColorFactor'] == entity['material']['baseColorFactor'] for o in legacy['objects'] for p in o['parts'])
+    assert legacy['objects'] == [] and legacy['missingModelEntities'] == [{'entityId':entity['id'], 'reason':'active_model_missing'}]
     assert source['entities'][0]['material'] == entity['material'] and doc['entities'][0]['representations'][0]['material'] == active['material']

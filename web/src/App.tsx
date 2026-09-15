@@ -1051,6 +1051,8 @@ export function SpatialView({
   mode,
   cameraId,
   layers,
+  modelPreview,
+  onModelPreview,
 }: {
   revision: Revision;
   selection: Selection;
@@ -1059,14 +1061,28 @@ export function SpatialView({
   mode: ViewerMode;
   cameraId: string | null;
   layers: Record<string, any>;
+  modelPreview?: { entityId: string; frameId: string; mode: "free" | "front" | "side" | "top"; requestKey: string };
+  onModelPreview?: (requestKey: string, image: string) => void;
 }) {
   const host = useRef<HTMLDivElement>(null),
     runtime = useRef<any>(null),
-    callbacks = useRef({ onSelect, onCommit, revision }),
+    callbacks = useRef({ onSelect, onCommit, revision, modelPreview, onModelPreview }),
+    capturedKey = useRef<string | null>(null),
     { language, t } = useI18n(),
     [status, setStatus] = useState("loadingModel"),
     [error, setError] = useState<unknown>();
-  callbacks.current = { onSelect, onCommit, revision };
+  callbacks.current = { onSelect, onCommit, revision, modelPreview, onModelPreview };
+  function refreshModelPreview() {
+    const current = callbacks.current, request = current.modelPreview;
+    if (!request || !current.onModelPreview || capturedKey.current === request.requestKey) return;
+    try {
+      const image = runtime.current?.captureModel(request.entityId, request.mode, current.revision.id, request.frameId);
+      if (image && callbacks.current.modelPreview?.requestKey === request.requestKey) {
+        capturedKey.current = request.requestKey;
+        current.onModelPreview(request.requestKey, image);
+      }
+    } catch (error) { setError(error); }
+  }
   useEffect(() => {
     if (!host.current) return;
     let viewer: ReturnType<typeof mountSceneViewer>;
@@ -1098,6 +1114,7 @@ export function SpatialView({
           else if (event.type === "renderReady") setStatus("");
           else if (event.type === "loadProgress")
             setStatus(event.message || "loadingModel");
+          if (event.type === "renderReady" || event.type === "loadProgress" && event.phase === "assets") refreshModelPreview();
         },
       });
     } catch (error) {
@@ -1119,11 +1136,13 @@ export function SpatialView({
     runtime.current?.setSelection(selection);
   }, [selection.entityId, selection.observationId, selection.revisionId]);
   useEffect(() => {
+    runtime.current?.setLayers(layers);
     runtime.current?.setCamera({ mode, cameraId });
-  }, [mode, cameraId]);
+  }, [mode, cameraId, layers.modelOnly, layers.observed_surface, layers.point_cloud]);
   useEffect(() => {
     runtime.current?.setLayers(layers);
   }, [JSON.stringify(layers)]);
+  useEffect(() => { capturedKey.current = null; refreshModelPreview(); }, [modelPreview?.requestKey, revision.id]);
   return (
     <div className="spatial-view">
       <div ref={host} className="native-viewer" />
@@ -1247,7 +1266,8 @@ function Workspace({
       cameraId: camera?.id || null,
     },
     layers = {
-      observed_surface: representation !== "point_cloud",
+      observed_surface: representation === "observed_surface",
+      modelOnly: representation === "model",
       generated_mesh: representation === "model",
       primitive: representation === "model",
       point_cloud: representation === "point_cloud",
@@ -1567,6 +1587,7 @@ function Workspace({
             document={document}
             onCommit={onCommit}
             busy={busy}
+            canConfirmPlacement={canWrite}
             onGenerate={
               canWrite && onJob
                 ? () => onJob("generate_object", selected ? [selected.id] : [])
@@ -1599,6 +1620,7 @@ function EntityInspector({
   onCommit,
   busy,
   onGenerate,
+  canConfirmPlacement = false,
 }: {
   entity: Entity | null;
   document: SceneDocument;
@@ -1608,6 +1630,7 @@ function EntityInspector({
   ) => unknown;
   busy: boolean;
   onGenerate?: () => unknown;
+  canConfirmPlacement?: boolean;
 }) {
   const { t } = useI18n(),
     [label, setLabel] = useState("");
@@ -1660,11 +1683,11 @@ function EntityInspector({
       {candidate && (
         <p className="evidence-note">
           {t("candidatePlacement")}
-          {!busy && transform && (
+          {canConfirmPlacement && !busy && transform && (
             <button
               onClick={() =>
                 onCommit([
-                  { type: "setTransform", entityId: entity.id, transform },
+                  { type: "confirmPlacement", entityId: entity.id, representationId: entity.activeModelRepresentationId },
                 ])
               }
             >

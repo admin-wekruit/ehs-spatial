@@ -10,7 +10,9 @@ export type ViewerOptions={resolveAsset:(id:string)=>Promise<string|{url:string}
 export type SceneViewer=ReturnType<typeof mountSceneViewer>;
 
 export function representationPass(entity:any,representation:any,frameId:string|null,layers:any) {
-  const available=!!entity&&representationAvailable(entity,representation,frameId,!!layers.showCandidates)&&representationInPhoto(entity,representation,layers.imageId,layers.observations);
+  const available=!!entity&&(!layers.entityId||entity.id===layers.entityId)&&
+    (!layers.modelOnly||!entity.sourceContext&&['generated_mesh','primitive'].includes(representation.kind))&&
+    representationAvailable(entity,representation,frameId,!!layers.showCandidates)&&representationInPhoto(entity,representation,layers.imageId,layers.observations);
   const visible=available&&layers[representation.kind]!==false;
   const cloudOnly=layers.point_cloud!==false&&['observed_surface','generated_mesh','primitive'].every(kind=>layers[kind]===false);
   // Pick actual observed triangles in a cloud view, never invisible generated
@@ -82,8 +84,8 @@ export function readGLB(buffer:ArrayBuffer):Mesh[] {
 
 function primitive(spec:any):Mesh {
   const p=spec.parameters||spec,type=spec.kind||spec.primitiveType||spec.type;const vertices:number[]=[],indices:number[]=[];
-  if(type==='box'){const dims=p.dimensions;if(!Array.isArray(dims)||dims.length!==3)throw Error('invalid_primitive');if(!dims.every(v=>Number.isFinite(v)&&v>0))throw Error('invalid_primitive');for(const c of boundsCorners({min:dims.map(v=>-v/2),max:dims.map(v=>v/2)}))vertices.push(...c,0,0,1,.64,.76,.71,0,0);indices.push(0,2,1,1,2,3,4,5,6,5,7,6,0,1,4,1,5,4,2,6,3,3,6,7,0,4,2,2,4,6,1,3,5,3,7,5);}
-  else if(type==='cylinder'){const r=p.radius,h=p.height;if(!(Number.isFinite(r)&&r>0&&Number.isFinite(h)&&h>0))throw Error('invalid_primitive');const n=48;for(let z=0;z<2;z++)for(let i=0;i<n;i++){const a=i*2*Math.PI/n;vertices.push(r*Math.cos(a),r*Math.sin(a),(z-.5)*h,Math.cos(a),Math.sin(a),0,.64,.76,.71,0,0);}for(let i=0;i<n;i++){const j=(i+1)%n;indices.push(i,j,i+n,j,j+n,i+n);if(i>0&&i<n-1)indices.push(0,i+1,i,n,n+i,n+i+1);}}
+  if(type==='box'){const dims=p.dimensions;if(!Array.isArray(dims)||dims.length!==3)throw Error('invalid_primitive');if(!dims.every(v=>Number.isFinite(v)&&v>0))throw Error('invalid_primitive');for(const c of boundsCorners({min:dims.map(v=>-v/2),max:dims.map(v=>v/2)}))vertices.push(...c,0,0,1,1,1,1,0,0);indices.push(0,2,1,1,2,3,4,5,6,5,7,6,0,1,4,1,5,4,2,6,3,3,6,7,0,4,2,2,4,6,1,3,5,3,7,5);}
+  else if(type==='cylinder'){const r=p.radius,h=p.height,n=p.segments??64;if(!(Number.isFinite(r)&&r>0&&Number.isFinite(h)&&h>0&&Number.isInteger(n)&&n>=8&&n<=256))throw Error('invalid_primitive');for(let z=0;z<2;z++)for(let i=0;i<n;i++){const a=i*2*Math.PI/n;vertices.push(r*Math.cos(a),r*Math.sin(a),(z-.5)*h,Math.cos(a),Math.sin(a),0,1,1,1,0,0);}vertices.push(0,0,-h/2,0,0,-1,1,1,1,0,0,0,0,h/2,0,0,1,1,1,1,0,0);for(let i=0;i<n;i++){const j=(i+1)%n;indices.push(i,j,n+j,i,n+j,n+i,2*n,j,i,2*n+1,n+i,n+j);}}
   else throw Error('unsupported_primitive');
   const min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity];for(let i=0;i<vertices.length;i+=11)for(let k=0;k<3;k++){min[k]=Math.min(min[k],vertices[i+k]);max[k]=Math.max(max[k],vertices[i+k]);}
   return {vertices:new Float32Array(vertices),indices:new Uint32Array(indices),mode:4,matrix:identity(),bounds:{min,max}};
@@ -97,6 +99,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
   const gl=canvas.getContext('webgl2',{alpha:true,antialias:true,preserveDrawingBuffer:true});if(!gl){stage.remove();throw Error('webgl_unavailable');}
   let disposed=false,epoch=0,photoEpoch=0,doc:any={entities:[],cameras:[],coordinateFrames:[]},revisionId='',selection:any={},camera:Camera|null=null,radius=1,center:Vec=[0,0,0],frameId:string|null=null,gpu:GPU[]=[],abort=new AbortController(),preview=new Map<string,Transform>(),drag:any=null,axisDrag:any=null;
   let sceneAssetsSignature='',viewMode='free';let navigationVersion=0;let photoAbort=new AbortController(),photoObjectURL:string|null=null;
+  let captureSize:{w:number;h:number;cw:number;ch:number}|null=null;const loadedRepresentations=new Set<string>();
   let layers:any={observed_surface:true,generated_mesh:true,primitive:true,point_cloud:true,allBounds:false,opacity:.65,lighting:true,showCandidates:false};const cleanups:(()=>void)[]=[];
   const emit=(type:string,payload:any={})=>{if(!disposed)options.onEvent?.({type,...payload});};
   const program=gl.createProgram()!;const shaders:WebGLShader[]=[];
@@ -104,7 +107,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
   gl.linkProgram(program);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error('shader_link_error');gl.useProgram(program);gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);
   const u=Object.fromEntries(['vp','model','image','pickColor','selected','pick','opacity','lighting','tint'].map(n=>[n,gl.getUniformLocation(program,n)]));
   const attrs=['p','n','c','uv'].map(n=>gl.getAttribLocation(program,n));for(const a of attrs)gl.enableVertexAttribArray(a);gl.uniform1i(u.image,0);
-  function release(){for(const g of gpu){gl!.deleteBuffer(g.vertex);gl!.deleteBuffer(g.index);gl!.deleteTexture(g.texture);}gpu=[];}
+  function release(){for(const g of gpu){gl!.deleteBuffer(g.vertex);gl!.deleteBuffer(g.index);gl!.deleteTexture(g.texture);}gpu=[];loadedRepresentations.clear();}
   function entity(id:string){return doc.entities.find((e:any)=>e.id===id);}
   function model(g:GPU){const e=entity(g.entityId),t=g.representation.kind==='observed_surface'||g.representation.kind==='point_cloud'?g.representation.transform:preview.get(g.entityId)||e?.currentModelTransform||g.representation.transform;return matmul(transformMatrix(t),g.mesh.matrix);}
   function visible(g:GPU){return representationPass(entity(g.entityId),g.representation,frameId,layers).visible;}
@@ -112,7 +115,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
   function selectedGeometry(id:string){return selectionGeometry(doc,entity(id),frameId,layers,preview.get(id));}
   function fittingPoints(){const objects=gpu.filter(g=>visible(g)&&!entity(g.entityId)?.sourceContext);return objects.length?objects.flatMap(g=>boundsCorners(g.mesh.bounds).map(p=>point(model(g),p))):corners();}
   function dimensions(){const ps=fittingPoints();if(!ps.length)return;const min=[0,1,2].map(k=>Math.min(...ps.map(p=>p[k]))),max=[0,1,2].map(k=>Math.max(...ps.map(p=>p[k])));center=min.map((v,k)=>(v+max[k])/2);radius=Math.max(Math.hypot(...max.map((v,k)=>v-min[k]))/2,1e-4);}
-  function viewSize(){const w=stage.clientWidth,h=stage.clientHeight,ratio=camera?.exact?camera.frame.width/camera.frame.height:w/h,cw=Math.min(w,h*ratio),ch=cw/ratio;return {w,h,cw,ch};}
+  function viewSize(){if(captureSize)return captureSize;const w=stage.clientWidth,h=stage.clientHeight,ratio=camera?.exact?camera.frame.width/camera.frame.height:w/h,cw=Math.min(w,h*ratio),ch=cw/ratio;return {w,h,cw,ch};}
   function draw(pick=false){
     if(disposed||!camera||gl!.isContextLost())return;const {w,h,cw,ch}=viewSize();if(!(cw>0&&ch>0))return;const dpr=Math.min(devicePixelRatio||1,2);canvas.style.width=photo.style.width=cw+'px';canvas.style.height=photo.style.height=ch+'px';const pw=Math.max(1,Math.round(cw*dpr)),ph=Math.max(1,Math.round(ch*dpr));if(canvas.width!==pw||canvas.height!==ph){canvas.width=pw;canvas.height=ph;}
     gl!.viewport(0,0,pw,ph);gl!.useProgram(program);gl!.clearColor(pick?0:17/255,pick?0:27/255,pick?0:33/255,camera.exact&&!pick?0:1);gl!.clear(gl!.COLOR_BUFFER_BIT|gl!.DEPTH_BUFFER_BIT);if(camera.exact&&!pick){gl!.enable(gl!.BLEND);gl!.blendFunc(gl!.SRC_ALPHA,gl!.ONE_MINUS_SRC_ALPHA);}else gl!.disable(gl!.BLEND);
@@ -141,8 +144,27 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
   function setCamera(value:any){
     if(disposed)return;viewMode=typeof value==='string'?value:value?.mode||'free';const f=currentCameras(doc).find((c:any)=>c.id===(typeof value==='string'?value:value?.cameraId));if(f){frameId=f.coordinateFrameId;layers.imageId=f.imageId;layers.observations=doc.observations;}if(f&&(typeof value==='string'||value?.mode==='photo')){camera=sourceCamera(f,radius,center);setPhoto();draw();return;}
     dimensions();const mode=typeof value==='string'?value:value?.mode||'free';if(value?.eye){navigationVersion++;camera=value;photo.hidden=true;draw();return;}
+    camera=fittedCamera(mode);photoEpoch++;photoAbort.abort();photo.hidden=true;draw();
+  }
+  function fittedCamera(mode:string){
     const frame=doc.coordinateFrames.find((f:any)=>f.id===frameId),up=unit(frame?.ground?.normal||[0,0,1]),reference=currentCameras(doc).find((c:any)=>c.coordinateFrameId===frameId),rawFront=reference?reference.cameraToWorld.slice(0,3).map((r:Vec)=>-r[2]):[0,-1,0];let planar=add(rawFront,scale(up,-dot(rawFront,up)));if(Math.hypot(...planar)<1e-6){const axis=Math.abs(up[0])<.8?[1,0,0]:[0,1,0];planar=add(axis,scale(up,-dot(axis,up)));}const front=unit(planar),right=unit(cross(up,front)),back=mode==='top'?up:mode==='side'?right:mode==='front'?front:unit(add(add(front,scale(right,.45)),scale(up,.55))),vup=mode==='top'?scale(front,-1):up,ps=fittingPoints();
-    camera=fitCamera(ps.length?ps:boundsCorners({min:[-1,-1,-1],max:[1,1,1]}),back,vup,Math.max(stage.clientWidth,1)/Math.max(stage.clientHeight,1),['top','front','side'].includes(mode));photoEpoch++;photoAbort.abort();photo.hidden=true;draw();
+    return fitCamera(ps.length?ps:boundsCorners({min:[-1,-1,-1],max:[1,1,1]}),back,vup,Math.max(captureSize?.w||stage.clientWidth,1)/Math.max(captureSize?.h||stage.clientHeight,1),['top','front','side'].includes(mode));
+  }
+  function captureModel(entityId:string,mode:'free'|'front'|'side'|'top',expectedRevisionId:string,expectedFrameId?:string){
+    if(disposed||revisionId!==expectedRevisionId||expectedFrameId!==undefined&&expectedFrameId!==frameId||gl!.isContextLost())return null;
+    const subject=entity(entityId),rep=subject?.representations?.find((r:any)=>r.id===subject.activeModelRepresentationId);
+    if(!rep||!loadedRepresentations.has(entityId+'/'+rep.id)||!representationAvailable(subject,rep,frameId,true)||!['generated_mesh','primitive'].includes(rep.kind))return null;
+    const saved={camera,layers,selection,radius,center,width:canvas.width,height:canvas.height,canvasStyle:canvas.style.cssText,photoStyle:photo.style.cssText};
+    try{
+      // ponytail: one synchronous capture reuses the scene GPU buffers; restore
+      // before yielding so object previews cannot change scene navigation.
+      captureSize={w:640,h:400,cw:640,ch:400};
+      layers={...layers,modelOnly:true,entityId,observed_surface:false,point_cloud:false,generated_mesh:true,primitive:true,showCandidates:true,showBounds:false,editable:false};
+      selection={};dimensions();camera=fittedCamera(mode);draw();return canvas.toDataURL('image/png');
+    }finally{
+      camera=saved.camera;layers=saved.layers;selection=saved.selection;radius=saved.radius;center=saved.center;captureSize=null;
+      canvas.width=saved.width;canvas.height=saved.height;canvas.style.cssText=saved.canvasStyle;photo.style.cssText=saved.photoStyle;draw();
+    }
   }
   async function upload(mesh:Mesh,entityId:string,representation:any,n:number){
     if(disposed||n!==epoch)return;const vertex=gl!.createBuffer()!,index=gl!.createBuffer()!,texture=gl!.createTexture()!;gl!.bindBuffer(gl!.ARRAY_BUFFER,vertex);gl!.bufferData(gl!.ARRAY_BUFFER,mesh.vertices,gl!.STATIC_DRAW);gl!.bindBuffer(gl!.ELEMENT_ARRAY_BUFFER,index);gl!.bufferData(gl!.ELEMENT_ARRAY_BUFFER,mesh.indices,gl!.STATIC_DRAW);gl!.bindTexture(gl!.TEXTURE_2D,texture);gl!.texParameteri(gl!.TEXTURE_2D,gl!.TEXTURE_MIN_FILTER,gl!.LINEAR);gl!.texParameteri(gl!.TEXTURE_2D,gl!.TEXTURE_MAG_FILTER,gl!.LINEAR);gl!.texParameteri(gl!.TEXTURE_2D,gl!.TEXTURE_WRAP_S,gl!.CLAMP_TO_EDGE);gl!.texParameteri(gl!.TEXTURE_2D,gl!.TEXTURE_WRAP_T,gl!.CLAMP_TO_EDGE);gl!.texImage2D(gl!.TEXTURE_2D,0,gl!.RGBA,1,1,0,gl!.RGBA,gl!.UNSIGNED_BYTE,new Uint8Array([255,255,255,255]));
@@ -157,7 +179,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
     const fitVersion=navigationVersion,initialRadius=radius;const tasks=doc.entities.flatMap((e:any)=>(e.representations||[]).filter((r:any)=>r.sourceValidity!=='stale'&&(r.placementState==='confirmed'||['requires_alignment_confirmation','imported_proposal'].includes(r.placementReason))).map((r:any)=>({e,r})));let finished=0;
     // Two downloads at a time bounds decode memory on phones. Late data may draw,
     // but never writes the host's selection or camera.
-    async function load(){while(tasks.length&&!disposed&&n===epoch){const {e,r}=tasks.shift()!;try{let meshes:Mesh[];if(r.kind==='primitive')meshes=[primitive(r.primitive)];else{const src=await url(r.assetId);if(n!==epoch||disposed)return;const res=await fetch(src,{signal:abort.signal});if(!res.ok)throw Error('asset_download_failed');const bytes=await res.arrayBuffer();emit('loadProgress',{phase:'gpu_upload',assetId:r.assetId,bytes:bytes.byteLength});const meta=doc.assets.find((a:any)=>a.id===r.assetId);meshes=(meta?.format||meta?.metadata?.format)==='panoptes-mesh-v1'?readPacked(bytes,meta):readGLB(bytes);}for(const mesh of meshes)await upload(mesh,e.id,r,n);}catch(error:any){if(n===epoch&&error.name!=='AbortError')emit('loadError',{code:error.message,entityId:e.id,assetId:r.assetId});}if(n===epoch){finished++;emit('loadProgress',{phase:'assets',loaded:finished,total:finished+tasks.length});}}}
+    async function load(){while(tasks.length&&!disposed&&n===epoch){const {e,r}=tasks.shift()!;try{let meshes:Mesh[];if(r.kind==='primitive')meshes=[primitive(r.primitive)];else{const src=await url(r.assetId);if(n!==epoch||disposed)return;const res=await fetch(src,{signal:abort.signal});if(!res.ok)throw Error('asset_download_failed');const bytes=await res.arrayBuffer();emit('loadProgress',{phase:'gpu_upload',assetId:r.assetId,bytes:bytes.byteLength});const meta=doc.assets.find((a:any)=>a.id===r.assetId);meshes=(meta?.format||meta?.metadata?.format)==='panoptes-mesh-v1'?readPacked(bytes,meta):readGLB(bytes);}for(const mesh of meshes)await upload(mesh,e.id,r,n);if(n===epoch&&!disposed)loadedRepresentations.add(e.id+'/'+r.id);}catch(error:any){if(n===epoch&&error.name!=='AbortError')emit('loadError',{code:error.message,entityId:e.id,assetId:r.assetId});}if(n===epoch){finished++;emit('loadProgress',{phase:'assets',loaded:finished,total:finished+tasks.length});}}}
     await Promise.all([load(),load()]);if(n===epoch&&!disposed){dimensions();if(!camera?.exact&&navigationVersion===fitVersion&&initialRadius!==radius)setCamera(viewMode);draw();emit('renderReady',{phase:'scene',revisionId});}
   }
   function listen(target:EventTarget,name:string,fn:any,opts?:any){target.addEventListener(name,fn,opts);cleanups.push(()=>target.removeEventListener(name,fn,opts));}
@@ -168,5 +190,5 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
   listen(stage,'pointercancel',()=>{if(axisDrag)preview.delete(axisDrag.id);axisDrag=null;drag=null;emit('transformPreview',{operations:[]});draw();});listen(canvas,'contextmenu',(e:Event)=>e.preventDefault());
   listen(canvas,'wheel',(e:WheelEvent)=>{if(!camera||camera.exact)return;e.preventDefault();navigationVersion++;const offset=add(camera.eye,scale(camera.target,-1)),factor=Math.exp(e.deltaY*.0012);if(camera.orthographic)camera.orthoHeight=Math.max(radius*.02,Math.min(radius*50,camera.orthoHeight!*factor));else camera.eye=add(camera.target,scale(offset,Math.max(radius*.02,Math.min(radius*50,Math.hypot(...offset)*factor))/Math.hypot(...offset)));draw();},{passive:false});
   listen(canvas,'webglcontextlost',(e:Event)=>{e.preventDefault();emit('contextLost');});listen(canvas,'webglcontextrestored',()=>emit('loadError',{code:'viewer_remount_required'}));const observer=new ResizeObserver(()=>draw());observer.observe(stage);
-  return {setScene,setSelection(value:any){selection={...value};draw();},setCamera,setLayers(value:any){layers={...layers,...value};if(layers.imageId)frameId=cameraForImage(doc,layers.imageId)?.coordinateFrameId||null;dimensions();draw();},previewOperations(ops:any[]){for(const op of ops)if(op.type==='setTransform')preview.set(op.entityId,op);draw();},clearPreview(){preview.clear();draw();},resize(){draw();},dispose(){if(disposed)return;disposed=true;epoch++;photoEpoch++;abort.abort();photoAbort.abort();if(photoObjectURL)URL.revokeObjectURL(photoObjectURL);observer.disconnect();cleanups.forEach(fn=>fn());release();shaders.forEach(s=>gl.deleteShader(s));gl.deleteProgram(program);gl.getExtension('WEBGL_lose_context')?.loseContext();photo.removeAttribute('src');stage.remove();}};
+  return {setScene,captureModel,setSelection(value:any){selection={...value};draw();},setCamera,setLayers(value:any){layers={...layers,...value};if(layers.imageId)frameId=cameraForImage(doc,layers.imageId)?.coordinateFrameId||null;dimensions();draw();},previewOperations(ops:any[]){for(const op of ops)if(op.type==='setTransform')preview.set(op.entityId,op);draw();},clearPreview(){preview.clear();draw();},resize(){draw();},dispose(){if(disposed)return;disposed=true;epoch++;photoEpoch++;abort.abort();photoAbort.abort();if(photoObjectURL)URL.revokeObjectURL(photoObjectURL);observer.disconnect();cleanups.forEach(fn=>fn());release();shaders.forEach(s=>gl.deleteShader(s));gl.deleteProgram(program);gl.getExtension('WEBGL_lose_context')?.loseContext();photo.removeAttribute('src');stage.remove();}};
 }

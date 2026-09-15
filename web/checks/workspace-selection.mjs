@@ -5,7 +5,7 @@ import {createRequire} from 'node:module';
 import React from 'react';
 import ts from 'typescript';
 import * as core from '../src/core.ts';
-import {entityEvidenceStatus} from '../src/scene-semantics.ts';
+import {entityEvidenceStatus,isReferenceSurface} from '../src/scene-semantics.ts';
 
 // Execute the real Workspace handlers without mounting GPU/network children.
 const source=await readFile(new URL('../src/App.tsx',import.meta.url),'utf8');
@@ -18,8 +18,8 @@ const hooks={
  useRef(initial){const i=cursor++;return slots[i]??={current:initial};},
  useEffect(effect,deps){const i=cursor++,previous=slots[i];if(!previous||deps.some((v,j)=>!Object.is(v,previous[j]))){slots[i]=deps;effects.push(effect);}},
 };
-const children=Object.fromEntries(['PhotoView','SpatialView','CadView','PlanView','AssetImage','EntityInspector','IdentityReview','AgentPanel','PrimitiveCreator','ErrorNotice'].map(name=>[name,()=>null]));
-const scope={...core,...hooks,...children,entityEvidenceStatus,useI18n:()=>({t:key=>key}),id:()=>`request-${++serial}`};
+const children=Object.fromEntries(['PhotoView','SpatialView','CadView','PlanView','AssetImage','EntityInspector','IdentityReview','AgentPanel','PrimitiveCreator','ErrorNotice','ModelEvidence','Badge','PrimitiveFields','TransformFields'].map(name=>[name,()=>null]));
+const scope={...core,...hooks,...children,entityEvidenceStatus,isReferenceSurface,useI18n:()=>({t:key=>key}),id:()=>`request-${++serial}`};
 const module={exports:{}},require=createRequire(import.meta.url);
 new Function('require','module','exports',...Object.keys(scope),code)(require,module,module.exports,...Object.values(scope));
 const nodes=node=>React.isValidElement(node)?[node,...React.Children.toArray(node.props.children).flatMap(nodes)]:[];
@@ -39,6 +39,8 @@ const entity=(id,refs)=>({id,label:id,observationRefs:refs,representations:[],me
 const base={schemaVersion:2,target:'scene',entities:[entity('a',['oa']),entity('b',['ob']),entity('c',['oc'])],observations:[{id:'oa',imageId:'photo',originalPixelBox:[0,0,5,5]},{id:'ob',imageId:'photo',originalPixelBox:[10,0,15,5]},{id:'oc',imageId:'photo',originalPixelBox:[20,0,25,5]}],assets:[{id:'photo',kind:'source_image'}],annotations:[],coordinateFrames:[],cameras:[{id:'camera',imageId:'photo'}],geometryBindings:{photo:{cameraId:'camera',geometrySolutionId:'solution'}},identityDecisions:[]};
 const merged={...base,entities:[entity('a',['oa','ob']),base.entities[2]],identityDecisions:[{entityIds:['a','b'],observationGroups:[['oa'],['ob']],decision:'same',survivorId:'a'}]};
 reset(merged,'?object=b&observation=ob&image=photo');
+assert.equal(find('EntityInspector').props.canConfirmPlacement,true,'Only owner workspaces offer saved placement confirmation');
+props={...props,canWrite:false};assert.equal(find('EntityInspector').props.canConfirmPlacement,false,'Visitor temporary edits cannot claim persistent placement confirmation');props={...props,canWrite:true};
 assert.equal(selected(),'a','A retired deep-link ID resolves to its unique current survivor');
 assert.equal(observation(),'ob','The exact retained observation remains selected');
 assert.equal(render().filter(n=>n.props.className?.startsWith('entity-row ')).length,2,'Merged same-photo masks produce one entity row, not one row per mask');
@@ -67,4 +69,12 @@ render().find(n=>n.type==='button'&&n.props['aria-label']==='addModel').props.on
 const pending=find('PrimitiveCreator').props.onCommit([{type:'setPrimitive',entityId:'a'}]);
 find('PhotoView').props.onSelect('c','oc');render();complete(true);await pending;
 assert.equal(selected(),'c','A late creation response cannot override a newer selection');assert.equal(observation(),'oc');
+const inspectorDeclaration=parsed.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='EntityInspector');
+const inspectorCode=ts.transpileModule(inspectorDeclaration.getText(parsed).replace('function EntityInspector','export function ConfirmInspector'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
+const inspectorModule={exports:{}};new Function('require','module','exports',...Object.keys(scope),inspectorCode)(require,inspectorModule,inspectorModule.exports,...Object.values(scope));
+const candidate={...entity('a',['oa']),activeModelRepresentationId:'model',currentModelTransform:transform,representations:[{id:'model',kind:'primitive',coordinateFrameId:'frame',transform,primitive:{kind:'box',dimensions:[2,2,2]},placementState:'unconfirmed',placementReason:'requires_alignment_confirmation'}]},confirmations=[];
+function inspectorNodes(canConfirmPlacement){slots.length=0;effects.length=0;cursor=0;return nodes(inspectorModule.exports.ConfirmInspector({entity:candidate,document:{...base,entities:[candidate],coordinateFrames:[{id:'frame',ground:{normal:[0,0,1]}}]},busy:false,canConfirmPlacement,onCommit:operations=>confirmations.push(operations)}));}
+assert.equal(inspectorNodes(false).some(n=>n.type==='button'&&n.props.children==='acceptPlacement'),false,'A visitor sees the candidate state without a persistent-confirmation control');
+inspectorNodes(true).find(n=>n.type==='button'&&n.props.children==='acceptPlacement').props.onClick();
+assert.deepEqual(confirmations,[[{type:'confirmPlacement',entityId:'a',representationId:'model'}]],'Owner confirmation names the exact active representation instead of abusing a no-op transform');
 console.log('Workspace selection: retired IDs, exact mask ownership, one merged row, default none, ambiguous split, revision remapping and late user selection passed');

@@ -5,7 +5,7 @@ from copy import deepcopy
 from typing import Any, Protocol
 from uuid import NAMESPACE_URL, uuid5
 
-from .contracts import PlatformError, validate_document, validate_transform
+from .contracts import PlatformError, digest, validate_document, validate_transform
 
 
 class Repository(Protocol):
@@ -81,6 +81,21 @@ def apply_operations(source: dict, operations: list[dict], *, base_revision_id: 
         elif kind in ("recordIdentityDecision", "mergeEntities", "splitEntity", "setActiveModelRepresentation", "selectMeasurementEvidence"):
             from .identity import apply_identity_operation
             apply_identity_operation(document, operation, base_revision_id=base_revision_id)
+        elif kind == 'confirmPlacement':
+            item = entity(operation.get('entityId'))
+            active_id = item.get('activeModelRepresentationId')
+            if not active_id or operation.get('representationId') != active_id:
+                raise PlatformError('active_model_selection_required', 422)
+            rep = next((r for r in item['representations'] if r['id'] == active_id), None)
+            if rep is None or rep['kind'] not in ('generated_mesh', 'primitive') or rep.get('sourceValidity') == 'stale':
+                raise PlatformError('active_model_required', 422)
+            if rep['placementState'] != 'confirmed' and rep.get('placementReason') not in ('imported_proposal', 'requires_alignment_confirmation'):
+                raise PlatformError('model_placement_required', 422)
+            pose = item.get('currentModelTransform') or rep['transform']
+            validate_transform(pose, frames)
+            rep.update(placementState='confirmed', placementSource={
+                'type': 'manual_assertion', 'operation': 'confirmPlacement',
+                'representationId': active_id, 'transformSha256': digest(pose)})
         elif kind in ("setTransform", "setLabel", "setVisibility", "setMaterial", "setPrimitive"):
             item = entity(operation.get("entityId"))
             if kind == "setTransform":
@@ -88,13 +103,16 @@ def apply_operations(source: dict, operations: list[dict], *, base_revision_id: 
                 validate_transform(value, frames)
                 if document["schemaVersion"] == 2 and item["activeModelRepresentationId"] is None:
                     raise PlatformError("active_model_required", 422)
+                previous_transform = item.get('currentModelTransform')
                 item["currentModelTransform"] = deepcopy(value)
                 for representation in item.get("representations", []):
                     if representation.get("kind") in ("generated_mesh", "primitive") and (document["schemaVersion"] == 1 or representation["id"] == item["activeModelRepresentationId"]):
+                        changed = value != (previous_transform or representation.get('transform'))
                         representation["transform"] = deepcopy(value)
                         representation["coordinateFrameId"] = value["coordinateFrameId"]
-                        representation["placementState"] = "confirmed"
-                        representation["placementSource"] = {"type": "manual_assertion", "operation": "setTransform", "schemaVersion": 1}
+                        if changed:
+                            representation.update(placementState='unconfirmed', placementReason='requires_alignment_confirmation')
+                            representation.pop('placementSource', None)
             elif kind == "setLabel":
                 value = operation.get("label")
                 if not isinstance(value, str) or not value.strip() or len(value) > 500:
@@ -119,11 +137,7 @@ def apply_operations(source: dict, operations: list[dict], *, base_revision_id: 
                 if not isinstance(primitive, dict) or primitive.get("kind", primitive.get("type")) not in ("box", "cylinder"):
                     raise PlatformError("invalid_primitive")
                 from .spatial import primitive_mesh
-                primitive_mesh(primitive)
-                transform = operation.get("transform") or primitive.get("transform") or item.get("currentModelTransform")
-                if transform is None:
-                    raise PlatformError("primitive_placement_required", 422)
-                validate_transform(transform, frames)
+                mesh = primitive_mesh(primitive)
                 representation_id = operation.get("representationId")
                 if document["schemaVersion"] == 2:
                     active_id = item["activeModelRepresentationId"]
@@ -136,15 +150,21 @@ def apply_operations(source: dict, operations: list[dict], *, base_revision_id: 
                     rep = next((r for r in item.get("representations", []) if r.get("kind") == "primitive" and (representation_id is None or r["id"] == representation_id)), None)
                 if representation_id is not None and rep is None:
                     raise PlatformError("primitive_representation_not_found", 422)
+                transform = operation.get("transform") or primitive.get("transform") or item.get("currentModelTransform") or (rep or {}).get("transform")
+                if transform is None:
+                    raise PlatformError("primitive_placement_required", 422)
+                validate_transform(transform, frames)
                 if rep is None:
                     rep = {"id": str(uuid5(NAMESPACE_URL, "primitive:" + item["id"])), "kind": "primitive", "assetId": None,
                            "sourceRefs": [{"observationId": identity} for identity in item.get("observationRefs", [])]}
                     item.setdefault("representations", []).append(rep)
-                frame = next(f for f in document["coordinateFrames"] if f["id"] == transform["coordinateFrameId"])
-                manual = frame.get("source") == "manual_assertion"
-                rep.update(primitive=deepcopy(primitive), transform=deepcopy(transform), coordinateFrameId=transform["coordinateFrameId"], placementState="confirmed" if manual else "unconfirmed", placementReason="manual_assertion" if manual else "requires_alignment_confirmation")
-                if manual:
-                    rep["sourceRefs"] = [{"type": "manual_assertion", "coordinateFrameId": frame["id"]}]
+                changed = primitive != rep.get("primitive") or transform != (item.get("currentModelTransform") or rep.get("transform"))
+                rep.update(primitive=deepcopy(primitive), transform=deepcopy(transform), coordinateFrameId=transform["coordinateFrameId"],
+                           bounds={"min": mesh.vertices.min(axis=0).tolist(), "max": mesh.vertices.max(axis=0).tolist()})
+                if changed:
+                    rep.update(placementState="unconfirmed", placementReason="requires_alignment_confirmation")
+                    rep.pop("placementSource", None)
+                    rep.pop("planProjection", None)
                 item["currentModelTransform"] = deepcopy(transform)
                 if document["schemaVersion"] == 2:
                     item["activeModelRepresentationId"] = rep["id"]

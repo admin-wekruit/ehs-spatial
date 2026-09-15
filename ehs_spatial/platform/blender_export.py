@@ -193,25 +193,36 @@ def _export_parts(mesh, override, *, apply_color_tint=False):
     return parts
 
 
-def prepare_export(revision_id: str, document: dict[str, Any], resolve_asset: Callable[[str], bytes | MeshData]) -> dict[str, Any]:
+EXPORT_OBJECT_FIELDS = ("entityId", "id", "label", "kind", "primitive", "sourceRefs", "observationRefs", "visible", "editable",
+                        "coordinateFrameId", "coordinateFrameScale", "transform", "placementState", "placementReason",
+                        "placementSource", "sourceValidity", "coverage", "shapeStatus", "sourceContext")
+
+
+def prepare_export(revision_id: str, document: dict[str, Any], resolve_asset: Callable[[str], bytes | MeshData], *, scene_mode: str = "models") -> dict[str, Any]:
+    if scene_mode not in ("models", "observed"):
+        raise PlatformError("invalid_export_scene_mode", 422)
     validate_document(document)
     document = json.loads(canonical(document))
     assets = {x["id"]: x for x in document["assets"]}
-    frames = {x["id"] for x in document["coordinateFrames"]}
-    objects, unresolved, excluded = [], [], []
+    frames = {x["id"]: x for x in document["coordinateFrames"]}
+    objects, unresolved, excluded, missing_models, pending, not_required = [], [], [], [], [], []
     for entity in document["entities"]:
+        exported_model = False
         for rep in entity.get("representations", []):
             if rep.get('sourceValidity') == 'stale':
                 excluded.append({'entityId':entity['id'], 'representationId':rep['id'], 'reason':'source_geometry_stale'})
                 continue
-            if document['schemaVersion'] == 2 and rep['kind'] in ('generated_mesh', 'primitive') and rep['id'] != entity.get('activeModelRepresentationId'):
-                excluded.append({'entityId':entity['id'], 'representationId':rep['id'], 'reason':'source_model_candidate'})
+            modeled = rep['kind'] in ('generated_mesh', 'primitive')
+            if scene_mode == "models":
+                reason = "reference_context" if entity.get("sourceContext") else "observation_evidence" if not modeled else "source_model_candidate" if rep['id'] != entity.get('activeModelRepresentationId') else None
+            else:
+                reason = "model_scene_representation" if modeled else "point_cloud_context" if entity.get("sourceContext") and rep['kind'] == "point_cloud" else "not_a_mesh" if rep['kind'] == "point_cloud" else None
+            if reason:
+                (unresolved if reason == "not_a_mesh" else excluded).append({"entityId": entity["id"], "representationId": rep["id"], "reason": reason})
                 continue
-            if entity.get("sourceContext") is True and rep["kind"] == "point_cloud":
-                excluded.append({"entityId": entity["id"], "representationId": rep["id"], "reason": "point_cloud_context"})
-                continue
-            if rep["placementState"] != "confirmed" or rep["kind"] == "point_cloud":
-                unresolved.append({"entityId": entity["id"], "representationId": rep["id"], "reason": "placement_unconfirmed" if rep["placementState"] != "confirmed" else "not_a_mesh"})
+            candidate = modeled and rep["placementState"] == "unconfirmed" and rep.get("placementReason") in ("imported_proposal", "requires_alignment_confirmation")
+            if rep["placementState"] != "confirmed" and not candidate:
+                unresolved.append({"entityId": entity["id"], "representationId": rep["id"], "reason": "placement_unconfirmed"})
                 continue
             if rep["kind"] == "primitive":
                 mesh = primitive_mesh(rep["primitive"])
@@ -233,20 +244,38 @@ def prepare_export(revision_id: str, document: dict[str, Any], resolve_asset: Ca
                             "uv":mesh.uv.tolist() if mesh.uv is not None else None,
                             "texture":base64.b64encode(mesh.texture_bytes).decode() if mesh.texture_bytes else None,"textureMimeType":mesh.texture_mime_type,
                             "material": material, "visible": entity.get("visible", True),
+                            "editable": scene_mode == "models", "sourceContext": entity.get("sourceContext", False),
+                            "observationRefs": entity.get("observationRefs", []), "coordinateFrameScale": frames[pose["coordinateFrameId"]]["scale"],
+                            **{key: rep.get(key) for key in ("placementState", "placementReason", "placementSource", "sourceValidity", "coverage", "shapeStatus")},
                             "parts":_export_parts(mesh,material,apply_color_tint=document["schemaVersion"] == 2 and rep["kind"] in ("generated_mesh", "primitive")),
                             "primitive": rep.get("primitive"), "sourceRefs": rep.get("sourceRefs", [])})
+            exported_model = modeled
+            if candidate:
+                pending.append({"entityId":entity["id"], "representationId":rep["id"], "placementState":rep["placementState"], "placementReason":rep["placementReason"]})
         if not entity.get("representations"):
             unresolved.append({"entityId": entity["id"], "reason": "no_representation"})
+        reference_surface = scene_mode == "models" and entity.get("geometryRole") == "floor"
+        if reference_surface:
+            not_required.append({"entityId": entity["id"], "reason": "reference_surface"})
+        if scene_mode == "models" and not entity.get("sourceContext") and not reference_surface and not exported_model:
+            missing_models.append({"entityId": entity["id"], "reason": "no_representation" if not entity.get("representations") else "active_model_missing" if not entity.get("activeModelRepresentationId") else "active_model_not_exportable"})
     cameras = [{**c, "blender": blender_camera_parameters(c)} for c in document["cameras"]]
-    return {"schemaVersion": 1, "sceneRevisionId": revision_id, "documentSha256": digest(document), "document": document,
-            "objects": objects, "cameras": cameras, "unplacedEntities": unresolved, "excludedRepresentations": excluded, "newModelCalls": 0}
+    if scene_mode == "models":
+        unresolved = missing_models
+    manifest = {"schemaVersion": 1, "sceneRevisionId": revision_id, "documentSha256": digest(document), "sceneMode": scene_mode,
+                "status": "incomplete" if unresolved or pending else "succeeded", "newModelCalls": 0,
+                "exportedModelCount": sum(item["editable"] for item in objects), "exportedObservedRepresentationCount": sum(not item["editable"] for item in objects),
+                "missingModelEntities": missing_models, "modelNotRequiredEntities": not_required, "placementPendingEntities": pending, "unplacedEntities": unresolved,
+                "excludedRepresentations": excluded, "sourceDocument": document, "objects": [{key: item[key] for key in EXPORT_OBJECT_FIELDS} for item in objects],
+                "validationMeaning": "File consistency only; model inclusion and placement confirmation do not certify reconstruction completeness or physical accuracy"}
+    return {**manifest, "document": document, "objects": objects, "cameras": cameras, "manifest": manifest}
 
 
 def write_glb(prepared: dict[str, Any], path: Path) -> dict[str, Any]:
     """Preserve camera K in extras: glTF cameras cannot encode shifted principal points."""
     binary = bytearray()
     spec = {"asset": {"version": "2.0", "generator": "Panoptes revision export"}, "scene": 0, "scenes": [], "nodes": [], "meshes": [], "materials": [], "buffers": [], "bufferViews": [], "accessors": [], "images":[],"textures":[],
-            "extras": {"sceneRevisionId": prepared["sceneRevisionId"], "documentSha256": prepared["documentSha256"], "sourceDocument": prepared["document"], "cameraProjection": "source K/cameraToWorld preserved in sourceDocument; no approximate glTF cameras"}}
+            "extras": {**prepared["manifest"], "cameraProjection": "source K/cameraToWorld preserved in sourceDocument; no approximate glTF cameras"}}
     def accessor(array: np.ndarray, kind: str, component: int, bounds: bool = False):
         while len(binary)%4:
             binary.append(0)
@@ -295,7 +324,7 @@ def write_glb(prepared: dict[str, Any], path: Path) -> dict[str, Any]:
             primitives.append({"attributes":attrs,"indices":accessor(f.reshape(-1),"SCALAR",5125),"material":len(spec["materials"])-1})
         spec["meshes"].append({"name":obj["id"],"primitives":primitives})
         spec["nodes"].append({"name": obj["id"], "mesh": len(spec["meshes"])-1, "matrix": np.asarray(obj["matrix"]).T.ravel().tolist(),
-                              "extras": {k: obj[k] for k in ("entityId", "id", "kind", "primitive", "sourceRefs", "visible", "coordinateFrameId")}})
+                              "extras": {k: obj[k] for k in EXPORT_OBJECT_FIELDS}})
         if obj["visible"]:
             frame_nodes[obj["coordinateFrameId"]].append(len(spec["nodes"])-1)
     spec["scenes"] = [{"name": frame, "nodes": nodes} for frame,nodes in frame_nodes.items()] or [{"name": "Unplaced assets", "nodes": []}]
@@ -309,6 +338,8 @@ def write_glb(prepared: dict[str, Any], path: Path) -> dict[str, Any]:
     if reopened["extras"]["sourceDocument"] != prepared["document"]:
         raise PlatformError("glb_reopen_provenance_mismatch")
     for obj,node in zip(prepared["objects"],reopened["nodes"],strict=True):
+        if node['extras'] != {key: obj[key] for key in EXPORT_OBJECT_FIELDS}:
+            raise PlatformError("glb_reopen_provenance_mismatch")
         if node["matrix"] != np.asarray(obj["matrix"]).T.ravel().tolist():
             raise PlatformError("glb_reopen_geometry_mismatch")
         for part,primitive in zip(obj["parts"],reopened["meshes"][node["mesh"]]["primitives"],strict=True):
@@ -339,28 +370,42 @@ from bpy_extras.object_utils import world_to_camera_view
 root = Path(sys.argv[sys.argv.index('--')+1])
 spec = json.loads((root/'input.json').read_text())
 bpy.ops.wm.read_factory_settings(use_empty=True)
-first, scenes = bpy.context.scene, {}
+first, scenes, collections = bpy.context.scene, {}, {}
 for i, frame in enumerate(spec['document']['coordinateFrames']):
     scene = first if i == 0 else bpy.data.scenes.new(frame['id'])
     scene.name = frame['id']
     scene['coordinate_frame_json'] = json.dumps(frame)
     scene['scene_revision_id'] = spec['sceneRevisionId']
+    scene['scene_mode'] = spec['sceneMode']
     scale = frame['scale']
     scene.unit_settings.system = 'METRIC' if scale['status'] == 'operator_anchored' else 'NONE'
     if scale['status'] == 'operator_anchored':
         scene.unit_settings.scale_length = scale['nativeToMeters']
     scenes[frame['id']] = scene
-for item in spec['objects']:
+    collection = bpy.data.collections.new('Editable models' if spec['sceneMode'] == 'models' else 'Observed evidence')
+    collection['scene_mode'] = spec['sceneMode']
+    scene.collection.children.link(collection)
+    collections[frame['id']] = collection
+for item,metadata in zip(spec['objects'],spec['manifest']['objects'],strict=True):
     scene = scenes[item['coordinateFrameId']]
     mesh = bpy.data.meshes.new(item['id'])
     mesh.from_pydata(item['vertices'], [], item['faces'])
     mesh.update()
     obj = bpy.data.objects.new(item['id'],mesh)
-    scene.collection.objects.link(obj)
+    collections[item['coordinateFrameId']].objects.link(obj)
     obj.matrix_world = Matrix(item['matrix'])
     obj['entity_id'], obj['representation_id'] = item['entityId'], item['id']
     obj['source_refs_json'] = json.dumps(item['sourceRefs'])
     obj['native_transform_json'] = json.dumps(item['transform'])
+    obj['representation_metadata_json'] = json.dumps(metadata)
+    obj['placement_state'] = item['placementState']
+    obj['placement_reason'] = item['placementReason'] or ''
+    obj['coverage_json'] = json.dumps(item['coverage'])
+    obj['coordinate_frame_id'] = item['coordinateFrameId']
+    obj['coordinate_frame_scale_json'] = json.dumps(item['coordinateFrameScale'])
+    obj['editable_model'] = item['editable']
+    obj.hide_select = not item['editable']
+    obj.lock_location = obj.lock_rotation = obj.lock_scale = (not item['editable'],)*3
     obj.hide_render = obj.hide_viewport = not item['visible']
     rgba_parts = []
     for part in item['parts']:
@@ -481,7 +526,7 @@ text.write(json.dumps(spec['document'],ensure_ascii=False,indent=1))
 bpy.ops.wm.save_as_mainfile(filepath=str(root/'scene.blend'))
 bpy.ops.wm.open_mainfile(filepath=str(root/'scene.blend'))
 records, camera_records, parameter_records = [],[],[]
-for item in spec['objects']:
+for item,metadata in zip(spec['objects'],spec['manifest']['objects'],strict=True):
     obj = next(o for o in bpy.data.objects if o.get('representation_id') == item['id'])
     scene = bpy.data.scenes[item['coordinateFrameId']]
     bpy.context.window.scene = scene
@@ -495,6 +540,12 @@ for item in spec['objects']:
     residual = float(np.max(np.abs(actual@a[:3,:3].T+a[:3,3] - (expected@b[:3,:3].T+b[:3,3]))))
     assert residual < 5e-5,(item['id'],residual)
     assert obj['entity_id'] == item['entityId']
+    assert json.loads(obj['representation_metadata_json']) == metadata
+    assert obj['placement_state'] == item['placementState']
+    assert obj['placement_reason'] == (item['placementReason'] or '')
+    assert obj['editable_model'] == item['editable']
+    assert obj.hide_select == (not item['editable'])
+    assert all(collection.get('scene_mode') == spec['sceneMode'] for collection in obj.users_collection)
     assert obj.hide_viewport == (not item['visible'])
     assert len(obj.data.materials) == len(item['parts'])
     expected_colors = []
@@ -528,7 +579,8 @@ for item in spec['objects']:
                     assert np.allclose(obj.data.uv_layers.active.data[loop_index].uv,[expected_uv[0],1-expected_uv[1]],atol=1e-6)
         face_start += len(part['faces'])
         vertex_start += len(part['vertices'])
-    records.append({'entityId':item['entityId'],'representationId':item['id'],'vertices':len(actual),'triangles':len(faces),'materials':len(item['parts']),'maxWorldErrorNative':residual,'maxLinearColorError':color_error})
+    records.append({'entityId':item['entityId'],'representationId':item['id'],'vertices':len(actual),'triangles':len(faces),'materials':len(item['parts']),'maxWorldErrorNative':residual,'maxLinearColorError':color_error,
+        'editable':item['editable'],'placementState':item['placementState'],'placementReason':item['placementReason'],'metadataReopened':'passed'})
     if item.get('primitive'):
         original_scale = np.array(obj.scale)
         key = 'radiusNative' if 'radiusNative' in obj else 'dimension0'
@@ -571,8 +623,8 @@ assert json.loads(bpy.data.texts['Panoptes source revision.json'].as_string()) =
 '''
 
 
-def export_scene_revision(revision_id: str, document: dict[str, Any], resolve_asset: Callable[[str], bytes | MeshData], output_dir: str | Path, blender_executable: str | Path | None = None) -> dict[str, Any]:
-    prepared = prepare_export(revision_id, document, resolve_asset)
+def export_scene_revision(revision_id: str, document: dict[str, Any], resolve_asset: Callable[[str], bytes | MeshData], output_dir: str | Path, blender_executable: str | Path | None = None, *, scene_mode: str = "models") -> dict[str, Any]:
+    prepared = prepare_export(revision_id, document, resolve_asset, scene_mode=scene_mode)
     executable = str(blender_executable) if blender_executable else shutil.which("blender")
     if not executable:
         raise PlatformError("blender_worker_unavailable", 503)
@@ -594,8 +646,7 @@ def export_scene_revision(revision_id: str, document: dict[str, Any], resolve_as
         if completed.returncode or not (root/"blender-validation.json").exists():
             raise PlatformError("blender_export_validation_failed", 422)
         blend_validation = json.loads((root/"blender-validation.json").read_text())
-        manifest = {"sceneRevisionId": revision_id,"documentSha256": prepared["documentSha256"],"status":"incomplete" if prepared["unplacedEntities"] else "succeeded", "newModelCalls":0,
-                    "unplacedEntities":prepared["unplacedEntities"],"excludedRepresentations":prepared["excludedRepresentations"],"validation":{"blender":blend_validation,"glb":glb_validation},"files":[]}
+        manifest = {**prepared["manifest"], "validation":{"blender":blend_validation,"glb":glb_validation},"files":[]}
         for name in ("scene.glb","scene.blend"):
             path = root/name
             manifest["files"].append({"name":name,"sha256":hashlib.sha256(path.read_bytes()).hexdigest(),"bytes":path.stat().st_size})

@@ -4,7 +4,7 @@ import {entityGeometryForLayer as geometry, planShapes as projectPlan} from '../
 import {representationPass, selectionGeometry} from '../src/viewer/native-viewer.ts';
 
 const observation={id:'observation',imageId:'photo',revision:1}, baseOptions={imageId:'photo',observations:[observation]};
-const planShapes=(document,options={})=>projectPlan(document,{...baseOptions,...options});
+const planShapes=(document,options={})=>projectPlan(document,{...baseOptions,layer:'observed_surface',...options});
 const entityGeometryForLayer=(entity,options)=>geometry(entity,{...baseOptions,...options});
 const observedGeometry=(entity,frameId)=>entityGeometryForLayer(entity,{layer:'observed_surface',frameId});
 const transform = {coordinateFrameId:'native',position:[10,20,30],quaternion:[0,0,Math.SQRT1_2,Math.SQRT1_2],scale:[2,3,4]};
@@ -79,7 +79,8 @@ assert.notEqual(planShapes({...layered,entities:[explicit]},{layer:'observed_sur
 const contradictory={...modelOnly,measurements:{projectedHull:{...saved,representationSnapshot:[model],geometryKind:'observed',representationIds:['model']}}};
 assert.notEqual(planShapes({...layered,entities:[contradictory]})[0]?.projectionSource,'saved_hull','Explicit incompatible provenance cannot be replaced by an inferred source');
 const sparse={measurementSelections:{observedBounds:'bounds'},measurementEvidence:[{id:'bounds',observationRefs:['observation']}],id:'sparse-button',representations:[{...observed,sourceValidity:'stale'}],measurements:{coordinateFrameId:'native',observedBounds:{coordinateFrameId:'native',min:[1,2,3],max:[2,3,4],source:'observed_measurement',sourceRefs:[{observationId:'updated',revision:2}]}}};
-for(const layer of ['model','observed_surface','point_cloud']) {
+assert.equal(entityGeometryForLayer(sparse,{layer:'model',frameId:'native'}),null,'Sparse observed bounds never become an object model');
+for(const layer of ['observed_surface','point_cloud']) {
   const geometry=entityGeometryForLayer(sparse,{layer,frameId:'native'});
   assert.equal(geometry.geometryKind,'observed_measurement','Fresh sparse points remain locatable even when the old mesh is stale and no new faces can be formed');
   assert.equal(geometry.corners.length,8);

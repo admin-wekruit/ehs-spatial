@@ -221,22 +221,39 @@ export function previewOperations(
   operations: Operation[],
 ): SceneDocument {
   const next = structuredClone(document);
+  function transformValue(raw: unknown): Transform {
+    const value = jsonObject(raw);
+    if (!value || !next.coordinateFrames.some(frame => frame.id === value.coordinateFrameId)) throw Error("invalid_coordinate_frame");
+    if (!isVec3(value.position) || !isVec3(value.scale) || value.scale.some(n => n <= 0) ||
+      !Array.isArray(value.quaternion) || value.quaternion.length !== 4 || value.quaternion.some(n => finiteNumber(n) === undefined) ||
+      Math.abs(value.quaternion.reduce((sum, n) => sum + n * n, 0) - 1) > 1e-5) throw Error("invalid_transform");
+    return structuredClone(value) as Transform;
+  }
   for (const op of operations) {
     const entity = next.entities.find((e) => e.id === op.entityId);
     if (op.type === "setTransform" && entity) {
-      entity.currentModelTransform = structuredClone(
-        (op.transform || {
+      if (next.schemaVersion === 2 && !activeModel(entity)) throw Error("active_model_required");
+      const value = transformValue(op.transform || {
           coordinateFrameId: op.coordinateFrameId,
           position: op.position,
           quaternion: op.quaternion,
           scale: op.scale,
-        }) as Transform,
-      );
+        }), previous = entity.currentModelTransform;
+      entity.currentModelTransform = value;
       (entity.representations || [])
-        .filter((r) => r.id === entity.activeModelRepresentationId)
-        .forEach(
-          (r) => (r.transform = structuredClone(entity.currentModelTransform!)),
-        );
+        .filter(r => ["generated_mesh", "primitive"].includes(r.kind) && (next.schemaVersion === 1 || r.id === entity.activeModelRepresentationId))
+        .forEach(r => {
+          const changed = !sameJSON(value, previous || r.transform);
+          r.transform = structuredClone(value); r.coordinateFrameId = value.coordinateFrameId;
+          if (changed) { r.placementState = "unconfirmed"; r.placementReason = "requires_alignment_confirmation"; delete r.placementSource; }
+        });
+    } else if (op.type === "confirmPlacement" && entity) {
+      if (!entity.activeModelRepresentationId || op.representationId !== entity.activeModelRepresentationId) throw Error("active_model_selection_required");
+      const rep = activeModel(entity);
+      if (!rep || rep.sourceValidity === "stale") throw Error("active_model_required");
+      if (rep.placementState !== "confirmed" && !["imported_proposal", "requires_alignment_confirmation"].includes(rep.placementReason || "")) throw Error("model_placement_required");
+      transformValue(entity.currentModelTransform || rep.transform);
+      // Only the saved server response supplies manual placement confirmation.
     } else if (op.type === "setVisibility" && entity)
       entity.visible = op.visible as boolean;
     else if (op.type === "setLabel" && entity)
@@ -255,22 +272,45 @@ export function previewOperations(
       entity.measurements = {...entity.measurements,[key]:evidence ? structuredClone(evidence.originalMeasurement) : null};
     }
     else if (op.type === "setPrimitive" && entity) {
-      let rep = activeModel(entity)?.kind === "primitive" ? activeModel(entity)! : undefined;
+      const spec = jsonObject(op.primitive), kind = spec?.kind || spec?.type;
+      let bounds: { min: Vec3; max: Vec3 };
+      if (kind === "box" && isVec3(spec?.dimensions) && spec.dimensions.every(n => n > 0)) {
+        bounds = { min: spec.dimensions.map(n => -Math.fround(n / 2)) as Vec3, max: spec.dimensions.map(n => Math.fround(n / 2)) as Vec3 };
+      } else if (kind === "cylinder" && finiteNumber(spec?.radius) !== undefined && Number(spec!.radius) > 0 &&
+        finiteNumber(spec?.height) !== undefined && Number(spec!.height) > 0 && Number.isInteger(spec!.segments ?? 64) && Number(spec!.segments ?? 64) >= 8 && Number(spec!.segments ?? 64) <= 256) {
+        const radius = Number(spec!.radius), height = Number(spec!.height), segments = Number(spec!.segments ?? 64),
+          xs = Array.from({ length: segments }, (_, i) => Math.fround(radius * Math.cos(i * 2 * Math.PI / segments))),
+          ys = Array.from({ length: segments }, (_, i) => Math.fround(radius * Math.sin(i * 2 * Math.PI / segments)));
+        bounds = { min: [Math.min(...xs), Math.min(...ys), -Math.fround(height / 2)], max: [Math.max(...xs), Math.max(...ys), Math.fround(height / 2)] };
+      } else throw Error("invalid_primitive");
+      const models = entity.representations || [];
+      if (next.schemaVersion === 2 && op.representationId != null && op.representationId !== entity.activeModelRepresentationId) throw Error("active_model_selection_required");
+      let rep = models.find(r => r.kind === "primitive" && (next.schemaVersion === 2 ? r.id === entity.activeModelRepresentationId : op.representationId == null || r.id === op.representationId));
+      if (next.schemaVersion === 2 && !rep && models.some(r => r.kind === "primitive")) throw Error("active_model_selection_required");
+      if (op.representationId != null && !rep) throw Error("primitive_representation_not_found");
+      const rawTransform = op.transform || spec?.transform || entity.currentModelTransform || rep?.transform;
+      if (!rawTransform) throw Error("primitive_placement_required");
+      const value = transformValue(rawTransform);
+      const changed = !rep || !sameJSON(rep.primitive, spec) || !sameJSON(value, entity.currentModelTransform || rep.transform);
       if (!rep) {
-        const transform = op.transform as Transform;
         rep = {
           id: "preview:" + entity.id,
           kind: "primitive",
           assetId: null,
-          coordinateFrameId: transform.coordinateFrameId,
-          transform,
+          coordinateFrameId: value.coordinateFrameId,
+          transform: value,
           placementState: "unconfirmed",
+          sourceRefs: (entity.observationRefs || []).map(observationId => ({ observationId })),
         };
         (entity.representations ??= []).push(rep);
-        entity.activeModelRepresentationId = rep.id;
-        entity.currentModelTransform = transform;
       }
-      rep.primitive = structuredClone(op.primitive as Record<string, unknown>);
+      rep.primitive = structuredClone(spec!); rep.transform = structuredClone(value); rep.coordinateFrameId = value.coordinateFrameId;
+      rep.bounds = bounds; entity.currentModelTransform = value;
+      if (next.schemaVersion === 2) entity.activeModelRepresentationId = rep.id;
+      if (changed) {
+        rep.placementState = "unconfirmed"; rep.placementReason = "requires_alignment_confirmation";
+        delete rep.placementSource; delete rep.planProjection;
+      }
     } else if (op.type === "addCoordinateFrame")
       next.coordinateFrames.push(
         structuredClone(op.frame as SceneDocument["coordinateFrames"][number]),
@@ -398,8 +438,7 @@ export function entityGeometryForLayer(entity: Entity, { layer, frameId, showCan
       geometryKind, representationIds: geometries.map((g) => g.rep.id)};
   }
   if (layer === "model") {
-    const model = fromRepresentations(representations.filter((r) => ["generated_mesh", "primitive"].includes(r.kind)), "model");
-    if (model) return model;
+    return fromRepresentations(representations.filter((r) => ["generated_mesh", "primitive"].includes(r.kind)), "model");
   }
   if (layer === "point_cloud") {
     const cloud = fromRepresentations(representations.filter((r) => r.kind === "point_cloud"), "point_cloud");
@@ -476,7 +515,7 @@ export function scenePlanOptions(document: SceneDocument, layer: GeometryLayer, 
     return {scope: "photo", layer, imageId, frameId: cameraForImage(document, imageId)?.coordinateFrameId || "", showCandidates};
   const frames = new Set(document.entities.filter(entity => entity.visible !== false && !entity.sourceContext).flatMap(entity => {
     const model = layer === "model" ? activeModel(entity) : null;
-    if (model && representationAvailable(entity, model, model.coordinateFrameId, showCandidates)) return [model.coordinateFrameId];
+    if (layer === "model") return model && representationAvailable(entity, model, model.coordinateFrameId, showCandidates) ? [model.coordinateFrameId] : [];
     const camera = cameraForImage(document, cadReferenceImage(document, entity));
     return camera ? [camera.coordinateFrameId] : [];
   }));

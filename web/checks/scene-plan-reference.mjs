@@ -2,7 +2,7 @@
 // Optional frozen-data scan: append <scene-document.json> <publication-catalog-directory>.
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {planShapes,scenePlanOptions,cadReferenceImage,entityGeometryForLayer} from '../src/core.ts';
+import {planShapes,scenePlanOptions,cadReferenceImage,entityGeometryForLayer,activeModel,representationAvailable} from '../src/core.ts';
 const frame='frame',plane=[[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]],sha='a'.repeat(64);
 const transform={coordinateFrameId:frame,position:[0,0,0],quaternion:[0,0,0,1],scale:[1,1,1]};
 const observation=(id,imageId)=>({id,imageId,revision:1});
@@ -41,7 +41,9 @@ if(process.argv[2]) {
  const images=scene.assets.filter(asset=>asset.kind==='source_image').map(asset=>asset.id);
  for(const layer of ['observed_surface','model','point_cloud']) {
   const options=scenePlanOptions(scene,layer),expected=planShapes(scene,options);
-  assert.equal(expected.length,records.length,'Every record in this repaired scene must have a real reference contour');
+  const count=layer==='model'?records.filter(entity=>{const model=activeModel(entity);return model&&representationAvailable(entity,model,options.frameId,true);}).length:records.length;
+  assert.equal(expected.length,count,'Every eligible active model or observed record retains its own real contour');
+  if(layer==='model')assert.ok(expected.every(shape=>shape.geometryKind==='model'),'Observed contours never fill missing model coverage');
   assert.ok(expected.every(shape=>shape.projectionSource==='mesh_projection'));
   for(const imageId of images)assert.deepEqual(planShapes(scene,{...options,imageId}),expected,'Every source-photo switch preserves actual full-scene contours');
   console.log(`${layer}: ${expected.length}/${records.length} entities; ${images.length} photo switches preserve exact geometry`);
@@ -50,16 +52,19 @@ if(process.argv[2]) {
 }
 
 if(process.argv[3]) {
- const cases=[['e38008a7-41e2-451a-aa10-2154962617cf',9],['cfb403f4-d930-4a61-80e3-ad4497db1a43',23],['f292baf7-4f27-4962-b7df-6e931c614413',28]];
+ const cases=[['e38008a7-41e2-451a-aa10-2154962617cf',7,2],['cfb403f4-d930-4a61-80e3-ad4497db1a43',23,9],['f292baf7-4f27-4962-b7df-6e931c614413',28,9]];
  const imageId='6d69d290-2cea-410b-8c96-73b377ff5917';
- for(const [id,count] of cases) {
+ for(const [id,count,modelCount] of cases) {
   const bundle=JSON.parse(await readFile(`${process.argv[3]}/${id}/bundle.json`,'utf8'));
   const scene=bundle.responses[`/api/publications/${id}`].snapshot.revision.document,before=JSON.stringify(scene);
-  const options=scenePlanOptions(scene,'model',true,imageId),shapes=planShapes(scene,options);
+  const options=scenePlanOptions(scene,'observed_surface',true,imageId),shapes=planShapes(scene,options);
   assert.equal(shapes.length,count,`${id}: Preserve the frozen document's actual CAD evidence`);
+  const models=planShapes(scene,scenePlanOptions(scene,'model',true,imageId));
+  assert.equal(models.length,modelCount,`${id}: Model coverage counts only active models`);
+  assert.ok(models.every(shape=>shape.geometryKind==='model'));
   assert.ok(shapes.some(shape=>shape.entity.id.startsWith('5c16a2fb')),'The selected mixed cart/guard record remains visible in its photo3 contour');
-  if(options.scope==='scene')for(const image of scene.assets.filter(asset=>asset.kind==='source_image'))assert.deepEqual(planShapes(scene,scenePlanOptions(scene,'model',true,image.id)),shapes,'Fixed scene CAD is independent of the viewed photo');
+  if(options.scope==='scene')for(const image of scene.assets.filter(asset=>asset.kind==='source_image'))assert.deepEqual(planShapes(scene,scenePlanOptions(scene,'observed_surface',true,image.id)),shapes,'Fixed scene CAD is independent of the viewed photo');
   assert.equal(JSON.stringify(scene),before,'Historical report data remains immutable');
-  console.log(`${id}: ${shapes.length}/28 real saved shapes, ${options.scope} rendering contract`);
+  console.log(`${id}: ${shapes.length}/28 observed contours; ${models.length}/28 model contours; ${options.scope} rendering contract`);
  }
 }

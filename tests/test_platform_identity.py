@@ -195,6 +195,107 @@ def test_active_model_edits_never_change_alternative_models():
     assert edited["entities"][0]["representations"][0]["material"] == {"color": "changed"}
 
 
+def test_model_edit_and_explicit_placement_confirmation_are_separate():
+    doc = migrate_document(source_scene(), base_revision_id=BASE)
+    active = doc['entities'][0]['representations'][0]
+    active.update(placementState='unconfirmed', placementReason='imported_proposal')
+    pose = deepcopy(doc['entities'][0]['currentModelTransform'])
+    no_op, _ = apply_operations(doc, [{'type': 'setTransform', 'entityId': 'entity-1', 'transform': pose}], base_revision_id=BASE)
+    assert no_op['entities'][0]['representations'][0]['placementState'] == 'unconfirmed'
+    confirm = {'type': 'confirmPlacement', 'entityId': 'entity-1', 'representationId': 'model-1'}
+    confirmed, inverse = apply_operations(no_op, [confirm], base_revision_id=BASE)
+    placed = confirmed['entities'][0]['representations'][0]
+    assert placed['placementState'] == 'confirmed'
+    assert placed['placementSource']['type'] == 'manual_assertion'
+    assert placed['placementSource']['transformSha256'] == digest(pose)
+    assert inverse[0]['document'] == no_op
+    pose['position'][0] += 1
+    moved, _ = apply_operations(confirmed, [{'type': 'setTransform', 'entityId': 'entity-1', 'transform': pose}], base_revision_id=BASE)
+    assert moved['entities'][0]['representations'][0]['placementState'] == 'unconfirmed'
+    assert 'placementSource' not in moved['entities'][0]['representations'][0]
+    assert moved['entities'][0]['measurements'] == doc['entities'][0]['measurements']
+    with pytest.raises(PlatformError, match='active_model_selection_required'):
+        apply_operations(doc, [{**confirm, 'representationId': 'model-2'}], base_revision_id=BASE)
+    active['placementReason'] = 'insufficient_observed_depth'
+    with pytest.raises(PlatformError, match='model_placement_required'):
+        apply_operations(doc, [confirm], base_revision_id=BASE)
+
+
+@pytest.mark.parametrize('placement_state', ['confirmed', 'unconfirmed'])
+@pytest.mark.parametrize('change', ['none', 'primitive', 'transform'])
+def test_primitive_edits_preserve_evidence_and_require_confirmation_only_on_change(placement_state, change):
+    doc = migrate_document(source_scene(), base_revision_id=BASE)
+    doc['coordinateFrames'][0]['source'] = 'manual_assertion'
+    item = doc['entities'][0]
+    active = item['representations'][0]
+    active.update(placementState=placement_state, placementReason='imported_proposal',
+                  bounds={'min': [-0.5, -1.0, -1.5], 'max': [0.5, 1.0, 1.5]},
+                  planProjection={'polygon': [[0, 0], [1, 0], [1, 1]]})
+    if placement_state == 'confirmed':
+        active['placementSource'] = {'type': 'manual_assertion', 'transformSha256': digest(active['transform'])}
+    operation = {'type': 'setPrimitive', 'entityId': item['id'], 'primitive': deepcopy(active['primitive']),
+                 'transform': deepcopy(item['currentModelTransform'])}
+    if change == 'primitive':
+        operation['primitive'] = {'kind': 'box', 'dimensions': [2, 4, 6]}
+    elif change == 'transform':
+        operation['transform']['position'][0] += 1
+    before = deepcopy(doc)
+    edited, inverse = apply_operations(doc, [operation], base_revision_id=BASE)
+    result = edited['entities'][0]
+    rep = result['representations'][0]
+    if change == 'none':
+        assert rep == active
+    else:
+        assert rep['placementState'] == 'unconfirmed'
+        assert rep['placementReason'] == 'requires_alignment_confirmation'
+        assert 'placementSource' not in rep and 'planProjection' not in rep
+        expected_bounds = {'min': [-1.0, -2.0, -3.0], 'max': [1.0, 2.0, 3.0]} if change == 'primitive' else active['bounds']
+        assert rep['bounds'] == expected_bounds
+    assert rep['sourceRefs'] == active['sourceRefs']
+    assert result['currentModelTransform'] == rep['transform'] == operation['transform']
+    for key in ('measurements', 'measurementEvidence', 'measurementSelections', 'sourceRefs'):
+        assert result[key] == item[key]
+    assert edited['observations'] == doc['observations']
+    assert inverse == [{'type': 'restoreDocument', 'document': before}] and doc == before
+
+
+def test_primitive_bounds_follow_actual_cylinder_mesh_and_new_primitives_need_confirmation():
+    from ehs_spatial.platform.spatial import primitive_mesh
+    doc = migrate_document(source_scene(), base_revision_id=BASE)
+    doc['coordinateFrames'][0]['source'] = 'manual_assertion'
+    item = doc['entities'][0]
+    item['representations'] = []
+    item['activeModelRepresentationId'] = None
+    primitive = {'kind': 'cylinder', 'radius': 2, 'height': 4, 'segments': 9}
+    edited, _ = apply_operations(doc, [{'type': 'setPrimitive', 'entityId': item['id'], 'primitive': primitive}], base_revision_id=BASE)
+    result = edited['entities'][0]
+    rep = result['representations'][0]
+    mesh = primitive_mesh(primitive)
+    assert rep['bounds'] == {'min': mesh.vertices.min(axis=0).tolist(), 'max': mesh.vertices.max(axis=0).tolist()}
+    assert rep['placementState'] == 'unconfirmed' and rep['placementReason'] == 'requires_alignment_confirmation'
+    assert 'placementSource' not in rep
+    assert result['activeModelRepresentationId'] == rep['id']
+    assert rep['sourceRefs'] == [{'observationId': oid} for oid in item['observationRefs']]
+
+
+@pytest.mark.parametrize('operation_type', ['setTransform', 'setPrimitive'])
+def test_same_effective_model_pose_preserves_confirmation_without_entity_override(operation_type):
+    doc = migrate_document(source_scene(), base_revision_id=BASE)
+    item = doc['entities'][0]
+    item['currentModelTransform'] = None
+    active = item['representations'][0]
+    active['placementSource'] = {'type': 'manual_assertion', 'transformSha256': digest(active['transform'])}
+    operation = {'type': operation_type, 'entityId': item['id']}
+    if operation_type == 'setPrimitive':
+        operation['primitive'] = deepcopy(active['primitive'])
+    else:
+        operation['transform'] = deepcopy(active['transform'])
+    edited, _ = apply_operations(doc, [operation], base_revision_id=BASE)
+    rep = edited['entities'][0]['representations'][0]
+    assert rep['placementState'] == active['placementState'] == 'confirmed'
+    assert rep['placementSource'] == active['placementSource']
+
+
 def test_same_decision_cannot_be_recorded_without_merge_and_stale_evidence_is_rejected():
     doc = migrate_document(source_scene(), base_revision_id=BASE)
     d = decision(doc)

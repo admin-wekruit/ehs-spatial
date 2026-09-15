@@ -53,11 +53,11 @@ forks and new model jobs remain in the full platform.
      .venv/bin/modal deploy modal_apps/publication_site.py
    ```
 
-   The publication container reserves 2 GiB of memory. On 2026-09-15, loading
-   eight frozen bundles with `create_app` in a fresh local Python process peaked
-   at 971,816,960 bytes of RSS (926.8 MiB), before Modal's container runtime and
-   request handling. The former 1 GiB allocation left insufficient operating
-   headroom. Recheck startup RSS when expanding the catalog; keep complete
+   The publication container reserves 3 GiB of memory. On 2026-09-15, loading
+   nine frozen bundles with `create_app` in a fresh local Python process peaked
+   at 1,502,003,200 bytes of RSS (1,432.4 MiB), before Modal's container runtime and
+   request handling. Reserve response serialization headroom in addition to
+   catalog loading. Recheck startup RSS when expanding the catalog; keep complete
    publication and asset hash verification.
 
 3. Build the website with `VITE_PUBLICATION_ID=PUBLICATION_UUID` and
@@ -88,6 +88,10 @@ bundles outside Git. Exporting into an existing directory is refused.
 `PANOPTES_PROVIDER_MANIFEST` is a local JSON deployment manifest. Its reviewed, secret-free fields are frozen into each job at enqueue time. Workers read that snapshot; a changed deployment does not change an already accepted job. Each stage has provider pins and license/runtime/quality evidence. Missing or failed gates stop that stage. There is no automatic alternate model route.
 
 Paid invocation additionally requires an explicit nonnegative `PANOPTES_PAID_BUDGET_USD`. No value means paid calls cannot begin. The agent also requires `PANOPTES_AGENT_MODEL`, `PANOPTES_AGENT_CALL_BUDGET_USD`, and its server-side provider credential. Browsing, editing, selection, rule evaluation, export and cached-result viewing do not call a VLM.
+
+Run `PYTHONPATH=. .venv/bin/python scripts/preflight_sam3d.py --runtime-manifest docs/platform/sam3d-runtime.example.json --provider-manifest docs/platform/sam3d-provider.example.json` to check the SAM3D configuration without loading a model or reserving work. The examples pin the official code and weight revisions inspected on 2026-09-15; unresolved values are null and all release checks remain unverified. Exit 1 lists every unmet configuration gate. This preflight never establishes runtime quality or approves evidence itself.
+
+The runtime image must be built and audited before recording its registry content digest in `PANOPTES_MODEL_RUNTIME_MANIFEST`. The official [setup](https://github.com/facebookresearch/sam-3d-objects/blob/f91db411c50efee93d8db7aeb323885650f6f722/doc/setup.md) requires Linux and an NVIDIA GPU with at least 32 GB VRAM. Code and checkpoints use the custom [SAM License](https://github.com/facebookresearch/sam-3d-objects/blob/f91db411c50efee93d8db7aeb323885650f6f722/LICENSE). A Modal `huggingface` secret alone does not prove access to the manually gated checkpoint repository. Record actual access and mesh-only dependency checks, official posed-mesh agreement, external-pointmap/no-internal-depth execution, and quality results against the same pins. Fill the existing provider evidence fields only with their resulting artifact hashes; then deploy `modal_apps/platform_models.py`. An explicitly authorized budget and per-call reservation remain required before inference. Historical RecGen services and their non-commercial checkpoints are not the SAM3D deployment.
 
 `PANOPTES_BLENDER_EXECUTABLE` sets the worker's Blender executable. The user does not install Blender. Blender output is verified by reopening the saved file. Unsupported camera/mesh inputs fail explicitly.
 

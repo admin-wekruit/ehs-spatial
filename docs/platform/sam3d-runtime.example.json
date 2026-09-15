@@ -1,0 +1,12 @@
+{
+  "generation": {
+    "pins": {
+      "model": "facebook/sam-3d-objects",
+      "codeRevision": "f91db411c50efee93d8db7aeb323885650f6f722",
+      "modelRevision": "2e73555018d2741ccd486e56c24fac41155a1dc6"
+    },
+    "runtimeImage": null,
+    "distribution": "sam3d_objects",
+    "checkpointConfig": "checkpoints/pipeline.yaml"
+  }
+}

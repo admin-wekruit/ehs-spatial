@@ -10,9 +10,9 @@ from PIL import Image
 import pytest
 
 from ehs_spatial.platform.contracts import PlatformError
-from ehs_spatial.platform.spatial import transform_matrix
+from ehs_spatial.platform.spatial import primitive_mesh, transform_matrix, transform_points
 from ehs_spatial.platform.repository import apply_operations
-from scripts.import_public_scene import floor_evidence, floor_mesh_members, import_document, legacy_transform, packed_asset, source_path
+from scripts.import_public_scene import floor_evidence, floor_mesh_members, import_document, legacy_transform, packed_asset, parametric_definition, source_path, unpack_mesh
 
 
 def make_public_scene(root):
@@ -148,6 +148,103 @@ def test_native_euler_exact_order_and_content_hash_validation(tmp_path):
         source_path(tmp_path,'../outside.json')
 
 
+def make_parametric_scene(root):
+    path = make_public_scene(root)
+    source = json.loads(path.read_text())
+    record = source['objects'][1]
+    spec = {'kind':'cylinder', 'radius':.3, 'height':1.7, 'segments':16}
+    mesh = primitive_mesh(spec)
+    pose = legacy_transform({'position':[2.,-1.,4.], 'rotation_deg':[-37.,15.,22.], 'scale':[1.,1.,1.]}, 'native')
+    native = transform_matrix(pose)
+    # Baked source vertices use a different rotated, non-unit-scaled object frame.
+    local = transform_points(transform_points(mesh.vertices, native), np.linalg.inv(transform_matrix(legacy_transform(record['transform'], 'native'))))
+    vertices = np.column_stack((local, np.zeros_like(local), np.tile([.18,.24,.3], (len(local),1)))).astype('<f4')
+    faces = mesh.faces.copy()
+    n = spec['segments']
+    for i in range(n):
+        j = (i+1) % n
+        faces[4*i:4*i+2] = [[i,j,n+i], [j,n+j,n+i]]
+    raw = vertices.tobytes() + faces.astype('<u4').tobytes()
+    packed = gzip.compress(raw)
+    (root/'cylinder.bin.gz').write_bytes(packed)
+    params = {'radius_native':spec['radius'], 'height_native':spec['height']}
+    definition = {'primitive':{'type':'cylinder','radius':1,'height':1,'segments':n,'local_axis':'+Z'},
+                  'parameter_source':'Frozen generic fit', 'limitations':['Circular cross-section prior; no physical scale'],
+                  'objects':[{'object_id':record['id'], 'fitted_parameters':params,
+                              'native_object_to_world':(native @ np.diag([spec['radius'],spec['radius'],spec['height'],1])).tolist()}]}
+    (root/'parameters.json').write_text(json.dumps(definition))
+    record.update(source='parametric', parameters=params, metrics={'parameter_source':'parameters.json'},
+                  mesh={'byte_offset':0,'vertex_count':len(vertices),'stride':9,'index_byte_offset':vertices.nbytes,
+                        'index_count':faces.size,'index_type':'uint32',
+                        'asset':{'path':'cylinder.bin.gz','bytes':len(raw),'packed_bytes':len(packed),'sha256':hashlib.sha256(raw).hexdigest()}})
+    path.write_text(json.dumps(source))
+    return path, spec, native
+
+
+def test_parametric_import_restores_editable_dimensions_and_proves_source_surface(tmp_path):
+    path, spec, native = make_parametric_scene(tmp_path)
+    source_bytes, parameter_bytes = path.read_bytes(), (tmp_path/'parameters.json').read_bytes()
+    stored = {}
+    def put(data, media_type, metadata):
+        sha = hashlib.sha256(data).hexdigest()
+        identity = str(uuid5(NAMESPACE_URL, sha))
+        stored[identity] = data
+        return {'id':identity,'sha256':sha,'sizeBytes':len(data),'mediaType':media_type,'metadata':metadata}
+    document, manifest = import_document(path, put)
+    entity = next(item for item in document['entities'] if item['id'] == manifest['entityIds']['generated'])
+    rep = entity['representations'][0]
+    namespace = uuid5(NAMESPACE_URL, 'panoptes-public:' + hashlib.sha256(source_bytes).hexdigest())
+    assert entity['id'] == str(uuid5(namespace, 'entity:generated')) and rep['id'] == str(uuid5(namespace, 'representation:generated'))
+    assert rep['kind'] == 'primitive' and rep['assetId'] is None and rep['primitive'] == spec
+    assert rep['placementState'] == 'unconfirmed' and rep['placementReason'] == 'imported_proposal'
+    assert rep['transform'] == entity['currentModelTransform'] and rep['transform']['scale'] == [1.,1.,1.]
+    assert np.allclose(transform_matrix(rep['transform']), native, atol=1e-12)
+    assert np.allclose(rep['material']['color'], [.18,.24,.3])
+    mesh = primitive_mesh(spec)
+    assert rep['bounds'] == {'min':mesh.vertices.min(axis=0).tolist(), 'max':mesh.vertices.max(axis=0).tolist()}
+    source_ref, mesh_ref, parameter_ref = rep['sourceRefs']
+    assert stored[source_ref['assetId']] == source_bytes
+    assert mesh_ref['assetId'] == manifest['representationAssetIds']['generated']
+    assert stored[parameter_ref['assetId']] == parameter_bytes
+    assert parameter_ref['sha256'] == hashlib.sha256(parameter_bytes).hexdigest()
+    assert parameter_ref['proof']['surfaceCoverage'] == 'equivalent' and parameter_ref['proof']['surfaceFacetCount'] == 18
+    assert parameter_ref['proof']['maxVertexErrorNative'] <= parameter_ref['proof']['toleranceNative']
+    assert path.read_bytes() == source_bytes and (tmp_path/'parameters.json').read_bytes() == parameter_bytes
+    assert import_document(path, put)[1]['documentSha256'] == manifest['documentSha256']
+
+
+def test_parametric_import_rejects_changed_parameters_and_equal_vertex_surface_corruption(tmp_path):
+    path, spec, _ = make_parametric_scene(tmp_path)
+    source = json.loads(path.read_text())
+    record = source['objects'][1]
+    vertices, faces = unpack_mesh(tmp_path, record['mesh'])
+    corrupted = faces.copy()
+    corrupted[0] = corrupted[4]  # Same vertex set and triangle count, but one missing side triangle.
+    with pytest.raises(PlatformError, match='import_parameter_surface_mismatch'):
+        parametric_definition(tmp_path, record, (vertices, corrupted), 'native')
+    definition = json.loads((tmp_path/'parameters.json').read_text())
+    definition['objects'][0]['fitted_parameters']['radius_native'] = spec['radius'] * 1.1
+    (tmp_path/'parameters.json').write_text(json.dumps(definition))
+    with pytest.raises(PlatformError, match='import_parameter_values_mismatch'):
+        parametric_definition(tmp_path, record, (vertices, faces), 'native')
+    record['parameters']['radius_native'] *= 1.1
+    definition['objects'][0]['native_object_to_world'] = (np.asarray(definition['objects'][0]['native_object_to_world']) @ np.diag([1.1,1.1,1,1])).tolist()
+    (tmp_path/'parameters.json').write_text(json.dumps(definition))
+    with pytest.raises(PlatformError, match='import_parameter_mesh_mismatch'):
+        parametric_definition(tmp_path, record, (vertices, faces), 'native')
+    path, _, _ = make_parametric_scene(tmp_path)
+    source = json.loads(path.read_text())
+    asset = source['objects'][1]['mesh']['asset']
+    raw = bytearray(gzip.decompress((tmp_path/asset['path']).read_bytes()))
+    np.frombuffer(raw, dtype='<f4')[6] = .8
+    packed = gzip.compress(raw)
+    (tmp_path/asset['path']).write_bytes(packed)
+    asset.update(packed_bytes=len(packed), sha256=hashlib.sha256(raw).hexdigest())
+    path.write_text(json.dumps(source))
+    with pytest.raises(PlatformError, match='import_parameter_material_not_uniform'):
+        import_document(path, lambda data, media_type, metadata: {'id':str(uuid5(NAMESPACE_URL, hashlib.sha256(data).hexdigest())), 'sha256':hashlib.sha256(data).hexdigest(), 'sizeBytes':len(data), 'mediaType':media_type})
+
+
 def test_import_normalizes_observed_basis_without_report_and_retains_floor_query(tmp_path):
     path = make_public_scene(tmp_path)
     source = json.loads(path.read_text())
@@ -176,7 +273,7 @@ def test_import_normalizes_observed_basis_without_report_and_retains_floor_query
     assert json.loads(path.read_text()) == source, 'Conversion must not mutate source artifacts'
 
 
-def test_imported_bounds_measures_exact_photo_binding_and_manual_acceptance(tmp_path):
+def test_imported_bounds_measures_exact_photo_binding_without_automatic_acceptance(tmp_path):
     path = make_public_scene(tmp_path)
     source = json.loads(path.read_text())
     source['floor_plane'] = [0,-2,0,4]
@@ -199,8 +296,8 @@ def test_imported_bounds_measures_exact_photo_binding_and_manual_acceptance(tmp_
     assert observation['originalPixelBox']==[1,1,3,4] and observation['maskAssetId'] is None
     assert observation['missingEvidence']==['source_mask_not_packaged']
     accepted,_=apply_operations(document,[{'type':'setTransform','entityId':generated['id'],'transform':rep['transform']}])
-    assert accepted['entities'][1]['representations'][0]['placementState']=='confirmed'
-    assert accepted['entities'][1]['representations'][0]['placementSource']['type']=='manual_assertion'
+    assert accepted['entities'][1]['representations'][0]['placementState']=='unconfirmed'
+    assert accepted['entities'][1]['representations'][0].get('placementSource') is None
     assert generated['representations'][0]['placementState']=='unconfirmed'
     source['objects'][1]['measurements']['source']['image_sha256']='b'*64
     path.write_text(json.dumps(source))

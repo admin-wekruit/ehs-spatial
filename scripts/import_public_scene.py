@@ -104,6 +104,84 @@ def unpack_mesh(root, record):
     return vertices, faces
 
 
+def parametric_definition(root, record, geometry, frame_id):
+    """Restore saved cylinder parameters only when they reproduce the source mesh."""
+    from ehs_spatial.platform.spatial import primitive_mesh, matrix_to_transform, transform_points
+    from shapely.geometry import Polygon, box
+    from shapely.ops import unary_union
+    relative = (record.get('metrics') or {}).get('parameter_source')
+    if not isinstance(relative, str):
+        raise PlatformError('import_parameter_source_missing', 422)
+    raw = source_path(root, relative).read_bytes()
+    try:
+        source = json.loads(raw)
+    except ValueError:
+        raise PlatformError('import_parameter_contract_invalid', 422) from None
+    if not isinstance(source, dict) or not isinstance(source.get('objects'), list) or not all(isinstance(row, dict) for row in source['objects']):
+        raise PlatformError('import_parameter_contract_invalid', 422)
+    rows = [row for row in source['objects'] if row.get('object_id') == record['id']]
+    template = source.get('primitive', {})
+    if len(rows) != 1 or not isinstance(template, dict) or template.get('type') != 'cylinder' or template.get('local_axis') != '+Z' or template.get('radius') != 1 or template.get('height') != 1:
+        raise PlatformError('import_parameter_contract_invalid', 422)
+    row = rows[0]
+    if not isinstance(row.get('fitted_parameters'), dict) or row['fitted_parameters'] != record.get('parameters'):
+        raise PlatformError('import_parameter_values_mismatch', 422)
+    params = row['fitted_parameters']
+    primitive = {'kind': 'cylinder', 'radius': params.get('radius_native'), 'height': params.get('height_native'), 'segments': template.get('segments')}
+    mesh = primitive_mesh(primitive)
+    try:
+        matrix = np.asarray(row.get('native_object_to_world'), dtype=float)
+    except (TypeError, ValueError):
+        raise PlatformError('import_parameter_pose_invalid', 422) from None
+    if matrix.shape != (4, 4) or not np.isfinite(matrix).all():
+        raise PlatformError('import_parameter_pose_invalid', 422)
+    matrix = matrix @ np.diag([1 / primitive['radius'], 1 / primitive['radius'], 1 / primitive['height'], 1])
+    pose = matrix_to_transform(matrix, frame_id)
+    if not np.allclose(pose['scale'], [1, 1, 1], rtol=0, atol=1e-6):
+        raise PlatformError('import_parameter_pose_invalid', 422)
+    pose['scale'] = [1., 1., 1.]
+    expected = transform_points(geometry[0][:, :3], transform_matrix(legacy_transform(record['transform'], frame_id)))
+    actual = transform_points(mesh.vertices, transform_matrix(pose))
+    if len(mesh.faces) != len(geometry[1]) or not 0 < len(expected) <= 3 * len(mesh.faces):
+        raise PlatformError('import_parameter_mesh_mismatch', 422)
+    # ponytail: cylinder-only proof is at most 3072 by 514 vertices; general
+    # parametric assets need a spatial index before increasing this bound.
+    errors = np.linalg.norm(expected[:, None, :] - actual[None, :, :], axis=2)
+    error = float(max(errors.min(axis=0).max(), errors.min(axis=1).max()))
+    tolerance = max(1e-7, float(np.max(np.abs(expected))) * float(np.finfo(np.float32).eps) * 16)
+    if error > tolerance:
+        raise PlatformError('import_parameter_mesh_mismatch', 422, maxVertexError=error, tolerance=tolerance)
+    # Equal vertices do not prove equal surfaces. Compare each boundary facet's
+    # coverage; either diagonal of a side quad represents the same surface.
+    n = primitive['segments']
+    facets = [[] for _ in range(n + 2)]
+    for face in errors.argmin(axis=1)[geometry[1]]:
+        if np.all((face < n) | (face == 2*n)):
+            facet, points = n, mesh.vertices[face, :2] / primitive['radius']
+        elif np.all(((face >= n) & (face < 2*n)) | (face == 2*n+1)):
+            facet, points = n+1, mesh.vertices[face, :2] / primitive['radius']
+        else:
+            ring = sorted(set((face % n).tolist()))
+            if np.any(face >= 2*n) or len(ring) != 2 or (ring[1]-ring[0]) not in (1, n-1):
+                raise PlatformError('import_parameter_surface_mismatch', 422)
+            facet = ring[0] if ring[1]-ring[0] == 1 else ring[1]
+            points = np.column_stack((face % n != facet, face >= n)).astype(float)
+        triangle = Polygon(points)
+        if not triangle.is_valid or triangle.area == 0:
+            raise PlatformError('import_parameter_surface_mismatch', 422)
+        facets[facet].append(triangle)
+    for index, triangles in enumerate(facets):
+        boundary = Polygon(mesh.vertices[:n, :2] / primitive['radius']) if index >= n else box(0, 0, 1, 1)
+        covered = unary_union(triangles)
+        if covered.symmetric_difference(boundary).area > 1e-10 or abs(sum(triangle.area for triangle in triangles) - boundary.area) > 1e-10:
+            raise PlatformError('import_parameter_surface_mismatch', 422)
+    proof = {'method': 'saved-cylinder-surface-equivalence-v1', 'maxVertexErrorNative': error, 'toleranceNative': tolerance,
+             'surfaceFacetCount': len(facets), 'surfaceCoverage': 'equivalent',
+             'parameterSourceSha256': hashlib.sha256(raw).hexdigest(), 'parameterSource': source.get('parameter_source'),
+             'limitations': source.get('limitations', [])}
+    return primitive, pose, raw, proof
+
+
 def floor_evidence(geometry_root, source):
     """Hash-pinned floor samples in the source scene's native camera frame."""
     if not geometry_root or not source.get("floor_reference"):
@@ -263,7 +341,7 @@ def import_document(scene_path, put_asset, *, legacy_root=None, observation_root
                 raise PlatformError("import_identity_invalid", 422)
             if record["id"] not in records:
                 records[record["id"]] = record
-    for record in source.get("objects", []):
+    for record in (record for collection in ("objects", "observed_regions", "unavailable_regions", "unavailable_objects") for record in source.get(collection, [])):
         if record.get("mesh"):
             meshes[record["id"]] = unpack_mesh(root, record["mesh"])
     floor_members, floor_refs = set(), []
@@ -396,12 +474,27 @@ def import_document(scene_path, put_asset, *, legacy_root=None, observation_root
             asset_id = save_mesh(*geometry, old_id)
             manifest["representationAssetIds"][old_id] = asset_id
             kind = "observed_surface" if record.get("source") == "observed" else "generated_mesh"
+            primitive, material = None, None
+            source_refs = [{"assetId": source_asset, "sourceRecordId": old_id}]
+            vertices = geometry[0][:, :3]
+            if record.get("source") == "parametric":
+                from ehs_spatial.platform.spatial import primitive_mesh
+                primitive, transform, parameters_raw, proof = parametric_definition(root, record, geometry, frame_id)
+                colors = geometry[0][:, 6:9]
+                if not np.array_equal(colors, np.broadcast_to(colors[0], colors.shape)) or np.any((colors < 0) | (colors > 1)):
+                    raise PlatformError("import_parameter_material_not_uniform", 422)
+                material = {"color": colors[0].tolist()}
+                parameter_id = include(parameters_raw, "application/json", {"kind": "parametric_source", "sha256": proof["parameterSourceSha256"]}, record["metrics"]["parameter_source"])
+                source_refs += [{"assetId": asset_id, "sourceRecordId": old_id, "binding": "original_baked_mesh"},
+                                {"assetId": parameter_id, "sourceRecordId": old_id, "sha256": proof["parameterSourceSha256"], "binding": "verified_cylinder_parameters", "proof": proof}]
+                vertices = primitive_mesh(primitive).vertices
+                kind, asset_id = "primitive", None
             item["representations"].append({"id": ident("representation", old_id), "kind": kind, "assetId": asset_id,
-                "coordinateFrameId": frame_id, "transform": transform, "primitive": None, "placementState": "confirmed" if kind == "observed_surface" else "unconfirmed",
+                "coordinateFrameId": frame_id, "transform": transform, "primitive": primitive, "placementState": "confirmed" if kind == "observed_surface" else "unconfirmed",
                 "placementReason": "imported_observed_surface" if kind == "observed_surface" else "imported_proposal",
-                "bounds": {"min": geometry[0][:, :3].min(axis=0).tolist(), "max": geometry[0][:, :3].max(axis=0).tolist()},
-                "sourceRefs": [{"assetId": source_asset, "sourceRecordId": old_id}]})
-            if kind == "generated_mesh":
+                "bounds": {"min": vertices.min(axis=0).tolist(), "max": vertices.max(axis=0).tolist()},
+                "sourceRefs": source_refs, **({"material": material} if material else {})})
+            if kind in ("generated_mesh", "primitive"):
                 item["currentModelTransform"] = deepcopy(transform)
         document["entities"].append(item)
     document["annotations"].append({"id": ident("annotation", "provenance"), "kind": "import_provenance", "sourceAssetId": source_asset,
@@ -468,9 +561,17 @@ def run_import(scene_path, repository, blobs, output_dir, title=None, *, legacy_
         from scripts.import_geometry_evidence import geometry_dependencies
         geometry_files = geometry_dependencies(geometry_root, source)
         geometry_files += observation_mask_sources(geometry_root, source)[2]
+    parameter_files = set()
+    for record in source.get("objects", []):
+        if record.get("source") == "parametric":
+            relative = (record.get("metrics") or {}).get("parameter_source")
+            if not isinstance(relative, str):
+                raise PlatformError("import_parameter_source_missing", 422)
+            parameter_files.add(source_path(scene_path.parent, relative))
     converter_key = digest({"converter": converter, "evidence": [hashlib.sha256(raw).hexdigest() for _, raw in evidence_documents(scene_path, source)],
                             "reportDependencies": [hashlib.sha256(path.read_bytes()).hexdigest() for path in report_dependencies(scene_path, source, legacy_root, observation_root)],
                             "geometryDependencies": [hashlib.sha256(path.read_bytes()).hexdigest() for path in geometry_files],
+                            "parameterDependencies": [hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(parameter_files)],
                             "floorDependencies": [hashlib.sha256(raw).hexdigest() for raw in (floor_evidence(geometry_root, source) or {}).get("files", {}).values()]})
     manifest_path = output_dir / (sha + "." + converter_key + ".manifest.json")
     if manifest_path.exists():

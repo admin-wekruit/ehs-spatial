@@ -48,17 +48,21 @@ def export_job(repository, blobs, job):
         return blobs.get(asset['storageKey'], asset['sha256'], asset['sizeBytes'])
     with tempfile.TemporaryDirectory(prefix='panoptes-export-') as tmp:
         root = Path(tmp)
-        validation, unplaced = {}, []
+        validation, unplaced, export_info = {}, [], {}
+        scene_mode = job.get('inputs', {}).get('sceneMode', 'models')
         if job['kind'] == 'export_blender':
             root = root / 'verified'
-            validation = export_scene_revision(revision['id'], document, resolve, root, os.environ.get('PANOPTES_BLENDER_EXECUTABLE'))
+            validation = export_scene_revision(revision['id'], document, resolve, root, os.environ.get('PANOPTES_BLENDER_EXECUTABLE'), scene_mode=scene_mode)
+            export_info = validation
             unplaced = validation['unplacedEntities']
         else:
             (root / 'scene.json').write_bytes(canonical(document))
             if job['kind'] == 'export_glb':
-                prepared = prepare_export(revision['id'], document, resolve)
+                prepared = prepare_export(revision['id'], document, resolve, scene_mode=scene_mode)
                 validation = write_glb(prepared, root / 'scene.glb')
                 unplaced = prepared['unplacedEntities']
+                export_info = prepared['manifest']
+                (root / 'manifest.json').write_bytes(canonical({**export_info, 'validation': {'glb': validation}}))
         assets = []
         for path in sorted(root.iterdir()):
             if path.is_file():
@@ -66,7 +70,8 @@ def export_job(repository, blobs, job):
                 blob = blobs.put(path.read_bytes(), media)
                 blob['metadata'] = {'kind': 'scene_export', 'name': path.name, 'sceneRevisionId': revision['id'], 'documentSha256': digest(document)}
                 assets.append(repository.register_asset(job['projectId'], blob, job['id']))
-        return {'status': 'incomplete' if unplaced else 'succeeded', 'sceneRevisionId': revision['id'], 'documentSha256': digest(document), 'assets': assets, 'validation': validation, 'unplacedEntities': unplaced, 'newModelCalls': 0}
+        return {'status': export_info.get('status', 'succeeded'), 'sceneRevisionId': revision['id'], 'documentSha256': digest(document), 'assets': assets, 'validation': validation, 'unplacedEntities': unplaced, 'newModelCalls': 0,
+                **{key: export_info[key] for key in ('sceneMode', 'exportedModelCount', 'exportedObservedRepresentationCount', 'missingModelEntities', 'modelNotRequiredEntities', 'placementPendingEntities', 'excludedRepresentations') if key in export_info}}
 
 
 def run_job(repository, blobs, job_id, providers=None):

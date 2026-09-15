@@ -204,7 +204,8 @@ if "generation" in CONFIG:
             settings.rendering_engine = "pytorch3d"
             settings.compile_model = False
             settings.workspace_dir = str((root/relative).parent)
-            self.pipeline = instantiate(settings)
+            # Hydra recursively builds configured depth models before __init__.
+            self.pipeline = instantiate(settings, depth_model=None)
             self.depth_calls = 0
             def forbidden_depth(*args,**kwargs):
                 self.depth_calls += 1
