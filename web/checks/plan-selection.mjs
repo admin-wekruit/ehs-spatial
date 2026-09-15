@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 import ts from 'typescript';
-import {planHits} from '../src/core.ts';
+import {planHits,planPolygonPath} from '../src/core.ts';
 
 const shapes=[
   {entity:{id:'fence-a',label:'Safety fence'},min:[0,0],max:[10,10],polygon:[[0,0],[10,0],[10,10],[0,10]]},
   {entity:{id:'fence-b',label:'Right front safety fence panel'},min:[4,4],max:[6,6],polygon:[[4,4],[6,4],[6,6],[4,6]]},
   {entity:{id:'triangle',label:'Other footprint'},min:[7,7],max:[9,9],polygon:[[7,7],[9,7],[7,9]]},
-];
+].map(({polygon,...shape})=>({...shape,polygons:[{exterior:polygon,holes:[]}],lines:[]}));
 const before=structuredClone(shapes);
 assert.deepEqual(planHits(shapes,5,5).map(h=>h.entity.id),['fence-b','fence-a']);
 assert.deepEqual(planHits(shapes,8.8,8.8).map(h=>h.entity.id),['fence-a'],'An enclosing bbox must not turn empty triangle area into a hit');
@@ -28,7 +28,7 @@ const useState=initial=>{const i=cursor++;if(!(i in hooks))hooks[i]=initial;retu
 const useRef=()=>{const i=cursor++;return hooks[i]||= {current:null};};
 const useEffect=(fn,deps)=>{const i=cursor++,old=hooks[i];if(!old||deps.some((d,j)=>!Object.is(d,old[j])))effects.push(fn);hooks[i]=deps;};
 const React={createElement:(type,props,...children)=>({type,props:props||{},children:children.flat(Infinity).filter(Boolean)})};
-const context=vm.createContext({React,useState,useRef,useEffect,useI18n:()=>({t:key=>key}),planShapes:()=>shapes,planHits,
+const context=vm.createContext({React,useState,useRef,useEffect,useI18n:()=>({t:key=>key}),planShapes:()=>shapes,planHits,planPolygonPath,
   DOMPoint:class{constructor(x,y){this.x=x;this.y=y;}matrixTransform(m){return{x:m.a*this.x+m.c*this.y+m.e,y:m.b*this.x+m.d*this.y+m.f};}}});
 vm.runInContext(code,context);
 const nodes=root=>[root,...root.children.filter(c=>typeof c==='object').flatMap(nodes)];

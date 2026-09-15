@@ -333,8 +333,8 @@ const messages: Record<string, [string, string]> = {
   cadScope: ["当前场景的俯视投影", "Top projection of this scene"],
   planScope: ["对象空间范围", "Object footprints"],
   planCoverage: ["条对象记录有投影", "object records projected"],
-  planObserved: ["观测范围", "Observed bounds"],
-  planModeled: ["模型范围", "Model bounds"],
+  planObserved: ["观测网格轮廓", "Observed mesh contours"],
+  planModeled: ["模型网格轮廓", "Model mesh contours"],
   planSaved: ["来源投影轮廓", "Source projected hulls"],
   planNativeUnits: ["依据当前坐标 · 不代表实测 CAD", "Scene coordinates · not a surveyed CAD drawing"],
   planIndex: ["对象索引与缺失项", "Object index & missing geometry"],
@@ -397,8 +397,8 @@ const messages: Record<string, [string, string]> = {
   after: ["之后", "After"],
   date: ["日期", "Date"],
   emptyPlan: [
-    "没有可靠平面范围。原图中的选择仍可用。",
-    "No reliable plan geometry. Photograph selection is still available.",
+    "当前照片、姿态与地面坐标下暂无网格轮廓。原图选择仍可用。",
+    "No mesh contours for the current photo, pose and ground frame. Photograph selection remains available.",
   ],
   fileError: [
     "照片无法读取，请选择有效图片。",

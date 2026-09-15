@@ -191,7 +191,7 @@ sceneDocument.assets.push({ id: "cloud" });
 assert.equal(sceneAvailability(sceneDocument, geometryOptions).spatialTitle, "scene3D",
   "Confirmed registered observed geometry uses a neutral scene title, without asserting completeness");
 sceneDocument.coordinateFrames[0].ground = { normal: [0, 0, 1] };
-assert.equal(sceneAvailability(sceneDocument, geometryOptions).planEmpty, null, "Real same-frame model corners remain projectable");
+assert.equal(sceneAvailability(sceneDocument, geometryOptions).planEmpty, "sceneNoPlanProjection", "Model corners without a true mesh contour remain 3D evidence, not CAD");
 sceneDocument.entities = [{ id: "unmodeled", representations: [] }];
 assert.equal(sceneAvailability(sceneDocument, geometryOptions).planEmpty, "sceneNoPlanProjection",
   "Ground alone does not establish an object footprint");
@@ -218,7 +218,7 @@ const useEffect = (fn, deps) => { const i = cursor++, old = hooks[i]; if (!old |
 const React = { createElement: (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity).filter((c) => c !== null && c !== undefined && c !== false) }) };
 const SpatialView = () => {}, PlanView = () => {}, PhotoView = () => {}, PhotoAxes = () => {}, CadView = () => {};
 const uiDocument = { ...objectOnlyDocument,
-  assets: [{ id: "model-asset" }, { id: "photo", kind: "source_image" }, { id: "photo-2", kind: "source_image" }],
+  assets: [{ id: "model-asset", sha256: "a".repeat(64) }, { id: "photo", kind: "source_image" }, { id: "photo-2", kind: "source_image" }],
   geometryBindings:{photo:{cameraId:"camera",geometrySolutionId:"solution"},"photo-2":{cameraId:"camera-2",geometrySolutionId:"solution"}},
   cameras: [camera, { ...camera, id: "camera-2", imageId: "photo-2" }],
   coordinateFrames: [{ id: "f", ground: { normal: [0, 0, 1] } }],
@@ -227,6 +227,12 @@ const uiDocument = { ...objectOnlyDocument,
     { id: "background", sourceContext: true, representations: [] }],
   observations: [{ id: "observation", imageId: "photo" }, { id: "observation-2", imageId: "photo-2" }],
 };
+uiDocument.entities[0].representations[0] = { ...rep, planProjection: {
+  methodVersion: "indexed-mesh-triangle-union-v1", coordinateFrameId: "f", assetId: "model-asset", assetSha256: "a".repeat(64),
+  imageId: null, transformSnapshot: structuredClone(transform), groundNormalSnapshot: [0,0,1],
+  nativeToPlane: [[0,-1,0,0],[1,0,0,0],[0,0,1,0],[0,0,0,1]],
+  polygons: [{exterior: [[-1.2,5.9],[-.8,5.9],[-.8,6.1],[-1.2,6.1],[-1.2,5.9]], holes: []}], lines: [],
+} };
 let uiSelection = { entityId: "object", cameraId: "camera" }, uiImageId = "photo", calls = [], objectListRequest = 0, feedbackEnabled = false, feedbackCalls = [];
 const inspector = React.createElement("div", { id: "inspector-content" }, "real host inspector");
 const ui = vm.createContext({ React, useState, useRef, useEffect, useId: () => "workspace-check",

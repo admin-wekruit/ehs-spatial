@@ -16,7 +16,7 @@ const code = ts.transpileModule(declarations.map(node => node.getText(parsed)).j
 const context = vm.createContext({ exports: {} });
 vm.runInContext(code, context);
 const { cadFit, cadScreen, cadWorld, cadStep, cadCallouts } = context.exports;
-const shape = (id, min, max) => ({ entity: { id }, min, max, polygon: [min, [max[0], min[1]], max, [min[0], max[1]]] });
+const shape = (id, min, max) => ({ entity: { id }, min, max, polygons: [{exterior: [min, [max[0], min[1]], max, [min[0], max[1]]], holes: []}], lines: [] });
 let shapes = [shape("small", [0, 0], [1, 2]), shape("far", [-5, 4], [-4.8, 4.2])];
 if (process.argv[2]) {
   const document = JSON.parse(await readFile(process.argv[2], "utf8"));
@@ -26,11 +26,11 @@ if (process.argv[2]) {
 const original = JSON.stringify(shapes);
 for (const size of [{ width: 436.5, height: 47.65625 }, { width: 360, height: 260 }, { width: 900, height: 700 }]) {
   const camera = cadFit(shapes, size);
-  const extents = shapes.flatMap(shape => shape.polygon.map(point => cadScreen(point, camera, size)));
+  const extents = shapes.flatMap(shape => shape.polygons[0].exterior.map(point => cadScreen(point, camera, size)));
   const occupied = [0, 1].map(k => Math.max(...extents.map(p => p[k])) - Math.min(...extents.map(p => p[k])));
   assert.ok(occupied[0] >= size.width * .79 || occupied[1] >= size.height * .79,
     "Automatic fit must fill at least 79% of one canvas dimension, including compact panes");
-  for (const shape of shapes) for (const point of shape.polygon) {
+  for (const shape of shapes) for (const point of shape.polygons[0].exterior) {
     const screen = cadScreen(point, camera, size);
     assert.ok(screen[0] >= 0 && screen[0] <= size.width);
     assert.ok(screen[1] >= 0 && screen[1] <= size.height);
@@ -57,8 +57,8 @@ const narrowSize = { width: 100, height: 40 }, narrowFocus = cadFit([focusedShap
 assert.ok(cadScreen(focusedShape.max, narrowFocus, narrowSize)[0] - cadScreen(focusedShape.min, narrowFocus, narrowSize)[0] >= 60,
   "Explicit focus padding must also shrink on narrow panes instead of compressing the object to one pixel");
 assert.deepEqual(Array.from(cadWorld([120, 70], { center: [2, -3], scale: 20 }, { width: 200, height: 100 })), [3, -4]);
-assert.ok(source.includes("shape.polygon.map(p => cadScreen(p, view, size)"), "Render the shared detailed polygons directly");
-assert.ok(source.includes("planHits(shapes, world[0], world[1])"), "Overlap picking uses the same geometry as the drawing");
+assert.ok(source.includes("planPolygonPath(polygon, p => cadScreen(p, view, size))") && source.includes('fillRule="evenodd"'), "Render each true polygon with its holes directly");
+assert.ok(source.includes("planHits(shapes, world[0], world[1], 4 / view.scale)"), "Overlap picking uses the same geometry as the drawing");
 assert.ok(!source.includes("onWheel="), "Reading the report must not trap wheel scrolling");
 assert.ok(source.includes("suppressClick.current = !!pointer.current?.moved"), "Dragging must not trigger selection");
 
@@ -69,6 +69,13 @@ findMemo(parsed);
 const transform = x => ({coordinateFrameId:"frame",position:[x,0,0],quaternion:[0,0,0,1],scale:[1,1,1]});
 const observations = [{id:"a",imageId:"photo-a"},{id:"b",imageId:"photo-b"}];
 const photographed = {entities:[{id:"object",observationRefs:["a","b"],representations:observations.map((observation,i)=>({id:observation.id,kind:"observed_surface",assetId:observation.id,coordinateFrameId:"frame",transform:transform(i*10),placementState:"confirmed",bounds:{min:[0,0,0],max:[1,1,1]},sourceRefs:[{observationId:observation.id}]}))}],observations,coordinateFrames:[{id:"frame",ground:{normal:[0,0,1]}}]};
+photographed.assets = observations.map(observation=>({id:observation.id,sha256:'1'.repeat(64)}));
+photographed.observations.forEach(observation=>observation.revision=1);
+for (const rep of photographed.entities[0].representations) {
+  rep.sourceRefs[0].revision=1;
+  const observation=observations.find(observation=>observation.id===rep.id),x=rep.transform.position[0];
+  rep.planProjection={methodVersion:'indexed-mesh-triangle-union-v1',coordinateFrameId:'frame',assetId:rep.assetId,assetSha256:'1'.repeat(64),imageId:observation.imageId,observationId:observation.id,observationRevision:1,groundNormalSnapshot:[0,0,1],transformSnapshot:structuredClone(rep.transform),nativeToPlane:[[0,-1,0,0],[1,0,0,0],[0,0,1,0],[0,0,0,1]],polygons:[{exterior:[[-1,x],[0,x],[0,x+1],[-1,x+1],[-1,x]],holes:[]}],lines:[]};
+}
 let cache;
 const memoContext = vm.createContext({document:photographed,geometryOptions:{layer:"observed_surface",frameId:"frame",imageId:"photo-a"},planShapes,
   useMemo:(make,deps)=>{if(!cache || deps.some((value,i)=>value!==cache.deps[i])) cache={deps,result:make()};return cache.result;}});

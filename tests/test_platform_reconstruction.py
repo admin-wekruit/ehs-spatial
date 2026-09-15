@@ -178,6 +178,7 @@ def test_shape_ready_does_not_invent_button_placement_and_segmentation_keeps_ide
     repo = Repo(blobs)
     providers = bundle(repo)
     document,_ = run_analysis(repo,blobs,repo.job,providers)
+    document['coordinateFrames'][0]['ground'] = {'normal': [0., 0., 1.], 'plane': [0., 0., 1., 0.], 'source': 'manual'}
     repo.document = document
     tiny = next(e for e in document["entities"] if e["label"] == "tiny control")
     def generation(payload):
@@ -192,6 +193,7 @@ def test_shape_ready_does_not_invent_button_placement_and_segmentation_keeps_ide
     assert entity["representations"][0]["placementState"] == "unconfirmed"
     assert entity["representations"][0]["placementReason"] == "insufficient_observed_depth"
     assert entity["currentModelTransform"] is None
+    assert entity['activeModelRepresentationId'] is None and entity['representations'][0]['planProjection']['polygons']
     validate_document(generated)
     oid = tiny["observationRefs"][0]
     segmented,result = run_segmentation(repo,blobs,{**repo.job,"inputs":{"observationId":oid}},providers)
@@ -295,6 +297,7 @@ def test_analysis_binds_estimated_native_ground_only_to_explicit_mask_evidence(t
     assert document["coordinateFrames"][0]["scale"]["nativeToMeters"] is None
     assert any(a.get("metadata",{}).get("kind") == "ground_fit_evidence" for a in document["assets"])
     assert result["groundFit"]["views"] and all(e["measurements"].get("groundHeightNative",0) == pytest.approx(0,abs=1e-6) for e in document["entities"])
+    assert all('planProjection' in r for e in document['entities'] if not e.get('sourceContext') for r in e['representations'])
     validate_document(document)
 
 
@@ -728,3 +731,89 @@ def test_full_observed_rebuild_preserves_identity_measurements_and_every_photo(t
     unchanged, failed = run_reassociation(repo, blobs, job, {})
     assert failed['status'] == 'incomplete'
     assert unchanged['entities'] == repo.document['entities']
+
+
+@pytest.mark.parametrize('cells,parts,holes', [
+    ([(0, 0), (1, 0), (0, 1)], 1, 0),
+    ([(x, y) for x in range(3) for y in range(3) if (x, y) != (1, 1)], 1, 1),
+    ([(0, 0), (3, 0)], 2, 0),
+])
+def test_observed_plan_uses_indexed_triangles_preserving_concavity_holes_and_islands(tmp_path, monkeypatch, cells, parts, holes):
+    from types import SimpleNamespace
+    from shapely import Polygon, union_all
+    from ehs_spatial.platform import reconstruction
+    from ehs_spatial.platform.spatial import MeshData
+
+    vertices, faces = [], []
+    for x, y in cells:
+        i = len(vertices)
+        vertices.extend([(x, y, 0), (x + 1, y, 0), (x + 1, y + 1, 0), (x, y + 1, 0)])
+        faces.extend([(i, i + 1, i + 2), (i, i + 2, i + 3)])
+    vertices.append((100, 100, 100))  # Retained in the asset but never drawn.
+    mesh = MeshData(np.asarray(vertices, dtype=np.float32), np.asarray(faces, dtype=np.uint32), None)
+    monkeypatch.setattr(reconstruction, '_mesh', lambda *args: mesh)
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    document = deepcopy(repo.document)
+    frame_id = str(uuid4())
+    document['coordinateFrames'] = [{'id': frame_id, 'ground': {'normal': [0., 0., 1.]}}]
+    document['reportEvidence'] = {'plan': {'coordinateFrameId': frame_id, 'nativeToFloor': np.eye(4).tolist()}}
+    observation = {'id': str(uuid4()), 'revision': 2}
+    frame = SimpleNamespace(image_id=repo.capture['images'][0]['id'], coordinate_frame_id=frame_id, points=None, support=lambda: None)
+    entity = {'id': str(uuid4()), 'representations': []}
+    reconstruction._save_observed_surface(document, entity, frame, {'rgb': None}, None, _Stages(repo, blobs, repo.job, {}), observation)
+    rep = entity['representations'][0]
+    saved = rep['planProjection']
+    polygons = [Polygon(p['exterior'], p['holes']) for p in saved['polygons']]
+    assert len(polygons) == parts and sum(len(p.interiors) for p in polygons) == holes
+    assert union_all(polygons).area == pytest.approx(len(cells))
+    assert rep['bounds']['max'] == [max(x for x, _ in cells) + 1, max(y for _, y in cells) + 1, 0]
+    assert saved['assetSha256'] == repo.get_asset(rep['assetId'])['sha256']
+    assert saved['assetId'] == rep['assetId'] and saved['imageId'] == frame.image_id
+    assert saved['observationId'] == observation['id'] and saved['observationRevision'] == 2
+    assert saved['transformSnapshot'] == rep['transform'] and saved['nativeToPlane'] == np.eye(4).tolist()
+    if len(cells) == 3:
+        from shapely import Point
+        assert not union_all(polygons).covers(Point(1.5, 1.5))
+    pose = {**deepcopy(rep['transform']), 'position': [4., 5., 0.], 'scale': [2., 3., 1.],
+            'quaternion': [0., 0., 2 ** -.5, 2 ** -.5]}
+    moved = reconstruction._plan_projection(document, rep, mesh, saved['assetSha256'], pose)
+    moved_union = union_all([Polygon(p['exterior'], p['holes']) for p in moved['polygons']])
+    assert moved_union.area == pytest.approx(len(cells) * 6)
+    assert moved_union.bounds == pytest.approx([4 - 3 * (max(y for _, y in cells) + 1), 5, 4, 5 + 2 * (max(x for x, _ in cells) + 1)])
+    assert moved['transformSnapshot'] == pose and rep['transform'] == saved['transformSnapshot']
+
+
+def test_plan_projection_keeps_vertical_edges_and_current_model_pose_without_confirming_it(tmp_path):
+    from shapely import LineString, Polygon, union_all
+    from ehs_spatial.platform.reconstruction import _plan_projection, _refresh_plan_projections
+    from ehs_spatial.platform.spatial import MeshData
+
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    doc = deepcopy(repo.document)
+    frame_id = str(uuid4())
+    doc['coordinateFrames'] = [{'id': frame_id, 'ground': {'normal': [0., 0., 1.]}}]
+    doc['reportEvidence'] = {'plan': {'coordinateFrameId': frame_id, 'nativeToFloor': np.eye(4).tolist()}}
+    pose = {'coordinateFrameId': frame_id, 'position': [0., 0., 0.], 'quaternion': [0., 0., 0., 1.], 'scale': [1., 1., 1.]}
+    rep = {'id': str(uuid4()), 'kind': 'primitive', 'assetId': None, 'coordinateFrameId': frame_id,
+           'transform': pose, 'primitive': {'type': 'box', 'dimensions': [1., 2., 3.]}, 'placementState': 'unconfirmed', 'sourceRefs': []}
+    wall = MeshData(np.array([[2., 0., 0.], [2., 3., 0.], [2., 3., 4.], [2., 0., 4.]]), np.array([[0, 1, 2], [0, 2, 3]], dtype=np.uint32))
+    flat = _plan_projection(doc, rep, wall, None)
+    assert flat['polygons'] == []
+    assert union_all([LineString(line) for line in flat['lines']]).equals(LineString([(2, 0), (2, 3)]))
+    inactive = {**deepcopy(rep), 'id': str(uuid4())}
+    current = {**deepcopy(pose), 'position': [10., 20., 0.], 'scale': [2., 3., 1.]}
+    entity = {'id': str(uuid4()), 'representations': [rep, inactive], 'activeModelRepresentationId': rep['id'], 'currentModelTransform': current}
+    doc['entities'] = [entity]
+    before = deepcopy(entity)
+    _refresh_plan_projections(doc, _Stages(repo, blobs, repo.job, {}))
+    saved = rep['planProjection']
+    shape = union_all([Polygon(p['exterior'], p['holes']) for p in saved['polygons']])
+    assert shape.bounds == pytest.approx([9, 17, 11, 23]) and shape.area == pytest.approx(12)
+    assert saved['transformSnapshot'] == current and saved['primitiveSnapshot'] == rep['primitive']
+    assert {k: v for k, v in rep.items() if k != 'planProjection'} == before['representations'][0]
+    assert inactive == before['representations'][1] and entity['currentModelTransform'] == before['currentModelTransform']
+    doc['coordinateFrames'][0]['ground'] = None
+    _refresh_plan_projections(doc, _Stages(repo, blobs, repo.job, {}))
+    assert 'planProjection' not in rep

@@ -130,7 +130,7 @@ assert.equal(
   "no ground means no plan pretending to be floor",
 );
 modeled.coordinateFrames[0].ground = { normal: [0, 0, 1] };
-assert.equal(planShapes(modeled).length, 1);
+assert.equal(planShapes(modeled).length, 0, "Grounded model bounds without a mesh projection are not a CAD contour");
 const edited = previewOperations(modeled, [
   {
     type: "setTransform",

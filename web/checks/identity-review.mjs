@@ -28,14 +28,14 @@ assert.equal(moved.entities[0].representations[0].transform.position[0],5);
 assert.equal(moved.entities[0].representations[0].material.color,'#ff0000');
 const switched=core.previewOperations(moved,[{type:'setActiveModelRepresentation',entityId:'a',representationId:'model-b'}]);
 assert.equal(core.modelGeometry(switched.entities[0]).corners[0][0],19,'Changing the active model restores its own pose');
-assert.equal(core.planShapes(switched)[0].representationIds[0],'model-b');
+assert.equal(core.planShapes(switched).length,0,'An active primitive without a computed contour retains 3D geometry without inventing CAD');
 assert.equal(core.modelGeometry(core.previewOperations(switched,[{type:'setActiveModelRepresentation',entityId:'a',representationId:null}]).entities[0]),null);
 const surface=(id,observationId,x)=>({...rep(id,x),kind:'observed_surface',assetId:id,bounds:{min:[0,0,0],max:[1,1,1]},sourceRefs:[{observationId}]});
 const states={...entity,observationRefs:['oa','ob'],representations:[surface('state-a','oa',1),surface('state-b','ob',20)],activeModelRepresentationId:null};
 for(const [imageId,x] of [['photo-a',1],['photo-b',20]]) {
  const options={layer:'observed_surface',frameId:'frame',imageId,observations};
  assert.equal(core.entityGeometryForLayer(states,options).corners[0][0],x,'Each photo uses its own observed state, never a fused volume');
- assert.equal(core.planShapes({...document,entities:[states]},options)[0].representationIds.length,1);
+ assert.equal(core.planShapes({...document,entities:[states]},options).length,0,'Observed bounds without a mesh projection cannot become CAD');
 }
 assert.equal(core.entityGeometryForLayer(states,{layer:'observed_surface',frameId:'frame',observations}),null,'Unscoped source states do not invent a current pose');
 const importedObservations=observations.map((observation,i)=>({...observation,sourceRefs:[{assetId:'frozen-records',sourceRecordId:`record-${i}`}]}));
@@ -43,7 +43,7 @@ const importedStates={...states,representations:states.representations.map((repr
 for(const [imageId,x] of [['photo-a',1],['photo-b',20]]) {
  const options={layer:'observed_surface',frameId:'frame',imageId,observations:importedObservations};
  assert.equal(core.entityGeometryForLayer(importedStates,options).corners[0][0],x,'A frozen asset+record source link resolves the exact current photo');
- assert.equal(core.planShapes({...document,observations:importedObservations,entities:[importedStates]},options).length,1,'Source-linked observed geometry remains available to CAD');
+ assert.equal(core.planShapes({...document,observations:importedObservations,entities:[importedStates]},options).length,0,'Source-linked bounds alone do not masquerade as mesh contours');
  assert.equal(core.entityGeometryForLayer(importedStates,{...options,frameId:'unrelated-frame'}),null,'A source match never authorizes a different coordinate frame');
 }
 for(const sourceRefs of [[{assetId:'wrong-asset',sourceRecordId:'record-0'}],[{assetId:'frozen-records',sourceRecordId:'wrong-record'}],[{assetId:'frozen-records'}],[{sourceRecordId:'record-0'}]]) {

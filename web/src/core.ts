@@ -140,14 +140,26 @@ export function insidePolygons(polygons: number[][][], x: number, y: number) {
     }
   return inside;
 }
-export function planHits(shapes: ReturnType<typeof planShapes>, x: number, y: number) {
+export function planHits(shapes: ReturnType<typeof planShapes>, x: number, y: number, lineTolerance = 0) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return [];
   const area = (polygon: number[][]) => Math.abs(polygon.reduce((sum, p, i) => {
     const q = polygon[(i + 1) % polygon.length];
     return sum + p[0] * q[1] - q[0] * p[1];
   }, 0)) / 2;
-  return shapes.filter((shape) => insidePolygons([shape.polygon], x, y))
-    .sort((a, b) => area(a.polygon) - area(b.polygon) || a.entity.id.localeCompare(b.entity.id));
+  const size = (shape: ReturnType<typeof planShapes>[number]) => shape.polygons.reduce((sum, polygon) =>
+    sum + area(polygon.exterior) - polygon.holes.reduce((total, hole) => total + area(hole), 0), 0);
+  const nearLine = (line: number[][]) => line.some((b, i) => {
+    if (!i) return false;
+    const a = line[i - 1], dx = b[0] - a[0], dy = b[1] - a[1], squared = dx * dx + dy * dy;
+    const t = squared ? Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / squared)) : 0;
+    return Math.hypot(x - a[0] - t * dx, y - a[1] - t * dy) <= Math.max(0, lineTolerance);
+  });
+  return shapes.filter((shape) => shape.polygons.some(polygon => insidePolygons([polygon.exterior, ...polygon.holes], x, y)) || shape.lines.some(nearLine))
+    .sort((a, b) => size(a) - size(b) || a.entity.id.localeCompare(b.entity.id));
+}
+export type PlanPolygon = { exterior: number[][]; holes: number[][][] };
+export function planPolygonPath(polygon: PlanPolygon, project: (p: number[]) => number[]) {
+  return [polygon.exterior, ...polygon.holes].map(ring => "M " + ring.map(p => project(p).join(",")).join(" L ") + " Z").join(" ");
 }
 export function originalPixel(
   clientX: number,
@@ -452,11 +464,7 @@ export function planShapes(document: SceneDocument, options: Partial<GeometryOpt
     ) &&
     Math.abs(Math.abs(dot(unit(rawPlane[2].slice(0, 3)), n)) - 1) < 1e-6
       ? (rawPlane as number[][])
-      : null;
-  const project = (p: number[]) =>
-    plane
-      ? [dot(p, plane[0]) + plane[0][3], dot(p, plane[1]) + plane[1][3]]
-      : [dot(p, x), dot(p, y)];
+      : [[...x, 0], [...y, 0], [...n, 0], [0, 0, 0, 1]];
   return document.entities
     .filter((e) => e.visible !== false && !e.sourceContext)
     .flatMap((entity) => {
@@ -471,6 +479,37 @@ export function planShapes(document: SceneDocument, options: Partial<GeometryOpt
         !corners.every(isVec3)
       )
         return [];
+      const projections = (entity.representations || []).filter(rep => geometry.representationIds.includes(rep.id)).flatMap(rep => {
+        const saved = jsonObject(rep.planProjection), asset = document.assets.find(asset => asset.id === rep.assetId);
+        const modeled = ["generated_mesh", "primitive"].includes(rep.kind);
+        const transform = modeled ? entity.currentModelTransform || rep.transform : rep.transform;
+        const snapshot = jsonObject(saved?.transformSnapshot);
+        const unchanged = sameJSON(snapshot, transform);
+        const translated = modeled && isVec3(snapshot?.position) && sameJSON({...snapshot, position: transform.position}, transform);
+        const matrix = saved?.nativeToPlane;
+        const samePlane = Array.isArray(matrix) && matrix.length === 4 && matrix.every((row, i) =>
+          Array.isArray(row) && row.length === 4 && row.every((value, j) => typeof value === "number" && Number.isFinite(value) &&
+            Math.abs(value - plane[i][j]) <= 1e-12 * Math.max(1, Math.abs(value), Math.abs(plane[i][j]))));
+        const observation = document.observations.find(observation => observation.id === saved?.observationId);
+        if (saved?.methodVersion !== "indexed-mesh-triangle-union-v1" || saved.coordinateFrameId !== frame.id ||
+            !sameJSON(saved.groundNormalSnapshot, normal) || !samePlane || (!unchanged && !translated) ||
+            (rep.kind === "primitive" ? saved.assetId != null || saved.assetSha256 != null || !sameJSON(saved.primitiveSnapshot, rep.primitive)
+              : !asset?.sha256 || saved.assetId !== rep.assetId || saved.assetSha256 !== asset.sha256) ||
+            (!modeled && (saved.imageId !== options.imageId || !observation || observation.imageId !== saved.imageId ||
+              observation.revision !== saved.observationRevision || !entity.observationRefs?.includes(observation.id) ||
+              !(rep.sourceRefs || []).some(raw => { const ref = jsonObject(raw); return ref?.observationId === observation.id && ref.revision === observation.revision; })))) return [];
+        const points = (value: unknown): value is number[][] => Array.isArray(value) &&
+          value.every(point => Array.isArray(point) && point.length === 2 && point.every(value => typeof value === "number" && Number.isFinite(value)));
+        const ring = (value: unknown): value is number[][] => points(value) && value.length >= 4 && sameJSON(value[0], value[value.length - 1]);
+        if (!Array.isArray(saved.polygons) || !Array.isArray(saved.lines) ||
+            !saved.polygons.every(raw => { const polygon = jsonObject(raw); return polygon && ring(polygon.exterior) && Array.isArray(polygon.holes) && polygon.holes.every(ring); }) ||
+            !saved.lines.every(line => points(line) && line.length >= 2)) return [];
+        const delta = translated && !unchanged ? transform.position.map((value, k) => value - (snapshot!.position as number[])[k]) : [0, 0, 0];
+        const offset = [dot(delta, plane[0]), dot(delta, plane[1])], shift = (p: number[]) => [p[0] + offset[0], p[1] + offset[1]];
+        return [{representationId: rep.id,
+          polygons: (saved.polygons as PlanPolygon[]).map(polygon => ({exterior: polygon.exterior.map(shift), holes: polygon.holes.map(hole => hole.map(shift))})),
+          lines: (saved.lines as number[][][]).map(line => line.map(shift))}];
+      });
       const saved = jsonObject(entity.measurements?.projectedHull);
       const snapshot = saved?.representationSnapshot;
       // A frozen hull with both model and observed sources is ambiguous. Recompute
@@ -498,26 +537,24 @@ export function planShapes(document: SceneDocument, options: Partial<GeometryOpt
             p.length === 2 &&
             p.every((v) => typeof v === "number" && Number.isFinite(v)),
         );
-      const ps = useSavedHull
-          ? (saved!.points as number[][])
-          : convexHull2D(corners.map(project));
+      const polygons: PlanPolygon[] = projections.length ? projections.flatMap(projection => projection.polygons)
+        : useSavedHull ? [{exterior: saved!.points as number[][], holes: []}] : [];
+      const lines = projections.flatMap(projection => projection.lines);
+      const ps = [...polygons.flatMap(polygon => [polygon.exterior, ...polygon.holes].flat()), ...lines.flat()];
+      if (!ps.length) return [];
+      const min = [Infinity, Infinity], max = [-Infinity, -Infinity];
+      for (const p of ps) for (let k = 0; k < 2; k++) { min[k] = Math.min(min[k], p[k]); max[k] = Math.max(max[k], p[k]); }
       return [
         {
           entity,
-          polygon: ps,
+          polygons,
+          lines,
           coordinateFrameId: frame.id,
-          projectionSource: useSavedHull ? "saved_hull" as const : geometry.geometryKind === "model"
-            ? "model_bounds" as const : geometry.geometryKind === "observed_measurement" ? "observed_measurement" as const : "observed_bounds" as const,
+          projectionSource: projections.length ? "mesh_projection" as const : "saved_hull" as const,
           geometryKind: geometry.geometryKind,
-          representationIds: geometry.representationIds,
-          min: [
-            Math.min(...ps.map((p) => p[0])),
-            Math.min(...ps.map((p) => p[1])),
-          ],
-          max: [
-            Math.max(...ps.map((p) => p[0])),
-            Math.max(...ps.map((p) => p[1])),
-          ],
+          representationIds: projections.length ? projections.map(projection => projection.representationId) : geometry.representationIds,
+          min,
+          max,
         },
       ];
     });
@@ -541,28 +578,6 @@ function sameJSON(a: unknown, b: unknown): boolean {
     )
   );
 }
-function convexHull2D(points: number[][]) {
-  const sorted = points.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  const turn = (a: number[], b: number[], c: number[]) =>
-    (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-  const half = (values: number[][]) => {
-    const out: number[][] = [];
-    for (const p of values) {
-      while (
-        out.length > 1 &&
-        turn(out[out.length - 2], out[out.length - 1], p) <= 0
-      )
-        out.pop();
-      out.push(p);
-    }
-    return out;
-  };
-  return [
-    ...half(sorted).slice(0, -1),
-    ...half(sorted.slice().reverse()).slice(0, -1),
-  ];
-}
-
 // Extension JSON is intentionally open in OpenAPI; narrow it before rendering.
 export function jsonObject(
   value: unknown,

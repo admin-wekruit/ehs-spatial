@@ -37,9 +37,9 @@ forks and new model jobs remain in the full platform.
    ```sh
    .venv/bin/python scripts/export_platform_publication.py \
      --api http://127.0.0.1:8792 --publication PUBLICATION_UUID \
-     --output .platform/publications/PUBLICATION_UUID
+     --output .platform/publication-catalog/PUBLICATION_UUID
    .venv/bin/python tests/check_publication_site.py \
-     --bundle .platform/publications/PUBLICATION_UUID \
+     --catalog .platform/publication-catalog \
      --source-api http://127.0.0.1:8792
    ```
 

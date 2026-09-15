@@ -23,7 +23,7 @@ export const reportSceneMessages: Record<string, [string, string]> = {
   sceneChoosePlanObject: ["请选择要查看的物体；当前选择保持不变。", "Choose an object to inspect; your current selection is unchanged."],
   scenePlanUnavailable: ["暂无平面投影", "No plan projection"],
   sceneNoPlanGround: ["缺少地面参考，无法确定投影平面。", "A ground reference is missing, so the projection plane is unknown."],
-  sceneNoPlanProjection: ["缺少同坐标系的物体范围或投影依据。", "Object bounds or projection evidence in the same coordinate frame are missing."],
+  sceneNoPlanProjection: ["缺少当前照片、姿态与地面坐标下的网格投影轮廓。", "Mesh contours for the current photo, pose and ground frame are unavailable."],
   sceneSelectionRetained: ["仍可在原图或对象清单中选择物体。", "Objects remain selectable in photographs and the object list."],
   sceneLayers: ["空间表示", "Representation"],
   sceneModel: ["生成模型对照", "Generated model comparison"],

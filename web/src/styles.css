@@ -1303,7 +1303,7 @@ pre {
   width: 100%;
 }
 .plan-view rect,
-.plan-view polygon {
+.plan-view path {
   fill: #d7e2cc42;
   stroke: #869b7c;
   stroke-width: 1;
@@ -1324,7 +1324,7 @@ pre {
 .plan-object-index button small { color: var(--muted); white-space: nowrap; }
 .plan-object-index button[aria-pressed="true"] { color: var(--green); font-weight: 700; }
 .plan-view rect.selected,
-.plan-view polygon.selected {
+.plan-view path.selected {
   fill: #efcdad;
   stroke: #b46b36;
   stroke-width: 2;

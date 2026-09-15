@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { planHits, planShapes } from "./core";
+import { planHits, planShapes, planPolygonPath } from "./core";
 import { useI18n } from "./i18n";
 import { isReferenceSurface } from "./scene-semantics";
 import type { SceneDocument } from "./types";
@@ -168,7 +168,7 @@ export function CadView({ document, selectedId, onSelect, geometryOptions }: {
           const matrix = svg.current?.getScreenCTM();
           if (!matrix) return;
           const local = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse());
-          const world = cadWorld([local.x, local.y], view, size), hits = planHits(shapes, world[0], world[1]);
+          const world = cadWorld([local.x, local.y], view, size), hits = planHits(shapes, world[0], world[1], 4 / view.scale);
           if (hits.length === 1) choose(hits[0].entity.id);
           else setCandidates(hits.map(hit => hit.entity.id));
         }}>
@@ -180,7 +180,8 @@ export function CadView({ document, selectedId, onSelect, geometryOptions }: {
           {sorted.map(shape => <g key={shape.entity.id} role="button" tabIndex={0} aria-label={`#${numbers.get(shape.entity.id)} ${shape.entity.label || shape.entity.id}`} aria-pressed={shape.entity.id === selectedId}
             data-cad-entity={shape.entity.id} data-cad-source={shape.projectionSource} className={`cad-object cad-${source(shape)}${shape.entity.id === selectedId ? " is-selected" : ""}`}
             onKeyDown={event => { if (["Enter", " "].includes(event.key)) { event.preventDefault(); event.stopPropagation(); choose(shape.entity.id); } }}>
-            <polygon points={shape.polygon.map(p => cadScreen(p, view, size).join(",")).join(" ")} />
+            {shape.polygons.map((polygon, index) => <path key={"area-" + index} d={planPolygonPath(polygon, p => cadScreen(p, view, size))} fillRule="evenodd" />)}
+            {shape.lines.map((line, index) => <path key={"line-" + index} d={"M " + line.map(p => cadScreen(p, view, size).join(",")).join(" L ")} style={{fill: "none"}} />)}
             <title>{`#${numbers.get(shape.entity.id)} ${shape.entity.label || shape.entity.id} · ${t(source(shape))}`}</title>
           </g>)}
         </g>

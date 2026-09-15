@@ -523,24 +523,101 @@ def _verified_source_equivalences(document, masks, stages):
     return verified, skipped
 
 
-def _save_observed_surface(document, entity, frame, record, mask, stages, observation=None):
+def _plan_plane(document, frame_id):
+    frame = next((f for f in document['coordinateFrames'] if f['id'] == frame_id), None)
+    normal = np.asarray((frame.get('ground') or {}).get('normal', []) if frame else [], dtype=float)
+    if normal.shape != (3,) or not np.isfinite(normal).all() or np.linalg.norm(normal) <= 1e-8:
+        return None
+    n = normal / np.linalg.norm(normal)
+    saved = (document.get('reportEvidence') or {}).get('plan') or {}
+    plane = np.asarray(saved.get('nativeToFloor', []), dtype=float)
+    if saved.get('coordinateFrameId') == frame_id and plane.shape == (4, 4) and np.isfinite(plane).all() and np.linalg.norm(plane[2, :3]) > 0 and abs(abs(np.dot(plane[2, :3] / np.linalg.norm(plane[2, :3]), n)) - 1) < 1e-6:
+        return plane
+    x = np.cross([1., 0., 0.] if abs(n[0]) < .8 else [0., 1., 0.], n)
+    x /= np.linalg.norm(x)
+    plane = np.eye(4)
+    plane[:3, :3] = [x, np.cross(n, x), n]
+    return plane
+
+
+def _plan_projection(document, rep, mesh, asset_sha256, transform=None):
+    from shapely import get_parts, line_merge, linestrings, polygons, union_all
+    from .spatial import transform_matrix
+
+    plane = _plan_plane(document, rep['coordinateFrameId'])
+    pose = transform or rep['transform']
+    if plane is None or pose['coordinateFrameId'] != rep['coordinateFrameId']:
+        return None
+    projected = transform_points(mesh.vertices, plane @ transform_matrix(pose))[:, :2]
+    triangles = projected[mesh.faces]
+    ab, ac = triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0]
+    has_area = ab[:, 0] * ac[:, 1] - ab[:, 1] * ac[:, 0] != 0
+    surface = union_all(polygons(triangles[has_area]))
+    # No hull, simplification, area threshold, or completion of unsupported holes.
+    rings = [{'exterior': np.asarray(p.exterior.coords).tolist(),
+              'holes': [np.asarray(r.coords).tolist() for r in p.interiors]}
+             for p in get_parts(surface) if p.geom_type == 'Polygon']
+    edges = triangles[~has_area][:, [[0, 1], [1, 2], [2, 0]], :].reshape(-1, 2, 2)
+    edges = edges[np.any(edges[:, 0] != edges[:, 1], axis=1)]
+    lines = [np.asarray(line.coords).tolist() for line in get_parts(line_merge(union_all(linestrings(edges)).difference(surface))) if line.geom_type == 'LineString']
+    frame = next(f for f in document['coordinateFrames'] if f['id'] == rep['coordinateFrameId'])
+    refs = rep.get('sourceRefs') or []
+    source = next((r for r in refs if r.get('observationId')), {})
+    image_id = next((r['imageId'] for r in refs if r.get('imageId')), None)
+    result = {'methodVersion': 'indexed-mesh-triangle-union-v1', 'coordinateFrameId': rep['coordinateFrameId'],
+        'assetId': rep.get('assetId'), 'assetSha256': asset_sha256, 'imageId': image_id,
+        'primitiveSnapshot': deepcopy(rep.get('primitive')), 'transformSnapshot': deepcopy(pose),
+        'groundNormalSnapshot': deepcopy(frame['ground']['normal']), 'nativeToPlane': plane.tolist(), 'polygons': rings, 'lines': lines}
+    if source:
+        result.update(observationId=source['observationId'], observationRevision=source.get('revision'))
+    return result
+
+
+def _refresh_plan_projections(document, stages, *, frame_ids=None, entity_ids=None):
+    from .blender_export import mesh_from_asset
+    from .spatial import primitive_mesh
+
+    for entity in document['entities']:
+        if entity.get('sourceContext') or entity_ids is not None and entity['id'] not in entity_ids:
+            continue
+        for rep in entity['representations']:
+            modeled = rep['kind'] in ('generated_mesh', 'primitive')
+            if rep.get('sourceValidity') == 'stale' or rep['kind'] not in ('observed_surface', 'generated_mesh', 'primitive') or modeled and rep['id'] != entity.get('activeModelRepresentationId') or frame_ids is not None and rep['coordinateFrameId'] not in frame_ids:
+                continue
+            if _plan_plane(document, rep['coordinateFrameId']) is None:
+                rep.pop('planProjection', None)
+                continue
+            asset = stages.repo.get_asset(rep['assetId']) if rep.get('assetId') else None
+            mesh = mesh_from_asset(_scene_asset_bytes(document, rep['assetId'], stages), {**asset, **asset.get('metadata', {})}) if asset else primitive_mesh(rep['primitive'])
+            projection = _plan_projection(document, rep, mesh, asset['sha256'] if asset else None,
+                                          entity.get('currentModelTransform') if modeled else None)
+            if projection is None:
+                rep.pop('planProjection', None)
+            else:
+                rep['planProjection'] = projection
+
+
+def _save_observed_surface(document, entity, frame, record, mask, stages, observation=None, *, project_to_plan=True):
     """Use complete native support inside the exact mask, before context carving."""
     mesh = _mesh(frame.points, frame.support(), record['rgb'], mask)
     if mesh is None:
         return None
     source = {'observationId': observation['id'], 'revision': observation['revision'], 'imageId': frame.image_id} if observation else {'imageId': frame.image_id}
     asset = _save_mesh(stages, mesh, {'kind': 'observed_surface' if observation else 'capture_context',
-        'entityId': entity['id'], 'sourceRefs': [source], 'methodVersion': 'full-native-observed-v1'})
+        'entityId': entity['id'], 'sourceRefs': [source], 'methodVersion': 'full-native-observed-v2'})
     _include(document, asset)
-    identity = _id(document['captureId'], 'full-native-observed-v1', entity['id'], source.get('observationId', frame.image_id),
+    identity = _id(document['captureId'], 'full-native-observed-v2', entity['id'], source.get('observationId', frame.image_id),
                    source.get('revision', 0), record.get('geometrySolutionId'), asset['sha256'])
     rep = {'id': identity, 'kind': 'observed_surface', 'assetId': asset['id'], 'coordinateFrameId': frame.coordinate_frame_id,
         'transform': {'coordinateFrameId': frame.coordinate_frame_id, 'position': [0., 0., 0.], 'quaternion': [0., 0., 0., 1.], 'scale': [1., 1., 1.]},
-        'bounds': {'min': mesh.vertices.min(axis=0).tolist(), 'max': mesh.vertices.max(axis=0).tolist()},
+        'bounds': {'min': mesh.vertices[mesh.faces].min(axis=(0, 1)).tolist(), 'max': mesh.vertices[mesh.faces].max(axis=(0, 1)).tolist()},
         'primitive': None, 'placementState': 'confirmed', 'sourceRefs': [source],
         'coverage': 'complete_valid_mask_support' if observation else 'observed_camera_state_only'}
     if record.get('geometryManifestAssetId'):
         rep['sourceRefs'].append({'assetId': record['geometryManifestAssetId']})
+    projection = _plan_projection(document, rep, mesh, asset['sha256']) if observation and project_to_plan else None
+    if projection is not None:
+        rep['planProjection'] = projection
     if not any(r['id'] == identity for r in entity['representations']):
         entity['representations'].append(rep)
     return {'representationId': identity, 'vertexCount': len(mesh.vertices), 'triangleCount': len(mesh.faces)}
@@ -625,7 +702,7 @@ def _rebuild_observed_surfaces(document, frames, records, masks, stages):
         replacements = []
         for oid in entity['observationRefs']:
             observation = observations[oid]
-            result = _save_observed_surface(working, entity, frames[observation['imageId']], records[observation['imageId']], masks[oid], stages, observation)
+            result = _save_observed_surface(working, entity, frames[observation['imageId']], records[observation['imageId']], masks[oid], stages, observation, project_to_plan=False)
             if result is None:
                 raise PlatformError('observed_surface_unavailable', 409, observationId=oid)
             replacements.append(result['representationId'])
@@ -643,11 +720,12 @@ def _rebuild_observed_surfaces(document, frames, records, masks, stages):
             for rep in entity['representations']:
                 if rep['kind'] == 'observed_surface' and rep['coordinateFrameId'] in {f.coordinate_frame_id for f in frames.values()} and rep['id'] not in replacements and rep.get('sourceValidity') != 'stale':
                     rep.update(sourceValidity='stale', supersededByRepresentationIds=replacements)
+    _refresh_plan_projections(working, stages)
     from .contracts import validate_document
     validate_document(working)
     document.clear()
     document.update(working)
-    return {'methodVersion': 'full-native-observed-v1', 'observationCount': len(rebuilt), 'observations': rebuilt, 'contexts': contexts}
+    return {'methodVersion': 'full-native-observed-v2', 'observationCount': len(rebuilt), 'observations': rebuilt, 'contexts': contexts}
 
 
 def _ground(document,frames,masks,stages, *, affected_observation_ids=None):
@@ -700,6 +778,7 @@ def _ground(document,frames,masks,stages, *, affected_observation_ids=None):
     from .identity import snapshot_measurements
     for entity in document["entities"]:
         snapshot_measurements(entity, source_revision_id=stages.job["baseRevisionId"], document=document)
+    _refresh_plan_projections(document, stages, frame_ids=affected_frames)
     return reports[0] if len(reports) == 1 else {"status":"evaluated_per_coordinate_frame","frames":reports}
 
 
@@ -1077,6 +1156,9 @@ def run_generation(repository,blobs,job,providers):
             rep = {"id":_id(document["captureId"],"generated",entity["id"],anchor["id"],str(anchor["revision"]),evidence["sha256"],mesh_asset["sha256"]),"kind":"generated_mesh","assetId":mesh_asset["id"],"coordinateFrameId":f.coordinate_frame_id,
                    "transform":transform,"bounds":mesh_asset["metadata"]["bounds"],"primitive":None,"placementState":"unconfirmed","sourceRefs":[_ref(evidence),{"observationId":anchor["id"],"revision":anchor["revision"]}],
                    "placementReason":"requires_alignment_confirmation" if proposed is not None else "insufficient_observed_depth","shapeStatus":"ready"}
+            projection = _plan_projection(document, rep, mesh, mesh_asset['sha256'])
+            if projection is not None:
+                rep['planProjection'] = projection
             if not any(r['id'] == rep['id'] for r in entity['representations']):
                 entity['representations'].append(rep)
             if not entity.get('activeModelRepresentationId') and proposed is not None:

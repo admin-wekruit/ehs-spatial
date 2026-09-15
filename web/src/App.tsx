@@ -45,6 +45,7 @@ import {
   modelTilt,
   planShapes,
   planHits,
+  planPolygonPath,
   groupPublications,
   sourceDimensions,
   sourceScale,
@@ -1948,7 +1949,7 @@ export function PlanView({
           const matrix = drawing.current?.getScreenCTM();
           if (!matrix) return;
           const local = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse());
-          const hits = planHits(shapes, local.x / factor + min[0], max[1] - local.y / factor);
+          const hits = planHits(shapes, local.x / factor + min[0], max[1] - local.y / factor, 4 / (factor * zoom));
           if (hits.length === 1) choose(hits[0].entity.id);
           else setCandidates(hits.map((hit) => hit.entity.id));
         }}>
@@ -1967,7 +1968,7 @@ export function PlanView({
                 (b.max[0] - b.min[0]) * (b.max[1] - b.min[1]) -
                 (a.max[0] - a.min[0]) * (a.max[1] - a.min[1]),
             )
-            .map(({ entity, min: lo, max: hi, polygon, projectionSource, geometryKind }) => (
+            .map(({ entity, min: lo, max: hi, polygons, lines, projectionSource, geometryKind }) => (
               <g
                 key={entity.id}
                 role="button"
@@ -1983,16 +1984,14 @@ export function PlanView({
                   }
                 }}
               >
-                <polygon
-                  points={polygon
-                    .map((p) =>
-                      [(p[0] - min[0]) * factor, (max[1] - p[1]) * factor].join(
-                        ",",
-                      ),
-                    )
-                    .join(" ")}
+                {polygons.map((polygon, index) => <path key={"area-" + index}
+                  d={planPolygonPath(polygon, p => [(p[0] - min[0]) * factor, (max[1] - p[1]) * factor])}
+                  fillRule="evenodd"
                   className={[entity.id === selectedId ? "selected" : "", geometryKind === "model" ? "model-footprint" : projectionSource === "saved_hull" ? "saved-footprint" : "observed-footprint"].join(" ")}
-                />
+                />)}
+                {lines.map((line, index) => <path key={"line-" + index}
+                  d={"M " + line.map(p => [(p[0] - min[0]) * factor, (max[1] - p[1]) * factor].join(",")).join(" L ")}
+                  style={{fill: "none"}} className={entity.id === selectedId ? "selected" : "observed-footprint"} />)}
                 <title>{entity.label || entity.id}</title>
                 {entity.id === selectedId && (
                   <text

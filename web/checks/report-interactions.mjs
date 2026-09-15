@@ -266,10 +266,7 @@ assert.deepEqual(sourceScale(measuredDocument, measured), {
   status: "uncalibrated",
   nativeToMeters: null,
 });
-const [shape] = planShapes(measuredDocument);
-assert.equal(shape.entity.id, measured.id);
-assert.deepEqual(shape.min, [2, 2]);
-assert.deepEqual(shape.max, [4, 5]);
+assert.equal(planShapes(measuredDocument).length, 0, "Located measurement bounds remain evidence, not a fabricated CAD contour");
 assert.equal(
   planShapes({
     ...measuredDocument,
@@ -368,51 +365,28 @@ const hullDocument = (points) => {
 for (const polygon of [triangle, circle]) {
   const scene = hullDocument(polygon);
   const snapshot = structuredClone(scene);
-  assert.deepEqual(planShapes(scene)[0].polygon, polygon,
+  assert.deepEqual(planShapes(scene)[0].polygons[0].exterior, polygon,
     "Verified triangular/circular hull must not collapse to its enclosing rectangle");
   assert.deepEqual(scene, snapshot, "Rendering never rewrites the evidence snapshot");
 }
-const moved = hullDocument(triangle);
-moved.entities[0].currentModelTransform.position[0] = 10;
-assert.deepEqual(planShapes(moved)[0].min, [9, -1]);
-assert.deepEqual(planShapes(moved)[0].max, [11, 1]);
-assert.equal(planShapes(moved)[0].polygon.length, 4,
-  "A changed pose must derive the current model footprint, never reuse the old triangle");
-const replaced = hullDocument(circle);
-replaced.entities[0].representations[0].assetId = "replacement-mesh";
-assert.equal(planShapes(replaced)[0].polygon.length, 4,
-  "An asset change invalidates the frozen hull even when the old bounds remain");
-const resized = hullDocument(triangle);
-resized.entities[0].representations[0].bounds.max[0] = 3;
-assert.equal(planShapes(resized)[0].max[0], 3);
-assert.equal(planShapes(resized)[0].polygon.length, 4);
-const rotated = hullDocument(triangle);
-rotated.entities[0].currentModelTransform.quaternion = [0, 0, Math.sin(Math.PI / 8), Math.cos(Math.PI / 8)];
-const diamond = planShapes(rotated)[0].polygon;
-assert.equal(diamond.length, 4);
-assert.ok(diamond.every(([x, y]) => Math.abs(x) < 1e-10 || Math.abs(y) < 1e-10),
-  "Current rotated OBB projects to a diamond; min/max alone would invent four corner areas");
-const tiltedFloor = hullDocument(triangle);
-tiltedFloor.coordinateFrames = structuredClone(tiltedFloor.coordinateFrames);
-tiltedFloor.coordinateFrames[0].ground.normal = [0, 1, 0];
-assert.equal(planShapes(tiltedFloor)[0].polygon.length, 4,
-  "A changed ground normal rejects the old plane and its saved footprint");
-const otherPlaneFrame = hullDocument(triangle);
-otherPlaneFrame.reportEvidence.plan.coordinateFrameId = "other-native-frame";
-assert.equal(planShapes(otherPlaneFrame)[0].polygon.length, 4,
-  "Identical matrices in different frames do not establish registration");
-const otherHullFrame = hullDocument(triangle);
-otherHullFrame.entities[0].measurements.projectedHull.coordinateFrameId = "other-native-frame";
-assert.equal(planShapes(otherHullFrame)[0].polygon.length, 4);
-const shiftedPlane = hullDocument(triangle);
-shiftedPlane.reportEvidence.plan.nativeToFloor[0][3] = 1e-8;
-assert.equal(planShapes(shiftedPlane)[0].polygon.length, 4,
-  "Plane snapshots match exactly; even a small translation must not retain frozen coordinates");
-assert.equal(planShapes(shiftedPlane)[0].min[0], -1 + 1e-8);
+for (const [name, change] of [
+  ["position", scene => scene.entities[0].currentModelTransform.position[0] = 10],
+  ["asset", scene => scene.entities[0].representations[0].assetId = "replacement-mesh"],
+  ["bounds", scene => scene.entities[0].representations[0].bounds.max[0] = 3],
+  ["rotation", scene => scene.entities[0].currentModelTransform.quaternion = [0, 0, Math.sin(Math.PI / 8), Math.cos(Math.PI / 8)]],
+  ["ground", scene => scene.coordinateFrames[0].ground.normal = [0, 1, 0]],
+  ["plane frame", scene => scene.reportEvidence.plan.coordinateFrameId = "other-frame"],
+  ["hull frame", scene => scene.entities[0].measurements.projectedHull.coordinateFrameId = "other-frame"],
+  ["plane translation", scene => scene.reportEvidence.plan.nativeToFloor[0][3] = 1e-8],
+]) {
+  const changed = structuredClone(hullDocument(triangle));
+  change(changed);
+  assert.equal(planShapes(changed).length, 0, `A changed ${name} invalidates a frozen hull without inventing a replacement box`);
+}
 const sameChangedPlane = hullDocument(circle);
 sameChangedPlane.reportEvidence.plan.nativeToFloor[0][3] = 7;
 sameChangedPlane.entities[0].measurements.projectedHull.nativeToPlane[0][3] = 7;
-assert.deepEqual(planShapes(sameChangedPlane)[0].polygon, circle,
+assert.deepEqual(planShapes(sameChangedPlane)[0].polygons[0].exterior, circle,
   "A verified matching plane is used as recorded, with no second reprojection");
 console.log(
   "report interactions: pixel-centre contours, even-odd holes/boundaries, nested small objects, letterboxing, native dimensions and exact-frame projected hull snapshot invalidation passed",
