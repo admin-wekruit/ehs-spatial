@@ -337,6 +337,8 @@ class PostgresRepository:
             return _wire({"capture": capture, "revision": revision, "job": job})
 
     def create_job(self, project_id, capability, body):
+        if body["kind"] == "validate_model":
+            raise PlatformError("admin_job_required", 403)
         with self._connect() as connection:
             self._auth(connection, project_id, capability)
             previous = self._idempotent(connection, "jobs", project_id, body)

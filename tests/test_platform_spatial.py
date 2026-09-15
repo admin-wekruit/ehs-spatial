@@ -703,3 +703,122 @@ def test_v2_active_material_edit_exports_its_color_and_preserves_source_candidat
     legacy = prepare_export('legacy-color', source, lambda _: source_mesh)
     assert legacy['objects'] == [] and legacy['missingModelEntities'] == [{'entityId':entity['id'], 'reason':'active_model_missing'}]
     assert source['entities'][0]['material'] == entity['material'] and doc['entities'][0]['representations'][0]['material'] == active['material']
+
+
+def packed_partition_case(*, empty_residual=False):
+    from ehs_spatial.platform.contracts import digest
+    document = scene_document()
+    document['entities'] = document['entities'][:2]
+    parent, child = document['entities']
+    image_id = document['cameras'][0]['imageId']
+    for index, entity in enumerate(document['entities']):
+        oid = f'part-observation-{index}'
+        document['observations'].append({'id': oid, 'imageId': image_id, 'captureId': document['captureIds'][0],
+            'revision': 1, 'originalPixelBox': [1, 1, 5, 5], 'maskAssetId': None})
+        entity['observationRefs'] = [oid]
+    mesh = primitive_mesh({'type': 'box', 'dimensions': [1, 2, 3]})
+    colors = np.arange(len(mesh.vertices) * 3, dtype=np.float32).reshape(-1, 3) / (len(mesh.vertices) * 3)
+    rows = np.column_stack((mesh.vertices, np.full_like(mesh.vertices, .25), colors)).astype('<f4')
+    faces = np.asarray(mesh.faces, dtype='<u4')
+    payload = rows.tobytes() + faces.tobytes()
+    asset = {'id': 'partition-source', 'kind': 'generated_mesh', 'sha256': hashlib.sha256(payload).hexdigest(),
+        'format': 'panoptes-mesh-v1', 'byteLayout': {'stride': 9, 'byteOffset': 0, 'vertexCount': len(rows),
+            'indexByteOffset': rows.nbytes, 'indexCount': faces.size, 'indexType': 'uint32'}}
+    document['assets'].append(asset)
+    parent['representations'][0].update(kind='generated_mesh', assetId=asset['id'], primitive=None,
+        material={'roughness': .33, 'metallic': .2}, sourceRefs=[{'observationId': parent['observationRefs'][0], 'revision': 1}])
+    parent['representations'][0]['placementSource'] = {'type': 'manual_assertion', 'operation': 'confirmPlacement',
+        'representationId': parent['activeModelRepresentationId'], 'transformSha256': digest(parent['currentModelTransform'])}
+    child.update(activeModelRepresentationId=None, currentModelTransform=None)
+    half = 0 if empty_residual else len(faces) // 2
+    manifest = {'schemaVersion': 1, 'confirmed': True, 'sourceRevisionId': 'partition-source-revision', 'documentSha256': digest(document),
+        'parentEntityId': parent['id'], 'sourceRepresentationId': parent['activeModelRepresentationId'],
+        'sourceAssetId': asset['id'], 'sourceAssetSha256': asset['sha256'],
+        'reason': 'Reviewed explicit source-triangle ownership against both observations.',
+        'evidenceRefs': [{'observationId': o['id'], 'revision': o['revision']} for o in document['observations']],
+        'parts': [{'entityId': child['id'], 'faceIndices': list(range(half, len(faces)))}], 'residualFaceIndices': list(range(half))}
+    return document, manifest, payload, rows, faces
+
+
+@pytest.mark.parametrize('empty_residual', [False, True])
+def test_actual_face_partition_preserves_geometry_colors_material_pose_and_single_export(tmp_path, empty_residual):
+    from scripts.research.partition_model_parts import partition_document
+    from ehs_spatial.platform.blender_export import _read_glb
+    from ehs_spatial.platform.repository import apply_operations
+    source, manifest, payload, rows, faces = packed_partition_case(empty_residual=empty_residual)
+    before = deepcopy(source)
+    document, assets = partition_document(source, manifest, payload)
+    assert source == before
+    parent, child = document['entities']
+    assert parent['representations'][0] == source['entities'][0]['representations'][0]
+    assert parent['activeModelRepresentationId'] != manifest['sourceRepresentationId']
+    assert child['parentEntityId'] == parent['id']
+    assert parent['currentModelTransform'] == child['currentModelTransform'] == source['entities'][0]['currentModelTransform']
+    selected_faces = []
+    for asset in (a for a in document['assets'] if a['id'] in assets):
+        packed = np.frombuffer(assets[asset['id']], dtype='<f4', count=asset['byteLayout']['vertexCount'] * 9).reshape(-1, 9)
+        assert packed.tobytes() == rows[asset['sourceVertexIndices']].tobytes()
+        mesh = mesh_from_asset(assets[asset['id']], asset)
+        assert np.array_equal(mesh.vertices[mesh.faces], rows[faces[asset['sourceFaceIndices']], :3])
+        selected_faces += asset['sourceFaceIndices']
+    assert sorted(selected_faces) == list(range(len(faces)))
+    prepared = prepare_export('partitioned', document, assets.__getitem__)
+    assert prepared['status'] == 'succeeded' and prepared['missingModelEntities'] == []
+    assert len(prepared['objects']) == (1 if empty_residual else 2)
+    assert sum(len(obj['faces']) for obj in prepared['objects']) == len(faces)
+    assert all(obj['material'] == {'roughness': .33, 'metallic': .2} for obj in prepared['objects'])
+    assert all(obj['placementSource']['type'] == 'derived_source_partition'
+        and obj['placementSource']['representationId'] == obj['id']
+        and obj['placementSource']['sourceRepresentationId'] == manifest['sourceRepresentationId']
+        and obj['placementSource']['sourcePlacementSource'] == before['entities'][0]['representations'][0]['placementSource']
+        and obj['placementState'] == 'confirmed' for obj in prepared['objects'])
+    assert prepared['assemblies'][0]['familyEntityIds'] == [parent['id'], child['id']]
+    assert any(x['representationId'] == manifest['sourceRepresentationId'] and x['reason'] == 'source_model_candidate' for x in prepared['excludedRepresentations'])
+    write_glb(prepared, tmp_path / 'parts.glb')
+    glb, _ = _read_glb((tmp_path / 'parts.glb').read_bytes())
+    assert len(glb['meshes']) == len(prepared['objects']) and len(glb['nodes']) == len(prepared['objects']) + 1
+    mesh = mesh_from_asset((tmp_path / 'parts.glb').read_bytes(), {})
+    assert len(mesh.faces) == len(faces)
+    expected_world = transform_points(rows[:, :3], transform_matrix(parent['currentModelTransform']))
+    actual_triangles = mesh.vertices[mesh.faces]
+    expected_triangles = expected_world[faces]
+    actual_keys = sorted(tuple(np.round(triangle.ravel(), 5)) for triangle in actual_triangles)
+    expected_keys = sorted(tuple(np.round(triangle.ravel(), 5)) for triangle in expected_triangles)
+    assert np.allclose(actual_keys, expected_keys, atol=2e-5)
+    with pytest.raises(PlatformError, match='part_source_model_inactive'):
+        apply_operations(document, [{'type': 'setActiveModelRepresentation', 'entityId': parent['id'],
+            'representationId': manifest['sourceRepresentationId']}], base_revision_id='partitioned')
+    if empty_residual:
+        assert parent['activeModelRepresentationId'] is None
+        assert all(obj['entityId'] == child['id'] for obj in prepared['objects'])
+    repeated, repeated_assets = partition_document(source, manifest, payload)
+    assert repeated == document and repeated_assets == assets
+
+
+def test_face_partition_rejects_guesses_overlap_gaps_stale_evidence_and_wrong_source():
+    from scripts.research.partition_model_parts import partition_document
+    source, manifest, payload, rows, faces = packed_partition_case()
+    for edit, code in [({'confirmed': False}, 'confirmed_partition_source_required'),
+        ({'documentSha256': '0' * 64}, 'confirmed_partition_source_required'),
+        ({'sourceAssetSha256': '0' * 64}, 'part_source_model_mismatch'),
+        ({'residualFaceIndices': list(range(len(faces)))}, 'overlapping_face_partition'),
+        ({'residualFaceIndices': []}, 'incomplete_face_partition'),
+        ({'residualFaceIndices': [0, 0]}, 'invalid_face_partition'),
+        ({'evidenceRefs': []}, 'part_relation_evidence_required'),
+        ({'evidenceRefs': [{'observationId': source['observations'][0]['id'], 'revision': 2}]}, 'part_observation_revision_mismatch')]:
+        with pytest.raises(PlatformError, match=code):
+            partition_document(source, {**manifest, **edit}, payload)
+    with pytest.raises(PlatformError, match='part_source_model_mismatch'):
+        partition_document(source, manifest, payload[:-4])
+
+
+@pytest.mark.skipif(not BLENDER.exists(), reason='real Blender executable not installed')
+def test_real_blender_part_collections_preserve_world_geometry_and_reopen(tmp_path):
+    from scripts.research.partition_model_parts import partition_document
+    source, manifest, payload, _, faces = packed_partition_case(empty_residual=True)
+    document, assets = partition_document(source, manifest, payload)
+    result = export_scene_revision('parts', document, assets.__getitem__, tmp_path / 'parts', BLENDER)
+    assert result['status'] == 'succeeded' and result['exportedModelCount'] == 1
+    assert result['validation']['blender']['assemblies'] == result['assemblies']
+    assert sum(obj['triangles'] for obj in result['validation']['blender']['objects']) == len(faces)
+    assert result['validation']['blender']['status'] == result['validation']['glb']['status'] == 'passed'

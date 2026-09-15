@@ -1,0 +1,2969 @@
+{
+  "baseRevisionId": "00000000-0000-4000-8000-000000000001",
+  "document": {
+    "schemaVersion": 2,
+    "captureId": "capture",
+    "target": "scene",
+    "coordinateFrames": [
+      {
+        "id": "frame",
+        "convention": "opencv",
+        "scale": {
+          "status": "uncalibrated",
+          "nativeToMeters": null
+        },
+        "ground": null
+      },
+      {
+        "id": "other",
+        "convention": "opencv",
+        "scale": {
+          "status": "uncalibrated",
+          "nativeToMeters": null
+        },
+        "ground": null
+      }
+    ],
+    "cameras": [
+      {
+        "id": "camera-1",
+        "imageId": "image-1",
+        "coordinateFrameId": "frame",
+        "width": 20,
+        "height": 20,
+        "K": [
+          [10, 0, 10],
+          [0, 10, 10],
+          [0, 0, 1]
+        ],
+        "cameraToWorld": [
+          [1, 0, 0, 0],
+          [0, 1, 0, 0],
+          [0, 0, 1, 0],
+          [0, 0, 0, 1]
+        ]
+      },
+      {
+        "id": "camera-2",
+        "imageId": "image-2",
+        "coordinateFrameId": "frame",
+        "width": 20,
+        "height": 20,
+        "K": [
+          [10, 0, 10],
+          [0, 10, 10],
+          [0, 0, 1]
+        ],
+        "cameraToWorld": [
+          [1, 0, 0, 0],
+          [0, 1, 0, 0],
+          [0, 0, 1, 0],
+          [0, 0, 0, 1]
+        ]
+      }
+    ],
+    "observations": [
+      {
+        "id": "observation-1",
+        "revision": 1,
+        "imageId": "image-1",
+        "originalPixelBox": [1, 2, 4, 6],
+        "maskAssetId": null,
+        "captureId": "capture"
+      },
+      {
+        "id": "observation-2",
+        "revision": 1,
+        "imageId": "image-2",
+        "originalPixelBox": [1, 2, 4, 6],
+        "maskAssetId": null,
+        "captureId": "capture"
+      },
+      {
+        "id": "observation-4",
+        "revision": 1,
+        "imageId": "image-2",
+        "originalPixelBox": [1, 2, 4, 6],
+        "maskAssetId": null,
+        "captureId": "capture"
+      },
+      {
+        "id": "observation-3",
+        "revision": 1,
+        "imageId": "image-2",
+        "originalPixelBox": [1, 2, 4, 6],
+        "maskAssetId": null,
+        "captureId": "capture"
+      }
+    ],
+    "entities": [
+      {
+        "id": "entity-1",
+        "label": "Same appearance",
+        "observationRefs": ["observation-1"],
+        "associationState": "association_pending",
+        "representations": [
+          {
+            "id": "model-1",
+            "kind": "primitive",
+            "assetId": null,
+            "coordinateFrameId": "frame",
+            "transform": {
+              "coordinateFrameId": "frame",
+              "position": [1, 0, 1],
+              "quaternion": [0, 0, 0, 1],
+              "scale": [1, 1, 1]
+            },
+            "primitive": {
+              "kind": "box",
+              "dimensions": [1, 2, 3]
+            },
+            "placementState": "confirmed",
+            "sourceRefs": [
+              {
+                "observationId": "observation-1"
+              }
+            ],
+            "material": {
+              "color": "color-1"
+            }
+          }
+        ],
+        "currentModelTransform": {
+          "coordinateFrameId": "frame",
+          "position": [1, 0, 1],
+          "quaternion": [0, 0, 0, 1],
+          "scale": [1, 1, 1]
+        },
+        "measurements": {
+          "height": {
+            "value": 1,
+            "unit": "native",
+            "sourceRefs": [
+              {
+                "observationId": "observation-1",
+                "revision": 1
+              }
+            ]
+          }
+        },
+        "sourceRefs": [
+          {
+            "recordId": "source-1"
+          }
+        ],
+        "lineage": [
+          {
+            "operation": "migrate_scene",
+            "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+            "entityId": "entity-1",
+            "sourceModelTransform": {
+              "coordinateFrameId": "frame",
+              "position": [1, 0, 1],
+              "quaternion": [0, 0, 0, 1],
+              "scale": [1, 1, 1]
+            }
+          }
+        ],
+        "material": {
+          "color": "color-1"
+        },
+        "measurementEvidence": [
+          {
+            "id": "4ab1c591-7231-51be-8317-b268bac4c212",
+            "measurementKey": "height",
+            "originalMeasurement": {
+              "value": 1,
+              "unit": "native",
+              "sourceRefs": [
+                {
+                  "observationId": "observation-1",
+                  "revision": 1
+                }
+              ]
+            },
+            "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+            "sourceEntityId": "entity-1",
+            "observationRefs": ["observation-1"],
+            "representationId": null,
+            "sourceRefs": [
+              {
+                "observationId": "observation-1",
+                "revision": 1
+              }
+            ]
+          }
+        ],
+        "measurementSelections": {
+          "height": "4ab1c591-7231-51be-8317-b268bac4c212"
+        },
+        "activeModelRepresentationId": "model-1"
+      },
+      {
+        "id": "entity-2",
+        "label": "Same appearance",
+        "observationRefs": ["observation-2"],
+        "associationState": "association_pending",
+        "representations": [
+          {
+            "id": "model-2",
+            "kind": "primitive",
+            "assetId": null,
+            "coordinateFrameId": "frame",
+            "transform": {
+              "coordinateFrameId": "frame",
+              "position": [2, 0, 1],
+              "quaternion": [0, 0, 0, 1],
+              "scale": [1, 1, 1]
+            },
+            "primitive": {
+              "kind": "box",
+              "dimensions": [1, 2, 3]
+            },
+            "placementState": "confirmed",
+            "sourceRefs": [
+              {
+                "observationId": "observation-2"
+              }
+            ],
+            "material": {
+              "color": "color-2"
+            }
+          }
+        ],
+        "currentModelTransform": {
+          "coordinateFrameId": "frame",
+          "position": [2, 0, 1],
+          "quaternion": [0, 0, 0, 1],
+          "scale": [1, 1, 1]
+        },
+        "measurements": {
+          "height": {
+            "value": 2,
+            "unit": "native",
+            "sourceRefs": [
+              {
+                "observationId": "observation-2",
+                "revision": 1
+              }
+            ]
+          }
+        },
+        "sourceRefs": [
+          {
+            "recordId": "source-2"
+          }
+        ],
+        "lineage": [
+          {
+            "operation": "migrate_scene",
+            "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+            "entityId": "entity-2",
+            "sourceModelTransform": {
+              "coordinateFrameId": "frame",
+              "position": [2, 0, 1],
+              "quaternion": [0, 0, 0, 1],
+              "scale": [1, 1, 1]
+            }
+          },
+          {
+            "operation": "setPartRelation",
+            "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+            "parentEntityId": null,
+            "partRelation": null
+          }
+        ],
+        "material": {
+          "color": "color-2"
+        },
+        "measurementEvidence": [
+          {
+            "id": "cd7c8ada-7782-5f6c-a48f-5b48221eb0a7",
+            "measurementKey": "height",
+            "originalMeasurement": {
+              "value": 2,
+              "unit": "native",
+              "sourceRefs": [
+                {
+                  "observationId": "observation-2",
+                  "revision": 1
+                }
+              ]
+            },
+            "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+            "sourceEntityId": "entity-2",
+            "observationRefs": ["observation-2"],
+            "representationId": null,
+            "sourceRefs": [
+              {
+                "observationId": "observation-2",
+                "revision": 1
+              }
+            ]
+          }
+        ],
+        "measurementSelections": {
+          "height": "cd7c8ada-7782-5f6c-a48f-5b48221eb0a7"
+        },
+        "activeModelRepresentationId": "model-2",
+        "parentEntityId": "entity-1",
+        "partRelation": {
+          "source": "manual",
+          "baseRevisionId": "00000000-0000-4000-8000-000000000001",
+          "evidenceRefs": [
+            {
+              "observationId": "observation-2",
+              "revision": 1
+            },
+            {
+              "observationId": "observation-1",
+              "revision": 1
+            }
+          ],
+          "reason": "Reviewed source observations: this separate panel is a physical part of the assembly."
+        }
+      },
+      {
+        "id": "entity-4",
+        "label": "Same appearance",
+        "observationRefs": ["observation-4"],
+        "associationState": "association_pending",
+        "representations": [
+          {
+            "id": "model-4",
+            "kind": "primitive",
+            "assetId": null,
+            "coordinateFrameId": "frame",
+            "transform": {
+              "coordinateFrameId": "frame",
+              "position": [4, 1, 1],
+              "quaternion": [0, 0, 0, 1],
+              "scale": [1, 1, 1]
+            },
+            "primitive": {
+              "kind": "box",
+              "dimensions": [1, 2, 3]
+            },
+            "placementState": "confirmed",
+            "sourceRefs": [
+              {
+                "observationId": "observation-4"
+              }
+            ],
+            "material": {
+              "color": "color-2"
+            }
+          }
+        ],
+        "currentModelTransform": {
+          "coordinateFrameId": "frame",
+          "position": [4, 1, 1],
+          "quaternion": [0, 0, 0, 1],
+          "scale": [1, 1, 1]
+        },
+        "measurements": {
+          "height": {
+            "value": 2,
+            "unit": "native",
+            "sourceRefs": [
+              {
+                "observationId": "observation-2",
+                "revision": 1
+              }
+            ]
+          }
+        },
+        "sourceRefs": [
+          {
+            "recordId": "source-2"
+          }
+        ],
+        "lineage": [
+          {
+            "operation": "migrate_scene",
+            "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+            "entityId": "entity-4",
+            "sourceModelTransform": {
+              "coordinateFrameId": "frame",
+              "position": [4, 1, 1],
+              "quaternion": [0, 0, 0, 1],
+              "scale": [1, 1, 1]
+            }
+          },
+          {
+            "operation": "setPartRelation",
+            "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+            "parentEntityId": null,
+            "partRelation": null
+          }
+        ],
+        "material": {
+          "color": "color-2"
+        },
+        "measurementEvidence": [
+          {
+            "id": "918499c6-9b81-5f5b-9451-d51e93355a50",
+            "measurementKey": "height",
+            "originalMeasurement": {
+              "value": 2,
+              "unit": "native",
+              "sourceRefs": [
+                {
+                  "observationId": "observation-2",
+                  "revision": 1
+                }
+              ]
+            },
+            "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+            "sourceEntityId": "entity-4",
+            "observationRefs": [],
+            "representationId": null,
+            "sourceRefs": [
+              {
+                "observationId": "observation-2",
+                "revision": 1
+              }
+            ]
+          }
+        ],
+        "measurementSelections": {
+          "height": "918499c6-9b81-5f5b-9451-d51e93355a50"
+        },
+        "activeModelRepresentationId": "model-4",
+        "parentEntityId": "entity-1",
+        "partRelation": {
+          "source": "manual",
+          "baseRevisionId": "00000000-0000-4000-8000-000000000001",
+          "evidenceRefs": [
+            {
+              "observationId": "observation-4",
+              "revision": 1
+            },
+            {
+              "observationId": "observation-1",
+              "revision": 1
+            }
+          ],
+          "reason": "Reviewed source observations: this separate panel is a physical part of the assembly."
+        }
+      },
+      {
+        "id": "entity-3",
+        "label": "Same appearance",
+        "observationRefs": ["observation-3"],
+        "associationState": "association_pending",
+        "representations": [
+          {
+            "id": "model-3",
+            "kind": "primitive",
+            "assetId": null,
+            "coordinateFrameId": "frame",
+            "transform": {
+              "coordinateFrameId": "frame",
+              "position": [3, 1, 1],
+              "quaternion": [0, 0, 0, 1],
+              "scale": [1, 1, 1]
+            },
+            "primitive": {
+              "kind": "box",
+              "dimensions": [1, 2, 3]
+            },
+            "placementState": "confirmed",
+            "sourceRefs": [
+              {
+                "observationId": "observation-3"
+              }
+            ],
+            "material": {
+              "color": "color-2"
+            }
+          }
+        ],
+        "currentModelTransform": {
+          "coordinateFrameId": "frame",
+          "position": [3, 1, 1],
+          "quaternion": [0, 0, 0, 1],
+          "scale": [1, 1, 1]
+        },
+        "measurements": {
+          "height": {
+            "value": 2,
+            "unit": "native",
+            "sourceRefs": [
+              {
+                "observationId": "observation-2",
+                "revision": 1
+              }
+            ]
+          }
+        },
+        "sourceRefs": [
+          {
+            "recordId": "source-2"
+          }
+        ],
+        "lineage": [
+          {
+            "operation": "migrate_scene",
+            "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+            "entityId": "entity-3",
+            "sourceModelTransform": {
+              "coordinateFrameId": "frame",
+              "position": [3, 1, 1],
+              "quaternion": [0, 0, 0, 1],
+              "scale": [1, 1, 1]
+            }
+          },
+          {
+            "operation": "setPartRelation",
+            "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+            "parentEntityId": null,
+            "partRelation": null
+          }
+        ],
+        "material": {
+          "color": "color-2"
+        },
+        "measurementEvidence": [
+          {
+            "id": "b21a7fb2-fb11-5692-b35d-8e55ba4189cc",
+            "measurementKey": "height",
+            "originalMeasurement": {
+              "value": 2,
+              "unit": "native",
+              "sourceRefs": [
+                {
+                  "observationId": "observation-2",
+                  "revision": 1
+                }
+              ]
+            },
+            "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+            "sourceEntityId": "entity-3",
+            "observationRefs": [],
+            "representationId": null,
+            "sourceRefs": [
+              {
+                "observationId": "observation-2",
+                "revision": 1
+              }
+            ]
+          }
+        ],
+        "measurementSelections": {
+          "height": "b21a7fb2-fb11-5692-b35d-8e55ba4189cc"
+        },
+        "activeModelRepresentationId": "model-3",
+        "parentEntityId": "entity-2",
+        "partRelation": {
+          "source": "manual",
+          "baseRevisionId": "00000000-0000-4000-8000-000000000001",
+          "evidenceRefs": [
+            {
+              "observationId": "observation-3",
+              "revision": 1
+            },
+            {
+              "observationId": "observation-2",
+              "revision": 1
+            }
+          ],
+          "reason": "Reviewed source observations: this separate panel is a physical part of the assembly."
+        }
+      }
+    ],
+    "assets": [
+      {
+        "id": "image-1",
+        "kind": "source_image",
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      {
+        "id": "image-2",
+        "kind": "source_image",
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      }
+    ],
+    "annotations": [
+      {
+        "id": "note",
+        "kind": "note",
+        "entityId": "entity-2",
+        "sourceRefs": [
+          {
+            "observationId": "observation-2"
+          }
+        ]
+      }
+    ],
+    "reportEvidence": {
+      "objects": [
+        {
+          "entityId": "entity-2",
+          "sourceRecordId": "source-2",
+          "views": [
+            {
+              "observationId": "observation-2"
+            }
+          ]
+        }
+      ],
+      "historical": {
+        "inventory": [
+          {
+            "inventoryIndex": 7,
+            "entityIds": ["entity-2"]
+          }
+        ],
+        "cad": {
+          "regions": [
+            {
+              "inventoryIndex": 7,
+              "entityIds": ["entity-2"],
+              "polygon": [
+                [1, 2],
+                [3, 4]
+              ]
+            }
+          ]
+        },
+        "findings": [
+          {
+            "entityId": "entity-2",
+            "facts": [
+              {
+                "entityId": "native-source-id",
+                "value": 9
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "captureIds": ["capture"],
+    "identityDecisions": [],
+    "geometryBindings": {
+      "image-1": {
+        "geometrySolutionId": "frame",
+        "cameraId": "camera-1"
+      },
+      "image-2": {
+        "geometrySolutionId": "frame",
+        "cameraId": "camera-2"
+      }
+    }
+  },
+  "families": {
+    "entity-1": ["entity-1", "entity-2", "entity-3", "entity-4"],
+    "entity-2": ["entity-2", "entity-3"],
+    "entity-4": ["entity-4"],
+    "entity-3": ["entity-3"]
+  },
+  "cases": [
+    {
+      "name": "parent_rotation_uniform_scale",
+      "entityOverrides": {},
+      "operations": [
+        {
+          "type": "setTransform",
+          "entityId": "entity-1",
+          "transform": {
+            "coordinateFrameId": "frame",
+            "position": [7, 2, 3],
+            "quaternion": [0, 0, 0.19866933079506122, 0.9800665778412416],
+            "scale": [2, 2, 2]
+          }
+        }
+      ],
+      "expected": {
+        "entity-1": {
+          "matrix": [1.8421219880057702, 0.7788366846173009, 0.0, 0.0, -0.7788366846173009, 1.8421219880057702, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 7.0, 2.0, 3.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-1": {
+              "material": {
+                "color": "color-1"
+              },
+              "placementState": "unconfirmed"
+            }
+          }
+        },
+        "entity-2": {
+          "matrix": [1.8421219880057702, 0.7788366846173009, 0.0, 0.0, -0.7788366846173009, 1.8421219880057702, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 8.84212198800577, 2.7788366846173007, 3.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-2": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "unconfirmed"
+            }
+          }
+        },
+        "entity-4": {
+          "matrix": [1.8421219880057702, 0.7788366846173009, 0.0, 0.0, -0.7788366846173009, 1.8421219880057702, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 11.747529279400009, 6.178632041857673, 3.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-4": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "unconfirmed"
+            }
+          }
+        },
+        "entity-3": {
+          "matrix": [1.8421219880057702, 0.7788366846173009, 0.0, 0.0, -0.7788366846173009, 1.8421219880057702, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 9.90540729139424, 5.3997953572403725, 3.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-3": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "unconfirmed"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "empty_residual_parent",
+      "entityOverrides": {
+        "entity-1": {
+          "activeModelRepresentationId": null
+        }
+      },
+      "operations": [
+        {
+          "type": "setTransform",
+          "entityId": "entity-1",
+          "transform": {
+            "coordinateFrameId": "frame",
+            "position": [7, 2, 3],
+            "quaternion": [0, 0, 0, 1],
+            "scale": [1, 1, 1]
+          }
+        }
+      ],
+      "expected": {
+        "entity-1": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 7.0, 2.0, 3.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-1": {
+              "material": {
+                "color": "color-1"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-2": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 8.0, 2.0, 3.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-2": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "unconfirmed"
+            }
+          }
+        },
+        "entity-4": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 10.0, 3.0, 3.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-4": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "unconfirmed"
+            }
+          }
+        },
+        "entity-3": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 9.0, 3.0, 3.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-3": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "unconfirmed"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "no_change",
+      "entityOverrides": {},
+      "operations": [
+        {
+          "type": "setTransform",
+          "entityId": "entity-1",
+          "transform": {
+            "coordinateFrameId": "frame",
+            "position": [1, 0, 1],
+            "quaternion": [0, 0, 0, 1],
+            "scale": [1, 1, 1]
+          }
+        }
+      ],
+      "expected": {
+        "entity-1": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-1": {
+              "material": {
+                "color": "color-1"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-2": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 2.0, 0.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-2": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-4": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 4.0, 1.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-4": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-3": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 3.0, 1.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-3": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "child_motion_subtree_only",
+      "entityOverrides": {},
+      "operations": [
+        {
+          "type": "setTransform",
+          "entityId": "entity-2",
+          "transform": {
+            "coordinateFrameId": "frame",
+            "position": [-3, 1, 2],
+            "quaternion": [0, 0, 0, 1],
+            "scale": [1, 1, 1]
+          }
+        }
+      ],
+      "expected": {
+        "entity-1": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-1": {
+              "material": {
+                "color": "color-1"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-2": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -3.0, 1.0, 2.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-2": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "unconfirmed"
+            }
+          }
+        },
+        "entity-4": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 4.0, 1.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-4": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-3": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -2.0, 2.0, 2.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-3": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "unconfirmed"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "family_visibility_and_material",
+      "entityOverrides": {},
+      "operations": [
+        {
+          "type": "setVisibility",
+          "entityId": "entity-1",
+          "visible": false
+        },
+        {
+          "type": "setMaterial",
+          "entityId": "entity-1",
+          "material": {
+            "color": [0.2, 0.4, 0.6]
+          }
+        }
+      ],
+      "expected": {
+        "entity-1": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0],
+          "visible": false,
+          "label": "Same appearance",
+          "representations": {
+            "model-1": {
+              "material": {
+                "color": [0.2, 0.4, 0.6]
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-2": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 2.0, 0.0, 1.0, 1.0],
+          "visible": false,
+          "label": "Same appearance",
+          "representations": {
+            "model-2": {
+              "material": {
+                "color": [0.2, 0.4, 0.6]
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-4": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 4.0, 1.0, 1.0, 1.0],
+          "visible": false,
+          "label": "Same appearance",
+          "representations": {
+            "model-4": {
+              "material": {
+                "color": [0.2, 0.4, 0.6]
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-3": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 3.0, 1.0, 1.0, 1.0],
+          "visible": false,
+          "label": "Same appearance",
+          "representations": {
+            "model-3": {
+              "material": {
+                "color": [0.2, 0.4, 0.6]
+              },
+              "placementState": "confirmed"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "child_material_and_label",
+      "entityOverrides": {},
+      "operations": [
+        {
+          "type": "setMaterial",
+          "entityId": "entity-2",
+          "material": {
+            "color": [0.1, 0.2, 0.3]
+          }
+        },
+        {
+          "type": "setLabel",
+          "entityId": "entity-2",
+          "label": "Edited child only"
+        }
+      ],
+      "expected": {
+        "entity-1": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-1": {
+              "material": {
+                "color": "color-1"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-2": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 2.0, 0.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Edited child only",
+          "representations": {
+            "model-2": {
+              "material": {
+                "color": [0.1, 0.2, 0.3]
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-4": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 4.0, 1.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-4": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-3": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 3.0, 1.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-3": {
+              "material": {
+                "color": [0.1, 0.2, 0.3]
+              },
+              "placementState": "confirmed"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "reject_shear",
+      "entityOverrides": {
+        "entity-2": {
+          "currentModelTransform": {
+            "coordinateFrameId": "frame",
+            "position": [2, 0, 1],
+            "quaternion": [0, 0, 0.3894183423086505, 0.9210609940028851],
+            "scale": [1, 1, 1]
+          }
+        }
+      },
+      "operations": [
+        {
+          "type": "setTransform",
+          "entityId": "entity-1",
+          "transform": {
+            "coordinateFrameId": "frame",
+            "position": [1, 0, 1],
+            "quaternion": [0, 0, 0, 1],
+            "scale": [2, 1, 1]
+          }
+        }
+      ],
+      "errorCode": "transform_shear_or_reflection"
+    },
+    {
+      "name": "reject_frame_change",
+      "entityOverrides": {},
+      "operations": [
+        {
+          "type": "setTransform",
+          "entityId": "entity-1",
+          "transform": {
+            "coordinateFrameId": "other",
+            "position": [1, 0, 1],
+            "quaternion": [0, 0, 0, 1],
+            "scale": [1, 1, 1]
+          }
+        }
+      ],
+      "errorCode": "part_coordinate_frame_mismatch"
+    },
+    {
+      "name": "parent_half_turn_0",
+      "entityOverrides": {},
+      "operations": [
+        {
+          "type": "setTransform",
+          "entityId": "entity-1",
+          "transform": {
+            "coordinateFrameId": "frame",
+            "position": [1, 0, 1],
+            "quaternion": [1, 0, 0, 0],
+            "scale": [1, 1, 1]
+          }
+        }
+      ],
+      "expected": {
+        "entity-1": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-1": {
+              "material": {
+                "color": "color-1"
+              },
+              "placementState": "unconfirmed"
+            }
+          }
+        },
+        "entity-2": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 2.0, 0.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-2": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "unconfirmed"
+            }
+          }
+        },
+        "entity-4": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 4.0, -1.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-4": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "unconfirmed"
+            }
+          }
+        },
+        "entity-3": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 3.0, -1.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-3": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "unconfirmed"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "parent_half_turn_1",
+      "entityOverrides": {},
+      "operations": [
+        {
+          "type": "setTransform",
+          "entityId": "entity-1",
+          "transform": {
+            "coordinateFrameId": "frame",
+            "position": [1, 0, 1],
+            "quaternion": [0, 1, 0, 0],
+            "scale": [1, 1, 1]
+          }
+        }
+      ],
+      "expected": {
+        "entity-1": {
+          "matrix": [-1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-1": {
+              "material": {
+                "color": "color-1"
+              },
+              "placementState": "unconfirmed"
+            }
+          }
+        },
+        "entity-2": {
+          "matrix": [-1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-2": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "unconfirmed"
+            }
+          }
+        },
+        "entity-4": {
+          "matrix": [-1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, -2.0, 1.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-4": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "unconfirmed"
+            }
+          }
+        },
+        "entity-3": {
+          "matrix": [-1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, -1.0, 1.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-3": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "unconfirmed"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "parent_half_turn_2",
+      "entityOverrides": {},
+      "operations": [
+        {
+          "type": "setTransform",
+          "entityId": "entity-1",
+          "transform": {
+            "coordinateFrameId": "frame",
+            "position": [1, 0, 1],
+            "quaternion": [0, 0, 1, 0],
+            "scale": [1, 1, 1]
+          }
+        }
+      ],
+      "expected": {
+        "entity-1": {
+          "matrix": [-1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-1": {
+              "material": {
+                "color": "color-1"
+              },
+              "placementState": "unconfirmed"
+            }
+          }
+        },
+        "entity-2": {
+          "matrix": [-1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-2": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "unconfirmed"
+            }
+          }
+        },
+        "entity-4": {
+          "matrix": [-1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -2.0, -1.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-4": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "unconfirmed"
+            }
+          }
+        },
+        "entity-3": {
+          "matrix": [-1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -1.0, -1.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-3": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "unconfirmed"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "clear_active_parent_preserves_pivot",
+      "entityOverrides": {},
+      "operations": [
+        {
+          "type": "setActiveModelRepresentation",
+          "entityId": "entity-1",
+          "representationId": null
+        },
+        {
+          "type": "setTransform",
+          "entityId": "entity-1",
+          "transform": {
+            "coordinateFrameId": "frame",
+            "position": [1, 0, 1],
+            "quaternion": [0, 0, 0, 1],
+            "scale": [1, 1, 1]
+          }
+        }
+      ],
+      "expected": {
+        "entity-1": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-1": {
+              "material": {
+                "color": "color-1"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-2": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 2.0, 0.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-2": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-4": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 4.0, 1.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-4": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-3": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 3.0, 1.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-3": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        }
+      },
+      "expectedRelations": {
+        "entity-1": {
+          "parentEntityId": null,
+          "partRelation": null,
+          "lineage": [
+            {
+              "operation": "migrate_scene",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "entityId": "entity-1",
+              "sourceModelTransform": {
+                "coordinateFrameId": "frame",
+                "position": [1, 0, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              }
+            }
+          ]
+        },
+        "entity-2": {
+          "parentEntityId": "entity-1",
+          "partRelation": {
+            "source": "manual",
+            "baseRevisionId": "00000000-0000-4000-8000-000000000001",
+            "evidenceRefs": [
+              {
+                "observationId": "observation-2",
+                "revision": 1
+              },
+              {
+                "observationId": "observation-1",
+                "revision": 1
+              }
+            ],
+            "reason": "Reviewed source observations: this separate panel is a physical part of the assembly."
+          },
+          "lineage": [
+            {
+              "operation": "migrate_scene",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "entityId": "entity-2",
+              "sourceModelTransform": {
+                "coordinateFrameId": "frame",
+                "position": [2, 0, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              }
+            },
+            {
+              "operation": "setPartRelation",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "parentEntityId": null,
+              "partRelation": null
+            }
+          ]
+        },
+        "entity-4": {
+          "parentEntityId": "entity-1",
+          "partRelation": {
+            "source": "manual",
+            "baseRevisionId": "00000000-0000-4000-8000-000000000001",
+            "evidenceRefs": [
+              {
+                "observationId": "observation-4",
+                "revision": 1
+              },
+              {
+                "observationId": "observation-1",
+                "revision": 1
+              }
+            ],
+            "reason": "Reviewed source observations: this separate panel is a physical part of the assembly."
+          },
+          "lineage": [
+            {
+              "operation": "migrate_scene",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "entityId": "entity-4",
+              "sourceModelTransform": {
+                "coordinateFrameId": "frame",
+                "position": [4, 1, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              }
+            },
+            {
+              "operation": "setPartRelation",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "parentEntityId": null,
+              "partRelation": null
+            }
+          ]
+        },
+        "entity-3": {
+          "parentEntityId": "entity-2",
+          "partRelation": {
+            "source": "manual",
+            "baseRevisionId": "00000000-0000-4000-8000-000000000001",
+            "evidenceRefs": [
+              {
+                "observationId": "observation-3",
+                "revision": 1
+              },
+              {
+                "observationId": "observation-2",
+                "revision": 1
+              }
+            ],
+            "reason": "Reviewed source observations: this separate panel is a physical part of the assembly."
+          },
+          "lineage": [
+            {
+              "operation": "migrate_scene",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "entityId": "entity-3",
+              "sourceModelTransform": {
+                "coordinateFrameId": "frame",
+                "position": [3, 1, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              }
+            },
+            {
+              "operation": "setPartRelation",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "parentEntityId": null,
+              "partRelation": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "reject_partition_source_activation",
+      "entityOverrides": {
+        "entity-1": {
+          "activeModelRepresentationId": null,
+          "lineage": [
+            {
+              "operation": "partition_model_parts",
+              "sourceRepresentationId": "model-1"
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "type": "setActiveModelRepresentation",
+          "entityId": "entity-1",
+          "representationId": "model-1"
+        }
+      ],
+      "errorCode": "part_source_model_inactive"
+    },
+    {
+      "name": "reparent_explicit_part",
+      "entityOverrides": {},
+      "operations": [
+        {
+          "type": "setPartRelation",
+          "entityId": "entity-3",
+          "parentEntityId": "entity-1",
+          "evidenceRefs": [
+            {
+              "observationId": "observation-3",
+              "revision": 1
+            },
+            {
+              "observationId": "observation-1",
+              "revision": 1
+            }
+          ],
+          "reason": "Reviewed explicit source evidence for this part relation."
+        }
+      ],
+      "expected": {
+        "entity-1": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-1": {
+              "material": {
+                "color": "color-1"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-2": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 2.0, 0.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-2": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-4": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 4.0, 1.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-4": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-3": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 3.0, 1.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-3": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        }
+      },
+      "expectedRelations": {
+        "entity-1": {
+          "parentEntityId": null,
+          "partRelation": null,
+          "lineage": [
+            {
+              "operation": "migrate_scene",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "entityId": "entity-1",
+              "sourceModelTransform": {
+                "coordinateFrameId": "frame",
+                "position": [1, 0, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              }
+            }
+          ]
+        },
+        "entity-2": {
+          "parentEntityId": "entity-1",
+          "partRelation": {
+            "source": "manual",
+            "baseRevisionId": "00000000-0000-4000-8000-000000000001",
+            "evidenceRefs": [
+              {
+                "observationId": "observation-2",
+                "revision": 1
+              },
+              {
+                "observationId": "observation-1",
+                "revision": 1
+              }
+            ],
+            "reason": "Reviewed source observations: this separate panel is a physical part of the assembly."
+          },
+          "lineage": [
+            {
+              "operation": "migrate_scene",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "entityId": "entity-2",
+              "sourceModelTransform": {
+                "coordinateFrameId": "frame",
+                "position": [2, 0, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              }
+            },
+            {
+              "operation": "setPartRelation",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "parentEntityId": null,
+              "partRelation": null
+            }
+          ]
+        },
+        "entity-4": {
+          "parentEntityId": "entity-1",
+          "partRelation": {
+            "source": "manual",
+            "baseRevisionId": "00000000-0000-4000-8000-000000000001",
+            "evidenceRefs": [
+              {
+                "observationId": "observation-4",
+                "revision": 1
+              },
+              {
+                "observationId": "observation-1",
+                "revision": 1
+              }
+            ],
+            "reason": "Reviewed source observations: this separate panel is a physical part of the assembly."
+          },
+          "lineage": [
+            {
+              "operation": "migrate_scene",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "entityId": "entity-4",
+              "sourceModelTransform": {
+                "coordinateFrameId": "frame",
+                "position": [4, 1, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              }
+            },
+            {
+              "operation": "setPartRelation",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "parentEntityId": null,
+              "partRelation": null
+            }
+          ]
+        },
+        "entity-3": {
+          "parentEntityId": "entity-1",
+          "partRelation": {
+            "source": "manual",
+            "baseRevisionId": "00000000-0000-4000-8000-000000000001",
+            "evidenceRefs": [
+              {
+                "observationId": "observation-3",
+                "revision": 1
+              },
+              {
+                "observationId": "observation-1",
+                "revision": 1
+              }
+            ],
+            "reason": "Reviewed explicit source evidence for this part relation."
+          },
+          "lineage": [
+            {
+              "operation": "migrate_scene",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "entityId": "entity-3",
+              "sourceModelTransform": {
+                "coordinateFrameId": "frame",
+                "position": [3, 1, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              }
+            },
+            {
+              "operation": "setPartRelation",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "parentEntityId": null,
+              "partRelation": null
+            },
+            {
+              "operation": "setPartRelation",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "parentEntityId": "entity-2",
+              "partRelation": {
+                "source": "manual",
+                "baseRevisionId": "00000000-0000-4000-8000-000000000001",
+                "evidenceRefs": [
+                  {
+                    "observationId": "observation-3",
+                    "revision": 1
+                  },
+                  {
+                    "observationId": "observation-2",
+                    "revision": 1
+                  }
+                ],
+                "reason": "Reviewed source observations: this separate panel is a physical part of the assembly."
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "detach_part",
+      "entityOverrides": {},
+      "operations": [
+        {
+          "type": "setPartRelation",
+          "entityId": "entity-2",
+          "parentEntityId": null,
+          "evidenceRefs": [
+            {
+              "observationId": "observation-2",
+              "revision": 1
+            }
+          ],
+          "reason": "Reviewed explicit source evidence for this part relation."
+        }
+      ],
+      "expected": {
+        "entity-1": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-1": {
+              "material": {
+                "color": "color-1"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-2": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 2.0, 0.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-2": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-4": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 4.0, 1.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-4": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-3": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 3.0, 1.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-3": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        }
+      },
+      "expectedRelations": {
+        "entity-1": {
+          "parentEntityId": null,
+          "partRelation": null,
+          "lineage": [
+            {
+              "operation": "migrate_scene",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "entityId": "entity-1",
+              "sourceModelTransform": {
+                "coordinateFrameId": "frame",
+                "position": [1, 0, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              }
+            }
+          ]
+        },
+        "entity-2": {
+          "parentEntityId": null,
+          "partRelation": {
+            "source": "manual",
+            "baseRevisionId": "00000000-0000-4000-8000-000000000001",
+            "evidenceRefs": [
+              {
+                "observationId": "observation-2",
+                "revision": 1
+              }
+            ],
+            "reason": "Reviewed explicit source evidence for this part relation."
+          },
+          "lineage": [
+            {
+              "operation": "migrate_scene",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "entityId": "entity-2",
+              "sourceModelTransform": {
+                "coordinateFrameId": "frame",
+                "position": [2, 0, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              }
+            },
+            {
+              "operation": "setPartRelation",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "parentEntityId": null,
+              "partRelation": null
+            },
+            {
+              "operation": "setPartRelation",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "parentEntityId": "entity-1",
+              "partRelation": {
+                "source": "manual",
+                "baseRevisionId": "00000000-0000-4000-8000-000000000001",
+                "evidenceRefs": [
+                  {
+                    "observationId": "observation-2",
+                    "revision": 1
+                  },
+                  {
+                    "observationId": "observation-1",
+                    "revision": 1
+                  }
+                ],
+                "reason": "Reviewed source observations: this separate panel is a physical part of the assembly."
+              }
+            }
+          ]
+        },
+        "entity-4": {
+          "parentEntityId": "entity-1",
+          "partRelation": {
+            "source": "manual",
+            "baseRevisionId": "00000000-0000-4000-8000-000000000001",
+            "evidenceRefs": [
+              {
+                "observationId": "observation-4",
+                "revision": 1
+              },
+              {
+                "observationId": "observation-1",
+                "revision": 1
+              }
+            ],
+            "reason": "Reviewed source observations: this separate panel is a physical part of the assembly."
+          },
+          "lineage": [
+            {
+              "operation": "migrate_scene",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "entityId": "entity-4",
+              "sourceModelTransform": {
+                "coordinateFrameId": "frame",
+                "position": [4, 1, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              }
+            },
+            {
+              "operation": "setPartRelation",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "parentEntityId": null,
+              "partRelation": null
+            }
+          ]
+        },
+        "entity-3": {
+          "parentEntityId": "entity-2",
+          "partRelation": {
+            "source": "manual",
+            "baseRevisionId": "00000000-0000-4000-8000-000000000001",
+            "evidenceRefs": [
+              {
+                "observationId": "observation-3",
+                "revision": 1
+              },
+              {
+                "observationId": "observation-2",
+                "revision": 1
+              }
+            ],
+            "reason": "Reviewed source observations: this separate panel is a physical part of the assembly."
+          },
+          "lineage": [
+            {
+              "operation": "migrate_scene",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "entityId": "entity-3",
+              "sourceModelTransform": {
+                "coordinateFrameId": "frame",
+                "position": [3, 1, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              }
+            },
+            {
+              "operation": "setPartRelation",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "parentEntityId": null,
+              "partRelation": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "empty_parent_detach_last_children",
+      "entityOverrides": {
+        "entity-1": {
+          "activeModelRepresentationId": null
+        }
+      },
+      "operations": [
+        {
+          "type": "setPartRelation",
+          "entityId": "entity-2",
+          "parentEntityId": null,
+          "evidenceRefs": [
+            {
+              "observationId": "observation-2",
+              "revision": 1
+            }
+          ],
+          "reason": "Reviewed explicit source evidence for this part relation."
+        },
+        {
+          "type": "setPartRelation",
+          "entityId": "entity-4",
+          "parentEntityId": null,
+          "evidenceRefs": [
+            {
+              "observationId": "observation-4",
+              "revision": 1
+            }
+          ],
+          "reason": "Reviewed explicit source evidence for this part relation."
+        }
+      ],
+      "expected": {
+        "entity-1": {
+          "matrix": null,
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-1": {
+              "material": {
+                "color": "color-1"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-2": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 2.0, 0.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-2": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-4": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 4.0, 1.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-4": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-3": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 3.0, 1.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-3": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        }
+      },
+      "expectedRelations": {
+        "entity-1": {
+          "parentEntityId": null,
+          "partRelation": null,
+          "lineage": [
+            {
+              "operation": "migrate_scene",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "entityId": "entity-1",
+              "sourceModelTransform": {
+                "coordinateFrameId": "frame",
+                "position": [1, 0, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              }
+            }
+          ]
+        },
+        "entity-2": {
+          "parentEntityId": null,
+          "partRelation": {
+            "source": "manual",
+            "baseRevisionId": "00000000-0000-4000-8000-000000000001",
+            "evidenceRefs": [
+              {
+                "observationId": "observation-2",
+                "revision": 1
+              }
+            ],
+            "reason": "Reviewed explicit source evidence for this part relation."
+          },
+          "lineage": [
+            {
+              "operation": "migrate_scene",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "entityId": "entity-2",
+              "sourceModelTransform": {
+                "coordinateFrameId": "frame",
+                "position": [2, 0, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              }
+            },
+            {
+              "operation": "setPartRelation",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "parentEntityId": null,
+              "partRelation": null
+            },
+            {
+              "operation": "setPartRelation",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "parentEntityId": "entity-1",
+              "partRelation": {
+                "source": "manual",
+                "baseRevisionId": "00000000-0000-4000-8000-000000000001",
+                "evidenceRefs": [
+                  {
+                    "observationId": "observation-2",
+                    "revision": 1
+                  },
+                  {
+                    "observationId": "observation-1",
+                    "revision": 1
+                  }
+                ],
+                "reason": "Reviewed source observations: this separate panel is a physical part of the assembly."
+              }
+            }
+          ]
+        },
+        "entity-4": {
+          "parentEntityId": null,
+          "partRelation": {
+            "source": "manual",
+            "baseRevisionId": "00000000-0000-4000-8000-000000000001",
+            "evidenceRefs": [
+              {
+                "observationId": "observation-4",
+                "revision": 1
+              }
+            ],
+            "reason": "Reviewed explicit source evidence for this part relation."
+          },
+          "lineage": [
+            {
+              "operation": "migrate_scene",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "entityId": "entity-4",
+              "sourceModelTransform": {
+                "coordinateFrameId": "frame",
+                "position": [4, 1, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              }
+            },
+            {
+              "operation": "setPartRelation",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "parentEntityId": null,
+              "partRelation": null
+            },
+            {
+              "operation": "setPartRelation",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "parentEntityId": "entity-1",
+              "partRelation": {
+                "source": "manual",
+                "baseRevisionId": "00000000-0000-4000-8000-000000000001",
+                "evidenceRefs": [
+                  {
+                    "observationId": "observation-4",
+                    "revision": 1
+                  },
+                  {
+                    "observationId": "observation-1",
+                    "revision": 1
+                  }
+                ],
+                "reason": "Reviewed source observations: this separate panel is a physical part of the assembly."
+              }
+            }
+          ]
+        },
+        "entity-3": {
+          "parentEntityId": "entity-2",
+          "partRelation": {
+            "source": "manual",
+            "baseRevisionId": "00000000-0000-4000-8000-000000000001",
+            "evidenceRefs": [
+              {
+                "observationId": "observation-3",
+                "revision": 1
+              },
+              {
+                "observationId": "observation-2",
+                "revision": 1
+              }
+            ],
+            "reason": "Reviewed source observations: this separate panel is a physical part of the assembly."
+          },
+          "lineage": [
+            {
+              "operation": "migrate_scene",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "entityId": "entity-3",
+              "sourceModelTransform": {
+                "coordinateFrameId": "frame",
+                "position": [3, 1, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              }
+            },
+            {
+              "operation": "setPartRelation",
+              "sourceRevisionId": "00000000-0000-4000-8000-000000000001",
+              "parentEntityId": null,
+              "partRelation": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "reject_relation_cycle",
+      "entityOverrides": {},
+      "operations": [
+        {
+          "type": "setPartRelation",
+          "entityId": "entity-1",
+          "parentEntityId": "entity-3",
+          "evidenceRefs": [
+            {
+              "observationId": "observation-1",
+              "revision": 1
+            },
+            {
+              "observationId": "observation-3",
+              "revision": 1
+            }
+          ],
+          "reason": "Reviewed explicit source evidence for this part relation."
+        }
+      ],
+      "errorCode": "part_relation_cycle"
+    },
+    {
+      "name": "reject_relation_stale_evidence",
+      "entityOverrides": {},
+      "operations": [
+        {
+          "type": "setPartRelation",
+          "entityId": "entity-3",
+          "parentEntityId": "entity-1",
+          "evidenceRefs": [
+            {
+              "observationId": "observation-3",
+              "revision": 2
+            },
+            {
+              "observationId": "observation-1",
+              "revision": 1
+            }
+          ],
+          "reason": "Reviewed explicit source evidence for this part relation."
+        }
+      ],
+      "errorCode": "part_observation_revision_mismatch"
+    },
+    {
+      "name": "reject_relation_scope",
+      "entityOverrides": {},
+      "operations": [
+        {
+          "type": "setPartRelation",
+          "entityId": "entity-3",
+          "parentEntityId": "entity-1",
+          "evidenceRefs": [
+            {
+              "observationId": "observation-3",
+              "revision": 1
+            }
+          ],
+          "reason": "Reviewed explicit source evidence for this part relation."
+        }
+      ],
+      "errorCode": "part_relation_evidence_scope"
+    },
+    {
+      "name": "reject_relation_duplicate_evidence",
+      "entityOverrides": {},
+      "operations": [
+        {
+          "type": "setPartRelation",
+          "entityId": "entity-3",
+          "parentEntityId": "entity-1",
+          "evidenceRefs": [
+            {
+              "observationId": "observation-3",
+              "revision": 1
+            },
+            {
+              "observationId": "observation-1",
+              "revision": 1
+            },
+            {
+              "observationId": "observation-1",
+              "revision": 1
+            }
+          ],
+          "reason": "Reviewed explicit source evidence for this part relation."
+        }
+      ],
+      "errorCode": "part_relation_evidence_invalid"
+    },
+    {
+      "name": "reject_relation_frame",
+      "entityOverrides": {
+        "entity-3": {
+          "currentModelTransform": {
+            "coordinateFrameId": "other",
+            "position": [1, 0, 1],
+            "quaternion": [0, 0, 0, 1],
+            "scale": [1, 1, 1]
+          }
+        }
+      },
+      "operations": [
+        {
+          "type": "setPartRelation",
+          "entityId": "entity-3",
+          "parentEntityId": "entity-1",
+          "evidenceRefs": [
+            {
+              "observationId": "observation-3",
+              "revision": 1
+            },
+            {
+              "observationId": "observation-1",
+              "revision": 1
+            }
+          ],
+          "reason": "Reviewed explicit source evidence for this part relation."
+        }
+      ],
+      "errorCode": "part_coordinate_frame_mismatch"
+    },
+    {
+      "name": "reject_parent_model_frame_switch",
+      "entityOverrides": {
+        "entity-1": {
+          "representations": [
+            {
+              "id": "model-1",
+              "kind": "primitive",
+              "assetId": null,
+              "coordinateFrameId": "frame",
+              "transform": {
+                "coordinateFrameId": "frame",
+                "position": [1, 0, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              },
+              "primitive": {
+                "kind": "box",
+                "dimensions": [1, 2, 3]
+              },
+              "placementState": "confirmed",
+              "sourceRefs": [
+                {
+                  "observationId": "observation-1"
+                }
+              ],
+              "material": {
+                "color": "color-1"
+              }
+            },
+            {
+              "id": "model-1-alternate",
+              "kind": "primitive",
+              "assetId": null,
+              "coordinateFrameId": "other",
+              "transform": {
+                "coordinateFrameId": "other",
+                "position": [1, 0, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              },
+              "primitive": {
+                "kind": "box",
+                "dimensions": [1, 2, 3]
+              },
+              "placementState": "confirmed",
+              "sourceRefs": [
+                {
+                  "observationId": "observation-1"
+                }
+              ],
+              "material": {
+                "color": "color-1"
+              }
+            }
+          ]
+        },
+        "entity-2": {
+          "representations": [
+            {
+              "id": "model-2",
+              "kind": "primitive",
+              "assetId": null,
+              "coordinateFrameId": "frame",
+              "transform": {
+                "coordinateFrameId": "frame",
+                "position": [2, 0, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              },
+              "primitive": {
+                "kind": "box",
+                "dimensions": [1, 2, 3]
+              },
+              "placementState": "confirmed",
+              "sourceRefs": [
+                {
+                  "observationId": "observation-2"
+                }
+              ],
+              "material": {
+                "color": "color-2"
+              }
+            },
+            {
+              "id": "model-2-alternate",
+              "kind": "primitive",
+              "assetId": null,
+              "coordinateFrameId": "other",
+              "transform": {
+                "coordinateFrameId": "other",
+                "position": [2, 0, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              },
+              "primitive": {
+                "kind": "box",
+                "dimensions": [1, 2, 3]
+              },
+              "placementState": "confirmed",
+              "sourceRefs": [
+                {
+                  "observationId": "observation-2"
+                }
+              ],
+              "material": {
+                "color": "color-2"
+              }
+            }
+          ]
+        },
+        "entity-4": {
+          "representations": [
+            {
+              "id": "model-4",
+              "kind": "primitive",
+              "assetId": null,
+              "coordinateFrameId": "frame",
+              "transform": {
+                "coordinateFrameId": "frame",
+                "position": [4, 1, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              },
+              "primitive": {
+                "kind": "box",
+                "dimensions": [1, 2, 3]
+              },
+              "placementState": "confirmed",
+              "sourceRefs": [
+                {
+                  "observationId": "observation-4"
+                }
+              ],
+              "material": {
+                "color": "color-2"
+              }
+            },
+            {
+              "id": "model-4-alternate",
+              "kind": "primitive",
+              "assetId": null,
+              "coordinateFrameId": "other",
+              "transform": {
+                "coordinateFrameId": "other",
+                "position": [4, 1, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              },
+              "primitive": {
+                "kind": "box",
+                "dimensions": [1, 2, 3]
+              },
+              "placementState": "confirmed",
+              "sourceRefs": [
+                {
+                  "observationId": "observation-4"
+                }
+              ],
+              "material": {
+                "color": "color-2"
+              }
+            }
+          ]
+        },
+        "entity-3": {
+          "representations": [
+            {
+              "id": "model-3",
+              "kind": "primitive",
+              "assetId": null,
+              "coordinateFrameId": "frame",
+              "transform": {
+                "coordinateFrameId": "frame",
+                "position": [3, 1, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              },
+              "primitive": {
+                "kind": "box",
+                "dimensions": [1, 2, 3]
+              },
+              "placementState": "confirmed",
+              "sourceRefs": [
+                {
+                  "observationId": "observation-3"
+                }
+              ],
+              "material": {
+                "color": "color-2"
+              }
+            },
+            {
+              "id": "model-3-alternate",
+              "kind": "primitive",
+              "assetId": null,
+              "coordinateFrameId": "other",
+              "transform": {
+                "coordinateFrameId": "other",
+                "position": [3, 1, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              },
+              "primitive": {
+                "kind": "box",
+                "dimensions": [1, 2, 3]
+              },
+              "placementState": "confirmed",
+              "sourceRefs": [
+                {
+                  "observationId": "observation-3"
+                }
+              ],
+              "material": {
+                "color": "color-2"
+              }
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "type": "setActiveModelRepresentation",
+          "entityId": "entity-1",
+          "representationId": "model-1-alternate"
+        }
+      ],
+      "errorCode": "part_coordinate_frame_mismatch"
+    },
+    {
+      "name": "switch_whole_family_model_frame_in_one_batch",
+      "entityOverrides": {
+        "entity-1": {
+          "representations": [
+            {
+              "id": "model-1",
+              "kind": "primitive",
+              "assetId": null,
+              "coordinateFrameId": "frame",
+              "transform": {
+                "coordinateFrameId": "frame",
+                "position": [1, 0, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              },
+              "primitive": {
+                "kind": "box",
+                "dimensions": [1, 2, 3]
+              },
+              "placementState": "confirmed",
+              "sourceRefs": [
+                {
+                  "observationId": "observation-1"
+                }
+              ],
+              "material": {
+                "color": "color-1"
+              }
+            },
+            {
+              "id": "model-1-alternate",
+              "kind": "primitive",
+              "assetId": null,
+              "coordinateFrameId": "other",
+              "transform": {
+                "coordinateFrameId": "other",
+                "position": [1, 0, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              },
+              "primitive": {
+                "kind": "box",
+                "dimensions": [1, 2, 3]
+              },
+              "placementState": "confirmed",
+              "sourceRefs": [
+                {
+                  "observationId": "observation-1"
+                }
+              ],
+              "material": {
+                "color": "color-1"
+              }
+            }
+          ]
+        },
+        "entity-2": {
+          "representations": [
+            {
+              "id": "model-2",
+              "kind": "primitive",
+              "assetId": null,
+              "coordinateFrameId": "frame",
+              "transform": {
+                "coordinateFrameId": "frame",
+                "position": [2, 0, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              },
+              "primitive": {
+                "kind": "box",
+                "dimensions": [1, 2, 3]
+              },
+              "placementState": "confirmed",
+              "sourceRefs": [
+                {
+                  "observationId": "observation-2"
+                }
+              ],
+              "material": {
+                "color": "color-2"
+              }
+            },
+            {
+              "id": "model-2-alternate",
+              "kind": "primitive",
+              "assetId": null,
+              "coordinateFrameId": "other",
+              "transform": {
+                "coordinateFrameId": "other",
+                "position": [2, 0, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              },
+              "primitive": {
+                "kind": "box",
+                "dimensions": [1, 2, 3]
+              },
+              "placementState": "confirmed",
+              "sourceRefs": [
+                {
+                  "observationId": "observation-2"
+                }
+              ],
+              "material": {
+                "color": "color-2"
+              }
+            }
+          ]
+        },
+        "entity-4": {
+          "representations": [
+            {
+              "id": "model-4",
+              "kind": "primitive",
+              "assetId": null,
+              "coordinateFrameId": "frame",
+              "transform": {
+                "coordinateFrameId": "frame",
+                "position": [4, 1, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              },
+              "primitive": {
+                "kind": "box",
+                "dimensions": [1, 2, 3]
+              },
+              "placementState": "confirmed",
+              "sourceRefs": [
+                {
+                  "observationId": "observation-4"
+                }
+              ],
+              "material": {
+                "color": "color-2"
+              }
+            },
+            {
+              "id": "model-4-alternate",
+              "kind": "primitive",
+              "assetId": null,
+              "coordinateFrameId": "other",
+              "transform": {
+                "coordinateFrameId": "other",
+                "position": [4, 1, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              },
+              "primitive": {
+                "kind": "box",
+                "dimensions": [1, 2, 3]
+              },
+              "placementState": "confirmed",
+              "sourceRefs": [
+                {
+                  "observationId": "observation-4"
+                }
+              ],
+              "material": {
+                "color": "color-2"
+              }
+            }
+          ]
+        },
+        "entity-3": {
+          "representations": [
+            {
+              "id": "model-3",
+              "kind": "primitive",
+              "assetId": null,
+              "coordinateFrameId": "frame",
+              "transform": {
+                "coordinateFrameId": "frame",
+                "position": [3, 1, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              },
+              "primitive": {
+                "kind": "box",
+                "dimensions": [1, 2, 3]
+              },
+              "placementState": "confirmed",
+              "sourceRefs": [
+                {
+                  "observationId": "observation-3"
+                }
+              ],
+              "material": {
+                "color": "color-2"
+              }
+            },
+            {
+              "id": "model-3-alternate",
+              "kind": "primitive",
+              "assetId": null,
+              "coordinateFrameId": "other",
+              "transform": {
+                "coordinateFrameId": "other",
+                "position": [3, 1, 1],
+                "quaternion": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              },
+              "primitive": {
+                "kind": "box",
+                "dimensions": [1, 2, 3]
+              },
+              "placementState": "confirmed",
+              "sourceRefs": [
+                {
+                  "observationId": "observation-3"
+                }
+              ],
+              "material": {
+                "color": "color-2"
+              }
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "type": "setActiveModelRepresentation",
+          "entityId": "entity-1",
+          "representationId": "model-1-alternate"
+        },
+        {
+          "type": "setActiveModelRepresentation",
+          "entityId": "entity-2",
+          "representationId": "model-2-alternate"
+        },
+        {
+          "type": "setActiveModelRepresentation",
+          "entityId": "entity-4",
+          "representationId": "model-4-alternate"
+        },
+        {
+          "type": "setActiveModelRepresentation",
+          "entityId": "entity-3",
+          "representationId": "model-3-alternate"
+        }
+      ],
+      "expected": {
+        "entity-1": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-1": {
+              "material": {
+                "color": "color-1"
+              },
+              "placementState": "confirmed"
+            },
+            "model-1-alternate": {
+              "material": {
+                "color": "color-1"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-2": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 2.0, 0.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-2": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "confirmed"
+            },
+            "model-2-alternate": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-4": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 4.0, 1.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-4": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "confirmed"
+            },
+            "model-4-alternate": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        },
+        "entity-3": {
+          "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 3.0, 1.0, 1.0, 1.0],
+          "visible": null,
+          "label": "Same appearance",
+          "representations": {
+            "model-3": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "confirmed"
+            },
+            "model-3-alternate": {
+              "material": {
+                "color": "color-2"
+              },
+              "placementState": "confirmed"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "reject_clearing_leaf_part_model",
+      "entityOverrides": {},
+      "operations": [
+        {
+          "type": "setActiveModelRepresentation",
+          "entityId": "entity-4",
+          "representationId": null
+        }
+      ],
+      "errorCode": "part_coordinate_frame_mismatch"
+    },
+    {
+      "name": "reject_leaf_transform_frame_change",
+      "entityOverrides": {},
+      "operations": [
+        {
+          "type": "setTransform",
+          "entityId": "entity-4",
+          "transform": {
+            "coordinateFrameId": "other",
+            "position": [4, 1, 1],
+            "quaternion": [0, 0, 0, 1],
+            "scale": [1, 1, 1]
+          }
+        }
+      ],
+      "errorCode": "part_coordinate_frame_mismatch"
+    }
+  ]
+}

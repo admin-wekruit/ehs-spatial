@@ -81,6 +81,9 @@ def apply_operations(source: dict, operations: list[dict], *, base_revision_id: 
         elif kind in ("recordIdentityDecision", "mergeEntities", "splitEntity", "setActiveModelRepresentation", "selectMeasurementEvidence"):
             from .identity import apply_identity_operation
             apply_identity_operation(document, operation, base_revision_id=base_revision_id)
+        elif kind == 'setPartRelation':
+            from .identity import set_part_relation
+            set_part_relation(document, operation, base_revision_id=base_revision_id)
         elif kind == 'confirmPlacement':
             item = entity(operation.get('entityId'))
             active_id = item.get('activeModelRepresentationId')
@@ -101,18 +104,33 @@ def apply_operations(source: dict, operations: list[dict], *, base_revision_id: 
             if kind == "setTransform":
                 value = operation.get("transform", {k: operation[k] for k in ("coordinateFrameId", "position", "quaternion", "scale") if k in operation})
                 validate_transform(value, frames)
-                if document["schemaVersion"] == 2 and item["activeModelRepresentationId"] is None:
+                from .identity import model_family
+                family = model_family(document, item['id'])
+                if document["schemaVersion"] == 2 and item["activeModelRepresentationId"] is None and len(family) == 1:
                     raise PlatformError("active_model_required", 422)
-                previous_transform = item.get('currentModelTransform')
-                item["currentModelTransform"] = deepcopy(value)
-                for representation in item.get("representations", []):
-                    if representation.get("kind") in ("generated_mesh", "primitive") and (document["schemaVersion"] == 1 or representation["id"] == item["activeModelRepresentationId"]):
-                        changed = value != (previous_transform or representation.get('transform'))
-                        representation["transform"] = deepcopy(value)
-                        representation["coordinateFrameId"] = value["coordinateFrameId"]
-                        if changed:
-                            representation.update(placementState='unconfirmed', placementReason='requires_alignment_confirmation')
-                            representation.pop('placementSource', None)
+                transforms = [value]
+                if len(family) > 1:
+                    import numpy as np
+                    from .spatial import matrix_to_transform, transform_matrix
+                    old = item.get('currentModelTransform')
+                    if old is None or old['coordinateFrameId'] != value['coordinateFrameId']:
+                        raise PlatformError('part_coordinate_frame_mismatch', 422)
+                    delta = transform_matrix(value) @ np.linalg.inv(transform_matrix(old))
+                    for member in family[1:]:
+                        pose = member.get('currentModelTransform')
+                        if pose is None or pose['coordinateFrameId'] != old['coordinateFrameId']:
+                            raise PlatformError('part_coordinate_frame_mismatch', 422)
+                        transforms.append(deepcopy(pose) if value == old else matrix_to_transform(delta @ transform_matrix(pose), pose['coordinateFrameId']))
+                for member, pose in zip(family, transforms, strict=True):
+                    previous_transform = member.get('currentModelTransform')
+                    member['currentModelTransform'] = deepcopy(pose)
+                    for representation in member.get('representations', []):
+                        if representation.get('kind') in ('generated_mesh', 'primitive') and (document['schemaVersion'] == 1 or representation['id'] == member['activeModelRepresentationId']):
+                            changed = pose != (previous_transform or representation.get('transform'))
+                            representation.update(transform=deepcopy(pose), coordinateFrameId=pose['coordinateFrameId'])
+                            if changed:
+                                representation.update(placementState='unconfirmed', placementReason='requires_alignment_confirmation')
+                                representation.pop('placementSource', None)
             elif kind == "setLabel":
                 value = operation.get("label")
                 if not isinstance(value, str) or not value.strip() or len(value) > 500:
@@ -121,15 +139,20 @@ def apply_operations(source: dict, operations: list[dict], *, base_revision_id: 
             elif kind == "setVisibility":
                 if type(operation.get("visible")) is not bool:
                     raise PlatformError("invalid_visibility")
-                item["visible"] = operation["visible"]
+                from .identity import model_family
+                for member in model_family(document, item['id']):
+                    member['visible'] = operation['visible']
             elif kind == "setMaterial":
                 if not isinstance(operation.get("material"), dict):
                     raise PlatformError("invalid_material")
                 if document["schemaVersion"] == 2:
-                    active = next((r for r in item["representations"] if r["id"] == item["activeModelRepresentationId"]), None)
-                    if active is None:
+                    from .identity import model_family
+                    family = model_family(document, item['id'])
+                    active_models = [r for member in family for r in member.get('representations', []) if r['id'] == member['activeModelRepresentationId']]
+                    if not active_models:
                         raise PlatformError("active_model_required", 422)
-                    active["material"] = deepcopy(operation["material"])
+                    for active in active_models:
+                        active['material'] = deepcopy(operation['material'])
                 else:
                     item["material"] = deepcopy(operation["material"])
             else:
@@ -177,7 +200,12 @@ def apply_operations(source: dict, operations: list[dict], *, base_revision_id: 
             document["entities"].append(deepcopy(value))
         elif kind == "removeEntity":
             item = entity(operation.get("entityId"))
+            if any(e.get('parentEntityId') == item['id'] for e in document['entities']):
+                raise PlatformError('part_parent_has_children', 422)
             document["entities"].remove(item)
+            parent = next((e for e in document['entities'] if e['id'] == item.get('parentEntityId')), None)
+            if parent is not None and parent.get('activeModelRepresentationId') is None and not any(e.get('parentEntityId') == parent['id'] for e in document['entities']):
+                parent['currentModelTransform'] = None
         elif kind == "addObservation":
             item = entity(operation.get("entityId"))
             observation = operation.get("observation")

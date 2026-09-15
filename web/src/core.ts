@@ -2,6 +2,7 @@ import {
   boundsCorners,
   cross,
   dot,
+  matmul,
   point,
   transformMatrix,
   unit,
@@ -18,6 +19,7 @@ import type {
   Transform,
   Vec3,
 } from "./types.ts";
+import { modelFamily } from "./scene-semantics.ts";
 
 export function groupPublications(items: PublicationSummary[]) {
   const groups = new Map<string, PublicationSummary[]>();
@@ -81,6 +83,18 @@ export function currentCameras(document: SceneDocument) {
 export function activeModel(entity: Entity) {
   return (entity.representations || []).find(rep => rep.id === entity.activeModelRepresentationId &&
     ["generated_mesh", "primitive"].includes(rep.kind)) || null;
+}
+export function isPartitionSource(entity: Entity, representationId: string) {
+  return (entity.lineage || []).some(raw => {
+    const event = jsonObject(raw);return event?.operation === "partition_model_parts" && event.sourceRepresentationId === representationId;
+  });
+}
+export function modelFamilySignature(document: SceneDocument, entityId: string) {
+  return modelFamily(document, entityId).map(entity => {
+    const rep = activeModel(entity);
+    return [entity.id, entity.parentEntityId, entity.visible, entity.activeModelRepresentationId,
+      entity.currentModelTransform, rep, document.assets.find(asset => asset.id === rep?.assetId)];
+  });
 }
 export function observationOwner(document: SceneDocument, observationId: string) {
   const owners = document.entities.filter(entity => entity.observationRefs?.includes(observationId));
@@ -188,8 +202,9 @@ export function originalPixel(
     ? null
     : ([x, y] as [number, number]);
 }
-export function editableTransform(entity: Entity): Transform | null {
+export function editableTransform(entity: Entity, document?: SceneDocument): Transform | null {
   const model = activeModel(entity);
+  if (!model && entity.currentModelTransform && document?.entities.some(child => child.parentEntityId === entity.id)) return entity.currentModelTransform;
   return model && model.sourceValidity !== "stale" && (model.placementState === "confirmed" || ["requires_alignment_confirmation", "imported_proposal"].includes(model.placementReason || ""))
     ? entity.currentModelTransform || model.transform : null;
 }
@@ -216,9 +231,43 @@ export function quaternionEuler([x, y, z, w]: number[]): Vec3 {
     Math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)),
   ].map((a) => (a * 180) / Math.PI) as Vec3;
 }
+/** Apply a world-space assembly delta while retaining absolute part poses. */
+export function modelFamilyTransforms(document: SceneDocument, entityId: string, value: Transform) {
+  const family = modelFamily(document, entityId), target = family[0];
+  if (!target) throw Error("entity_not_found");
+  if (document.schemaVersion === 2 && !activeModel(target) && family.length === 1) throw Error("active_model_required");
+  if (family.length === 1) return [{ entity: target, transform: value }];
+  const old = target.currentModelTransform;
+  if (!old || old.coordinateFrameId !== value.coordinateFrameId) throw Error("part_coordinate_frame_mismatch");
+  const matrix = transformMatrix(old), inverse = Array(16).fill(0);inverse[15] = 1;
+  for (let c = 0; c < 3; c++) for (let r = 0; r < 3; r++) inverse[c * 4 + r] = matrix[r * 4 + c] / (old.scale[r] ** 2);
+  for (let r = 0; r < 3; r++) inverse[12 + r] = -[0, 1, 2].reduce((sum, k) => sum + inverse[k * 4 + r] * old.position[k], 0);
+  const delta = matmul(transformMatrix(value), inverse);
+  return family.map((entity, index) => {
+    if (!index) return { entity, transform: value };
+    const pose = entity.currentModelTransform;
+    if (!pose || pose.coordinateFrameId !== old.coordinateFrameId) throw Error("part_coordinate_frame_mismatch");
+    if (sameJSON(old, value)) return { entity, transform: pose };
+    const m = matmul(delta, transformMatrix(pose)), scales = [0, 1, 2].map(c => Math.hypot(m[c * 4], m[c * 4 + 1], m[c * 4 + 2]));
+    if (scales.some(s => !Number.isFinite(s) || s <= 0)) throw Error("invalid_transform_scale");
+    const columns = scales.map((s, c) => [0, 1, 2].map(r => m[c * 4 + r] / s));
+    if (columns.some((a, i) => columns.some((b, j) => Math.abs(dot(a, b) - (i === j ? 1 : 0)) > 1e-6)) || dot(cross(columns[0], columns[1]), columns[2]) < .999999) throw Error("transform_shear_or_reflection");
+    const r = (i: number, j: number) => columns[j][i], trace = r(0, 0) + r(1, 1) + r(2, 2), q = [0, 0, 0, 0];
+    if (trace > 0) {
+      const s = Math.sqrt(trace + 1) * 2;q[3] = s / 4;q[0] = (r(2, 1) - r(1, 2)) / s;q[1] = (r(0, 2) - r(2, 0)) / s;q[2] = (r(1, 0) - r(0, 1)) / s;
+    } else {
+      const i = [0, 1, 2].reduce((best, candidate) => r(candidate, candidate) > r(best, best) ? candidate : best, 0), j = (i + 1) % 3, k = (i + 2) % 3, s = Math.sqrt(1 + r(i, i) - r(j, j) - r(k, k)) * 2;
+      q[i] = s / 4;q[3] = (r(k, j) - r(j, k)) / s;q[j] = (r(j, i) + r(i, j)) / s;q[k] = (r(k, i) + r(i, k)) / s;
+    }
+    const transform: Transform = { coordinateFrameId: pose.coordinateFrameId, position: [m[12], m[13], m[14]], quaternion: q.map(v => v / Math.hypot(...q)) as Transform["quaternion"], scale: scales as Vec3 };
+    if (transformMatrix(transform).some((v, i) => Math.abs(v - m[i]) > 1e-6 + 1e-5 * Math.abs(m[i]))) throw Error("transform_roundtrip_failed");
+    return { entity, transform };
+  });
+}
 export function previewOperations(
   document: SceneDocument,
   operations: Operation[],
+  baseRevisionId?: string,
 ): SceneDocument {
   const next = structuredClone(document);
   function transformValue(raw: unknown): Transform {
@@ -231,22 +280,49 @@ export function previewOperations(
   }
   for (const op of operations) {
     const entity = next.entities.find((e) => e.id === op.entityId);
-    if (op.type === "setTransform" && entity) {
-      if (next.schemaVersion === 2 && !activeModel(entity)) throw Error("active_model_required");
+    if (op.type === "setPartRelation") {
+      if (next.schemaVersion !== 2) throw Error("parts_require_scene_v2");
+      const evidence = Array.isArray(op.evidenceRefs) ? op.evidenceRefs.map(jsonObject) : [];
+      if ((op.parentEntityId !== null && typeof op.parentEntityId !== "string") || typeof op.reason !== "string" || !op.reason.trim() || op.reason.length > 8000 || !evidence.length ||
+        evidence.some(ref => !ref || typeof ref.observationId !== "string" || !ref.observationId || !Number.isInteger(ref.revision) || Number(ref.revision) < 1)) throw Error("part_relation_evidence_required");
+      if (!baseRevisionId) throw Error("part_base_revision_required");
+      if (!entity) throw Error("entity_not_found");
+      const parent = op.parentEntityId === null ? null : next.entities.find(item => item.id === op.parentEntityId);
+      if (op.parentEntityId !== null && !parent) throw Error("part_parent_not_found");
+      const refs = evidence as { observationId: string; revision: number }[], ids = new Set(refs.map(ref => ref.observationId));
+      if (refs.some(ref => next.observations.find(observation => observation.id === ref.observationId)?.revision !== ref.revision)) throw Error("part_observation_revision_mismatch");
+      if (!entity.observationRefs?.some(id => ids.has(id)) || parent && !parent.observationRefs?.some(id => ids.has(id))) throw Error("part_relation_evidence_scope");
+      if (ids.size !== refs.length) throw Error("part_relation_evidence_invalid");
+      if (parent && (!entity.currentModelTransform || !parent.currentModelTransform || entity.currentModelTransform.coordinateFrameId !== parent.currentModelTransform.coordinateFrameId)) throw Error("part_coordinate_frame_mismatch");
+      const seen = new Set([entity.id]);let ancestor = parent;
+      while (ancestor) {
+        if (seen.has(ancestor.id)) throw Error("part_relation_cycle");seen.add(ancestor.id);
+        const parentId = ancestor.parentEntityId;ancestor = parentId ? next.entities.find(item => item.id === parentId) : null;
+        if (parentId && !ancestor) throw Error("part_parent_not_found");
+      }
+      const oldParent = next.entities.find(item => item.id === entity.parentEntityId);
+      (entity.lineage ||= []).push({ operation: "setPartRelation", sourceRevisionId: baseRevisionId, parentEntityId: entity.parentEntityId || null, partRelation: structuredClone(entity.partRelation || null) });
+      entity.parentEntityId = op.parentEntityId as string | null;
+      entity.partRelation = { source: "manual", baseRevisionId, evidenceRefs: structuredClone(refs), reason: op.reason };
+      if (oldParent && !oldParent.activeModelRepresentationId && !next.entities.some(item => item.parentEntityId === oldParent.id)) oldParent.currentModelTransform = null;
+    } else if (op.type === "setTransform" && entity) {
       const value = transformValue(op.transform || {
           coordinateFrameId: op.coordinateFrameId,
           position: op.position,
           quaternion: op.quaternion,
           scale: op.scale,
-        }), previous = entity.currentModelTransform;
-      entity.currentModelTransform = value;
-      (entity.representations || [])
-        .filter(r => ["generated_mesh", "primitive"].includes(r.kind) && (next.schemaVersion === 1 || r.id === entity.activeModelRepresentationId))
-        .forEach(r => {
-          const changed = !sameJSON(value, previous || r.transform);
-          r.transform = structuredClone(value); r.coordinateFrameId = value.coordinateFrameId;
-          if (changed) { r.placementState = "unconfirmed"; r.placementReason = "requires_alignment_confirmation"; delete r.placementSource; }
         });
+      for (const { entity: member, transform } of modelFamilyTransforms(next, entity.id, value)) {
+        const previous = member.currentModelTransform;
+        member.currentModelTransform = structuredClone(transform);
+        (member.representations || [])
+          .filter(r => ["generated_mesh", "primitive"].includes(r.kind) && (next.schemaVersion === 1 || r.id === member.activeModelRepresentationId))
+          .forEach(r => {
+            const changed = !sameJSON(transform, previous || r.transform);
+            r.transform = structuredClone(transform); r.coordinateFrameId = transform.coordinateFrameId;
+            if (changed) { r.placementState = "unconfirmed"; r.placementReason = "requires_alignment_confirmation"; delete r.placementSource; }
+          });
+      }
     } else if (op.type === "confirmPlacement" && entity) {
       if (!entity.activeModelRepresentationId || op.representationId !== entity.activeModelRepresentationId) throw Error("active_model_selection_required");
       const rep = activeModel(entity);
@@ -254,15 +330,30 @@ export function previewOperations(
       if (rep.placementState !== "confirmed" && !["imported_proposal", "requires_alignment_confirmation"].includes(rep.placementReason || "")) throw Error("model_placement_required");
       transformValue(entity.currentModelTransform || rep.transform);
       // Only the saved server response supplies manual placement confirmation.
-    } else if (op.type === "setVisibility" && entity)
-      entity.visible = op.visible as boolean;
+    } else if (op.type === "setVisibility" && entity) {
+      if (typeof op.visible !== "boolean") throw Error("invalid_visibility");
+      modelFamily(next, entity.id).forEach(member => { member.visible = op.visible as boolean; });
+    }
     else if (op.type === "setLabel" && entity)
       entity.label = op.label as string;
-    else if (op.type === "setMaterial" && entity && activeModel(entity))
-      activeModel(entity)!.material = op.material as Record<string, unknown>;
+    else if (op.type === "setMaterial" && entity) {
+      const material = jsonObject(op.material);
+      if (!material) throw Error("invalid_material");
+      if (next.schemaVersion === 1) entity.material = structuredClone(material);
+      else {
+        const models = modelFamily(next, entity.id).flatMap(member => activeModel(member) ? [activeModel(member)!] : []);
+        if (!models.length) throw Error("active_model_required");
+        models.forEach(rep => { rep.material = structuredClone(material); });
+      }
+    }
     else if (op.type === "setActiveModelRepresentation" && entity) {
-      entity.activeModelRepresentationId = typeof op.representationId === "string" ? op.representationId : null;
-      entity.currentModelTransform = activeModel(entity)?.transform || null;
+      if (!("representationId" in op)) throw Error("active_model_representation_required");
+      const rep = (entity.representations || []).find(rep => rep.id === op.representationId && ["generated_mesh", "primitive"].includes(rep.kind));
+      if (op.representationId !== null && !rep) throw Error("active_model_representation_invalid");
+      if (rep && isPartitionSource(entity, rep.id)) throw Error("part_source_model_inactive");
+      const assemblyPose = next.entities.some(child => child.parentEntityId === entity.id) ? entity.currentModelTransform : null;
+      entity.activeModelRepresentationId = op.representationId as string | null;
+      entity.currentModelTransform = structuredClone(rep?.transform || assemblyPose || null);
     }
     else if (op.type === "selectMeasurementEvidence" && entity) {
       const key = String(op.measurementKey), selectedId = typeof op.measurementEvidenceId === "string" ? op.measurementEvidenceId : null;
@@ -320,6 +411,12 @@ export function previewOperations(
     else if (op.type === "removeEntity")
       next.entities = next.entities.filter((e) => e.id !== op.entityId);
   }
+  // Match the server's final-batch check: a whole family may switch frames together.
+  for (const entity of next.entities) if (entity.parentEntityId) {
+    const parent = next.entities.find(parent => parent.id === entity.parentEntityId);
+    if (!parent) throw Error("part_parent_not_found");
+    if (!entity.currentModelTransform || !parent.currentModelTransform || entity.currentModelTransform.coordinateFrameId !== parent.currentModelTransform.coordinateFrameId) throw Error("part_coordinate_frame_mismatch");
+  }
   return next;
 }
 export function sourceDimensions(entity: Entity) {
@@ -340,7 +437,7 @@ export function sourceScale(document: SceneDocument, entity: Entity) {
 }
 
 export function modelScale(document: SceneDocument, entity: Entity) {
-  return document.coordinateFrames.find(frame => frame.id === editableTransform(entity)?.coordinateFrameId)?.scale || null;
+  return document.coordinateFrames.find(frame => frame.id === editableTransform(entity, document)?.coordinateFrameId)?.scale || null;
 }
 
 export function modelGeometry(entity: Entity) {
@@ -469,8 +566,24 @@ export function entityGeometryForLayer(entity: Entity, { layer, frameId, showCan
       geometryKind: "observed_measurement" as const, representationIds: [] as string[]};
   return null;
 }
+export function modelFamilyGeometry(document: SceneDocument, entityId: string, options: GeometryOptions) {
+  const family = modelFamily(document, entityId), target = family[0];
+  if (!target || target.visible === false || target.sourceContext) return null;
+  const geometries = family.flatMap(entity => {
+    const geometry = entityGeometryForLayer(entity, { ...options, layer: "model" });
+    return geometry ? [geometry] : [];
+  });
+  if (!geometries.length) return null;
+  if (family.length === 1) return geometries[0];
+  const points = geometries.flatMap(geometry => geometry.corners);
+  // Part transforms already locate their vertices in the native scene frame.
+  return { ...geometries[0], transform: target.currentModelTransform || geometries[0].transform,
+    corners: boundsCorners({ min: [0, 1, 2].map(k => Math.min(...points.map(p => p[k]))),
+      max: [0, 1, 2].map(k => Math.max(...points.map(p => p[k]))) }),
+    representationIds: geometries.flatMap(geometry => geometry.representationIds) };
+}
 export function modelTilt(document: SceneDocument, entity: Entity) {
-  const transform = editableTransform(entity);
+  const transform = editableTransform(entity, document);
   if (!transform) return null;
   const normal = document.coordinateFrames.find(
     (f) => f.id === transform.coordinateFrameId,

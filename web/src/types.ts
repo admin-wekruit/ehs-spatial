@@ -37,6 +37,15 @@ export type Annotation = components["schemas"]["Annotation"];
 export type CreateProjectRequest = components["schemas"]["CreateProject"];
 export type CreateBranchRequest = components["schemas"]["CreateBranch"];
 export type Vec3 = Transform["position"];
+export type RepresentationLoadState = {
+  entityId: string;
+  representationId: string;
+  assetId: string | null;
+  state: "loading" | "ready" | "error";
+  vertexCount: number;
+  triangleCount: number;
+  errorCode: string | null;
+};
 // The selection is application state; it is not an API response.
 export type Selection = {
   projectId: string;

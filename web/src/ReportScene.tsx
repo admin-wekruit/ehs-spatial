@@ -3,8 +3,8 @@ import { SpatialView } from "./App";
 import { PhotoView } from "./PhotoView";
 import { CadView } from "./CadView";
 import { useI18n } from "./i18n";
-import { cameraForImage, activeModel, observationsFor, entityGeometryForLayer, jsonObject, planShapes, cadReferenceImage, scenePlanOptions, sourceDimensions, sourceScale, type GeometryOptions, type PlanOptions } from "./core";
-import { entityEvidenceStatus, identityCounts, isReferenceSurface } from "./scene-semantics";
+import { cameraForImage, activeModel, modelFamilyGeometry, modelFamilySignature, observationsFor, entityGeometryForLayer, jsonObject, planShapes, cadReferenceImage, scenePlanOptions, sourceDimensions, sourceScale, type GeometryOptions, type PlanOptions } from "./core";
+import { entityEvidenceStatus, identityCounts, isReferenceSurface, modelFamily } from "./scene-semantics";
 import {
   add,
   cameraMatrix,
@@ -15,7 +15,7 @@ import {
   unit,
   type Vec,
 } from "./viewer/native-math";
-import type { Camera, Entity, Revision, Selection, SceneDocument } from "./types";
+import type { Camera, Entity, Revision, Selection, SceneDocument, RepresentationLoadState } from "./types";
 import "./report-scene.css";
 
 type Pane = "photo" | "spatial" | "cad" | "plan";
@@ -233,7 +233,9 @@ export function ReportScene({
     [fullscreenError, setFullscreenError] = useState(false),
     [isFullscreen, setIsFullscreen] = useState(false),
     [previewMode, setPreviewMode] = useState<"free" | "front" | "side" | "top">("free"),
-    [modelPreview, setModelPreview] = useState<{ key: string; image: string } | null>(null);
+    [modelPreview, setModelPreview] = useState<{ key: string; image: string } | null>(null),
+    [modelLoads, setModelLoads] = useState<{ revisionId: string; states: RepresentationLoadState[] } | null>(null),
+    [expandedEntities, setExpandedEntities] = useState<Set<string>>(() => new Set());
   const document = revision.document,
     selected = document.entities.find((entity) => entity.id === selection.entityId);
   const camera = cameraForImage(document, imageId);
@@ -254,8 +256,26 @@ export function ReportScene({
   const objects = document.entities.filter((entity) => !entity.sourceContext);
   const modelObjects = objects.filter(entity => entityGeometryForLayer(entity, { ...geometryOptions, layer: "model" }));
   const modelCandidates = modelObjects.filter(entity => activeModel(entity)?.placementState !== "confirmed").length;
-  const selectedModel = selected && entityGeometryForLayer(selected, { ...geometryOptions, layer: "model" });
-  const previewKey = JSON.stringify([revision.id, selected?.id, selected?.activeModelRepresentationId, selected?.currentModelTransform, geometryOptions.frameId, previewMode]);
+  const modelFrameMismatch = (entity: Entity) => {
+    const rep = activeModel(entity);
+    return !!rep && rep.sourceValidity !== "stale" && (rep.coordinateFrameId !== geometryOptions.frameId ||
+      (entity.currentModelTransform || rep.transform).coordinateFrameId !== geometryOptions.frameId);
+  };
+  const modelStates = modelLoads?.revisionId === revision.id ? modelLoads.states : [];
+  const modelState = (entity: Entity) => {
+    const rep = activeModel(entity);
+    return modelStates.find(state => state.entityId === entity.id && state.representationId === rep?.id && state.assetId === (rep?.assetId || null));
+  };
+  const readyModels = modelObjects.filter(entity => modelState(entity)?.state === "ready"),
+    failedModels = modelObjects.filter(entity => modelState(entity)?.state === "error"),
+    pendingModels = modelObjects.length - readyModels.length - failedModels.length;
+  const selectedFamily = selected ? modelFamily(document, selected.id) : [];
+  const selectedModels = selectedFamily.filter(entity => entityGeometryForLayer(entity, { ...geometryOptions, layer: "model" }));
+  const selectedModel = selected && modelFamilyGeometry(document, selected.id, { ...geometryOptions, layer: "model" });
+  const selectedModelFailed = selectedModels.some(entity => modelState(entity)?.state === "error");
+  const selectedModelWrongFrame = selectedFamily.some(modelFrameMismatch);
+  const selectedModelStale = selectedFamily.some(entity => activeModel(entity)?.sourceValidity === "stale");
+  const previewKey = JSON.stringify([revision.id, selected?.id, selected && modelFamilySignature(document, selected.id), geometryOptions.frameId, previewMode]);
   currentPreviewKey.current = previewKey;
   const previewRequest = selected && selectedModel ? { entityId: selected.id, frameId: geometryOptions.frameId, mode: previewMode, requestKey: previewKey } : undefined;
   const previewImage = modelPreview?.key === previewKey ? modelPreview.image : null;
@@ -264,6 +284,16 @@ export function ReportScene({
   const query = search.trim().toLowerCase();
   const numberedObject = objects.find((entity) => objectNumbers.get(entity.id) === query || String(Number(objectNumbers.get(entity.id))) === query);
   const filtered = numberedObject ? [numberedObject] : objects.filter((e) => `${e.label || ""} ${e.id}`.toLowerCase().includes(query));
+  const children = new Map<string, Entity[]>();
+  for (const entity of objects) if (entity.parentEntityId) children.set(entity.parentEntityId, [...children.get(entity.parentEntityId) || [], entity]);
+  const objectRows: { entity: Entity; depth: number }[] = [], listed = new Set<string>();
+  function appendRows(entity: Entity, depth: number) {
+    if (listed.has(entity.id)) return;
+    listed.add(entity.id); objectRows.push({ entity, depth });
+    if (expandedEntities.has(entity.id)) for (const child of children.get(entity.id) || []) appendRows(child, depth + 1);
+  }
+  if (query) filtered.forEach(entity => objectRows.push({ entity, depth: 0 }));
+  else objects.filter(entity => !entity.parentEntityId || !objects.some(parent => parent.id === entity.parentEntityId)).forEach(entity => appendRows(entity, 0));
   const photoIds = new Map(objects.map((entity) => [entity.id, new Set(observationsFor(document, entity).map((o) => o.imageId))]));
   const reportObjects = jsonObject(document.reportEvidence)?.objects;
   if (Array.isArray(reportObjects)) for (const item of reportObjects) {
@@ -293,13 +323,18 @@ export function ReportScene({
     return () => window.document.removeEventListener("fullscreenchange", changed);
   }, []);
   useEffect(() => {
+    const ancestors = new Set<string>();let parentId = selected?.parentEntityId;
+    while (parentId && !ancestors.has(parentId)) { ancestors.add(parentId);parentId = document.entities.find(entity => entity.id === parentId)?.parentEntityId; }
+    setExpandedEntities(current => [...ancestors].every(id => current.has(id)) ? current : new Set([...current, ...ancestors]));
+  }, [selection.entityId, document]);
+  useEffect(() => {
     const list = objectList.current, active = list?.querySelector<HTMLElement>('[aria-pressed="true"]');
     if (!list || !active) return;
     const row = active.getBoundingClientRect(), viewport = list.getBoundingClientRect();
     // Scroll only the object rail; selecting a scene object must not move the report.
     if (row.top < viewport.top) list.scrollTop -= viewport.top - row.top;
     else if (row.bottom > viewport.bottom) list.scrollTop += row.bottom - viewport.bottom;
-  }, [selection.entityId, search, isFullscreen, mobileSection]);
+  }, [selection.entityId, search, isFullscreen, mobileSection, expandedEntities]);
   function chooseView(pane: Pane | null) { setFocused(pane); setMobileSection("views"); }
   async function fullscreen() {
     setFullscreenError(false);
@@ -368,19 +403,21 @@ export function ReportScene({
             {selected && <small>{selected.id.slice(0, 8)}</small>}
           </div>
           <div ref={objectList} className="report-scene-object-list">
-            {filtered.map((entity) => {
+            {objectRows.map(({ entity, depth }) => {
               const indices = images.flatMap((image, index) => photoIds.get(entity.id)?.has(image.imageId) ? [index + 1] : []);
               const evidence = entityEvidenceStatus(document, entity), observations = observationsFor(document, entity),
                 representations = entity.representations || [],
-                candidate = representations.some((representation) => representation.id === entity.activeModelRepresentationId && representation.sourceValidity !== "stale" && representation.placementState === "unconfirmed");
-              return <div key={entity.id} className="report-scene-object-row"><button key={entity.id} aria-pressed={entity.id === selection.entityId} onClick={() => selectEntity(entity.id)}>
+                candidate = representations.some((representation) => representation.id === entity.activeModelRepresentationId && representation.sourceValidity !== "stale" && representation.placementState === "unconfirmed"),
+                familyModels = modelFamily(document, entity.id).filter(member => entityGeometryForLayer(member, { ...geometryOptions, layer: "model" })),
+                modelStatus = modelFamily(document, entity.id).some(member => activeModel(member)?.sourceValidity === "stale") ? "identityModelStale" : modelFamily(document, entity.id).some(modelFrameMismatch) ? "sceneModelWrongFrame" : !familyModels.length ? "reportMissingGeometry" : familyModels.some(member => modelState(member)?.state === "error") ? "sceneModelLoadFailed" : familyModels.every(member => modelState(member)?.state === "ready") ? "sceneModelLoaded" : "sceneModelLoading";
+              return <div key={entity.id} className="report-scene-object-row" data-entity-id={entity.id} data-parent-entity-id={entity.parentEntityId || undefined} style={{ marginLeft: depth * 12 }}><button key={entity.id} aria-pressed={entity.id === selection.entityId} onClick={() => selectEntity(entity.id)}>
                 <strong><b className="report-scene-object-number">{objectNumbers.get(entity.id)}</b>{entity.label || entity.id}</strong>
                 <span className="report-scene-object-source">{indices.length ? `${t("scenePhotoNumber")} ${indices.join(" / ")}` : t("sceneNoPhotoLink")}<small>{entity.id.slice(0, 8)}</small></span>
                 <span className="report-scene-object-evidence">{t(evidence.photoKey)}{observations.length > 0 && ` · ${observations.length} ${t("observations")}`}</span>
                 {evidence.identityKey && <span className="report-scene-object-identity"><span>{t("entityIdentity")}</span>{t(evidence.identityKey)}</span>}
-                <span className="report-scene-object-model"><span>{t("model")}</span>{t(evidence.modelKey === "noGeometry" ? entityGeometryForLayer(entity, geometryOptions) ? "sceneBoundsOnly" : "reportMissingGeometry" : evidence.modelKey)}{candidate && <em>{t("sceneCandidate")}</em>}</span>
+                <span className="report-scene-object-model" data-model-state={modelStatus}><span>{t("model")}</span>{t(modelStatus)}{candidate && <em>{t("sceneCandidate")}</em>}</span>
                 <span className="report-scene-object-extent"><span>{t("reportObservedExtent")}</span><Extent entity={entity} document={document} /></span>
-              </button>{onFeedback && <button className="report-object-feedback" aria-label={`${t("sceneFeedback")} · ${entity.label || entity.id}`} onClick={() => { selectEntity(entity.id); onFeedback(entity.id); setMobileSection("inspector"); }}>{t("sceneFeedback")} ↗</button>}</div>;
+              </button>{children.has(entity.id) && <button aria-expanded={expandedEntities.has(entity.id)} aria-label={`${t("sceneModelParts")} · ${entity.label || entity.id}`} onClick={() => setExpandedEntities(current => { const next = new Set(current);if (next.has(entity.id)) next.delete(entity.id);else next.add(entity.id);return next; })}>{expandedEntities.has(entity.id) ? "▾" : "▸"} {children.get(entity.id)!.length} {t("sceneModelParts")}</button>}{onFeedback && <button className="report-object-feedback" aria-label={`${t("sceneFeedback")} · ${entity.label || entity.id}`} onClick={() => { selectEntity(entity.id); onFeedback(entity.id); setMobileSection("inspector"); }}>{t("sceneFeedback")} ↗</button>}</div>;
             })}
             {!filtered.length && <p className="report-scene-list-empty">{t(objects.length ? "sceneNoMatches" : "sceneNoObjects")}</p>}
           </div>
@@ -396,7 +433,7 @@ export function ReportScene({
           <nav className="report-scene-view-switch report-scene-mobile-views" aria-label={t("sceneViews")}>
             {paneOrder.map((pane) => <button key={pane} aria-pressed={(focused || "photo") === pane} aria-controls={`${panePrefix}-${pane}`} onClick={() => chooseView(pane)}>{t(paneNames[pane])}</button>)}
           </nav>
-          {layer === "model" && <p className="report-scene-notice" data-model-coverage={modelObjects.length}><strong>{modelObjects.length} / {objects.filter(entity => entity.visible !== false).length} {t("sceneModelCoverage")}</strong>{modelCandidates > 0 && <> · {modelCandidates} {t("sceneModelCandidateCount")}</>} · {t("sceneModelCoverageMeaning")}</p>}
+          {layer === "model" && <p className="report-scene-notice" data-model-coverage={modelObjects.length} data-model-loaded={readyModels.length}><strong>{modelObjects.length} / {objects.filter(entity => entity.visible !== false).length} {t("sceneModelCoverage")}</strong> · {readyModels.length} / {modelObjects.length} {t("sceneModelLoaded")}{pendingModels > 0 && <> · {pendingModels} {t("sceneModelLoading")}</>}{failedModels.length > 0 && <> · {failedModels.length} {t("sceneModelLoadFailed")}</>}{modelCandidates > 0 && <> · {modelCandidates} {t("sceneModelCandidateCount")}</>} · {t("sceneModelCoverageMeaning")}</p>}
           {hasCandidates && <p className="report-scene-notice">{t("sceneCandidateNotice")}</p>}
           <div className="report-scene-grid">
             {paneOrder.map((pane, index) => (
@@ -411,6 +448,7 @@ export function ReportScene({
                     {camera && allBounds && <PhotoAxes revision={revision} camera={camera} layer={layer} selectedId={selection.entityId} allBounds={allBounds} />}</>}
                   {pane === "spatial" && <><SpatialView revision={revision} selection={selection} onSelect={selectEntity} onCommit={noEdit} mode="free" cameraId={camera?.id || null}
                     modelPreview={previewRequest} onModelPreview={(key, image) => { if (key === currentPreviewKey.current) setModelPreview({ key, image }); }}
+                    onAssetStates={(revisionId, states) => setModelLoads({ revisionId, states })}
                     layers={{ modelOnly: layer === "model", observed_surface: layer === "observed_surface", generated_mesh: layer === "model", primitive: layer === "model", point_cloud: layer === "point_cloud", allBounds, showBounds: allBounds, showCandidates: true, editable: false, opacity: 1, imageId, observations: document.observations }} />
                     {!hasRepresentation && <div className="report-scene-stage-note">{t("sceneNoRepresentation")}</div>}</>}
                   {pane === "cad" && availability.planEmpty && <div className="report-scene-plan-empty" role="status"><strong>{t("scenePlanUnavailable")}</strong><p>{t(availability.planEmpty)}</p><small>{t("sceneSelectionRetained")}</small></div>}
@@ -418,9 +456,9 @@ export function ReportScene({
                   {pane === "plan" && <div className="report-model-preview" data-model-entity={selected?.id || ""}>
                     {selectedModel && selected ? <>
                       <nav aria-label={t("sceneModelOrientation")}>{(["free", "front", "side", "top"] as const).map(mode => <button key={mode} aria-pressed={previewMode === mode} onClick={() => setPreviewMode(mode)}>{t(mode)}</button>)}</nav>
-                      <div className="report-model-image">{previewImage ? <img src={previewImage} alt={`${selected.label || selected.id} · ${t(previewMode)}`} /> : <p role="status">{t("loadingModel")}</p>}</div>
-                      <footer><strong>{selected.label || selected.id}</strong><span>{t(activeModel(selected)?.placementState === "confirmed" ? "identityPlacementConfirmed" : "identityPlacementUnconfirmed")}</span><button onClick={() => { setLayer("model"); chooseView("spatial"); }}>{t("sceneOpenModelScene")} ↗</button></footer>
-                    </> : <div className="report-scene-plan-empty" role="status"><strong>{t(selected ? "sceneObjectModelMissing" : "sceneSelectModel")}</strong><p>{t(selected ? "sceneObjectModelMissingMeaning" : "sceneSelectModelMeaning")}</p></div>}
+                      <div className="report-model-image">{previewImage ? <img src={previewImage} alt={`${selected.label || selected.id} · ${t(previewMode)}`} /> : <p role="status">{t(selectedModelStale ? "identityModelStale" : selectedModelWrongFrame ? "sceneModelWrongFrame" : selectedModelFailed ? "sceneModelLoadFailed" : "loadingModel")}</p>}</div>
+                      <footer><strong>{selected.label || selected.id}</strong><span>{t(selectedModels.every(entity => activeModel(entity)?.placementState === "confirmed") ? "identityPlacementConfirmed" : "identityPlacementUnconfirmed")}</span><button onClick={() => { setLayer("model"); chooseView("spatial"); }}>{t("sceneOpenModelScene")} ↗</button></footer>
+                    </> : <div className="report-scene-plan-empty" role="status"><strong>{t(selectedModelStale ? "identityModelStale" : selectedModelWrongFrame ? "sceneModelWrongFrame" : selected ? "sceneObjectModelMissing" : "sceneSelectModel")}</strong><p>{t(selectedModelWrongFrame ? "sceneModelWrongFrameMeaning" : selected ? "sceneObjectModelMissingMeaning" : "sceneSelectModelMeaning")}</p></div>}
                   </div>}
                 </div>
                 {pane === "photo" && <footer className="report-scene-photo-switch">{images.map((image, i) => <button key={image.imageId} aria-pressed={imageId === image.imageId} onClick={() => onCamera(image.imageId, image.cameraId)}>{t("scenePhotoNumber")} {i + 1}</button>)}{draw && <span>{t("sceneDrawActive")}</span>}</footer>}

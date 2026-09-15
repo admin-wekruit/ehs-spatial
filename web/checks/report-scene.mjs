@@ -4,8 +4,8 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import ts from "typescript";
 import * as math from "../src/viewer/native-math.ts";
-import { entityEvidenceStatus, identityCounts, isReferenceSurface } from "../src/scene-semantics.ts";
-import { cameraForImage, activeModel, entityGeometryForLayer, observationsFor, jsonObject, planShapes, cadReferenceImage, scenePlanOptions, sourceDimensions, sourceScale, previewOperations } from "../src/core.ts";
+import { entityEvidenceStatus, identityCounts, isReferenceSurface, modelFamily } from "../src/scene-semantics.ts";
+import { cameraForImage, activeModel, modelFamilyGeometry, modelFamilySignature, entityGeometryForLayer, observationsFor, jsonObject, planShapes, cadReferenceImage, scenePlanOptions, sourceDimensions, sourceScale, previewOperations } from "../src/core.ts";
 
 // Exercise the actual two pure functions without importing the browser app.
 const source = await readFile(
@@ -239,6 +239,7 @@ const cadSwitchDocument = structuredClone(uiDocument);
 let uiSelection = { entityId: "object", cameraId: "camera" }, uiImageId = "photo", calls = [], objectListRequest = 0, feedbackEnabled = false, feedbackCalls = [], sourceCadCalls = [];
 const inspector = React.createElement("div", { id: "inspector-content" }, "real host inspector");
 const ui = vm.createContext({ React, useState, useRef, useEffect, useId: () => "workspace-check",
+  modelFamily, modelFamilyGeometry, modelFamilySignature,
   useI18n: () => ({ t: (key) => key }), cameraForImage, activeModel, identityCounts, jsonObject, observationsFor, entityGeometryForLayer, cadReferenceImage, scenePlanOptions,
   photoOverlay, sceneAvailability, isReferenceSurface, entityEvidenceStatus, sourceDimensions, sourceScale, SpatialView, PlanView, PhotoView, PhotoAxes, CadView,
   paneOrder: ["photo", "spatial", "cad", "plan"], paneNames: { photo: "scenePhoto", spatial: "scene3D", cad: "sceneCAD", plan: "scenePlan" }, noEdit: () => {},
@@ -275,6 +276,13 @@ assert.equal(nodes(tree).some(node => node.type === PlanView), false, "The fourt
 assert.equal(spatialHost()[0].props.layers.modelOnly, true);
 assert.equal(spatialHost()[0].props.layers.observed_surface, false, "Current models never include the observed background");
 assert.equal(nodes(tree).find(node => node.props['data-model-coverage'] !== undefined).props['data-model-coverage'], 1, "Missing models are not counted from observed geometry");
+assert.equal(nodes(tree).find(node => node.props['data-model-loaded'] !== undefined).props['data-model-loaded'], 0, "Declared models are not reported as loaded before the renderer confirms upload");
+const selectedAssetState={entityId:'object',representationId:'mesh',assetId:'model-asset',vertexCount:0,triangleCount:0,state:'error',errorCode:'invalid_packed_mesh'};
+spatialHost()[0].props.onAssetStates('revision',[selectedAssetState]);tree=renderWorkspace();
+assert.ok(nodes(tree).some(node=>node.children.includes('sceneModelLoadFailed')), 'The report shows a failed model instead of an endless loading preview');
+assert.equal(nodes(tree).find(node=>node.props['data-model-loaded']!==undefined).props['data-model-loaded'],0,'Failed assets never increase the ready count');
+spatialHost()[0].props.onAssetStates('revision',[{...selectedAssetState,state:'ready',vertexCount:3,triangleCount:1,errorCode:null}]);tree=renderWorkspace();
+assert.equal(nodes(tree).find(node=>node.props['data-model-loaded']!==undefined).props['data-model-loaded'],1,'A successful complete upload increases actual readiness');
 const firstPreview = spatialHost()[0].props;
 firstPreview.onModelPreview(firstPreview.modelPreview.requestKey, "data:image/png;base64,model-a");tree = renderWorkspace();
 assert.ok(nodes(tree).some(node => node.type === "img" && node.props.src.endsWith("model-a")));
@@ -475,6 +483,21 @@ async function checkCadModes(scene, label) {
 }
 await checkCadModes(cadSwitchDocument, "Report CAD regression");
 if (process.argv[2]) await checkCadModes(JSON.parse(await readFile(process.argv[2], "utf8")), "Frozen report CAD");
+uiDocument=structuredClone(cadSwitchDocument);hooks.length=0;uiImageId='photo';
+const part=uiDocument.entities.find(entity=>entity.id==='object');
+part.parentEntityId='assembly';uiDocument.entities.unshift({id:'assembly',label:'Whole assembly',representations:[],activeModelRepresentationId:null,currentModelTransform:structuredClone(transform)});
+uiSelection={entityId:'assembly',cameraId:'camera'};tree=renderWorkspace();
+assert.equal(nodes(tree).some(node=>node.props['data-entity-id']==='object'),false,'The assembly begins as one expandable row');
+assert.equal(spatialHost()[0].props.modelPreview.entityId,'assembly','An empty-residual assembly requests a real family preview');
+nodes(tree).find(node=>node.props['aria-expanded']===false).props.onClick();tree=renderWorkspace();
+assert.ok(nodes(tree).some(node=>node.props['data-entity-id']==='object'&&node.props['data-parent-entity-id']==='assembly'&&node.props.style.marginLeft===12),'The real part appears below and inside its assembly');
+nodes(tree).find(node=>node.props['data-entity-id']==='object').children[0].props.onClick();tree=renderWorkspace();
+assert.equal(uiSelection.entityId,'object');assert.equal(spatialHost()[0].props.modelPreview.entityId,'object','Selecting the part retains the part identity across model preview and shared selection');
+const partPreviewKey=spatialHost()[0].props.modelPreview.requestKey;
+part.currentModelTransform={...transform,coordinateFrameId:'unregistered'};tree=renderWorkspace();
+assert.equal(spatialHost()[0].props.modelPreview,undefined);
+assert.ok(nodes(tree).some(node=>node.children.includes('sceneModelWrongFrame')),'Wrong-frame geometry has a distinct reason rather than a false missing-model or loaded state');
+assert.ok(partPreviewKey);
 console.log(
   "report scene: 68-record unified evidence inventory, observed extents/scale, no duplicate table, linked no-geometry selection, mobile navigation, photo projection, floor semantics and one WebGL passed",
 );

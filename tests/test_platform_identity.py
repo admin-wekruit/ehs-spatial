@@ -529,3 +529,111 @@ def test_explicit_null_measurement_keys_survive_merge_split_and_selection():
         assert selected == current
         assert selected['observations'] == doc['observations'] and selected['assets'] == doc['assets']
         assert {r['id']: r for e in selected['entities'] for r in e['measurementEvidence']} == {r['id']: r for e in doc['entities'] for r in e['measurementEvidence']}
+
+
+def part_operation(child='entity-2', parent='entity-1', observations=('observation-1', 'observation-2')):
+    return {'type': 'setPartRelation', 'entityId': child, 'parentEntityId': parent,
+        'evidenceRefs': [{'observationId': oid, 'revision': 1} for oid in observations],
+        'reason': 'Reviewed source observations: this separate panel is a physical part of the assembly.'}
+
+
+def test_part_relation_requires_current_reviewed_observations_and_rejects_invalid_graphs():
+    from ehs_spatial.platform.identity import model_family
+    source = migrate_document(source_scene(), base_revision_id=BASE)
+    source['futureExtension'] = {'retained': True}
+    source['entities'][0]['futureExtension'] = {'sourceDetail': 'retained'}
+    document, inverse = apply_operations(source, [part_operation()], base_revision_id=BASE)
+    assert SceneDocument.model_validate(document).model_dump(exclude_unset=True)['futureExtension'] == source['futureExtension']
+    assert document['entities'][0]['futureExtension'] == source['entities'][0]['futureExtension']
+    assert [e['id'] for e in model_family(document, 'entity-1')] == ['entity-1', 'entity-2']
+    assert document['observations'] == source['observations'] and document['assets'] == source['assets']
+    assert [e['representations'] for e in document['entities']] == [e['representations'] for e in source['entities']]
+    assert inverse[0]['document'] == source
+    assert document['entities'][1].get('groupId') == source['entities'][1].get('groupId')
+    assert document['identityDecisions'] == []
+    invalid = [({**part_operation(), 'evidenceRefs': []}, 'part_relation_evidence_required'),
+        ({**part_operation(), 'reason': '  '}, 'part_relation_evidence_required'),
+        ({**part_operation(), 'evidenceRefs': [{'observationId': 'observation-2', 'revision': 2}]}, 'part_observation_revision_mismatch'),
+        (part_operation(observations=('observation-2',)), 'part_relation_evidence_scope'),
+        (part_operation(parent='missing'), 'part_parent_not_found'),
+        (part_operation(parent='entity-2'), 'part_relation_cycle')]
+    for operation, code in invalid:
+        with pytest.raises(PlatformError, match=code):
+            apply_operations(source, [operation], base_revision_id=BASE)
+    with pytest.raises(PlatformError, match='part_relation_cycle'):
+        apply_operations(document, [part_operation('entity-1', 'entity-2')], base_revision_id=BASE)
+    with pytest.raises(PlatformError, match='part_parent_has_children'):
+        apply_operations(document, [{'type': 'removeEntity', 'entityId': 'entity-1'}], base_revision_id=BASE)
+    other = deepcopy(source)
+    other['coordinateFrames'].append({**deepcopy(other['coordinateFrames'][0]), 'id': 'other'})
+    other['entities'][1]['currentModelTransform']['coordinateFrameId'] = 'other'
+    with pytest.raises(PlatformError, match='part_coordinate_frame_mismatch'):
+        apply_operations(other, [part_operation()], base_revision_id=BASE)
+
+
+def test_parent_edits_expand_absolute_transforms_atomically_and_child_edits_stay_local():
+    import numpy as np
+    from ehs_spatial.platform.spatial import transform_matrix
+    source = migrate_document(source_scene(), base_revision_id=BASE)
+    document, _ = apply_operations(source, [part_operation()], base_revision_id=BASE)
+    parent, child = document['entities']
+    new_pose = {**parent['currentModelTransform'], 'position': [7, 2, 3], 'quaternion': [0, 0, float(np.sin(.2)), float(np.cos(.2))], 'scale': [2, 2, 2]}
+    moved, inverse = apply_operations(document, [{'type': 'setTransform', 'entityId': parent['id'], 'transform': new_pose}], base_revision_id=BASE)
+    delta = transform_matrix(new_pose) @ np.linalg.inv(transform_matrix(parent['currentModelTransform']))
+    assert np.allclose(transform_matrix(moved['entities'][1]['currentModelTransform']), delta @ transform_matrix(child['currentModelTransform']))
+    assert inverse[0]['document'] == document
+    assert all(e['representations'][0]['placementState'] == 'unconfirmed' for e in moved['entities'])
+    child_only, _ = apply_operations(document, [{'type': 'setTransform', 'entityId': child['id'], 'transform': new_pose}], base_revision_id=BASE)
+    assert child_only['entities'][0] == parent
+    unchanged, _ = apply_operations(document, [{'type': 'setTransform', 'entityId': parent['id'], 'transform': parent['currentModelTransform']}], base_revision_id=BASE)
+    assert unchanged == document
+    styled, _ = apply_operations(document, [{'type': 'setVisibility', 'entityId': parent['id'], 'visible': False},
+        {'type': 'setMaterial', 'entityId': parent['id'], 'material': {'color': '#ffcc00'}}], base_revision_id=BASE)
+    assert all(e['visible'] is False and e['representations'][0]['material']['color'] == '#ffcc00' for e in styled['entities'])
+    assembly = deepcopy(document)
+    assembly['entities'][0]['activeModelRepresentationId'] = None
+    validate_document(assembly)
+    moved, _ = apply_operations(assembly, [{'type': 'setTransform', 'entityId': parent['id'], 'transform': new_pose}], base_revision_id=BASE)
+    assert moved['entities'][0]['activeModelRepresentationId'] is None
+    assert moved['entities'][0]['representations'] == parent['representations']
+    assert np.allclose(transform_matrix(moved['entities'][1]['currentModelTransform']), delta @ transform_matrix(child['currentModelTransform']))
+    detached, _ = apply_operations(assembly, [part_operation(parent=None)], base_revision_id=BASE)
+    assert detached['entities'][0]['currentModelTransform'] is None
+    assert detached['entities'][1]['currentModelTransform'] == child['currentModelTransform']
+    rotated = deepcopy(document)
+    rotated['entities'][1]['currentModelTransform']['quaternion'] = [0, 0, float(np.sin(.4)), float(np.cos(.4))]
+    snapshot = deepcopy(rotated)
+    with pytest.raises(PlatformError, match='transform_shear_or_reflection'):
+        apply_operations(rotated, [{'type': 'setTransform', 'entityId': parent['id'],
+            'transform': {**parent['currentModelTransform'], 'scale': [2, 1, 1]}}], base_revision_id=BASE)
+    assert rotated == snapshot
+
+
+def test_identity_merge_remaps_part_parents_and_split_requires_explicit_child_ownership():
+    source = source_scene()
+    third_observation = {**deepcopy(source['observations'][0]), 'id': 'observation-3'}
+    third = deepcopy(source['entities'][0])
+    third.update(id='entity-3', observationRefs=['observation-3'], measurements={})
+    third['representations'][0].update(id='model-3', sourceRefs=[{'observationId': 'observation-3'}])
+    source['observations'].append(third_observation)
+    source['entities'].append(third)
+    doc = migrate_document(source, base_revision_id=BASE)
+    doc, _ = apply_operations(doc, [part_operation(parent='entity-3', observations=('observation-2', 'observation-3'))], base_revision_id=BASE)
+    d = decision(doc, ids=['entity-1', 'entity-3'])
+    merged, inverse = apply_operations(doc, [{'type': 'recordIdentityDecision', 'decision': d},
+        {'type': 'mergeEntities', 'entityIds': d['entityIds'], 'survivorId': 'entity-1', 'decisionId': d['id']}], base_revision_id=BASE)
+    assert next(e for e in merged['entities'] if e['id'] == 'entity-2')['parentEntityId'] == 'entity-1'
+    assert inverse[0]['document'] == doc
+    with pytest.raises(PlatformError, match='part_parent_not_found'):
+        apply_operations(merged, [part_operation(parent='entity-3', observations=('observation-2', 'observation-3'))], base_revision_id=BASE)
+    archived_parent = deepcopy(merged)
+    next(e for e in archived_parent['entities'] if e['id'] == 'entity-2')['parentEntityId'] = 'entity-3'
+    with pytest.raises(PlatformError, match='part_parent_not_found'):
+        validate_document(archived_parent)
+    with pytest.raises(PlatformError, match='identity_merge_part_parent_conflict'):
+        merge(merged)
+    split_decision = decision(merged, 'different', ids=['entity-1'], supersedes=d['id'])
+    split_decision['observationGroups'] = [['observation-1'], ['observation-3']]
+    with pytest.raises(PlatformError, match='identity_split_part_parent_requires_detach'):
+        apply_operations(merged, [{'type': 'recordIdentityDecision', 'decision': split_decision},
+            {'type': 'splitEntity', 'entityId': 'entity-1', 'decisionId': split_decision['id'], 'groups': []}], base_revision_id=BASE)

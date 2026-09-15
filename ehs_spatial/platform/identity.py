@@ -10,7 +10,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import ValidationError
 
-from .contracts import GeometryBinding, IdentityDecision, MeasurementEvidence, PlatformError, SourceIdentityEvidence, SourceObservationEquivalence, canonical, digest
+from .contracts import GeometryBinding, IdentityDecision, MeasurementEvidence, PartRelation, PlatformError, SetPartRelationOperation, SourceIdentityEvidence, SourceObservationEquivalence, canonical, digest
 
 
 MODEL_KINDS = frozenset(("generated_mesh", "primitive"))
@@ -30,6 +30,80 @@ def _typed(model, value, code):
 
 def _unique(values):
     return list(dict.fromkeys(values))
+
+
+def model_family(document, entity_id):
+    """The target and its explicit descendants, in stable parent-first order."""
+    entities = {e['id']: e for e in document['entities']}
+    _require(entity_id in entities, 'entity_not_found', entityId=entity_id)
+    children = {}
+    for item in entities.values():
+        children.setdefault(item.get('parentEntityId'), []).append(item)
+    result, pending, seen = [], [entities[entity_id]], set()
+    while pending:
+        item = pending.pop()
+        _require(item['id'] not in seen, 'part_relation_cycle')
+        seen.add(item['id'])
+        result.append(item)
+        pending.extend(reversed(children.get(item['id'], [])))
+    return result
+
+
+def validate_part_relations(document):
+    entities = {e['id']: e for e in document['entities']}
+    observations = {o['id']: o for o in document['observations']}
+    for item in entities.values():
+        parent_id = item.get('parentEntityId')
+        relation = item.get('partRelation')
+        if parent_id is None and relation is None:
+            continue
+        _require(document['schemaVersion'] == 2, 'parts_require_scene_v2')
+        relation = _typed(PartRelation, relation, 'part_relation_evidence_required')
+        _require(bool(relation['reason'].strip()), 'part_relation_evidence_required')
+        refs = relation['evidenceRefs']
+        _require(len({r['observationId'] for r in refs}) == len(refs), 'part_relation_evidence_invalid')
+        for ref in refs:
+            _require(ref['observationId'] in observations and ref['revision'] <= observations[ref['observationId']].get('revision', 1), 'part_observation_revision_mismatch')
+        if parent_id is None:
+            continue
+        _require(parent_id in entities, 'part_parent_not_found')
+        _require(parent_id != item['id'], 'part_relation_cycle')
+        parent = entities[parent_id]
+        evidence_ids = {ref['observationId'] for ref in refs}
+        _require(bool(evidence_ids.intersection(item.get('observationRefs', []))) and bool(evidence_ids.intersection(parent.get('observationRefs', []))), 'part_relation_evidence_scope')
+        own_pose, parent_pose = item.get('currentModelTransform'), parent.get('currentModelTransform')
+        _require(own_pose is not None and parent_pose is not None and own_pose['coordinateFrameId'] == parent_pose['coordinateFrameId'], 'part_coordinate_frame_mismatch')
+        ancestors = {item['id']}
+        while parent_id is not None:
+            _require(parent_id not in ancestors, 'part_relation_cycle')
+            _require(parent_id in entities, 'part_parent_not_found')
+            ancestors.add(parent_id)
+            parent_id = entities[parent_id].get('parentEntityId')
+
+
+def set_part_relation(document, operation, *, base_revision_id):
+    _require(document.get('schemaVersion') == 2, 'parts_require_scene_v2')
+    op = _typed(SetPartRelationOperation, operation, 'part_relation_evidence_required')
+    _require(isinstance(base_revision_id, str) and bool(base_revision_id), 'part_base_revision_required')
+    entities = {e['id']: e for e in document['entities']}
+    _require(op['entityId'] in entities, 'entity_not_found')
+    item = entities[op['entityId']]
+    old_parent_id = item.get('parentEntityId')
+    parent_id = op['parentEntityId']
+    _require(parent_id is None or parent_id in entities, 'part_parent_not_found')
+    observations = {o['id']: o for o in document['observations']}
+    for ref in op['evidenceRefs']:
+        _require(observations.get(ref['observationId'], {}).get('revision', 1) == ref['revision'] and ref['observationId'] in observations, 'part_observation_revision_mismatch')
+    evidence_ids = {ref['observationId'] for ref in op['evidenceRefs']}
+    _require(bool(evidence_ids.intersection(item.get('observationRefs', []))), 'part_relation_evidence_scope')
+    item.setdefault('lineage', []).append({'operation': 'setPartRelation', 'sourceRevisionId': base_revision_id,
+        'parentEntityId': item.get('parentEntityId'), 'partRelation': deepcopy(item.get('partRelation'))})
+    item.update(parentEntityId=parent_id, partRelation={'source': 'manual', 'baseRevisionId': base_revision_id,
+        'evidenceRefs': deepcopy(op['evidenceRefs']), 'reason': op['reason']})
+    old_parent = entities.get(old_parent_id)
+    if old_parent is not None and old_parent.get('activeModelRepresentationId') is None and not any(e.get('parentEntityId') == old_parent_id for e in entities.values()):
+        old_parent['currentModelTransform'] = None
+    validate_part_relations(document)
 
 
 def refresh_cad_reference(document, entity, *, reference=None):
@@ -509,7 +583,10 @@ def apply_identity_operation(document, operation, *, base_revision_id):
         _require(entity is not None, "entity_not_found")
         if kind == "setActiveModelRepresentation":
             _require("representationId" in operation, "active_model_representation_required")
+            assembly_pose = entity.get('currentModelTransform') if any(e.get('parentEntityId') == entity['id'] for e in document['entities']) else None
             _active(entity, operation["representationId"])
+            if operation['representationId'] is None and assembly_pose is not None:
+                entity['currentModelTransform'] = assembly_pose
         else:
             key, evidence_id = operation.get("measurementKey"), operation.get("measurementEvidenceId")
             evidence = next((r for r in entity["measurementEvidence"] if r["id"] == evidence_id and r["measurementKey"] == key), None)
@@ -524,6 +601,8 @@ def apply_identity_operation(document, operation, *, base_revision_id):
         _require(decision["decision"] == "same" and decision["entityIds"] == ids and decision["survivorId"] == survivor, "identity_operation_decision_mismatch")
         entities = {e["id"]: e for e in document["entities"]}
         _require(len(ids) >= 2 and len(ids) == len(set(ids)) and set(ids) <= set(entities), "invalid_merge")
+        _require(len({entities[eid].get('parentEntityId') for eid in ids}) == 1, 'identity_merge_part_parent_conflict')
+        _require(not any(e['id'] in ids for eid in ids for e in model_family(document, eid)[1:]), 'identity_merge_part_cycle')
         kept = entities[survivor]
         old_selection = {key: None for eid in ids for key in entities[eid]["measurementSelections"]} | kept["measurementSelections"]
         eligible_measurements = {selected for eid in ids for selected in entities[eid]["measurementSelections"].values() if selected is not None}
@@ -542,6 +621,9 @@ def apply_identity_operation(document, operation, *, base_revision_id):
         if refs_by_value:
             kept["sourceRefs"] = list(refs_by_value.values())
         document["entities"] = [e for e in document["entities"] if e["id"] not in set(ids) - {survivor}]
+        for child in document['entities']:
+            if child.get('parentEntityId') in ids:
+                child['parentEntityId'] = survivor
         kept["associationState"] = "confirmed"
         kept["associationEvidence"] = {"method": "identity_decision", "status": "confirmed", "decisionId": decision["id"], "observationIds": list(kept["observationRefs"]), "sourceRefs": deepcopy(decision["evidenceRefs"])}
         old_transform = deepcopy(kept.get("currentModelTransform"))
@@ -554,6 +636,7 @@ def apply_identity_operation(document, operation, *, base_revision_id):
         remap_attachments(document, base_revision_id=base_revision_id, affected_entity_ids=ids)
         return
     _require(kind == "splitEntity" and entity is not None, "unknown_identity_operation")
+    _require(not any(e.get('parentEntityId') == identity for e in document['entities']), 'identity_split_part_parent_requires_detach')
     _require(decision["decision"] == "different" and decision["source"] == "manual" and decision["entityIds"] == [identity], "identity_operation_decision_mismatch")
     groups = operation.get("groups", [])
     _require(isinstance(groups, list) and len(groups) >= 2 and all(isinstance(g, dict) and isinstance(g.get("id"), str) and g["id"] and
@@ -578,6 +661,8 @@ def apply_identity_operation(document, operation, *, base_revision_id):
                  "measurementEvidence": [deepcopy(r) for r in entity["measurementEvidence"] if r["id"] in group["measurementEvidenceIds"]],
                  "measurements": {}, "measurementSelections": {}, "groupId": entity.get("groupId"),
                  "lineage": [{"operation": "split", "entityId": identity, "sourceRevisionId": base_revision_id, "decisionId": decision["id"]}]}
+        if entity.get('parentEntityId') is not None:
+            child.update(parentEntityId=entity['parentEntityId'], partRelation=deepcopy(entity['partRelation']))
         if index == 0 and retained:
             child["lineage"][0]["sourceFields"] = {"retainedMeasurementEvidence": retained}
         for record in child["measurementEvidence"]:
@@ -609,7 +694,10 @@ def validate_identity_document(document):
         _require("activeModelRepresentationId" in entity, "active_model_selection_required")
         model_ids = {r["id"] for r in entity.get("representations", []) if r["kind"] in MODEL_KINDS}
         _require(entity["activeModelRepresentationId"] is None or entity["activeModelRepresentationId"] in model_ids, "active_model_representation_invalid")
-        _require(entity["activeModelRepresentationId"] is not None or entity.get("currentModelTransform") is None, "inactive_model_transform")
+        partition_sources = {event.get('sourceRepresentationId') for event in entity.get('lineage', []) if isinstance(event, dict) and event.get('operation') == 'partition_model_parts'}
+        _require(entity['activeModelRepresentationId'] is None or entity['activeModelRepresentationId'] not in partition_sources, 'part_source_model_inactive')
+        assembly = any(e.get('parentEntityId') == entity['id'] for e in entities.values())
+        _require(entity["activeModelRepresentationId"] is not None or entity.get("currentModelTransform") is None or assembly, "inactive_model_transform")
         records, selections = entity.get("measurementEvidence"), entity.get("measurementSelections")
         _require(isinstance(records, list) and isinstance(selections, dict), "measurement_evidence_required")
         by_id = {}

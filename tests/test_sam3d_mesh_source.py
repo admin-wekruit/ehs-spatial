@@ -1,10 +1,11 @@
 """CPU regression on exact prepared upstream code; no model inference or fake GS modules.
 
 First run scripts/prepare_sam3d_mesh_source.py --fetch --source
-.platform/model-delivery-20260915/sam3d-mesh-source, or set PANOPTES_SAM3D_TEST_SOURCE.
+.platform/model-delivery-20260915/sam3d-mesh-source-v2, or set PANOPTES_SAM3D_TEST_SOURCE.
 """
 import ast
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -23,7 +24,7 @@ def test_pinned_prepared_mesh_path_preserves_real_vertex_colors_topology_and_axe
     torch = pytest.importorskip('torch')
     pytest.importorskip('trimesh')
     root = Path(os.environ.get('PANOPTES_SAM3D_TEST_SOURCE',
-        '.platform/model-delivery-20260915/sam3d-mesh-source'))
+        '.platform/model-delivery-20260915/sam3d-mesh-source-v2'))
     if not (root / RECEIPT).exists():
         pytest.skip('Run the documented pinned source preparation first')
     receipt = json.loads((root / RECEIPT).read_text())
@@ -70,3 +71,87 @@ def test_source_preparation_rejects_different_code_before_patching(tmp_path):
         prepare(tmp_path)
     assert not (tmp_path / RECEIPT).exists()
     assert all((tmp_path / relative).read_text() == 'unreviewed source\n' for relative in SOURCE_HASHES)
+
+
+def eager_imports(root, entries):
+    """Conservative static Python imports, including package initializers; no model loading."""
+    seen, external, pending = set(), set(), list(entries)
+    def path(module):
+        candidate = root / (module.replace('.', '/') + '.py')
+        return candidate if candidate.is_file() else root / module.replace('.', '/') / '__init__.py'
+    def nodes(tree):
+        for node in ast.iter_child_nodes(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                continue
+            yield node
+            yield from nodes(node)
+    while pending:
+        module = pending.pop()
+        if module in seen:
+            continue
+        source = path(module)
+        if not source.is_file():
+            external.add(module)
+            continue
+        seen.add(module)
+        package = module if source.name == '__init__.py' else module.rpartition('.')[0]
+        pending.extend('.'.join(module.split('.')[:i]) for i in range(1, len(module.split('.'))))
+        for node in nodes(ast.parse(source.read_text())):
+            if isinstance(node, ast.Import):
+                pending.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                imported = importlib.util.resolve_name('.' * node.level + (node.module or ''), package) if node.level else node.module
+                if imported:
+                    pending.append(imported)
+                    pending.extend(imported + '.' + alias.name for alias in node.names if path(imported + '.' + alias.name).is_file())
+    return seen, external
+
+
+def test_pinned_mesh_import_closure_excludes_optional_gaussian_code():
+    root = Path(os.environ.get('PANOPTES_SAM3D_TEST_SOURCE', '.platform/model-delivery-20260915/sam3d-mesh-source-v2'))
+    upstream = Path(os.environ.get('PANOPTES_SAM3D_TEST_UPSTREAM', '.platform/model-delivery-20260915/sam3d-public-full'))
+    entries = ['sam3d_objects.pipeline.inference_pipeline_pointmap',
+        'sam3d_objects.model.backbone.tdfy_dit.models.structured_latent_vae.decoder_mesh']
+    if not all((base / 'sam3d_objects/pipeline/inference_pipeline_pointmap.py').exists() for base in (root, upstream)):
+        pytest.skip('Full pinned public source and its prepared copy are required for the import-closure check')
+    receipt = json.loads((root / RECEIPT).read_text())
+    assert receipt['patchSha256'] == hashlib.sha256(PATCH.read_bytes()).hexdigest()
+    for relative, expected in SOURCE_HASHES.items():
+        assert hashlib.sha256((upstream / relative).read_bytes()).hexdigest() == expected
+        assert hashlib.sha256((root / relative).read_bytes()).hexdigest() == receipt['files'][relative]['patchedSha256']
+    def forbidden(modules):
+        return {m for m in modules if any(part in m for part in (
+            'representations.gaussian', 'renderers.gaussian_render', 'decoder_gs', 'postprocessing_utils',
+            'gsplat', 'diff_gaussian_rasterization'))}
+    original, original_external = eager_imports(upstream, entries)
+    prepared, prepared_external = eager_imports(root, entries)
+    assert 'sam3d_objects.model.backbone.tdfy_dit.representations.gaussian.general_utils' in forbidden(original)
+    assert 'sam3d_objects.model.backbone.tdfy_dit.renderers.gaussian_render' in forbidden(original)
+    assert not forbidden(prepared | prepared_external)
+    assert set(entries) <= prepared
+    assert 'sam3d_objects.model.backbone.tdfy_dit.representations.mesh.cube2mesh' in prepared
+
+
+def test_gaussian_exports_are_deferred_until_explicitly_requested():
+    root = Path(os.environ.get('PANOPTES_SAM3D_TEST_SOURCE', '.platform/model-delivery-20260915/sam3d-mesh-source-v2'))
+    if not (root / RECEIPT).exists():
+        pytest.skip('Prepare the pinned source first')
+    for relative, name in (
+        ('sam3d_objects/model/backbone/tdfy_dit/models/__init__.py', 'SLatGaussianDecoder'),
+        ('sam3d_objects/model/backbone/tdfy_dit/models/structured_latent_vae/__init__.py', 'SLatGaussianDecoder'),
+        ('sam3d_objects/model/backbone/tdfy_dit/representations/__init__.py', 'Gaussian'),
+    ):
+        tree = ast.parse((root / relative).read_text())
+        assert not any(isinstance(node, ast.ImportFrom) and name in {a.name for a in node.names} for node in tree.body)
+        method = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == '__getattr__')
+        scope, requests = {}, []
+        def rejected_import(module, globals=None, locals=None, fromlist=(), level=0):
+            requests.append((module, fromlist, level))
+            raise ImportError('Optional Gaussian implementation was explicitly requested')
+        scope['__builtins__'] = {**vars(__import__('builtins')), '__import__': rejected_import}
+        exec(compile(ast.Module(body=[method], type_ignores=[]), relative, 'exec'), scope)
+        assert requests == []
+        with pytest.raises(AttributeError): scope['__getattr__']('unknown_export')
+        assert requests == []
+        with pytest.raises(ImportError, match='explicitly requested'): scope['__getattr__'](name)
+        assert len(requests) == 1 and name in requests[0][1]

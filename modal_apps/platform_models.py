@@ -231,7 +231,10 @@ if "generation" in CONFIG:
 
         @modal.method()
         @_timed_gpu
-        def run(self,payload):
+        def run(self,payload,expectedRuntimeManifestSha256=None):
+            runtime_sha = hashlib.sha256(json.dumps(CONFIG["generation"],sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()).hexdigest()
+            if expectedRuntimeManifestSha256 is not None and expectedRuntimeManifestSha256 != runtime_sha:
+                raise ValueError("Frozen runtime manifest differs from deployed runtime")
             import numpy as np
             import torch
             from pytorch3d.transforms import quaternion_to_matrix
@@ -258,4 +261,5 @@ if "generation" in CONFIG:
             colors = np.asarray(mesh.visual.vertex_colors)[:,:3].astype(np.float32)/255
             return {"vertices":raw,"faces":np.asarray(mesh.faces,dtype=np.uint32),"colors":colors,"officialPosedVertices":official,
                     "objectToProvider":column_pose@basis4,"decodeFormats":["mesh"],"internalDepthCalls":self.depth_calls-start_depth_calls,
+                    "runtimeManifestSha256":runtime_sha,
                     "pins":CONFIG["generation"]["pins"]}

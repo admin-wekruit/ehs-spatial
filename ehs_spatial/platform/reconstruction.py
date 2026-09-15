@@ -14,6 +14,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import time
 from typing import Any, Callable, Literal, Mapping
 from uuid import UUID, uuid5
@@ -77,11 +78,18 @@ class ProviderSpec:
     release_evidence: Mapping[str,Any]
     paid: bool = True
 
-    def validate(self, stage: str, *, require_quality=True):
+    def validate(self, stage: str, *, research_protocol=None):
         evidence = self.release_evidence
         if not self.pins or any(not isinstance(v,str) or not v for v in self.pins.values()) or evidence.get("pins") != dict(self.pins):
             raise PlatformError("provider_pins_unverified",409,stage=stage)
-        for gate in (("license","quality","runtime") if require_quality else ("license","runtime")):
+        purpose = None
+        if research_protocol is not None:
+            _validate_research_protocol(research_protocol)
+            purpose = research_protocol["purpose"]
+            if stage == "generation":
+                _validate_research_runtime(research_protocol,self.pins)
+        gates = ("license",) if purpose == "runtime_validation" else ("license","runtime") if purpose == "quality_validation" else ("license","quality","runtime")
+        for gate in gates:
             record = evidence.get(gate,{})
             if record.get("status") != "passed" or len(record.get("artifactSha256","")) != 64:
                 raise PlatformError("provider_release_gate_unverified",409,stage=stage,gate=gate)
@@ -132,7 +140,13 @@ class _Stages:
         provider = self.providers.get(stage)
         if provider is None:
             raise PlatformError("provider_not_configured",409,stage=stage)
-        provider.validate(stage,require_quality=research_protocol is None)
+        if research_protocol is not None:
+            if self.job.get("kind") != "validate_model" or self.job.get("config",{}).get("researchProtocolSha256") != digest(research_protocol):
+                raise PlatformError("admin_research_job_required",403)
+            limits = research_protocol["callLimits"]
+            if provider.paid is not True or not 0 < provider.estimated_cost_usd <= limits["maxCostPerCallUsd"] or provider.estimated_cost_usd > limits["maxTotalCostUsd"]:
+                raise PlatformError("research_call_budget_invalid",409)
+        provider.validate(stage,research_protocol=research_protocol)
         key = stage_cache_key(stage,[{"imageId":x["id"],"sha256":x["sha256"],"pixelMapping":x.get("pixelMapping",[])} for x in images],provider.pins,{"payloadSha256":digest(_packed(payload))},refs)
         cached = next((a for a in self.assets if a.get("metadata",{}).get("kind") == "stage_cache" and a["metadata"].get("cacheKey") == key),None)
         if cached:
@@ -143,8 +157,13 @@ class _Stages:
             if envelope["output"].get("providerError"):
                 raise PlatformError("provider_failed",502,stage=stage)
             return envelope["output"],cached
-        call = self.repo.reserve_model_call(self.job["id"],self.job["attemptToken"],provider.name,provider.pins["model"],key,provider.estimated_cost_usd,
-            code_sha256=digest({"code":provider.pins.get("codeRevision")}),model_sha256=digest({"model":provider.pins}),adapter_sha256=digest({"adapter":PIPELINE_VERSION}),input_sha256=digest(_packed(payload)),paid=provider.paid)
+        try:
+            call = self.repo.reserve_model_call(self.job["id"],self.job["attemptToken"],provider.name,provider.pins["model"],key,provider.estimated_cost_usd,
+                code_sha256=digest({"code":provider.pins.get("codeRevision")}),model_sha256=digest({"model":provider.pins}),adapter_sha256=digest({"adapter":PIPELINE_VERSION}),input_sha256=digest(_packed(payload)),paid=provider.paid)
+        except PlatformError as exc:
+            if research_protocol is not None and exc.code == "model_call_already_reserved" and exc.params.get("status") in ("reserved","outcome_unknown"):
+                raise PlatformError("provider_outcome_unknown",409,stage=stage) from None
+            raise
         started = time.monotonic()
         try:
             result = provider.invoke(payload)
@@ -1209,13 +1228,39 @@ def run_segmentation(repository,blobs,job,providers):
     return document,{"status":"incomplete" if errors else "succeeded","stages":stages.records,"errors":errors}
 
 
+def _generation_targets(document, job):
+    # A scene batch freezes the reviewed IDs; an omitted list must never mean
+    # "generate everything", including reference surfaces and existing models.
+    inputs = job.get("inputs", {})
+    requested = inputs.get("entityIds")
+    if requested is None and inputs.get("entityId"):
+        requested = [inputs["entityId"]]
+    if (not isinstance(requested, list) or not requested or any(not isinstance(x, str) for x in requested)
+            or len(requested) != len(set(requested))):
+        raise PlatformError("generation_targets_required", 422)
+    by_id = {e["id"]: e for e in document["entities"]}
+    if any(identity not in by_id for identity in requested):
+        raise PlatformError("entity_not_found", 404)
+    entities = [by_id[identity] for identity in requested]
+    observations = {o['id']: o for o in document['observations']}
+    for entity in entities:
+        refs = [observations[oid] for oid in entity.get('observationRefs', []) if oid in observations]
+        floor = entity.get('geometryRole') == 'floor' or refs and all(
+            any(e.get('geometryRole') == 'floor' for e in o.get('labelEvidence', [])) for o in refs)
+        if entity.get('sourceContext') or floor:
+            raise PlatformError("generation_reference_surface", 409, entityId=entity['id'])
+        if entity.get('parentEntityId') or any(e.get('parentEntityId') == entity['id'] for e in by_id.values()):
+            raise PlatformError("generation_part_workflow_required", 409, entityId=entity['id'])
+        active = next((r for r in entity.get('representations', []) if r['id'] == entity.get('activeModelRepresentationId')), None)
+        if job['kind'] == 'generate_scene' and active and active.get('kind') in ('generated_mesh', 'primitive') and active.get('sourceValidity') != 'stale':
+            raise PlatformError("generation_model_already_present", 409, entityId=entity['id'])
+    return requested, entities
+
+
 def run_generation(repository,blobs,job,providers):
     _,document,images = _capture(repository,blobs,job)
+    requested, entities = _generation_targets(document, job)
     stages = _Stages(repository,blobs,job,providers)
-    requested = job["inputs"].get("entityIds") or ([job["inputs"]["entityId"]] if job["inputs"].get("entityId") else [e["id"] for e in document["entities"] if not e.get("sourceContext")] if job["kind"] == "generate_scene" else [])
-    entities = [e for e in document["entities"] if e["id"] in requested]
-    if not requested or len(entities) != len(set(requested)):
-        raise PlatformError("entity_not_found",404)
     errors,ready = [],[]
     try:
         frames,canonical = _load_geometry(document,images,stages)
@@ -1381,24 +1426,35 @@ def providers_from_manifest(snapshot: Mapping[str,Any], *, _research=False) -> d
                 raise PlatformError("generation_requires_sam3d")
             def invoke(payload, *, config=config,pins=pins,research=_research):
                 import modal
-                received = {}
+                received, runtime_evidence = {}, {}
                 def runtime(**kwargs):
                     klass = modal.Cls.from_name(config["modalApp"],config["modalClass"])
-                    result = getattr(klass(),config["modalMethod"]).remote(kwargs)
+                    expected = {"expectedRuntimeManifestSha256":digest(payload["_researchProtocol"]["runtimeManifest"]["generation"])} if research else {}
+                    result = getattr(klass(),config["modalMethod"]).remote(kwargs,**expected)
                     received.update(_telemetry(result))
+                    result = _unpacked(result)
+                    if research:
+                        runtime_evidence.update({k:result[k] for k in ("pins","runtimeManifestSha256","vertices","faces","officialPosedVertices","objectToProvider","internalDepthCalls","decodeFormats") if k in result})
                     if result.get("pins") != pins:
                         raise ProviderResponseError(received)
-                    return _unpacked(result)
+                    if research and result.get("runtimeManifestSha256") != digest(payload["_researchProtocol"]["runtimeManifest"]["generation"]):
+                        raise ProviderResponseError(received)
+                    return result
                 adapter = SAM3DMeshAdapter.for_research(runtime,pins,config["providerToOpenCV"],payload["_researchProtocol"]) if research else SAM3DMeshAdapter(runtime,pins,config["nativePoseEvidence"],config["providerToOpenCV"])
                 frame = FrameGeometry(payload["imageId"],payload["coordinateFrameId"],payload["imageSha256"],payload["points"],payload["valid"],payload["K"],payload["cameraToWorld"])
                 try:
                     result = adapter.generate(GenerationRequest(payload["entityId"],payload["image"],payload["mask"],frame,payload["seed"]))
                 except Exception:
+                    if research and runtime_evidence:
+                        return {"providerError":{"code":"research_response_invalid"},"runtimeEvidence":runtime_evidence,
+                                "telemetry":{k:v for k,v in received.items() if k != "providerRequestId"},"providerRequestId":received.get("providerRequestId")}
                     if received:
                         raise ProviderResponseError(received) from None
                     raise
+                provenance = {**result.provenance, "shapeStatus":"research_only"} if research else result.provenance
                 return {"vertices":result.mesh.vertices,"faces":result.mesh.faces,"colors":result.mesh.colors,
-                        "proposedObjectToNative":result.proposed_object_to_native,"provenance":result.provenance,
+                        "proposedObjectToNative":result.proposed_object_to_native,"provenance":provenance,
+                        **({"runtimeEvidence":runtime_evidence} if research else {}),
                         "telemetry":{k:v for k,v in received.items() if k != "providerRequestId"},"providerRequestId":received.get("providerRequestId")}
         else:
             raise PlatformError("unknown_provider_stage",stage=stage)
@@ -1408,22 +1464,87 @@ def providers_from_manifest(snapshot: Mapping[str,Any], *, _research=False) -> d
     return providers
 
 
-def run_research_stage(repository,blobs,job,stage,payload,images,provider_manifest,protocol):
-    """Explicit experiment entrypoint; returns an artifact, never a product scene.
-
-    The experiment can measure a not-yet-passed quality gate; licensing and pinned
-    runtime evidence are still required. No automatic call from product handlers.
-    """
-    required = {"id","inputHashes","baselineRevision","metricDefinitions","policyThresholds","split"}
-    if not isinstance(protocol,dict) or not required <= set(protocol) or not protocol["inputHashes"] or not protocol["metricDefinitions"]:
+def _validate_research_protocol(protocol):
+    required = {"id","purpose","inputHashes","baselineRevision","metricDefinitions","policyThresholds","split",
+                "entityId","inputAssetHashes","payloadSha256","providerManifestSha256","callLimits"}
+    if not isinstance(protocol,dict) or not required <= set(protocol):
         raise PlatformError("frozen_research_protocol_required",409)
-    if [i["sha256"] for i in images] != protocol["inputHashes"]:
+    if protocol["purpose"] not in ("runtime_validation","quality_validation"):
+        raise PlatformError("invalid_research_purpose",409)
+    if any(not isinstance(protocol[k],str) or not protocol[k] for k in ("id","baselineRevision","entityId","split")) or not isinstance(protocol["metricDefinitions"],dict) or not protocol["metricDefinitions"] or not isinstance(protocol["policyThresholds"],dict):
+        raise PlatformError("frozen_research_protocol_required",409)
+    hashes = protocol["inputHashes"]
+    refs = protocol["inputAssetHashes"]
+    if not isinstance(hashes,list) or not hashes or not isinstance(refs,list) or not refs or any(not isinstance(r,dict) or not r.get("assetId") or not re.fullmatch(r"[0-9a-f]{64}",str(r.get("sha256",""))) for r in refs) or any(not re.fullmatch(r"[0-9a-f]{64}",str(h)) for h in [*hashes,protocol["payloadSha256"],protocol["providerManifestSha256"]]):
+        raise PlatformError("research_input_hash_mismatch",409)
+    limits = protocol["callLimits"]
+    # ponytail: one immutable job performs one call; multi-input experiments use separate reviewed jobs.
+    if not isinstance(limits,dict) or type(limits.get("maxCalls")) is not int or limits["maxCalls"] != 1 or any(type(limits.get(k)) not in (int,float) or not np.isfinite(limits[k]) or limits[k] <= 0 for k in ("maxCostPerCallUsd","maxTotalCostUsd")) or limits["maxCostPerCallUsd"] > limits["maxTotalCostUsd"]:
+        raise PlatformError("research_call_budget_invalid",409)
+
+
+def _validate_research_runtime(protocol,pins):
+    runtime = (protocol.get("runtimeManifest") or {}).get("generation") or {}
+    checkpoint = Path(str(runtime.get("checkpointConfig") or ""))
+    allowed = {"pins","runtimeImage","distribution","meshSourceBuildSha256","checkpointConfig"}
+    if set(runtime)-allowed or pins.get("model") != "facebook/sam-3d-objects" or any(not re.fullmatch(r"[0-9a-f]{40}",str(pins.get(k,""))) for k in ("codeRevision","modelRevision")) or runtime.get("pins") != pins or runtime.get("distribution") != "sam3d_objects" or not re.fullmatch(r"[^\s]+@sha256:[0-9a-f]{64}",str(runtime.get("runtimeImage",""))) or not re.fullmatch(r"[0-9a-f]{64}",str(runtime.get("meshSourceBuildSha256",""))) or not runtime.get("checkpointConfig") or checkpoint.is_absolute() or ".." in checkpoint.parts:
+        raise PlatformError("research_runtime_unpinned",409)
+
+
+def validate_research_manifest(protocol, provider_manifest):
+    """Configuration prerequisites only: successful research never approves release gates."""
+    _validate_research_protocol(protocol)
+    if digest(provider_manifest) != protocol["providerManifestSha256"]:
+        raise PlatformError("research_provider_hash_mismatch",409)
+    if "generation" not in provider_manifest:
+        return
+    config = provider_manifest["generation"]
+    cost = config.get("estimatedCostUsd")
+    if config.get("paid",True) is not True or type(cost) not in (int,float) or not np.isfinite(cost) or not 0 < cost <= protocol["callLimits"]["maxCostPerCallUsd"]:
+        raise PlatformError("research_call_budget_invalid",409)
+    if any(not isinstance(config.get(k),str) or not config[k] for k in ("provider","modalApp","modalClass","modalMethod")):
+        raise PlatformError("research_runtime_unpinned",409)
+    pins = config.get("pins",{})
+    _validate_research_runtime(protocol,pins)
+    native = config.get("nativePoseEvidence") or {}
+    if native.get("pins") != pins or any((native.get(g) or {}).get("status") != "passed" or not re.fullmatch(r"[0-9a-f]{64}",str((native.get(g) or {}).get("artifactSha256",""))) for g in ("licenseAudit","meshOnlyDependencyAudit")):
+        raise PlatformError("research_source_audit_unverified",409)
+    # Validate the research basis without requiring the fixture this job will measure.
+    SAM3DMeshAdapter.for_research(None,pins,config.get("providerToOpenCV"),protocol)
+
+
+def run_research_stage(repository,blobs,job,stage,payload,images,provider_manifest,protocol):
+    """Admin experiment entrypoint: artifacts only, using the ordinary charged-call ledger."""
+    validate_research_manifest(protocol,provider_manifest)
+    if job.get("kind") != "validate_model" or job.get("config",{}).get("researchProtocolSha256") != digest(protocol):
+        raise PlatformError("admin_research_job_required",403)
+    if protocol["baselineRevision"] != job["baseRevisionId"] or [i["sha256"] for i in images] != protocol["inputHashes"] or digest(_packed(payload)) != protocol["payloadSha256"] or (stage == "generation" and payload.get("entityId") != protocol["entityId"]):
         raise PlatformError("research_input_hash_mismatch",409)
     providers = providers_from_manifest(provider_manifest,_research=True)
     stages = _Stages(repository,blobs,job,providers)
-    protocol_asset = stages.put({"protocol":protocol,"providerManifest":provider_manifest},{"kind":"frozen_research_protocol"})
+    protocol_asset = stages.put({"protocol":protocol,"providerManifest":provider_manifest},{"kind":"frozen_research_protocol","scope":"research_only"})
     if stage == "generation":
         payload = {**payload,"_researchProtocol":protocol}
-    output,asset = stages.call(stage,images,payload,[_ref(protocol_asset)],research_protocol=protocol)
-    return {"status":"research_only","protocolAssetId":protocol_asset["id"],"outputAssetId":asset["id"],"stages":stages.records,"output":output,
-            "productReleaseStatus":"not_changed","sceneRevision":None}
+    _,asset = stages.call(stage,images,payload,[_ref(protocol_asset)],research_protocol=protocol)
+    return {"status":"succeeded","scope":"research_only","protocolAssetId":protocol_asset["id"],"outputAssetId":asset["id"],"stages":stages.records,
+            "newModelCalls":sum(s["newModelCalls"] for s in stages.records),"productReleaseStatus":"not_changed","sceneRevision":None}
+
+
+def run_research_job(repository,blobs,job):
+    """Load only the admin CLI's immutable envelope, never caller-supplied runtime config."""
+    asset = repository.get_asset(job["inputs"]["validationAssetId"])
+    if asset["projectId"] != job["projectId"] or asset["sha256"] != job["inputs"].get("validationSha256") or asset.get("metadata",{}).get("kind") != "sam3d_validation_input":
+        raise PlatformError("research_input_hash_mismatch",409)
+    frozen = json.loads(blobs.get(asset["storageKey"],asset["sha256"],asset["sizeBytes"]))
+    if frozen.get("schemaVersion") != 1 or frozen.get("authority",{}).get("source") != "database_admin" or any(frozen.get(k) != job[k] for k in ("projectId","branchId","baseRevisionId")):
+        raise PlatformError("admin_research_job_required",403)
+    source = repository.get_revision(job["baseRevisionId"])["document"]
+    if digest(source) != frozen.get("baseDocumentSha256"):
+        raise PlatformError("research_input_hash_mismatch",409)
+    scene_assets = {a["id"]:a for a in source["assets"]}
+    for ref in frozen["protocol"]["inputAssetHashes"]:
+        asset = repository.get_asset(ref["assetId"])
+        if ref["assetId"] not in scene_assets or asset["sha256"] != ref["sha256"] or scene_assets[ref["assetId"]]["sha256"] != ref["sha256"]:
+            raise PlatformError("research_input_hash_mismatch",409)
+        blobs.get(asset["storageKey"],asset["sha256"],asset["sizeBytes"])
+    return run_research_stage(repository,blobs,job,"generation",_unpacked(frozen["payload"]),frozen["images"],frozen["providerManifest"],frozen["protocol"])

@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import {representationPass} from '../src/viewer/native-viewer.ts';
 import {cameraForImage} from '../src/core.ts';
+import {modelFamily} from '../src/scene-semantics.ts';
 import {boundsCorners,point,transformMatrix} from '../src/viewer/native-math.ts';
 
 // Execute the actual draw function against a one-pixel depth buffer. Geometry,
@@ -30,7 +31,7 @@ function pixel(objects,selected='marking',override={},pick=false,exact=false){
  const doc={entities:[context,marking,occluder]},layers={observed_surface:true,generated_mesh:true,primitive:true,point_cloud:false,showBounds:false,showCandidates:false,imageId:'photo',observations,...override};
  const scope=vm.createContext({disposed:false,camera:{exact},gl,viewSize:()=>({w:100,h:100,cw:100,ch:100}),devicePixelRatio:1,
   canvas:{style:{},width:100,height:100},photo:{style:{}},program:{},cameraMatrix:()=>[],radius:1,u:{selected:'selected'},gpu:objects,doc,layers,
-  entity:id=>doc.entities.find(e=>e.id===id),selection:{entityId:selected},frameId:'native',representationPass,attrs:[],model:()=>[],
+  entity:id=>doc.entities.find(e=>e.id===id),selection:{entityId:selected},frameId:'native',representationPass,modelFamily,attrs:[],model:()=>[],
   svg:{setAttribute(){},replaceChildren(){}},projected(){},add(){},document:{}});
  vm.runInContext(code,scope);scope.render(pick);return pixel;
 }

@@ -316,6 +316,13 @@ class CadReference(DTO):
     evidenceRefs: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class PartRelation(DTO):
+    source: Literal['manual'] = 'manual'
+    baseRevisionId: str = Field(min_length=1)
+    evidenceRefs: list[SourceObservationRevision] = Field(min_length=1)
+    reason: str = Field(min_length=1, max_length=8000)
+
+
 class Entity(IdentifiedDocument):
     label: str | None = None
     observationRefs: list[str] | None = None
@@ -326,6 +333,8 @@ class Entity(IdentifiedDocument):
     visible: bool | None = None
     material: dict[str, Any] | None = None
     groupId: str | None = None
+    parentEntityId: str | None = None
+    partRelation: PartRelation | None = None
     lineage: list[Any] | None = None
     activeModelRepresentationId: str | None = None
     measurementEvidence: list[MeasurementEvidence] | None = None
@@ -408,6 +417,14 @@ class ProjectDetail(DTO):
 
 class Operation(DocumentDTO):
     type: str
+
+
+class SetPartRelationOperation(DTO):
+    type: Literal['setPartRelation']
+    entityId: str = Field(min_length=1)
+    parentEntityId: str | None
+    evidenceRefs: list[SourceObservationRevision] = Field(min_length=1)
+    reason: str = Field(min_length=1, max_length=8000)
 
 
 class EditBatch(RequestedRecord):
@@ -821,4 +838,6 @@ def validate_document(document: dict[str, Any]) -> dict[str, Any]:
     if document["schemaVersion"] == 2:
         from .identity import validate_identity_document
         validate_identity_document(document)
+    from .identity import validate_part_relations
+    validate_part_relations(document)
     return document

@@ -79,7 +79,7 @@ import type {
   Vec3,
 } from "./types";
 import { mountSceneViewer } from "./viewer/native-viewer";
-import { entityEvidenceStatus, isReferenceSurface } from "./scene-semantics";
+import { entityEvidenceStatus, isReferenceSurface, modelFamily } from "./scene-semantics";
 import "./styles.css";
 const PolicyPage = lazy(() => import("./PolicyPage"));
 const path = (value: string) => "#" + value;
@@ -685,6 +685,8 @@ function Workbench({
     extra: Record<string, unknown> = {},
   ) => {
     if (!detail || inFlight.current) return;
+    try { previewOperations(detail.revision.document, canWrite ? ops : [...operations, ...ops], detail.revision.id); }
+    catch (error) { setError(error); return false; }
     if (!canWrite) {
       setOperations((old) => [...old, ...ops]);
       setStatus("temporary");
@@ -873,7 +875,7 @@ function Workbench({
   const revision = operations.length
     ? {
         ...detail.revision,
-        document: previewOperations(detail.revision.document, operations),
+        document: previewOperations(detail.revision.document, operations, detail.revision.id),
       }
     : detail.revision;
   return (
@@ -1053,6 +1055,7 @@ export function SpatialView({
   layers,
   modelPreview,
   onModelPreview,
+  onAssetStates,
 }: {
   revision: Revision;
   selection: Selection;
@@ -1063,15 +1066,17 @@ export function SpatialView({
   layers: Record<string, any>;
   modelPreview?: { entityId: string; frameId: string; mode: "free" | "front" | "side" | "top"; requestKey: string };
   onModelPreview?: (requestKey: string, image: string) => void;
+  onAssetStates?: (revisionId: string, states: import("./types").RepresentationLoadState[]) => void;
 }) {
   const host = useRef<HTMLDivElement>(null),
     runtime = useRef<any>(null),
-    callbacks = useRef({ onSelect, onCommit, revision, modelPreview, onModelPreview }),
+    callbacks = useRef({ onSelect, onCommit, revision, selection, modelPreview, onModelPreview, onAssetStates }),
     capturedKey = useRef<string | null>(null),
     { language, t } = useI18n(),
     [status, setStatus] = useState("loadingModel"),
     [error, setError] = useState<unknown>();
-  callbacks.current = { onSelect, onCommit, revision, modelPreview, onModelPreview };
+  callbacks.current = { onSelect, onCommit, revision, selection, modelPreview, onModelPreview, onAssetStates };
+  const viewCameraKey = mode === "photo" ? cameraId : currentCameras(revision.document).find(camera => camera.id === cameraId)?.coordinateFrameId;
   function refreshModelPreview() {
     const current = callbacks.current, request = current.modelPreview;
     if (!request || !current.onModelPreview || capturedKey.current === request.requestKey) return;
@@ -1109,11 +1114,16 @@ export function SpatialView({
               callbacks.current.onSelect(event.entityId, event.observationId);
           } else if (event.type === "transformCommitIntent" && event.operations)
             callbacks.current.onCommit(event.operations);
-          else if (event.type === "loadError" || event.type === "contextLost")
-            setError(new Error(event.message || event.code || "error"));
+          else if (event.type === "loadError" || event.type === "contextLost") {
+            const current = callbacks.current;
+            if (!event.entityId || !current.selection.entityId || modelFamily(current.revision.document, current.selection.entityId).some(entity => entity.id === event.entityId))
+              setError(Object.assign(new Error(event.message || event.code || "error"), { entityId: event.entityId }));
+          }
           else if (event.type === "renderReady") setStatus("");
           else if (event.type === "loadProgress")
-            setStatus(event.message || "loadingModel");
+            setStatus(event.phase === "assets" && event.pending === 0 ? "" : event.message || "loadingModel");
+          if (event.type === "loadProgress" && event.phase === "assets" && event.revisionId === callbacks.current.revision.id)
+            callbacks.current.onAssetStates?.(event.revisionId, event.states);
           if (event.type === "renderReady" || event.type === "loadProgress" && event.phase === "assets") refreshModelPreview();
         },
       });
@@ -1133,12 +1143,13 @@ export function SpatialView({
     Promise.resolve(runtime.current?.setScene(revision)).catch(setError);
   }, [revision]);
   useEffect(() => {
+    setError((current: unknown) => current instanceof Error && "entityId" in current && current.entityId ? undefined : current);
     runtime.current?.setSelection(selection);
   }, [selection.entityId, selection.observationId, selection.revisionId]);
   useEffect(() => {
     runtime.current?.setLayers(layers);
     runtime.current?.setCamera({ mode, cameraId });
-  }, [mode, cameraId, layers.modelOnly, layers.observed_surface, layers.point_cloud]);
+  }, [mode, viewCameraKey, layers.modelOnly, layers.observed_surface, layers.point_cloud]);
   useEffect(() => {
     runtime.current?.setLayers(layers);
   }, [JSON.stringify(layers)]);
@@ -1645,7 +1656,7 @@ function EntityInspector({
   );
   const referenceSurface = isReferenceSurface(document, entity),
     evidenceStatus = entityEvidenceStatus(document, entity),
-    transform = referenceSurface ? null : editableTransform(entity),
+    transform = referenceSurface ? null : editableTransform(entity, document),
     dimensions = sourceDimensions(entity),
     scale = sourceScale(document, entity),
     model = modelGeometry(entity),

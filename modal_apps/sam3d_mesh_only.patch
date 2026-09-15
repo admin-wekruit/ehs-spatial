@@ -2,12 +2,12 @@
 +++ b/sam3d_objects/pipeline/inference_pipeline.py
 @@ -46,7 +46,6 @@
  )
- 
+
  from sam3d_objects.model.backbone.tdfy_dit.modules import sparse as sp
 -from sam3d_objects.model.backbone.tdfy_dit.utils import postprocessing_utils
  from safetensors.torch import load_file
- 
- 
+
+
 @@ -540,7 +539,16 @@
          logger.info(
              f"Postprocessing mesh with option with_mesh_postprocess {with_mesh_postprocess}, with_texture_baking {with_texture_baking}..."
@@ -35,7 +35,7 @@
 -from sam3d_objects.model.backbone.tdfy_dit.renderers.gaussian_render import GaussianRenderer
  from loguru import logger
  from utils3d.numpy import depth_edge
- 
+
 @@ -584,6 +583,7 @@
      Forces square rendering (H=W) to work with unmodified gaussian_render.py.
      """
@@ -44,3 +44,56 @@
      orig_h, orig_w = Mask.shape[-2:]
      min_orig_size = min(orig_w, orig_h)
      scale_factor = min_size / min_orig_size
+--- a/sam3d_objects/model/backbone/tdfy_dit/models/__init__.py
++++ b/sam3d_objects/model/backbone/tdfy_dit/models/__init__.py
+@@ -2,7 +2,6 @@
+
+ from .sparse_structure_flow import SparseStructureFlowModel, SparseStructureFlowTdfyWrapper
+ from .sparse_structure_vae import SparseStructureEncoder, SparseStructureDecoder
+-from .structured_latent_vae import SLatGaussianDecoder
+ from .structured_latent_flow import SLatFlowModel, SLatFlowModelTdfyWrapper
+
+ def from_pretrained(path: str, **kwargs):
+@@ -38,3 +37,11 @@
+     model.load_state_dict(load_file(model_file))
+
+     return model
++
++
++def __getattr__(name):
++    # Mesh imports must not load the optional Gaussian implementation.
++    if name == "SLatGaussianDecoder":
++        from .structured_latent_vae import SLatGaussianDecoder
++        return SLatGaussianDecoder
++    raise AttributeError(name)
+--- a/sam3d_objects/model/backbone/tdfy_dit/models/structured_latent_vae/__init__.py
++++ b/sam3d_objects/model/backbone/tdfy_dit/models/structured_latent_vae/__init__.py
+@@ -1,4 +1,11 @@
+ # Copyright (c) Meta Platforms, Inc. and affiliates.
+ from .encoder import SLatEncoder
+-from .decoder_gs import SLatGaussianDecoder
+ from .decoder_rf import SLatRadianceFieldDecoder
++
++
++def __getattr__(name):
++    # Mesh imports must not load the optional Gaussian implementation.
++    if name == "SLatGaussianDecoder":
++        from .decoder_gs import SLatGaussianDecoder
++        return SLatGaussianDecoder
++    raise AttributeError(name)
+--- a/sam3d_objects/model/backbone/tdfy_dit/representations/__init__.py
++++ b/sam3d_objects/model/backbone/tdfy_dit/representations/__init__.py
+@@ -1,5 +1,12 @@
+ # Copyright (c) Meta Platforms, Inc. and affiliates.
+ from .radiance_field import Strivec
+ from .octree import DfsOctree as Octree
+-from .gaussian import Gaussian
+ from .mesh import MeshExtractResult
++
++
++def __getattr__(name):
++    # Mesh imports must not load the optional Gaussian implementation.
++    if name == "Gaussian":
++        from .gaussian import Gaussian
++        return Gaussian
++    raise AttributeError(name)

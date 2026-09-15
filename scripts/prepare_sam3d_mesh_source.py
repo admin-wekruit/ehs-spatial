@@ -19,6 +19,9 @@ RECEIPT = "sam3d_objects/panoptes_mesh_build.json"
 SOURCE_HASHES = {
     "sam3d_objects/pipeline/inference_pipeline.py": "e83e9560a727b06565134ea855503034d3510cbfbeeff2b6ca6dc13013536d2f",
     "sam3d_objects/pipeline/layout_post_optimization_utils.py": "0603a4455acbe390f46b0c482aaaab9e2ad6da5668be575e646149e84f06ee11",
+    "sam3d_objects/model/backbone/tdfy_dit/models/__init__.py": "f9cdf6b86d71e23fea5b54eb2045fb96d3de13c88c1561bcacb4caad1f6e6f91",
+    "sam3d_objects/model/backbone/tdfy_dit/models/structured_latent_vae/__init__.py": "a1954488f54bc60850a40a4f16c35dacea7d857721c2843827c3825eced6d12b",
+    "sam3d_objects/model/backbone/tdfy_dit/representations/__init__.py": "86c302b322d161e8305943ef07bb3c8e93ea143acada479d068af32768b8adcd",
 }
 
 

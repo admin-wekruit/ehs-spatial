@@ -91,6 +91,9 @@ def run_job(repository, blobs, job_id, providers=None):
             elif job['kind'] == 'reassociate_scene':
                 from ehs_spatial.platform.reconstruction import run_reassociation
                 document, result = run_reassociation(repository, blobs, job)
+            elif job['kind'] == 'validate_model':
+                from ehs_spatial.platform.reconstruction import run_research_job
+                result = run_research_job(repository, blobs, job)
             elif job['kind'] in {'analyze_capture', 'generate_object', 'generate_scene', 'segment_object'}:
                 from ehs_spatial.platform import reconstruction
                 providers = reconstruction.providers_from_manifest(job["config"].get("providerManifest", {})) if providers is None else providers
@@ -108,6 +111,9 @@ def run_job(repository, blobs, job_id, providers=None):
             status = 'failed'
             result = {'error': {'code': 'worker_error', 'params': {'type': type(exc).__name__}}}
         result['timings'] = {**result.get('timings', {}), 'workerSeconds': time.monotonic() - started}
+        if job['kind'] == 'validate_model':
+            document = None
+            result.update(scope='research_only', productReleaseStatus='not_changed', sceneRevision=None)
         return repository.finish_job(job['id'], job['attemptToken'], status, document=document, result=result)
 
 

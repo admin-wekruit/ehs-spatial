@@ -1,5 +1,22 @@
 import type { Entity, SceneDocument } from "./types";
 
+/** Explicit model parts use absolute transforms in the same native frame. */
+export function modelFamily(document: SceneDocument, entityId: string): Entity[] {
+  const target = document.entities.find(entity => entity.id === entityId);
+  if (!target) return [];
+  const children = new Map<string, Entity[]>();
+  for (const entity of document.entities) if (entity.parentEntityId) {
+    const group = children.get(entity.parentEntityId) || []; group.push(entity); children.set(entity.parentEntityId, group);
+  }
+  const family: Entity[] = [], pending = [target], seen = new Set<string>();
+  while (pending.length) {
+    const entity = pending.pop()!;
+    if (seen.has(entity.id)) throw Error("part_relation_cycle");
+    seen.add(entity.id); family.push(entity); pending.push(...(children.get(entity.id) || []).slice().reverse());
+  }
+  return family;
+}
+
 export function identityCounts(document: SceneDocument) {
   const entities = document.entities.filter(entity => !entity.sourceContext);
   return { records: entities.length,

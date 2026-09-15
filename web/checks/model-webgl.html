@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Actual model WebGL acceptance</title>
+<style>body{font:16px system-ui;margin:24px}#scene{width:640px;height:480px}pre{white-space:pre-wrap}</style>
+<h1>Actual model WebGL acceptance</h1><div id="scene"></div><pre id="result">Running…</pre>
+<script type="module">
+// Run with the existing Vite server at /checks/model-webgl.html. Every draw,
+// upload, shader, decoded triangle and preview uses the production renderer.
+import {mountSceneViewer} from '/src/viewer/native-viewer.ts';
+const result=document.querySelector('#result'),host=document.querySelector('#scene');
+const assert=(value,message)=>{if(!value)throw Error(message);};
+const pose=x=>({coordinateFrameId:'native',position:[x,0,0],quaternion:[0,0,0,1],scale:[1,1,1]});
+const urls=[],events=[];let leftGate=null;
+function packed(id,color,empty=false){
+  const buffer=new ArrayBuffer(empty?0:120);
+  if(!empty){const vertices=new Float32Array(buffer,0,27);[[0,0,0],[1,0,0],[0,0,1]].forEach((p,i)=>vertices.set([...p,0,-1,0,...color],i*9));new Uint32Array(buffer,108,3).set([0,1,2]);}
+  const url=URL.createObjectURL(new Blob([buffer]));urls.push(url);
+  return {id,url,format:'panoptes-mesh-v1',byteLayout:{stride:9,vertexCount:empty?0:3,indexByteOffset:empty?0:108,indexCount:empty?0:3,indexType:'uint32'}};
+}
+function model(id,assetId,x,parentEntityId){
+  const transform=pose(x),rep={id:'model-'+id,kind:'generated_mesh',assetId,coordinateFrameId:'native',transform,placementState:'confirmed',bounds:{min:[0,0,0],max:[1,0,1]}};
+  return {id,parentEntityId,currentModelTransform:transform,activeModelRepresentationId:rep.id,representations:[rep]};
+}
+function brokenTextureGLB(){
+  const binary=new Uint8Array(68);new Float32Array(binary.buffer,0,9).set([0,0,0,1,0,0,0,0,1]);
+  new Float32Array(binary.buffer,36,6).set([0,0,1,0,0,1]);
+  const spec={asset:{version:'2.0'},scene:0,scenes:[{nodes:[0]}],nodes:[{mesh:0}],meshes:[{primitives:[{attributes:{POSITION:0}},{attributes:{POSITION:0,TEXCOORD_0:1},material:0}]}],
+    buffers:[{byteLength:binary.length}],bufferViews:[{buffer:0,byteOffset:0,byteLength:36},{buffer:0,byteOffset:36,byteLength:24},{buffer:0,byteOffset:60,byteLength:8}],
+    accessors:[{bufferView:0,componentType:5126,count:3,type:'VEC3'},{bufferView:1,componentType:5126,count:3,type:'VEC2'}],
+    materials:[{pbrMetallicRoughness:{baseColorTexture:{index:0}}}],textures:[{source:0}],images:[{bufferView:2,mimeType:'image/png'}]};
+  const json=new TextEncoder().encode(JSON.stringify(spec)),size=Math.ceil(json.length/4)*4,buffer=new ArrayBuffer(28+size+binary.length),view=new DataView(buffer),bytes=new Uint8Array(buffer);
+  [0x46546c67,2,buffer.byteLength,size,0x4e4f534a].forEach((n,i)=>view.setUint32(i*4,n,true));bytes.fill(32,20,20+size);bytes.set(json,20);view.setUint32(20+size,binary.length,true);view.setUint32(24+size,0x004e4942,true);bytes.set(binary,28+size);
+  const url=URL.createObjectURL(new Blob([buffer]));urls.push(url);return {id:'broken-texture',url};
+}
+const left=packed('left',[.9,.1,.1]),right=packed('right',[.1,.2,.9]),empty=packed('empty',[1,1,1],true),
+  parent={id:'assembly',activeModelRepresentationId:null,currentModelTransform:pose(100),representations:[]},
+  entities=[parent,model('a','left',-2,'assembly'),model('b','right',2,'assembly'),model('bad','corrupt',5),model('missing','missing',8),model('empty','empty',10),model('partial','broken-texture',12)],
+  scene={schemaVersion:2,captureId:'webgl-check',assets:[left,right,empty,brokenTextureGLB(),{id:'corrupt'},{id:'missing'}],entities,cameras:[],observations:[],coordinateFrames:[{id:'native',ground:{normal:[0,0,1]}}]};
+const viewer=mountSceneViewer(host,{resolveAsset:async id=>{
+  if(id==='left'&&leftGate)await leftGate;
+  if(id==='missing')throw Error('asset_unavailable');
+  if(id==='corrupt')return 'data:application/octet-stream;base64,AAAA';
+  return scene.assets.find(asset=>asset.id===id).url;
+},onEvent:event=>events.push(event)});
+try{
+  viewer.setLayers({modelOnly:true,observed_surface:false,point_cloud:false,generated_mesh:true,primitive:true,lighting:false,showBounds:false,showCandidates:true});
+  await viewer.setScene({id:'revision',document:scene});viewer.setCamera('front');
+  const progress=events.filter(event=>event.phase==='assets').at(-1);
+  assert(progress.total===6&&progress.loaded===2&&progress.failed===4&&progress.pending===0,'Failures must not increment successful asset loads');
+  assert(progress.vertices===6&&progress.triangles===2,'Count only successfully decoded and uploaded geometry');
+  assert(progress.states.every(state=>state.entityId&&state.representationId&&state.assetId),'Every load state identifies entity, representation and asset');
+  assert(progress.states.filter(state=>state.state==='error').every(state=>state.vertexCount===0&&state.triangleCount===0),'Failed and empty meshes contribute no geometry');
+  assert(events.some(event=>event.type==='renderReady'&&event.canvasReady),'Canvas readiness can coexist with explicit failed assets');
+  const canvas=host.querySelector('canvas'),gl=canvas.getContext('webgl2'),rawDraw=gl.drawElements.bind(gl);let draws=0;
+  gl.drawElements=(...args)=>{draws++;rawDraw(...args);};
+  function pixels(color){const data=new Uint8Array(canvas.width*canvas.height*4);gl.readPixels(0,0,canvas.width,canvas.height,gl.RGBA,gl.UNSIGNED_BYTE,data);let found=0;for(let i=0;i<data.length;i+=4)if(color.every((c,k)=>Math.abs(data[i+k]-Math.round(c*255))<=2))found++;return found;}
+  const red=[.9,.1,.1],blue=[.1,.2,.9],tint=color=>color.map((v,k)=>v*.6+[.28,.86,.75][k]*.4);
+  viewer.setSelection({entityId:null});assert(pixels(red)>100&&pixels(blue)>100,'The unselected scene contains both real packed triangles');
+  draws=0;viewer.setSelection({entityId:'assembly'});assert(draws===2,'Draw each actual part exactly once, with no invented parent mesh');
+  assert(pixels(tint(red))>100&&pixels(tint(blue))>100,'Parent selection highlights the union of its real parts');
+  viewer.setSelection({entityId:'a'});assert(pixels(tint(red))>100&&pixels(blue)>100&&pixels(tint(blue))===0,'Child selection highlights only its own real mesh');
+  const before=canvas.toDataURL();
+  for(const mode of ['free','front','side','top'])assert(viewer.captureModel('assembly',mode,'revision','native')?.startsWith('data:image/png'),'An empty-residual parent produces a real family preview');
+  assert(canvas.toDataURL()===before,'Capturing family previews restores the main camera and selection pixels');
+  viewer.previewOperations([{type:'setTransform',entityId:'assembly',transform:pose(101)}]);
+  assert(canvas.toDataURL()!==before,'A parent drag preview applies the real world delta to its part meshes');
+  viewer.clearPreview();assert(canvas.toDataURL()===before,'Clearing a family preview restores every part');
+  assert(['bad','empty','partial'].every(id=>viewer.captureModel(id,'front','revision')===null),'Failed, empty or partially uploaded models never produce a substitute preview');
+  assert(viewer.captureModel('assembly','front','old-revision')===null,'An old revision cannot publish into the current preview');
+  entities.find(entity=>entity.id==='bad').parentEntityId='assembly';
+  assert(viewer.captureModel('assembly','front','revision')===null,'A failed child blocks publication of an incomplete family preview');
+  let releaseLeft;leftGate=new Promise(resolve=>{releaseLeft=resolve;});
+  const loading=structuredClone(scene);loading.captureId='late-edit';
+  const pending=viewer.setScene({id:'before-edit',document:loading});
+  const edited=structuredClone(loading);edited.entities.find(entity=>entity.id==='a').representations[0].material={color:[0,1,0]};
+  await viewer.setScene({id:'after-edit',document:edited});releaseLeft();await pending;
+  viewer.setCamera('front');viewer.setSelection({entityId:null});
+  assert(pixels([0,.1,0])>100,'An asset finishing after a material edit uses the current representation, never the old in-flight metadata');
+  assert(viewer.captureModel('a','front','after-edit')?.startsWith('data:image/png'),'The completed current representation supplies the current-revision preview');
+  result.textContent=JSON.stringify({status:'passed',loaded:progress.loaded,failed:progress.failed,vertices:progress.vertices,triangles:progress.triangles,checks:['actual packed decoding and GPU upload','explicit failed asset states','parent union without double transform','exactly one draw per mesh','parent and child selection pixels','four model camera captures','main camera and selection restored','family drag preview restored','incomplete family rejected','in-flight material edit uses current revision']},null,2);
+  document.body.dataset.status='passed';
+}catch(error){result.textContent=error.stack;document.body.dataset.status='failed';throw error;}
+finally{urls.forEach(url=>URL.revokeObjectURL(url));}
+</script></html>

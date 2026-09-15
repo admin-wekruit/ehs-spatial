@@ -9,7 +9,7 @@ import numpy as np
 from PIL import Image
 import pytest
 
-from ehs_spatial.platform.contracts import PlatformError,empty_document,validate_document
+from ehs_spatial.platform.contracts import PlatformError,empty_document,validate_document,digest
 from ehs_spatial.platform.reconstruction import (
     MAP_PINS,ProviderSpec,providers_from_env,run_analysis,run_generation,run_segmentation,
     provider_snapshot_from_env,providers_from_manifest,run_research_stage,_Stages,ProviderResponseError,
@@ -52,15 +52,39 @@ class Repo:
     def reserve_model_call(self,*args,**kwargs):
         if kwargs.get("paid") and self.paid_budget is None:
             raise PlatformError("paid_budget_not_configured",409)
+        if kwargs.get("paid") and args[5] + sum(c["estimate"] for c in self.calls) > self.paid_budget:
+            raise PlatformError("paid_budget_exceeded",409)
         if any(x["key"] == args[4] for x in self.calls):
-            raise PlatformError("model_call_already_reserved",409)
-        call = {"id":str(uuid4()),"key":args[4],"status":"reserved"}
+            existing = next(x for x in self.calls if x["key"] == args[4])
+            raise PlatformError("model_call_already_reserved",409,status=existing["status"])
+        call = {"id":str(uuid4()),"key":args[4],"status":"reserved","estimate":args[5]}
         self.calls.append(call)
         self.events.append(("reserve",args[2]))
         return call
     def complete_model_call(self,cid,status,**kwargs):
         next(c for c in self.calls if c["id"] == cid).update(status=status,**kwargs)
         self.events.append(("complete",status))
+
+
+def test_generation_batch_requires_explicit_targets_and_preserves_existing_models():
+    from ehs_spatial.platform.reconstruction import _generation_targets
+    entities = [{'id': 'floor', 'geometryRole': 'floor'}, {'id':'context','sourceContext': True},
+        {'id':'modeled','activeModelRepresentationId':'mesh','representations':[{'id':'mesh','kind':'generated_mesh'}]},
+        {'id':'parent'}, {'id':'part','parentEntityId':'parent'}, {'id':'a'}, {'id':'b'}]
+    document = {'entities':entities, 'observations':[]}
+    job = {'kind':'generate_scene', 'inputs':{}}
+    for ids, code in [(None,'generation_targets_required'), ([], 'generation_targets_required'),
+            (['a','a'], 'generation_targets_required'), (['unknown'],'entity_not_found'),
+            (['floor'],'generation_reference_surface'), (['context'],'generation_reference_surface'),
+            (['modeled'],'generation_model_already_present'), (['parent'],'generation_part_workflow_required'),
+            (['part'],'generation_part_workflow_required')]:
+        with pytest.raises(PlatformError, match=code):
+            _generation_targets(document, {**job, 'inputs':{'entityIds':ids}})
+    requested, targets = _generation_targets(document, {**job, 'inputs':{'entityIds':['b','a']}})
+    assert requested == [entity['id'] for entity in targets] == ['b','a']
+    # Explicit regeneration remains available and leaves the active pose intact
+    # (covered by the existing end-to-end regeneration cases).
+    assert _generation_targets(document, {'kind':'generate_object','inputs':{'entityId':'modeled'}})[0] == ['modeled']
 
 
 def provider(stage,fn,model=None,paid=False):
@@ -135,7 +159,10 @@ def test_generic_multiphoto_analysis_retains_tiny_objects_caches_frames_and_uses
     repo.document = deepcopy(document)
     # Context identity follows the shared field, including imported contexts.
     next(e for e in repo.document["entities"] if e.get("sourceContext")).pop("kind")
-    _, generation = run_generation(repo,blobs,{**repo.job,"kind":"generate_scene","inputs":{}},{})
+    with pytest.raises(PlatformError, match='generation_targets_required'):
+        run_generation(repo,blobs,{**repo.job,"kind":"generate_scene","inputs":{}},{})
+    requested = [e['id'] for e in document['entities'] if not e.get('sourceContext')]
+    _, generation = run_generation(repo,blobs,{**repo.job,"kind":"generate_scene","inputs":{"entityIds": requested}},{})
     assert set(generation["manifest"]["entityIds"]) == {e["id"] for e in document["entities"] if not e.get("sourceContext")}
     assert len(repo.calls) == calls
 
@@ -220,16 +247,20 @@ def test_frozen_provider_snapshot_not_mutable_deployment_and_research_does_not_p
     repo = Repo(blobs)
     evidence = deepcopy(spec.release_evidence)
     evidence["quality"] = {"status":"unverified"}
-    candidate = replace(spec,invoke=lambda _:{"items":[]},release_evidence=evidence)
+    candidate = replace(spec,invoke=lambda _:{"items":[]},release_evidence=evidence,paid=True)
     with pytest.raises(PlatformError,match="provider_release_gate_unverified"):
         candidate.validate("discovery")
     monkeypatch.setattr("ehs_spatial.platform.reconstruction.providers_from_manifest",lambda *a,**kw:{"discovery":candidate})
     image = repo.capture["images"][0]
     image = {**image,"sha256":repo.get_asset(image["assetId"])["sha256"]}
-    protocol = {"id":"heldout-fixture-only","inputHashes":[image["sha256"]],"baselineRevision":"frozen-baseline",
-                "metricDefinitions":{"retention":"discovered count"},"policyThresholds":{},"split":"heldout"}
-    result = run_research_stage(repo,blobs,repo.job,"discovery",{},[image],frozen,protocol)
-    assert result["status"] == "research_only" and result["sceneRevision"] is None
+    protocol = {"id":"heldout-fixture-only","purpose":"quality_validation","inputHashes":[image["sha256"]],"baselineRevision":repo.rid,
+                "metricDefinitions":{"retention":"discovered count"},"policyThresholds":{},"split":"heldout","entityId":"fixture",
+                "inputAssetHashes":[{"assetId":image["assetId"],"sha256":image["sha256"]}],"payloadSha256":digest({}),
+                "providerManifestSha256":digest(frozen),"callLimits":{"maxCalls":1,"maxCostPerCallUsd":.01,"maxTotalCostUsd":.01}}
+    repo.paid_budget = .01
+    job = {**repo.job,"kind":"validate_model","config":{"researchProtocolSha256":digest(protocol)}}
+    result = run_research_stage(repo,blobs,job,"discovery",{},[image],frozen,protocol)
+    assert result["status"] == "succeeded" and result["scope"] == "research_only" and result["sceneRevision"] is None
     assert result["productReleaseStatus"] == "not_changed" and evidence["quality"]["status"] == "unverified"
 
 

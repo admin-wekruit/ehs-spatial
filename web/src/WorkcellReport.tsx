@@ -1113,7 +1113,7 @@ function ObjectFacts({
     model = modelGeometry(entity),
     dimensions = sourceDimensions(entity),
     scale = modelScale(document, entity),
-    transform = editableTransform(entity),
+    transform = editableTransform(entity, document),
     tilt = modelTilt(document, entity);
   const referenceSurface = isReferenceSurface(document, entity);
   const evidenceStatus = entityEvidenceStatus(document, entity);

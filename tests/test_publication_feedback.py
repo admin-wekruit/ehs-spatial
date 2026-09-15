@@ -346,6 +346,23 @@ def test_model_context_contains_selected_object_evidence_only(catalog, tmp_path)
         assert len(provider.calls) == 2
 
 
+def test_part_feedback_distinguishes_active_residual_from_original_model(catalog):
+    from ehs_spatial.platform.feedback import feedback_context
+    _, publications = catalog
+    publication = deepcopy(publications[0])
+    document = publication['snapshot']['revision']['document']
+    parent, child = document['entities']
+    parent.update(activeModelRepresentationId='residual', representations=[
+        {'id':'original','kind':'generated_mesh','sourceValidity':'stale'},
+        {'id':'residual','kind':'generated_mesh','sourceValidity':'current'}])
+    child['parentEntityId'] = parent['id']
+    result = feedback_context(publication, parent['id'], {})['entity']
+    assert result['activeModelRepresentationId'] == 'residual'
+    assert result['partEntityIds'] == [child['id']]
+    assert [r['sourceValidity'] for r in result['representations']] == ['stale', 'current']
+    assert feedback_context(publication, child['id'], {})['entity']['parentEntityId'] == parent['id']
+
+
 def test_feedback_cors_and_validation_do_not_enable_publication_edits(catalog, tmp_path):
     root, publications = catalog
     publication, body = publications[0], request()

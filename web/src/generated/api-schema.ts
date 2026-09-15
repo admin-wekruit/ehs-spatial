@@ -1155,6 +1155,9 @@ export interface components {
             } | null;
             /** Groupid */
             groupId?: string | null;
+            /** Parententityid */
+            parentEntityId?: string | null;
+            partRelation?: components["schemas"]["PartRelation"] | null;
             /** Lineage */
             lineage?: unknown[] | null;
             /** Activemodelrepresentationid */
@@ -1661,6 +1664,21 @@ export interface components {
             type: string;
         } & {
             [key: string]: unknown;
+        };
+        /** PartRelation */
+        PartRelation: {
+            /**
+             * Source
+             * @default manual
+             * @constant
+             */
+            source: "manual";
+            /** Baserevisionid */
+            baseRevisionId: string;
+            /** Evidencerefs */
+            evidenceRefs: components["schemas"]["SourceObservationRevision"][];
+            /** Reason */
+            reason: string;
         };
         /** PlaygroundDefinition */
         PlaygroundDefinition: {

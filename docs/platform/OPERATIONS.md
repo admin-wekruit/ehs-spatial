@@ -54,8 +54,8 @@ forks and new model jobs remain in the full platform.
    ```
 
    The publication container reserves 3 GiB of memory. On 2026-09-15, loading
-   nine frozen bundles with `create_app` in a fresh local Python process peaked
-   at 1,502,003,200 bytes of RSS (1,432.4 MiB), before Modal's container runtime and
+   ten frozen bundles with `create_app` in a fresh local Python process peaked
+   at 1,643,692,032 bytes of RSS (1,567.5 MiB), before Modal's container runtime and
    request handling. Reserve response serialization headroom in addition to
    catalog loading. Recheck startup RSS when expanding the catalog; keep complete
    publication and asset hash verification.

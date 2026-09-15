@@ -145,9 +145,10 @@ def feedback_context(publication, entity_id, request):
     measurements = {k: v for k, v in (entity.get("measurements") or {}).items() if k != "projectedHull"}
     if isinstance(measurements.get("basis"), dict):
         measurements["basis"] = {k: v for k, v in measurements["basis"].items() if k != "cornersNative"}
-    entity_text = {k: entity[k] for k in ("id", "label", "geometryRole", "associationState", "visible", "currentModelTransform", "sourceRefs") if k in entity}
+    entity_text = {k: entity[k] for k in ("id", "label", "geometryRole", "associationState", "visible", "currentModelTransform", "sourceRefs", "parentEntityId", "partRelation", "activeModelRepresentationId") if k in entity}
+    entity_text['partEntityIds'] = [e['id'] for e in doc['entities'] if e.get('parentEntityId') == entity_id]
     entity_text["measurements"] = measurements
-    entity_text["representations"] = [{k: r[k] for k in ("id", "kind", "placementState", "placementReason", "coordinateFrameId", "transform", "primitive", "bounds") if k in r} for r in (entity.get("representations") or [])]
+    entity_text["representations"] = [{k: r[k] for k in ("id", "kind", "placementState", "placementReason", "coordinateFrameId", "transform", "primitive", "bounds", "sourceValidity") if k in r} for r in (entity.get("representations") or [])]
     observation_text = [{k: o[k] for k in ("id", "imageId", "originalPixelBox", "geometrySupport", "sourceRefs", "labelEvidence", "missingEvidence") if k in o} for o in observations]
     findings = [{"evaluationId": evaluation["id"], "finding": finding} for evaluation in snapshot.get("evaluations", [])
                 if evaluation.get("sceneRevisionId") == revision["id"]

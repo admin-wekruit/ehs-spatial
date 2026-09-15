@@ -193,7 +193,7 @@ def _export_parts(mesh, override, *, apply_color_tint=False):
     return parts
 
 
-EXPORT_OBJECT_FIELDS = ("entityId", "id", "label", "kind", "primitive", "sourceRefs", "observationRefs", "visible", "editable",
+EXPORT_OBJECT_FIELDS = ("entityId", "parentEntityId", "id", "label", "kind", "primitive", "sourceRefs", "observationRefs", "visible", "editable",
                         "coordinateFrameId", "coordinateFrameScale", "transform", "placementState", "placementReason",
                         "placementSource", "sourceValidity", "coverage", "shapeStatus", "sourceContext")
 
@@ -205,6 +205,12 @@ def prepare_export(revision_id: str, document: dict[str, Any], resolve_asset: Ca
     document = json.loads(canonical(document))
     assets = {x["id"]: x for x in document["assets"]}
     frames = {x["id"]: x for x in document["coordinateFrames"]}
+    from .identity import model_family
+    parent_ids = {e['parentEntityId'] for e in document['entities'] if e.get('parentEntityId')}
+    assemblies = [{'entityId': e['id'], 'parentEntityId': e.get('parentEntityId'), 'label': e.get('label', ''),
+        'coordinateFrameId': e['currentModelTransform']['coordinateFrameId'], 'transform': e['currentModelTransform'],
+        'familyEntityIds': [member['id'] for member in model_family(document, e['id'])]}
+        for e in document['entities'] if e['id'] in parent_ids] if scene_mode == 'models' else []
     objects, unresolved, excluded, missing_models, pending, not_required = [], [], [], [], [], []
     for entity in document["entities"]:
         exported_model = False
@@ -237,7 +243,7 @@ def prepare_export(revision_id: str, document: dict[str, Any], resolve_asset: Ca
                 raise PlatformError("invalid_coordinate_frame")
             matrix = transform_matrix(pose)
             material = (rep.get("material") or {}) if document["schemaVersion"] == 2 else entity.get("material", rep.get("material", {}))
-            objects.append({"entityId": entity["id"], "id": rep["id"], "label": entity.get("label", ""), "kind": rep["kind"],
+            objects.append({"entityId": entity["id"], "parentEntityId": entity.get('parentEntityId'), "id": rep["id"], "label": entity.get("label", ""), "kind": rep["kind"],
                             "coordinateFrameId": pose["coordinateFrameId"], "transform": pose, "matrix": matrix.tolist(),
                             "vertices": np.asarray(mesh.vertices,dtype=np.float32).tolist(), "faces": mesh.faces.tolist(),
                             "colors": mesh.colors.tolist() if mesh.colors is not None else None,
@@ -252,12 +258,13 @@ def prepare_export(revision_id: str, document: dict[str, Any], resolve_asset: Ca
             exported_model = modeled
             if candidate:
                 pending.append({"entityId":entity["id"], "representationId":rep["id"], "placementState":rep["placementState"], "placementReason":rep["placementReason"]})
-        if not entity.get("representations"):
+        assembly = scene_mode == 'models' and entity['id'] in parent_ids and entity.get('activeModelRepresentationId') is None
+        if not entity.get("representations") and not assembly:
             unresolved.append({"entityId": entity["id"], "reason": "no_representation"})
         reference_surface = scene_mode == "models" and entity.get("geometryRole") == "floor"
         if reference_surface:
             not_required.append({"entityId": entity["id"], "reason": "reference_surface"})
-        if scene_mode == "models" and not entity.get("sourceContext") and not reference_surface and not exported_model:
+        if scene_mode == "models" and not entity.get("sourceContext") and not reference_surface and not assembly and not exported_model:
             missing_models.append({"entityId": entity["id"], "reason": "no_representation" if not entity.get("representations") else "active_model_missing" if not entity.get("activeModelRepresentationId") else "active_model_not_exportable"})
     cameras = [{**c, "blender": blender_camera_parameters(c)} for c in document["cameras"]]
     if scene_mode == "models":
@@ -266,7 +273,7 @@ def prepare_export(revision_id: str, document: dict[str, Any], resolve_asset: Ca
                 "status": "incomplete" if unresolved or pending else "succeeded", "newModelCalls": 0,
                 "exportedModelCount": sum(item["editable"] for item in objects), "exportedObservedRepresentationCount": sum(not item["editable"] for item in objects),
                 "missingModelEntities": missing_models, "modelNotRequiredEntities": not_required, "placementPendingEntities": pending, "unplacedEntities": unresolved,
-                "excludedRepresentations": excluded, "sourceDocument": document, "objects": [{key: item[key] for key in EXPORT_OBJECT_FIELDS} for item in objects],
+                "excludedRepresentations": excluded, "sourceDocument": document, "assemblies": assemblies, "objects": [{key: item[key] for key in EXPORT_OBJECT_FIELDS} for item in objects],
                 "validationMeaning": "File consistency only; model inclusion and placement confirmation do not certify reconstruction completeness or physical accuracy"}
     return {**manifest, "document": document, "objects": objects, "cameras": cameras, "manifest": manifest}
 
@@ -327,6 +334,20 @@ def write_glb(prepared: dict[str, Any], path: Path) -> dict[str, Any]:
                               "extras": {k: obj[k] for k in EXPORT_OBJECT_FIELDS}})
         if obj["visible"]:
             frame_nodes[obj["coordinateFrameId"]].append(len(spec["nodes"])-1)
+    assembly_nodes = {}
+    for assembly in prepared.get('assemblies', []):
+        assembly_nodes[assembly['entityId']] = len(spec['nodes'])
+        spec['nodes'].append({'name': assembly['entityId'], 'children': [], 'extras': {'assembly': assembly}})
+    if assembly_nodes:
+        frame_nodes = {frame: [] for frame in frame_nodes}
+        for index, obj in enumerate(prepared['objects']):
+            if not obj['visible']:
+                continue
+            parent = assembly_nodes.get(obj['entityId'], assembly_nodes.get(obj.get('parentEntityId')))
+            (spec['nodes'][parent]['children'] if parent is not None else frame_nodes[obj['coordinateFrameId']]).append(index)
+        for assembly in prepared['assemblies']:
+            parent = assembly_nodes.get(assembly['parentEntityId'])
+            (spec['nodes'][parent]['children'] if parent is not None else frame_nodes[assembly['coordinateFrameId']]).append(assembly_nodes[assembly['entityId']])
     spec["scenes"] = [{"name": frame, "nodes": nodes} for frame,nodes in frame_nodes.items()] or [{"name": "Unplaced assets", "nodes": []}]
     spec["buffers"] = [{"byteLength": len(binary)}]
     js = canonical(spec)
@@ -337,7 +358,7 @@ def write_glb(prepared: dict[str, Any], path: Path) -> dict[str, Any]:
     reopened, data = _read_glb(path.read_bytes())
     if reopened["extras"]["sourceDocument"] != prepared["document"]:
         raise PlatformError("glb_reopen_provenance_mismatch")
-    for obj,node in zip(prepared["objects"],reopened["nodes"],strict=True):
+    for obj,node in zip(prepared["objects"],reopened["nodes"][:len(prepared['objects'])],strict=True):
         if node['extras'] != {key: obj[key] for key in EXPORT_OBJECT_FIELDS}:
             raise PlatformError("glb_reopen_provenance_mismatch")
         if node["matrix"] != np.asarray(obj["matrix"]).T.ravel().tolist():
@@ -386,13 +407,24 @@ for i, frame in enumerate(spec['document']['coordinateFrames']):
     collection['scene_mode'] = spec['sceneMode']
     scene.collection.children.link(collection)
     collections[frame['id']] = collection
+assembly_collections = {}
+for assembly in spec.get('assemblies', []):
+    collection = bpy.data.collections.new(assembly['label'] or assembly['entityId'])
+    collection['assembly_metadata_json'] = json.dumps(assembly)
+    collection['entity_id'] = assembly['entityId']
+    collection['scene_mode'] = spec['sceneMode']
+    assembly_collections[assembly['entityId']] = collection
+for assembly in spec.get('assemblies', []):
+    parent = assembly_collections.get(assembly['parentEntityId'], collections[assembly['coordinateFrameId']])
+    parent.children.link(assembly_collections[assembly['entityId']])
 for item,metadata in zip(spec['objects'],spec['manifest']['objects'],strict=True):
     scene = scenes[item['coordinateFrameId']]
     mesh = bpy.data.meshes.new(item['id'])
     mesh.from_pydata(item['vertices'], [], item['faces'])
     mesh.update()
     obj = bpy.data.objects.new(item['id'],mesh)
-    collections[item['coordinateFrameId']].objects.link(obj)
+    collection = assembly_collections.get(item['entityId'], assembly_collections.get(item.get('parentEntityId'), collections[item['coordinateFrameId']]))
+    collection.objects.link(obj)
     obj.matrix_world = Matrix(item['matrix'])
     obj['entity_id'], obj['representation_id'] = item['entityId'], item['id']
     obj['source_refs_json'] = json.dumps(item['sourceRefs'])
@@ -526,6 +558,11 @@ text.write(json.dumps(spec['document'],ensure_ascii=False,indent=1))
 bpy.ops.wm.save_as_mainfile(filepath=str(root/'scene.blend'))
 bpy.ops.wm.open_mainfile(filepath=str(root/'scene.blend'))
 records, camera_records, parameter_records = [],[],[]
+for assembly in spec.get('assemblies', []):
+    collection = next(c for c in bpy.data.collections if c.get('entity_id') == assembly['entityId'])
+    assert json.loads(collection['assembly_metadata_json']) == assembly
+    expected = {item['id'] for item in spec['objects'] if item['entityId'] in assembly['familyEntityIds']}
+    assert {obj.get('representation_id') for obj in collection.all_objects} == expected
 for item,metadata in zip(spec['objects'],spec['manifest']['objects'],strict=True):
     obj = next(o for o in bpy.data.objects if o.get('representation_id') == item['id'])
     scene = bpy.data.scenes[item['coordinateFrameId']]
@@ -619,7 +656,7 @@ for camera in spec['cameras']:
         'toleranceBasis':'16 float32 ULPs at source-image magnitude; minimum .001 px',
         'meaning':'Numerical export/reopen consistency, not physical reconstruction accuracy'})
 assert json.loads(bpy.data.texts['Panoptes source revision.json'].as_string()) == spec['document']
-(root/'blender-validation.json').write_text(json.dumps({'status':'passed','sceneRevisionId':spec['sceneRevisionId'],'objects':records,'cameras':camera_records,'parameters':parameter_records,'newModelCalls':0}))
+(root/'blender-validation.json').write_text(json.dumps({'status':'passed','sceneRevisionId':spec['sceneRevisionId'],'objects':records,'assemblies':spec.get('assemblies', []),'cameras':camera_records,'parameters':parameter_records,'newModelCalls':0}))
 '''
 
 

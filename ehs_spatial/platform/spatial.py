@@ -429,6 +429,57 @@ class MeshData:
             raise PlatformError("invalid_mesh_primitives")
 
 
+def partition_packed_mesh(payload: bytes, metadata: Mapping[str, Any], ownership: Mapping[str, Sequence[int]]):
+    """Slice confirmed triangle ownership without changing source vertex bytes."""
+    import gzip
+    if metadata.get('format') != 'panoptes-mesh-v1' or not isinstance(payload, bytes):
+        raise PlatformError('part_partition_requires_packed_mesh', 422)
+    if metadata.get('contentEncoding') == 'gzip':
+        payload = gzip.decompress(payload)
+    layout = metadata.get('byteLayout') or {}
+    vertex_count, index_count = layout.get('vertexCount'), layout.get('indexCount')
+    vertex_offset, index_offset = layout.get('byteOffset', 0), layout.get('indexByteOffset')
+    if (any(type(v) is not int or v < 0 for v in (vertex_count, index_count, vertex_offset, index_offset))
+            or layout.get('stride', 9) != 9 or layout.get('indexType', 'uint32') != 'uint32'
+            or vertex_count < 3 or index_count == 0 or index_count % 3 or vertex_offset % 4 or index_offset % 4
+            or index_offset < vertex_offset + vertex_count * 36 or index_offset + index_count * 4 > len(payload)):
+        raise PlatformError('invalid_packed_mesh_layout', 422)
+    rows = np.frombuffer(payload, dtype='<f4', count=vertex_count * 9, offset=vertex_offset).reshape(-1, 9)
+    faces = np.frombuffer(payload, dtype='<u4', count=index_count, offset=index_offset).reshape(-1, 3)
+    MeshData(rows[:, :3], faces, rows[:, 6:9])
+    if not np.isfinite(rows).all() or not isinstance(ownership, Mapping) or not ownership:
+        raise PlatformError('invalid_face_partition', 422)
+    owners = np.full(len(faces), -1, dtype=np.int64)
+    selections = {}
+    for owner_index, (identity, indices) in enumerate(ownership.items()):
+        if (not isinstance(identity, str) or not identity or not isinstance(indices, (list, tuple))
+                or any(type(i) is not int or i < 0 or i >= len(faces) for i in indices)
+                or len(indices) != len(set(indices))):
+            raise PlatformError('invalid_face_partition', 422)
+        selected = np.asarray(indices, dtype=np.int64)
+        if np.any(owners[selected] != -1):
+            raise PlatformError('overlapping_face_partition', 422)
+        owners[selected] = owner_index
+        selections[identity] = selected
+    if np.any(owners == -1):
+        raise PlatformError('incomplete_face_partition', 422)
+    result = {}
+    for identity, selected in selections.items():
+        if not len(selected):
+            result[identity] = None
+            continue
+        source_faces = faces[selected]
+        used, remapped = np.unique(source_faces, return_inverse=True)
+        packed = rows[used].copy()
+        indices = remapped.astype('<u4').reshape(-1, 3)
+        result[identity] = (packed.tobytes() + indices.tobytes(), {
+            'format': 'panoptes-mesh-v1', 'byteLayout': {'stride': 9, 'byteOffset': 0, 'vertexCount': len(used),
+                'indexByteOffset': packed.nbytes, 'indexCount': indices.size, 'indexType': 'uint32'},
+            'bounds': {'min': packed[:, :3].min(axis=0).tolist(), 'max': packed[:, :3].max(axis=0).tolist()},
+            'sourceVertexIndices': used.tolist(), 'sourceFaceIndices': selected.tolist()})
+    return result
+
+
 def primitive_mesh(spec: Mapping[str, Any]) -> MeshData:
     """Local native units; centred box or Z-axis cylinder. No ground assumption."""
     kind = spec.get("type", spec.get("kind"))
