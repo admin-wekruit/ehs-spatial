@@ -4,7 +4,7 @@ export const reportSceneMessages: Record<string, [string, string]> = {
   sceneCadReference: ["CAD 参考", "CAD reference"],
   sceneViewedPhoto: ["当前查看照片", "Viewed photo"],
   sceneCadReferenceMissing: ["参考来源未确定", "Reference source unresolved"],
-  sceneCadModelPose: ["模型轮廓采用当前模型姿态", "Model contours use the active model pose"],
+  sceneCadSource: ["CAD：照片观测投影", "CAD: photo observation projection"],
   sceneCadFixedState: ["工位 CAD 使用固定的对象参考状态，切换照片不改变布局。", "The workcell CAD uses fixed object reference states; changing photographs preserves its layout."],
   sceneBoundsOnly: ["有观测范围，尚无网格", "Observed bounds, no mesh yet"],
   sceneWorkspace: ["空间工作台", "Spatial workspace"],

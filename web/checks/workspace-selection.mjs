@@ -69,6 +69,27 @@ render().find(n=>n.type==='button'&&n.props['aria-label']==='addModel').props.on
 const pending=find('PrimitiveCreator').props.onCommit([{type:'setPrimitive',entityId:'a'}]);
 find('PhotoView').props.onSelect('c','oc');render();complete(true);await pending;
 assert.equal(selected(),'c','A late creation response cannot override a newer selection');assert.equal(observation(),'oc');
+
+// The actual workbench 3D selector changes the model plan, never source CAD.
+const cadDocument={...structuredClone(base),observations:base.observations.map(observation=>({...observation,revision:1})),assets:[...base.assets,...surfaces.map(rep=>({id:rep.assetId,sha256:'a'.repeat(64)}))],coordinateFrames:[{id:'frame',ground:{normal:[0,0,1]}}],cameras:[{id:'camera',imageId:'photo',coordinateFrameId:'frame'}]};
+cadDocument.entities[0].representations=[structuredClone(surfaces[0]),{...structuredClone(surfaces[0]),id:'active-model',kind:'generated_mesh'}];
+cadDocument.entities[0].activeModelRepresentationId='active-model';
+cadDocument.entities[0].currentModelTransform=structuredClone(transform);
+cadDocument.entities[1].representations=[structuredClone(surfaces[1])];
+reset(cadDocument,'?object=a&image=photo');
+render().find(node=>node.type==='button'&&node.props.children==='four').props.onClick();
+const sourceContours=core.planShapes(cadDocument,{layer:'observed_surface',frameId:'frame',imageId:'photo'});
+assert.equal(sourceContours.length,2);
+for(const layer of ['model','observed_surface','point_cloud']){
+ render().find(node=>node.type==='select'&&node.props['aria-label']==='model').props.onChange({target:{value:layer}});
+ const cad=find('CadView'),plan=find('PlanView');
+ assert.equal(cad.props.geometryOptions.layer,'observed_surface','Workbench CAD keeps its observed source layer');
+ assert.deepEqual(core.planShapes(cadDocument,cad.props.geometryOptions),sourceContours,'Workbench display changes cannot drop source-only CAD objects');
+ assert.equal(plan.props.geometryOptions.layer,layer,'The existing model plan remains available for current model projections');
+ assert.equal(cad.props.selectedId,'a');
+}
+find('CadView').props.onSelect('b');assert.equal(selected(),'b','Source CAD still uses the shared object selection');
+
 const inspectorDeclaration=parsed.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='EntityInspector');
 const inspectorCode=ts.transpileModule(inspectorDeclaration.getText(parsed).replace('function EntityInspector','export function ConfirmInspector'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
 const inspectorModule={exports:{}};new Function('require','module','exports',...Object.keys(scope),inspectorCode)(require,inspectorModule,inspectorModule.exports,...Object.values(scope));

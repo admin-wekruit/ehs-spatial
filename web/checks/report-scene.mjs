@@ -5,7 +5,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import * as math from "../src/viewer/native-math.ts";
 import { entityEvidenceStatus, identityCounts, isReferenceSurface } from "../src/scene-semantics.ts";
-import { cameraForImage, activeModel, entityGeometryForLayer, observationsFor, jsonObject, planShapes, cadReferenceImage, scenePlanOptions, sourceDimensions, sourceScale } from "../src/core.ts";
+import { cameraForImage, activeModel, entityGeometryForLayer, observationsFor, jsonObject, planShapes, cadReferenceImage, scenePlanOptions, sourceDimensions, sourceScale, previewOperations } from "../src/core.ts";
 
 // Exercise the actual two pure functions without importing the browser app.
 const source = await readFile(
@@ -217,7 +217,7 @@ const useRef = (initial) => { const i = cursor++; return hooks[i] ||= { current:
 const useEffect = (fn, deps) => { const i = cursor++, old = hooks[i]; if (!old || deps.some((value, n) => !Object.is(value, old[n]))) effects.push(fn); hooks[i] = deps; };
 const React = { createElement: (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity).filter((c) => c !== null && c !== undefined && c !== false) }) };
 const SpatialView = () => {}, PlanView = () => {}, PhotoView = () => {}, PhotoAxes = () => {}, CadView = () => {};
-const uiDocument = { ...objectOnlyDocument,
+let uiDocument = { ...objectOnlyDocument,
   assets: [{ id: "model-asset", sha256: "a".repeat(64) }, { id: "photo", kind: "source_image" }, { id: "photo-2", kind: "source_image" }],
   geometryBindings:{photo:{cameraId:"camera",geometrySolutionId:"solution"},"photo-2":{cameraId:"camera-2",geometrySolutionId:"solution"}},
   cameras: [camera, { ...camera, id: "camera-2", imageId: "photo-2" }],
@@ -235,6 +235,7 @@ uiDocument.entities[0].representations[0] = { ...rep, planProjection: {
 } };
 uiDocument.entities[0].cadReference={status:"resolved",referenceImageId:"photo",source:"explicit_reference_image",sourceRefs:[{observationId:"observation",revision:1}]};
 uiDocument.entities[0].representations[1]={...observed,id:"surface",sourceRefs:[{observationId:"observation",imageId:"photo",revision:1}],planProjection:{...structuredClone(uiDocument.entities[0].representations[0].planProjection),imageId:"photo",observationId:"observation",observationRevision:1}};
+const cadSwitchDocument = structuredClone(uiDocument);
 let uiSelection = { entityId: "object", cameraId: "camera" }, uiImageId = "photo", calls = [], objectListRequest = 0, feedbackEnabled = false, feedbackCalls = [], sourceCadCalls = [];
 const inspector = React.createElement("div", { id: "inspector-content" }, "real host inspector");
 const ui = vm.createContext({ React, useState, useRef, useEffect, useId: () => "workspace-check",
@@ -330,7 +331,7 @@ tree = renderWorkspace();
 assert.ok(nodes(rail()).some((node) => node.type === "strong" && node.children.includes("small button")), "The current selection remains visible when a search hides its row");
 nodes(tree).find((node) => node.type === "select").props.onChange({ target: { value: "observed_surface" } }); tree = renderWorkspace();
 assert.equal(spatialHost()[0].props.layers.generated_mesh, false);
-assert.ok(nodes(tree).filter((node) => [PlanView, CadView].includes(node.type)).every((node) => node.props.geometryOptions.layer === "observed_surface" && node.props.geometryOptions.frameId === "f"), "Both plans use the same selected layer and frame as the photo and 3D");
+assert.equal(nodes(tree).find(node => node.type === CadView).props.geometryOptions.layer, "observed_surface", "CAD preserves its source layer");
 for (const section of ["objects", "inspector", "views"]) {
   const tab = nodes(tree).find((node) => node.type === "button" && node.props["aria-controls"] === `workspace-check-${section}`);
   tab.props.onClick(); tree = renderWorkspace();
@@ -428,6 +429,52 @@ uiDocument.entities.find(entity => entity.id === "background").representations =
 hooks.length = 0;
 tree = renderWorkspace();
 assert.equal(nodes(tree).find(node => node.type === "select").props.value, "model", "An available active model is the default even when complete photo evidence is attached");
+
+// Exercise the real report controls with more observed objects than active models.
+const sourceOnly = cadSwitchDocument.entities[1], sourceRep = structuredClone(cadSwitchDocument.entities[0].representations[1]);
+sourceRep.id = "source-only";
+sourceRep.sourceRefs = [{ observationId: "observation-2", imageId: "photo-2", revision: 1 }];
+Object.assign(sourceRep.planProjection, { imageId: "photo-2", observationId: "observation-2" });
+sourceOnly.representations = [sourceRep];
+sourceOnly.cadReference = { status: "resolved", referenceImageId: "photo-2", sourceRefs: [{ observationId: "observation-2", revision: 1 }] };
+cadSwitchDocument.entities[2].representations = [{ ...structuredClone(sourceRep), id: "context-cloud", kind: "point_cloud" }];
+const cadGeometry = (shapes) => shapes.map(({ entity, ...geometry }) => ({ entityId: entity.id, ...geometry }));
+async function checkCadModes(scene, label) {
+  uiDocument = scene; hooks.length = 0;
+  const images = scene.assets.filter(asset => asset.kind === "source_image").map(asset => asset.id);
+  uiImageId = images[0]; uiSelection = { entityId: scene.entities.find(entity => !entity.sourceContext).id, cameraId: cameraForImage(scene, uiImageId)?.id };
+  tree = renderWorkspace();
+  const expected = cadGeometry(planShapes(scene, scenePlanOptions(scene, "observed_surface", true, uiImageId)));
+  assert.ok(expected.length > planShapes(scene, scenePlanOptions(scene, "model", true, uiImageId)).length, "The regression scene contains observed-only objects");
+  const before = JSON.stringify(scene);
+  for (const mode of ["model", "observed_surface", "point_cloud"]) for (const imageId of images) {
+    uiImageId = imageId; uiSelection = { ...uiSelection, cameraId: cameraForImage(scene, imageId)?.id };
+    nodes(tree).find(node => node.type === "select").props.onChange({ target: { value: mode } }); tree = renderWorkspace();
+    const cad = nodes(tree).find(node => node.type === CadView);
+    assert.ok(cad, `${label}: source CAD remains available in ${mode}`);
+    assert.equal(cad.props.geometryOptions.layer, "observed_surface", `${label}: the 3D selector cannot replace the CAD source layer`);
+    assert.deepEqual(cadGeometry(planShapes(scene, cad.props.geometryOptions)), expected, `${label}: ${mode}/${imageId} preserves every source contour`);
+    assert.equal(cad.props.selectedId, uiSelection.entityId, "CAD selection remains shared");
+    assert.equal(spatialHost().length, 1);
+    if (mode === "model") {
+      const models = scene.entities.filter(entity => !entity.sourceContext && entityGeometryForLayer(entity, { layer: "model", frameId: cad.props.geometryOptions.frameId, showCandidates: true }));
+      assert.equal(nodes(tree).find(node => node.props["data-model-coverage"] !== undefined).props["data-model-coverage"], models.length, "Restoring CAD evidence never inflates model coverage");
+      assert.ok(nodes(tree).some(node => node.children.includes("sceneModelScene")), "Source CAD does not change the model scene title");
+    }
+  }
+  assert.equal(JSON.stringify(scene), before, "View switches preserve source evidence");
+  const modeled = scene.entities.find(entity => activeModel(entity)), model = activeModel(modeled), originalPose = modeled.currentModelTransform || model.transform;
+  const modelOptions = scenePlanOptions(scene, "model", true, images[0]);
+  const previousModels = cadGeometry(planShapes(scene, modelOptions));
+  const pose = { ...originalPose, position: originalPose.position.map((value, i) => value + (i === 0 ? 1 : 0)) };
+  uiDocument = previewOperations(scene, [{ type: "setTransform", entityId: modeled.id, transform: pose }]); tree = renderWorkspace();
+  assert.deepEqual(cadGeometry(planShapes(uiDocument, nodes(tree).find(node => node.type === CadView).props.geometryOptions)), expected, "Model edits cannot rewrite observed CAD evidence");
+  assert.notDeepEqual(cadGeometry(planShapes(uiDocument, modelOptions)), previousModels, "The distinct model plan still follows edited model placement");
+  assert.equal(JSON.stringify(scene), before, "Editing a preview does not mutate the source document");
+  console.log(`${label}: ${expected.length} source contours stable across ${images.length} photos × 3 display modes; model edits remain separate`);
+}
+await checkCadModes(cadSwitchDocument, "Report CAD regression");
+if (process.argv[2]) await checkCadModes(JSON.parse(await readFile(process.argv[2], "utf8")), "Frozen report CAD");
 console.log(
   "report scene: 68-record unified evidence inventory, observed extents/scale, no duplicate table, linked no-geometry selection, mobile navigation, photo projection, floor semantics and one WebGL passed",
 );

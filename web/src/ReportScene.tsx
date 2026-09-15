@@ -30,7 +30,7 @@ const paneOrder: Pane[] = ["photo", "spatial", "cad", "plan"];
 const colors = ["#e86b58", "#39ad7c", "#458ce0"];
 const noEdit = () => {};
 
-function sceneAvailability(document: SceneDocument, geometryOptions: PlanOptions) {
+function sceneAvailability(document: SceneDocument, geometryOptions: PlanOptions, spatialLayer = geometryOptions.layer) {
   const frames = new Set(document.coordinateFrames.map((frame) => frame.id));
   const assets = new Set(document.assets.map((asset) => asset.id));
   const representations = document.entities.flatMap((entity) =>
@@ -47,7 +47,7 @@ function sceneAvailability(document: SceneDocument, geometryOptions: PlanOptions
     return Array.isArray(normal) && normal.length === 3 && normal.every(Number.isFinite) && Math.hypot(...normal) > 1e-8;
   });
   return {
-    spatialTitle: geometryOptions.layer === "model" ? "sceneModelScene" : hasModel && !hasObserved ? "sceneObjectModels" : "scene3D",
+    spatialTitle: spatialLayer === "model" ? "sceneModelScene" : hasModel && !hasObserved ? "sceneObjectModels" : "scene3D",
     planEmpty: planShapes(document, geometryOptions).length ? null : geometryOptions.scope === "scene" && !geometryOptions.frameId ? "sceneNoPlanFrame" : hasGround ? "sceneNoPlanProjection" : "sceneNoPlanGround",
   };
 }
@@ -238,8 +238,8 @@ export function ReportScene({
     selected = document.entities.find((entity) => entity.id === selection.entityId);
   const camera = cameraForImage(document, imageId);
   const geometryOptions: GeometryOptions = { layer, frameId: camera?.coordinateFrameId || (!imageId ? document.coordinateFrames[0]?.id : "") || "", showCandidates: true, imageId, observations: document.observations };
-  const planOptions = scenePlanOptions(document, layer, true, imageId);
-  const availability = sceneAvailability(document, planOptions);
+  const planOptions = scenePlanOptions(document, "observed_surface", true, imageId);
+  const availability = sceneAvailability(document, planOptions, layer);
   const referenceImageId = selected ? cadReferenceImage(document, selected) : null;
   const images = [...new Set([
     ...document.assets.filter((a) => a.kind === "source_image").map((a) => a.id),
@@ -427,7 +427,7 @@ export function ReportScene({
               </section>
             ))}
           </div>
-          <p className="report-scene-selection-note"><span className="report-scene-reference-note">{selected ? <>{t("sceneCadReference")}: {referenceImageId ? `${t("scenePhotoNumber")} ${images.findIndex(image => image.imageId === referenceImageId) + 1}` : t("sceneCadReferenceMissing")} · {t("sceneViewedPhoto")}: {imageId ? images.findIndex(image => image.imageId === imageId) + 1 : "—"}{layer === "model" && activeModel(selected) && <> · {t("sceneCadModelPose")}</>}</> : t("sceneCadFixedState")}</span>{selected ? isReferenceSurface(document, selected) ? t("sceneReferenceSurface") : selectedOverlay ? t(selectedOverlay.axisSpace === "native" ? "sceneNativeAxis" : "sceneSourceAxis") : !entityGeometryForLayer(selected, geometryOptions) ? t("sceneNoGeometrySelection") : t("sceneNoPhotoAxes") : t("sceneReadOnly")}</p>
+          <p className="report-scene-selection-note"><span className="report-scene-reference-note">{t("sceneCadSource")} · {selected ? <>{t("sceneCadReference")}: {referenceImageId ? `${t("scenePhotoNumber")} ${images.findIndex(image => image.imageId === referenceImageId) + 1}` : t("sceneCadReferenceMissing")} · {t("sceneViewedPhoto")}: {imageId ? images.findIndex(image => image.imageId === imageId) + 1 : "—"}</> : t("sceneCadFixedState")}</span>{selected ? isReferenceSurface(document, selected) ? t("sceneReferenceSurface") : selectedOverlay ? t(selectedOverlay.axisSpace === "native" ? "sceneNativeAxis" : "sceneSourceAxis") : !entityGeometryForLayer(selected, geometryOptions) ? t("sceneNoGeometrySelection") : t("sceneNoPhotoAxes") : t("sceneReadOnly")}</p>
         </div>
         <aside className="report-scene-inspector" id={`${panePrefix}-inspector`} aria-label={t("sceneInspector")}>
           <header><h3>{t("sceneInspector")}</h3>{selected && <span>{selected.id.slice(0, 8)}</span>}</header>

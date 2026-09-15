@@ -214,7 +214,7 @@ export function CadView({ document, selectedId, onSelect, geometryOptions }: {
       </div>}
     </div>
     <div className="cad-selection" role="status">{selected ? <><strong>#{numbers.get(selected.entity.id)} {selected.entity.label || selected.entity.id}</strong><span>{t("width")} {cadNumber(selected.max[0] - selected.min[0])} · {t("depth")} {cadNumber(selected.max[1] - selected.min[1])} · {units}</span></> : <span>{t(selectedEntity ? "missing" : "noSelection")}</span>}</div>
-    <footer className="cad-legend"><span className="cad-key-observed">{t("observed")}</span><span className="cad-key-model">{t("model")}</span><span className="cad-key-hull">{t("hull")}</span><span className="cad-key-floor">{t("floor")}</span>
+    <footer className="cad-legend">{["observed", "model", "hull", "floor"].filter(kind => shapes.some(shape => source(shape) === kind)).map(kind => <span key={kind} className={`cad-key-${kind}`}>{t(kind)}</span>)}<div>{units}</div>
       <details><summary aria-label={t("bounds")}>ⓘ</summary><p>{t("bounds")} {t("axes")}<br />{t("numbers")}<br />{t("panHint")}</p></details>
     </footer>
   </div>;

@@ -26,12 +26,12 @@ assert.equal(model.placementState,'unconfirmed','Rendering cannot confirm placem
 const source=await readFile(new URL('../src/viewer/native-viewer.ts',import.meta.url),'utf8');
 const parsed=ts.createSourceFile('native-viewer.ts',source,ts.ScriptTarget.ES2022,true,ts.ScriptKind.TS);
 const wanted=['captureModel','fittedCamera','fittingPoints','corners','dimensions','model','primitive'];
-const declarations=[];const visit=node=>{if(ts.isFunctionDeclaration(node)&&wanted.includes(node.name?.text))declarations.push(node.getText(parsed));ts.forEachChild(node,visit);};visit(parsed);
+const declarations=[];let drawSource;const visit=node=>{if(ts.isFunctionDeclaration(node)&&node.name?.text==='draw')drawSource=node.getText(parsed);if(ts.isFunctionDeclaration(node)&&wanted.includes(node.name?.text))declarations.push(node.getText(parsed));ts.forEachChild(node,visit);};visit(parsed);
 assert.equal(declarations.length,wanted.length);
 const code=ts.transpileModule(declarations.join('\n')+'\nglobalThis.capture=captureModel;globalThis.primitiveMesh=primitive;', {compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
 const gpu=document.entities.flatMap(entity=>entity.representations.map(representation=>({entityId:entity.id,representation,mesh:{bounds:model.bounds,matrix:math.identity()}})));
 let shots=[],failCapture=false;
-const canvas={width:900,height:500,style:{cssText:'original-canvas'},toDataURL(){if(failCapture)throw Error('capture failed');shots.push({camera:structuredClone(scope.camera),entities:gpu.filter(scope.visible).map(g=>g.entityId),representations:gpu.filter(scope.visible).map(g=>g.representation.id)});return 'data:image/png;base64,actual-model';}};
+const canvas={width:900,height:500,style:{cssText:'original-canvas'},toDataURL(){if(failCapture)throw Error('capture failed');shots.push({camera:structuredClone(scope.camera),studio:scope.layers.studio,entities:gpu.filter(scope.visible).map(g=>g.entityId),representations:gpu.filter(scope.visible).map(g=>g.representation.id)});return 'data:image/png;base64,actual-model';}};
 const scope=vm.createContext({...math,...core,representationPass,disposed:false,revisionId:'revision',gl:{isContextLost:()=>false},doc:document,frameId:'frame',gpu,
  entity:id=>document.entities.find(e=>e.id===id),layers:{...strict},camera:{eye:[30,20,10],target:[1,2,3],up:[0,0,1]},selection:{entityId:'b'},radius:99,center:[4,5,6],preview:new Map(),captureSize:null,
  loadedRepresentations:new Set(['a/model-a','b/model-b']),canvas,photo:{style:{cssText:'original-photo'}},stage:{clientWidth:0,clientHeight:0},draw(){},
@@ -41,7 +41,7 @@ vm.runInContext(code,scope);
 const original={camera:scope.camera,layers:scope.layers,selection:scope.selection,radius:scope.radius,center:scope.center},before=JSON.stringify(document);
 for(const mode of ['free','front','side','top']){
  assert.equal(scope.capture('a',mode,'revision'),'data:image/png;base64,actual-model');
- const shot=shots.at(-1);assert.deepEqual(shot.entities,['a']);assert.deepEqual(shot.representations,['model-a']);
+ const shot=shots.at(-1);assert.equal(shot.studio,true,'Object capture always enables readable studio display without changing the main view lighting');assert.deepEqual(shot.entities,['a']);assert.deepEqual(shot.representations,['model-a']);
  assert.equal(!!shot.camera.orthographic,mode!=='free','Existing orthographic camera modes are reused');
  for(const key of Object.keys(original))assert.equal(scope[key],original[key],`Capture restores ${key}`);
  assert.equal(scope.captureSize,null);assert.equal(canvas.width,900);assert.equal(canvas.style.cssText,'original-canvas');
@@ -57,6 +57,19 @@ for(const mesh of [cylinder,scope.primitiveMesh({kind:'box',dimensions:[1,2,3]})
 assert.equal(scope.primitiveMesh({kind:'cylinder',radius:2,height:3,segments:8}).vertices.length/11,18);
 for(const segments of [7,257,8.5])assert.throws(()=>scope.primitiveMesh({kind:'cylinder',radius:2,height:3,segments}),/invalid_primitive/);
 assert.equal((source.match(/getContext\('webgl2'/g)||[]).length,1,'Object previews never allocate a second WebGL context');
+// Exercise the actual WebGL draw setup: studio affects presentation uniforms
+// only, including when the normal scene's lighting has been switched off.
+const displayed={};
+const displayScope=vm.createContext({disposed:false,camera:{exact:false},devicePixelRatio:1,
+ gl:{isContextLost:()=>false,viewport(){},useProgram(){},clearColor(...rgba){displayed.background=rgba;},clear(){},enable(){},disable(){},uniformMatrix4fv(){},uniform1f(name,value){displayed[name]=value;}},
+ viewSize:()=>({w:640,h:400,cw:640,ch:400}),canvas:{width:640,height:400,style:{}},photo:{style:{}},program:{},cameraMatrix:()=>[],radius:1,
+ layers:{studio:true,lighting:false,showBounds:false},u:{lighting:'lighting'},gpu:[],selection:{},svg:{setAttribute(){},replaceChildren(){}},
+});
+vm.runInContext(ts.transpileModule(drawSource+';globalThis.draw=draw;', {compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,displayScope);
+displayScope.draw();assert.deepEqual(displayed.background,[237/255,240/255,238/255,1]);assert.equal(displayed.lighting,2,'Studio uses soft illumination even when the main scene lighting is off');
+displayScope.layers.studio=false;displayScope.draw();assert.deepEqual(displayed.background,[17/255,27/255,33/255,1]);assert.equal(displayed.lighting,0,'The regular scene retains the user lighting choice');
+displayScope.layers.studio=true;displayScope.draw(true);assert.deepEqual(displayed.background,[0,0,0,1],'Studio background cannot create phantom objects in the ID-picking buffer');
+
 
 // Execute SpatialView's real effect/event bridge: delayed A asset events must
 // service the current B request, never replace B with the previous selection.
