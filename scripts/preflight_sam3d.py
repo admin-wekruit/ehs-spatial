@@ -37,6 +37,7 @@ def preflight(runtime, provider, budget):
     check("runtime_pins_match", bool(pins) and runtime.get("pins") == pins)
     check("runtime_image_digest", bool(re.fullmatch(r"[^\s]+@sha256:[0-9a-f]{64}", str(runtime.get("runtimeImage") or ""))))
     check("runtime_distribution", runtime.get("distribution") == "sam3d_objects")
+    check("mesh_source_build_receipt", bool(re.fullmatch(r"[0-9a-f]{64}", str(runtime.get("meshSourceBuildSha256") or ""))))
     checkpoint = Path(str(runtime.get("checkpointConfig") or ""))
     check("checkpoint_config", bool(runtime.get("checkpointConfig")) and not checkpoint.is_absolute() and ".." not in checkpoint.parts)
     for key in ("modalApp", "modalClass", "modalMethod"):

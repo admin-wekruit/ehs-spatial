@@ -1,0 +1,46 @@
+--- a/sam3d_objects/pipeline/inference_pipeline.py
++++ b/sam3d_objects/pipeline/inference_pipeline.py
+@@ -46,7 +46,6 @@
+ )
+ 
+ from sam3d_objects.model.backbone.tdfy_dit.modules import sparse as sp
+-from sam3d_objects.model.backbone.tdfy_dit.utils import postprocessing_utils
+ from safetensors.torch import load_file
+ 
+ 
+@@ -540,7 +539,16 @@
+         logger.info(
+             f"Postprocessing mesh with option with_mesh_postprocess {with_mesh_postprocess}, with_texture_baking {with_texture_baking}..."
+         )
+-        if "mesh" in outputs:
++        if "mesh" in outputs and not with_mesh_postprocess and not with_texture_baking and use_vertex_color:
++            # Same vertex-color conversion as to_glb, without Gaussian dependencies.
++            import trimesh
++            mesh = outputs["mesh"][0]
++            vertices = mesh.vertices.float().cpu().numpy()
++            vertices = vertices @ np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
++            glb = trimesh.Trimesh(vertices=vertices, faces=mesh.faces.cpu().numpy(), process=False)
++            glb.visual.vertex_colors = mesh.vertex_attrs[:, :3].cpu().numpy()
++        elif "mesh" in outputs:
++            from sam3d_objects.model.backbone.tdfy_dit.utils import postprocessing_utils
+             glb = postprocessing_utils.to_glb(
+                 outputs["gaussian"][0],
+                 outputs["mesh"][0],
+--- a/sam3d_objects/pipeline/layout_post_optimization_utils.py
++++ b/sam3d_objects/pipeline/layout_post_optimization_utils.py
+@@ -19,7 +19,6 @@
+ import open3d as o3d
+ from scipy.ndimage import label, binary_dilation, binary_fill_holes, binary_erosion, minimum_filter
+ import copy
+-from sam3d_objects.model.backbone.tdfy_dit.renderers.gaussian_render import GaussianRenderer
+ from loguru import logger
+ from utils3d.numpy import depth_edge
+ 
+@@ -584,6 +583,7 @@
+     Forces square rendering (H=W) to work with unmodified gaussian_render.py.
+     """
+     # Use exact same mask resize code as get_mask_renderer
++    from sam3d_objects.model.backbone.tdfy_dit.renderers.gaussian_render import GaussianRenderer
+     orig_h, orig_w = Mask.shape[-2:]
+     min_orig_size = min(orig_w, orig_h)
+     scale_factor = min_size / min_orig_size

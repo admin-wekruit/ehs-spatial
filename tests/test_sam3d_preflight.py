@@ -10,6 +10,6 @@ def test_preflight_reports_missing_gates_and_never_calls_models():
         result = preflight(runtime, provider, budget)
         failed = {c["gate"] for c in result["checks"] if c["status"] != "configured"}
         assert result["status"] == "blocked" and result["newModelCalls"] == 0
-        assert {"explicit_paid_budget", "runtime_image_digest", "releaseEvidence.license", "releaseEvidence.runtime", "releaseEvidence.quality", "nativePoseEvidence.officialPoseFixture", "native_pose_and_basis_contract"} <= failed
+        assert {"explicit_paid_budget", "runtime_image_digest", "mesh_source_build_receipt", "releaseEvidence.license", "releaseEvidence.runtime", "releaseEvidence.quality", "nativePoseEvidence.officialPoseFixture", "native_pose_and_basis_contract"} <= failed
     runtime["generation"]["checkpointConfig"] = "../untrusted.yaml"
     assert next(c for c in preflight(runtime, provider, "1")["checks"] if c["gate"] == "checkpoint_config")["status"] == "missing_or_invalid"

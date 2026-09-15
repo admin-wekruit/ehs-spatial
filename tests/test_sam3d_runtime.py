@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 
-def load_worker(monkeypatch, tmp_path):
+def load_worker(monkeypatch, tmp_path, *, stub_distribution=True):
     manifest = tmp_path / "runtime.json"
     manifest.write_text(json.dumps({"generation": {
         "runtimeImage": "registry.example/sam3d@sha256:" + "a" * 64,
@@ -24,11 +24,12 @@ def load_worker(monkeypatch, tmp_path):
     spec = importlib.util.spec_from_file_location("sam3d_worker_test", Path(__file__).parents[1] / "modal_apps/platform_models.py")
     worker = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(worker)
-    monkeypatch.setattr(worker, "_verify_distribution", lambda stage: None)
+    if stub_distribution:
+        monkeypatch.setattr(worker, "_verify_distribution", lambda stage: None)
     return worker
 
 
-def test_loader_removes_depth_factory_before_hydra_recurses(monkeypatch, tmp_path):
+def test_loader_removes_depth_and_gaussian_factories_before_hydra_recurses(monkeypatch, tmp_path):
     worker = load_worker(monkeypatch, tmp_path)
     constructed = []
 
@@ -41,6 +42,11 @@ def test_loader_removes_depth_factory_before_hydra_recurses(monkeypatch, tmp_pat
     def instantiate(config, **overrides):
         # Hydra resolves overrides before recursively constructing nested targets.
         depth = overrides.get("depth_model", config.depth_model)
+        for key in ('slat_decoder_gs_config_path', 'slat_decoder_gs_ckpt_path',
+                    'slat_decoder_gs_4_config_path', 'slat_decoder_gs_4_ckpt_path'):
+            if overrides.get(key, 'configured upstream decoder') is not None:
+                depth_factory()
+        assert overrides['decode_formats'] == ['mesh']
         return SimpleNamespace(depth_model=depth() if callable(depth) else depth)
 
     monkeypatch.setitem(sys.modules, "huggingface_hub", SimpleNamespace(snapshot_download=lambda *a, **k: str(tmp_path)))
@@ -96,3 +102,28 @@ def test_external_pointmap_is_preserved_and_failure_returns_telemetry(monkeypatc
     assert result["telemetry"]["gpuElapsedSeconds"] == 1.25
     assert result["telemetry"]["workerElapsedSeconds"] >= 0
     assert result["telemetry"]["actualCostUsd"] is None
+
+
+def test_runtime_rejects_changed_mesh_source_or_receipt(monkeypatch, tmp_path):
+    import hashlib
+    worker = load_worker(monkeypatch, tmp_path, stub_distribution=False)
+    config = worker.CONFIG['generation']
+    relative = 'sam3d_objects/pipeline/inference_pipeline.py'
+    source = tmp_path / relative
+    source.parent.mkdir(parents=True)
+    source.write_text('reviewed test source\n')
+    build = {'codeRevision': config['pins']['codeRevision'], 'files': {
+        relative: {'patchedSha256': hashlib.sha256(source.read_bytes()).hexdigest()}}}
+    receipt = tmp_path / 'sam3d_objects/panoptes_mesh_build.json'
+    receipt.write_text(json.dumps(build))
+    config['meshSourceBuildSha256'] = hashlib.sha256(receipt.read_bytes()).hexdigest()
+    monkeypatch.setattr(worker.importlib.metadata, 'distribution', lambda name: SimpleNamespace(
+        read_text=lambda name: json.dumps({'vcs_info': {'commit_id': config['pins']['codeRevision']}}),
+        locate_file=lambda relative: tmp_path / relative))
+    worker._verify_distribution('generation')
+    source.write_text('unexpected source edit\n')
+    with pytest.raises(RuntimeError, match='patched source differs'):
+        worker._verify_distribution('generation')
+    receipt.write_text('{}')
+    with pytest.raises(RuntimeError, match='source build differs'):
+        worker._verify_distribution('generation')

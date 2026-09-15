@@ -6,6 +6,7 @@ Images must already contain the audited pinned GPU dependencies. This file does
 not claim that an image, HF access, native-pose fixture or quality gate has passed.
 """
 import base64
+import hashlib
 import importlib.metadata
 import io
 import json
@@ -60,10 +61,24 @@ def _runtime_image(stage):
 
 def _verify_distribution(stage):
     config = CONFIG[stage]
-    provenance = importlib.metadata.distribution(config["distribution"]).read_text("direct_url.json")
+    distribution = importlib.metadata.distribution(config["distribution"])
+    provenance = distribution.read_text("direct_url.json")
     actual = json.loads(provenance or "{}").get("vcs_info",{}).get("commit_id")
     if actual != config["pins"]["codeRevision"]:
         raise RuntimeError("Installed source revision is not the configured revision")
+    if stage == "generation":
+        receipt = distribution.locate_file("sam3d_objects/panoptes_mesh_build.json").read_bytes()
+        if hashlib.sha256(receipt).hexdigest() != config.get("meshSourceBuildSha256"):
+            raise RuntimeError("SAM3D mesh source build differs from configuration")
+        build = json.loads(receipt)
+        if build["codeRevision"] != actual:
+            raise RuntimeError("SAM3D mesh source build revision differs")
+        for relative, hashes in build["files"].items():
+            path = Path(relative)
+            if path.is_absolute() or ".." in path.parts or path.parts[0] != "sam3d_objects":
+                raise RuntimeError("SAM3D mesh source build path is invalid")
+            if hashlib.sha256(distribution.locate_file(relative).read_bytes()).hexdigest() != hashes["patchedSha256"]:
+                raise RuntimeError("SAM3D patched source differs from recorded build")
 
 
 def _image(record):
@@ -205,7 +220,9 @@ if "generation" in CONFIG:
             settings.compile_model = False
             settings.workspace_dir = str((root/relative).parent)
             # Hydra recursively builds configured depth models before __init__.
-            self.pipeline = instantiate(settings, depth_model=None)
+            self.pipeline = instantiate(settings, depth_model=None, decode_formats=["mesh"],
+                slat_decoder_gs_config_path=None, slat_decoder_gs_ckpt_path=None,
+                slat_decoder_gs_4_config_path=None, slat_decoder_gs_4_ckpt_path=None)
             self.depth_calls = 0
             def forbidden_depth(*args,**kwargs):
                 self.depth_calls += 1
