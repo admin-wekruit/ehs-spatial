@@ -212,7 +212,7 @@ const componentCode = ts.transpileModule(component.getText(parsed).replace("expo
   compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, module: ts.ModuleKind.None },
 }).outputText;
 const hooks = []; let cursor = 0, effects = [], dirty = false, fullscreenRequests = 0;
-const useState = (initial) => { const i = cursor++; if (!(i in hooks)) hooks[i] = initial; return [hooks[i], (next) => { const value = typeof next === "function" ? next(hooks[i]) : next; dirty ||= !Object.is(value, hooks[i]); hooks[i] = value; }]; };
+const useState = (initial) => { const i = cursor++; if (!(i in hooks)) hooks[i] = typeof initial === "function" ? initial() : initial; return [hooks[i], (next) => { const value = typeof next === "function" ? next(hooks[i]) : next; dirty ||= !Object.is(value, hooks[i]); hooks[i] = value; }]; };
 const useRef = (initial) => { const i = cursor++; return hooks[i] ||= { current: initial }; };
 const useEffect = (fn, deps) => { const i = cursor++, old = hooks[i]; if (!old || deps.some((value, n) => !Object.is(value, old[n]))) effects.push(fn); hooks[i] = deps; };
 const React = { createElement: (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity).filter((c) => c !== null && c !== undefined && c !== false) }) };
@@ -257,6 +257,7 @@ function renderWorkspace() {
   return tree;
 }
 let tree = renderWorkspace();
+assert.equal(nodes(tree).find(node => node.type === "select").props.value, "model", "A model-only report starts on its available representation");
 const rail = () => nodes(tree).find((node) => node.props.className === "report-scene-object-rail");
 const switcher = () => nodes(tree).find((node) => node.props.className === "report-scene-view-switch");
 const spatialHost = () => nodes(tree).filter((node) => node.type === SpatialView);
@@ -369,6 +370,10 @@ const report = await readFile(new URL("../src/WorkcellReport.tsx", import.meta.u
 assert.doesNotMatch(report, /className="report-inventory"|filteredObjects|setAllObjects/, "No second object inventory or search state remains below the workspace");
 assert.match(report, /section="understanding"/, "Image interpretation and its source history remain in the report");
 assert.match(report, /objectListRequest=\{objectListRequest\}/, "The lower section opens the workspace inventory");
+uiDocument.entities.find(entity => entity.id === "background").representations = [{...observed, coverage: "observed_camera_state_only"}];
+hooks.length = 0;
+tree = renderWorkspace();
+assert.equal(nodes(tree).find(node => node.type === "select").props.value, "observed_surface", "A complete observed camera scene starts with its object-owned evidence, not unpartitioned generated candidates");
 console.log(
   "report scene: 68-record unified evidence inventory, observed extents/scale, no duplicate table, linked no-geometry selection, mobile navigation, photo projection, floor semantics and one WebGL passed",
 );

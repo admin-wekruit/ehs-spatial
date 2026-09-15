@@ -223,7 +223,8 @@ export function ReportScene({
 }) {
   const { t } = useI18n(), container = useRef<HTMLElement>(null),
     objectList = useRef<HTMLDivElement>(null), objectSearch = useRef<HTMLInputElement>(null), panePrefix = useId();
-  const [layer, setLayer] = useState<Layer>("model"),
+  const [layer, setLayer] = useState<Layer>(() => revision.document.entities.some(entity =>
+    entity.sourceContext && entity.representations?.some(rep => rep.kind === "observed_surface" && rep.sourceValidity !== "stale" && rep.coverage === "observed_camera_state_only")) ? "observed_surface" : "model"),
     [allBounds, setAllBounds] = useState(false),
     [focused, setFocused] = useState<Pane | null>(null),
     [mobileSection, setMobileSection] = useState("views"),
@@ -316,7 +317,7 @@ export function ReportScene({
         <div className="report-scene-intro"><strong>{t("sceneWorkspace")}</strong><span>{t("sceneLinked")}</span></div>
         <div className="report-scene-controls">
           <label><span>{t("sceneLayers")}</span><select aria-label={t("sceneLayers")} value={layer} onChange={(e) => setLayer(e.target.value as Layer)}>
-            <option value="model">{t("sceneModel")}</option><option value="observed_surface">{t("sceneObserved")}</option>
+            <option value="observed_surface">{t("sceneObserved")}</option><option value="model">{t("sceneModel")}</option>
             <option value="point_cloud" disabled={!hasPointCloud}>{t(hasPointCloud ? "scenePoints" : "sceneNoPoints")}</option>
           </select></label>
           <label className="report-scene-check"><input type="checkbox" checked={allBounds} onChange={(e) => setAllBounds(e.target.checked)} />{t("sceneShowBorders")}</label>

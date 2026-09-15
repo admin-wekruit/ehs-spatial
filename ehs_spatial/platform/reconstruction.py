@@ -523,6 +523,29 @@ def _verified_source_equivalences(document, masks, stages):
     return verified, skipped
 
 
+def _save_observed_surface(document, entity, frame, record, mask, stages, observation=None):
+    """Use complete native support inside the exact mask, before context carving."""
+    mesh = _mesh(frame.points, frame.support(), record['rgb'], mask)
+    if mesh is None:
+        return None
+    source = {'observationId': observation['id'], 'revision': observation['revision'], 'imageId': frame.image_id} if observation else {'imageId': frame.image_id}
+    asset = _save_mesh(stages, mesh, {'kind': 'observed_surface' if observation else 'capture_context',
+        'entityId': entity['id'], 'sourceRefs': [source], 'methodVersion': 'full-native-observed-v1'})
+    _include(document, asset)
+    identity = _id(document['captureId'], 'full-native-observed-v1', entity['id'], source.get('observationId', frame.image_id),
+                   source.get('revision', 0), record.get('geometrySolutionId'), asset['sha256'])
+    rep = {'id': identity, 'kind': 'observed_surface', 'assetId': asset['id'], 'coordinateFrameId': frame.coordinate_frame_id,
+        'transform': {'coordinateFrameId': frame.coordinate_frame_id, 'position': [0., 0., 0.], 'quaternion': [0., 0., 0., 1.], 'scale': [1., 1., 1.]},
+        'bounds': {'min': mesh.vertices.min(axis=0).tolist(), 'max': mesh.vertices.max(axis=0).tolist()},
+        'primitive': None, 'placementState': 'confirmed', 'sourceRefs': [source],
+        'coverage': 'complete_valid_mask_support' if observation else 'observed_camera_state_only'}
+    if record.get('geometryManifestAssetId'):
+        rep['sourceRefs'].append({'assetId': record['geometryManifestAssetId']})
+    if not any(r['id'] == identity for r in entity['representations']):
+        entity['representations'].append(rep)
+    return {'representationId': identity, 'vertexCount': len(mesh.vertices), 'triangleCount': len(mesh.faces)}
+
+
 def _associate_and_surfaces(document,frames,canonical,masks,stages, *, rebuild_surfaces=True, new_observation_ids=None, refresh_observation_ids=None, invalidated_measurement_ids=()):
     from .identity import apply_source_equivalences
     verified, skipped = _verified_source_equivalences(document, masks, stages)
@@ -548,6 +571,8 @@ def _associate_and_surfaces(document,frames,canonical,masks,stages, *, rebuild_s
             continue
         if not rebuild_surfaces:
             continue
+        for _, oid, frame, _ in candidates:
+            _save_observed_surface(document, entity, frame, canonical[frame.image_id], masks[oid], stages, lookup[oid])
         _,oid,f,support = max(candidates,key=lambda x:(x[0],x[1]))
         observation = lookup[oid]
         selected_bounds = entity['measurements'].get('observedBounds')
@@ -561,16 +586,6 @@ def _associate_and_surfaces(document,frames,canonical,masks,stages, *, rebuild_s
             dimensions = np.asarray(bounds["max"])-np.asarray(bounds["min"])
             entity["measurements"].update({"dimensionsNative":dimensions.tolist(),
                 "coordinateFrameId":f.coordinate_frame_id,"dimensionBasis":"native_axes_not_ground_aligned"})
-        mesh = _mesh(f.points,f.support(),canonical[f.image_id]["rgb"],masks[oid])
-        if mesh is None:
-            continue
-        asset = _save_mesh(stages,mesh,{"kind":"observed_surface","entityId":entity["id"],"sourceObservationId":oid})
-        if asset["id"] not in {a["id"] for a in document["assets"]}:
-            document["assets"].append(asset)
-        rep = {"id":_id(document["captureId"],"observed",entity["id"],oid,str(observation["revision"]),asset["sha256"]),"kind":"observed_surface","assetId":asset["id"],"coordinateFrameId":f.coordinate_frame_id,
-               "transform":{"coordinateFrameId":f.coordinate_frame_id,"position":[0.,0.,0.],"quaternion":[0.,0.,0.,1.],"scale":[1.,1.,1.]},"bounds":asset["metadata"]["bounds"],"primitive":None,"placementState":"confirmed","sourceRefs":[{"observationId":oid,"revision":observation["revision"]}]}
-        if not any(r["id"] == rep["id"] for r in entity["representations"]):
-            entity["representations"].append(rep)
     from .identity import snapshot_measurements
     for entity in document["entities"]:
         snapshot_measurements(entity, source_revision_id=stages.job["baseRevisionId"], document=document)
@@ -579,22 +594,60 @@ def _associate_and_surfaces(document,frames,canonical,masks,stages, *, rebuild_s
 
 
 def _capture_context(document,frames,canonical,stages):
-    if not frames:
-        return
-    # One fixed camera state avoids inventing a fused state of moving machinery.
-    anchor = max(frames.values(),key=lambda f:(int(f.support().sum()),f.image_id))
-    mesh = _mesh(anchor.points,anchor.support(),canonical[anchor.image_id]["rgb"],np.ones(anchor.valid.shape,bool))
-    if mesh is None:
-        return
-    asset = _save_mesh(stages,mesh,{"kind":"capture_context","imageId":anchor.image_id})
-    _include(document,asset)
-    identity = _id(document["captureId"],"capture_context")
-    entity = {"id":identity,"label":"Observed capture context","kind":"capture_context","sourceContext":True,"editable":False,"observationRefs":[],"associationState":"confirmed",
-        "representations":[{"id":_id(document["captureId"],"context",asset["sha256"]),"kind":"observed_surface","assetId":asset["id"],"coordinateFrameId":anchor.coordinate_frame_id,
-            "transform":{"coordinateFrameId":anchor.coordinate_frame_id,"position":[0.,0.,0.],"quaternion":[0.,0.,0.,1.],"scale":[1.,1.,1.]},
-            "primitive":None,"bounds":asset["metadata"]["bounds"],"placementState":"confirmed","editable":False,"sourceRefs":[{"imageId":anchor.image_id},_ref(asset)],"coverage":"observed_camera_state_only"}],
-        "currentModelTransform":None,"measurements":{},"groupId":None,"lineage":[],"activeModelRepresentationId":None,"measurementEvidence":[],"measurementSelections":{}}
-    document["entities"] = [e for e in document["entities"] if e["id"] != identity] + [entity]
+    results = []
+    # Each context retains one camera state; contexts are never fused across photos.
+    for frame in frames.values():
+        identity = _id(document['captureId'], 'capture_context', frame.image_id)
+        entity = next((e for e in document['entities'] if e['id'] == identity), None)
+        if entity is None:
+            entity = {'id': identity, 'label': 'Observed capture context', 'kind': 'capture_context', 'sourceContext': True,
+                'editable': False, 'observationRefs': [], 'associationState': 'confirmed', 'representations': [],
+                'currentModelTransform': None, 'measurements': {}, 'groupId': None, 'lineage': [],
+                'activeModelRepresentationId': None, 'measurementEvidence': [], 'measurementSelections': {}}
+        result = _save_observed_surface(document, entity, frame, canonical[frame.image_id], np.ones(frame.valid.shape, bool), stages)
+        if result:
+            for rep in entity['representations']:
+                if rep['id'] != result['representationId'] and rep.get('sourceValidity') != 'stale':
+                    rep.update(sourceValidity='stale', supersededByRepresentationIds=[result['representationId']])
+            if not any(e['id'] == identity for e in document['entities']):
+                document['entities'].append(entity)
+            results.append({'imageId': frame.image_id, **result})
+    return results
+
+
+def _rebuild_observed_surfaces(document, frames, records, masks, stages):
+    working = deepcopy(document)
+    observations = {o['id']: o for o in working['observations']}
+    rebuilt = []
+    for entity in working['entities']:
+        if entity.get('sourceContext'):
+            continue
+        replacements = []
+        for oid in entity['observationRefs']:
+            observation = observations[oid]
+            result = _save_observed_surface(working, entity, frames[observation['imageId']], records[observation['imageId']], masks[oid], stages, observation)
+            if result is None:
+                raise PlatformError('observed_surface_unavailable', 409, observationId=oid)
+            replacements.append(result['representationId'])
+            rebuilt.append({'entityId': entity['id'], 'observationId': oid, 'imageId': observation['imageId'], **result})
+        if replacements:
+            for rep in entity['representations']:
+                if rep['kind'] == 'observed_surface' and rep['id'] not in replacements and rep.get('sourceValidity') != 'stale':
+                    rep.update(sourceValidity='stale', supersededByRepresentationIds=replacements)
+    contexts = _capture_context(working, frames, records, stages)
+    if len(contexts) != len(frames):
+        raise PlatformError('observed_context_unavailable', 409)
+    replacements = [r['representationId'] for r in contexts]
+    for entity in working['entities']:
+        if entity.get('sourceContext'):
+            for rep in entity['representations']:
+                if rep['kind'] == 'observed_surface' and rep['coordinateFrameId'] in {f.coordinate_frame_id for f in frames.values()} and rep['id'] not in replacements and rep.get('sourceValidity') != 'stale':
+                    rep.update(sourceValidity='stale', supersededByRepresentationIds=replacements)
+    from .contracts import validate_document
+    validate_document(working)
+    document.clear()
+    document.update(working)
+    return {'methodVersion': 'full-native-observed-v1', 'observationCount': len(rebuilt), 'observations': rebuilt, 'contexts': contexts}
 
 
 def _ground(document,frames,masks,stages, *, affected_observation_ids=None):
@@ -767,8 +820,8 @@ def run_analysis(repository,blobs,job,providers):
     association = attempt("association",lambda:_associate_and_surfaces(document,frames,canonical,masks,stages,new_observation_ids={o["id"] for o in document["observations"] if o["imageId"] in lookup} if is_append else None)) if frames else None
     if association is None:
         _association_evidence(document,None,frames,masks)
-    if not is_append:
-        attempt("capture_context",lambda:_capture_context(document,frames,canonical,stages))
+    context_frames = {image_id: frame for image_id, frame in frames.items() if not is_append or image_id in lookup}
+    attempt("capture_context",lambda:_capture_context(document,context_frames,canonical,stages))
     ground_report = attempt("ground",lambda:_ground(document,frames,masks,stages)) if not is_append else {"status":"preserved_source_ground"}
     checkpoint = stages.checkpoint(document,"analysis_complete" if not errors else "analysis_incomplete")
     result = {"status":"incomplete" if errors else "succeeded","pipelineVersion":PIPELINE_VERSION,"stages":stages.records,"errors":errors,"checkpointAssetId":checkpoint["id"],
@@ -907,22 +960,33 @@ def run_reassociation(repository, blobs, job, providers=None):
         source = json.loads(blobs.get(asset['storageKey'],asset['sha256'],asset['sizeBytes']))
         from .contracts import validate_document
         validate_document(source)
+    rebuild_surfaces = job.get('inputs', {}).get('rebuildObservedSurfaces', False)
+    if type(rebuild_surfaces) is not bool:
+        raise PlatformError('invalid_surface_rebuild_request', 422)
+    if rebuild_surfaces and source['schemaVersion'] != 2:
+        raise PlatformError('surface_rebuild_requires_scene_v2', 409)
     document = migrate_document(source, base_revision_id=job['baseRevisionId']) if source['schemaVersion'] == 1 else deepcopy(source)
-    repair_measurement_sources(document, base_revision_id=job['baseRevisionId'])
+    if not rebuild_surfaces:
+        repair_measurement_sources(document, base_revision_id=job['baseRevisionId'])
     images = [image for capture in repository.list_project_records(job['projectId'], 'captures')['items']
               if capture['id'] in document.get('captureIds', []) for image in capture['images']]
-    errors, frames, records, masks, association = [], {}, {}, {}, None
+    errors, frames, records, masks, association, surface_rebuild = [], {}, {}, {}, None, None
     try:
         frames, records = _load_geometry(document, images, stages)
         masks, errors = _load_masks(document, records, stages)
-        association = _associate_and_surfaces(document, frames, records, masks, stages, rebuild_surfaces=False)
+        if rebuild_surfaces:
+            if not errors:
+                surface_rebuild = _rebuild_observed_surfaces(document, frames, records, masks, stages)
+        else:
+            association = _associate_and_surfaces(document, frames, records, masks, stages, rebuild_surfaces=False)
     except PlatformError as exc:
         errors.append({'stage':'association', 'code':exc.code, 'params':exc.params})
-    _association_evidence(document, association, frames, masks)
+    if not rebuild_surfaces:
+        _association_evidence(document, association, frames, masks)
     evidence = stages.put({'methodVersion':ASSOCIATION_VERSION, 'baseRevisionId':job['baseRevisionId'],
-        'association':association, 'errors':errors, 'newModelCalls':0}, {'kind':'identity_evaluation', 'baseRevisionId':job['baseRevisionId']})
+        'association':association, 'surfaceRebuild':surface_rebuild, 'errors':errors, 'newModelCalls':0}, {'kind':'observed_surface_rebuild' if rebuild_surfaces else 'identity_evaluation', 'baseRevisionId':job['baseRevisionId']})
     _include(document, evidence)
-    return document, {'status':'incomplete' if errors else 'succeeded', 'newModelCalls':0, 'association':association,
+    return document, {'status':'incomplete' if errors else 'succeeded', 'newModelCalls':0, 'association':association, 'surfaceRebuild':surface_rebuild,
         'errors':errors, 'evidenceAssetId':evidence['id'], 'beforeEntityCount':sum(not e.get('sourceContext') for e in source['entities']),
         'afterEntityCount':sum(not e.get('sourceContext') for e in document['entities']), 'observationCount':len(document['observations']),
         'evaluatedObservationCount':len(masks), 'methodVersion':ASSOCIATION_VERSION, 'qualityStatus':'requires_physical_identity_validation'}

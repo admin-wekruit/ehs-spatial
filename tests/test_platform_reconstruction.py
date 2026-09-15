@@ -101,7 +101,7 @@ def test_generic_multiphoto_analysis_retains_tiny_objects_caches_frames_and_uses
     document,result = run_analysis(repo,blobs,repo.job,providers)
     assert result["status"] == "succeeded",result["errors"]
     assert len(document["observations"]) == 6
-    assert len(document["entities"]) == 5  # two objects, two tiny observations, observed context
+    assert len(document["entities"]) == 6  # two objects, two tiny observations, two photo contexts
     assert all(f["ground"] is None for f in document["coordinateFrames"])
     assert document["target"] == "standalone_object"
     tiny = [e for e in document["entities"] if e["label"] == "tiny control"]
@@ -110,7 +110,7 @@ def test_generic_multiphoto_analysis_retains_tiny_objects_caches_frames_and_uses
     linked = [e for e in document["entities"] if e.get("associationEvidence", {}).get("status") == "confirmed"]
     assert len(linked) == 2 and all(len(e["observationRefs"]) == 2 for e in linked)
     assert all(any(link["accepted"] for link in e["associationEvidence"]["geometryVerification"]["links"]) for e in linked)
-    assert len([r for e in document["entities"] for r in e["representations"]]) == 3
+    assert len([r for e in document["entities"] for r in e["representations"]]) == 6
     context = next(e for e in document["entities"] if e.get("kind") == "capture_context")
     assert context["sourceContext"] is True
     assert len([e for e in document["entities"] if not e.get("sourceContext")]) == 4
@@ -449,6 +449,9 @@ def test_append_photos_registers_new_solution_preserves_source_and_reuses_duplic
     old_entity=next(e for e in before['entities'] if not e.get('sourceContext'))
     assert objects[0]['id']==old_entity['id']
     assert objects[0]['measurementEvidence']==old_entity['measurementEvidence']
+    contexts = [e for e in updated['entities'] if e.get('sourceContext')]
+    assert all(e in contexts for e in before['entities'] if e.get('sourceContext'))
+    assert any(r['sourceRefs'][0].get('imageId') == asset['id'] for e in contexts for r in e['representations'])
     assert updated['registrationEvidence'][0]['metrics']['holdoutP95Relative']<1e-6
     loaded,_=_load_geometry(updated,[],_Stages(repo,blobs,job,{}))
     assert len({f.coordinate_frame_id for f in loaded.values()})==1
@@ -675,3 +678,53 @@ def test_source_equivalence_verifier_rejects_nonobject_proof_document(tmp_path):
     document['sourceIdentityEvidence'] = [{'assetId':asset['id'], 'sha256':asset['sha256']}]
     with pytest.raises(PlatformError, match='invalid_source_identity_proof'):
         _verified_source_equivalences(document, masks, stages)
+
+
+def test_full_observed_rebuild_preserves_identity_measurements_and_every_photo(tmp_path):
+    from ehs_spatial.platform.reconstruction import run_reassociation
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    providers = bundle(repo)
+    providers['discovery'] = provider('discovery', lambda _: {'items': [{'label': 'fixture', 'box': [0, 0, 5, 12]}]})
+    source, _ = run_analysis(repo, blobs, repo.job, providers)
+    entity = next(e for e in source['entities'] if not e.get('sourceContext'))
+    assert len(entity['observationRefs']) == 2
+    assert {r['sourceRefs'][0]['observationId'] for r in entity['representations']} == set(entity['observationRefs'])
+    # Simulate an imported carved mesh: retain its immutable asset, then replace
+    # only its current representation selection with full native mask support.
+    entity['representations'] = entity['representations'][:1]
+    entity['representations'][0]['id'] = str(uuid4())
+    generated = {**deepcopy(entity['representations'][0]), 'id': str(uuid4()), 'kind': 'generated_mesh'}
+    entity['representations'].append(generated)
+    entity['activeModelRepresentationId'] = generated['id']
+    entity['currentModelTransform'] = deepcopy(generated['transform'])
+    repo.document = deepcopy(source)
+    calls = len(repo.calls)
+    # Asset deduplication can return frozen import metadata without bounds.
+    for asset in repo.assets:
+        asset.get('metadata', {}).pop('bounds', None)
+    job = {**repo.job, 'id': str(uuid4()), 'kind': 'reassociate_scene', 'inputs': {'rebuildObservedSurfaces': True}}
+    rebuilt, result = run_reassociation(repo, blobs, job, {})
+    assert result['status'] == 'succeeded' and result['newModelCalls'] == 0 and len(repo.calls) == calls
+    assert result['surfaceRebuild']['observationCount'] == 2
+    assert rebuilt['observations'] == source['observations'] and rebuilt['identityDecisions'] == source['identityDecisions']
+    current = next(e for e in rebuilt['entities'] if e['id'] == entity['id'])
+    for key in ('measurementEvidence', 'measurementSelections', 'measurements', 'activeModelRepresentationId', 'currentModelTransform'):
+        assert current[key] == entity[key]
+    assert next(r for r in current['representations'] if r['id'] == generated['id']) == generated
+    old = next(r for r in current['representations'] if r['id'] == entity['representations'][0]['id'])
+    assert old['sourceValidity'] == 'stale' and old['assetId'] == entity['representations'][0]['assetId']
+    surfaces = [r for r in current['representations'] if r['kind'] == 'observed_surface' and r.get('sourceValidity') != 'stale']
+    assert {r['sourceRefs'][0]['observationId'] for r in surfaces} == set(entity['observationRefs'])
+    contexts = [r for e in rebuilt['entities'] if e.get('sourceContext') for r in e['representations'] if r['kind'] == 'observed_surface' and r.get('sourceValidity') != 'stale']
+    assert {r['sourceRefs'][0]['imageId'] for r in contexts} == {o['imageId'] for o in source['observations']}
+    assert all(a in rebuilt['assets'] for a in source['assets'])
+    validate_document(rebuilt)
+    repo.document = deepcopy(rebuilt)
+    repeated, _ = run_reassociation(repo, blobs, job, {})
+    assert [e['representations'] for e in repeated['entities']] == [e['representations'] for e in rebuilt['entities']]
+    # An incomplete source cannot retire usable geometry or claim full coverage.
+    repo.document['observations'][0]['maskAssetId'] = None
+    unchanged, failed = run_reassociation(repo, blobs, job, {})
+    assert failed['status'] == 'incomplete'
+    assert unchanged['entities'] == repo.document['entities']

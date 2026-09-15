@@ -201,6 +201,9 @@ def prepare_export(revision_id: str, document: dict[str, Any], resolve_asset: Ca
     objects, unresolved, excluded = [], [], []
     for entity in document["entities"]:
         for rep in entity.get("representations", []):
+            if rep.get('sourceValidity') == 'stale':
+                excluded.append({'entityId':entity['id'], 'representationId':rep['id'], 'reason':'source_geometry_stale'})
+                continue
             if document['schemaVersion'] == 2 and rep['kind'] in ('generated_mesh', 'primitive') and rep['id'] != entity.get('activeModelRepresentationId'):
                 excluded.append({'entityId':entity['id'], 'representationId':rep['id'], 'reason':'source_model_candidate'})
                 continue

@@ -18,6 +18,23 @@ const buffer=new ArrayBuffer(3*36+12),vertices=new Float32Array(buffer,0,27),ind
 const meta={byteLayout:{stride:9,vertexCount:3,indexByteOffset:108,indexCount:3,indexType:'uint32'}};
 const meshes=readPacked(buffer,meta);assert.equal(meshes[0].vertices.length,33);assert.deepEqual([...meshes[0].indices],[0,1,2]);
 indices[2]=3;assert.throws(()=>readPacked(buffer,meta));assert.throws(()=>readGLB(new ArrayBuffer(24)));
+// The fourth stored vertex is not used by any drawn triangle. Keep its data,
+// but never let it enlarge rendered bounds; non-indexed points do use it.
+const positions=new Float32Array([0,0,1,1,0,1,0,1,1,1000,2000,3000]),used=new Uint32Array([0,1,2]);
+const indexedPacked=new ArrayBuffer(4*36+12),packedVertices=new Float32Array(indexedPacked,0,36);
+for(let i=0;i<4;i++)packedVertices.set([...positions.slice(i*3,i*3+3),0,0,1,1,1,1],i*9);
+new Uint32Array(indexedPacked,144,3).set(used);
+const boundedPacked=readPacked(indexedPacked,{byteLayout:{stride:9,vertexCount:4,indexByteOffset:144,indexCount:3,indexType:'uint32'}})[0];
+assert.deepEqual(boundedPacked.bounds,{min:[0,0,1],max:[1,1,1]},'Packed mesh bounds use only vertices referenced by rendered indices');
+assert.equal(boundedPacked.vertices.length,44,'Computing rendered bounds does not discard original vertex data');
+function indexedGLB(mode,indexed=true){
+ const binary=new Uint8Array(positions.byteLength+used.byteLength);binary.set(new Uint8Array(positions.buffer));binary.set(new Uint8Array(used.buffer),positions.byteLength);
+ const spec={asset:{version:'2.0'},scene:0,scenes:[{nodes:[0]}],nodes:[{mesh:0}],meshes:[{primitives:[{attributes:{POSITION:0},mode,...(indexed?{indices:1}:{})}]}],buffers:[{byteLength:binary.length}],bufferViews:[{buffer:0,byteOffset:0,byteLength:positions.byteLength},{buffer:0,byteOffset:positions.byteLength,byteLength:used.byteLength}],accessors:[{bufferView:0,componentType:5126,count:4,type:'VEC3'},{bufferView:1,componentType:5125,count:3,type:'SCALAR'}]};
+ const raw=new TextEncoder().encode(JSON.stringify(spec)),jsonSize=Math.ceil(raw.length/4)*4,output=new ArrayBuffer(28+jsonSize+binary.length),view=new DataView(output),bytes=new Uint8Array(output);
+ [0x46546c67,2,output.byteLength,jsonSize,0x4e4f534a].forEach((n,i)=>view.setUint32(i*4,n,true));bytes.fill(32,20,20+jsonSize);bytes.set(raw,20);view.setUint32(20+jsonSize,binary.length,true);view.setUint32(24+jsonSize,0x004e4942,true);bytes.set(binary,28+jsonSize);return output;
+}
+for(const mode of [0,4])assert.deepEqual(readGLB(indexedGLB(mode))[0].bounds,boundedPacked.bounds,'GLB triangle/point index subsets use their actual drawn vertices');
+assert.deepEqual(readGLB(indexedGLB(0,false))[0].bounds,{min:[0,0,1],max:[1000,2000,3000]},'A non-indexed point cloud retains all actually drawn points');
 for(const aspect of [.4,1,2.5])for(const ortho of [false,true]){
   const corners=boundsCorners({min:[-3,-1,0],max:[4,2,6]}),c=fitCamera(corners,[1,-2,1],[0,0,1],aspect,ortho),matrix=cameraMatrix(c,aspect,10);
   for(const p of corners){const xy=projected(matrix,p,1000*aspect,1000);assert.ok(xy&&xy[0]>0&&xy[0]<1000*aspect&&xy[1]>0&&xy[1]<1000,'camera fit clips scene');}
@@ -38,6 +55,13 @@ assert.deepEqual(selectionGeometry(scene,both,'native',layers).transform,pose,'C
 assert.equal(representationPass({...modelEntity,currentModelTransform:{...pose,coordinateFrameId:'other'}},modelRep,'native',{...layers,generated_mesh:true}).pick,false,'A model pose in another frame cannot be picked or drawn in this scene');
 const context={...e,sourceContext:true},cloudRep={...rep,kind:'point_cloud'};
 assert.deepEqual(representationPass(context,cloudRep,'native',layers),{available:true,visible:true,pick:true,selectable:false},'Visible context contributes real occlusion with ID zero, never a business entity ID');
+for(const kind of ['observed_surface','point_cloud']){
+  const scoped={...rep,kind,sourceRefs:[{imageId:'photo'}]},enabled={...layers,[kind]:true};
+  assert.equal(representationPass(context,scoped,'native',enabled).visible,true,'The current photo context remains visible');
+  assert.deepEqual(representationPass(context,scoped,'native',{...enabled,imageId:'other-photo'}),{available:false,visible:false,pick:false,selectable:false},'Photo-bound context cannot draw or occlude another photo in the same native frame');
+  assert.equal(representationPass(context,scoped,'native',{...enabled,imageId:null}).visible,false,'An explicitly photo-bound context requires the bound photo');
+}
+assert.equal(representationPass(context,{...cloudRep,sourceRefs:[{assetId:'verified-whole-cloud'}]},'native',{...layers,imageId:'other-photo'}).visible,true,'An unscoped whole-scene cloud is not invented into a per-photo source');
 assert.equal(selectionGeometry(scene,context,'native',layers).corners.length,0,'All-object bounds exclude the giant background context');
 assert.equal(representationPass(e,{...rep,coordinateFrameId:'unregistered'},'native',layers).pick,false);
 assert.equal(representationPass({...e,visible:false},rep,'native',layers).pick,false);

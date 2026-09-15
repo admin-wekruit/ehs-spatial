@@ -316,9 +316,10 @@ export type GeometryLayer = "model" | "observed_surface" | "point_cloud";
 export type GeometryOptions = { layer: GeometryLayer; frameId: string; showCandidates?: boolean; imageId?: string | null; observations?: Observation[] };
 
 export function representationInPhoto(entity: Entity, rep: Representation, imageId?: string | null, observations: Observation[] = []) {
-  if (entity.sourceContext || !["observed_surface", "point_cloud"].includes(rep.kind)) return true;
+  if (!["observed_surface", "point_cloud"].includes(rep.kind)) return true;
   const explicitImages = (rep.sourceRefs || []).flatMap(ref => { const value = jsonObject(ref); return typeof value?.imageId === "string" ? [value.imageId] : []; });
   if (explicitImages.length) return !!imageId && explicitImages.includes(imageId);
+  if (entity.sourceContext) return true;
   const sourceIds = (rep.sourceRefs || []).flatMap(ref => {
     const value = jsonObject(ref); return typeof value?.observationId === "string" ? [value.observationId] : [];
   });

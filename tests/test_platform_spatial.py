@@ -258,6 +258,27 @@ def test_export_asset_allowlist_hash_and_unconfirmed_placement(tmp_path):
         mesh_from_asset(b"wrong",{"sha256":"a"*64})
 
 
+@pytest.mark.parametrize('kind', ['observed_surface', 'generated_mesh', 'primitive'])
+def test_export_excludes_stale_before_loading_but_retains_frozen_source(kind, tmp_path):
+    from ehs_spatial.platform.identity import migrate_document
+    doc = migrate_document(scene_document(), base_revision_id=str(uuid4()))
+    entity = doc['entities'][0]
+    rep = entity['representations'][0]
+    rep.update(kind=kind, sourceValidity='stale')
+    if kind != 'primitive':
+        asset_id = str(uuid4())
+        rep.update(assetId=asset_id, primitive=None)
+        doc['assets'].append({'id':asset_id, 'kind':kind})
+    if kind == 'observed_surface':
+        entity.update(activeModelRepresentationId=None, currentModelTransform=None)
+    before = deepcopy(doc)
+    prepared = prepare_export('stale-source', doc, lambda _: pytest.fail('Stale geometry must be excluded before any asset is loaded'))
+    assert prepared['excludedRepresentations'] == [{'entityId':entity['id'], 'representationId':rep['id'], 'reason':'source_geometry_stale'}]
+    assert len(prepared['objects']) == 3 and all(item['id'] != rep['id'] for item in prepared['objects'])
+    assert prepared['document'] == before and doc == before
+    assert write_glb(prepared, tmp_path/'current.glb')['objects'] == 3
+
+
 BLENDER = Path(os.environ.get("BLENDER_EXECUTABLE","/Users/adam/Desktop/panoptes-public/.tools/blender-4.5.9/Blender.app/Contents/MacOS/Blender"))
 
 
