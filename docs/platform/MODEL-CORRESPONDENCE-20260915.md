@@ -63,9 +63,21 @@ the existing budget reservation/attempt rules, and cannot advance a scene branch
 - Fresh catalog startup RSS: 1,643,692,032 bytes under the existing 3 GiB reservation.
 
 Local evidence is under `.platform/model-correspondence/`: `accepted-audit.json`,
-`guard-parts/accepted-ownership.json`, `blender-validation.json`, `final-tests.log`,
+`accepted-dispositions.json`, `guard-parts/accepted-ownership.json`,
+`blender-validation.json`, `panoptes-accepted-parts-qa.json`, `final-tests.log`,
 `hf-access.json`, and `budget.json`. Original binary assets and credentials are not
 committed to the source repository.
+
+Source commit: `69175b2a73e49fda67386456c636aa8649ef066c`.
+Pages commit: `03e7b160e04e23605aa12f2d7e83d5b4740d744e`;
+[deployment run](https://github.com/admin-wekruit/panoptes-workcell-report/actions/runs/35030500504)
+completed successfully. Public HTML matches the release build byte for byte.
+The [public report](https://admin-wekruit.github.io/panoptes-workcell-report/app.html#/reports/10cb71d2-80dc-4cc8-b678-8ffc27bdf857)
+was reloaded after deployment and checked through computer use: 12/12 models
+loaded, CAD 28/28, empty initial selection, then the whole guard and all three
+parts selected with matching photo/scene/individual-model displays. The local
+actual-asset acceptance also verifies that all four selections preserve the
+manually adjusted main-camera matrix exactly.
 
 ## Remaining work and compute boundary
 
@@ -74,6 +86,13 @@ present in the existing fence mesh; copying the whole fence cannot supply them.
 Signal lights, controls and other missing geometry need reviewed generation inputs.
 Mixed or unresolved observations remain in the inventory and require evidence
 correction or explicit identity review; they are not counted as completed models.
+The 28-row reviewed disposition ledger distinguishes nine retained models, three
+accepted components, one floor reference, two fence-part geometry gaps, four
+identity/mask reviews (#12/14/23/28), seven missing independent geometries,
+one insufficient generation input (#17), and one mixed observation (#21).
+For #21, existing masks support 8,450 disjoint cart/guard pixels; 895 boundary
+pixels still require focused annotation. It is not a new physical object and
+does not require a new model call to correct its observation.
 
 The authorized total compute budget is USD 20, including failed validation/generation.
 No new GPU or model inference was started. Two CPU-only Hugging Face access diagnostics
