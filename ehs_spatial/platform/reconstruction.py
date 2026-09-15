@@ -523,6 +523,64 @@ def _verified_source_equivalences(document, masks, stages):
     return verified, skipped
 
 
+def _establish_cad_references(document, stages, reference_image_id=None, *, reference_source='explicit_reference_image'):
+    from .identity import refresh_cad_reference
+    observations = {o['id']: o for o in document['observations']}
+    cameras = {c['id']: c for c in document['cameras']}
+    bound_images = {image_id for image_id, binding in document.get('geometryBindings', {}).items()
+                    if binding and cameras.get(binding['cameraId'], {}).get('imageId') == image_id}
+    known_images = {o['imageId'] for o in observations.values()} | {c['imageId'] for c in cameras.values()}
+    if reference_image_id is not None and (not isinstance(reference_image_id, str) or known_images and reference_image_id not in known_images):
+        raise PlatformError('cad_reference_image_not_found', 422)
+    source_documents, rows = {}, []
+    for entity in document['entities']:
+        if entity.get('sourceContext'):
+            continue
+        own = [observations[oid] for oid in entity['observationRefs']]
+        available = {o['imageId'] for o in own if o['imageId'] in bound_images}
+        previous = entity.get('cadReference') or {}
+        selected = previous.get('referenceImageId') if previous.get('status') == 'resolved' and previous.get('referenceImageId') in available else None
+        source = previous.get('source') if selected else None
+        evidence_refs = deepcopy(previous.get('evidenceRefs', [])) if selected else []
+        if selected is None:
+            images, evidence = set(), []
+            active = next((r for r in entity['representations'] if r['id'] == entity.get('activeModelRepresentationId') and r.get('sourceValidity') != 'stale'), None)
+            for ref in (active or {}).get('sourceRefs', []):
+                observation = observations.get(ref.get('observationId'))
+                if observation and observation['id'] in entity['observationRefs'] and observation['revision'] == ref.get('revision') and observation['imageId'] in available:
+                    images.add(observation['imageId'])
+                    evidence.append(deepcopy(ref))
+                if ref.get('assetId') and ref.get('sourceRecordId'):
+                    aid = ref['assetId']
+                    if aid not in source_documents:
+                        source_documents[aid] = json.loads(_scene_asset_bytes(document, aid, stages))
+                    raw = source_documents[aid]
+                    records = [r for r in raw.get('objects', []) if r.get('id') == ref['sourceRecordId']]
+                    if len(records) != 1 or not records[0].get('reference_frame'):
+                        continue
+                    frame_id = records[0]['reference_frame']
+                    matched = {c['imageId'] for c in cameras.values() if c['imageId'] in available
+                        and (document['geometryBindings'].get(c['imageId']) or {}).get('cameraId') == c['id']
+                        and any(s.get('assetId') == aid and s.get('sourceCameraId') == frame_id for s in c.get('sourceRefs', []))}
+                    if len(matched) == 1:
+                        images.update(matched)
+                        evidence.append({**deepcopy(ref), 'sourceCameraId': frame_id})
+            if len(images) == 1:
+                selected, source, evidence_refs = next(iter(images)), 'existing_source_reference', evidence
+            elif reference_image_id in available:
+                selected, source = reference_image_id, reference_source
+                evidence_refs = [{'jobId': stages.job['id'], 'baseRevisionId': stages.job['baseRevisionId']}]
+            elif len(available) == 1:
+                selected, source = next(iter(available)), 'single_source_image'
+        if selected is None:
+            source = 'no_observations' if not own else 'unbound_geometry' if not available else 'ambiguous_sources'
+        refresh_cad_reference(document, entity, reference={'referenceImageId': selected,
+            'status': 'resolved' if selected else 'unresolved', 'source': source, 'evidenceRefs': evidence_refs})
+        rows.append({'entityId': entity['id'], **deepcopy(entity['cadReference'])})
+    return {'methodVersion': 'scene-cad-reference-v1', 'referenceImageId': reference_image_id, 'entities': rows,
+        'resolvedEntityCount': sum(r['status'] == 'resolved' for r in rows), 'unresolvedEntityCount': sum(r['status'] == 'unresolved' for r in rows)}
+
+
 def _plan_plane(document, frame_id):
     frame = next((f for f in document['coordinateFrames'] if f['id'] == frame_id), None)
     normal = np.asarray((frame.get('ground') or {}).get('normal', []) if frame else [], dtype=float)
@@ -666,6 +724,9 @@ def _associate_and_surfaces(document,frames,canonical,masks,stages, *, rebuild_s
     from .identity import snapshot_measurements
     for entity in document["entities"]:
         snapshot_measurements(entity, source_revision_id=stages.job["baseRevisionId"], document=document)
+    if ((document.get('reportEvidence') or {}).get('historical') or {}).get('inventoryAssetId'):
+        from .source_cad import refresh_source_cad_links
+        refresh_source_cad_links(document, lambda aid: _scene_asset_bytes(document, aid, stages), masks)
     _association_evidence(document,associations,frames,masks)
     return associations
 
@@ -902,6 +963,8 @@ def run_analysis(repository,blobs,job,providers):
     context_frames = {image_id: frame for image_id, frame in frames.items() if not is_append or image_id in lookup}
     attempt("capture_context",lambda:_capture_context(document,context_frames,canonical,stages))
     ground_report = attempt("ground",lambda:_ground(document,frames,masks,stages)) if not is_append else {"status":"preserved_source_ground"}
+    attempt('cad_references', lambda: _establish_cad_references(document, stages,
+        job.get('inputs', {}).get('referenceImageId') or images[0]['id'], reference_source='capture_reference'))
     checkpoint = stages.checkpoint(document,"analysis_complete" if not errors else "analysis_incomplete")
     result = {"status":"incomplete" if errors else "succeeded","pipelineVersion":PIPELINE_VERSION,"stages":stages.records,"errors":errors,"checkpointAssetId":checkpoint["id"],
               "association":association,"entityCount":sum(e.get("kind") != "capture_context" for e in document["entities"]),"observationCount":len(document["observations"]),"generatedAssetCount":0,
@@ -1040,11 +1103,38 @@ def run_reassociation(repository, blobs, job, providers=None):
         from .contracts import validate_document
         validate_document(source)
     rebuild_surfaces = job.get('inputs', {}).get('rebuildObservedSurfaces', False)
-    if type(rebuild_surfaces) is not bool:
+    establish_references = job.get('inputs', {}).get('establishCadReferences', False)
+    if type(rebuild_surfaces) is not bool or type(establish_references) is not bool or rebuild_surfaces and establish_references:
         raise PlatformError('invalid_surface_rebuild_request', 422)
     if rebuild_surfaces and source['schemaVersion'] != 2:
         raise PlatformError('surface_rebuild_requires_scene_v2', 409)
     document = migrate_document(source, base_revision_id=job['baseRevisionId']) if source['schemaVersion'] == 1 else deepcopy(source)
+    if establish_references:
+        coverage = None
+        inventory_id = job['inputs'].get('sourceCadInventoryAssetId') or ((document.get('reportEvidence') or {}).get('historical') or {}).get('inventoryAssetId')
+        manifest_id = job['inputs'].get('sourceCadManifestAssetId')
+        if inventory_id or manifest_id:
+            from .source_cad import refresh_source_cad_links
+            for aid, kind in ((inventory_id, 'inventory'), (manifest_id, 'manifest')):
+                if aid:
+                    asset = repository.get_asset(aid)
+                    if asset['projectId'] != job['projectId']:
+                        raise PlatformError(f'source_cad_{kind}_scope_mismatch', 422)
+                    _include(document, asset)
+            _, records = _load_geometry(document, [], stages)
+            masks, errors = _load_masks(document, records, stages)
+            if errors:
+                raise PlatformError('source_cad_masks_unavailable', 409, errors=errors)
+            coverage = refresh_source_cad_links(document, lambda aid: _scene_asset_bytes(document, aid, stages), masks,
+                                                inventory_asset_id=inventory_id, source_manifest_asset_id=manifest_id)
+        references = _establish_cad_references(document, stages, job['inputs'].get('referenceImageId'))
+        evidence = stages.put({'baseRevisionId': job['baseRevisionId'], 'cadReferences': references, 'sourceCadCoverage': coverage,
+                              'newModelCalls': 0}, {'kind': 'cad_reference_state', 'baseRevisionId': job['baseRevisionId']})
+        _include(document, evidence)
+        from .contracts import validate_document
+        validate_document(document)
+        return document, {'status': 'succeeded', 'newModelCalls': 0, 'cadReferences': references,
+                          'sourceCadCoverage': coverage, 'evidenceAssetId': evidence['id'], 'errors': []}
     if not rebuild_surfaces:
         repair_measurement_sources(document, base_revision_id=job['baseRevisionId'])
     images = [image for capture in repository.list_project_records(job['projectId'], 'captures')['items']
@@ -1062,6 +1152,7 @@ def run_reassociation(repository, blobs, job, providers=None):
         errors.append({'stage':'association', 'code':exc.code, 'params':exc.params})
     if not rebuild_surfaces:
         _association_evidence(document, association, frames, masks)
+    _establish_cad_references(document, stages, job.get('inputs', {}).get('referenceImageId'))
     evidence = stages.put({'methodVersion':ASSOCIATION_VERSION, 'baseRevisionId':job['baseRevisionId'],
         'association':association, 'surfaceRebuild':surface_rebuild, 'errors':errors, 'newModelCalls':0}, {'kind':'observed_surface_rebuild' if rebuild_surfaces else 'identity_evaluation', 'baseRevisionId':job['baseRevisionId']})
     _include(document, evidence)
@@ -1111,6 +1202,7 @@ def run_segmentation(repository,blobs,job,providers):
         errors.extend(mask_errors)
         _associate_and_surfaces(document,frames,canonical,masks,stages,refresh_observation_ids=changed_observations,invalidated_measurement_ids=invalidated_measurements)
         _ground(document,frames,masks,stages,affected_observation_ids=changed_observations)
+        _establish_cad_references(document, stages, job.get('inputs', {}).get('referenceImageId'))
     except PlatformError as exc:
         errors.append({"stage":"geometry_support","code":exc.code})
     stages.checkpoint(document,"segmentation")
@@ -1169,6 +1261,7 @@ def run_generation(repository,blobs,job,providers):
             errors.append({"entityId":entity["id"],"code":exc.code})
         except (ValueError,TypeError,KeyError):
             errors.append({"entityId":entity["id"],"code":"generation_response_invalid"})
+    _establish_cad_references(document, stages, job.get('inputs', {}).get('referenceImageId'))
     stages.checkpoint(document,"generation")
     return document,{"status":"incomplete","stages":stages.records,"errors":errors,"shapeReadyEntityIds":ready,"placementConfirmedEntityIds":[],
                      "placementStatus":"requires_alignment_confirmation","manifest":{"baseSceneRevisionId":job["baseRevisionId"],"entityIds":requested,"sourceDocumentSha256":digest(repository.get_revision(job["baseRevisionId"])["document"])}}

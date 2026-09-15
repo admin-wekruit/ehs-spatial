@@ -421,6 +421,11 @@ function HistoricalCAD({ cad, runId, document, onSelect, embedded = false, selec
   const linkedRegions = cad.regions.map(region => ({ ...region, entityIds: cadLinkedEntities(document, region) })).filter(region => region.entityIds.length);
   const objectCount = new Set(cad.regions.map(region => region.inventoryIndex)).size;
   const linkedCount = new Set(linkedRegions.map(region => region.inventoryIndex)).size;
+  const sourceHistorical = jsonObject(jsonObject(document.reportEvidence)?.historical);
+  const coverage = jsonObject(jsonObject(sourceHistorical?.cad)?.coverage);
+  const coverageRows = coverage?.method === "source_cad_identity_v1" && Array.isArray(coverage.records)
+    ? coverage.records.map(jsonObject).filter((row): row is Record<string, unknown> => Boolean(row && Number.isSafeInteger(row.inventoryIndex))) : [];
+  const unresolvedRows = coverageRows.filter(row => !linkedRegions.some(region => region.inventoryIndex === row.inventoryIndex));
   const selectionMapped = linkedRegions.some(region => selectedId && region.entityIds.includes(selectedId));
   const fit = () => setView([0, 0, cad.width, cad.height]);
   const zoom = (factor: number) => setView(current => cadZoomView(current, cad.width, factor, [current[0] + current[2] / 2, current[1] + current[3] / 2]));
@@ -463,7 +468,26 @@ function HistoricalCAD({ cad, runId, document, onSelect, embedded = false, selec
           <button type="button" aria-label={t("reCadZoomIn")} onClick={() => zoom(1.5)}>+</button>
         </div>
       </div>
-      <p className="report-cad-summary">{objectCount} {t("reCadObjectRecords")} · {linkedCount} {t("reCadLinkedObjects")}</p>
+      <p className="report-cad-summary">{objectCount} {t("reCadObjectRecords")} · {linkedCount} {t("reCadLinkedObjects")} · {objectCount - linkedCount} {t("reCadUnresolvedRecords")}</p>
+      {!!coverageRows.length && <details className="report-quality-details">
+        <summary>{t("reCadCoverageLedger")} · {unresolvedRows.length} {t("reCadUnresolvedRecords")}</summary>
+        <p>{t("reCadCoverageMeaning")}</p>
+        <div className="table-scroll"><table><thead><tr>
+          <th>{t("reCadSourceRecord")}</th><th>{t("reportSource")}</th><th>{t("reCadLinkStatus")}</th>
+        </tr></thead><tbody>{coverageRows.map(row => {
+          const linked = linkedRegions.find(region => region.inventoryIndex === row.inventoryIndex);
+          return <tr key={String(row.inventoryIndex)}>
+            <td>#{Number(row.inventoryIndex) + 1} {typeof row.label === "string" ? row.label : ""}</td>
+            <td>{typeof row.sourceFrameId === "string" ? row.sourceFrameId : "—"}</td>
+            <td>{linked ? <button type="button" onClick={() => choose(linked.entityIds)}>{linked.entityIds.map(id => document.entities.find(entity => entity.id === id)?.label).filter(Boolean).join(" · ")} ↗</button>
+              : t(row.reason === "no_verified_same_photo" ? "reCadNoSourcePhoto" : row.reason === "canonical_masks_differ" ? "reCadMaskChanged"
+                : row.reason === "ambiguous_entity_ownership" ? "reCadAmbiguousOwnership" : row.reason === "source_segmentation_hash_mismatch" ? "reCadSourceHashMismatch" : "reCadExactProofMissing")}
+              {linked && <small>{t(row.proofStatus === "verified_original_source_mask" ? "reCadSourceMaskVerified" : "reCadExplicitBindingOnly")}</small>}</td>
+          </tr>;
+        })}</tbody></table></div>
+        {typeof sourceHistorical?.inventoryAssetId === "string" && <ReportDownload assetId={sourceHistorical.inventoryAssetId}>{t("reCadSourceInventory")}</ReportDownload>}
+        {typeof sourceHistorical?.sourceCadManifestAssetId === "string" && <ReportDownload assetId={sourceHistorical.sourceCadManifestAssetId}>{t("reCadSourceManifest")}</ReportDownload>}
+      </details>}
       <ErrorNotice error={error} />
       {(error || imageFailed) && <div role="alert" className="report-cad-state">{imageFailed && t("reCadLoadError")} <button onClick={() => setAttempt(value => value + 1)}>{t("reCadRetry")}</button></div>}
       {!error && !imageFailed && !imageReady && <div className="report-cad-state" role="status">{t("reCadLoading")}</div>}

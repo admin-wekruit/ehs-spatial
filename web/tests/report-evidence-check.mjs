@@ -147,6 +147,21 @@ assert.match(cadHtml,/3 original CAD object records · 1 linked to the current s
 assert.match(cadHtml,/old-run · Image-region coordinates 1600 × 1240 px/);
 assert.match(cadHtml,/not the current model plan or a verified site survey/);
 assert.match(cadHtml,/data-asset="historical-cad"/,'the original CAD download remains available');
+cadDoc.reportEvidence.historical.inventoryAssetId='source-inventory';
+cadDoc.reportEvidence.historical.sourceCadManifestAssetId='source-manifest';
+cadDoc.reportEvidence.historical.cad.coverage={method:'source_cad_identity_v1',linkedRecordCount:99,records:[
+  {inventoryIndex:1,label:'Exact source button',reason:'exact_source_mask',sourceFrameId:'frame-a',proofStatus:'verified_original_source_mask'},
+  {inventoryIndex:2,label:'Source rail',reason:'no_verified_same_photo',sourceFrameId:'frame-b'},
+  {inventoryIndex:3,label:'Source marker',reason:'canonical_masks_differ',sourceFrameId:'frame-c'}]};
+const coverageHtml=render('assets',cadDoc);
+assert.match(coverageHtml,/3 original CAD object records · 1 linked to the current scene · 2 source records to reconcile/,'coverage counts current valid bindings instead of trusting stale summary totals');
+assert.match(coverageHtml,/Source CAD coverage ledger · 2 source records to reconcile/);
+assert.match(coverageHtml,/Source photo has no verified correspondence to a current photo/);
+assert.match(coverageHtml,/The current segmentation changed and needs reconciliation/);
+assert.match(coverageHtml,/Source coordinates are not registered and do not constrain current model positions or dimensions/);
+assert.match(coverageHtml,/data-asset="source-inventory"/);
+assert.match(coverageHtml,/data-asset="source-manifest"/);
+assert.match(coverageHtml,/Original segmentation evidence verified/);
 assert.equal(JSON.stringify(doc),before,'rendering/sorting must not mutate the fixed scene snapshot');
 language='zh';assert.match(render('safety'),/规则理由/);assert.match(render('quality'),/原始实验候选对比/);
 if(process.env.PANOPTES_TEST_PUBLICATION_URL){

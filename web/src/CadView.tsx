@@ -75,7 +75,7 @@ export function CadView({ document, selectedId, onSelect, geometryOptions }: {
   const [focusMode, setFocusMode] = useState(false);
   const pointer = useRef<{ id: number; x: number; y: number; camera: CadCamera; moved: boolean } | null>(null);
   const suppressClick = useRef(false);
-  const shapes = useMemo(() => planShapes(document, geometryOptions), [document, geometryOptions?.frameId, geometryOptions?.layer, geometryOptions?.imageId, geometryOptions?.showCandidates]);
+  const shapes = useMemo(() => planShapes(document, geometryOptions), [document, geometryOptions?.scope, geometryOptions?.frameId, geometryOptions?.layer, geometryOptions?.imageId, geometryOptions?.showCandidates]);
   const entities = document.entities.filter(entity => !entity.sourceContext);
   const numbers = new Map(entities.map((entity, index) => [entity.id, String(index + 1).padStart(2, "0")]));
   const selected = shapes.find(shape => shape.entity.id === selectedId);
@@ -102,7 +102,7 @@ export function CadView({ document, selectedId, onSelect, geometryOptions }: {
     return () => observer.disconnect();
   }, []);
   useEffect(() => { setCamera(null); setFocusMode(false); setCandidates([]); pointer.current = null; }, [document.captureId, geometryOptions?.frameId]);
-  useEffect(() => { setCandidates([]); }, [selectedId, document, geometryOptions?.layer, geometryOptions?.imageId]);
+  useEffect(() => { setCandidates([]); }, [selectedId, document, geometryOptions?.scope, geometryOptions?.layer, geometryOptions?.imageId]);
   useEffect(() => { if (candidates.length) picker.current?.querySelector<HTMLButtonElement>("button[data-candidate]")?.focus(); }, [candidates]);
 
   function choose(id: string) { setCandidates([]); onSelect(id); svg.current?.focus(); }

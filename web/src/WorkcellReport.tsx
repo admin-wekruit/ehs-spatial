@@ -636,6 +636,9 @@ export function WorkcellReport({
   );
   const objects = doc.entities.filter((e) => !e.sourceContext);
   const sourceImages = doc.assets.filter((a) => a.kind === "source_image");
+  const newestPublication = history[0]; // The API preserves PostgreSQL timestamp ordering.
+  const newerReport = publication && newestPublication && newestPublication.id !== publication.id
+    ? {href: `./app.html?report=${encodeURIComponent(newestPublication.id)}#/reports/${encodeURIComponent(newestPublication.id)}`, title: newestPublication.title} : undefined;
   const modelWorkbenchURL = contextURL("#/projects/" + project.id + "/workbench?revision=" + revision.id, { selection, imageId, box: null, reviewMode: false, agentOpen: false });
   const pendingGeometry = objects.filter(e => !e.representations?.length || e.representations.some(r => r.placementState === "unconfirmed")).length;
   const assessmentState = assessment?.revisionId === revision.id ? assessment.state : "loading";
@@ -745,6 +748,7 @@ export function WorkcellReport({
         {draw && <p className="report-notice">{t("reportDrawHint")}</p>}
         <ReportScene
           revision={revision}
+          newerReport={newerReport}
           selection={selection}
           onSelect={select}
           imageId={imageId}

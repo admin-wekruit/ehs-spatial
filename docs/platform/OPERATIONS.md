@@ -53,6 +53,13 @@ forks and new model jobs remain in the full platform.
      .venv/bin/modal deploy modal_apps/publication_site.py
    ```
 
+   The publication container reserves 2 GiB of memory. On 2026-09-15, loading
+   eight frozen bundles with `create_app` in a fresh local Python process peaked
+   at 971,816,960 bytes of RSS (926.8 MiB), before Modal's container runtime and
+   request handling. The former 1 GiB allocation left insufficient operating
+   headroom. Recheck startup RSS when expanding the catalog; keep complete
+   publication and asset hash verification.
+
 3. Build the website with `VITE_PUBLICATION_ID=PUBLICATION_UUID` and
    `VITE_API_ORIGIN` set to the returned HTTPS origin. Use a separate output path
    to leave the running local platform build unchanged:

@@ -307,6 +307,15 @@ class GeometryBinding(DTO):
     cameraId: str = Field(min_length=1)
 
 
+class CadReference(DTO):
+    referenceImageId: str | None = None
+    status: Literal['resolved', 'unresolved']
+    source: Literal['existing_source_reference', 'explicit_reference_image', 'capture_reference',
+                    'single_source_image', 'ambiguous_sources', 'no_observations', 'unbound_geometry']
+    sourceRefs: list[SourceObservationRevision]
+    evidenceRefs: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class Entity(IdentifiedDocument):
     label: str | None = None
     observationRefs: list[str] | None = None
@@ -321,6 +330,7 @@ class Entity(IdentifiedDocument):
     activeModelRepresentationId: str | None = None
     measurementEvidence: list[MeasurementEvidence] | None = None
     measurementSelections: dict[str, str | None] | None = None
+    cadReference: CadReference | None = None
 
 
 class SceneAsset(IdentifiedDocument):

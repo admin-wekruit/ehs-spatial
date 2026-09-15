@@ -15,6 +15,107 @@ from test_platform_import import make_public_scene
 from test_platform_backend import repo
 
 
+def test_source_cad_coverage_uses_exact_mask_owner_and_keeps_original_geometry():
+    from copy import deepcopy
+    from ehs_spatial.platform.source_cad import refresh_source_cad_links
+    payloads, assets = {}, []
+    def asset(aid, value):
+        raw = json.dumps(value).encode()
+        payloads[aid] = raw
+        assets.append({"id": aid, "sha256": hashlib.sha256(raw).hexdigest(), "sizeBytes": len(raw), "mediaType": "application/json"})
+        return assets[-1]["sha256"]
+    image_sha = asset("image", {"image": "photo"})
+    sam_sha = asset("sam", {"rle": [json.dumps({"size": [2, 3], "counts": [0, 6]})]})
+    inventory_sha = asset("inventory", {"objects": [{"inv": i, "frame": "old" if i < 4 else "missing-photo", "label": "arbitrary fence", "instance": 0} for i in range(5)]})
+    asset("map", {"inventory_sha256": inventory_sha})
+    asset("manifest", {"schemaVersion": 1, "kind": "source_cad_segmentation_manifest", "sourceRunId": "source-run", "inventorySha256": inventory_sha,
+        "files": [{"path": "inventory/sam/old__arbitrary_fence.json", "sha256": sam_sha, "sizeBytes": len(payloads["sam"])}]})
+    mapping = {"target_frame_id": "new", "source_image_sha256": "a" * 64, "target_image_sha256": image_sha,
+               "source_canonical_to_target_canonical": np.eye(3).tolist()}
+    source = {"id": "arbitrary-record", "provenance": {"source_image_sha256": image_sha, "source_record": {
+        "candidate_id": "arbitrary-record", "source_frame_id": "old", "target_frame_id": "new", "capture_mapping": mapping,
+        "source_mask": {"ref": {"path": "inventory/sam/old__arbitrary_fence.json", "sha256": sam_sha,
+                                    "pointer": ["rle", 0], "encoding": "rle", "shape_hw": [2, 3]}}}}}
+    asset("source", {"observed_regions": [source]})
+    document = {"assets": assets, "entities": [{"id": "current-owner", "observationRefs": ["obs"]}, {"id": "old-explicit", "observationRefs": []}],
+        "observations": [{"id": "obs", "revision": 3, "imageId": "image", "sourceRefs": [{"assetId": "source", "sourceRecordId": "arbitrary-record"}]}],
+        "reportEvidence": {"frameRelations": {"frames": [{"sourceFrameId": "old", "targetFrameId": "new", "sourceImageSha256": "a" * 64,
+            "targetImageSha256": image_sha, "sourceCanonicalToTargetCanonical": np.eye(3).tolist()}]},
+            "historical": {"runId": "source-run", "sourceCadManifestAssetId": "manifest", "inventory": [{"inventoryIndex": 0, "entityIds": ["old-explicit"]}, {"inventoryIndex": 1, "entityIds": []},
+                                           {"inventoryIndex": 4, "entityIds": []}],
+                "findings": [{"status": "FAIL", "measured": 7}], "cad": {"sourceRefs": [{"assetId": "map"}], "regions": [
+                    {"inventoryIndex": i, "entityIds": [], "polygon": [[i, 0], [i, 1], [i + 1, 1]]} for i in (0, 1, 4)]}}}}
+    # An existing explicit binding conflicting with a new proof must remain unresolved.
+    before = deepcopy(document)
+    masks = {"obs": np.ones((2, 3), bool)}
+    result = refresh_source_cad_links(document, payloads.__getitem__, masks, inventory_asset_id="inventory")
+    assert [r["reason"] for r in result["records"]] == ["ambiguous_entity_ownership", "exact_source_mask", "no_verified_same_photo"]
+    assert result["linkedRecordCount"] == 1 and result["unresolvedRecordCount"] == 2
+    assert result["geometryRegistration"] == "not_registered" and not result["geometryConstraintsApplied"]
+    proof = result["records"][1]["evidence"][0]
+    assert proof["entityId"] == "current-owner" and proof["observationRevision"] == 3
+    assert proof["sourceRefs"][0] == {"assetId": "inventory", "jsonPointer": "/objects/1"}
+    assert proof["canonicalMaskSha256"] == hashlib.sha256(masks["obs"].tobytes()).hexdigest()
+    assert refresh_source_cad_links(document, payloads.__getitem__, masks)["records"][0]["reason"] == "ambiguous_entity_ownership"
+    assert document["entities"] == before["entities"] and document["observations"] == before["observations"]
+    assert document["reportEvidence"]["historical"]["findings"] == before["reportEvidence"]["historical"]["findings"]
+    assert [r["polygon"] for r in document["reportEvidence"]["historical"]["cad"]["regions"]] == [r["polygon"] for r in before["reportEvidence"]["historical"]["cad"]["regions"]]
+    # A current mask edit invalidates exact evidence; the old link is not promoted into authority.
+    masks["obs"][0, 0] = False
+    invalidated = refresh_source_cad_links(document, payloads.__getitem__, masks)
+    assert invalidated["records"][1]["entityIds"] == [] and invalidated["records"][1]["reason"] == "canonical_masks_differ"
+    # Same source evidence with multiple current owners cannot select either silently.
+    ambiguous = deepcopy(before)
+    ambiguous["entities"].append({"id": "another-owner", "observationRefs": ["obs-2"]})
+    ambiguous["observations"].append({**deepcopy(ambiguous["observations"][0]), "id": "obs-2"})
+    masks = {oid: np.ones((2, 3), bool) for oid in ("obs", "obs-2")}
+    result = refresh_source_cad_links(ambiguous, payloads.__getitem__, masks, inventory_asset_id="inventory")
+    assert result["records"][1]["reason"] == "ambiguous_entity_ownership"
+    # A different coordinate mapping is not treated as exact canonical mask evidence.
+    wrong_grid = deepcopy(before)
+    wrong_grid["reportEvidence"]["frameRelations"]["frames"][0]["sourceCanonicalToTargetCanonical"][0][0] = 2
+    result = refresh_source_cad_links(wrong_grid, payloads.__getitem__, masks, inventory_asset_id="inventory")
+    assert result["records"][1]["entityIds"] == []
+    assert result["records"][1]["reason"] == "canonical_grid_mapping_requires_review"
+    corrupted = {**payloads, "inventory": b"corrupt"}
+    with pytest.raises(PlatformError, match="source_cad_asset_hash_mismatch"):
+        refresh_source_cad_links(deepcopy(before), corrupted.__getitem__, masks, inventory_asset_id="inventory")
+    # A matching filename/instance is insufficient without the independent source-run hash.
+    missing_manifest = deepcopy(before)
+    del missing_manifest["reportEvidence"]["historical"]["sourceCadManifestAssetId"]
+    result = refresh_source_cad_links(missing_manifest, payloads.__getitem__, masks, inventory_asset_id="inventory")
+    assert result["records"][0]["entityIds"] == ["old-explicit"]
+    assert result["records"][0]["proofStatus"] == "explicit_binding_only"
+    assert result["records"][1]["entityIds"] == [] and result["records"][1]["reason"] == "source_segmentation_manifest_missing"
+    wrong_source = deepcopy(before)
+    manifest = json.loads(payloads["manifest"])
+    manifest["files"][0]["sha256"] = "b" * 64
+    raw = json.dumps(manifest).encode()
+    wrong_payloads = {**payloads, "manifest": raw}
+    next(a for a in wrong_source["assets"] if a["id"] == "manifest").update(sha256=hashlib.sha256(raw).hexdigest(), sizeBytes=len(raw))
+    result = refresh_source_cad_links(wrong_source, wrong_payloads.__getitem__, masks, inventory_asset_id="inventory")
+    assert result["records"][1]["entityIds"] == [] and result["records"][1]["reason"] == "source_segmentation_hash_mismatch"
+
+
+def test_source_cad_manifest_freezes_source_files_independently(tmp_path):
+    from scripts.import_report_evidence import build_source_cad_manifest
+    root = tmp_path / "inventory"
+    (root / "sam").mkdir(parents=True)
+    raw = json.dumps({"objects": [{"inv": 7, "frame": "frame-a", "label": "any fence", "instance": 1}]}).encode()
+    (root / "inventory.json").write_bytes(raw)
+    sha = hashlib.sha256(raw).hexdigest()
+    sam = root / "sam/frame-a__any_fence.json"
+    sam.write_bytes(b'{"rle": []}')
+    original = json.loads(build_source_cad_manifest(tmp_path, sha, source_run_id="original"))
+    assert original["inventorySha256"] == sha and original["sourceRunId"] == "original"
+    assert original["files"] == [{"path": "inventory/sam/frame-a__any_fence.json", "sha256": hashlib.sha256(sam.read_bytes()).hexdigest(), "sizeBytes": len(sam.read_bytes())}]
+    sam.write_bytes(b'{"rle": ["different"]}')
+    updated = json.loads(build_source_cad_manifest(tmp_path, sha, source_run_id="original"))
+    assert updated["files"][0]["sha256"] != original["files"][0]["sha256"]
+    with pytest.raises(PlatformError, match="import_report_source_hash_mismatch"):
+        build_source_cad_manifest(tmp_path, "c" * 64, source_run_id="original")
+
+
 def test_source_equivalence_proof_requires_exact_instance_and_mask(tmp_path):
     from copy import deepcopy
     import scripts.import_report_evidence as importer

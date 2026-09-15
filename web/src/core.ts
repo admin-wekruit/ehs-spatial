@@ -439,7 +439,32 @@ export function modelTilt(document: SceneDocument, entity: Entity) {
     Math.PI
   );
 }
-export function planShapes(document: SceneDocument, options: Partial<GeometryOptions> = {}) {
+export type PlanOptions = Partial<GeometryOptions> & { scope?: "photo" | "scene" };
+
+/** The saved source exposure chooses an observed state; browsing a photo does not. */
+export function cadReferenceImage(document: SceneDocument, entity: Entity): string | null {
+  const reference = jsonObject(entity.cadReference), imageId = reference?.referenceImageId;
+  if (reference?.status !== "resolved" || typeof imageId !== "string" || !cameraForImage(document, imageId)) return null;
+  const observations = observationsFor(document, entity).filter(observation => observation.imageId === imageId);
+  const sourceRefs = reference.sourceRefs;
+  if (!observations.length || !Array.isArray(sourceRefs) || sourceRefs.length !== observations.length ||
+      !observations.every(observation => sourceRefs.some(raw => {
+        const ref = jsonObject(raw); return ref?.observationId === observation.id && ref.revision === observation.revision;
+      }))) return null;
+  return imageId;
+}
+
+export function scenePlanOptions(document: SceneDocument, layer: GeometryLayer, showCandidates = true): PlanOptions {
+  const frames = new Set(document.entities.filter(entity => entity.visible !== false && !entity.sourceContext).flatMap(entity => {
+    const model = layer === "model" ? activeModel(entity) : null;
+    if (model && representationAvailable(entity, model, model.coordinateFrameId, showCandidates)) return [model.coordinateFrameId];
+    const camera = cameraForImage(document, cadReferenceImage(document, entity));
+    return camera ? [camera.coordinateFrameId] : [];
+  }));
+  return {scope: "scene", layer, frameId: frames.size === 1 ? [...frames][0] : "", showCandidates};
+}
+
+export function planShapes(document: SceneDocument, options: PlanOptions = {}) {
   const frame = document.coordinateFrames.find(
     (f) =>
       (options.frameId === undefined || f.id === options.frameId) &&
@@ -468,7 +493,8 @@ export function planShapes(document: SceneDocument, options: Partial<GeometryOpt
   return document.entities
     .filter((e) => e.visible !== false && !e.sourceContext)
     .flatMap((entity) => {
-      const geometry = entityGeometryForLayer(entity, {layer: options.layer || "model", frameId: frame.id, showCandidates: options.showCandidates, imageId: options.imageId, observations: document.observations});
+      const imageId = options.scope === "scene" ? cadReferenceImage(document, entity) : options.imageId;
+      const geometry = entityGeometryForLayer(entity, {layer: options.layer || "model", frameId: frame.id, showCandidates: options.showCandidates, imageId, observations: document.observations});
       if (!geometry) return [];
       const frameId = geometry?.frameId;
       const corners = geometry?.corners;
@@ -495,7 +521,7 @@ export function planShapes(document: SceneDocument, options: Partial<GeometryOpt
             !sameJSON(saved.groundNormalSnapshot, normal) || !samePlane || (!unchanged && !translated) ||
             (rep.kind === "primitive" ? saved.assetId != null || saved.assetSha256 != null || !sameJSON(saved.primitiveSnapshot, rep.primitive)
               : !asset?.sha256 || saved.assetId !== rep.assetId || saved.assetSha256 !== asset.sha256) ||
-            (!modeled && (saved.imageId !== options.imageId || !observation || observation.imageId !== saved.imageId ||
+            (!modeled && (saved.imageId !== imageId || !observation || observation.imageId !== saved.imageId ||
               observation.revision !== saved.observationRevision || !entity.observationRefs?.includes(observation.id) ||
               !(rep.sourceRefs || []).some(raw => { const ref = jsonObject(raw); return ref?.observationId === observation.id && ref.revision === observation.revision; })))) return [];
         const points = (value: unknown): value is number[][] => Array.isArray(value) &&

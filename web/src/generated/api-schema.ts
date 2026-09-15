@@ -855,6 +855,27 @@ export interface components {
             /** Requestid */
             requestId: string | null;
         };
+        /** CadReference */
+        CadReference: {
+            /** Referenceimageid */
+            referenceImageId?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "resolved" | "unresolved";
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "existing_source_reference" | "explicit_reference_image" | "capture_reference" | "single_source_image" | "ambiguous_sources" | "no_observations" | "unbound_geometry";
+            /** Sourcerefs */
+            sourceRefs: components["schemas"]["SourceObservationRevision"][];
+            /** Evidencerefs */
+            evidenceRefs?: {
+                [key: string]: unknown;
+            }[];
+        };
         /** Camera */
         Camera: {
             /** Id */
@@ -1144,6 +1165,7 @@ export interface components {
             measurementSelections?: {
                 [key: string]: string | null;
             } | null;
+            cadReference?: components["schemas"]["CadReference"] | null;
         } & {
             [key: string]: unknown;
         };
@@ -2146,6 +2168,13 @@ export interface components {
             assetId: string;
             /** Sha256 */
             sha256: string;
+        };
+        /** SourceObservationRevision */
+        SourceObservationRevision: {
+            /** Observationid */
+            observationId: string;
+            /** Revision */
+            revision: number;
         };
         /** SourceText */
         SourceText: {

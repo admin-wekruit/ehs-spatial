@@ -32,6 +32,26 @@ def _unique(values):
     return list(dict.fromkeys(values))
 
 
+def refresh_cad_reference(document, entity, *, reference=None):
+    """Retain a declared exposure while refreshing its exact current owners."""
+    observations = {o['id']: o for o in document['observations']}
+    cameras = {c['id']: c for c in document['cameras']}
+    own = [observations[oid] for oid in entity['observationRefs']]
+    bound = {image_id for image_id, binding in document.get('geometryBindings', {}).items()
+             if binding and cameras.get(binding['cameraId'], {}).get('imageId') == image_id}
+    available = {o['imageId'] for o in own if o['imageId'] in bound}
+    previous = reference if reference is not None else entity.get('cadReference') or {}
+    selected = previous.get('referenceImageId') if previous.get('status') == 'resolved' and previous.get('referenceImageId') in available else None
+    source, evidence = (previous.get('source'), deepcopy(previous.get('evidenceRefs', []))) if selected else (None, [])
+    if selected is None and len(available) == 1:
+        selected, source = next(iter(available)), 'single_source_image'
+    if selected is None:
+        source = 'no_observations' if not own else 'unbound_geometry' if not available else 'ambiguous_sources'
+    entity['cadReference'] = {'referenceImageId': selected, 'status': 'resolved' if selected else 'unresolved',
+        'source': source, 'sourceRefs': [{'observationId': o['id'], 'revision': o['revision']} for o in own if o['imageId'] == selected],
+        'evidenceRefs': evidence}
+
+
 def _observation_refs(value):
     """Only named observation references are identity evidence; labels are not."""
     if isinstance(value, dict):
@@ -530,6 +550,7 @@ def apply_identity_operation(document, operation, *, base_revision_id):
         if old_transform is not None and old_active == kept["activeModelRepresentationId"]:
             kept["currentModelTransform"] = old_transform
         _select_measurements(kept, old_selection, eligible_ids=eligible_measurements)
+        refresh_cad_reference(document, kept)
         remap_attachments(document, base_revision_id=base_revision_id, affected_entity_ids=ids)
         return
     _require(kind == "splitEntity" and entity is not None, "unknown_identity_operation")
@@ -564,6 +585,7 @@ def apply_identity_operation(document, operation, *, base_revision_id):
             _require(record["representationId"] is None or record["representationId"] in group["representationIds"], "measurement_split_scope_invalid")
         _active(child, group.get("activeModelRepresentationId", ...))
         _select_measurements(child, entity["measurementSelections"], eligible_ids=set(entity["measurementSelections"].values()) - {None})
+        refresh_cad_reference(document, child, reference=entity.get('cadReference'))
         document["entities"].append(child)
     remap_attachments(document, base_revision_id=base_revision_id, affected_entity_ids=[identity])
 

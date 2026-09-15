@@ -51,7 +51,7 @@ for module in ("__init__", "publication_site", "feedback", "contracts", "agent_s
 
 
 @app.function(image=image, volumes={"/feedback": feedback_data}, secrets=feedback_secrets,
-              cpu=1, memory=1024, timeout=180, scaledown_window=300, max_containers=1)
+              cpu=1, memory=2048, timeout=180, scaledown_window=300, max_containers=1)
 @modal.concurrent(max_inputs=32)
 @modal.asgi_app()
 def web():

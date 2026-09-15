@@ -46,3 +46,30 @@ Producer regression checks: 52 passed, including concavity, holes, disconnected 
 Publication `cfb403f4-d930-4a61-80e3-ad4497db1a43` preserves this revision. Export job `9b04968c-e42a-49c1-9b78-369498c5b550` passed GLB/Blender reopen checks for 87 meshes and 3 cameras (world geometry error 0); the same 9 unconfirmed generated candidates remain excluded. Catalog checks passed for all 7 publications, 586 exact read responses and 551 byte-verified assets.
 
 Frontend TypeScript/build, interaction checks and 10 targeted checks passed. Per-photo consumption accounts for all 84 observed projections; every available new shape has `mesh_projection` provenance. Computer Use verified the unselected initial state, four-view selection/highlighting, full-screen CAD with visible concavity and holes, fit-to-selected, and a real CAD geometry click followed by the correct central-plate choice among overlapping objects.
+
+
+## Whole-workcell CAD reference correction
+
+The previous correction still used the currently viewed photo as the filter for CAD and the interactive plan. A valid 28-record scene therefore displayed 8/18/23 observed records depending on the photo; an older report/model view could show only 9. This was a scene-state selection bug, not a need to invent missing bounding polygons.
+
+Each scene entity now persists a `cadReference`: its declared reference exposure and exact observation revisions. An existing model/source reference is retained; otherwise an explicit capture/job reference is used, and an object with only one source photo can use that source. Ambiguous sources remain unresolved. Normal reconstruction, append, mask repair, association, and GUI merge/split preserve or update the same reference contract. This is a chosen representation state, not proof that all photos describe one physical instant.
+
+CAD and plan consume those references in a common registered native frame. Viewing another photo no longer changes the workcell drawing. Clicking a CAD object selects its real reference observation and corresponding photo/3D surface. No convex hull or bounding-box replacement is introduced. The repaired document retains 28/28 shapes in observed, model and point-cloud modes, with identical contour data across all three photo switches. The reference distribution is 6/1/21 across the three photos, retaining nine existing model/source anchors, fourteen explicit references and five sole-source references.
+
+### Original CAD completeness and provenance
+
+The original CAD remains a complete historical drawing with 33 plotted records. A shared importer/runtime helper now binds records through the pinned original inventory hash, an immutable original-SAM path/hash/size manifest, the exact source instance, a verified same-photo/canonical-grid mapping, and exact current-mask equality. A repeated filename or class label alone cannot establish identity. All source records remain in an auditable ledger: 9 are linked (6 current entities); 24 have no verified same-photo relation. Three additional records are now linked. Original pixels, measurements, observations, identity decisions and historical findings are preserved.
+
+The source drawing was generated from historical estimated geometry. Its pixel/native coordinates have not been registered to the current scene, so geometric constraints are explicitly not applied. The ledger is a completeness check, not a claim that an old estimated drawing is measured ground truth. A new immutable report must be produced when those source relations are established.
+
+### Saved result and checks
+
+- Reference job: `ad4e7961-c9d4-417d-9274-80748d1e4989`, succeeded with head advanced and zero model calls.
+- Scene revision: `38650c52-312a-49f5-b5ba-36abf47d8dcd`.
+- Publication: `f292baf7-4f27-4962-b7df-6e931c614413`, “完整工位 · 全部对象 CAD 与来源核对”.
+- Source manifest asset: `22378ab1-159d-45c8-9af5-e2647ec0d9ae`, SHA `fa385c1a12c66f8ff900d1e54a83e85ad8fc0c00a7f4428fc35ffda3d8c0df78`, 15 original SAM files.
+- Blender export job: `1eaf75d0-5ef8-41a7-9e88-0b4d9579e08a`; GLB and Blender reopen checks passed for 87 meshes and 3 cameras, world-position error 0. Overall incomplete remains correct because nine existing unconfirmed generated candidates are excluded.
+- Backend reconstruction/identity/importer tests: 63 passed, 2 database-conditional skips. Importer provenance suite separately checks missing manifest and same-path changed SHA.
+- Runnable consumer check: `node --experimental-strip-types web/checks/scene-plan-reference.mjs <scene-document.json>` verifies actual production shapes, all three layers, photo-switch invariance and source observation freshness.
+- Publication catalog: 8 immutable bundles, 595 exact read responses, 558 byte-verified assets. Prior report IDs and assets retained.
+- Local Computer Use: default no selection; 28/28 on each of three photos; CAD #11 switches from photo 3 to its photo 1 evidence; CAD #22 switches back to photo 3 with visible green 3D surface; the newly linked source-CAD record opens the correct adjacent-fence entity. These are sampled visible interactions, alongside complete data-contract checks.

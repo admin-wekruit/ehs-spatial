@@ -247,6 +247,39 @@ def test_split_partitions_models_and_evidence_and_does_not_broadcast_record_metr
         merge(split, source="geometry")
 
 
+def test_cad_reference_follows_merge_and_split_observation_ownership():
+    doc = migrate_document(source_scene(), base_revision_id=BASE)
+    extra = {**deepcopy(doc['observations'][0]), 'id': 'observation-3'}
+    doc['observations'].append(extra)
+    doc['entities'][1]['observationRefs'].append(extra['id'])
+    reference = {'referenceImageId': 'image-1', 'status': 'resolved', 'source': 'explicit_reference_image',
+                 'sourceRefs': [{'observationId': 'observation-1', 'revision': 1}], 'evidenceRefs': [{'baseRevisionId': BASE}]}
+    doc['entities'][0]['cadReference'] = deepcopy(reference)
+    merged, inverse = merge(doc)
+    parent = merged['entities'][0]
+    assert parent['cadReference'] == {**reference, 'sourceRefs': [
+        {'observationId': 'observation-1', 'revision': 1}, {'observationId': 'observation-3', 'revision': 1}]}
+    assert inverse == [{'type': 'restoreDocument', 'document': doc}]
+    d = decision(merged, 'different', ids=[parent['id']], supersedes=merged['identityDecisions'][-1]['id'])
+    d['observationGroups'] = [[f'observation-{i}'] for i in (1, 2, 3)]
+    groups = [{'id': f'child-{i}', 'observationRefs': [f'observation-{i}'],
+               'representationIds': [f'model-{i}'] if i < 3 else [],
+               'measurementEvidenceIds': [r['id'] for r in parent['measurementEvidence'] if r['sourceEntityId'] == f'entity-{i}']}
+              for i in (1, 2, 3)]
+    split, _ = apply_operations(merged, [{'type': 'recordIdentityDecision', 'decision': d},
+        {'type': 'splitEntity', 'entityId': parent['id'], 'decisionId': d['id'], 'groups': groups}], base_revision_id=BASE)
+    for child, image_id in zip(split['entities'], ('image-1', 'image-2', 'image-1')):
+        ref = child['cadReference']
+        assert ref['referenceImageId'] == image_id and ref['status'] == 'resolved'
+        assert ref['sourceRefs'] == [{'observationId': child['observationRefs'][0], 'revision': 1}]
+        assert ref['source'] == ('single_source_image' if image_id == 'image-2' else reference['source'])
+    assert split['observations'] == doc['observations'] and split['assets'] == doc['assets']
+    from ehs_spatial.platform.identity import refresh_cad_reference
+    ambiguous = {'observationRefs': ['observation-1', 'observation-2']}
+    refresh_cad_reference(doc, ambiguous)
+    assert ambiguous['cadReference']['status'] == 'unresolved' and ambiguous['cadReference']['source'] == 'ambiguous_sources'
+
+
 def test_invalid_split_is_atomic_and_no_source_representation_can_disappear():
     doc, _ = merge(migrate_document(source_scene(), base_revision_id=BASE))
     before = deepcopy(doc)

@@ -16,6 +16,7 @@ import numpy as np
 from PIL import Image
 
 from ehs_spatial.platform.contracts import PlatformError
+from ehs_spatial.platform.source_cad import legacy_inventory_sam_path
 
 
 def _path(root, value):
@@ -30,6 +31,19 @@ def _read(path, expected=None):
     if expected and hashlib.sha256(raw).hexdigest() != expected:
         raise PlatformError("import_report_source_hash_mismatch", 422)
     return raw
+
+
+def build_source_cad_manifest(root, inventory_sha256, *, source_run_id):
+    """Freeze the actual source-run SAM bytes independently of current candidates."""
+    inventory = json.loads(_read(_path(root, "inventory/inventory.json"), inventory_sha256))
+    files = []
+    for relative in sorted({legacy_inventory_sam_path(row) for row in inventory.get("objects", []) if not row.get("refine_slug")}):
+        if not (Path(root) / relative).is_file():
+            continue
+        raw = _read(_path(root, relative))
+        files.append({"path": relative, "sha256": hashlib.sha256(raw).hexdigest(), "sizeBytes": len(raw)})
+    return json.dumps({"schemaVersion": 1, "kind": "source_cad_segmentation_manifest", "sourceRunId": source_run_id,
+        "inventorySha256": inventory_sha256, "files": files}, sort_keys=True, separators=(",", ":")).encode()
 
 
 def observation_mask_sources(geometry_root, source):
@@ -329,6 +343,9 @@ def report_dependencies(scene_path, source, legacy_root=None, observation_root=N
             for name in ("policies.json", "assessment.json", "scene.json", "inventory/inventory.json", "detection/detections.json", "observations.json"):
                 files.add(_path(old, name))
             files.update(old.glob("geometry/frames/*/canonical.png"))
+            inventory = json.loads(_path(old, "inventory/inventory.json").read_bytes())
+            files.update(_path(old, relative) for relative in {legacy_inventory_sam_path(row) for row in inventory.get("objects", [])}
+                         if (old / relative).is_file())
         if observation_root:
             original = Path(observation_root)
             registry = _path(original, "object-evidence.json")
@@ -521,7 +538,10 @@ def _attach_legacy(root, saved, evidence, historical, result, include):
     pins = evidence["source_sha256"]
     for name in ("policies.json", "assessment.json", "scene.json"):
         _read(_path(root, name), pins[name])
-    _read(_path(root, "inventory/inventory.json"), saved["source_sha256"]["legacy_inventory"])
+    inventory_raw = _read(_path(root, "inventory/inventory.json"), saved["source_sha256"]["legacy_inventory"])
+    historical["inventoryAssetId"] = include(inventory_raw, "application/json", {"kind": "historical_inventory", "sourceRunId": historical["runId"]})
+    source_manifest = build_source_cad_manifest(root, saved["source_sha256"]["legacy_inventory"], source_run_id=historical["runId"])
+    historical["sourceCadManifestAssetId"] = include(source_manifest, "application/json", {"kind": "source_cad_segmentation_manifest", "sourceRunId": historical["runId"]})
     old_scene = json.loads(_path(root, "scene.json").read_bytes())
     if old_scene.get("run_id") != historical["runId"]:
         raise PlatformError("import_report_run_mismatch", 422)

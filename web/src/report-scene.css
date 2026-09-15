@@ -158,3 +158,7 @@
 .identity-preview p { margin: 6px 0; font-size: 12px; }
 .identity-split { margin-top: 12px; }
 .identity-split label { font-size: 12px; }
+
+.report-scene-history-notice { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: 6px 16px; align-items: center; padding: 7px 12px; color: #70511c; background: #f8f0da; border-bottom: 1px solid #d9c798; font-size: 12px; }
+.report-scene-history-notice a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.report-scene-reference-note { display: block; color: var(--scene-ink); margin-bottom: 3px; }

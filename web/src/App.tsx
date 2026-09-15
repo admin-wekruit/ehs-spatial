@@ -46,6 +46,8 @@ import {
   planShapes,
   planHits,
   planPolygonPath,
+  scenePlanOptions,
+  cadReferenceImage,
   groupPublications,
   sourceDimensions,
   sourceScale,
@@ -1210,6 +1212,11 @@ function Workspace({
     const next = cameraForImage(document, imageId)?.id || null;
     if (next !== cameraId) setCamera(next);
   }, [document.geometryBindings, document.cameras, imageId, cameraId]);
+  function selectPlanEntity(entityId: string) {
+    const entity = document.entities.find(entity => entity.id === entityId);
+    const reference = entity && cadReferenceImage(document, entity);
+    select(entityId, entity && observationsFor(document, entity).find(observation => observation.imageId === reference)?.id);
+  }
   function select(entityId: string, obsId?: string) {
     const currentId = currentEntityId(document, entityId);
     selectionEpoch.current++;
@@ -1489,8 +1496,8 @@ function Workspace({
                   key={revision.id}
                   document={document}
                   selectedId={selectedId}
-                  onSelect={select}
-                  geometryOptions={{ layer: representation as "model" | "observed_surface" | "point_cloud", frameId: camera?.coordinateFrameId || "", imageId: camera?.imageId, observations: document.observations, showCandidates: !report }}
+                  onSelect={selectPlanEntity}
+                  geometryOptions={scenePlanOptions(document, representation as "model" | "observed_surface" | "point_cloud", !report)}
                 />
               </div>
               <div className="canvas-pane">
@@ -1498,8 +1505,8 @@ function Workspace({
                 <PlanView
                   document={document}
                   selectedId={selectedId}
-                  onSelect={select}
-                  geometryOptions={{ layer: representation as "model" | "observed_surface" | "point_cloud", frameId: camera?.coordinateFrameId || "", imageId: camera?.imageId, observations: document.observations, showCandidates: !report }}
+                  onSelect={selectPlanEntity}
+                  geometryOptions={scenePlanOptions(document, representation as "model" | "observed_surface" | "point_cloud", !report)}
                   interactive
                 />
               </div>
@@ -1890,7 +1897,7 @@ export function PlanView({
     svg = useRef<SVGSVGElement>(null),
     picker = useRef<HTMLDivElement>(null),
     pointer = useRef<{ x: number; y: number; moved: boolean } | null>(null);
-  useEffect(() => { setCandidates([]); pointer.current = null; }, [document, selectedId, zoom, geometryOptions?.layer, geometryOptions?.frameId, geometryOptions?.imageId]);
+  useEffect(() => { setCandidates([]); pointer.current = null; }, [document, selectedId, zoom, geometryOptions?.scope, geometryOptions?.layer, geometryOptions?.frameId, geometryOptions?.imageId]);
   useEffect(() => { if (candidates.length) picker.current?.querySelector<HTMLButtonElement>("button[data-candidate]")?.focus(); }, [candidates]);
   function choose(id: string) {
     setCandidates([]);

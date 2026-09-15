@@ -84,7 +84,9 @@ vm.runInContext(memoCode,memoContext);
 assert.equal(memoContext.result[0].representationIds[0],"a");
 memoContext.geometryOptions={...memoContext.geometryOptions,imageId:"photo-b"};vm.runInContext(memoCode,memoContext);
 assert.equal(memoContext.result[0].representationIds[0],"b","Changing only the photograph must recompute CAD geometry and its dimension labels");
-assert.ok(source.includes("[selectedId, document, geometryOptions?.layer, geometryOptions?.imageId]"),"Changing photo must dismiss stale overlap candidates");
+memoContext.geometryOptions={...memoContext.geometryOptions,scope:"scene"};vm.runInContext(memoCode,memoContext);
+assert.equal(memoContext.result.length,0,"Switching from photo evidence to a scene reference cannot reuse the old photo cache when no reference was declared");
+assert.ok(source.includes("[selectedId, document, geometryOptions?.scope, geometryOptions?.layer, geometryOptions?.imageId]"),"Changing photo must dismiss stale overlap candidates");
 
 // Execute the component's actual pointer handlers, including a release outside
 // before capture starts. A later button-up hover must not resume that gesture.

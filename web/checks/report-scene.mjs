@@ -5,7 +5,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import * as math from "../src/viewer/native-math.ts";
 import { entityEvidenceStatus, identityCounts, isReferenceSurface } from "../src/scene-semantics.ts";
-import { cameraForImage, activeModel, entityGeometryForLayer, observationsFor, jsonObject, planShapes, sourceDimensions, sourceScale } from "../src/core.ts";
+import { cameraForImage, activeModel, entityGeometryForLayer, observationsFor, jsonObject, planShapes, cadReferenceImage, scenePlanOptions, sourceDimensions, sourceScale } from "../src/core.ts";
 
 // Exercise the actual two pure functions without importing the browser app.
 const source = await readFile(
@@ -225,7 +225,7 @@ const uiDocument = { ...objectOnlyDocument,
   entities: [{ ...entity, observationRefs: ["observation"], representations: [rep, { ...observed, id: "surface" }] },
     { id: "no-geometry", label: "small button", observationRefs: ["observation-2"], representations: [] },
     { id: "background", sourceContext: true, representations: [] }],
-  observations: [{ id: "observation", imageId: "photo" }, { id: "observation-2", imageId: "photo-2" }],
+  observations: [{ id: "observation", imageId: "photo", revision: 1 }, { id: "observation-2", imageId: "photo-2", revision: 1 }],
 };
 uiDocument.entities[0].representations[0] = { ...rep, planProjection: {
   methodVersion: "indexed-mesh-triangle-union-v1", coordinateFrameId: "f", assetId: "model-asset", assetSha256: "a".repeat(64),
@@ -233,10 +233,12 @@ uiDocument.entities[0].representations[0] = { ...rep, planProjection: {
   nativeToPlane: [[0,-1,0,0],[1,0,0,0],[0,0,1,0],[0,0,0,1]],
   polygons: [{exterior: [[-1.2,5.9],[-.8,5.9],[-.8,6.1],[-1.2,6.1],[-1.2,5.9]], holes: []}], lines: [],
 } };
-let uiSelection = { entityId: "object", cameraId: "camera" }, uiImageId = "photo", calls = [], objectListRequest = 0, feedbackEnabled = false, feedbackCalls = [];
+uiDocument.entities[0].cadReference={status:"resolved",referenceImageId:"photo",source:"explicit_reference_image",sourceRefs:[{observationId:"observation",revision:1}]};
+uiDocument.entities[0].representations[1]={...observed,id:"surface",sourceRefs:[{observationId:"observation",imageId:"photo",revision:1}],planProjection:{...structuredClone(uiDocument.entities[0].representations[0].planProjection),imageId:"photo",observationId:"observation",observationRevision:1}};
+let uiSelection = { entityId: "object", cameraId: "camera" }, uiImageId = "photo", calls = [], objectListRequest = 0, feedbackEnabled = false, feedbackCalls = [], sourceCadCalls = [];
 const inspector = React.createElement("div", { id: "inspector-content" }, "real host inspector");
 const ui = vm.createContext({ React, useState, useRef, useEffect, useId: () => "workspace-check",
-  useI18n: () => ({ t: (key) => key }), cameraForImage, activeModel, identityCounts, jsonObject, observationsFor, entityGeometryForLayer,
+  useI18n: () => ({ t: (key) => key }), cameraForImage, activeModel, identityCounts, jsonObject, observationsFor, entityGeometryForLayer, cadReferenceImage, scenePlanOptions,
   photoOverlay, sceneAvailability, isReferenceSurface, entityEvidenceStatus, sourceDimensions, sourceScale, SpatialView, PlanView, PhotoView, PhotoAxes, CadView,
   paneOrder: ["photo", "spatial", "cad", "plan"], paneNames: { photo: "scenePhoto", spatial: "scene3D", cad: "sceneCAD", plan: "scenePlan" }, noEdit: () => {},
   window: { document: { fullscreenElement: null, addEventListener() {}, removeEventListener() {} }, requestAnimationFrame(callback) { callback(); return 1; }, cancelAnimationFrame() {}, scrollTo() { throw Error("Selecting an object must not scroll the report"); } },
@@ -252,7 +254,8 @@ function renderWorkspace() {
   for (let n = 0; n < 5; n++) {
     cursor = 0; effects = []; dirty = false;
     tree = ui.ReportScene({ revision: { id: "revision", document: uiDocument }, selection: uiSelection, imageId: uiImageId,
-      cameraId: uiSelection.cameraId, inspector, objectListRequest,
+      cameraId: uiSelection.cameraId, inspector, objectListRequest, newerReport:{href:"#/reports/latest",title:"Latest report"},
+      onOpenSourceCad: () => sourceCadCalls.push("open"),
       onFeedback: feedbackEnabled ? (id) => feedbackCalls.push(id) : undefined,
       onSelect: (id) => { uiSelection = { ...uiSelection, entityId: id }; calls.push(id); },
       onCamera: (imageId, cameraId) => { uiImageId = imageId; uiSelection = { ...uiSelection, cameraId }; },
@@ -322,8 +325,38 @@ for (const section of ["objects", "inspector", "views"]) {
 tree.props.ref.current = { requestFullscreen: async () => { fullscreenRequests++; } };
 await nodes(tree).find((node) => node.props.className === "report-scene-fullscreen").props.onClick();
 assert.equal(fullscreenRequests, 1, "Only the separate fullscreen control requests browser fullscreen");
-// Photo 2 has no observed source geometry; it must not borrow photo 1's state.
-assert.equal(nodes(tree).some(node=>node.type===CadView),false);
+const sourceCadButton = () => nodes(tree).find(node => node.props.className === "report-scene-source-cad");
+await sourceCadButton().props.onClick();
+assert.deepEqual(sourceCadCalls, ["open"], "Source CAD opens directly outside fullscreen");
+sourceCadCalls = [];
+ui.window.document.fullscreenElement = tree.props.ref.current;
+let finishExit;
+ui.window.document.exitFullscreen = () => { sourceCadCalls.push("exit"); return new Promise(resolve => { finishExit = resolve; }); };
+const openingSourceCad = sourceCadButton().props.onClick();
+assert.deepEqual(sourceCadCalls, ["exit"], "Source CAD outside the fullscreen host must wait until exit completes");
+finishExit(); await openingSourceCad;
+assert.deepEqual(sourceCadCalls, ["exit", "open"]);
+sourceCadCalls = [];
+ui.window.document.exitFullscreen = async () => { throw Error("fullscreen_exit_failed"); };
+await sourceCadButton().props.onClick(); tree = renderWorkspace();
+assert.deepEqual(sourceCadCalls, [], "Failed fullscreen exit must not scroll an invisible outside section");
+assert.ok(nodes(tree).some(node => node.props.className === "report-scene-notice" && node.children.includes("sceneFullscreenUnavailable")), "Fullscreen errors reuse the existing status message");
+ui.window.document.fullscreenElement = null;
+await sourceCadButton().props.onClick(); tree = renderWorkspace();
+assert.deepEqual(sourceCadCalls, ["open"]);
+assert.equal(nodes(tree).some(node => node.props.className === "report-scene-notice" && node.children.includes("sceneFullscreenUnavailable")), false, "Successful retry clears the fullscreen error");
+// CAD keeps the fixed source state even when the photo has no geometry for that entity.
+const referenceCad=nodes(tree).find(node=>node.type===CadView);
+assert.ok(referenceCad);
+assert.equal(referenceCad.props.geometryOptions.scope,"scene");
+assert.equal(referenceCad.props.geometryOptions.imageId,undefined);
+assert.equal(spatialHost()[0].props.layers.imageId,"photo-2","3D remains scoped to the selected source photo");
+assert.equal(planShapes(uiDocument,referenceCad.props.geometryOptions).length,1);
+assert.equal(nodes(tree).find(node=>node.type==="a"&&node.props.href==="#/reports/latest").children[0],"sceneLatestReport","The fullscreen workbench exposes a real latest-report link without automatic navigation");
+referenceCad.props.onSelect("object");tree=renderWorkspace();
+assert.equal(uiImageId,"photo","Clicking reference CAD uses its declared source photo");
+nodes(tree).find(node=>node.type==="input"&&node.props.type==="search").props.onChange({target:{value:""}});tree=renderWorkspace();
+nodes(rail()).find(node=>node.type==="button"&&node.props.key==="no-geometry").props.onClick();tree=renderWorkspace();
 nodes(tree).find(node=>node.type==="select").props.onChange({target:{value:"model"}});tree=renderWorkspace();
 // Source CAD stays evidence; it must never replace the current scene projection.
 uiDocument.reportEvidence = {historical: {runId: "source-run", cad: {assetId: "full-resolution-cad", width: 1600, height: 1240, regions: []}}};

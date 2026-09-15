@@ -22,6 +22,7 @@ from PIL import Image
 
 from ehs_spatial.platform.contracts import PlatformError, canonical, digest, empty_document, validate_document
 from ehs_spatial.platform.spatial import MeshData, camera_intrinsics, transform_matrix
+from ehs_spatial.platform.source_cad import refresh_source_cad_links
 from scripts.import_report_evidence import canonical_measurements, canonical_observation_masks, import_report_evidence, import_observation_masks, import_source_equivalences, observation_mask_sources, original_box, original_polygons, report_dependencies
 
 CONVERTER_VERSION = "public-scene-v9"
@@ -30,6 +31,7 @@ CONVERTER_VERSION = "public-scene-v9"
 def converter_identity():
     return {"version": CONVERTER_VERSION, "reportRendererVersion": "native-webgl-v1", "codeSha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             "reportConverterSha256": hashlib.sha256(Path(__file__).with_name("import_report_evidence.py").read_bytes()).hexdigest(),
+            "sourceCadConverterSha256": hashlib.sha256(Path(__file__).parents[1].joinpath("ehs_spatial/platform/source_cad.py").read_bytes()).hexdigest(),
             "geometryConverterSha256": hashlib.sha256(Path(__file__).with_name("import_geometry_evidence.py").read_bytes()).hexdigest()}
 
 
@@ -197,7 +199,7 @@ def import_document(scene_path, put_asset, *, legacy_root=None, observation_root
     raster_bytes = {}
     def include(data, media_type, metadata, source_key=None):
         asset = put_asset(data, media_type, metadata)
-        if geometry_root and media_type in ("image/png", "application/x-npy"):
+        if media_type == "application/json" or (geometry_root and media_type in ("image/png", "application/x-npy")):
             raster_bytes[asset["id"]] = data
         ref = {**asset, **metadata}
         if asset["id"] not in {a["id"] for a in document["assets"]}:
@@ -409,6 +411,7 @@ def import_document(scene_path, put_asset, *, legacy_root=None, observation_root
     report = import_report_evidence(scene_path, source, document, manifest, include, cameras, camera_images, ident, legacy_root, observation_root)
     if report:
         document["reportEvidence"] = report
+    masks = {}
     if geometry_root:
         from scripts.import_geometry_evidence import import_geometry_evidence
         document["geometryEvidence"] = import_geometry_evidence(geometry_root, scene_path, source, document, manifest, include, ident, frame_id)
@@ -431,6 +434,8 @@ def import_document(scene_path, put_asset, *, legacy_root=None, observation_root
         provenance["missingArtifacts"] = ["native_depth"]
         provenance["recomputeRequiresNewCapture"] = False
         provenance["recomputeStatus"] = "frozen_geometry_imported_not_a_platform_pipeline_checkpoint"
+    if report and (report.get("historical") or {}).get("cad"):
+        manifest["sourceCadCoverage"] = refresh_source_cad_links(document, raster_bytes.__getitem__, masks)
     validate_document(document)
     manifest.update(entityCount=len(document["entities"]), observationCount=len(document["observations"]),
                     representationCount=sum(len(e["representations"]) for e in document["entities"]), assetCount=len(document["assets"]), documentSha256=digest(document))

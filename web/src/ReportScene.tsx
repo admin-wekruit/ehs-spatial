@@ -3,7 +3,7 @@ import { SpatialView, PlanView } from "./App";
 import { PhotoView } from "./PhotoView";
 import { CadView } from "./CadView";
 import { useI18n } from "./i18n";
-import { cameraForImage, activeModel, observationsFor, entityGeometryForLayer, jsonObject, planShapes, sourceDimensions, sourceScale, type GeometryOptions } from "./core";
+import { cameraForImage, activeModel, observationsFor, entityGeometryForLayer, jsonObject, planShapes, cadReferenceImage, scenePlanOptions, sourceDimensions, sourceScale, type GeometryOptions, type PlanOptions } from "./core";
 import { entityEvidenceStatus, identityCounts, isReferenceSurface } from "./scene-semantics";
 import {
   add,
@@ -30,7 +30,7 @@ const paneOrder: Pane[] = ["photo", "spatial", "cad", "plan"];
 const colors = ["#e86b58", "#39ad7c", "#458ce0"];
 const noEdit = () => {};
 
-function sceneAvailability(document: SceneDocument, geometryOptions: GeometryOptions) {
+function sceneAvailability(document: SceneDocument, geometryOptions: PlanOptions) {
   const frames = new Set(document.coordinateFrames.map((frame) => frame.id));
   const assets = new Set(document.assets.map((asset) => asset.id));
   const representations = document.entities.flatMap((entity) =>
@@ -48,7 +48,7 @@ function sceneAvailability(document: SceneDocument, geometryOptions: GeometryOpt
   });
   return {
     spatialTitle: hasModel && !hasObserved ? "sceneObjectModels" : "scene3D",
-    planEmpty: planShapes(document, geometryOptions).length ? null : hasGround ? "sceneNoPlanProjection" : "sceneNoPlanGround",
+    planEmpty: planShapes(document, geometryOptions).length ? null : geometryOptions.scope === "scene" && !geometryOptions.frameId ? "sceneNoPlanFrame" : hasGround ? "sceneNoPlanProjection" : "sceneNoPlanGround",
   };
 }
 
@@ -205,7 +205,7 @@ export function Extent({ entity, document }: { entity: Entity; document: SceneDo
 
 export function ReportScene({
   revision, selection, onSelect, imageId, cameraId, onCamera,
-  draw = false, onBox, onOpenSourceCad, inspector, objectListRequest = 0, onFeedback, onClearSelection,
+  draw = false, onBox, onOpenSourceCad, inspector, objectListRequest = 0, onFeedback, onClearSelection, newerReport,
 }: {
   revision: Revision;
   selection: Selection;
@@ -217,6 +217,7 @@ export function ReportScene({
   onBox?: (box: number[] | null) => void;
   onOpenSourceCad?: () => void;
   inspector?: ReactNode;
+  newerReport?: { href: string; title: string };
   objectListRequest?: number;
   onFeedback?: (entityId: string) => void;
   onClearSelection?: () => void;
@@ -235,7 +236,9 @@ export function ReportScene({
     selected = document.entities.find((entity) => entity.id === selection.entityId);
   const camera = cameraForImage(document, imageId);
   const geometryOptions: GeometryOptions = { layer, frameId: camera?.coordinateFrameId || (!imageId ? document.coordinateFrames[0]?.id : "") || "", showCandidates: true, imageId, observations: document.observations };
-  const availability = sceneAvailability(document, geometryOptions);
+  const planOptions = scenePlanOptions(document, layer);
+  const availability = sceneAvailability(document, planOptions);
+  const referenceImageId = selected ? cadReferenceImage(document, selected) : null;
   const images = [...new Set([
     ...document.assets.filter((a) => a.kind === "source_image").map((a) => a.id),
     ...document.cameras.map((c) => c.imageId),
@@ -297,6 +300,13 @@ export function ReportScene({
       else throw new Error("fullscreen_unavailable");
     } catch { setFullscreenError(true); }
   }
+  async function openSourceCad() {
+    setFullscreenError(false);
+    try {
+      if (window.document.fullscreenElement === container.current) await window.document.exitFullscreen();
+      onOpenSourceCad?.();
+    } catch { setFullscreenError(true); }
+  }
   function selectEntity(entityId: string, observationId?: string) {
     onSelect(entityId, observationId);
     setMobileSection("views");
@@ -306,6 +316,12 @@ export function ReportScene({
       observations.find((o) => o.imageId === imageId) || observations[0];
     if (observation && observation.imageId !== imageId)
       onCamera(observation.imageId, cameraForImage(document, observation.imageId)?.id || null);
+  }
+  function selectPlanEntity(entityId: string) {
+    const entity = document.entities.find(entity => entity.id === entityId);
+    const reference = entity && cadReferenceImage(document, entity);
+    const observation = entity && observationsFor(document, entity).find(observation => observation.imageId === reference);
+    selectEntity(entityId, observation?.id);
   }
   return (
     <section ref={container} className="report-scene" data-view={focused || "quad"}
@@ -325,6 +341,7 @@ export function ReportScene({
           <button className="report-scene-fullscreen" onClick={fullscreen} aria-pressed={isFullscreen} aria-label={t(isFullscreen ? "sceneExitFullscreen" : "sceneFullscreen")}>⛶ <span>{t(isFullscreen ? "sceneExitFullscreen" : "sceneFullscreen")}</span></button>
         </div>
       </header>
+      {newerReport && <div className="report-scene-history-notice" role="status"><span>{t("sceneHistoricalReport")}</span><a href={newerReport.href} title={newerReport.title}>{t("sceneLatestReport")} ↗</a></div>}
       {fullscreenError && <p className="report-scene-notice" role="status">{t("sceneFullscreenUnavailable")}</p>}
       <nav className="report-scene-section-tabs" aria-label={t("sceneWorkspace")}>
         {(["objects", "views", "inspector"] as const).map((section) => <button key={section}
@@ -375,7 +392,7 @@ export function ReportScene({
             {paneOrder.map((pane, index) => (
               <section className="report-scene-pane" id={`${panePrefix}-${pane}`} data-pane={pane} key={pane} aria-label={t(paneNames[pane])}>
                 <header><h3><span>{String(index + 1).padStart(2, "0")}</span>{t(pane === "spatial" ? availability.spatialTitle : paneNames[pane])}</h3>
-                  {pane === "cad" && onOpenSourceCad && <button className="report-scene-source-cad" onClick={onOpenSourceCad}>{t("sceneSourceCad")} ↗</button>}
+                  {pane === "cad" && onOpenSourceCad && <button className="report-scene-source-cad" onClick={openSourceCad}>{t("sceneSourceCad")} ↗</button>}
                   <button className="report-scene-expand" aria-label={`${t(focused === pane ? "sceneQuad" : "sceneSingleView")} · ${t(paneNames[pane])}`}
                     title={t(focused === pane ? "sceneQuad" : "sceneSingleView")} onClick={() => chooseView(focused === pane ? null : pane)}>{focused === pane ? "⊞" : "↗"}</button>
                 </header>
@@ -386,14 +403,14 @@ export function ReportScene({
                     layers={{ observed_surface: layer !== "point_cloud", generated_mesh: layer === "model", primitive: layer === "model", point_cloud: layer === "point_cloud", allBounds, showBounds: allBounds, showCandidates: true, editable: false, opacity: 1, imageId, observations: document.observations }} />
                     {!hasRepresentation && <div className="report-scene-stage-note">{t("sceneNoRepresentation")}</div>}</>}
                   {(pane === "plan" || pane === "cad") && availability.planEmpty && <div className="report-scene-plan-empty" role="status"><strong>{t("scenePlanUnavailable")}</strong><p>{t(availability.planEmpty)}</p><small>{t("sceneSelectionRetained")}</small></div>}
-                  {pane === "cad" && !availability.planEmpty && <CadView key={revision.id} document={document} selectedId={selection.entityId} onSelect={selectEntity} geometryOptions={geometryOptions} />}
-                  {pane === "plan" && !availability.planEmpty && <PlanView document={document} selectedId={selection.entityId} onSelect={selectEntity} interactive geometryOptions={geometryOptions} />}
+                  {pane === "cad" && !availability.planEmpty && <CadView key={revision.id} document={document} selectedId={selection.entityId} onSelect={selectPlanEntity} geometryOptions={planOptions} />}
+                  {pane === "plan" && !availability.planEmpty && <PlanView document={document} selectedId={selection.entityId} onSelect={selectPlanEntity} interactive geometryOptions={planOptions} />}
                 </div>
                 {pane === "photo" && <footer className="report-scene-photo-switch">{images.map((image, i) => <button key={image.imageId} aria-pressed={imageId === image.imageId} onClick={() => onCamera(image.imageId, image.cameraId)}>{t("scenePhotoNumber")} {i + 1}</button>)}{draw && <span>{t("sceneDrawActive")}</span>}</footer>}
               </section>
             ))}
           </div>
-          <p className="report-scene-selection-note">{selected ? isReferenceSurface(document, selected) ? t("sceneReferenceSurface") : selectedOverlay ? t(selectedOverlay.axisSpace === "native" ? "sceneNativeAxis" : "sceneSourceAxis") : !entityGeometryForLayer(selected, geometryOptions) ? t("sceneNoGeometrySelection") : t("sceneNoPhotoAxes") : t("sceneReadOnly")}</p>
+          <p className="report-scene-selection-note"><span className="report-scene-reference-note">{selected ? <>{t("sceneCadReference")}: {referenceImageId ? `${t("scenePhotoNumber")} ${images.findIndex(image => image.imageId === referenceImageId) + 1}` : t("sceneCadReferenceMissing")} · {t("sceneViewedPhoto")}: {imageId ? images.findIndex(image => image.imageId === imageId) + 1 : "—"}{layer === "model" && activeModel(selected) && <> · {t("sceneCadModelPose")}</>}</> : t("sceneCadFixedState")}</span>{selected ? isReferenceSurface(document, selected) ? t("sceneReferenceSurface") : selectedOverlay ? t(selectedOverlay.axisSpace === "native" ? "sceneNativeAxis" : "sceneSourceAxis") : !entityGeometryForLayer(selected, geometryOptions) ? t("sceneNoGeometrySelection") : t("sceneNoPhotoAxes") : t("sceneReadOnly")}</p>
         </div>
         <aside className="report-scene-inspector" id={`${panePrefix}-inspector`} aria-label={t("sceneInspector")}>
           <header><h3>{t("sceneInspector")}</h3>{selected && <span>{selected.id.slice(0, 8)}</span>}</header>

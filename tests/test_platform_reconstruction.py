@@ -114,6 +114,7 @@ def test_generic_multiphoto_analysis_retains_tiny_objects_caches_frames_and_uses
     context = next(e for e in document["entities"] if e.get("kind") == "capture_context")
     assert context["sourceContext"] is True
     assert len([e for e in document["entities"] if not e.get("sourceContext")]) == 4
+    assert all(e['cadReference']['status'] == 'resolved' for e in document['entities'] if not e.get('sourceContext'))
     assert context["editable"] is False and context["representations"][0]["coverage"] == "observed_camera_state_only"
     for entity in document["entities"]:
         for rep in entity["representations"]:
@@ -199,6 +200,7 @@ def test_shape_ready_does_not_invent_button_placement_and_segmentation_keeps_ide
     segmented,result = run_segmentation(repo,blobs,{**repo.job,"inputs":{"observationId":oid}},providers)
     assert any(e["id"] == tiny["id"] for e in segmented["entities"])
     assert next(o for o in segmented["observations"] if o["id"] == oid)["revision"] == 2
+    assert next(e for e in segmented['entities'] if e['id'] == tiny['id'])['cadReference']['sourceRefs'] == [{'observationId': oid, 'revision': 2}]
 
 
 def test_frozen_provider_snapshot_not_mutable_deployment_and_research_does_not_publish(tmp_path,monkeypatch):
@@ -452,6 +454,7 @@ def test_append_photos_registers_new_solution_preserves_source_and_reuses_duplic
     old_entity=next(e for e in before['entities'] if not e.get('sourceContext'))
     assert objects[0]['id']==old_entity['id']
     assert objects[0]['measurementEvidence']==old_entity['measurementEvidence']
+    assert objects[0]['cadReference']['referenceImageId'] == old_entity['cadReference']['referenceImageId']
     contexts = [e for e in updated['entities'] if e.get('sourceContext')]
     assert all(e in contexts for e in before['entities'] if e.get('sourceContext'))
     assert any(r['sourceRefs'][0].get('imageId') == asset['id'] for e in contexts for r in e['representations'])
@@ -817,3 +820,87 @@ def test_plan_projection_keeps_vertical_edges_and_current_model_pose_without_con
     doc['coordinateFrames'][0]['ground'] = None
     _refresh_plan_projections(doc, _Stages(repo, blobs, repo.job, {}))
     assert 'planProjection' not in rep
+
+
+def test_scene_cad_references_preserve_sources_and_do_not_rebuild_geometry(tmp_path, monkeypatch):
+    from ehs_spatial.platform import reconstruction
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    doc, _ = run_analysis(repo, blobs, repo.job, bundle(repo))
+    for entity in doc['entities']:
+        entity.pop('cadReference', None)
+    own = [e for e in doc['entities'] if not e.get('sourceContext')]
+    linked = next(e for e in own if len(e['observationRefs']) == 2)
+    observations = {o['id']: o for o in doc['observations']}
+    preferred = repo.capture['images'][0]['id']
+    anchor = next(observations[oid] for oid in linked['observationRefs'] if observations[oid]['imageId'] != preferred)
+    model = {**deepcopy(linked['representations'][0]), 'id': str(uuid4()), 'kind': 'generated_mesh',
+             'sourceRefs': [{'observationId': anchor['id'], 'revision': anchor['revision']}]}
+    linked['representations'].append(model)
+    linked.update(activeModelRepresentationId=model['id'], currentModelTransform=deepcopy(model['transform']))
+    before = deepcopy(doc)
+    stages = _Stages(repo, blobs, repo.job, {})
+    audit = reconstruction._establish_cad_references(doc, stages, preferred)
+    assert audit['unresolvedEntityCount'] == 0 and audit['resolvedEntityCount'] == len(own)
+    assert linked['cadReference']['referenceImageId'] == anchor['imageId']
+    assert linked['cadReference']['source'] == 'existing_source_reference'
+    for old, current in zip(before['entities'], doc['entities']):
+        assert {k: v for k, v in current.items() if k != 'cadReference'} == old
+        if not current.get('sourceContext'):
+            ref = current['cadReference']
+            assert ref['sourceRefs'] == [{'observationId': oid, 'revision': observations[oid]['revision']}
+                for oid in current['observationRefs'] if observations[oid]['imageId'] == ref['referenceImageId']]
+    unresolved = deepcopy(before)
+    for entity in unresolved['entities']:
+        entity['activeModelRepresentationId'] = None
+    uncertain = reconstruction._establish_cad_references(unresolved, stages)
+    assert uncertain['unresolvedEntityCount'] == 2
+    assert all(e['cadReference']['referenceImageId'] is None for e in unresolved['entities'] if len(e['observationRefs']) == 2)
+    repo.document = deepcopy(doc)
+    monkeypatch.setattr(reconstruction, '_load_geometry', lambda *args: pytest.fail('Reference selection cannot rebuild geometry'))
+    monkeypatch.setattr(reconstruction, '_refresh_plan_projections', lambda *args, **kwargs: pytest.fail('Existing CAD projections must be reused'))
+    updated, result = reconstruction.run_reassociation(repo, blobs, {**repo.job, 'kind': 'reassociate_scene',
+        'inputs': {'establishCadReferences': True, 'referenceImageId': preferred}}, {})
+    assert result['status'] == 'succeeded' and result['cadReferences']['resolvedEntityCount'] == len(own)
+    assert updated['entities'] == doc['entities'] and updated['observations'] == doc['observations']
+    validate_document(updated)
+    with pytest.raises(PlatformError, match='cad_reference_image_not_found'):
+        reconstruction._establish_cad_references(doc, stages, str(uuid4()))
+    # Imported model references must bind the source camera in the same artifact.
+    imported = deepcopy(before)
+    raw = stages.put({'objects': [{'id': 'source-model', 'reference_frame': 'source-camera'}]}, {'kind': 'test_source'})
+    imported['assets'].append(raw)
+    imported_model = next(r for e in imported['entities'] for r in e['representations'] if r['id'] == model['id'])
+    imported_model['sourceRefs'] = [{'assetId': raw['id'], 'sourceRecordId': 'source-model'}]
+    next(c for c in imported['cameras'] if c['imageId'] == anchor['imageId'])['sourceRefs'].append({'assetId': raw['id'], 'sourceCameraId': 'source-camera'})
+    reconstruction._establish_cad_references(imported, stages, preferred)
+    assert next(e for e in imported['entities'] if e['id'] == linked['id'])['cadReference']['referenceImageId'] == anchor['imageId']
+
+
+def test_cad_reference_job_pins_same_project_source_manifest(tmp_path, monkeypatch):
+    from ehs_spatial.platform import reconstruction, source_cad
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    repo.document, _ = run_analysis(repo, blobs, repo.job, bundle(repo))
+    stages = _Stages(repo, blobs, repo.job, {})
+    inventory = stages.put({'objects': []}, {'kind': 'source_inventory'})
+    manifest = stages.put({'files': []}, {'kind': 'source_cad_segmentation_manifest'})
+    repo.document['reportEvidence'] = {'historical': {'inventoryAssetId': inventory['id']}}
+    calls = []
+    def refresh(document, read_asset, masks, *, inventory_asset_id=None, source_manifest_asset_id=None):
+        assert {inventory_asset_id, source_manifest_asset_id} <= {a['id'] for a in document['assets']}
+        assert json.loads(read_asset(source_manifest_asset_id)) == {'files': []}
+        calls.append((inventory_asset_id, source_manifest_asset_id))
+        return {'linkedRecordCount': 0}
+    monkeypatch.setattr(source_cad, 'refresh_source_cad_links', refresh)
+    monkeypatch.setattr(reconstruction, '_load_geometry', lambda *args: ({}, {}))
+    monkeypatch.setattr(reconstruction, '_load_masks', lambda *args: ({}, []))
+    job = {**repo.job, 'kind': 'reassociate_scene', 'inputs': {'establishCadReferences': True,
+        'sourceCadManifestAssetId': manifest['id']}}
+    _, result = reconstruction.run_reassociation(repo, blobs, job, {})
+    assert calls == [(inventory['id'], manifest['id'])]
+    assert result['sourceCadCoverage'] == {'linkedRecordCount': 0}
+    next(a for a in repo.assets if a['id'] == manifest['id'])['projectId'] = str(uuid4())
+    with pytest.raises(PlatformError, match='source_cad_manifest_scope_mismatch'):
+        reconstruction.run_reassociation(repo, blobs, job, {})
+    assert len(calls) == 1
