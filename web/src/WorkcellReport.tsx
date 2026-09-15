@@ -14,6 +14,7 @@ import {
 import {
   cameraForImage,
   publicationReaderURL,
+  currentPublicationURL,
   currentEntityId,
   modelScale,
   editableTransform,
@@ -148,10 +149,12 @@ export function WorkcellReport({
   projectId,
   publicationId,
   requestedRevision,
+  historical = false,
 }: {
   projectId?: string;
   publicationId?: string;
   requestedRevision?: string | null;
+  historical?: boolean;
 }) {
   const { t } = useI18n();
   const readOnly = !!PUBLICATION_ID;
@@ -177,6 +180,7 @@ export function WorkcellReport({
   const [imageId, setImageId] = useState<string | null>(null),
     [jobs, setJobs] = useState<Job[]>([]),
     [history, setHistory] = useState<PublicationSummary[]>([]),
+    [newestPublication, setNewestPublication] = useState<PublicationSummary>(),
     [events, setEvents] = useState<EditBatch[]>([]);
   const [objectListRequest, setObjectListRequest] = useState(0),
     [generation, setGeneration] = useState(0);
@@ -199,22 +203,38 @@ export function WorkcellReport({
     setPublication(undefined);
     setJobs([]);
     setHistory([]);
+    setNewestPublication(undefined);
     setEvents([]);
     setReviewMode(false);
     setAgentOpen(false);
     setBox(null);
     setDraw(false);
     (async () => {
-      const pub = publicationId
-        ? await request<Publication>("/api/publications/" + publicationId)
-        : undefined;
+      const [pub, publications] = await Promise.all([
+        publicationId ? request<Publication>("/api/publications/" + publicationId) : Promise.resolve(undefined),
+        request<{ items: PublicationSummary[] }>("/api/publications"),
+      ]);
       const pid = pub?.projectId || projectId!;
+      if (pub && publications.items.some(p => p.id === pub.id)) {
+        // ponytail: scan newer snapshots in API order; include branchId in summaries if long multi-branch histories make these reads costly.
+        for (const item of publications.items.filter(p => p.projectId === pid)) {
+          if (item.id === pub.id) break;
+          const candidate = await request<Publication>("/api/publications/" + item.id);
+          if (candidate.projectId !== pub.projectId || candidate.snapshot.revision.branchId !== pub.snapshot.revision.branchId) continue;
+          const destination = currentPublicationURL(pub, candidate, location.href);
+          if (!live) return;
+          if (destination) { location.replace(destination); return; }
+          setNewestPublication(item);
+          break;
+        }
+      }
       const d = await request<ProjectDetail>("/api/projects/" + pid);
       const revision =
         pub?.snapshot.revision ||
         (requestedRevision
           ? await request<Revision>("/api/revisions/" + requestedRevision)
           : d.revision);
+      if (!live) return;
       if (pub) {
         const reader = publicationReaderURL(revision.document.schemaVersion, location.href);
         if (reader) { location.replace(reader); return; }
@@ -289,12 +309,8 @@ export function WorkcellReport({
         inputBox[3] <= height
       )
         setBox(inputBox);
-      const [publications, batches] = await Promise.all([
-        request<{ items: PublicationSummary[] }>("/api/publications"),
-        pub
-          ? Promise.resolve({ items: pub.snapshot.editBatches || [] })
-          : request<{ items: EditBatch[] }>("/api/projects/" + pid + "/edits"),
-      ]);
+      const batches = pub ? { items: pub.snapshot.editBatches || [] }
+        : await request<{ items: EditBatch[] }>("/api/projects/" + pid + "/edits");
       if (live) {
         setHistory(publications.items.filter((p) => p.projectId === pid));
         setEvents(batches.items);
@@ -305,7 +321,7 @@ export function WorkcellReport({
     return () => {
       live = false;
     };
-  }, [projectId, publicationId, requestedRevision]);
+  }, [projectId, publicationId, requestedRevision, historical]);
   useEffect(() => {
     if (!detail) return;
     if (publicationId) {
@@ -636,7 +652,7 @@ export function WorkcellReport({
   );
   const objects = doc.entities.filter((e) => !e.sourceContext);
   const sourceImages = doc.assets.filter((a) => a.kind === "source_image");
-  const newestPublication = history[0]; // The API preserves PostgreSQL timestamp ordering.
+  const fromReport = history.find(p => p.id === new URLSearchParams(location.hash.split("?")[1] || "").get("fromReport"));
   const newerReport = publication && newestPublication && newestPublication.id !== publication.id
     ? {href: `./app.html?report=${encodeURIComponent(newestPublication.id)}#/reports/${encodeURIComponent(newestPublication.id)}`, title: newestPublication.title} : undefined;
   const modelWorkbenchURL = contextURL("#/projects/" + project.id + "/workbench?revision=" + revision.id, { selection, imageId, box: null, reviewMode: false, agentOpen: false });
@@ -734,6 +750,9 @@ export function WorkcellReport({
         ))}
       </nav>
       <ErrorNotice error={error} />
+      {fromReport && fromReport.id !== publication?.id && <p className="report-notice" role="status">
+        {t("reportOpenedCurrent")} {" "}<a href={"#/reports/" + fromReport.id + "?snapshot=1"}>{t("reportOpenOriginalSnapshot")} ↗</a>
+      </p>}
       {notice && (
         <p className="report-notice" role="status">
           {t(notice)}
@@ -1061,7 +1080,7 @@ export function WorkcellReport({
             <a
               className="report-history-link"
               key={p.id}
-              href={"#/reports/" + p.id}
+              href={"#/reports/" + p.id + "?snapshot=1"}
             >
               <span>{p.title}</span>
               <span>{p.sceneRevisionId.slice(0, 8)}</span>

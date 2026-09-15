@@ -236,7 +236,7 @@ export function ReportScene({
     selected = document.entities.find((entity) => entity.id === selection.entityId);
   const camera = cameraForImage(document, imageId);
   const geometryOptions: GeometryOptions = { layer, frameId: camera?.coordinateFrameId || (!imageId ? document.coordinateFrames[0]?.id : "") || "", showCandidates: true, imageId, observations: document.observations };
-  const planOptions = scenePlanOptions(document, layer);
+  const planOptions = scenePlanOptions(document, layer, true, imageId);
   const availability = sceneAvailability(document, planOptions);
   const referenceImageId = selected ? cadReferenceImage(document, selected) : null;
   const images = [...new Set([

@@ -10,6 +10,8 @@ const messages: Record<string, [string, string]> = {
   catalogPublications: ["次发布", "publications"],
   catalogLatest: ["最近发布", "Latest publication"],
   catalogHistory: ["此前发布", "Earlier publications"],
+  reportOpenedCurrent: ["已打开此工位的最新报告。", "Opened the latest report for this workcell."],
+  reportOpenOriginalSnapshot: ["查看原历史快照", "View the original historical snapshot"],
   catalogNoObservedScene: ["未附物体的观测表面。请在报告中核对模型的照片与空间依据。", "No object-level observed surfaces attached. Check the models' photograph and spatial evidence in the report."],
   ...identityMessages,
   ...workcellMessages,

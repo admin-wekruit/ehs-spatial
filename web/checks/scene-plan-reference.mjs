@@ -1,4 +1,5 @@
 // node --experimental-strip-types web/checks/scene-plan-reference.mjs
+// Optional frozen-data scan: append <scene-document.json> <publication-catalog-directory>.
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {planShapes,scenePlanOptions,cadReferenceImage,entityGeometryForLayer} from '../src/core.ts';
@@ -21,6 +22,17 @@ for(const change of [d=>d.entities[0].cadReference.status='unresolved',d=>d.enti
  const changed=structuredClone(document);change(changed);assert.equal(cadReferenceImage(changed,changed.entities[0]),null);assert.equal(planShapes(changed,scenePlanOptions(changed,'observed_surface')).length,1,'Invalid reference provenance cannot be replaced with another photo');
 }
 const mixed=structuredClone(document);mixed.cameras[1].coordinateFrameId='unregistered-frame';assert.equal(scenePlanOptions(mixed,'observed_surface').frameId,'','Unregistered coordinate frames cannot be silently combined');
+const historical=structuredClone(document);for(const entity of historical.entities)delete entity.cadReference;
+const historicalBefore=JSON.stringify(historical),historicalOptions=scenePlanOptions(historical,'observed_surface',true,'side');
+assert.equal(historicalOptions.scope,'photo','A snapshot without saved scene references retains its source-photo rendering contract');
+assert.deepEqual(planShapes(historical,historicalOptions).map(shape=>shape.representationIds),[['rep-a-side'],['rep-b-side']]);
+const invalidReferences=structuredClone(historical);for(const entity of invalidReferences.entities)entity.cadReference={status:'unresolved',referenceImageId:null};
+assert.equal(scenePlanOptions(invalidReferences,'observed_surface',true,'side').scope,'scene','Explicit unresolved references never become historical photo selection');
+assert.equal(planShapes(invalidReferences,scenePlanOptions(invalidReferences,'observed_surface',true,'side')).length,0);
+invalidReferences.entities[0].cadReference=null;
+assert.equal(scenePlanOptions(invalidReferences,'observed_surface',true,'side').scope,'scene','An explicitly malformed reference cannot opt into a different rendering contract');
+assert.equal(planShapes(historical,scenePlanOptions(historical,'observed_surface',true,'missing')).length,0,'A historical photo must have its own verified geometry binding');
+assert.equal(JSON.stringify(historical),historicalBefore);
 assert.deepEqual(document,before,'Reference display never rewrites the immutable scene');
 console.log('Scene CAD references: complete inventory across photo switches, distinct dynamic states, exact source provenance, honest frame failures and unchanged photo geometry passed');
 
@@ -35,4 +47,19 @@ if(process.argv[2]) {
   console.log(`${layer}: ${expected.length}/${records.length} entities; ${images.length} photo switches preserve exact geometry`);
  }
  assert.equal(JSON.stringify(scene),before);
+}
+
+if(process.argv[3]) {
+ const cases=[['e38008a7-41e2-451a-aa10-2154962617cf',9],['cfb403f4-d930-4a61-80e3-ad4497db1a43',23],['f292baf7-4f27-4962-b7df-6e931c614413',28]];
+ const imageId='6d69d290-2cea-410b-8c96-73b377ff5917';
+ for(const [id,count] of cases) {
+  const bundle=JSON.parse(await readFile(`${process.argv[3]}/${id}/bundle.json`,'utf8'));
+  const scene=bundle.responses[`/api/publications/${id}`].snapshot.revision.document,before=JSON.stringify(scene);
+  const options=scenePlanOptions(scene,'model',true,imageId),shapes=planShapes(scene,options);
+  assert.equal(shapes.length,count,`${id}: Preserve the frozen document's actual CAD evidence`);
+  assert.ok(shapes.some(shape=>shape.entity.id.startsWith('5c16a2fb')),'The selected mixed cart/guard record remains visible in its photo3 contour');
+  if(options.scope==='scene')for(const image of scene.assets.filter(asset=>asset.kind==='source_image'))assert.deepEqual(planShapes(scene,scenePlanOptions(scene,'model',true,image.id)),shapes,'Fixed scene CAD is independent of the viewed photo');
+  assert.equal(JSON.stringify(scene),before,'Historical report data remains immutable');
+  console.log(`${id}: ${shapes.length}/28 real saved shapes, ${options.scope} rendering contract`);
+ }
 }

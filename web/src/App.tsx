@@ -239,7 +239,7 @@ export default function App() {
         />
       );
   } else if (parts[0] === "reports" && parts[1])
-    content = <WorkcellReport key={parts[1]} publicationId={parts[1]} />;
+    content = <WorkcellReport key={parts[1] + (route.query.get("snapshot") === "1" ? ":snapshot" : "")} publicationId={parts[1]} historical={route.query.get("snapshot") === "1"} />;
   else if (parts[0] === "reports") content = <ReportLibrary />;
   else if (parts[0] === "policies")
     content = (
@@ -1497,7 +1497,7 @@ function Workspace({
                   document={document}
                   selectedId={selectedId}
                   onSelect={selectPlanEntity}
-                  geometryOptions={scenePlanOptions(document, representation as "model" | "observed_surface" | "point_cloud", !report)}
+                  geometryOptions={scenePlanOptions(document, representation as "model" | "observed_surface" | "point_cloud", !report, imageId)}
                 />
               </div>
               <div className="canvas-pane">
@@ -1506,7 +1506,7 @@ function Workspace({
                   document={document}
                   selectedId={selectedId}
                   onSelect={selectPlanEntity}
-                  geometryOptions={scenePlanOptions(document, representation as "model" | "observed_surface" | "point_cloud", !report)}
+                  geometryOptions={scenePlanOptions(document, representation as "model" | "observed_surface" | "point_cloud", !report, imageId)}
                   interactive
                 />
               </div>
@@ -2211,7 +2211,7 @@ function History({ projectId }: { projectId: string }) {
           <a
             className="report-history"
             key={p.id}
-            href={path("/reports/" + p.id)}
+            href={path("/reports/" + p.id + "?snapshot=1")}
           >
             <strong>{p.title}</strong>
             <DateLabel value={p.createdAt} />
@@ -2318,7 +2318,7 @@ function ReportLibrary() {
                   <ol>
                     {history.map((old) => (
                       <li key={old.id}>
-                        <a href={path("/reports/" + old.id)}>
+                        <a href={path("/reports/" + old.id + "?snapshot=1")}>
                           <span>{old.title}</span>
                           <small>
                             {t("version")} {old.sceneRevisionId.slice(0, 8)} ·{" "}

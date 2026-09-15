@@ -11,6 +11,7 @@ import type {
   Job,
   Observation,
   Operation,
+  Publication,
   PublicationSummary,
   Representation,
   SceneDocument,
@@ -49,6 +50,16 @@ export function publicationReaderURL(schemaVersion: number, href: string): strin
   const legacy = new URL("readers/v1/app.html", new URL(".", current));
   legacy.search = current.search; legacy.hash = current.hash;
   return legacy.href;
+}
+/** Daily report links follow the same workcell branch; explicit snapshots stay fixed. */
+export function currentPublicationURL(publication: Publication, candidate: Publication, href: string): string | null {
+  const url = new URL(href), params = new URLSearchParams(url.hash.split("?")[1] || "");
+  if (params.get("snapshot") === "1" || publication.id === candidate.id || publication.projectId !== candidate.projectId ||
+      publication.snapshot.revision.branchId !== candidate.snapshot.revision.branchId) return null;
+  params.set("fromReport", publication.id);
+  url.searchParams.set("report", candidate.id);
+  url.hash = "/reports/" + encodeURIComponent(candidate.id) + "?" + params;
+  return url.href;
 }
 export function currentEntityId(document: SceneDocument, entityId: string): string | null {
   if (document.entities.some(entity => entity.id === entityId)) return entityId;
@@ -454,7 +465,15 @@ export function cadReferenceImage(document: SceneDocument, entity: Entity): stri
   return imageId;
 }
 
-export function scenePlanOptions(document: SceneDocument, layer: GeometryLayer, showCandidates = true): PlanOptions {
+export function planReferenceContract(document: SceneDocument): "photo" | "scene" {
+  // Before saved scene references, observation sources define the photo contract.
+  // An explicit invalid reference still declares scene scope; it cannot select another exposure.
+  return document.entities.some(entity => Object.hasOwn(entity, "cadReference")) ? "scene" : "photo";
+}
+
+export function scenePlanOptions(document: SceneDocument, layer: GeometryLayer, showCandidates = true, imageId?: string | null): PlanOptions {
+  if (planReferenceContract(document) === "photo")
+    return {scope: "photo", layer, imageId, frameId: cameraForImage(document, imageId)?.coordinateFrameId || "", showCandidates};
   const frames = new Set(document.entities.filter(entity => entity.visible !== false && !entity.sourceContext).flatMap(entity => {
     const model = layer === "model" ? activeModel(entity) : null;
     if (model && representationAvailable(entity, model, model.coordinateFrameId, showCandidates)) return [model.coordinateFrameId];
