@@ -100,3 +100,18 @@ The hash-pinned source audit and preflight evidence are stored under
 The public deployment is the existing read-only publication service plus scoped
 feedback. It is not the full writable SaaS/GPU deployment. Local project editing,
 durable versions and export were validated separately as described above.
+
+## Public deployment verification
+
+Product commit `6345fb7` and Pages commit
+`71d0ee2bc783f9e0890189f1b53dae909e679d39` were pushed. GitHub Pages workflow
+`35018459439` completed successfully. The live page serves `app-D9eTdTWY.js`
+and `app-D09UFqbs.css`; the publication API lists the new fixed report first.
+
+Computer Use on the public page verified the default model scene and empty
+selection, linked cylinder photo/3D/CAD selection, dimensions 0.092 × 0.092 ×
+0.714, full-size circular top view and a 390 × 844 mobile layout. The desktop
+viewport was restored and the page left in four-view mode with no selection.
+The previous report link was also checked resolving to the new report, retaining
+its source photo. Public `.blend` and `.glb` asset metadata matched the verified
+hashes; range downloads returned 206 with valid BLENDER/glTF signatures.
