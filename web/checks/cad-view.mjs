@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import ts from "typescript";
-import { planShapes } from "../src/core.ts";
+import { planShapes, scenePlanOptions } from "../src/core.ts";
 
 const source = await readFile(new URL("../src/CadView.tsx", import.meta.url), "utf8");
 const parsed = ts.createSourceFile("CadView.tsx", source, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX);
@@ -20,17 +20,18 @@ const shape = (id, min, max) => ({ entity: { id }, min, max, polygons: [{exterio
 let shapes = [shape("small", [0, 0], [1, 2]), shape("far", [-5, 4], [-4.8, 4.2])];
 if (process.argv[2]) {
   const document = JSON.parse(await readFile(process.argv[2], "utf8"));
-  shapes = planShapes(document, { layer: "model", frameId: document.coordinateFrames[0].id, showCandidates: true });
+  shapes = planShapes(document, scenePlanOptions(document, "observed_surface", true, document.cameras[0]?.imageId));
   assert.ok(shapes.length > 0);
 }
 const original = JSON.stringify(shapes);
+const points = shapes.flatMap(shape => [...shape.polygons.flatMap(polygon => [...polygon.exterior, ...polygon.holes.flat()]), ...shape.lines.flat()]);
 for (const size of [{ width: 436.5, height: 47.65625 }, { width: 360, height: 260 }, { width: 900, height: 700 }]) {
   const camera = cadFit(shapes, size);
-  const extents = shapes.flatMap(shape => shape.polygons[0].exterior.map(point => cadScreen(point, camera, size)));
+  const extents = points.map(point => cadScreen(point, camera, size));
   const occupied = [0, 1].map(k => Math.max(...extents.map(p => p[k])) - Math.min(...extents.map(p => p[k])));
-  assert.ok(occupied[0] >= size.width * .79 || occupied[1] >= size.height * .79,
-    "Automatic fit must fill at least 79% of one canvas dimension, including compact panes");
-  for (const shape of shapes) for (const point of shape.polygons[0].exterior) {
+  assert.ok(occupied[0] >= size.width * .94 - 1e-9 || occupied[1] >= size.height * .94 - 1e-9,
+    "Default fit fills at least 94% of one canvas dimension, including compact panes");
+  for (const point of points) {
     const screen = cadScreen(point, camera, size);
     assert.ok(screen[0] >= 0 && screen[0] <= size.width);
     assert.ok(screen[1] >= 0 && screen[1] <= size.height);

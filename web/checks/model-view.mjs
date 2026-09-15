@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import * as math from '../src/viewer/native-math.ts';
 import * as core from '../src/core.ts';
-import {representationPass} from '../src/viewer/native-viewer.ts';
+import {representationPass,selectionGeometry} from '../src/viewer/native-viewer.ts';
 
 const transform={coordinateFrameId:'frame',position:[0,0,0],quaternion:[0,0,0,1],scale:[1,1,1]};
 const model={id:'model-a',kind:'generated_mesh',assetId:'asset-a',coordinateFrameId:'frame',transform,placementState:'unconfirmed',placementReason:'imported_proposal',bounds:{min:[-1,-1,-1],max:[1,1,1]}};
@@ -25,14 +25,14 @@ assert.equal(model.placementState,'unconfirmed','Rendering cannot confirm placem
 
 const source=await readFile(new URL('../src/viewer/native-viewer.ts',import.meta.url),'utf8');
 const parsed=ts.createSourceFile('native-viewer.ts',source,ts.ScriptTarget.ES2022,true,ts.ScriptKind.TS);
-const wanted=['captureModel','fittedCamera','fittingPoints','corners','dimensions','model','primitive'];
+const wanted=['captureModel','fittedCamera','fittingPoints','corners','dimensions','model','primitive','selectedGeometry','selectedAxes'];
 const declarations=[];let drawSource;const visit=node=>{if(ts.isFunctionDeclaration(node)&&node.name?.text==='draw')drawSource=node.getText(parsed);if(ts.isFunctionDeclaration(node)&&wanted.includes(node.name?.text))declarations.push(node.getText(parsed));ts.forEachChild(node,visit);};visit(parsed);
 assert.equal(declarations.length,wanted.length);
-const code=ts.transpileModule(declarations.join('\n')+'\nglobalThis.capture=captureModel;globalThis.primitiveMesh=primitive;', {compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+const code=ts.transpileModule(declarations.join('\n')+'\nglobalThis.capture=captureModel;globalThis.primitiveMesh=primitive;globalThis.axesFor=selectedAxes;', {compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
 const gpu=document.entities.flatMap(entity=>entity.representations.map(representation=>({entityId:entity.id,representation,mesh:{bounds:model.bounds,matrix:math.identity()}})));
 let shots=[],failCapture=false;
-const canvas={width:900,height:500,style:{cssText:'original-canvas'},toDataURL(){if(failCapture)throw Error('capture failed');shots.push({camera:structuredClone(scope.camera),studio:scope.layers.studio,entities:gpu.filter(scope.visible).map(g=>g.entityId),representations:gpu.filter(scope.visible).map(g=>g.representation.id)});return 'data:image/png;base64,actual-model';}};
-const scope=vm.createContext({...math,...core,representationPass,disposed:false,revisionId:'revision',gl:{isContextLost:()=>false},doc:document,frameId:'frame',gpu,
+const canvas={width:900,height:500,style:{cssText:'original-canvas'},toDataURL(){if(failCapture)throw Error('capture failed');shots.push({camera:structuredClone(scope.camera),studio:scope.layers.studio,axes:scope.axesFor(scope.layers.axisEntityId),size:scope.captureSize,entities:gpu.filter(scope.visible).map(g=>g.entityId),representations:gpu.filter(scope.visible).map(g=>g.representation.id)});return 'data:image/png;base64,actual-model';}};
+const scope=vm.createContext({...math,...core,representationPass,selectionGeometry,document:{createElement(){return {getContext:()=>({}),toDataURL:()=>canvas.toDataURL()};}},disposed:false,revisionId:'revision',gl:{isContextLost:()=>false},doc:document,frameId:'frame',gpu,
  entity:id=>document.entities.find(e=>e.id===id),layers:{...strict},camera:{eye:[30,20,10],target:[1,2,3],up:[0,0,1]},selection:{entityId:'b'},radius:99,center:[4,5,6],preview:new Map(),captureSize:null,
  loadedRepresentations:new Set(['a/model-a','b/model-b']),canvas,photo:{style:{cssText:'original-photo'}},stage:{clientWidth:0,clientHeight:0},draw(){},
  visible:g=>representationPass(document.entities.find(e=>e.id===g.entityId),g.representation,'frame',scope.layers).visible,
@@ -42,10 +42,21 @@ const original={camera:scope.camera,layers:scope.layers,selection:scope.selectio
 for(const mode of ['free','front','side','top']){
  assert.equal(scope.capture('a',mode,'revision'),'data:image/png;base64,actual-model');
  const shot=shots.at(-1);assert.equal(shot.studio,true,'Object capture always enables readable studio display without changing the main view lighting');assert.deepEqual(shot.entities,['a']);assert.deepEqual(shot.representations,['model-a']);
+ assert.equal(shot.size.w,shot.size.h,'Model previews fit the near-square fourth pane');
+ assert.deepEqual([...shot.axes.axes.map(axis=>axis.label)],['X','Y','Z']);
+ const projection=math.cameraMatrix(shot.camera,1,scope.radius);for(const axis of shot.axes.axes){const pixel=math.projected(projection,axis.end,640,640);assert.ok(pixel&&pixel[0]>16&&pixel[0]<610&&pixel[1]>20&&pixel[1]<620,'Snapshot fitting keeps real axis endpoints and labels inside the frame');}
  assert.equal(!!shot.camera.orthographic,mode!=='free','Existing orthographic camera modes are reused');
  for(const key of Object.keys(original))assert.equal(scope[key],original[key],`Capture restores ${key}`);
  assert.equal(scope.captureSize,null);assert.equal(canvas.width,900);assert.equal(canvas.style.cssText,'original-canvas');
 }
+const originalPose=a.currentModelTransform;
+a.currentModelTransform={...originalPose,quaternion:[0,0,Math.SQRT1_2,Math.SQRT1_2],scale:[2,3,4]};
+for(const mode of ['free','front','side','top']){
+ scope.capture('a',mode,'revision');const shot=shots.at(-1),expected=[[0,1,0],[-1,0,0],[0,0,1]];
+ shot.axes.axes.forEach((axis,i)=>axis.direction.forEach((v,k)=>assert.ok(Math.abs(v-expected[i][k])<1e-6,'XYZ follows the current saved model quaternion, with non-unit scale normalized')));
+ const matrix=math.cameraMatrix(shot.camera,1,scope.radius);for(const axis of shot.axes.axes){const pixel=math.projected(matrix,axis.end,640,640);assert.ok(pixel&&pixel[0]>16&&pixel[0]<610&&pixel[1]>20&&pixel[1]<620,'Rotated/non-unit model axes and labels remain inside every preview');}
+}
+a.currentModelTransform=originalPose;
 assert.equal(scope.capture('a','free','old-revision'),null,'An old revision cannot supply a newer preview');
 assert.equal(scope.capture('a','free','revision','other-frame'),null,'A pending camera-frame change cannot publish geometry from the old frame');
 scope.loadedRepresentations.delete('a/model-a');assert.equal(scope.capture('a','free','revision'),null,'A partially loaded multi-mesh model is never published as a complete preview');scope.loadedRepresentations.add('a/model-a');
@@ -70,6 +81,21 @@ displayScope.draw();assert.deepEqual(displayed.background,[237/255,240/255,238/2
 displayScope.layers.studio=false;displayScope.draw();assert.deepEqual(displayed.background,[17/255,27/255,33/255,1]);assert.equal(displayed.lighting,0,'The regular scene retains the user lighting choice');
 displayScope.layers.studio=true;displayScope.draw(true);assert.deepEqual(displayed.background,[0,0,0,1],'Studio background cannot create phantom objects in the ID-picking buffer');
 
+
+// Composite the same projected native SVG axes into the exported model image.
+const capturedLabels=[],capturedLines=[],svgNodes=[];
+const overlay={drawImage(image){assert.equal(image,displayScope.canvas);},scale(){},beginPath(){},moveTo(){},lineTo(x,y){capturedLines.push([x,y]);},stroke(){},strokeText(){},fillText(text){capturedLabels.push(text);}};
+const captureCanvas={getContext:()=>overlay},shot=shots[0];
+Object.assign(displayScope,{camera:shot.camera,cameraMatrix:math.cameraMatrix,projected:math.projected,add:math.add,
+ viewSize:()=>({w:640,h:640,cw:640,ch:640}),layers:{studio:true,showBounds:false,showAxes:true,axisEntityId:'a'},
+ doc:document,entity:id=>document.entities.find(e=>e.id===id),selectedAxes:()=>shot.axes,
+ svg:{namespaceURI:'http://www.w3.org/2000/svg',setAttribute(){},replaceChildren(){svgNodes.length=0;},append(node){svgNodes.push(node);}},
+ document:{createElementNS(_ns,tag){return {tag,attributes:{},setAttribute(k,v){this.attributes[k]=v;}};}},
+});
+displayScope.draw(false,captureCanvas);assert.deepEqual(capturedLabels,['X','Y','Z'],'Snapshot includes all three native axis labels instead of exporting WebGL pixels alone');
+assert.equal(capturedLines.length,3,'Snapshot contains axes only, without re-enabling all object bounds');assert.equal(overlay.font,'700 24px sans-serif','Snapshot labels stay legible when fitted into a report pane');
+assert.equal(captureCanvas.width,640);assert.equal(captureCanvas.height,640);
+const svgLines=svgNodes.filter(node=>node.tag==='line');capturedLines.forEach(([x,y],i)=>assert.deepEqual([x,y],[Number(svgLines[i].attributes.x2),Number(svgLines[i].attributes.y2)],'Snapshot and native viewer use identical axis projection'));
 
 // Execute SpatialView's real effect/event bridge: delayed A asset events must
 // service the current B request, never replace B with the previous selection.

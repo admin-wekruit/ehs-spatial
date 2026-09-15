@@ -10,14 +10,14 @@ type Shape = ReturnType<typeof planShapes>[number];
 type CadCamera = { center: number[]; scale: number };
 type CadSize = { width: number; height: number };
 
-export function cadFit(shapes: Shape[], { width, height }: CadSize, horizontalPadding = Math.min(64, width * .12)): CadCamera {
+export function cadFit(shapes: Shape[], { width, height }: CadSize, horizontalPadding = Math.min(24, width * .06)): CadCamera {
   if (!shapes.length) return { center: [0, 0], scale: 1 };
   const min = [0, 1].map(k => Math.min(...shapes.map(shape => shape.min[k])));
   const max = [0, 1].map(k => Math.max(...shapes.map(shape => shape.max[k])));
   return { center: min.map((value, k) => (value + max[k]) / 2), scale: Math.min(
     Math.max(1, width - Math.min(horizontalPadding, width * .4)) / Math.max(max[0] - min[0], 1e-6),
-    // Padding must shrink with the pane; a fixed 80px swallowed short CAD views.
-    Math.max(1, height - Math.min(48, height * .2)) / Math.max(max[1] - min[1], 1e-6),
+    // Keep all contour extrema visible with a small margin that shrinks on short panes.
+    Math.max(1, height - Math.min(24, height * .06)) / Math.max(max[1] - min[1], 1e-6),
   ) };
 }
 
