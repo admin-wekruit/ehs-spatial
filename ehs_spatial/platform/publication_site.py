@@ -237,6 +237,14 @@ def create_app(catalog_dir: str | Path, *, allowed_origins: list[str], feedback=
                 raise PlatformError("publication_not_found", 404)
             return JSONResponse(feedback.identity_suggestions(publication), headers={"Cache-Control": "no-store"})
 
+    # Calculation is user-triggered; no model asset is read during report loading.
+    from .scene_measurements import register_measurement_routes
+    def measurement_asset(asset_id):
+        if asset_id not in files:
+            raise PlatformError("asset_not_found", 404)
+        return files[asset_id][0].read_bytes()
+    register_measurement_routes(app, lambda rid: get_record("/api/revisions/" + rid), measurement_asset)
+
     @app.api_route("/api/assets/{asset_id}/content", methods=["GET", "HEAD"])
     def content(asset_id: str):
         if asset_id not in files:

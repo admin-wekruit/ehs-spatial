@@ -798,6 +798,7 @@ export function planShapes(document: SceneDocument, options: PlanOptions = {}) {
           polygons,
           lines,
           coordinateFrameId: frame.id,
+          nativeToPlane: plane,
           projectionSource: projections.length ? "mesh_projection" as const : "saved_hull" as const,
           geometryKind: geometry.geometryKind,
           representationIds: projections.length ? projections.map(projection => projection.representationId) : geometry.representationIds,

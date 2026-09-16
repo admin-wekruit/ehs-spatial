@@ -1,0 +1,11 @@
+.spatial-measurements { border-bottom: 1px solid var(--border, #cdd5cb); padding: 0 0 20px; margin: 0 0 20px; }
+.spatial-measurements h4 { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 10px; }
+.spatial-measurements h4 small { font-size: 11px; font-weight: 400; border: 1px solid #bdc9bc; border-radius: 4px; padding: 3px 6px; }
+.spatial-measurements p { font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; margin: 10px 0; }
+.spatial-measurements label { display: grid; gap: 6px; font-size: 12px; margin: 12px 0; }
+.spatial-measurements select { width: 100%; min-width: 0; }
+.spatial-measurements .measure-calculate { width: 100%; margin-top: 12px; background: #315743; color: white; }
+.measurement-result { margin-top: 16px; padding: 14px; background: #eef3eb; border: 1px solid #bccdbb; border-radius: 6px; }
+.measurement-result output { font-size: 27px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.measurement-result summary { cursor: pointer; font-size: 12px; }
+.cad-measure-guide { padding: 8px 12px; font-size: 12px; background: #eaf4fa; color: #154b62; }

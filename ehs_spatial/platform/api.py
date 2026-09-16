@@ -254,6 +254,12 @@ def create_app(*, repository, blobs, executor=None, agent_service=None, policy_s
     for kind, model in (("revisions", Revision), ("captures", Capture), ("assets", AssetRecord), ("jobs", Job), ("edits", EditBatch)):
         app.add_api_route("/api/projects/{project_id}/" + kind, records_endpoint(kind), methods=["GET"], response_model=Items[model], response_model_exclude_unset=True)
 
+    from .scene_measurements import register_measurement_routes
+    def measurement_asset(asset_id):
+        record = repository.get_asset(asset_id)
+        return blobs.get(record["storageKey"], record["sha256"], record["sizeBytes"])
+    register_measurement_routes(app, lambda rid: repository.get_revision(rid), measurement_asset)
+
     if policy_service:
         policy_service.register_routes(app)
     return app

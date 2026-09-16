@@ -4,6 +4,7 @@ import { useI18n } from "./i18n";
 import { isReferenceSurface } from "./scene-semantics";
 import type { SceneDocument } from "./types";
 import { cadViewMessages } from "./cad-view-messages";
+import type { SceneMeasurement, MeasureRegion } from "./SpatialMeasurements";
 import "./cad-view.css";
 
 type Shape = ReturnType<typeof planShapes>[number];
@@ -61,7 +62,11 @@ export function cadCallouts(shapes: Shape[], selectedId: string | null, camera: 
   return labels;
 }
 
-export function CadView({ document, selectedId, onSelect, geometryOptions }: {
+export function CadView({ document, selectedId, onSelect, geometryOptions, measurement, region, drawingRegion, onRegion }: {
+  measurement?: SceneMeasurement | null;
+  region?: MeasureRegion | null;
+  drawingRegion?: boolean;
+  onRegion?: (region: MeasureRegion | null) => void;
   document: SceneDocument;
   selectedId: string | null;
   onSelect: (id: string) => void;
@@ -72,6 +77,7 @@ export function CadView({ document, selectedId, onSelect, geometryOptions }: {
   const stage = useRef<HTMLDivElement>(null), svg = useRef<SVGSVGElement>(null), picker = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<CadSize>({ width: 600, height: 400 });
   const [camera, setCamera] = useState<CadCamera | null>(null), [candidates, setCandidates] = useState<string[]>([]);
+  const [regionStart, setRegionStart] = useState<number[] | null>(null), [regionCursor, setRegionCursor] = useState<number[]>([0, 0]);
   const [focusMode, setFocusMode] = useState(false);
   const pointer = useRef<{ id: number; x: number; y: number; camera: CadCamera; moved: boolean } | null>(null);
   const suppressClick = useRef(false);
@@ -105,6 +111,17 @@ export function CadView({ document, selectedId, onSelect, geometryOptions }: {
   useEffect(() => { setCandidates([]); }, [selectedId, document, geometryOptions?.scope, geometryOptions?.layer, geometryOptions?.imageId]);
   useEffect(() => { if (candidates.length) picker.current?.querySelector<HTMLButtonElement>("button[data-candidate]")?.focus(); }, [candidates]);
 
+  useEffect(() => { setRegionStart(null); if (drawingRegion) { setRegionCursor(view.center); svg.current?.focus(); } }, [drawingRegion]);
+  function regionCorner(p: number[]) {
+    const basis = shapes[0];
+    if (!basis || !onRegion) return;
+    if (!regionStart) { setRegionStart(p); setRegionCursor(p); }
+    else if (Math.abs(p[0] - regionStart[0]) > 1e-8 && Math.abs(p[1] - regionStart[1]) > 1e-8) {
+      onRegion({ coordinateFrameId: basis.coordinateFrameId, nativeToPlane: basis.nativeToPlane,
+        points: [regionStart, [p[0], regionStart[1]], p, [regionStart[0], p[1]]] }); setRegionStart(null);
+    }
+  }
+  const measurementLines = measurement && measurement.coordinateFrameId === frame?.id && shapes[0] ? measurement.lines.map(line => ({ ...line, screen: line.points.map(p => cadScreen(shapes[0].nativeToPlane.slice(0, 2).map(row => row[3] + row[0]*p[0] + row[1]*p[1] + row[2]*p[2]), view, size)) })) : [];
   function choose(id: string) { setCandidates([]); onSelect(id); svg.current?.focus(); }
   function zoom(factor: number) {
     setCamera({ ...view, scale: Math.max(fit.scale / 4, Math.min(fit.scale * 1000, view.scale * factor)) });
@@ -125,6 +142,7 @@ export function CadView({ document, selectedId, onSelect, geometryOptions }: {
   const source = (shape: Shape) => isReferenceSurface(document, shape.entity) ? "floor" : shape.projectionSource === "saved_hull" ? "hull" : shape.geometryKind === "model" ? "model" : "observed";
 
   return <div className="cad-view" onKeyDown={event => {
+    if (event.key === "Escape" && drawingRegion) { event.preventDefault(); event.stopPropagation(); onRegion?.(null); return; }
     if (event.key === "Escape" && candidates.length) { event.preventDefault(); event.stopPropagation(); setCandidates([]); svg.current?.focus(); }
   }}>
     <div className="cad-tools">
@@ -134,20 +152,30 @@ export function CadView({ document, selectedId, onSelect, geometryOptions }: {
         <button type="button" aria-label={t("zoomOut")} onClick={() => zoom(1 / 1.4)}>−</button>
         <button type="button" aria-label={t("zoomIn")} onClick={() => zoom(1.4)}>＋</button></div>
     </div>
+    {drawingRegion && <div className="cad-measure-guide" role="status">{language === "zh" ? "圈定区域：点击两个对角，或方向键移动十字光标后按 Enter；Esc 取消。" : "Draw region: click two opposite corners, or use arrow keys and Enter. Esc cancels."}</div>}
     <div className="cad-stage" ref={stage}>
       {!shapes.length ? <p className="cad-empty" role="status">{t("empty")}</p> : <svg ref={svg} role="group" tabIndex={0} viewBox={`0 0 ${size.width} ${size.height}`} aria-label={t("title")} data-frame-id={shapes[0]?.coordinateFrameId} data-cad-shapes={shapes.length}
         onKeyDown={event => {
+          if (drawingRegion) {
+            if (event.key === "Enter") { event.preventDefault(); event.stopPropagation(); regionCorner(regionCursor); return; }
+            const delta = { ArrowLeft: [-10, 0], ArrowRight: [10, 0], ArrowUp: [0, 10], ArrowDown: [0, -10] }[event.key];
+            if (delta) { event.preventDefault(); event.stopPropagation(); setRegionCursor(p => p.map((v, i) => v + delta[i] / view.scale)); return; }
+          }
           if (event.target !== event.currentTarget) return;
           if (["+", "=", "-"].includes(event.key)) { event.preventDefault(); event.stopPropagation(); zoom(event.key === "-" ? 1 / 1.4 : 1.4); }
           const delta = { ArrowLeft: [-40, 0], ArrowRight: [40, 0], ArrowUp: [0, 40], ArrowDown: [0, -40] }[event.key];
           if (delta) { event.preventDefault(); event.stopPropagation(); setCamera({ ...view, center: view.center.map((value, k) => value + delta[k] / view.scale) }); }
         }}
         onPointerDown={event => {
-          if (event.button !== 0) return;
+          if (event.button !== 0 || drawingRegion) return;
           suppressClick.current = false;
           pointer.current = { id: event.pointerId, x: event.clientX, y: event.clientY, camera: view, moved: false };
         }}
         onPointerMove={event => {
+          if (drawingRegion) {
+            const matrix = svg.current?.getScreenCTM();
+            if (matrix) { const p = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse()); setRegionCursor(cadWorld([p.x, p.y], view, size)); } return;
+          }
           const start = pointer.current;
           if (!start || start.id !== event.pointerId) return;
           if (event.pointerType !== "touch" && !(event.buttons & 1)) { pointer.current = null; return; }
@@ -164,11 +192,12 @@ export function CadView({ document, selectedId, onSelect, geometryOptions }: {
         onClick={event => {
           if (suppressClick.current) { suppressClick.current = false; return; }
           const marker = (event.target as Element).closest("[data-cad-label]")?.getAttribute("data-cad-label");
-          if (marker) { choose(marker); return; }
+          if (marker && !drawingRegion) { choose(marker); return; }
           const matrix = svg.current?.getScreenCTM();
           if (!matrix) return;
           const local = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse());
           const world = cadWorld([local.x, local.y], view, size), hits = planHits(shapes, world[0], world[1], 4 / view.scale);
+          if (drawingRegion) { regionCorner(world); return; }
           if (hits.length === 1) choose(hits[0].entity.id);
           else setCandidates(hits.map(hit => hit.entity.id));
         }}>
@@ -198,11 +227,19 @@ export function CadView({ document, selectedId, onSelect, geometryOptions }: {
           {callouts.map(label => <g key={label.id} className={label.id === selectedId ? "is-selected" : ""}>
             <path d={`M${label.anchor.join(",")}L${label.position.join(",")}`} />
             <g data-cad-label={label.id} role="button" tabIndex={0} aria-label={`#${numbers.get(label.id)} ${entities.find(entity => entity.id === label.id)?.label || label.id}`} aria-pressed={label.id === selectedId}
-              onKeyDown={event => { if (["Enter", " "].includes(event.key)) { event.preventDefault(); event.stopPropagation(); choose(label.id); } }}>
+              onKeyDown={event => { if (drawingRegion) return; if (["Enter", " "].includes(event.key)) { event.preventDefault(); event.stopPropagation(); choose(label.id); } }}>
               <rect x={label.position[0] - 14} y={label.position[1] - 10} width={28} height={20} rx={3} />
               <text x={label.position[0]} y={label.position[1] + 3.5} textAnchor="middle">{numbers.get(label.id)}</text>
             </g>
           </g>)}
+        </g>
+        <g className="cad-measurement" pointerEvents="none" fill="none" strokeWidth={2.5}>
+          {!drawingRegion && region?.coordinateFrameId === frame?.id && region && <polygon points={region.points.map(p => cadScreen(p, view, size).join(",")).join(" ")} stroke="#168bba" fill="#168bba11" />}
+          {measurementLines.map((line, i) => <polyline key={i} points={line.screen.map(p => p.join(",")).join(" ")} stroke={line.color} />)}
+          {drawingRegion && (() => { const a = cadScreen(regionStart || regionCursor, view, size), b = cadScreen(regionCursor, view, size); return <g stroke="#168bba">
+            <path d={`M${b[0]-10},${b[1]}h20 M${b[0]},${b[1]-10}v20`} />
+            {regionStart && <rect x={Math.min(a[0], b[0])} y={Math.min(a[1], b[1])} width={Math.abs(a[0]-b[0])} height={Math.abs(a[1]-b[1])} fill="#168bba22" />}
+          </g>; })()}
         </g>
         <g className="cad-scale" transform={`translate(16,${size.height - 28})`} aria-label={`${cadNumber(scaleLength)} ${units}`}>
           <rect x={-5} y={-22} width={Math.max(96, scaleLength * view.scale + 12)} height={31} />
