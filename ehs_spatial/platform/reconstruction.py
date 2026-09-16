@@ -83,6 +83,8 @@ class ProviderSpec:
         if not self.pins or any(not isinstance(v,str) or not v for v in self.pins.values()) or evidence.get("pins") != dict(self.pins):
             raise PlatformError("provider_pins_unverified",409,stage=stage)
         purpose = None
+        if self.pins.get('model') == 'TRI-ML/RecGen' and research_protocol is None:
+            raise PlatformError('recgen_research_only', 403)
         if research_protocol is not None:
             _validate_research_protocol(research_protocol)
             purpose = research_protocol["purpose"]
@@ -378,7 +380,7 @@ def _save_mesh(stages,mesh,metadata):
     for i in range(3):
         np.add.at(normals,mesh.faces[:,i],normal)
     normals /= np.maximum(np.linalg.norm(normals,axis=1,keepdims=True),1e-20)
-    colors = mesh.colors if mesh.colors is not None else np.ones_like(mesh.vertices)
+    colors = mesh.colors[:, :3] if mesh.colors is not None else np.ones_like(mesh.vertices)
     vertices = np.column_stack((mesh.vertices,normals,colors)).astype("<f4")
     indices = np.asarray(mesh.faces,dtype="<u4").ravel()
     layout = {"stride":9,"byteOffset":0,"vertexCount":len(vertices),"indexByteOffset":vertices.nbytes,"indexCount":len(indices),"indexType":"uint32"}
@@ -1257,6 +1259,33 @@ def _generation_targets(document, job):
     return requested, entities
 
 
+def _record_generated_representation(document, stages, entity, observations, coordinate_frame_id, response, evidence):
+    """Shared native representation assembly; research provenance never approves placement."""
+    _include(document,evidence)
+    anchor = observations[0]
+    mesh = MeshData(np.asarray(response['vertices']),np.asarray(response['faces']),np.asarray(response['colors']) if response.get('colors') is not None else None)
+    provenance = response.get('provenance') or {}
+    refs = [_ref(evidence)] + [{'observationId':o['id'],'revision':o['revision']} for o in observations]
+    mesh_asset = _save_mesh(stages,mesh,{'kind':'generated_mesh','entityId':entity['id'],'sourceRefs':refs, **({'provenance':provenance} if provenance else {})})
+    document['assets'] = [a for a in document['assets'] if a['id'] != mesh_asset['id']] + [mesh_asset]
+    proposed = response.get('proposedObjectToNative')
+    transform = matrix_to_transform(np.asarray(proposed) if proposed is not None else np.eye(4),coordinate_frame_id)
+    rep = {'id':_id(document['captureId'],'generated',entity['id'],anchor['id'],str(anchor['revision']),evidence['sha256'],mesh_asset['sha256']),
+           'kind':'generated_mesh','assetId':mesh_asset['id'],'coordinateFrameId':coordinate_frame_id,
+           'transform':transform,'bounds':mesh_asset['metadata']['bounds'],'primitive':None,'placementState':'unconfirmed','sourceRefs':refs,
+           'placementReason':'requires_alignment_confirmation' if proposed is not None else 'insufficient_observed_depth',
+           'shapeStatus':provenance.get('shapeStatus','ready'), **({'provenance':provenance} if provenance else {})}
+    projection = _plan_projection(document, rep, mesh, mesh_asset['sha256'])
+    if projection is not None:
+        rep['planProjection'] = projection
+    if not any(r['id'] == rep['id'] for r in entity['representations']):
+        entity['representations'].append(rep)
+    if not entity.get('activeModelRepresentationId') and proposed is not None:
+        entity['activeModelRepresentationId'] = rep['id']
+        entity['currentModelTransform'] = dict(rep['transform'])
+    return rep
+
+
 def run_generation(repository,blobs,job,providers):
     _,document,images = _capture(repository,blobs,job)
     requested, entities = _generation_targets(document, job)
@@ -1296,23 +1325,7 @@ def run_generation(repository,blobs,job,providers):
             payload = {"entityId":entity["id"],"image":canonical[image["id"]]["rgb"],"mask":mask,"points":f.points,"valid":f.valid,"K":f.K,"cameraToWorld":f.camera_to_world,
                        "coordinateFrameId":f.coordinate_frame_id,"imageId":image["id"],"imageSha256":image["sha256"],"seed":job.get("config",{}).get("seed",0)}
             response,evidence = stages.call("generation",[image],payload,[{"observationId":anchor["id"],"revision":anchor["revision"],"maskSha256":asset["sha256"]}])
-            _include(document,evidence)
-            mesh = MeshData(np.asarray(response["vertices"]),np.asarray(response["faces"]),np.asarray(response["colors"]) if response.get("colors") is not None else None)
-            mesh_asset = _save_mesh(stages,mesh,{"kind":"generated_mesh","entityId":entity["id"],"sourceRefs":[_ref(evidence)]})
-            document["assets"] = [a for a in document["assets"] if a["id"] != mesh_asset["id"]] + [mesh_asset]
-            proposed = response.get("proposedObjectToNative")
-            transform = matrix_to_transform(np.asarray(proposed) if proposed is not None else np.eye(4),f.coordinate_frame_id)
-            rep = {"id":_id(document["captureId"],"generated",entity["id"],anchor["id"],str(anchor["revision"]),evidence["sha256"],mesh_asset["sha256"]),"kind":"generated_mesh","assetId":mesh_asset["id"],"coordinateFrameId":f.coordinate_frame_id,
-                   "transform":transform,"bounds":mesh_asset["metadata"]["bounds"],"primitive":None,"placementState":"unconfirmed","sourceRefs":[_ref(evidence),{"observationId":anchor["id"],"revision":anchor["revision"]}],
-                   "placementReason":"requires_alignment_confirmation" if proposed is not None else "insufficient_observed_depth","shapeStatus":"ready"}
-            projection = _plan_projection(document, rep, mesh, mesh_asset['sha256'])
-            if projection is not None:
-                rep['planProjection'] = projection
-            if not any(r['id'] == rep['id'] for r in entity['representations']):
-                entity['representations'].append(rep)
-            if not entity.get('activeModelRepresentationId') and proposed is not None:
-                entity['activeModelRepresentationId'] = rep['id']
-                entity['currentModelTransform'] = dict(rep['transform'])
+            _record_generated_representation(document, stages, entity, [anchor], f.coordinate_frame_id, response, evidence)
             ready.append(entity["id"])
         except PlatformError as exc:
             errors.append({"entityId":entity["id"],"code":exc.code})
@@ -1386,7 +1399,8 @@ def provider_snapshot_from_env() -> dict:
     if not path:
         return {}
     manifest = json.loads(Path(path).read_text())
-    allowed = {"provider","pins","estimatedCostUsd","releaseEvidence","paid","modalApp","modalClass","modalMethod","nativePoseEvidence","providerToOpenCV"}
+    allowed = {"provider","pins","estimatedCostUsd","releaseEvidence","paid","modalApp","modalClass","modalMethod","nativePoseEvidence","providerToOpenCV",
+               "modalFunction","modalFunctionId","modalVolume"}
     for stage,config in manifest.items():
         if stage not in {"discovery","geometry","depth","segmentation","generation"} or not isinstance(config,dict) or set(config)-allowed:
             raise PlatformError("invalid_provider_manifest",stage=stage)
@@ -1433,6 +1447,21 @@ def providers_from_manifest(snapshot: Mapping[str,Any], *, _research=False) -> d
                 if result.get("pins") != pins:
                     raise ProviderResponseError(_telemetry(result))
                 return _unpacked(result)
+        elif stage == "generation" and pins.get('model') == 'TRI-ML/RecGen' and _research:
+            from .recgen import RecGenRequest, adapt_output
+            def invoke(payload, *, config=config):
+                from .recgen_transport import invoke as transport
+                request = RecGenRequest.from_payload(payload)
+                result = transport(payload, config)
+                if not isinstance(result, dict):
+                    raise ProviderResponseError(_telemetry(result))
+                if result.get('providerError'):
+                    return result
+                try:
+                    return adapt_output(request, result)
+                except (PlatformError, ValueError, TypeError, KeyError):
+                    return {'providerError':{'code':'research_response_invalid'}, 'runtimeEvidence':result,
+                            'telemetry':result.get('telemetry', {}), 'providerRequestId':result.get('providerRequestId')}
         elif stage == "generation":
             if pins.get("model") != "facebook/sam-3d-objects":
                 raise PlatformError("generation_requires_sam3d")
@@ -1496,6 +1525,9 @@ def _validate_research_protocol(protocol):
 
 
 def _validate_research_runtime(protocol,pins):
+    if pins.get('model') == 'TRI-ML/RecGen':
+        from .recgen import validate_runtime
+        return validate_runtime(protocol, pins)
     runtime = (protocol.get("runtimeManifest") or {}).get("generation") or {}
     checkpoint = Path(str(runtime.get("checkpointConfig") or ""))
     allowed = {"pins","runtimeImage","distribution","meshSourceBuildSha256","checkpointConfig"}
@@ -1514,6 +1546,16 @@ def validate_research_manifest(protocol, provider_manifest):
     cost = config.get("estimatedCostUsd")
     if config.get("paid",True) is not True or type(cost) not in (int,float) or not np.isfinite(cost) or not 0 < cost <= protocol["callLimits"]["maxCostPerCallUsd"]:
         raise PlatformError("research_call_budget_invalid",409)
+    if config.get('pins', {}).get('model') == 'TRI-ML/RecGen':
+        _validate_research_runtime(protocol, config['pins'])
+        runtime = protocol['runtimeManifest']['generation']
+        if (any(not isinstance(config.get(k), str) or not config[k] for k in ('provider', 'modalApp', 'modalFunction', 'modalFunctionId', 'modalVolume'))
+                or config['modalFunctionId'] != runtime['modalFunctionId']):
+            raise PlatformError('research_runtime_unpinned', 409)
+        license_record = (config.get('releaseEvidence') or {}).get('license') or {}
+        if license_record.get('scope') != 'noncommercial_research':
+            raise PlatformError('research_source_audit_unverified', 409)
+        return
     if any(not isinstance(config.get(k),str) or not config[k] for k in ("provider","modalApp","modalClass","modalMethod")):
         raise PlatformError("research_runtime_unpinned",409)
     pins = config.get("pins",{})
@@ -1532,6 +1574,11 @@ def run_research_stage(repository,blobs,job,stage,payload,images,provider_manife
         raise PlatformError("admin_research_job_required",403)
     if protocol["baselineRevision"] != job["baseRevisionId"] or [i["sha256"] for i in images] != protocol["inputHashes"] or digest(_packed(payload)) != protocol["payloadSha256"] or (stage == "generation" and payload.get("entityId") != protocol["entityId"]):
         raise PlatformError("research_input_hash_mismatch",409)
+    if stage == 'generation' and provider_manifest['generation']['pins'].get('model') == 'TRI-ML/RecGen':
+        from .recgen import validate_frozen_source
+        validate_frozen_source(payload, protocol, repository.get_revision(job['baseRevisionId'])['document'])
+        if [(v['imageId'], v['imageSha256']) for v in payload['views']] != [(i['id'], i['sha256']) for i in images]:
+            raise PlatformError('research_input_hash_mismatch', 409)
     providers = providers_from_manifest(provider_manifest,_research=True)
     stages = _Stages(repository,blobs,job,providers)
     protocol_asset = stages.put({"protocol":protocol,"providerManifest":provider_manifest},{"kind":"frozen_research_protocol","scope":"research_only"})
@@ -1545,9 +1592,12 @@ def run_research_stage(repository,blobs,job,stage,payload,images,provider_manife
 def run_research_job(repository,blobs,job):
     """Load only the admin CLI's immutable envelope, never caller-supplied runtime config."""
     asset = repository.get_asset(job["inputs"]["validationAssetId"])
-    if asset["projectId"] != job["projectId"] or asset["sha256"] != job["inputs"].get("validationSha256") or asset.get("metadata",{}).get("kind") != "sam3d_validation_input":
+    if asset["projectId"] != job["projectId"] or asset["sha256"] != job["inputs"].get("validationSha256") or asset.get("metadata",{}).get("kind") not in ('sam3d_validation_input', 'recgen_validation_input'):
         raise PlatformError("research_input_hash_mismatch",409)
     frozen = json.loads(blobs.get(asset["storageKey"],asset["sha256"],asset["sizeBytes"]))
+    expected_kind = 'recgen_validation_input' if frozen.get('providerManifest', {}).get('generation', {}).get('pins', {}).get('model') == 'TRI-ML/RecGen' else 'sam3d_validation_input'
+    if asset['metadata']['kind'] != expected_kind:
+        raise PlatformError('research_input_hash_mismatch', 409)
     if frozen.get("schemaVersion") != 1 or frozen.get("authority",{}).get("source") != "database_admin" or any(frozen.get(k) != job[k] for k in ("projectId","branchId","baseRevisionId")):
         raise PlatformError("admin_research_job_required",403)
     source = repository.get_revision(job["baseRevisionId"])["document"]

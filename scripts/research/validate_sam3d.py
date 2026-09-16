@@ -122,7 +122,8 @@ def submit(prepared, repository, blobs):
     if provider.paid is not True or not 0 < provider.estimated_cost_usd <= protocol["callLimits"]["maxCostPerCallUsd"]:
         raise PlatformError("research_call_budget_invalid", 409)
     pid, branch_id, base_id = (frozen[k] for k in ("projectId", "branchId", "baseRevisionId"))
-    job_id = str(uuid5(NAMESPACE_URL, "sam3d-validation:" + pid + ":" + protocol["id"]))
+    model_namespace = 'recgen' if provider.pins.get('model') == 'TRI-ML/RecGen' else 'sam3d'
+    job_id = str(uuid5(NAMESPACE_URL, model_namespace + "-validation:" + pid + ":" + protocol["id"]))
     with repository._connect() as connection:
         connection.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (job_id,))
         authority, source = admin_context(repository, connection, pid, branch_id, base_id)
@@ -141,8 +142,8 @@ def submit(prepared, repository, blobs):
                 raise PlatformError("research_input_hash_mismatch", 409)
             blobs.get(asset["storage_key"], ref["sha256"], asset["size_bytes"])
         metadata = blobs.put(canonical(frozen), "application/json")
-        metadata.update(id=str(uuid5(NAMESPACE_URL, "sam3d-validation-input:" + pid + ":" + prepared["sha256"])),
-                        metadata={"kind": "sam3d_validation_input", "scope": "research_only"})
+        metadata.update(id=str(uuid5(NAMESPACE_URL, model_namespace + "-validation-input:" + pid + ":" + prepared["sha256"])),
+                        metadata={"kind": model_namespace + "_validation_input", "scope": "research_only"})
         asset = repository._register_asset(connection, pid, metadata)
         inputs = {"validationAssetId": str(asset["id"]), "validationSha256": metadata["sha256"]}
         config = {"researchProtocolSha256": digest(protocol), "providerManifest": frozen["providerManifest"], "submittedBy": authority}
