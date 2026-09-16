@@ -465,7 +465,7 @@ async function checkCadModes(scene, label) {
     assert.equal(cad.props.selectedId, uiSelection.entityId, "CAD selection remains shared");
     assert.equal(spatialHost().length, 1);
     if (mode === "model") {
-      const models = scene.entities.filter(entity => !entity.sourceContext && entityGeometryForLayer(entity, { layer: "model", frameId: cad.props.geometryOptions.frameId, showCandidates: true }));
+      const models = scene.entities.filter(entity => !entity.sourceContext && activeModel(entity) && entityGeometryForLayer(entity, { layer: "model", frameId: cad.props.geometryOptions.frameId, showCandidates: true }));
       assert.equal(nodes(tree).find(node => node.props["data-model-coverage"] !== undefined).props["data-model-coverage"], models.length, "Restoring CAD evidence never inflates model coverage");
       assert.ok(nodes(tree).some(node => node.children.includes("sceneModelScene")), "Source CAD does not change the model scene title");
     }
@@ -526,6 +526,22 @@ assert.equal(spatialHost()[0].props.modelPreview,undefined);assert.ok(nodes(tree
 assert.ok(!nodes(tree).some(node=>node.type==='img'&&node.props.src==='data:image/png;base64,late-source'));
 assert.equal(nodes(tree).find(node=>node.props['data-model-coverage']!==undefined).props['data-model-coverage'],unchangedCoverage,'Switching to evidence cannot increase model coverage');
 setRepresentation('observed_surface');assert.equal(spatialHost()[0].props.modelPreview.layer,'observed_surface','Reverse switching restores the explicit source request');
+const floorReferenceCad=()=>cadGeometry(planShapes(uiDocument,scenePlanOptions(uiDocument,'observed_surface',true,'photo')));
+const originalCad=floorReferenceCad();
+const sourceReference={...structuredClone(sourcePreviewEntity.representations.find(rep=>rep.kind==='observed_surface')),id:'floor-reference',assetId:'floor-reference-asset',sourceKind:'observed_reference_surface',planProjection:null};
+sourcePreviewEntity.geometryRole='floor';sourcePreviewEntity.representations.push(sourceReference);
+uiDocument.assets.push({id:'floor-reference-asset',sha256:'f'.repeat(64)});
+setRepresentation('model');
+const referenceCoverage=nodes(tree).find(node=>node.props['data-model-coverage']!==undefined);
+assert.equal(referenceCoverage.props['data-model-coverage'],unchangedCoverage,'An explicitly attached observed reference never increases model coverage');
+assert.equal(referenceCoverage.props['data-reference-surfaces'],1,'Reference surfaces have their own count');
+assert.equal(spatialHost()[0].props.modelPreview.layer,'model','The floor reference is inspectable without switching the model scene to source evidence');
+assert.ok(nodes(tree).some(node=>node.children.includes('observed_reference_surface')));
+assert.ok(nodes(tree).some(node=>node.children.includes('sceneSelectedSurface')));
+assert.equal(sourcePreviewEntity.activeModelRepresentationId,null,'Displaying a reference does not activate a generated model');
+assert.deepEqual(floorReferenceCad(),originalCad,'Attaching a reference never changes the observed CAD contours');
+uiImageId='photo-2';tree=renderWorkspace();assert.ok(spatialHost()[0].props.modelPreview,'The same native reference remains inspectable across source photographs');
+setRepresentation('observed_surface');assert.equal(spatialHost()[0].props.modelPreview,undefined,'Source mode retains its strict photograph ownership despite the reference attachment');
 console.log(
   "report scene: 68-record unified evidence inventory, observed extents/scale, no duplicate table, linked no-geometry selection, mobile navigation, photo projection, floor semantics and one WebGL passed",
 );

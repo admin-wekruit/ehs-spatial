@@ -126,6 +126,29 @@ const sourceLayers={...strict,modelOnly:false,observed_surface:true,generated_me
 assert.deepEqual(missing.representations.filter(rep=>representationPass(missing,rep,'frame',sourceLayers).visible).map(rep=>rep.id),['exact-surface'],'Main scene and capture choose the identical selected observation representation');
 assert.ok(representationPass(a,observed,'frame',sourceLayers).visible,'Selecting an observation does not hide unrelated objects in the same photograph');
 missing.representations.splice(1);delete missing.observationRefs;document.observations.splice(0);gpu.splice(-2);
+const floorObservation={id:'floor-observation',revision:2,imageId:'floor-photo'},floorReference={...observed,id:'floor-reference',assetId:'floor-asset',sourceKind:'observed_reference_surface',sourceRefs:[{observationId:'floor-observation',revision:2,imageId:'floor-photo'}]};
+const floor={id:'floor',geometryRole:'floor',observationRefs:['floor-observation'],representations:[floorReference]};
+document.observations.push(floorObservation);document.entities.push(floor);
+gpu.push({entityId:floor.id,representation:floorReference,mesh:{bounds:model.bounds,matrix:math.identity()}});
+scope.loadedRepresentations.add('floor/floor-reference');
+const referenceLayers={...strict,observations:document.observations};
+assert.equal(core.activeModel(floor),null,'A reference surface never becomes an active generated model');
+assert.equal(core.entityGeometryForLayer(floor,{layer:'model',frameId:'frame',imageId:'other-photo',observations:document.observations}).geometryKind,'observed');
+assert.equal(representationPass(floor,floorReference,'frame',referenceLayers).visible,true,'Explicit current references persist across photographs in their same native model scene');
+assert.equal(representationPass(floor,floorReference,'other-frame',referenceLayers).visible,false);
+assert.equal(representationPass(floor,floorReference,'frame',{...referenceLayers,modelOnly:false,observed_surface:true,imageId:'floor-photo'}).visible,false,'Derived scene references do not duplicate immutable source surfaces in evidence mode');
+for(const mode of ['free','front','side','top']){
+ assert.ok(scope.capture('floor',mode,'revision','frame',{layer:'model',imageId:'other-photo'}));
+ assert.deepEqual(shots.at(-1).representations,['floor-reference']);
+ assert.equal(shots.at(-1).axes,null,'A reference floor has no invented object axes');
+ for(const key of Object.keys(original))assert.equal(scope[key],original[key],'Reference capture restores the scene camera and layers');
+}
+const referenceSignature=JSON.stringify(core.modelFamilySignature(document,'floor'));
+floorReference.assetId='replacement-floor';assert.notEqual(JSON.stringify(core.modelFamilySignature(document,'floor')),referenceSignature);floorReference.assetId='floor-asset';
+floorObservation.revision=3;
+assert.equal(representationPass(floor,floorReference,'frame',referenceLayers).visible,false,'Stale observation-bound references cannot display in the model scene');
+assert.equal(scope.capture('floor','free','revision','frame',{layer:'model'}),null);
+document.observations.pop();document.entities.pop();gpu.pop();
 const assembly={id:'assembly',activeModelRepresentationId:null,currentModelTransform:{...transform,position:[100,0,0]},representations:[]};
 document.entities.push(assembly);a.parentEntityId=assembly.id;b.parentEntityId=assembly.id;
 assert.equal(core.editableTransform(assembly,document),assembly.currentModelTransform,'An empty-residual assembly retains a transform control for its family');

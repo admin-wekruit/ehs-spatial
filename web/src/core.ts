@@ -84,6 +84,15 @@ export function activeModel(entity: Entity) {
   return (entity.representations || []).find(rep => rep.id === entity.activeModelRepresentationId &&
     ["generated_mesh", "primitive"].includes(rep.kind)) || null;
 }
+/** Explicit scene reference, never a generated model or a substitute for one. */
+export function isCurrentReferenceSurface(entity: Entity, rep: Representation, observations: Observation[] = []) {
+  return !activeModel(entity) && rep.kind === "observed_surface" && rep.sourceKind === "observed_reference_surface" &&
+    (rep.sourceRefs || []).some(raw => {
+      const ref = jsonObject(raw);
+      return observations.some(observation => entity.observationRefs?.includes(observation.id) &&
+        ref?.observationId === observation.id && ref.revision === observation.revision && ref.imageId === observation.imageId);
+    });
+}
 export function isPartitionSource(entity: Entity, representationId: string) {
   return (entity.lineage || []).some(raw => {
     const event = jsonObject(raw);return event?.operation === "partition_model_parts" && event.sourceRepresentationId === representationId;
@@ -93,7 +102,9 @@ export function modelFamilySignature(document: SceneDocument, entityId: string) 
   return modelFamily(document, entityId).map(entity => {
     const rep = activeModel(entity);
     return [entity.id, entity.parentEntityId, entity.visible, entity.activeModelRepresentationId,
-      entity.currentModelTransform, rep, document.assets.find(asset => asset.id === rep?.assetId)];
+      entity.currentModelTransform, rep, document.assets.find(asset => asset.id === rep?.assetId),
+      (entity.representations || []).filter(rep => rep.sourceKind === "observed_reference_surface")
+        .map(rep => [rep, document.assets.find(asset => asset.id === rep.assetId)])];
   });
 }
 export function observationOwner(document: SceneDocument, observationId: string) {
@@ -522,7 +533,9 @@ export function representationAvailable(entity: Entity, rep: Representation, fra
 export function entityGeometryForLayer(entity: Entity, { layer, frameId, showCandidates = true, imageId, observationId, observations }: GeometryOptions) {
   if (entity.sourceContext || entity.visible === false) return null;
   const representations = (entity.representations || []).filter((rep) =>
-    representationAvailable(entity, rep, frameId, showCandidates) && representationInPhoto(entity, rep, imageId, observations, observationId) &&
+    representationAvailable(entity, rep, frameId, showCandidates) &&
+    (rep.sourceKind === "observed_reference_surface" ? layer === "model" && isCurrentReferenceSurface(entity, rep, observations)
+      : representationInPhoto(entity, rep, imageId, observations, observationId)) &&
     (rep.kind === "primitive" ? !!rep.primitive : !!rep.assetId));
   const identity: Transform = {coordinateFrameId: frameId, position: [0, 0, 0], quaternion: [0, 0, 0, 1], scale: [1, 1, 1]};
   function fromRepresentations(reps: Representation[], geometryKind: "model" | "observed" | "point_cloud") {
@@ -546,7 +559,8 @@ export function entityGeometryForLayer(entity: Entity, { layer, frameId, showCan
       geometryKind, representationIds: geometries.map((g) => g.rep.id)};
   }
   if (layer === "model") {
-    return fromRepresentations(representations.filter((r) => ["generated_mesh", "primitive"].includes(r.kind)), "model");
+    return fromRepresentations(representations.filter((r) => ["generated_mesh", "primitive"].includes(r.kind)), "model") ||
+      fromRepresentations(representations.filter((r) => isCurrentReferenceSurface(entity, r, observations)), "observed");
   }
   if (layer === "point_cloud") {
     const cloud = fromRepresentations(representations.filter((r) => r.kind === "point_cloud"), "point_cloud");

@@ -1,6 +1,6 @@
 import {add,scale,dot,cross,unit,identity,matmul,point,rotate,transformMatrix,sourceCamera,cameraMatrix,boundsCorners,projected,fitCamera,type Camera,type Vec,type Transform} from './native-math.ts';
 import {isReferenceSurface,modelFamily} from '../scene-semantics.ts';
-import {activeModel,modelFamilyGeometry,modelFamilyTransforms,entityGeometryForLayer,representationAvailable,representationInPhoto,cameraForImage,currentCameras,type GeometryLayer} from '../core.ts';
+import {activeModel,isCurrentReferenceSurface,modelFamilyGeometry,modelFamilyTransforms,entityGeometryForLayer,representationAvailable,representationInPhoto,cameraForImage,currentCameras,type GeometryLayer} from '../core.ts';
 import type {SceneDocument,RepresentationLoadState} from '../types';
 
 type Mesh={vertices:Float32Array;indices:Uint32Array;mode:number;matrix:ArrayLike<number>;texture?:Blob;material?:{baseColorFactor:number[];alphaMode:'OPAQUE'|'MASK'|'BLEND';alphaCutoff:number};bounds:{min:Vec;max:Vec}};
@@ -10,11 +10,13 @@ export type ViewerOptions={resolveAsset:(id:string)=>Promise<string|{url:string}
 export type SceneViewer=ReturnType<typeof mountSceneViewer>;
 
 export function representationPass(entity:any,representation:any,frameId:string|null,layers:any) {
+  const reference=!!entity&&layers.modelOnly&&isCurrentReferenceSurface(entity,representation,layers.observations);
   const available=!!entity&&(!layers.entityId||entity.id===layers.entityId)&&(!layers.entityIds||layers.entityIds.includes(entity.id))&&
-    (!layers.modelOnly||!entity.sourceContext&&['generated_mesh','primitive'].includes(representation.kind))&&
+    (representation.sourceKind!=='observed_reference_surface'||reference)&&
+    (!layers.modelOnly||!entity.sourceContext&&(['generated_mesh','primitive'].includes(representation.kind)||reference))&&
     (!layers.representationIds||layers.representationIds.includes(representation.id))&&
-    representationAvailable(entity,representation,frameId,!!layers.showCandidates)&&representationInPhoto(entity,representation,layers.imageId,layers.observations,entity.id===layers.observationEntityId?layers.observationId:undefined);
-  const visible=available&&layers[representation.kind]!==false;
+    representationAvailable(entity,representation,frameId,!!layers.showCandidates)&&(reference||representationInPhoto(entity,representation,layers.imageId,layers.observations,entity.id===layers.observationEntityId?layers.observationId:undefined));
+  const visible=available&&(reference||layers[representation.kind]!==false);
   const cloudOnly=layers.point_cloud!==false&&['observed_surface','generated_mesh','primitive'].every(kind=>layers[kind]===false);
   // Pick actual observed triangles in a cloud view, never invisible generated
   // geometry or a bounding-box proxy. Visible context may occlude, but has ID 0.
@@ -22,7 +24,7 @@ export function representationPass(entity:any,representation:any,frameId:string|
 }
 
 export function selectionGeometry(document:SceneDocument,entity:any,frameId:string|null,layers:any,preview?:Transform) {
-  if(!entity||entity.sourceContext||entity.visible===false||!frameId||isReferenceSurface(document,entity))return {corners:[] as Vec[],transform:undefined,axisSpace:'native',editable:false};
+  if(!entity||entity.sourceContext||entity.visible===false||!frameId||isReferenceSurface(document,entity)||(entity.representations||[]).some((rep:any)=>isCurrentReferenceSurface(entity,rep,document.observations)))return {corners:[] as Vec[],transform:undefined,axisSpace:'native',editable:false};
   const cloudOnly=layers.point_cloud!==false&&['observed_surface','generated_mesh','primitive'].every(kind=>layers[kind]===false);
   const layer:GeometryLayer=cloudOnly?'point_cloud':layers.generated_mesh!==false||layers.primitive!==false?'model':'observed_surface';
   const subject=preview?{...entity,currentModelTransform:preview}:entity;
@@ -183,8 +185,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
   function capturePreview(entityId:string,mode:'free'|'front'|'side'|'top',expectedRevisionId:string,expectedFrameId?:string,source:{layer:GeometryLayer;imageId?:string|null;observationId?:string|null}={layer:'model'}){
     if(disposed||revisionId!==expectedRevisionId||expectedFrameId!==undefined&&expectedFrameId!==frameId||gl!.isContextLost())return null;
     const modeled=source.layer==='model',subject=entity(entityId),family=modeled?modelFamily(doc,entityId):subject?[subject]:[];
-    const geometry=!modeled&&subject&&frameId?entityGeometryForLayer(subject,{...source,frameId,showCandidates:true,observations:doc.observations}):null;
-    const models=family.flatMap(subject=>{const reps=modeled?[activeModel(subject)]:(subject.representations||[]).filter((rep:any)=>rep.kind===source.layer&&geometry?.representationIds.includes(rep.id));return subject.visible!==false?reps.filter(Boolean).map((rep:any)=>({subject,rep})):[];});
+    const models=family.flatMap(subject=>{const geometry=frameId?entityGeometryForLayer(subject,{...source,frameId,showCandidates:true,observations:doc.observations}):null;const reps=(subject.representations||[]).filter((rep:any)=>(modeled||rep.kind===source.layer)&&geometry?.representationIds.includes(rep.id));return subject.visible!==false?reps.map((rep:any)=>({subject,rep})):[];});
     if(!models.length||family[0]?.visible===false||models.some(({subject,rep})=>!representationAvailable(subject,rep,frameId,true)||!loadedRepresentations.has(subject.id+'/'+rep.id)))return null;
     const saved={camera,layers,selection,radius,center,width:canvas.width,height:canvas.height,canvasStyle:canvas.style.cssText,photoStyle:photo.style.cssText};
     try{

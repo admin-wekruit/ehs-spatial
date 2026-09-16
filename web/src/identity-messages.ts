@@ -8,6 +8,7 @@ export const measurementLabelKeys: Record<string, string> = {
 
 export const identityMessages: Record<string, [string, string]> = {
   observed_depth_surface: ['照片观测生成的表面模型', 'Photo-derived surface mesh'],
+  observed_reference_surface: ['观测参考面（非完整实体模型）', 'Observed reference surface (not a complete object model)'],
   inferred_planar_surface_from_observed_depth: ['推定平面模型', 'Inferred planar model'],
   identityVisibleSurfaceOnly: ['仅覆盖来源照片中的可见表面，背面和遮挡区域未补全。', 'Covers only the visible surface in the source photograph; rear and occluded surfaces are not reconstructed.'],
   identityInferredPlaneOnly: ['由照片轮廓与估计深度推定可见平面；背面、遮挡区域和厚度未重建。', 'The visible plane is inferred from the photo outline and estimated depth; rear surfaces, occluded regions and thickness are not reconstructed.'],
