@@ -22,3 +22,11 @@ Acceptance: each result names the two objects or explicit region, describes the 
 - A region drawn through the public CAD UI returned 0.1538 native units squared, 8.1% of that specific rectangle; an empty region returned zero locally. Mouse and keyboard corner selection worked. Switching language preserved the result; changing objects cleared it. Phone width 390 px and the default desktop local viewport were checked.
 - Public 3D rotation changed camera orientation and retained the correctly projected measurement overlays. Browser error log was empty. Existing 26 displayable records / 24 independent models and CAD correspondence stayed unchanged.
 - Calculations run only after the user clicks. No publication rewrite, model inference, paid GPU call, history prefetch, or dataset-specific object mapping was added. Units remain native model units until a separately verified metric conversion is provided.
+
+
+## Single-panel ground inclination — 2026-09-16
+
+- Added `inclination` to the same shared measurement service and public endpoint. It fits the transformed board mesh against the coordinate frame ground normal. Horizontal = 0 degrees, vertical = 90 degrees; deviation from vertical is its complement. No second object is required.
+- The blue datum passes through the board center parallel to ground; it does not claim the physical floor is at that elevation. The yellow arc runs from a ground-parallel direction to the fitted panel plane. Missing, zero or non-finite ground normals return unavailable.
+- Regression checks cover 0/30/80/90 degrees, arbitrary/reversed ground normal, arc endpoints lying in their respective planes, invalid ground and an HTTP request without entity B. Geometry/API checks, frontend interaction/scheduling checks and production build passed.
+- Source `8ccd37b`; Pages `1671709`; successful Pages run `35145999196`; shared Modal backend redeployed. Public computer-use calculation on the center guard board returned 57.64 degrees to ground and 32.4 degrees from vertical, matching the backend (57.63866282807513). A mouse drag rotated the scene while preserving the projected orange board, blue datum, yellow arc and numeric label. The result remains an unverified model estimate; existing model-quality evidence is retained.
