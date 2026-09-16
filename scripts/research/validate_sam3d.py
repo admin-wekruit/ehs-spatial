@@ -1,8 +1,10 @@
-"""Prepare one immutable SAM3D research input, or submit it through the admin DB boundary.
+"""Prepare one immutable research input, or submit it through the admin DB boundary.
 
 Protocol input: id, purpose, projectId, branchId, baselineRevision, entityId,
 metricDefinitions, policyThresholds, split, callLimits (maxCalls=1,
 maxCostPerCallUsd, maxTotalCostUsd), and optional observationId/seed.
+An explicit geometry/depth stage instead selects owned capture imageIds and
+requires no prior entities, masks or geometry. Depth selects exactly one photo.
 Configuration and budget come from the existing platform runtime environment.
 --prepare performs reads only; --submit enqueues the prepared envelope for the
 ordinary worker. Neither command invokes a model or modifies a scene head.
@@ -15,7 +17,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from ehs_spatial.platform.contracts import PlatformError, canonical, digest
 from ehs_spatial.platform.reconstruction import (
-    _Stages, _capture, _load_geometry, _load_masks, _packed,
+    _Stages, _capture, _load_geometry, _load_masks, _packed, _research_stage, _research_capture_input,
     provider_snapshot_from_env, providers_from_manifest, validate_research_manifest,
 )
 from ehs_spatial.platform.research_authority import admin_context, check_budget, validate_prepared
@@ -23,10 +25,16 @@ from ehs_spatial.platform.research_authority import admin_context, check_budget,
 
 def prepare(protocol, repository, blobs, provider_manifest, runtime_manifest):
     allowed = {"id", "purpose", "projectId", "branchId", "baselineRevision", "entityId", "observationId",
-               "metricDefinitions", "policyThresholds", "split", "callLimits", "seed"}
-    required = allowed - {"observationId", "seed"}
+               "metricDefinitions", "policyThresholds", "split", "callLimits", "seed", "stage", "imageIds"}
+    required = allowed - {"observationId", "seed", "stage", "imageIds", "entityId"}
     if not isinstance(protocol, dict) or not required <= set(protocol) or set(protocol) - allowed:
         raise PlatformError("frozen_research_protocol_required", 409)
+    stage = protocol.get('stage', 'generation')
+    if stage not in ('generation', 'geometry', 'depth'):
+        raise PlatformError('research_stage_unsupported', 409)
+    if (stage == 'generation' and ('entityId' not in protocol or 'imageIds' in protocol)
+            or stage != 'generation' and any(k in protocol for k in ('entityId', 'observationId', 'seed'))):
+        raise PlatformError('frozen_research_protocol_required', 409)
     protocol = json.loads(canonical(protocol))
     project_id, branch_id, base_id = (protocol[k] for k in ("projectId", "branchId", "baselineRevision"))
     with repository._connect() as connection:
@@ -34,6 +42,22 @@ def prepare(protocol, repository, blobs, provider_manifest, runtime_manifest):
     base_sha = digest(source["document"])
     job = {"id": str(uuid5(NAMESPACE_URL, protocol["id"])), "kind": "validate_model", "projectId": project_id,
            "baseRevisionId": base_id, "inputs": {}, "config": {}}
+    if stage in ('geometry', 'depth'):
+        payload, images = _research_capture_input(repository, blobs, job, stage, protocol.get('imageIds'))
+        if stage not in provider_manifest or stage not in runtime_manifest:
+            raise PlatformError('provider_not_configured', 409, stage=stage)
+        manifest = {stage: provider_manifest[stage]}
+        protocol.update(imageIds=[i['id'] for i in images], inputHashes=[i['sha256'] for i in images],
+                        inputAssetHashes=sorted([{'assetId': i['assetId'], 'sha256': i['sha256']} for i in images], key=lambda r: r['assetId']),
+                        payloadSha256=digest(payload), providerManifestSha256=digest(manifest),
+                        runtimeManifest={stage: runtime_manifest[stage]})
+        validate_research_manifest(protocol, manifest)
+        providers_from_manifest(manifest, _research=True)[stage].validate(stage, research_protocol=protocol)
+        with repository._connect() as connection:
+            budget = check_budget(repository, connection, protocol)
+        return {'schemaVersion': 1, 'projectId': project_id, 'branchId': branch_id, 'baseRevisionId': base_id,
+                'baseDocumentSha256': base_sha, 'authority': authority, 'budgetAtPreparation': budget,
+                'protocol': protocol, 'providerManifest': manifest, 'payload': payload, 'images': images}
     _, document, images = _capture(repository, blobs, job)
     entity = next((e for e in document["entities"] if e["id"] == protocol["entityId"] and not e.get("sourceContext")), None)
     if entity is None:
@@ -91,14 +115,15 @@ def submit(prepared, repository, blobs):
         raise PlatformError("research_input_hash_mismatch", 409)
     protocol = frozen["protocol"]
     validate_research_manifest(protocol, frozen["providerManifest"])
+    stage = _research_stage(protocol, frozen['providerManifest'])
     if digest(frozen["payload"]) != protocol["payloadSha256"]:
         raise PlatformError("research_input_hash_mismatch", 409)
-    provider = providers_from_manifest(frozen["providerManifest"], _research=True)["generation"]
-    provider.validate("generation", research_protocol=protocol)
+    provider = providers_from_manifest(frozen["providerManifest"], _research=True)[stage]
+    provider.validate(stage, research_protocol=protocol)
     if provider.paid is not True or not 0 < provider.estimated_cost_usd <= protocol["callLimits"]["maxCostPerCallUsd"]:
         raise PlatformError("research_call_budget_invalid", 409)
     pid, branch_id, base_id = (frozen[k] for k in ("projectId", "branchId", "baseRevisionId"))
-    model_namespace = 'recgen' if provider.pins.get('model') == 'TRI-ML/RecGen' else 'sam3d'
+    model_namespace = ('recgen' if provider.pins.get('model') == 'TRI-ML/RecGen' else 'sam3d') if stage == 'generation' else stage
     job_id = str(uuid5(NAMESPACE_URL, model_namespace + "-validation:" + pid + ":" + protocol["id"]))
     with repository._connect() as connection:
         connection.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (job_id,))
@@ -113,7 +138,8 @@ def submit(prepared, repository, blobs):
         authority = validate_prepared(repository, connection, frozen, prepared['sha256'])
         metadata = blobs.put(canonical(frozen), "application/json")
         metadata.update(id=str(uuid5(NAMESPACE_URL, model_namespace + "-validation-input:" + pid + ":" + prepared["sha256"])),
-                        metadata={"kind": model_namespace + "_validation_input", "scope": "research_only"})
+                        metadata=({'kind': model_namespace + '_validation_input', 'scope': 'research_only'} if stage == 'generation'
+                                  else {'kind': 'stage_validation_input', 'stage': stage, 'scope': 'research_only'}))
         asset = repository._register_asset(connection, pid, metadata)
         inputs = {"validationAssetId": str(asset["id"]), "validationSha256": metadata["sha256"]}
         config = {"researchProtocolSha256": digest(protocol), "providerManifest": frozen["providerManifest"], "submittedBy": authority}

@@ -30,7 +30,7 @@ def check_budget(repository, connection, protocol):
 
 def validate_prepared(repository, connection, frozen, sha256):
     """Validate before a transaction enqueues; reserve_model_call remains the spending lock."""
-    from .reconstruction import _unpacked, _validate_research_inputs, providers_from_manifest
+    from .reconstruction import _unpacked, _validate_research_inputs, _research_stage, providers_from_manifest
     if (digest(frozen) != sha256 or frozen.get('schemaVersion') != 1 or
             frozen.get('authority', {}).get('source') != 'database_admin'):
         raise PlatformError('research_input_hash_mismatch', 409)
@@ -38,11 +38,12 @@ def validate_prepared(repository, connection, frozen, sha256):
     if digest(source['document']) != frozen.get('baseDocumentSha256'):
         raise PlatformError('research_input_hash_mismatch', 409)
     protocol = frozen['protocol']
+    stage = _research_stage(protocol, frozen['providerManifest'])
     job = {**{k:frozen[k] for k in ('projectId','branchId','baseRevisionId')},
-           'kind':'validate_model', 'config':{'researchProtocolSha256':digest(protocol)}}
-    _validate_research_inputs(job,'generation',_unpacked(frozen['payload']),frozen['images'],frozen['providerManifest'],protocol,source['document'])
-    provider = providers_from_manifest(frozen['providerManifest'], _research=True)['generation']
-    provider.validate('generation', research_protocol=protocol)
+           'kind':'validate_model', 'inputs': {}, 'config':{'researchProtocolSha256':digest(protocol)}}
+    _validate_research_inputs(job,stage,_unpacked(frozen['payload']),frozen['images'],frozen['providerManifest'],protocol,source['document'], repository=repository, blobs=repository.blobs)
+    provider = providers_from_manifest(frozen['providerManifest'], _research=True)[stage]
+    provider.validate(stage, research_protocol=protocol)
     if provider.paid is not True or not 0 < provider.estimated_cost_usd <= protocol['callLimits']['maxCostPerCallUsd']:
         raise PlatformError('research_call_budget_invalid', 409)
     check_budget(repository, connection, protocol)

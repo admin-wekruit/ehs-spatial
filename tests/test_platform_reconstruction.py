@@ -295,7 +295,7 @@ def test_frozen_provider_snapshot_not_mutable_deployment_and_research_does_not_p
     monkeypatch.setattr("ehs_spatial.platform.reconstruction.providers_from_manifest",lambda *a,**kw:{"discovery":candidate})
     image = repo.capture["images"][0]
     image = {**image,"sha256":repo.get_asset(image["assetId"])["sha256"]}
-    protocol = {"id":"heldout-fixture-only","purpose":"quality_validation","inputHashes":[image["sha256"]],"baselineRevision":repo.rid,
+    protocol = {"id":"heldout-fixture-only","stage":"discovery","purpose":"quality_validation","inputHashes":[image["sha256"]],"baselineRevision":repo.rid,
                 "metricDefinitions":{"retention":"discovered count"},"policyThresholds":{},"split":"heldout","entityId":"fixture",
                 "inputAssetHashes":[{"assetId":image["assetId"],"sha256":image["sha256"]}],"payloadSha256":digest({}),
                 "providerManifestSha256":digest(frozen),"callLimits":{"maxCalls":1,"maxCostPerCallUsd":.01,"maxTotalCostUsd":.01}}

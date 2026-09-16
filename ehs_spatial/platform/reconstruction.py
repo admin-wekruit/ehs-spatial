@@ -89,8 +89,8 @@ class ProviderSpec:
         if research_protocol is not None:
             _validate_research_protocol(research_protocol)
             purpose = research_protocol["purpose"]
-            if stage == "generation":
-                _validate_research_runtime(research_protocol,self.pins)
+            if stage in ("generation", "geometry", "depth"):
+                _validate_research_runtime(research_protocol,self.pins,stage)
         gates = ("license",) if purpose == "runtime_validation" else ("license","runtime") if purpose == "quality_validation" else ("license","quality","runtime")
         for gate in gates:
             record = evidence.get(gate,{})
@@ -1678,11 +1678,13 @@ def providers_from_manifest(snapshot: Mapping[str,Any], *, _research=False) -> d
                 raise PlatformError("segmentation_model_pin_mismatch")
             invoke = _sam_invoke
         elif stage in ("geometry","depth"):
-            def invoke(payload, *, stage=stage, config=config, pins=pins):
+            def invoke(payload, *, stage=stage, config=config, pins=pins, research=_research):
                 import modal
                 klass = modal.Cls.from_name(config["modalApp"],config["modalClass"])
-                result = getattr(klass(),config["modalMethod"]).remote(payload)
-                if result.get("pins") != pins:
+                expected = digest(payload['_researchProtocol']['runtimeManifest'][stage]) if research else None
+                options = {'expectedRuntimeManifestSha256': expected} if research else {}
+                result = getattr(klass(),config["modalMethod"]).remote(payload, **options)
+                if result.get("pins") != pins or (research and result.get('runtimeManifestSha256') != expected):
                     raise ProviderResponseError(_telemetry(result))
                 return _unpacked(result)
         elif stage == "generation" and pins.get('model') == 'TRI-ML/RecGen' and _research:
@@ -1743,16 +1745,25 @@ def providers_from_manifest(snapshot: Mapping[str,Any], *, _research=False) -> d
     return providers
 
 
+def _research_stage(protocol, provider_manifest):
+    # Frozen generation envelopes predate an explicit stage; their hashes stay unchanged.
+    stage = protocol.get('stage', 'generation')
+    if stage not in {'generation', 'geometry', 'depth', 'discovery', 'segmentation', 'model_review'} or set(provider_manifest) != {stage}:
+        raise PlatformError('research_stage_mismatch', 409)
+    return stage
+
+
 def _validate_research_protocol(protocol):
     required = {"id","purpose","inputHashes","baselineRevision","metricDefinitions","policyThresholds","split",
-                "entityId","inputAssetHashes","payloadSha256","providerManifestSha256","callLimits"}
+                "inputAssetHashes","payloadSha256","providerManifestSha256","callLimits"}
     if not isinstance(protocol,dict) or not required <= set(protocol):
         raise PlatformError("frozen_research_protocol_required",409)
     if "dispatchAttemptId" in protocol and (not isinstance(protocol["dispatchAttemptId"],str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}",protocol["dispatchAttemptId"])):
         raise PlatformError("invalid_research_dispatch_attempt",409)
     if protocol["purpose"] not in ("runtime_validation","quality_validation"):
         raise PlatformError("invalid_research_purpose",409)
-    if any(not isinstance(protocol[k],str) or not protocol[k] for k in ("id","baselineRevision","entityId","split")) or not isinstance(protocol["metricDefinitions"],dict) or not protocol["metricDefinitions"] or not isinstance(protocol["policyThresholds"],dict):
+    fields = ("id", "baselineRevision", "split") + (("entityId",) if protocol.get('stage', 'generation') == 'generation' else ())
+    if any(not isinstance(protocol.get(k),str) or not protocol[k] for k in fields) or not isinstance(protocol["metricDefinitions"],dict) or not protocol["metricDefinitions"] or not isinstance(protocol["policyThresholds"],dict):
         raise PlatformError("frozen_research_protocol_required",409)
     hashes = protocol["inputHashes"]
     refs = protocol["inputAssetHashes"]
@@ -1764,7 +1775,19 @@ def _validate_research_protocol(protocol):
         raise PlatformError("research_call_budget_invalid",409)
 
 
-def _validate_research_runtime(protocol,pins):
+def _validate_research_runtime(protocol,pins,stage='generation'):
+    if stage in ('geometry', 'depth'):
+        runtime = (protocol.get('runtimeManifest') or {}).get(stage) or {}
+        registry = bool(re.fullmatch(r'[^\s]+@sha256:[0-9a-f]{64}', str(runtime.get('runtimeImage', ''))))
+        modal_image = bool(re.fullmatch(r'im-[A-Za-z0-9]{22}', str(runtime.get('modalImageId', ''))))
+        if (set(protocol.get('runtimeManifest') or {}) != {stage}
+                or set(runtime) - {'pins', 'runtimeImage', 'modalImageId', 'distribution'}
+                or ('runtimeImage' in runtime) == ('modalImageId' in runtime)
+                or not (registry or modal_image) or runtime.get('pins') != pins
+                or runtime.get('distribution') != ('mapanything' if stage == 'geometry' else 'moge')
+                or any(not re.fullmatch(r'[0-9a-f]{40}', str(pins.get(k, ''))) for k in ('codeRevision', 'modelRevision'))):
+            raise PlatformError('research_runtime_unpinned', 409)
+        return
     if pins.get('model') == 'TRI-ML/RecGen':
         from .recgen import validate_runtime
         return validate_runtime(protocol, pins)
@@ -1780,12 +1803,17 @@ def validate_research_manifest(protocol, provider_manifest):
     _validate_research_protocol(protocol)
     if digest(provider_manifest) != protocol["providerManifestSha256"]:
         raise PlatformError("research_provider_hash_mismatch",409)
-    if "generation" not in provider_manifest:
-        return
-    config = provider_manifest["generation"]
+    stage = _research_stage(protocol, provider_manifest)
+    config = provider_manifest[stage]
     cost = config.get("estimatedCostUsd")
     if config.get("paid",True) is not True or type(cost) not in (int,float) or not np.isfinite(cost) or not 0 < cost <= protocol["callLimits"]["maxCostPerCallUsd"]:
         raise PlatformError("research_call_budget_invalid",409)
+    if stage != 'generation':
+        if stage in ('geometry', 'depth'):
+            if any(not isinstance(config.get(k), str) or not config[k] for k in ('provider', 'modalApp', 'modalClass', 'modalMethod')):
+                raise PlatformError('research_runtime_unpinned', 409)
+            _validate_research_runtime(protocol, config.get('pins', {}), stage)
+        return
     if config.get('pins', {}).get('model') == 'TRI-ML/RecGen':
         _validate_research_runtime(protocol, config['pins'])
         runtime = protocol['runtimeManifest']['generation']
@@ -1807,12 +1835,43 @@ def validate_research_manifest(protocol, provider_manifest):
     SAM3DMeshAdapter.for_research(None,pins,config.get("providerToOpenCV"),protocol)
 
 
-def _validate_research_inputs(job, stage, payload, images, provider_manifest, protocol, source):
+def _research_capture_input(repository, blobs, job, stage, image_ids=None):
+    """Freeze only bytes belonging to captured photos in this immutable source scene."""
+    _, source, captured = _capture(repository, blobs, job)
+    ids = [image['id'] for image in captured] if image_ids is None else image_ids
+    if (not isinstance(ids, list) or not ids or any(not isinstance(i, str) for i in ids)
+            or len(ids) != len(set(ids)) or not 1 <= len(ids) <= (4 if stage == 'geometry' else 1)):
+        raise PlatformError('research_capture_images_invalid', 409)
+    lookup = {image['id']: image for image in captured}
+    if not set(ids) <= set(lookup):
+        raise PlatformError('research_input_hash_mismatch', 409)
+    selected = [lookup[i] for i in ids]
+    source_assets = {asset['id']: asset for asset in source['assets']}
+    for image in selected:
+        asset = repository.get_asset(image['assetId'])
+        if asset.get('projectId') != job['projectId'] or source_assets[asset['id']]['sha256'] != asset['sha256']:
+            raise PlatformError('research_input_hash_mismatch', 409)
+    payload = {'images': [_image_payload(i) for i in selected]} if stage == 'geometry' else {'image': _image_payload(selected[0])}
+    images = [{k: image[k] for k in ('id', 'assetId', 'sha256', 'pixelMapping') if k in image} for image in selected]
+    return payload, images
+
+
+def _validate_research_inputs(job, stage, payload, images, provider_manifest, protocol, source, *, repository=None, blobs=None):
     validate_research_manifest(protocol,provider_manifest)
+    if stage != _research_stage(protocol, provider_manifest):
+        raise PlatformError('research_stage_mismatch', 409)
     if job.get("kind") != "validate_model" or job.get("config",{}).get("researchProtocolSha256") != digest(protocol):
         raise PlatformError("admin_research_job_required",403)
     if protocol["baselineRevision"] != job["baseRevisionId"] or [i["sha256"] for i in images] != protocol["inputHashes"] or digest(_packed(payload)) != protocol["payloadSha256"] or (stage == "generation" and payload.get("entityId") != protocol["entityId"]):
         raise PlatformError("research_input_hash_mismatch",409)
+    if stage in ('geometry', 'depth'):
+        if repository is None or blobs is None:
+            raise PlatformError('research_capture_source_required', 409)
+        expected, owned_images = _research_capture_input(repository, blobs, job, stage, [i['id'] for i in images])
+        refs = sorted([{'assetId': i['assetId'], 'sha256': i['sha256']} for i in owned_images], key=lambda r: r['assetId'])
+        if (payload != expected or images != owned_images or protocol['inputAssetHashes'] != refs
+                or protocol.get('imageIds') != [i['id'] for i in owned_images]):
+            raise PlatformError('research_input_hash_mismatch', 409)
     if stage == 'generation' and provider_manifest['generation']['pins'].get('model') == 'TRI-ML/RecGen':
         from .recgen import validate_frozen_source
         validate_frozen_source(payload, protocol, source)
@@ -1820,11 +1879,11 @@ def _validate_research_inputs(job, stage, payload, images, provider_manifest, pr
             raise PlatformError('research_input_hash_mismatch', 409)
 def run_research_stage(repository,blobs,job,stage,payload,images,provider_manifest,protocol):
     """Admin experiment entrypoint: artifacts only, using the ordinary charged-call ledger."""
-    _validate_research_inputs(job,stage,payload,images,provider_manifest,protocol,repository.get_revision(job['baseRevisionId'])['document'])
+    _validate_research_inputs(job,stage,payload,images,provider_manifest,protocol,repository.get_revision(job['baseRevisionId'])['document'], repository=repository, blobs=blobs)
     providers = providers_from_manifest(provider_manifest,_research=True)
     stages = _Stages(repository,blobs,job,providers)
     protocol_asset = stages.put({"protocol":protocol,"providerManifest":provider_manifest},{"kind":"frozen_research_protocol","scope":"research_only"})
-    if stage == "generation":
+    if stage in ("generation", "geometry", "depth"):
         payload = {**payload,"_researchProtocol":protocol}
     _,asset = stages.call(stage,images,payload,[_ref(protocol_asset)],research_protocol=protocol)
     return {"status":"succeeded","scope":"research_only","protocolAssetId":protocol_asset["id"],"outputAssetId":asset["id"],"stages":stages.records,
@@ -1834,11 +1893,12 @@ def run_research_stage(repository,blobs,job,stage,payload,images,provider_manife
 def load_research_input(repository,blobs,job):
     """Read and validate the same frozen envelope for research and candidate review."""
     asset = repository.get_asset(job["inputs"]["validationAssetId"])
-    if asset["projectId"] != job["projectId"] or asset["sha256"] != job["inputs"].get("validationSha256") or asset.get("metadata",{}).get("kind") not in ('sam3d_validation_input', 'recgen_validation_input'):
+    if asset["projectId"] != job["projectId"] or asset["sha256"] != job["inputs"].get("validationSha256") or asset.get("metadata",{}).get("kind") not in ('sam3d_validation_input', 'recgen_validation_input', 'stage_validation_input'):
         raise PlatformError("research_input_hash_mismatch",409)
     frozen = json.loads(blobs.get(asset["storageKey"],asset["sha256"],asset["sizeBytes"]))
-    expected_kind = 'recgen_validation_input' if frozen.get('providerManifest', {}).get('generation', {}).get('pins', {}).get('model') == 'TRI-ML/RecGen' else 'sam3d_validation_input'
-    if asset['metadata']['kind'] != expected_kind:
+    stage = _research_stage(frozen.get('protocol', {}), frozen.get('providerManifest', {}))
+    expected_kind = ('recgen_validation_input' if frozen['providerManifest']['generation'].get('pins', {}).get('model') == 'TRI-ML/RecGen' else 'sam3d_validation_input') if stage == 'generation' else 'stage_validation_input'
+    if asset['metadata']['kind'] != expected_kind or (stage != 'generation' and asset['metadata'].get('stage') != stage):
         raise PlatformError('research_input_hash_mismatch', 409)
     if frozen.get("schemaVersion") != 1 or frozen.get("authority",{}).get("source") != "database_admin" or any(frozen.get(k) != job[k] for k in ("projectId","branchId","baseRevisionId")):
         raise PlatformError("admin_research_job_required",403)
@@ -1851,10 +1911,11 @@ def load_research_input(repository,blobs,job):
         if ref["assetId"] not in scene_assets or asset["sha256"] != ref["sha256"] or scene_assets[ref["assetId"]]["sha256"] != ref["sha256"]:
             raise PlatformError("research_input_hash_mismatch",409)
         blobs.get(asset["storageKey"],asset["sha256"],asset["sizeBytes"])
-    _validate_research_inputs(job,'generation',_unpacked(frozen['payload']),frozen['images'],frozen['providerManifest'],frozen['protocol'],source)
+    _validate_research_inputs(job,stage,_unpacked(frozen['payload']),frozen['images'],frozen['providerManifest'],frozen['protocol'],source, repository=repository, blobs=blobs)
     return frozen
 
 
 def run_research_job(repository,blobs,job):
     frozen = load_research_input(repository,blobs,job)
-    return run_research_stage(repository,blobs,job,"generation",_unpacked(frozen["payload"]),frozen["images"],frozen["providerManifest"],frozen["protocol"])
+    stage = _research_stage(frozen['protocol'], frozen['providerManifest'])
+    return run_research_stage(repository,blobs,job,stage,_unpacked(frozen["payload"]),frozen["images"],frozen["providerManifest"],frozen["protocol"])
