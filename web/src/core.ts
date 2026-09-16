@@ -519,34 +519,19 @@ export type GeometryOptions = { layer: GeometryLayer; frameId: string; showCandi
 
 export function representationInPhoto(entity: Entity, rep: Representation, imageId?: string | null, observations: Observation[] = [], observationId?: string | null) {
   if (!["observed_surface", "point_cloud"].includes(rep.kind)) return true;
-  if (observationId) {
-    const observation = observations.find(o => o.id === observationId && o.imageId === imageId && entity.observationRefs?.includes(o.id));
-    if (!observation) return false;
-    return (rep.sourceRefs || []).some(raw => {
-      const ref = jsonObject(raw);
-      if (ref?.observationId) return ref.observationId === observation.id &&
-        (ref.revision === undefined || ref.revision === observation.revision) && (!ref.imageId || ref.imageId === imageId);
-      return typeof ref?.assetId === "string" && typeof ref.sourceRecordId === "string" &&
-        (observation.sourceRefs || []).some(raw => { const source = jsonObject(raw); return source?.assetId === ref.assetId && source?.sourceRecordId === ref.sourceRecordId; });
-    });
-  }
-  const explicitImages = (rep.sourceRefs || []).flatMap(ref => { const value = jsonObject(ref); return typeof value?.imageId === "string" ? [value.imageId] : []; });
-  if (explicitImages.length) return !!imageId && explicitImages.includes(imageId);
-  if (entity.sourceContext) return true;
-  const sourceIds = (rep.sourceRefs || []).flatMap(ref => {
-    const value = jsonObject(ref); return typeof value?.observationId === "string" ? [value.observationId] : [];
-  });
-  const photoObservations = observations.filter(observation => entity.observationRefs?.includes(observation.id) && observation.imageId === imageId);
-  if (sourceIds.length) return !!imageId && photoObservations.some(observation => sourceIds.includes(observation.id));
-  // Imported evidence references a record within a frozen asset. Both fields
-  // identify the source; a shared label, asset alone or record ID alone cannot.
-  return !!imageId && (rep.sourceRefs || []).some(raw => {
-    const source = jsonObject(raw);
-    return typeof source?.assetId === "string" && typeof source.sourceRecordId === "string" &&
-      photoObservations.some(observation => (observation.sourceRefs || []).some(rawRef => {
-        const ref = jsonObject(rawRef);
-        return ref?.assetId === source.assetId && ref?.sourceRecordId === source.sourceRecordId;
-      }));
+  const sources = (rep.sourceRefs || []).map(jsonObject);
+  const photoObservations = observations.filter(observation => entity.observationRefs?.includes(observation.id) &&
+    observation.imageId === imageId && (!observationId || observation.id === observationId));
+  if (entity.sourceContext && !observationId && !sources.some(ref => ref?.imageId || ref?.observationId)) return true;
+  return !!imageId && sources.some(ref => {
+    if (!ref || ref.imageId && ref.imageId !== imageId) return false;
+    if (ref.observationId) return photoObservations.some(observation => ref.observationId === observation.id &&
+      (ref.revision === undefined || ref.revision === observation.revision));
+    // Imported evidence is identified by both the frozen asset and its record.
+    if (ref.assetId !== undefined || ref.sourceRecordId !== undefined)
+      return typeof ref.assetId === "string" && typeof ref.sourceRecordId === "string" && photoObservations.some(observation =>
+        (observation.sourceRefs || []).some(raw => { const source = jsonObject(raw); return source?.assetId === ref.assetId && source?.sourceRecordId === ref.sourceRecordId; }));
+    return ref.imageId === imageId && photoObservations.length > 0;
   });
 }
 

@@ -12,8 +12,9 @@ import {
   planShapes,
   previewOperations,
   quaternionEuler,
+  representationInPhoto,
 } from "../src/core.ts";
-import type { Entity, SceneDocument } from "../src/types.ts";
+import type { Entity, Representation, SceneDocument } from "../src/types.ts";
 const transform = {
   coordinateFrameId: "f",
   position: [0, 0, 0],
@@ -73,6 +74,25 @@ assert.equal(
   2,
   "enclosing entity remains selectable",
 );
+const observed: Representation = {id: "observed", kind: "observed_surface", coordinateFrameId: "f",
+  transform: {coordinateFrameId: "f", position: [0, 0, 0], quaternion: [0, 0, 0, 1], scale: [1, 1, 1]}, placementState: "confirmed"};
+for (const sourceRefs of [
+  [{imageId: "photo", observationId: "fence", revision: 1}],
+  [{imageId: "photo", observationId: "button", revision: 0}],
+  [{observationId: "button", revision: 0}],
+]) {
+  for (const observationId of [undefined, "button"])
+    assert.equal(representationInPhoto(doc.entities[1], {...observed, sourceRefs}, "photo", doc.observations, observationId), false,
+      "A matching photo never bypasses observation ownership or the recorded revision");
+}
+assert.equal(representationInPhoto(doc.entities[1], {...observed, sourceRefs: [{imageId: "photo"}]}, "photo", doc.observations), true,
+  "An explicit image-only source still requires a current owned observation in that photo");
+assert.equal(representationInPhoto({...doc.entities[1], observationRefs: []}, {...observed, sourceRefs: [{imageId: "photo"}]}, "photo", doc.observations), false);
+const frozenObservations = doc.observations.map(o => ({...o, sourceRefs: [{assetId: "frozen", sourceRecordId: o.id}]}));
+for (const sourceRefs of [[{imageId: "photo", assetId: "wrong", sourceRecordId: "button"}], [{imageId: "photo", assetId: "frozen", sourceRecordId: "fence"}]])
+  assert.equal(representationInPhoto(doc.entities[1], {...observed, sourceRefs}, "photo", frozenObservations), false,
+    "An image annotation cannot override the frozen asset and record pair");
+assert.equal(representationInPhoto(doc.entities[1], {...observed, sourceRefs: [{assetId: "frozen", sourceRecordId: "button"}]}, "photo", frozenObservations), true);
 assert.deepEqual(
   originalPixel(
     110,
