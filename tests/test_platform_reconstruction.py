@@ -339,7 +339,7 @@ def test_generation_uses_reviewed_observation_and_rejects_invalid_batch_before_c
 def test_frozen_provider_snapshot_not_mutable_deployment_preserves_release_gates(tmp_path,monkeypatch):
     from ehs_spatial.providers.gemini import GEMINI_MODEL_ID
     spec = provider("discovery",lambda _: {},GEMINI_MODEL_ID)
-    pins = {**spec.pins, 'adapter':'gemini-bounded-discovery-v1'}
+    pins = {**spec.pins, 'adapter':'gemini-bounded-discovery-v2'}
     config = {"provider":"gemini","pins":pins,"estimatedCostUsd":.10,"releaseEvidence":{**spec.release_evidence, 'pins':pins}}
     path = tmp_path/"providers.json"
     path.write_text(json.dumps({"discovery":config}))

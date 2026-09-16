@@ -2031,7 +2031,7 @@ def providers_from_manifest(snapshot: Mapping[str,Any], *, _research=False) -> d
             from ..providers.gemini import GEMINI_MODEL_ID
             if pins.get("model") != GEMINI_MODEL_ID:
                 raise PlatformError("discovery_model_pin_mismatch")
-            adapter = 'gemini-bounded-discovery-v1' if stage == 'discovery' else 'gemini-bounded-model-review-v1'
+            adapter = 'gemini-bounded-discovery-v2' if stage == 'discovery' else 'gemini-bounded-model-review-v1'
             if config.get('provider') != 'gemini' or pins.get('adapter') != adapter:
                 raise PlatformError('gemini_adapter_pin_mismatch', 409, stage=stage)
             # The pinned request admits <=16,384 input and <=8,192 output/thinking
@@ -2184,7 +2184,7 @@ def _validate_research_runtime(protocol,pins,stage='generation'):
                     'geminiAdapterSourceSha256', 'googleGenaiVersion'} or
                 runtime.get('pins') != pins or runtime.get('provider') != 'gemini' or
                 runtime.get('endpoint') != gemini.GEMINI_MODEL_ID or pins.get('model') != gemini.GEMINI_MODEL_ID or
-                pins.get('adapter') != 'gemini-bounded-discovery-v1' or
+                pins.get('adapter') != 'gemini-bounded-discovery-v2' or
                 runtime.get('googleGenaiVersion') != '2.11.0' or version('google-genai') != '2.11.0' or
                 runtime.get('adapterSourceSha256') != hashlib.sha256(Path(__file__).read_bytes()).hexdigest() or
                 runtime.get('geminiAdapterSourceSha256') != hashlib.sha256(Path(gemini.__file__).read_bytes()).hexdigest()):
