@@ -15,12 +15,40 @@ from test_platform_reconstruction import provider
 from test_platform_research_inputs import source
 
 
+@pytest.mark.parametrize('status', ['succeeded', 'incomplete', 'failed', 'outcome_unknown'])
+def test_final_result_preserves_ancestor_analysis_even_when_all_models_are_accepted(status):
+    from ehs_spatial.platform.reconstruction_pipeline import _result
+    analysis = {'jobId': 'analysis-job', 'baseRevisionId': 'capture-revision', 'result': {
+        'status': status, 'checkpointAssetId': 'analysis-checkpoint',
+        'stages': [{'stage': 'discovery', 'assetId': 'source-evidence'}],
+        'errors': [] if status == 'succeeded' else [{'stage': 'depth', 'code': 'depth_source_mismatch', 'imageId': 'photo-a'}]}}
+    before = deepcopy(analysis)
+    result = _result('attach', [{'entityId': 'object-from-photo-b', 'status': 'accepted'}], [],
+                     capture_analysis=analysis)
+    assert result['status'] == ('succeeded' if status == 'succeeded' else 'incomplete')
+    assert result['captureAnalysis'] == before and analysis == before
+    assert result['errors'] == before['result']['errors']
+    result['captureAnalysis']['result']['errors'].append({'code': 'mutation_of_return_value'})
+    assert analysis == before
+
+
 @pytest.fixture
 def pipeline(source):
     repo, blobs, job, entity, manifest, *_ = source
     job.update(kind='reconstruct_scene', inputs={'phase': 'prepare', 'entityIds': [entity['id']], 'processed': []})
     job['config']['providerManifest'] = manifest
     return repo, blobs, job, entity
+
+
+@pytest.mark.parametrize('context', [{}, [], {'result': {'status': 'succeeded'}},
+    {'jobId': 'ancestor', 'baseRevisionId': 'base', 'result': {'status': 'invented'}}])
+def test_malformed_ancestor_analysis_is_rejected_before_preparation(pipeline, context):
+    repo, blobs, job, _ = pipeline
+    job['config']['captureAnalysis'] = context
+    before = deepcopy((repo.document, repo.assets, repo.calls))
+    with pytest.raises(PlatformError, match='capture_analysis_context_invalid'):
+        run_reconstruction_pipeline(repo, blobs, job)
+    assert (repo.document, repo.assets, repo.calls) == before
 
 
 def researched(pipeline, monkeypatch):

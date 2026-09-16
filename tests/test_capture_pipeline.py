@@ -8,7 +8,7 @@ from ehs_spatial.platform.contracts import PlatformError, validate_document
 from ehs_spatial.platform.postgres import PostgresRepository
 from ehs_spatial.platform.reconstruction import _Stages, run_capture_pipeline
 from ehs_spatial.platform.storage import LocalBlobStore
-from test_platform_reconstruction import Repo, bundle, geometry_response, provider
+from test_platform_reconstruction import Repo, bundle, geometry_response, inventory_review_response, provider
 
 
 def providers_for_new_capture(repo, *, verdict='pass'):
@@ -18,7 +18,7 @@ def providers_for_new_capture(repo, *, verdict='pass'):
     providers['generation'] = provider('generation', lambda payload: {
         'vertices':np.array([[-1.2,-1.2,2.],[-.2,-1.2,2.],[-.2,1.2,2.],[-1.2,1.2,2.]]),
         'faces':np.array([[0,1,2],[0,2,3]]), 'proposedObjectToNative':np.eye(4)})
-    providers['model_review'] = provider('model_review', lambda payload:{'review':{
+    providers['model_review'] = provider('model_review', lambda payload: inventory_review_response(payload) if payload.get('mode') == 'inventory' else {'review':{
         'status':verdict, 'reason':'synthetic contract fixture',
         'observationIds':[view['observationId'] for view in payload['views']],
         'visibleShapeIssues':[] if verdict == 'pass' else ['visible structure differs'],
@@ -69,7 +69,8 @@ def test_empty_discovery_cannot_hide_unavailable_capture_geometry(tmp_path, reta
     def unexpected_model_call(_):
         pytest.fail('Empty discovery must not invent a model target')
     providers['generation'] = provider('generation', unexpected_model_call)
-    providers['model_review'] = provider('model_review', unexpected_model_call)
+    providers['model_review'] = provider('model_review', lambda payload: inventory_review_response(payload)
+        if payload.get('mode') == 'inventory' else unexpected_model_call(payload))
 
     document, result = run_capture_pipeline(repo, blobs, repo.job, providers)
     assert result['status'] == result['analysis']['status'] == 'incomplete'
@@ -155,7 +156,8 @@ def test_complete_capture_requires_actual_model_and_reference_cad(tmp_path, refe
 def test_request_cannot_supply_research_authority_or_provider_manifest():
     repo = PostgresRepository('unused')
     config = repo._job_config({'seed':7,'researchPreparation':{'authority':'forged'},
-        'providerManifest':{'generation':'forged'},'researchProtocolSha256':'0'*64})
+        'providerManifest':{'generation':'forged'},'researchProtocolSha256':'0'*64,
+        'captureAnalysis':{'result':{'status':'succeeded'}}})
     assert config == {'seed':7,'providerManifest':{}}
     server = {'researchPreparation':{'authority':{'source':'database_admin'}}}
     repo.execution_config = server
@@ -167,7 +169,7 @@ def test_research_capture_defers_preparation_until_analysis_revision_is_persiste
     repo = Repo(blobs)
     providers = providers_for_new_capture(repo)
     providers.pop('generation')
-    providers.pop('model_review')
+    providers['model_review'] = provider('model_review', inventory_review_response)
     job = {**repo.job, 'config':{
         'providerManifest':{'generation':{'pins':{'model':'TRI-ML/RecGen'}}},
         'researchPreparation':{'authority':{'source':'database_admin'}}}}
@@ -178,6 +180,8 @@ def test_research_capture_defers_preparation_until_analysis_revision_is_persiste
     assert successor['inputs']['phase'] == 'prepare'
     assert successor['inputs']['entityIds'] == [e['id'] for e in document['entities'] if not e.get('sourceContext')]
     assert 'baseRevisionId' not in successor  # finish_job supplies the actual new revision.
+    assert successor['config']['captureAnalysis'] == {'jobId':job['id'], 'baseRevisionId':job['baseRevisionId'],
+        'result':result['analysis']}
     assert all(event[1] != 'generation' for event in repo.events if event[0] == 'reserve')
 
 
@@ -194,7 +198,7 @@ def test_unknown_analysis_outcome_stops_later_paid_stages_and_model_continuation
     assert document['entities'] and result['stoppedReason'] == 'provider_outcome_unknown'
     assert '_continuation' not in result
     started = [event[1] for event in repo.events if event[0] == 'reserve']
-    assert started == ['discovery','discovery','geometry','depth']
+    assert started == ['discovery','model_review','discovery','model_review','geometry','depth']
 
 
 @pytest.mark.parametrize('stage', ['generation', 'model_review'])
@@ -205,13 +209,16 @@ def test_unknown_model_outcome_stops_remaining_objects(tmp_path, monkeypatch, st
     providers = providers_for_new_capture(repo)
     providers['discovery'] = bundle(repo)['discovery']  # Multiple independent targets.
     if failure == 'timeout':
-        def timeout(_):
+        def timeout(payload):
+            if payload.get('mode') == 'inventory':
+                return inventory_review_response(payload)
             raise TimeoutError('uncertain result')
         providers[stage] = provider(stage, timeout)
     else:
         original = _Stages.put
         def interrupted(self, value, metadata, *args):
-            if metadata.get('kind') == 'stage_cache' and metadata.get('stage') == stage:
+            if (metadata.get('kind') == 'stage_cache' and metadata.get('stage') == stage
+                    and not value.get('output', {}).get('review', {}).get('inventorySha256')):
                 raise OSError('response not durably stored')
             return original(self, value, metadata, *args)
         monkeypatch.setattr(_Stages, 'put', interrupted)
@@ -220,7 +227,7 @@ def test_unknown_model_outcome_stops_remaining_objects(tmp_path, monkeypatch, st
     expected = 'provider_outcome_unknown' if failure == 'timeout' else 'response_persistence_failed'
     assert result['generation']['stoppedReason'] == expected
     assert sum(event == ('reserve', 'generation') for event in repo.events) == 1
-    assert sum(event == ('reserve', 'model_review') for event in repo.events) == (stage == 'model_review')
+    assert sum(event == ('reserve', 'model_review') for event in repo.events) == len(repo.capture['images']) + (stage == 'model_review')
     assert len([e for e in document['entities'] if not e.get('sourceContext')]) == 4
 
 

@@ -19,7 +19,7 @@ from ehs_spatial.platform.storage import LocalBlobStore
 from ehs_spatial.providers.gemini import GEMINI_MODEL_ID
 from panoptes_worker.__main__ import run_job
 from test_platform_backend import edit_body, identity, project, repo
-from test_platform_reconstruction import provider
+from test_platform_reconstruction import depth_response, inventory_review_response, provider
 from test_recgen_research import payload, research_configuration
 
 
@@ -33,7 +33,7 @@ def chain(repo, tmp_path, monkeypatch):
                                                            'split', 'callLimits', 'runtimeManifest')}
     preparation.update(authority={'source': 'database_admin', 'databaseRole': 'test-only-prior'},
                        budgetAtPreparation={'configuredBudgetUsd': '1', 'spentOrReservedUsd': '0'})
-    review_pins = {'model': GEMINI_MODEL_ID, 'modelRevision': 'synthetic-test', 'adapter': 'gemini-bounded-model-review-v1'}
+    review_pins = {'model': GEMINI_MODEL_ID, 'modelRevision': 'synthetic-test', 'adapter': 'gemini-bounded-model-review-v2'}
     manifest['model_review'] = {'provider': 'gemini', 'pins': review_pins, 'estimatedCostUsd': .10,
         'paid': True, 'releaseEvidence': {'pins': review_pins,
             **{gate: {'status': 'passed', 'artifactSha256': 'f' * 64} for gate in ('license', 'quality', 'runtime')}}}
@@ -71,8 +71,9 @@ def chain(repo, tmp_path, monkeypatch):
                            'inputToCanonical': np.eye(3)})
         return {'frames': frames}
     analysis_providers = {'discovery': provider('discovery', discovery), 'geometry': provider('geometry', geometry),
-        'depth': provider('depth', lambda request: {'imageSha256': request['image']['sha256']}, 'Ruicheng/moge-3-vitl'),
-        'segmentation': provider('segmentation', segmentation)}
+        'depth': provider('depth', lambda request: depth_response(request['image']), 'Ruicheng/moge-3-vitl'),
+        'segmentation': provider('segmentation', segmentation),
+        'model_review': provider('model_review', inventory_review_response)}
     generated, reviewed = [], []
     def generation_transport(value, _config, *, is_current):
         assert is_current()
@@ -91,6 +92,8 @@ def chain(repo, tmp_path, monkeypatch):
                 'officialPosedVertices': transform_points(vertices, pose), 'pins': RECGEN_PINS,
                 'telemetry': {'actualCostUsd': 0}, 'providerRequestId': 'synthetic-generation'}
     def review_transport(value):
+        if value.get('mode') == 'inventory':
+            return inventory_review_response(value)
         reviewed.append(deepcopy(value))
         return {'review': {'status': 'pass', 'reason': 'Synthetic visible plane matches both source cameras.',
             'observationIds': [view['observationId'] for view in value['views']],
@@ -188,6 +191,73 @@ def test_capture_worker_chain_uses_persisted_baselines_and_preserves_each_model(
     assert chain.repo.get_revision(first_attachment['resultRevisionId'])['document'] == first_document
 
 
+def test_partial_multiphoto_analysis_survives_every_successor_and_final_model_acceptance(chain):
+    failed_image = chain.capture['capture']['images'][0]['id']
+    def depth(request):
+        response = depth_response(request['image'])
+        if request['image']['imageId'] == failed_image:
+            response['imageId'] = 'different-source-photo'
+        return response
+    chain.providers['depth'] = provider('depth', depth, 'Ruicheng/moge-3-vitl')
+    analyzed = dispatch(chain, chain.capture['job']['id'], analysis=True)
+    analysis = analyzed['result']['analysis']
+    assert analysis['status'] == 'incomplete'
+    assert len(analysis['errors']) == 1
+    assert analysis['errors'][0]['stage'] == 'depth' and analysis['errors'][0]['code'] == 'depth_source_grid_mismatch'
+    context = {'jobId': analyzed['id'], 'baseRevisionId': analyzed['baseRevisionId'], 'result': analysis}
+    original = deepcopy(chain.repo.get_revision(analyzed['resultRevisionId'])['document'])
+    finished = analyzed
+    count = 0
+    while finished['result'].get('continuationJobId'):
+        child = successor(chain, finished)
+        assert child['config']['captureAnalysis'] == context
+        finished = dispatch(chain, child['id'])
+        if child['kind'] == 'reconstruct_scene':
+            assert finished['result']['captureAnalysis'] == context
+            assert finished['status'] == 'incomplete'
+        count += 1
+        assert count <= 6  # Two independent objects, each prepare/generate/attach.
+    assert count == 6 and len(chain.generated) == len(chain.reviewed) == 2
+    assert all(row['status'] == 'accepted' for row in finished['result']['processed'])
+    assert finished['result']['captureAnalysis']['result'] == analysis
+    final = chain.repo.get_revision(finished['resultRevisionId'])['document']
+    assert final['observations'] == original['observations']
+    assert {e['id'] for e in final['entities']} == {e['id'] for e in original['entities']}
+    assert {a['id'] for a in original['assets']} <= {a['id'] for a in final['assets']}
+    assert all(e['activeModelRepresentationId'] for e in final['entities'] if not e.get('sourceContext'))
+    assert chain.repo.get_revision(analyzed['resultRevisionId'])['document'] == original
+    calls_before = len(model_calls(chain))
+    assert dispatch(chain, finished['id'])['result'] == finished['result']
+    assert len(model_calls(chain)) == calls_before
+
+
+def test_last_generation_failure_retains_ancestor_analysis_in_terminal_result(chain, monkeypatch):
+    discovery = chain.providers['discovery'].invoke
+    chain.providers['discovery'] = provider('discovery', lambda request: {'items': discovery(request)['items'][:1]})
+    failed_image = chain.capture['capture']['images'][0]['id']
+    def depth(request):
+        response = depth_response(request['image'])
+        if request['image']['imageId'] == failed_image:
+            response['imageId'] = 'different-source-photo'
+        return response
+    chain.providers['depth'] = provider('depth', depth, 'Ruicheng/moge-3-vitl')
+    analyzed, research = start_research(chain)
+    assert analyzed['result']['analysis']['status'] == 'incomplete'
+    assert len(research['config']['pipeline']['entityIds']) == 1
+    monkeypatch.setattr(sys.modules['ehs_spatial.platform.recgen_transport'], 'invoke',
+        lambda *_args, **_kwargs: {'providerError': {'code': 'known_failure'}, 'providerRequestId': 'synthetic-terminal-failure'})
+    failed = dispatch(chain, research['id'])
+    assert failed['status'] == 'incomplete' and failed['result']['generationStatus'] == 'failed'
+    assert failed['result']['captureAnalysis'] == research['config']['captureAnalysis']
+    assert failed['result']['errors'] == analyzed['result']['analysis']['errors']
+    assert failed['result']['error']['code'] == 'provider_failed'
+    assert not failed['result'].get('continuationJobId') and not failed['result']['remainingEntityIds']
+    assert chain.repo.get_project(research['projectId'])['revision']['id'] == analyzed['resultRevisionId']
+    calls_before = len(model_calls(chain))
+    assert dispatch(chain, failed['id'])['result'] == failed['result']
+    assert len(model_calls(chain)) == calls_before and not chain.generated and not chain.reviewed
+
+
 def test_user_edit_before_attachment_keeps_user_head_and_stops_next_child(chain):
     analyzed, research = start_research(chain)
     generated = dispatch(chain, research['id'])
@@ -277,6 +347,7 @@ def test_known_generation_failure_is_recorded_and_remaining_entity_continues_onc
     assert next_prepare['kind'] == 'reconstruct_scene' and next_prepare['inputs']['phase'] == 'prepare'
     assert failed_entity not in next_prepare['inputs']['entityIds']
     assert next_prepare['inputs']['processed'] == [failure_row]
+    assert next_prepare['config']['captureAnalysis'] == research['config']['captureAnalysis']
     prepared = dispatch(chain, next_prepare['id'])
     next_research = successor(chain, prepared)
     generated = dispatch(chain, next_research['id'])

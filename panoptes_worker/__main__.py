@@ -135,11 +135,13 @@ def run_job(repository, blobs, job_id, providers=None):
             if (status == 'failed' and pipeline.get('phase') == 'attach'
                     and error.get('code') in ('provider_failed','provider_response_invalid')
                     and error.get('params',{}).get('stage') == 'generation'):
-                from ehs_spatial.platform.reconstruction_pipeline import _next
+                from ehs_spatial.platform.reconstruction_pipeline import _next, _result
                 processed = [*pipeline['processed'], {'entityId':pipeline['entityId'], 'status':'failed',
                     'reason':error['code'], 'researchJobId':job['id']}]
                 remaining = pipeline['entityIds'][1:]
-                result.update(generationStatus='failed', processed=processed, remainingEntityIds=remaining)
+                result = _result(pipeline['phase'], processed, remaining,
+                    capture_analysis=job['config'].get('captureAnalysis'),
+                    **{**result, 'generationStatus':'failed', 'status':'incomplete'})
                 status, continuation = 'incomplete', _next(remaining, processed)
         options = {'continuation':continuation} if continuation is not None else {}
         try:

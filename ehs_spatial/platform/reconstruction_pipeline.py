@@ -18,12 +18,17 @@ def _next(entity_ids, processed):
             'entityIds': entity_ids, 'processed': processed}, 'config': {}} if entity_ids else None
 
 
-def _result(phase, processed, remaining, *, stages=(), document=None, correspondence=None, **extra):
+def _result(phase, processed, remaining, *, stages=(), document=None, correspondence=None, capture_analysis=None, **extra):
     result = {'status': 'incomplete' if remaining or any(row['status'] not in ('accepted', 'retained') for row in processed) else 'succeeded',
               'pipelineVersion': 'revision-research-attachment-v1', 'phase': phase,
               'processed': processed, 'remainingEntityIds': remaining, 'stages': list(stages),
               'newModelCalls': sum(row.get('newModelCalls', 0) for row in stages),
               'placementConfirmedEntityIds': [], 'scope': 'research_only', **extra}
+    if capture_analysis is not None:
+        result['captureAnalysis'] = deepcopy(capture_analysis)
+        result['errors'] = deepcopy(capture_analysis['result'].get('errors', [])) + result.get('errors', [])
+        if result['status'] == 'succeeded' and capture_analysis['result']['status'] != 'succeeded':
+            result['status'] = 'incomplete'
     if document is not None:
         audit = result['correspondence'] = correspondence or audit_correspondence(document)
         cad_pending = [row['entityId'] for row in audit['rows'] if row['cad']['status'] != 'validated']
@@ -87,6 +92,15 @@ def run_reconstruction_pipeline(repository, blobs, job, providers=None):
     research child. This function never submits or repeats a generation call.
     """
     inputs = job.get('inputs', {})
+    # finish_job inherits this server-owned config through every successor,
+    # including failed-generation skips that never enter the attachment path.
+    capture_analysis = job.get('config', {}).get('captureAnalysis')
+    if capture_analysis is not None and (not isinstance(capture_analysis, dict)
+            or any(not isinstance(capture_analysis.get(key), str) or not capture_analysis[key]
+                   for key in ('jobId', 'baseRevisionId'))
+            or not isinstance(capture_analysis.get('result'), dict)
+            or capture_analysis['result'].get('status') not in ('succeeded', 'incomplete', 'failed', 'outcome_unknown')):
+        raise PlatformError('capture_analysis_context_invalid', 422)
     phase, pending, processed = inputs.get('phase'), inputs.get('entityIds'), deepcopy(inputs.get('processed', []))
     if (job.get('kind') != 'reconstruct_scene' or phase not in ('prepare', 'attach')
             or not isinstance(pending, list) or any(not isinstance(identity, str) or not identity for identity in pending)
@@ -121,7 +135,7 @@ def run_reconstruction_pipeline(repository, blobs, job, providers=None):
                         {**job, 'kind':'review_models', 'inputs':{'entityIds':[entity_id]}}, providers)
                     processed.extend(review['reviews'])
                     remaining = pending[index + 1:]
-                    result = _result(phase, processed, remaining, document=document,
+                    result = _result(phase, processed, remaining, document=document, capture_analysis=capture_analysis,
                         correspondence=review['correspondence'], stages=review['stages'], review=review)
                     if review.get('stoppedReason'):
                         result['stoppedReason'] = review['stoppedReason']
@@ -137,10 +151,10 @@ def run_reconstruction_pipeline(repository, blobs, job, providers=None):
                         'entityId': entity_id, 'preparationJobId': job['id']}
             continuation = {'kind': 'validate_model', 'inputs': {'validationAssetId': asset['id'], 'validationSha256': asset['sha256']},
                             'config': {'researchProtocolSha256': digest(prepared['validation']['protocol']), 'pipeline': pipeline}}
-            return None, _result(phase, processed, remaining, validationAssetId=asset['id'],
+            return None, _result(phase, processed, remaining, capture_analysis=capture_analysis, validationAssetId=asset['id'],
                                  validationSha256=asset['sha256']), continuation
         audit = validate_cad_correspondence(source, _Stages(repository, blobs, job, {}))
-        return None, _result(phase, processed, [], document=source, correspondence=audit), None
+        return None, _result(phase, processed, [], document=source, correspondence=audit, capture_analysis=capture_analysis), None
 
     entity_id = inputs.get('entityId')
     research = repository.get_job(inputs['researchJobId'])
@@ -152,7 +166,7 @@ def run_reconstruction_pipeline(repository, blobs, job, providers=None):
         raise PlatformError('research_attachment_context_mismatch', 409)
     if research.get('status') not in ('succeeded', 'incomplete'):
         status = 'outcome_unknown' if research.get('status') == 'outcome_unknown' else 'incomplete'
-        return None, _result(phase, processed, pending, status=status,
+        return None, _result(phase, processed, pending, status=status, capture_analysis=capture_analysis,
                             error={'code': 'research_not_completed', 'researchStatus': research.get('status')}), None
     from .reconstruction import load_research_input
     frozen = load_research_input(repository, blobs, research)
@@ -193,7 +207,7 @@ def run_reconstruction_pipeline(repository, blobs, job, providers=None):
                               'researchJobId': research['id'], 'candidateRef': _ref(evidence)})
         unknown |= code in UNKNOWN_OUTCOME_CODES
     remaining = pending[1:]
-    result = _result(phase, processed, remaining, stages=stages.records, document=document,
+    result = _result(phase, processed, remaining, stages=stages.records, document=document, capture_analysis=capture_analysis,
                      correspondence=validate_cad_correspondence(document, stages) if not remaining else None,
                      researchJobId=research['id'], candidateRef=_ref(evidence))
     if unknown:

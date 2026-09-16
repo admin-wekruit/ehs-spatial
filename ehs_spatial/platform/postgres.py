@@ -65,7 +65,7 @@ class PostgresRepository:
         client = {key:value for key,value in client_config.items()
                   if key not in {'providerManifest','researchPreparation','researchProtocolSha256',
                                  'pipeline','pipelineStage','pipelineStep','pipelineRootJobId','parentJobId',
-                                 'continuation','continuationJobId','continuationStopped','submittedBy'}}
+                                 'continuation','continuationJobId','continuationStopped','submittedBy','captureAnalysis'}}
         return {**deepcopy(client), **deepcopy(self.execution_config)}
 
     @contextmanager

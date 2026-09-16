@@ -1916,7 +1916,9 @@ def run_capture_pipeline(repository, blobs, job, providers):
             'errors':analysis.get('errors',[])+review['errors'],'pipelineStatus':'modeling_pending'}
         if job.get('config',{}).get('researchPreparation'):
             result['_continuation'] = {'kind':'reconstruct_scene','inputs':{
-                'phase':'prepare','entityIds':targets,'processed':[]},'config':{}}
+                'phase':'prepare','entityIds':targets,'processed':[]},'config':{
+                'captureAnalysis': {'jobId':job['id'], 'baseRevisionId':job['baseRevisionId'],
+                                    'result':deepcopy(analysis)}}}
         else:
             result.update(pipelineStatus='needs_configuration')
             result['errors'] = result['errors'] + [{'code':'frozen_research_protocol_required'}]
