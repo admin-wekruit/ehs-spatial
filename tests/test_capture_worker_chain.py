@@ -5,6 +5,7 @@ import io
 import json
 import sys
 from types import SimpleNamespace
+from uuid import UUID
 
 import numpy as np
 from PIL import Image
@@ -245,3 +246,132 @@ def test_fresh_budget_rejection_preserves_analysis_and_preparation_record(chain)
     assert dispatch(chain, pending['id'])['result'] == stopped['result']
     with chain.repo._connect() as connection:
         assert connection.execute("SELECT count(*) AS n FROM jobs WHERE kind='validate_model'").fetchone()['n'] == 0
+
+
+@pytest.mark.parametrize('failure', ['provider_failed', 'provider_response_invalid'])
+def test_known_generation_failure_is_recorded_and_remaining_entity_continues_once(chain, monkeypatch, failure):
+    analyzed, research = start_research(chain)
+    transport = sys.modules['ehs_spatial.platform.recgen_transport']
+    original = transport.invoke
+    attempted = []
+    def fail_first(value, config, *, is_current):
+        attempted.append(value['entityId'])
+        if len(attempted) == 1:
+            return [] if failure == 'provider_response_invalid' else {
+                'providerError': {'code': 'synthetic_known_failure'},
+                'telemetry': {'actualCostUsd': 0}, 'providerRequestId': 'synthetic-failed-generation'}
+        return original(value, config, is_current=is_current)
+    monkeypatch.setattr(transport, 'invoke', fail_first)
+    failed = dispatch(chain, research['id'])
+    failed_entity = research['config']['pipeline']['entityId']
+    assert failed['status'] == 'incomplete', failed
+    assert failed['result']['generationStatus'] == 'failed'
+    assert failed['result']['error']['code'] == failure
+    failure_row = {'entityId': failed_entity, 'status': 'failed', 'reason': failure, 'researchJobId': research['id']}
+    assert failed['result']['processed'] == [failure_row]
+    assert failed['resultRevisionId'] is None and not chain.reviewed
+    assert chain.repo.get_project(research['projectId'])['revision']['id'] == analyzed['resultRevisionId']
+    assert dispatch(chain, research['id'])['result'] == failed['result']
+    assert attempted == [failed_entity]
+    next_prepare = successor(chain, failed)
+    assert next_prepare['kind'] == 'reconstruct_scene' and next_prepare['inputs']['phase'] == 'prepare'
+    assert failed_entity not in next_prepare['inputs']['entityIds']
+    assert next_prepare['inputs']['processed'] == [failure_row]
+    prepared = dispatch(chain, next_prepare['id'])
+    next_research = successor(chain, prepared)
+    generated = dispatch(chain, next_research['id'])
+    assert generated['status'] == 'succeeded', generated
+    attached = dispatch(chain, successor(chain, generated)['id'])
+    assert attached['headAdvanced'] and attached['result']['processed'][0] == failure_row
+    assert attached['result']['processed'][1]['status'] == 'accepted'
+    assert not attached['result'].get('continuationJobId') and attached['result']['remainingEntityIds'] == []
+    final = chain.repo.get_project(research['projectId'])['revision']['document']
+    assert next(e for e in final['entities'] if e['id'] == failed_entity)['activeModelRepresentationId'] is None
+    assert len(attempted) == len(set(attempted)) == 2 and len(chain.reviewed) == 1
+    rows = [call for call in model_calls(chain) if call['job_id'] == UUID(research['id'])]
+    assert len(rows) == 1 and rows[0]['status'] == 'failed'
+
+
+@pytest.mark.parametrize('failure', ['provider_outcome_unknown', 'response_persistence_failed'])
+def test_unknown_generation_outcome_stops_remaining_targets_without_replay(chain, monkeypatch, failure):
+    _, research = start_research(chain)
+    transport = sys.modules['ehs_spatial.platform.recgen_transport']
+    original = transport.invoke
+    attempted = []
+    def unknown(value, _config, *, is_current):
+        attempted.append(value['entityId'])
+        if failure == 'provider_outcome_unknown':
+            raise TimeoutError('Synthetic unresolved transport; never a known generation rejection.')
+        return original(value, _config, is_current=is_current)
+    monkeypatch.setattr(transport, 'invoke', unknown)
+    if failure == 'response_persistence_failed':
+        fail_response_storage(chain, monkeypatch, 'generation')
+    stopped = dispatch(chain, research['id'])
+    assert stopped['status'] == 'outcome_unknown'
+    assert stopped['result']['error']['code'] == failure
+    assert not stopped['result'].get('continuationJobId') and not chain.reviewed
+    assert dispatch(chain, research['id'])['result'] == stopped['result']
+    assert attempted == [research['config']['pipeline']['entityId']]
+    rows = [call for call in model_calls(chain) if call['job_id'] == UUID(research['id'])]
+    assert len(rows) == 1 and rows[0]['status'] == 'outcome_unknown'
+    assert not chain.repo.pending_jobs()
+
+
+def fail_response_storage(chain, monkeypatch, stage):
+    original = chain.blobs.put
+    def put(data, media_type):
+        if media_type == 'application/json':
+            value = json.loads(data)
+            if isinstance(value, dict) and value.get('stage') == stage and 'cacheKey' in value:
+                raise OSError('Synthetic storage failure after the provider response arrived.')
+        return original(data, media_type)
+    monkeypatch.setattr(chain.blobs, 'put', put)
+
+
+def test_unknown_review_persistence_keeps_candidate_and_stops_next_generation(chain, monkeypatch):
+    _, research = start_research(chain)
+    generated = dispatch(chain, research['id'])
+    attach = successor(chain, generated)
+    fail_response_storage(chain, monkeypatch, 'model_review')
+    stopped = dispatch(chain, attach['id'])
+    assert stopped['headAdvanced'] and stopped['status'] == 'incomplete', stopped
+    assert stopped['result']['stoppedReason'] == 'provider_outcome_unknown'
+    assert not stopped['result'].get('continuationJobId')
+    document = chain.repo.get_revision(stopped['resultRevisionId'])['document']
+    entity = next(e for e in document['entities'] if e['id'] == research['config']['pipeline']['entityId'])
+    candidate = next(r for r in entity['representations'] if r['kind'] == 'generated_mesh')
+    assert candidate['qualityEvidence']['shapeReview']['reason'] == 'response_persistence_failed'
+    assert entity['activeModelRepresentationId'] is None
+    assert len(chain.generated) == len(chain.reviewed) == 1
+    assert dispatch(chain, attach['id'])['result'] == stopped['result']
+    assert len(chain.reviewed) == 1 and not chain.repo.pending_jobs()
+    rows = [call for call in model_calls(chain) if call['job_id'] == UUID(attach['id'])]
+    assert len(rows) == 1 and rows[0]['status'] == 'outcome_unknown'
+
+
+def test_user_edit_during_analysis_prevents_same_job_generation_reservation(chain):
+    # Seed the existing capture as an ordinary full pipeline instead of RecGen.
+    with chain.repo._connect() as connection:
+        connection.execute("UPDATE jobs SET config='{}'::jsonb WHERE id=%s", (chain.capture['job']['id'],))
+    original = chain.providers['segmentation'].invoke
+    masks, edits, generated = [], [], []
+    def segment_and_edit(request):
+        masks.append(request)
+        if len(masks) == 4:
+            edits.append(chain.repo.commit_edits(chain.scene['project']['id'], chain.cap, {
+                'requestId': identity(), 'branchId': chain.scene['branch']['id'],
+                'baseRevisionId': chain.capture['revision']['id'], 'operations': [], 'label': 'User edit during analysis'}))
+        return original(request)
+    def generation(request):
+        generated.append(request)
+        return {'providerError': {'code': 'should_not_be_called'}}
+    chain.providers['segmentation'] = provider('segmentation', segment_and_edit)
+    chain.providers['generation'] = provider('generation', generation, paid=True)
+    stopped = dispatch(chain, chain.capture['job']['id'], analysis=True)
+    assert len(masks) == 4 and len(edits) == 1
+    assert not generated and not chain.reviewed
+    assert stopped['result']['generation']['errors']
+    assert {error['code'] for error in stopped['result']['generation']['errors']} == {'pipeline_base_revision_changed'}
+    assert all(call['provider'] != 'generation' for call in model_calls(chain))
+    assert not stopped['headAdvanced'] and stopped['resultRevisionId']
+    assert chain.repo.get_project(chain.scene['project']['id'])['revision']['id'] == edits[0]['revision']['id']

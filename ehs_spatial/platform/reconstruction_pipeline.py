@@ -5,7 +5,7 @@ from .contracts import PlatformError, digest
 from .correspondence import audit_correspondence
 from .recgen import RECGEN_PINS, validate_frozen_source
 from .reconstruction import (
-    _Stages, _assess_generation, _capture, _establish_cad_references,
+    UNKNOWN_OUTCOME_CODES, _Stages, _assess_generation, _capture, _establish_cad_references,
     _generation_targets, _include, _load_geometry, _load_masks, _packed, _ref,
     _record_generated_representation, _refresh_plan_projections, _unpacked, providers_from_manifest,
 )
@@ -164,7 +164,7 @@ def run_reconstruction_pipeline(repository, blobs, job, providers=None):
                                                evidence, activate=accepted, quality=quality)
         processed.append({'entityId': entity_id, 'status': quality['status'], 'representationId': rep['id'],
                           'qualityEvidenceRef': quality['evidenceRef'], 'researchJobId': research['id']})
-        unknown = 'outcome_unknown' in str(quality.get('shapeReview', {}).get('reason', ''))
+        unknown = quality.get('shapeReview', {}).get('reason') in UNKNOWN_OUTCOME_CODES
         _establish_cad_references(document, stages)
         _refresh_plan_projections(document, stages, entity_ids={entity_id})
     except (PlatformError, ValueError, TypeError, KeyError) as error:
@@ -174,7 +174,7 @@ def run_reconstruction_pipeline(repository, blobs, job, providers=None):
         else:
             processed.append({'entityId': entity_id, 'status': 'needs_information', 'reason': code,
                               'researchJobId': research['id'], 'candidateRef': _ref(evidence)})
-        unknown |= 'outcome_unknown' in code
+        unknown |= code in UNKNOWN_OUTCOME_CODES
     remaining = pending[1:]
     result = _result(phase, processed, remaining, stages=stages.records, document=document,
                      researchJobId=research['id'], candidateRef=_ref(evidence))

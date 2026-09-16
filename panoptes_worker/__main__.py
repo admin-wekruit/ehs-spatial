@@ -83,7 +83,7 @@ def run_job(repository, blobs, job_id, providers=None):
             return repository.get_job(job_id)
         raise
     started = time.monotonic()
-    document, result = None, {}
+    document, result, continuation = None, {}, None
     with lease(repository, job):
         try:
             if job['kind'] in {'export_json', 'export_glb', 'export_blender'}:
@@ -94,16 +94,30 @@ def run_job(repository, blobs, job_id, providers=None):
             elif job['kind'] == 'validate_model':
                 from ehs_spatial.platform.reconstruction import run_research_job
                 result = run_research_job(repository, blobs, job)
+                pipeline = job.get('config',{}).get('pipeline')
+                if (pipeline and pipeline.get('phase') == 'attach' and result.get('outputAssetId') and
+                        result.get('status') in ('succeeded','incomplete')):
+                    continuation = {'kind':'reconstruct_scene','inputs':{
+                        'phase':'attach','entityIds':pipeline['entityIds'],'processed':pipeline['processed'],
+                        'entityId':pipeline['entityId'],'researchJobId':job['id']},'config':{}}
+            elif job['kind'] == 'reconstruct_scene':
+                from ehs_spatial.platform.reconstruction_pipeline import run_reconstruction_pipeline
+                document, result, continuation = run_reconstruction_pipeline(repository, blobs, job, providers)
             elif job['kind'] in {'analyze_capture', 'generate_object', 'generate_scene', 'segment_object'}:
                 from ehs_spatial.platform import reconstruction
-                providers = reconstruction.providers_from_manifest(job["config"].get("providerManifest", {})) if providers is None else providers
-                name = {'analyze_capture': 'run_analysis', 'generate_object': 'run_generation', 'generate_scene': 'run_generation', 'segment_object': 'run_segmentation'}[job['kind']]
+                manifest = job['config'].get('providerManifest',{})
+                if job['kind'] == 'analyze_capture' and manifest.get('generation',{}).get('pins',{}).get('model') == 'TRI-ML/RecGen':
+                    manifest = {key:value for key,value in manifest.items() if key != 'generation'}
+                providers = reconstruction.providers_from_manifest(manifest) if providers is None else providers
+                name = {'analyze_capture': 'run_capture_pipeline', 'generate_object': 'run_generation', 'generate_scene': 'run_generation', 'segment_object': 'run_segmentation'}[job['kind']]
                 document, result = getattr(reconstruction, name)(repository, blobs, job, providers)
+                continuation = result.pop('_continuation', None)
             else:
                 raise PlatformError('unsupported_job_kind', 422, kind=job['kind'])
             status = result.get('status', 'succeeded')
         except PlatformError as exc:
-            status = 'outcome_unknown' if 'outcome_unknown' in exc.code else 'failed'
+            from ehs_spatial.platform.reconstruction import UNKNOWN_OUTCOME_CODES
+            status = 'outcome_unknown' if exc.code in UNKNOWN_OUTCOME_CODES else 'failed'
             result = {'error': {'code': exc.code, 'params': exc.params}}
         except Exception as exc:
             # Only the exception class enters the public record: provider text
@@ -114,7 +128,26 @@ def run_job(repository, blobs, job_id, providers=None):
         if job['kind'] == 'validate_model':
             document = None
             result.update(scope='research_only', productReleaseStatus='not_changed', sceneRevision=None)
-        return repository.finish_job(job['id'], job['attemptToken'], status, document=document, result=result)
+            pipeline, error = job.get('config',{}).get('pipeline') or {}, result.get('error') or {}
+            if (status == 'failed' and pipeline.get('phase') == 'attach'
+                    and error.get('code') in ('provider_failed','provider_response_invalid')
+                    and error.get('params',{}).get('stage') == 'generation'):
+                from ehs_spatial.platform.reconstruction_pipeline import _next
+                processed = [*pipeline['processed'], {'entityId':pipeline['entityId'], 'status':'failed',
+                    'reason':error['code'], 'researchJobId':job['id']}]
+                remaining = pipeline['entityIds'][1:]
+                result.update(generationStatus='failed', processed=processed, remainingEntityIds=remaining)
+                status, continuation = 'incomplete', _next(remaining, processed)
+        options = {'continuation':continuation} if continuation is not None else {}
+        try:
+            return repository.finish_job(job['id'], job['attemptToken'], status, document=document, result=result, **options)
+        except PlatformError as exc:
+            if continuation is None:
+                raise
+            # The outbox transaction rolled back; keep the completed analysis
+            # and exact stop reason without dispatching an unvalidated child.
+            result['continuationStopped'] = exc.code
+            return repository.finish_job(job['id'], job['attemptToken'], 'incomplete', document=document, result=result)
 
 
 def main():

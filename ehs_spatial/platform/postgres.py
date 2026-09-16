@@ -493,7 +493,7 @@ class PostgresRepository:
                 raise PlatformError("model_call_already_reserved", 409, modelCallId=str(existing["id"]), status=existing["status"])
             if job["status"] != "running" or job["cancel_requested"] or str(job["attempt_token"]) != str(attempt_token) or not job["lease_valid"]:
                 raise PlatformError("stale_job_attempt", 409)
-            if job['kind'] == 'reconstruct_scene' or (job['kind'] == 'validate_model' and isinstance(job['config'].get('pipeline'), dict)):
+            if job['kind'] in ('analyze_capture', 'reconstruct_scene') or (job['kind'] == 'validate_model' and isinstance(job['config'].get('pipeline'), dict)):
                 branch = self._branch(connection, job['project_id'], job['branch_id'])
                 if branch['head_revision_id'] != job['base_revision_id']:
                     raise PlatformError('pipeline_base_revision_changed', 409)
