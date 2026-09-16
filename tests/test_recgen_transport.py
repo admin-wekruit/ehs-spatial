@@ -153,3 +153,27 @@ def test_invalid_explicit_dispatch_attempt_rejected_before_provider(attempt):
     with pytest.raises(PlatformError) as caught:
         _validate_research_protocol(protocol)
     assert caught.value.code == 'invalid_research_dispatch_attempt'
+
+
+@pytest.mark.parametrize('reported', [True, None, 'malformed-settings'])
+def test_provider_cannot_silently_ignore_explicit_no_erosion(tmp_path, monkeypatch, reported):
+    from ehs_spatial.platform.contracts import digest
+    from ehs_spatial.platform.recgen import RECGEN_PINS, RecGenRequest
+    value = payload()
+    value['maskErosionEnabled'] = False
+    data = RecGenRequest.from_payload(value).to_npz()
+    identity = digest({'payloadSha256':hashlib.sha256(data).hexdigest(), 'entityId':'entity',
+        'seed':42, 'pins':RECGEN_PINS, 'runtime':None, 'functionId':'fu-test'})
+    folder = tmp_path / identity
+    folder.mkdir()
+    record = json.dumps({'status':'complete','input_contract_version':'recgen-input-v2',
+        'inference_settings':None if reported == 'malformed-settings' else {'mask_erosion_enabled':reported}}).encode()
+    (folder / 'dispatch.json').write_text(json.dumps({'status':'received','providerRequestId':'fc-test','wallSeconds':2}))
+    (folder / 'manifest.json').write_text(json.dumps({'volume_path':f'jobs/{identity[:32]}/result',
+        'files':{'output.json':hashlib.sha256(record).hexdigest()}}))
+    (folder / 'output.json').write_bytes(record)
+    monkeypatch.setenv('PANOPTES_RECGEN_JOURNAL', str(tmp_path))
+    monkeypatch.setitem(sys.modules,'modal',SimpleNamespace(Volume=SimpleNamespace(from_name=lambda *_:object())))
+    result = invoke(value, {'modalVolume':'private','modalFunctionId':'fu-test'})
+    assert result['providerError']['code'] == 'recgen_preprocessing_mismatch'
+    assert result['providerRequestId'] == 'fc-test'

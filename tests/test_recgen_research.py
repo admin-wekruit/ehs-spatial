@@ -45,6 +45,45 @@ def test_npz_preserves_every_view_with_explicit_anchor_and_exact_arrays():
         assert digest(_packed(changed)) != digest(_packed(value))
 
 
+def test_explicit_erosion_mode_preserves_thin_masks_and_changes_transmitted_identity():
+    value = payload()
+    historical = recgen.RecGenRequest.from_payload(value).to_npz()
+    with np.load(io.BytesIO(historical), allow_pickle=False) as arrays:
+        assert 'mask_erosion_enabled' not in arrays.files
+    value['maskErosionEnabled'] = False
+    explicit = recgen.RecGenRequest.from_payload(value).to_npz()
+    assert explicit != historical
+    with np.load(io.BytesIO(explicit), allow_pickle=False) as arrays:
+        assert arrays['mask_erosion_enabled'].shape == ()
+        assert arrays['mask_erosion_enabled'].dtype == bool
+        assert arrays['mask_erosion_enabled'].item() is False
+        np.testing.assert_array_equal(arrays['0_mask'],value['views'][0]['mask'].astype('uint8')*255)
+    for view in value['views']:
+        view['mask'][:] = False
+        view['mask'][3,:] = True
+    assert recgen.RecGenRequest.from_payload(value).mask_erosion_enabled is False
+    for mode in (True, 'false', None, 0):
+        value['maskErosionEnabled'] = mode
+        with pytest.raises(PlatformError):recgen.RecGenRequest.from_payload(value)
+    value.pop('maskErosionEnabled')
+    with pytest.raises(PlatformError):recgen.RecGenRequest.from_payload(value)
+    value['maskErosionEnabled'] = False
+    value['views'][0]['depth'][:] = 0
+    with pytest.raises(PlatformError):recgen.RecGenRequest.from_payload(value)
+
+
+def test_explicit_erosion_protocol_requires_audited_runtime_input_contract():
+    value = payload()
+    _, protocol = research_configuration(value, [])
+    protocol['maskErosionEnabled'] = False
+    with pytest.raises(PlatformError, match='research_runtime_unpinned'):
+        recgen.validate_runtime(protocol, recgen.RECGEN_PINS)
+    protocol['runtimeManifest']['generation']['inputContractVersion'] = 'recgen-input-v2'
+    recgen.validate_runtime(protocol, recgen.RECGEN_PINS)
+    protocol['maskErosionEnabled'] = 'false'
+    with pytest.raises(PlatformError):recgen.validate_runtime(protocol, recgen.RECGEN_PINS)
+
+
 @pytest.mark.parametrize('failure', ['anchor', 'duplicate', 'rgb', 'mask', 'depth', 'depth_units', 'K', 'camera', 'frame', 'hash', 'revision', 'unknown'])
 def test_typed_multiview_rejects_invalid_input(failure):
     value = payload()
@@ -193,7 +232,7 @@ def test_recgen_factory_is_research_only_and_does_not_relax_sam3d_gates():
         validate_research_manifest(protocol, manifest)
 
 
-@pytest.mark.parametrize('failure', ['schema', 'selection', 'source_revision', 'source_image', 'source_mask', 'source_geometry'])
+@pytest.mark.parametrize('failure', ['schema', 'selection', 'source_revision', 'source_image', 'source_mask', 'source_geometry', 'erosion_not_frozen'])
 def test_invalid_frozen_input_never_reaches_call_reservation(tmp_path, monkeypatch, failure):
     from test_platform_reconstruction import Repo
     from ehs_spatial.platform.storage import LocalBlobStore
@@ -218,6 +257,7 @@ def test_invalid_frozen_input_never_reaches_call_reservation(tmp_path, monkeypat
     if failure == 'source_image': repo.document['assets'][1]['sha256'] = 'f' * 64
     if failure == 'source_mask': repo.document['assets'][3]['sha256'] = 'f' * 64
     if failure == 'source_geometry': repo.document['assets'][4]['sha256'] = 'f' * 64
+    if failure == 'erosion_not_frozen': value['maskErosionEnabled'] = False
     protocol['payloadSha256'] = digest(_packed(value))
     job = {**repo.job, 'kind':'validate_model', 'config':{'researchProtocolSha256':digest(protocol)}}
     monkeypatch.setattr(repo, 'reserve_model_call', lambda *a, **kw: pytest.fail('Invalid input reserved a paid call'))

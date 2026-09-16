@@ -39,7 +39,7 @@ class RecGenView:
     pixel_mapping: dict | None = None
 
     @classmethod
-    def from_payload(cls, value):
+    def from_payload(cls, value, *, mask_erosion_enabled=True):
         fields = ('observationId', 'observationRevision', 'imageId', 'imageSha256', 'maskSha256',
                   'geometrySolutionSha256', 'coordinateFrameId', 'rgb', 'depth', 'mask', 'K', 'cameraToWorld')
         if not isinstance(value, dict) or not set(fields) <= set(value) or set(value) - set(fields) - {'pixelMapping'}:
@@ -53,10 +53,11 @@ class RecGenView:
             raise PlatformError('recgen_view_grid_invalid', 422)
         if not np.isfinite(depth).all() or (depth < 0).any() or (depth > 30).any():
             raise PlatformError('recgen_depth_invalid', 422)
-        # Upstream uses a fixed 5x5 erosion before inference. An empty supported
-        # mask here cannot become a model and must not consume a paid call.
+        # Check the exact explicitly selected upstream preprocessing mode. The
+        # default stays 5x5; thin structures require a separately frozen opt-out.
         from scipy.ndimage import binary_erosion
-        if not (binary_erosion(mask, structure=np.ones((5, 5), bool)) & (depth > 0)).any():
+        supported_mask = binary_erosion(mask, structure=np.ones((5, 5), bool)) if mask_erosion_enabled else mask
+        if not (supported_mask & (depth > 0)).any():
             raise PlatformError('recgen_mask_required', 409)
         camera_intrinsics(value['K'])
         affine(value['cameraToWorld'], rigid=True)
@@ -86,26 +87,31 @@ class RecGenRequest:
     anchor_observation_id: str
     views: tuple[RecGenView, ...]
     seed: int
+    mask_erosion_enabled: bool | None = None
 
     @classmethod
     def from_payload(cls, value):
         fields = {'entityId', 'anchorObservationId', 'views', 'seed'}
-        if not isinstance(value, dict) or not fields <= set(value) or set(value) - fields - {'_researchProtocol'}:
+        if not isinstance(value, dict) or not fields <= set(value) or set(value) - fields - {'_researchProtocol', 'maskErosionEnabled'}:
+            raise PlatformError('recgen_request_schema_invalid', 422)
+        if 'maskErosionEnabled' in value and type(value['maskErosionEnabled']) is not bool:
             raise PlatformError('recgen_request_schema_invalid', 422)
         if any(not isinstance(value[key], str) or not value[key] for key in ('entityId', 'anchorObservationId')) or type(value['seed']) is not int or not 0 <= value['seed'] < 2 ** 32:
             raise PlatformError('recgen_request_schema_invalid', 422)
         if not isinstance(value['views'], list) or not value['views']:
             raise PlatformError('recgen_observation_selection_invalid', 422)
-        views = tuple(RecGenView.from_payload(view) for view in value['views'])
+        views = tuple(RecGenView.from_payload(view, mask_erosion_enabled=value.get('maskErosionEnabled', True)) for view in value['views'])
         if (value['anchorObservationId'] != views[0].observation_id
                 or len({v.observation_id for v in views}) != len(views)
                 or len({v.image_id for v in views}) != len(views)
                 or len({v.coordinate_frame_id for v in views}) != 1):
             raise PlatformError('recgen_observation_selection_invalid', 422)
-        return cls(value['entityId'], value['anchorObservationId'], views, value['seed'])
+        return cls(value['entityId'], value['anchorObservationId'], views, value['seed'], value.get('maskErosionEnabled'))
 
     def to_npz(self):
         arrays = {'view_count':np.array(len(self.views), dtype=np.int32)}
+        if self.mask_erosion_enabled is not None:
+            arrays['mask_erosion_enabled'] = np.array(self.mask_erosion_enabled, dtype=bool)
         for index, view in enumerate(self.views):
             arrays.update({f'{index}_rgb':view.rgb, f'{index}_depth':view.depth,
                            f'{index}_mask':view.mask.astype(np.uint8) * 255,
@@ -205,6 +211,7 @@ def adapt_output(request, response):
         'proposedObjectToNative':native, 'provenance':{'shapeStatus':'research_only',
         'licenseScope':'noncommercial_research', 'licenses':RECGEN_LICENSES,
         'metricScaleKnown':False, 'placementState':'unconfirmed', 'pins':RECGEN_PINS,
+        **({'maskErosionEnabled':request.mask_erosion_enabled} if request.mask_erosion_enabled is not None else {}),
         'anchorObservationId':request.anchor_observation_id, 'coordinateFrameId':request.views[0].coordinate_frame_id,
         'sourceRefs':[{'observationId':v.observation_id, 'revision':v.observation_revision,
                        'imageSha256':v.image_sha256, 'maskSha256':v.mask_sha256,
@@ -216,7 +223,12 @@ def adapt_output(request, response):
 def validate_runtime(protocol, pins):
     runtime = (protocol.get('runtimeManifest') or {}).get('generation') or {}
     fields = {'pins', 'distribution', 'modalFunctionId', 'weightsManifestSha256', 'runtimeAuditSha256'}
-    if (set(runtime) != fields or pins != RECGEN_PINS or runtime.get('pins') != pins
+    if 'maskErosionEnabled' in protocol and (type(protocol['maskErosionEnabled']) is not bool
+            or runtime.get('inputContractVersion') != 'recgen-input-v2'):
+        raise PlatformError('research_runtime_unpinned', 409)
+    if (not fields <= set(runtime) or set(runtime)-fields-{'inputContractVersion'}
+            or ('inputContractVersion' in runtime and runtime['inputContractVersion'] != 'recgen-input-v2')
+            or pins != RECGEN_PINS or runtime.get('pins') != pins
             or runtime.get('distribution') != 'recgen_inference'
             or not re.fullmatch('fu-[A-Za-z0-9]+', str(runtime.get('modalFunctionId', '')))
             or runtime.get('weightsManifestSha256') != RECGEN_WEIGHTS_SHA256
@@ -226,6 +238,8 @@ def validate_runtime(protocol, pins):
 
 def validate_frozen_source(payload, protocol, document):
     request = RecGenRequest.from_payload(payload)
+    if payload.get('maskErosionEnabled') is not protocol.get('maskErosionEnabled'):
+        raise PlatformError('research_input_hash_mismatch', 409)
     if (protocol.get('observationIds') != [v.observation_id for v in request.views]
             or protocol.get('anchorObservationId') != request.anchor_observation_id):
         raise PlatformError('recgen_observation_selection_invalid', 409)

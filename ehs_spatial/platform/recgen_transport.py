@@ -153,6 +153,10 @@ def invoke(payload, config, *, is_current=None):
                 'actualCostUsd':None, 'usage':{'views':len(request.views), 'inferenceSeconds':record.get('inference_seconds')}}}
     if record.get('status') != 'complete':
         return {**result, 'providerError':{'code':'recgen_inference_failed'}}
+    settings = record.get('inference_settings')
+    if request.mask_erosion_enabled is not None and (record.get('input_contract_version') != 'recgen-input-v2'
+            or not isinstance(settings, dict) or settings.get('mask_erosion_enabled') is not request.mask_erosion_enabled):
+        return {**result, 'providerError':{'code':'recgen_preprocessing_mismatch'}}
     expected = {'source_payload_sha256':sha, 'model_id':RECGEN_PINS['model'],
                 'model_revision':RECGEN_PINS['modelRevision'], 'code_revision':RECGEN_PINS['codeRevision'],
                 'weights_manifest_sha256':RECGEN_WEIGHTS_SHA256, 'view_count':len(request.views),
