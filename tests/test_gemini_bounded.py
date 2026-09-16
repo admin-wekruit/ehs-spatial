@@ -219,6 +219,37 @@ def test_discovery_full_frame_scan_is_counted_and_sent_once_with_original_image(
     assert result['items'][0]['evidence'] == item['evidence']
 
 
+def test_inventory_review_mode_sends_exact_source_and_inventory_through_bounded_provider(monkeypatch):
+    from ehs_spatial.platform import reconstruction
+    from ehs_spatial.providers import gemini
+    inventory = [{'id':'observation-a','revision':3,'entityId':'entity-a','imageId':'image-a',
+        'originalPixelBox':[10,20,30,40],'labelEvidence':[{'label':'visible housing','evidence':'Blue outline.'}]}]
+    review = {'inventorySha256':'a'*64,'observationIds':['observation-a'],
+        'reason':'A separate visible outline was omitted.',
+        'additions':[{'label':'attached control','evidence':'Distinct circular face beside the housing.',
+            'box_2d':[200,300,250,350],'geometry_role':'unknown'}],'unresolvedRegions':[]}
+    sent = []
+    def transport(request):
+        sent.append((request.url.path,json.loads(request.content)))
+        if request.url.path.endswith(':countTokens'):
+            return httpx.Response(200,request=request,json={'totalTokens':1234})
+        return success(request,text=json.dumps(review))
+    with client(transport) as sdk:
+        adapter = GeminiAdapter(sdk)
+        monkeypatch.setattr(gemini,'GeminiAdapter',lambda:adapter)
+        result = reconstruction._model_review_invoke({'mode':'inventory','inventorySha256':'a'*64,
+            'observations':inventory,'image':{'dataUri':'data:image/jpeg;base64,'+inputs()[1].data}})
+    assert [path.rsplit(':',1)[-1] for path,_ in sent] == ['countTokens','generateContent']
+    counted = sent[0][1]['generateContentRequest']
+    counted.pop('model')
+    assert counted == sent[1][1]
+    parts = counted['contents'][0]['parts']
+    assert len(parts)==3 and json.loads(parts[1]['text']) == {'inventorySha256':'a'*64,'observations':inventory}
+    assert parts[2]['inlineData'] == {'mimeType':'image/jpeg','data':inputs()[1].data}
+    assert counted['generationConfig']['responseJsonSchema'] == reconstruction._InventoryReviewResponse.model_json_schema()
+    assert result['review'] == review and result['providerRequestId']=='provider-request-1'
+
+
 @pytest.mark.parametrize('change', [
     {'max_input_tokens': 16385}, {'max_output_tokens': 8193}, {'max_output_tokens': True},
     {'input': [{'type': 'image', 'uri': 'https://example.invalid/image.jpg', 'mime_type': 'image/jpeg'}]},

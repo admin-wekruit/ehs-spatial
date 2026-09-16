@@ -97,6 +97,14 @@ def provider(stage,fn,model=None,paid=False):
     return ProviderSpec(stage,pins,fn,.01,evidence,paid)
 
 
+def inventory_review_response(payload):
+    assert payload['mode'] == 'inventory'
+    return {'review':{'inventorySha256':payload['inventorySha256'],
+        'observationIds':[o['id'] for o in payload['observations']],
+        'reason':'Synthetic fixture review found no additional supported instances.',
+        'additions':[],'unresolvedRegions':[]}}
+
+
 def bundle(repo):
     def discover(payload):
         assert repo.calls[-1]["status"] == "reserved"
@@ -111,6 +119,7 @@ def bundle(repo):
         return {"mask":mask}
     return {"discovery":provider("discovery",discover),"geometry":provider("geometry",geometry),
             "depth":provider("depth",lambda payload:depth_response(payload['image']),"Ruicheng/moge-3-vitl"),
+            "model_review":provider("model_review",inventory_review_response),
             "segmentation":provider("segmentation",segmentation)}
 
 
@@ -134,6 +143,215 @@ def depth_response(image):
     return {'imageId':image['imageId'], 'imageSha256':image['sha256'],
             'points':points, 'mask':np.ones(shape,bool), 'depth':points[...,2],
             'intrinsics':np.eye(3), 'inputToCanonical':np.eye(3)}
+
+
+def test_inventory_review_additions_flow_through_segmentation_and_one_cross_photo_identity(tmp_path):
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    providers = bundle(repo)
+    providers['discovery'] = provider('discovery',lambda _: {'items':[
+        {'label':'known left object','box':[0,0,5,12],'evidence':'Distinct left outline.'}]})
+    seen = []
+    def review(payload):
+        seen.append(('review',deepcopy(payload)))
+        assert len(payload['observations']) == 1
+        assert payload['observations'][0]['labelEvidence'][0]['evidence'] == 'Distinct left outline.'
+        result = inventory_review_response(payload)
+        result['review']['additions'] = [{'label':'omitted right object','box_2d':[0,500,1000,1000],
+            'evidence':'Separate right outline beyond the existing object.','geometry_role':'object'}]
+        return result
+    original_segment = providers['segmentation'].invoke
+    def segment(payload):
+        seen.append(('segmentation',deepcopy(payload)))
+        return original_segment(payload)
+    providers['model_review'] = provider('model_review',review)
+    providers['segmentation'] = provider('segmentation',segment)
+    document,result = run_analysis(repo,blobs,repo.job,providers)
+    assert result['status'] == 'succeeded', result['errors']
+    assert document['inventoryReview'] == {r['imageId']:r for r in result['inventoryReview']}
+    assert [stage for stage,_ in seen] == ['review','review']+['segmentation']*4
+    assert len(document['observations']) == 4
+    objects = [e for e in document['entities'] if not e.get('sourceContext')]
+    assert {e['label'] for e in objects} == {'known left object','omitted right object'}
+    assert all(len(e['observationRefs']) == 2 and e['associationState'] == 'confirmed' for e in objects)
+    for entry in result['inventoryReview']:
+        assert entry['inventoryReviewStatus'] == 'assessed'
+        assert entry['coverageScope'] == 'visible_content' and entry['certainty'] == 'not_ground_truth'
+        assert len(entry['addedObservationIds']) == len(entry['observationIds']) == 1
+        observation = next(o for o in document['observations'] if o['id'] in entry['addedObservationIds'])
+        assert observation['maskAssetId'] and observation['geometrySupport']
+        assert observation['sourceRefs'][0]['assetId'] == entry['outputAssetId']
+        assert entry['reviewedObservations'][0]['id'] == entry['observationIds'][0]
+    calls = len(repo.calls)
+    replay,again = run_analysis(repo,blobs,repo.job,providers)
+    assert again['status'] == 'succeeded' and len(repo.calls) == calls
+    assert [o['id'] for o in replay['observations']] == [o['id'] for o in document['observations']]
+    validate_document(document)
+
+
+@pytest.mark.parametrize('bad', ['hash','foreign_id','duplicate_id','blank_evidence','bad_box','duplicate_item'])
+def test_invalid_inventory_review_preserves_original_objects_and_raw_cached_result(tmp_path,bad):
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    providers = bundle(repo)
+    providers['discovery'] = provider('discovery',lambda _: {'items':[
+        {'label':'known object','box':[0,0,6,12],'evidence':'Visible housing.'}]})
+    def review(payload):
+        result = inventory_review_response(payload)
+        r = result['review']
+        addition = {'label':'candidate','box_2d':[0,600,1000,1000],
+            'evidence':'Visible separate outline.','geometry_role':'unknown'}
+        r['additions'] = [addition]
+        if bad == 'hash': r['inventorySha256'] = 'a'*64
+        elif bad == 'foreign_id': r['observationIds'] = ['foreign']
+        elif bad == 'duplicate_id': r['observationIds'] *= 2
+        elif bad == 'blank_evidence': addition['evidence'] = ' '
+        elif bad == 'bad_box': r['unresolvedRegions'] = [{'box_2d':[0,0,1001,1000],'evidence':'Uncertain.'}]
+        else: addition.update(label='known object',box_2d=[0,0,1000,500],evidence='Visible housing.')
+        return result
+    providers['model_review'] = provider('model_review',review)
+    document,result = run_analysis(repo,blobs,repo.job,providers)
+    assert result['status'] == 'incomplete'
+    assert len(document['observations']) == 2 and all(o['maskAssetId'] for o in document['observations'])
+    errors = [e for e in result['errors'] if e['stage'] == 'inventory_review']
+    assert len(errors) == 2 and all(e['code']=='inventory_review_invalid' and e['imageId'] for e in errors)
+    assert all(any(a['id']==e['params']['outputAssetId'] for a in document['assets']) for e in errors)
+    calls = len(repo.calls)
+    _,again = run_analysis(repo,blobs,repo.job,providers)
+    assert again['status'] == 'incomplete' and len(repo.calls) == calls
+
+
+@pytest.mark.parametrize('change', ['revision','box','evidence','owner','source_hash','payload_snapshot','payload_pixels'])
+def test_inventory_admission_rechecks_current_source_snapshot(tmp_path,change):
+    from ehs_spatial.platform.reconstruction import _capture,_discover,_inventory_review_input,_admit_inventory_review
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    _,document,images = _capture(repo,blobs,repo.job)
+    image = images[0]
+    evidence = repo.assets[0]
+    _discover(document,image,{'items':[{'label':'known','box':[0,0,5,12]}]},evidence)
+    payload = _inventory_review_input(document,image)
+    response = inventory_review_response(payload)
+    if change == 'revision': document['observations'][0]['revision'] += 1
+    elif change == 'box': document['observations'][0]['originalPixelBox'][2] += 1
+    elif change == 'evidence': document['observations'][0]['labelEvidence'][0]['evidence'] = 'Changed evidence'
+    elif change == 'owner': document['entities'][0]['observationRefs'] = []
+    elif change == 'source_hash': image['sha256'] = 'f'*64
+    elif change == 'payload_snapshot': payload['observations'][0]['labelEvidence'][0]['evidence'] = 'Forged evidence'
+    else: payload['image']['dataUri'] += 'AAAA'
+    before = deepcopy(document)
+    with pytest.raises(PlatformError,match='inventory_review_invalid'):
+        _admit_inventory_review(document,image,payload,response,evidence)
+    assert document == before
+    assert not repo.calls
+
+
+def test_inventory_equal_boxes_do_not_merge_distinct_component_identity(tmp_path):
+    from ehs_spatial.platform.reconstruction import _capture,_discover,_inventory_review_input,_admit_inventory_review
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    _,document,images = _capture(repo,blobs,repo.job)
+    image = images[0]
+    _discover(document,image,{'items':[{'label':'assembly','box':[0,0,6,12],'evidence':'Outer frame.'}]},repo.assets[0])
+    original_id = document['observations'][0]['id']
+    payload = _inventory_review_input(document,image)
+    response = inventory_review_response(payload)
+    response['review']['additions'] = [{'label':'attached panel','box_2d':[0,0,1000,500],
+        'evidence':'Distinct infill panel inside the frame.','geometry_role':'object'}]
+    result = _admit_inventory_review(document,image,payload,response,repo.assets[1])
+    assert len(document['observations']) == 2 and document['observations'][0]['id'] == original_id
+    assert document['observations'][0]['originalPixelBox'] == document['observations'][1]['originalPixelBox']
+    assert result['addedObservationIds'] == [document['observations'][1]['id']]
+    assert len(document['entities']) == 2
+
+
+@pytest.mark.parametrize('empty', [False,True])
+def test_inventory_unresolved_regions_remain_explicit_without_erasing_known_observations(tmp_path,empty):
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    providers = bundle(repo)
+    if empty:
+        providers['discovery'] = provider('discovery',lambda _: {'items':[]})
+    def review(payload):
+        result = inventory_review_response(payload)
+        result['review']['unresolvedRegions'] = [{'box_2d':[0,0,500,500],
+            'evidence':'Overlapping visible structures prevent a distinct boundary.'}]
+        return result
+    providers['model_review'] = provider('model_review',review)
+    document,result = run_analysis(repo,blobs,repo.job,providers)
+    assert result['status'] == 'incomplete'
+    assert all(r['inventoryReviewStatus']=='needs_information' for r in result['inventoryReview'])
+    assert len([e for e in result['errors'] if e['code']=='inventory_unresolved_regions']) == 2
+    assert len(document['observations']) == (0 if empty else 6)
+    assert all(o['maskAssetId'] for o in document['observations'])
+
+
+def test_inventory_unknown_outcome_stops_later_paid_stages_without_replay(tmp_path):
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    providers = bundle(repo)
+    def unknown(_):
+        raise TimeoutError('private transport detail')
+    providers['model_review'] = provider('model_review',unknown)
+    document,result = run_analysis(repo,blobs,repo.job,providers)
+    assert result['status'] == 'incomplete' and len(repo.calls) == 2
+    assert len(document['observations']) == 3 and all(not o['maskAssetId'] for o in document['observations'])
+    error = next(e for e in result['errors'] if e['stage']=='inventory_review')
+    assert error['code']=='provider_outcome_unknown' and error['imageId']==repo.capture['images'][0]['id']
+    _,again = run_analysis(repo,blobs,repo.job,providers)
+    assert again['status']=='incomplete' and len(repo.calls)==2
+
+
+@pytest.mark.parametrize('failed_discovery', [False,True])
+def test_empty_inventory_review_is_distinct_from_failed_discovery(tmp_path,failed_discovery):
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    providers = bundle(repo)
+    def discover(_):
+        if failed_discovery:
+            raise ProviderResponseError({'providerRequestId':'failed-discovery'})
+        return {'items':[]}
+    providers['discovery'] = provider('discovery',discover)
+    document,result = run_analysis(repo,blobs,repo.job,providers)
+    assert not document['observations']
+    assert result['status'] == ('incomplete' if failed_discovery else 'succeeded')
+    assert len(result['inventoryReview']) == 2
+    if failed_discovery:
+        assert all(r['inventoryReviewStatus']=='needs_information' and r['reason']=='provider_response_invalid'
+                   for r in result['inventoryReview'])
+    else:
+        assert all(r['inventoryReviewStatus']=='assessed' and not r['observationIds'] for r in result['inventoryReview'])
+    assert document['inventoryReview'] == {r['imageId']:r for r in result['inventoryReview']}
+
+
+def test_inventory_review_obeys_budget_without_erasing_valid_discovery(tmp_path):
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    providers = bundle(repo)
+    providers['model_review'] = provider('model_review',lambda _:pytest.fail('Unfunded review invoked'),paid=True)
+    document,result = run_analysis(repo,blobs,repo.job,providers)
+    errors = [e for e in result['errors'] if e['stage']=='inventory_review']
+    assert result['status']=='incomplete' and len(errors)==2
+    assert all(e['code']=='paid_budget_not_configured' and e['imageId'] for e in errors)
+    assert len(document['observations'])==6 and all(o['maskAssetId'] for o in document['observations'])
+
+
+def test_append_retains_prior_photo_inventory_qualification(tmp_path):
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    providers = bundle(repo)
+    repo.document,_ = run_analysis(repo,blobs,repo.job,providers)
+    first,second = [image['id'] for image in repo.capture['images']]
+    prior = repo.document['inventoryReview'][first]
+    prior.update(inventoryReviewStatus='needs_information',unresolvedRegions=[
+        {'box':[0,0,3,3],'evidence':'Unresolved visible overlap.'}])
+    prior['errors'] = [{'stage':'inventory_review','code':'inventory_unresolved_regions','imageId':first}]
+    before = deepcopy(prior)
+    job = {**repo.job,'inputs':{**repo.job['inputs'],'captureMode':'append','newImageIds':[second]}}
+    document,result = run_analysis(repo,blobs,job,providers)
+    assert result['status']=='incomplete' and document['inventoryReview'][first]==before
+    assert document['inventoryReview'][second]['inventoryReviewStatus']=='assessed'
+    assert any(e['code']=='inventory_review_needs_information' and e['imageId']==first for e in result['errors'])
 
 
 @pytest.mark.parametrize('bad', ['photo','grid','nonfinite','negative','different_z'])
