@@ -5,7 +5,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import * as math from "../src/viewer/native-math.ts";
 import { entityEvidenceStatus, identityCounts, isReferenceSurface, modelFamily } from "../src/scene-semantics.ts";
-import { cameraForImage, activeModel, modelFamilyGeometry, modelFamilySignature, entityGeometryForLayer, observationsFor, jsonObject, planShapes, cadReferenceImage, scenePlanOptions, sourceDimensions, sourceScale, previewOperations } from "../src/core.ts";
+import { cameraForImage, activeModel, modelPreviewGeometry, modelPreviewSignature, compositeModelEvidence, modelPreviewEntities, entityGeometryForLayer, observationsFor, jsonObject, planShapes, cadReferenceImage, scenePlanOptions, sourceDimensions, sourceScale, previewOperations } from "../src/core.ts";
 
 // Exercise the actual two pure functions without importing the browser app.
 const source = await readFile(
@@ -239,7 +239,7 @@ const cadSwitchDocument = structuredClone(uiDocument);
 let uiSelection = { entityId: "object", cameraId: "camera" }, uiImageId = "photo", calls = [], objectListRequest = 0, feedbackEnabled = false, feedbackCalls = [], sourceCadCalls = [];
 const inspector = React.createElement("div", { id: "inspector-content" }, "real host inspector");
 const ui = vm.createContext({ React, useState, useRef, useEffect, useId: () => "workspace-check",
-  modelFamily, modelFamilyGeometry, modelFamilySignature,
+  modelFamily, modelPreviewGeometry, modelPreviewSignature, compositeModelEvidence, modelPreviewEntities,
   useI18n: () => ({ t: (key) => key }), cameraForImage, activeModel, identityCounts, jsonObject, observationsFor, entityGeometryForLayer, cadReferenceImage, scenePlanOptions,
   photoOverlay, sceneAvailability, isReferenceSurface, entityEvidenceStatus, sourceDimensions, sourceScale, SpatialView, PlanView, PhotoView, PhotoAxes, CadView,
   paneOrder: ["photo", "spatial", "cad", "plan"], paneNames: { photo: "scenePhoto", spatial: "scene3D", cad: "sceneCAD", plan: "scenePlan" }, noEdit: () => {},
@@ -542,6 +542,29 @@ assert.equal(sourcePreviewEntity.activeModelRepresentationId,null,'Displaying a 
 assert.deepEqual(floorReferenceCad(),originalCad,'Attaching a reference never changes the observed CAD contours');
 uiImageId='photo-2';tree=renderWorkspace();assert.ok(spatialHost()[0].props.modelPreview,'The same native reference remains inspectable across source photographs');
 setRepresentation('observed_surface');assert.equal(spatialHost()[0].props.modelPreview,undefined,'Source mode retains its strict photograph ownership despite the reference attachment');
+// The residual record previews reviewed component models while retaining its own source selection.
+uiDocument=structuredClone(cadSwitchDocument);hooks.length=0;uiImageId='photo-2';
+const composite=uiDocument.entities.find(entity=>entity.id==='no-geometry'),linked=uiDocument.entities.find(entity=>entity.id==='object');
+composite.representations=[{...structuredClone(observed),id:'residual-source',sourceRefs:[{observationId:'observation-2',imageId:'photo-2',revision:1}]}];
+uiDocument.annotations=[{id:'component-mapping',kind:'observation_component_mapping',entityId:composite.id,representationType:'composite_source_evidence',independentObject:false,unresolvedBoundaryObservationId:'observation-2',unresolvedBoundaryObservationRevision:1,targets:[{entityId:linked.id,observationId:'observation',observationRevision:1,activeModelRepresentationId:linked.activeModelRepresentationId}]}];
+uiSelection={entityId:composite.id,cameraId:'camera-2',observationId:'observation-2'};tree=renderWorkspace();setRepresentation('model');
+const compositeCad=cadGeometry(planShapes(uiDocument,scenePlanOptions(uiDocument,'observed_surface',true,'photo')));
+assert.equal(spatialHost()[0].props.modelPreview.entityId,composite.id,'A related-model preview keeps the residual identity');
+assert.equal(spatialHost()[0].props.selection.observationId,'observation-2');assert.equal(uiImageId,'photo-2');
+assert.equal(nodes(tree).find(node=>node.type===PhotoView).props.selectedId,composite.id);assert.equal(nodes(tree).find(node=>node.type===CadView).props.selectedId,composite.id);
+assert.equal(nodes(tree).find(node=>node.props['data-model-coverage']!==undefined).props['data-model-coverage'],1,'Related component references never count as a new active model');
+assert.ok(nodes(tree).some(node=>node.children.includes('sceneCompositeEvidence')));assert.ok(nodes(tree).some(node=>node.children.includes('sceneRelatedModels')));
+assert.ok(nodes(tree).some(node=>node.children.includes('sceneCompositeEvidenceMeaning')),'The preview explicitly preserves unresolved boundaries');
+const relatedRequest=spatialHost()[0].props;
+linked.currentModelTransform={...transform,position:[3,4,5]};tree=renderWorkspace();
+assert.notEqual(spatialHost()[0].props.modelPreview.requestKey,relatedRequest.modelPreview.requestKey,'Changing a linked model invalidates the residual preview');
+relatedRequest.onModelPreview(relatedRequest.modelPreview.requestKey,'data:image/png;base64,old-related');tree=renderWorkspace();
+assert.ok(!nodes(tree).some(node=>node.type==='img'),'Old linked-model previews cannot appear after target changes');
+setRepresentation('observed_surface');assert.equal(spatialHost()[0].props.modelPreview.observationId,'observation-2');assert.equal(spatialHost()[0].props.modelPreview.entityId,composite.id);
+assert.equal(nodes(tree).some(node=>node.children.includes('sceneRelatedModels')),false,'Source mode displays the residual rather than related model geometry');
+assert.deepEqual(cadGeometry(planShapes(uiDocument,scenePlanOptions(uiDocument,'observed_surface',true,'photo'))),compositeCad);
+setRepresentation('model');uiDocument.observations.find(observation=>observation.id==='observation-2').revision=2;tree=renderWorkspace();
+assert.equal(spatialHost()[0].props.modelPreview,undefined,'An expired source mapping cannot display old component evidence');
 console.log(
   "report scene: 68-record unified evidence inventory, observed extents/scale, no duplicate table, linked no-geometry selection, mobile navigation, photo projection, floor semantics and one WebGL passed",
 );

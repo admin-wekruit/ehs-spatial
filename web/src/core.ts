@@ -99,13 +99,44 @@ export function isPartitionSource(entity: Entity, representationId: string) {
   });
 }
 export function modelFamilySignature(document: SceneDocument, entityId: string) {
-  return modelFamily(document, entityId).map(entity => {
+  return modelSignatures(document, modelFamily(document, entityId));
+}
+function modelSignatures(document: SceneDocument, entities: Entity[]) {
+  return entities.map(entity => {
     const rep = activeModel(entity);
     return [entity.id, entity.parentEntityId, entity.visible, entity.activeModelRepresentationId,
       entity.currentModelTransform, rep, document.assets.find(asset => asset.id === rep?.assetId),
       (entity.representations || []).filter(rep => rep.sourceKind === "observed_reference_surface")
         .map(rep => [rep, document.assets.find(asset => asset.id === rep.assetId)])];
   });
+}
+/** Reviewed component evidence links displays, never physical part edits. */
+export function compositeModelEvidence(document: SceneDocument, entityId: string) {
+  const subject = document.entities.find(entity => entity.id === entityId);
+  const mappings = (document.annotations || []).filter(annotation => annotation.kind === "observation_component_mapping" &&
+    annotation.entityId === entityId && annotation.representationType === "composite_source_evidence" && annotation.independentObject === false);
+  if (!subject || subject.sourceContext || activeModel(subject) || mappings.length !== 1) return null;
+  const annotation = mappings[0], owns = (entity: Entity, id: unknown, revision: unknown) => typeof id === "string" && Number.isSafeInteger(revision) && Number(revision) > 0 &&
+    observationOwner(document, id)?.id === entity.id && document.observations.some(observation => observation.id === id && observation.revision === revision);
+  if (!owns(subject, annotation.unresolvedBoundaryObservationId, annotation.unresolvedBoundaryObservationRevision) ||
+      !Array.isArray(annotation.targets) || !annotation.targets.length) return null;
+  const targets: Entity[] = [];
+  for (const raw of annotation.targets) {
+    const ref = jsonObject(raw), target = document.entities.find(entity => entity.id === ref?.entityId);
+    const model = target && activeModel(target);
+    if (!target || target.id === entityId || target.sourceContext || !model || model.sourceValidity === "stale" ||
+        model.id !== ref?.activeModelRepresentationId || !owns(target, ref?.observationId, ref?.observationRevision)) return null;
+    if (!targets.includes(target)) targets.push(target);
+  }
+  return { annotation, targets };
+}
+export function modelPreviewEntities(document: SceneDocument, entityId: string): Entity[] {
+  const evidence = compositeModelEvidence(document, entityId);
+  return evidence ? [...new Map(evidence.targets.flatMap(target => modelFamily(document, target.id)).map(entity => [entity.id, entity])).values()]
+    : modelFamily(document, entityId);
+}
+export function modelPreviewSignature(document: SceneDocument, entityId: string) {
+  return [compositeModelEvidence(document, entityId)?.annotation, modelSignatures(document, modelPreviewEntities(document, entityId))];
 }
 export function observationOwner(document: SceneDocument, observationId: string) {
   const owners = document.entities.filter(entity => entity.observationRefs?.includes(observationId));
@@ -593,6 +624,15 @@ export function entityGeometryForLayer(entity: Entity, { layer, frameId, showCan
 }
 export function modelFamilyGeometry(document: SceneDocument, entityId: string, options: GeometryOptions) {
   const family = modelFamily(document, entityId), target = family[0];
+  return modelGroupGeometry(target, family, options);
+}
+export function modelPreviewGeometry(document: SceneDocument, entityId: string, options: GeometryOptions) {
+  const family = modelPreviewEntities(document, entityId);
+  if (compositeModelEvidence(document, entityId) && family.some(entity => entity.visible !== false && activeModel(entity) &&
+      !entityGeometryForLayer(entity, { ...options, layer: "model" }))) return null;
+  return modelGroupGeometry(document.entities.find(entity => entity.id === entityId), family, options);
+}
+function modelGroupGeometry(target: Entity | undefined, family: Entity[], options: GeometryOptions) {
   if (!target || target.visible === false || target.sourceContext) return null;
   const geometries = family.flatMap(entity => {
     const geometry = entityGeometryForLayer(entity, { ...options, layer: "model" });

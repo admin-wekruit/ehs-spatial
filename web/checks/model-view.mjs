@@ -171,6 +171,38 @@ assert.notEqual(JSON.stringify(core.modelFamilySignature(document,'assembly')),m
 scope.loadedRepresentations.delete('b/model-b');
 assert.equal(scope.capture('assembly','front','revision'),null,'An assembly with a failed or pending part never publishes a partial preview');
 delete a.parentEntityId;delete b.parentEntityId;delete b.currentModelTransform;b.representations[0].assetId='asset-b';document.entities.pop();scope.loadedRepresentations.add('b/model-b');
+// Component evidence previews borrow real models without becoming an assembly.
+{
+ const residual={id:'residual',observationRefs:['residual-obs'],representations:[{...observed,id:'residual-surface',sourceRefs:[{observationId:'residual-obs',revision:3,imageId:'photo'}]}]};
+ const child={...b,id:'child',parentEntityId:'b',currentModelTransform:structuredClone(transform),observationRefs:[],representations:[{...model,id:'child-model',assetId:'child-asset'}],activeModelRepresentationId:'child-model'};
+ document.entities.push(residual,child);b.currentModelTransform=structuredClone(transform);a.observationRefs=['a-obs'];b.observationRefs=['b-obs'];
+ document.observations.push(...['a','b','residual'].map(id=>({id:id+'-obs',revision:id==='residual'?3:2,imageId:'photo'})));
+ const mapping={id:'mapping',kind:'observation_component_mapping',entityId:'residual',representationType:'composite_source_evidence',independentObject:false,unresolvedBoundaryObservationId:'residual-obs',unresolvedBoundaryObservationRevision:3,targets:[{entityId:'a',observationId:'a-obs',observationRevision:2,activeModelRepresentationId:'model-a'},{entityId:'b',observationId:'b-obs',observationRevision:2,activeModelRepresentationId:'model-b'}]};
+ document.schemaVersion=2;document.annotations=[mapping];gpu.push({entityId:child.id,representation:child.representations[0],mesh:{bounds:model.bounds,matrix:math.identity()}});scope.loadedRepresentations.add('child/child-model');
+ const frozen=JSON.stringify(document),modelCount=document.entities.filter(core.activeModel).length;
+ assert.deepEqual(core.modelPreviewEntities(document,'residual').map(e=>e.id),['a','b','child']);
+ assert.deepEqual(modelFamily(document,'residual').map(e=>e.id),['residual'],'Evidence targets never become physical edit descendants');
+ assert.equal(core.activeModel(residual),null);assert.equal(core.editableTransform(residual,document),null);
+ assert.equal(selectionGeometry(document,residual,'frame',strict).editable,false);
+ assert.ok(scope.capture('residual','front','revision','frame',{layer:'model'}));
+ assert.deepEqual(shots.at(-1).entities,['a','b','child']);assert.equal(shots.at(-1).axes,null,'A composite has no invented object axes');
+ assert.equal(document.entities.filter(core.activeModel).length,modelCount);assert.equal(JSON.stringify(document),frozen);
+ for(const key of Object.keys(original))assert.equal(scope[key],original[key],'Composite capture restores the main view');
+ const hidden=core.previewOperations(document,[{type:'setVisibility',entityId:'residual',visible:false}],'revision');
+ for(const target of [a,b,child])assert.deepEqual(hidden.entities.find(e=>e.id===target.id),target,'A residual edit never changes linked models');
+ for(const operation of [{type:'setTransform',entityId:'residual',...transform},{type:'setMaterial',entityId:'residual',material:{color:[1,0,0]}}])assert.throws(()=>core.previewOperations(document,[operation],'revision'));
+ const signature=JSON.stringify(core.modelPreviewSignature(document,'residual'));
+ child.currentModelTransform={...transform,position:[4,0,0]};assert.notEqual(JSON.stringify(core.modelPreviewSignature(document,'residual')),signature);child.currentModelTransform=structuredClone(transform);
+ mapping.targets.push(mapping.targets[0]);assert.deepEqual(core.modelPreviewEntities(document,'residual').map(e=>e.id),['a','b','child'],'Repeated reviewed targets render once');mapping.targets.pop();
+ const options={layer:'model',frameId:'frame',observations:document.observations};
+ for(const [target,key,value] of [[mapping,'unresolvedBoundaryObservationRevision',2],[mapping.targets[0],'observationRevision',1],[mapping.targets[0],'activeModelRepresentationId','old-model'],[mapping,'independentObject',true]]){
+  const old=target[key];target[key]=value;assert.equal(core.compositeModelEvidence(document,'residual'),null);assert.equal(scope.capture('residual','free','revision'),null);target[key]=old;
+ }
+ b.currentModelTransform={...transform,coordinateFrameId:'other'};assert.equal(core.modelPreviewGeometry(document,'residual',options),null);assert.equal(scope.capture('residual','free','revision'),null,'Cross-frame components cannot create a misleading partial preview');b.currentModelTransform=structuredClone(transform);
+ scope.loadedRepresentations.delete('child/child-model');assert.equal(scope.capture('residual','free','revision'),null,'Unloaded related parts cannot publish a partial preview');
+ assert.equal(core.entityGeometryForLayer(residual,{...options,layer:'observed_surface',imageId:'photo',observationId:'residual-obs'}).representationIds[0],'residual-surface','Source mode keeps the residual own observation');
+ document.entities.splice(-2);document.observations.splice(-3);delete document.annotations;delete document.schemaVersion;delete a.observationRefs;delete b.observationRefs;delete b.currentModelTransform;gpu.pop();
+}
 const cylinder=scope.primitiveMesh({kind:'cylinder',radius:2,height:3});assert.equal(cylinder.vertices.length/12,130);assert.equal(cylinder.indices.length,768,'Default 64-segment cylinder has the same cap-center topology as backend primitive_mesh');
 for(const mesh of [cylinder,scope.primitiveMesh({kind:'box',dimensions:[1,2,3]})])for(let i=0;i<mesh.vertices.length;i+=12)assert.deepEqual([...mesh.vertices.slice(i+6,i+9)],[1,1,1],'Primitive vertex color is neutral, so explicit material RGB is applied exactly once and the absent-material default matches export');
 assert.equal(scope.primitiveMesh({kind:'cylinder',radius:2,height:3,segments:8}).vertices.length/12,18);
@@ -180,7 +212,7 @@ assert.equal((source.match(/getContext\('webgl2'/g)||[]).length,1,'Object previe
 // only, including when the normal scene's lighting has been switched off.
 const displayed={};
 const displayScope=vm.createContext({disposed:false,camera:{exact:false},devicePixelRatio:1,
- modelFamily,
+ modelPreviewEntities:core.modelPreviewEntities,
  gl:{isContextLost:()=>false,viewport(){},useProgram(){},clearColor(...rgba){displayed.background=rgba;},clear(){},depthMask(){},enable(){},disable(){},uniformMatrix4fv(){},uniform1f(name,value){displayed[name]=value;}},
  viewSize:()=>({w:640,h:400,cw:640,ch:400}),canvas:{width:640,height:400,style:{}},photo:{style:{}},program:{},cameraMatrix:()=>[],radius:1,
  layers:{studio:true,lighting:false,showBounds:false},u:{lighting:'lighting'},gpu:[],selection:{},svg:{setAttribute(){},replaceChildren(){}},
@@ -217,7 +249,7 @@ const runtime={setScene(){},setSelection(){},setLayers(){},setCamera(value){came
 const bridge=vm.createContext({React:{createElement:(type,props,...children)=>({type,props:props||{},children})},
  useRef(initial){const i=cursor++;return hooks[i]??={current:initial};},useState(initial){const i=cursor++;if(!(i in hooks))hooks[i]=initial;return [hooks[i],value=>{hooks[i]=typeof value==='function'?value(hooks[i]):value;}];},
  useEffect(fn,deps){const i=cursor++,old=hooks[i];if(!old||deps.some((value,j)=>!Object.is(value,old[j]))){hooks[i]=deps;effects.push(fn);}},
- useI18n:()=>({language:'en',t:key=>key}),mountSceneViewer(_host,options){mounts++;events=options.onEvent;return runtime;},resolveAsset(){},ErrorNotice(){},photoHits:core.photoHits,currentCameras:core.currentCameras,modelFamily,
+ useI18n:()=>({language:'en',t:key=>key}),mountSceneViewer(_host,options){mounts++;events=options.onEvent;return runtime;},resolveAsset(){},ErrorNotice(){},photoHits:core.photoHits,currentCameras:core.currentCameras,modelPreviewEntities:core.modelPreviewEntities,
 });vm.runInContext(executable,bridge);
 const bridgeDocument={...document,cameras:[{id:'camera',imageId:'photo-1',coordinateFrameId:'frame'},{id:'camera-2',imageId:'photo-2',coordinateFrameId:'frame'},{id:'camera-3',imageId:'photo-3',coordinateFrameId:'other'}],geometryBindings:{'photo-1':{cameraId:'camera'},'photo-2':{cameraId:'camera-2'},'photo-3':{cameraId:'camera-3'}}};
 let props={revision:{id:'revision',document:bridgeDocument},selection:{entityId:'a'},onSelect(){},onCommit(){},mode:'free',cameraId:'camera',layers:strict,modelPreview:{entityId:'a',mode:'free',requestKey:'a-key'},onModelPreview:(key,image)=>results.push({key,image})};

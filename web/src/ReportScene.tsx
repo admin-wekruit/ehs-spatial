@@ -3,8 +3,8 @@ import { SpatialView } from "./App";
 import { PhotoView } from "./PhotoView";
 import { CadView } from "./CadView";
 import { useI18n } from "./i18n";
-import { cameraForImage, activeModel, modelFamilyGeometry, modelFamilySignature, observationsFor, entityGeometryForLayer, jsonObject, planShapes, cadReferenceImage, scenePlanOptions, sourceDimensions, sourceScale, type GeometryOptions, type PlanOptions } from "./core";
-import { entityEvidenceStatus, identityCounts, isReferenceSurface, modelFamily } from "./scene-semantics";
+import { cameraForImage, activeModel, compositeModelEvidence, modelPreviewEntities, modelPreviewGeometry, modelPreviewSignature, observationsFor, entityGeometryForLayer, jsonObject, planShapes, cadReferenceImage, scenePlanOptions, sourceDimensions, sourceScale, type GeometryOptions, type PlanOptions } from "./core";
+import { entityEvidenceStatus, identityCounts, isReferenceSurface } from "./scene-semantics";
 import {
   add,
   cameraMatrix,
@@ -272,9 +272,10 @@ export function ReportScene({
   const readyModels = modelObjects.filter(entity => modelState(entity)?.state === "ready"),
     failedModels = modelObjects.filter(entity => modelState(entity)?.state === "error"),
     pendingModels = modelObjects.length - readyModels.length - failedModels.length;
-  const selectedFamily = selected ? modelFamily(document, selected.id) : [];
+  const selectedComposite = selected && layer === "model" ? compositeModelEvidence(document, selected.id) : null;
+  const selectedFamily = selected ? modelPreviewEntities(document, selected.id) : [];
   const selectedModels = selectedFamily.filter(entity => activeModel(entity) && entityGeometryForLayer(entity, { ...geometryOptions, layer: "model" }));
-  const selectedModel = selected && modelFamilyGeometry(document, selected.id, { ...geometryOptions, layer: "model" });
+  const selectedModel = selected && modelPreviewGeometry(document, selected.id, { ...geometryOptions, layer: "model" });
   const selectedSource = selected && layer !== "model" ? entityGeometryForLayer(selected, { ...geometryOptions, observationId: selection.observationId }) : null;
   const previewGeometry = layer === "model" ? selectedModel : selectedSource?.representationIds.length && selectedSource.geometryKind === (layer === "observed_surface" ? "observed" : "point_cloud") ? selectedSource : null;
   const selectedReference = layer === "model" && previewGeometry?.geometryKind === "observed";
@@ -282,11 +283,11 @@ export function ReportScene({
   const selectedModelFailed = layer === "model" && !selectedReference ? selectedModels.some(entity => modelState(entity)?.state === "error") : sourceReps.some(rep => modelStates.some(state => state.entityId === selected?.id && state.representationId === rep.id && state.assetId === rep.assetId && state.state === "error"));
   const selectedModelWrongFrame = layer === "model" && selectedFamily.some(modelFrameMismatch);
   const selectedModelStale = layer === "model" && selectedFamily.some(entity => activeModel(entity)?.sourceValidity === "stale");
-  const previewKey = JSON.stringify([revision.id, selected?.id, layer, imageId, selection.observationId, layer === "model" ? selected && modelFamilySignature(document, selected.id) : sourceReps.map(rep => [rep, document.assets.find(asset => asset.id === rep.assetId)]), geometryOptions.frameId, previewMode]);
+  const previewKey = JSON.stringify([revision.id, selected?.id, layer, imageId, selection.observationId, layer === "model" ? selected && modelPreviewSignature(document, selected.id) : sourceReps.map(rep => [rep, document.assets.find(asset => asset.id === rep.assetId)]), geometryOptions.frameId, previewMode]);
   currentPreviewKey.current = previewKey;
   const previewRequest = selected && previewGeometry ? { entityId: selected.id, frameId: geometryOptions.frameId, layer, imageId, observationId: selection.observationId, mode: previewMode, requestKey: previewKey } : undefined;
   const previewImage = modelPreview?.key === previewKey ? modelPreview.image : null;
-  const viewNames = { ...paneNames, plan: selectedReference ? "sceneSelectedSurface" : layer === "model" ? paneNames.plan : layer === "observed_surface" ? "sceneSelectedSurface" : "sceneSelectedPoints" };
+  const viewNames = { ...paneNames, plan: selectedComposite ? "sceneRelatedModels" : selectedReference ? "sceneSelectedSurface" : layer === "model" ? paneNames.plan : layer === "observed_surface" ? "sceneSelectedSurface" : "sceneSelectedPoints" };
   const counts = identityCounts(document);
   const objectNumbers = new Map(objects.map((entity, index) => [entity.id, String(index + 1).padStart(2, "0")]));
   const query = search.trim().toLowerCase();
@@ -416,14 +417,16 @@ export function ReportScene({
               const evidence = entityEvidenceStatus(document, entity), observations = observationsFor(document, entity),
                 representations = entity.representations || [],
                 candidate = representations.some((representation) => representation.id === entity.activeModelRepresentationId && representation.sourceValidity !== "stale" && representation.placementState === "unconfirmed"),
-                familyModels = modelFamily(document, entity.id).filter(member => activeModel(member) && entityGeometryForLayer(member, { ...geometryOptions, layer: "model" })),
-                modelStatus = referenceSurfaces.includes(entity) ? "observed_reference_surface" : modelFamily(document, entity.id).some(member => activeModel(member)?.sourceValidity === "stale") ? "identityModelStale" : modelFamily(document, entity.id).some(modelFrameMismatch) ? "sceneModelWrongFrame" : !familyModels.length ? "reportMissingGeometry" : familyModels.some(member => modelState(member)?.state === "error") ? "sceneModelLoadFailed" : familyModels.every(member => modelState(member)?.state === "ready") ? "sceneModelLoaded" : "sceneModelLoading";
+                composite = compositeModelEvidence(document, entity.id),
+                family = modelPreviewEntities(document, entity.id),
+                familyModels = family.filter(member => activeModel(member) && entityGeometryForLayer(member, { ...geometryOptions, layer: "model" })),
+                modelStatus = referenceSurfaces.includes(entity) ? "observed_reference_surface" : family.some(member => activeModel(member)?.sourceValidity === "stale") ? "identityModelStale" : family.some(modelFrameMismatch) ? "sceneModelWrongFrame" : !familyModels.length ? "reportMissingGeometry" : familyModels.some(member => modelState(member)?.state === "error") ? "sceneModelLoadFailed" : familyModels.every(member => modelState(member)?.state === "ready") ? composite ? "sceneCompositeEvidence" : "sceneModelLoaded" : "sceneModelLoading";
               return <div key={entity.id} className="report-scene-object-row" data-entity-id={entity.id} data-parent-entity-id={entity.parentEntityId || undefined} style={{ marginLeft: depth * 12 }}><button key={entity.id} aria-pressed={entity.id === selection.entityId} onClick={() => selectEntity(entity.id)}>
                 <strong><b className="report-scene-object-number">{objectNumbers.get(entity.id)}</b>{entity.label || entity.id}</strong>
                 <span className="report-scene-object-source">{indices.length ? `${t("scenePhotoNumber")} ${indices.join(" / ")}` : t("sceneNoPhotoLink")}<small>{entity.id.slice(0, 8)}</small></span>
                 <span className="report-scene-object-evidence">{t(evidence.photoKey)}{observations.length > 0 && ` · ${observations.length} ${t("observations")}`}</span>
                 {evidence.identityKey && <span className="report-scene-object-identity"><span>{t("entityIdentity")}</span>{t(evidence.identityKey)}</span>}
-                <span className="report-scene-object-model" data-model-state={modelStatus}><span>{t("model")}</span>{t(modelStatus)}{candidate && <em>{t("sceneCandidate")}</em>}</span>
+                <span className="report-scene-object-model" data-model-state={modelStatus}><span>{t("model")}</span>{t(modelStatus)}{composite && modelStatus !== "sceneCompositeEvidence" && <> · {t("sceneCompositeEvidence")}</>}{candidate && <em>{t("sceneCandidate")}</em>}</span>
                 <span className="report-scene-object-extent"><span>{t("reportObservedExtent")}</span><Extent entity={entity} document={document} /></span>
               </button>{children.has(entity.id) && <button aria-expanded={expandedEntities.has(entity.id)} aria-label={`${t("sceneModelParts")} · ${entity.label || entity.id}`} onClick={() => setExpandedEntities(current => { const next = new Set(current);if (next.has(entity.id)) next.delete(entity.id);else next.add(entity.id);return next; })}>{expandedEntities.has(entity.id) ? "▾" : "▸"} {children.get(entity.id)!.length} {t("sceneModelParts")}</button>}{onFeedback && <button className="report-object-feedback" aria-label={`${t("sceneFeedback")} · ${entity.label || entity.id}`} onClick={() => { selectEntity(entity.id); onFeedback(entity.id); setMobileSection("inspector"); }}>{t("sceneFeedback")} ↗</button>}</div>;
             })}
@@ -465,7 +468,7 @@ export function ReportScene({
                     {previewGeometry && selected ? <>
                       <nav aria-label={t(layer === "model" ? "sceneModelOrientation" : "sceneEvidenceOrientation")}>{(["free", "front", "side", "top"] as const).map(mode => <button key={mode} aria-pressed={previewMode === mode} onClick={() => setPreviewMode(mode)}>{t(mode)}</button>)}</nav>
                       <div className="report-model-image">{previewImage ? <img src={previewImage} alt={`${selected.label || selected.id} · ${t(viewNames.plan)} · ${t(previewMode)}`} /> : <p role="status">{t(selectedModelStale ? "identityModelStale" : selectedModelWrongFrame ? "sceneModelWrongFrame" : selectedModelFailed ? layer === "model" ? "sceneModelLoadFailed" : "sceneEvidenceLoadFailed" : layer === "model" ? "loadingModel" : "sceneEvidenceLoading")}</p>}</div>
-                      <footer><strong>{selected.label || selected.id}</strong><span>{selectedReference ? <>{t("observed_reference_surface")} · {t("sceneObservedCoverage")}</> : layer === "model" ? t(selectedModels.every(entity => activeModel(entity)?.placementState === "confirmed") ? "identityPlacementConfirmed" : "identityPlacementUnconfirmed") : <>{t(layer)} · {t("scenePhotoNumber")} {images.findIndex(image => image.imageId === imageId) + 1}{selection.observationId && <> · {t("sceneObservation")} {selection.observationId.slice(0, 8)}</>} · {t("sceneObservedCoverage")}</>}</span><button onClick={() => chooseView("spatial")}>{t(layer === "model" ? "sceneOpenModelScene" : "sceneOpenEvidenceScene")} ↗</button></footer>
+                      <footer><strong>{selected.label || selected.id}</strong><span>{selectedComposite ? <>{t("sceneCompositeEvidence")} · {selectedComposite.targets.map(entity => `${objectNumbers.get(entity.id)} ${entity.label || entity.id}`).join(" + ")} · {t("sceneCompositeEvidenceMeaning")}</> : selectedReference ? <>{t("observed_reference_surface")} · {t("sceneObservedCoverage")}</> : layer === "model" ? t(selectedModels.every(entity => activeModel(entity)?.placementState === "confirmed") ? "identityPlacementConfirmed" : "identityPlacementUnconfirmed") : <>{t(layer)} · {t("scenePhotoNumber")} {images.findIndex(image => image.imageId === imageId) + 1}{selection.observationId && <> · {t("sceneObservation")} {selection.observationId.slice(0, 8)}</>} · {t("sceneObservedCoverage")}</>}</span><button onClick={() => chooseView("spatial")}>{t(layer === "model" ? "sceneOpenModelScene" : "sceneOpenEvidenceScene")} ↗</button></footer>
                     </> : <div className="report-scene-plan-empty" role="status"><strong>{t(selectedModelStale ? "identityModelStale" : selectedModelWrongFrame ? "sceneModelWrongFrame" : selected ? layer === "model" ? "sceneObjectModelMissing" : "sceneEvidenceMissing" : layer === "model" ? "sceneSelectModel" : "sceneSelectEvidence")}</strong><p>{t(selectedModelWrongFrame ? "sceneModelWrongFrameMeaning" : selected ? layer === "model" ? "sceneObjectModelMissingMeaning" : "sceneEvidenceMissingMeaning" : "sceneSelectModelMeaning")}</p></div>}
                   </div>}
                 </div>

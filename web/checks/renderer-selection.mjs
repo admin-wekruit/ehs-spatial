@@ -4,8 +4,7 @@ import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 import ts from 'typescript';
 import {representationPass} from '../src/viewer/native-viewer.ts';
-import {cameraForImage} from '../src/core.ts';
-import {modelFamily} from '../src/scene-semantics.ts';
+import {cameraForImage,modelPreviewEntities} from '../src/core.ts';
 import {boundsCorners,point,transformMatrix} from '../src/viewer/native-math.ts';
 
 // Execute the actual draw function against a one-pixel depth buffer. Geometry,
@@ -20,7 +19,7 @@ const rep={id:'surface',assetId:'mesh',kind:'observed_surface',coordinateFrameId
 const observations=[{id:'observation',imageId:'photo'}];
 const context={id:'context',sourceContext:true},marking={id:'marking',observationRefs:['observation'],activeModelRepresentationId:'model',currentModelTransform:transform},occluder={id:'occluder',observationRefs:['observation']};
 const gpu=(entityId,depth,representation=rep,indexCount=3)=>({entityId,representation,vertex:{},index:{entityId,depth},texture:{},mesh:{mode:representation.kind==='point_cloud'?0:4,indices:new Uint32Array(indexCount)}});
-function pixel(objects,selected='marking',override={},pick=false,exact=false){
+function pixel(objects,selected='marking',override={},pick=false,exact=false,scene){
  let depth=Infinity,depthFunc='LESS',selectedUniform=0,current,pixel=null;
  const gl={LESS:'LESS',LEQUAL:'LEQUAL',ELEMENT_ARRAY_BUFFER:'ELEMENT_ARRAY_BUFFER',COLOR_BUFFER_BIT:1,DEPTH_BUFFER_BIT:2,
   isContextLost:()=>false,viewport(){},useProgram(){},clearColor(){},enable(){},disable(){},blendFunc(){},blendFuncSeparate(){},depthMask(){},
@@ -28,10 +27,10 @@ function pixel(objects,selected='marking',override={},pick=false,exact=false){
   uniformMatrix4fv(){},uniform1f(name,value){if(name==='selected')selectedUniform=value;},uniform3f(){},uniform3fv(){},uniform4fv(){},activeTexture(){},bindTexture(){},
   drawElements(){if(current.depth<depth||depthFunc==='LEQUAL'&&current.depth===depth){depth=current.depth;pixel={entityId:current.entityId,selected:!!selectedUniform};}},
  };
- const doc={entities:[context,marking,occluder]},layers={observed_surface:true,generated_mesh:true,primitive:true,point_cloud:false,showBounds:false,showCandidates:false,imageId:'photo',observations,...override};
+ const doc=scene||{entities:[context,marking,occluder]},layers={observed_surface:true,generated_mesh:true,primitive:true,point_cloud:false,showBounds:false,showCandidates:false,imageId:'photo',observations,...override};
  const scope=vm.createContext({disposed:false,camera:{exact},gl,viewSize:()=>({w:100,h:100,cw:100,ch:100}),devicePixelRatio:1,
   canvas:{style:{},width:100,height:100},photo:{style:{}},program:{},cameraMatrix:()=>[],radius:1,u:{selected:'selected'},gpu:objects,doc,layers,
-  entity:id=>doc.entities.find(e=>e.id===id),selection:{entityId:selected},frameId:'native',representationPass,modelFamily,attrs:[],model:()=>[],
+  entity:id=>doc.entities.find(e=>e.id===id),selection:{entityId:selected},frameId:'native',representationPass,modelPreviewEntities,attrs:[],model:()=>[],
   svg:{setAttribute(){},replaceChildren(){}},projected(){},add(){},document:{}});
  vm.runInContext(code,scope);scope.render(pick);return pixel;
 }
@@ -48,6 +47,11 @@ const tied=[gpu('marking',.5),gpu('occluder',.5)];
 assert.deepEqual(pixel(tied,null,{},true),pixel(tied.slice().reverse(),null,{},true),'Equal-size observed ties resolve by stable identity, not asynchronous GPU upload order');
 assert.deepEqual(pixel([gpu('context',.5),gpu('occluder',.3),gpu('marking',.5)]),{entityId:'occluder',selected:false},'A real nearer surface still occludes the selected geometry');
 assert.deepEqual(pixel([gpu('context',.5),gpu('marking',.4,{...rep,id:'model',kind:'generated_mesh'})]),{entityId:'marking',selected:true},'The active generated model retains its existing selected tint');
+const componentModel={...rep,id:'model',kind:'generated_mesh'},componentDocument={entities:[{...marking,representations:[componentModel]},{...occluder,observationRefs:['residual-observation']}],observations:[{id:'observation',revision:2,imageId:'photo'},{id:'residual-observation',revision:3,imageId:'photo'}],annotations:[{id:'mapping',kind:'observation_component_mapping',entityId:'occluder',representationType:'composite_source_evidence',independentObject:false,unresolvedBoundaryObservationId:'residual-observation',unresolvedBoundaryObservationRevision:3,targets:[{entityId:'marking',observationId:'observation',observationRevision:2,activeModelRepresentationId:'model'}]}]};
+assert.deepEqual(pixel([gpu('marking',.5,componentModel)],'occluder',{},false,false,componentDocument),{entityId:'marking',selected:true},'Selecting composite evidence highlights its actual related model');
+assert.deepEqual(pixel([gpu('marking',.5,rep)],'occluder',{},false,false,componentDocument),{entityId:'marking',selected:false},'Source surfaces keep their own identity rather than inheriting composite highlights');
+componentDocument.annotations[0].targets[0].observationRevision=1;
+assert.deepEqual(pixel([gpu('marking',.5,componentModel)],'occluder',{},false,false,componentDocument),{entityId:'marking',selected:false},'Expired mapping evidence cannot highlight another object');
 assert.equal(pixel([gpu('context',.5),gpu('marking',.5)],null).selected,false,'No selection never tints another surface');
 assert.equal(pixel([gpu('context',.5),gpu('marking',.5)],'marking',{observed_surface:false}),null,'Disabled geometry is not redrawn as a selection overlay');
 assert.deepEqual(pixel([gpu('context',.5),gpu('marking',.5,{...rep,coordinateFrameId:'other'})]),{entityId:'context',selected:false},'Selection never borrows geometry from another frame');

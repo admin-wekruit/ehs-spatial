@@ -40,6 +40,7 @@ import {
   cameraForImage,
   currentCameras,
   currentEntityId,
+  modelPreviewEntities,
   observationOwner,
   modelGeometry,
   modelTilt,
@@ -79,7 +80,7 @@ import type {
   Vec3,
 } from "./types";
 import { mountSceneViewer } from "./viewer/native-viewer";
-import { entityEvidenceStatus, isReferenceSurface, modelFamily } from "./scene-semantics";
+import { entityEvidenceStatus, isReferenceSurface } from "./scene-semantics";
 import "./styles.css";
 const PolicyPage = lazy(() => import("./PolicyPage"));
 const path = (value: string) => "#" + value;
@@ -1116,7 +1117,7 @@ export function SpatialView({
             callbacks.current.onCommit(event.operations);
           else if (event.type === "loadError" || event.type === "contextLost") {
             const current = callbacks.current;
-            if (!event.entityId || !current.selection.entityId || modelFamily(current.revision.document, current.selection.entityId).some(entity => entity.id === event.entityId))
+            if (!event.entityId || !current.selection.entityId || modelPreviewEntities(current.revision.document, current.selection.entityId).some(entity => entity.id === event.entityId))
               setError(Object.assign(new Error(event.message || event.code || "error"), { entityId: event.entityId }));
           }
           else if (event.type === "renderReady") setStatus("");

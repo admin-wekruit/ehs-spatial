@@ -1,6 +1,6 @@
 import {add,scale,dot,cross,unit,identity,matmul,point,rotate,transformMatrix,sourceCamera,cameraMatrix,boundsCorners,projected,fitCamera,type Camera,type Vec,type Transform} from './native-math.ts';
-import {isReferenceSurface,modelFamily} from '../scene-semantics.ts';
-import {activeModel,isCurrentReferenceSurface,modelFamilyGeometry,modelFamilyTransforms,entityGeometryForLayer,representationAvailable,representationInPhoto,cameraForImage,currentCameras,type GeometryLayer} from '../core.ts';
+import {isReferenceSurface} from '../scene-semantics.ts';
+import {activeModel,compositeModelEvidence,modelPreviewEntities,modelPreviewGeometry,isCurrentReferenceSurface,modelFamilyGeometry,modelFamilyTransforms,entityGeometryForLayer,representationAvailable,representationInPhoto,cameraForImage,currentCameras,type GeometryLayer} from '../core.ts';
 import type {SceneDocument,RepresentationLoadState} from '../types';
 
 type Mesh={vertices:Float32Array;indices:Uint32Array;mode:number;matrix:ArrayLike<number>;texture?:Blob;material?:{baseColorFactor:number[];alphaMode:'OPAQUE'|'MASK'|'BLEND';alphaCutoff:number};bounds:{min:Vec;max:Vec}};
@@ -139,7 +139,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
     // equal-depth interaction priority, not as evidence of object identity.
     // Unequal sampling would need source-mask area; nearer depth always wins.
     const pickRank=(g:GPU)=>entity(g.entityId)?.sourceContext?0:g.mesh.mode===4&&g.representation.kind==='observed_surface'&&g.representation.placementState==='confirmed'?2:1;
-    const selectedIds=new Set(selection.entityId?modelFamily(doc,selection.entityId).map(e=>e.id):[]),isSelected=(g:GPU)=>['generated_mesh','primitive'].includes(g.representation.kind)?selectedIds.has(g.entityId):g.entityId===selection.entityId;
+    const selectedIds=new Set(selection.entityId?modelPreviewEntities(doc,selection.entityId).map(e=>e.id):[]),isSelected=(g:GPU)=>['generated_mesh','primitive'].includes(g.representation.kind)?selectedIds.has(g.entityId):g.entityId===selection.entityId;
     const materialFor=(g:GPU)=>({...g.mesh.material,...(['generated_mesh','primitive'].includes(g.representation.kind)?g.representation.material:{})});
     const blended=(g:GPU)=>materialFor(g).alphaMode==='BLEND';
     const depth=(g:GPU)=>dot(add(point(model(g),g.mesh.bounds.min.map((n,k)=>(n+g.mesh.bounds.max[k])/2)),scale(camera!.eye,-1)),unit(add(camera!.target,scale(camera!.eye,-1))));
@@ -184,16 +184,17 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
   }
   function capturePreview(entityId:string,mode:'free'|'front'|'side'|'top',expectedRevisionId:string,expectedFrameId?:string,source:{layer:GeometryLayer;imageId?:string|null;observationId?:string|null}={layer:'model'}){
     if(disposed||revisionId!==expectedRevisionId||expectedFrameId!==undefined&&expectedFrameId!==frameId||gl!.isContextLost())return null;
-    const modeled=source.layer==='model',subject=entity(entityId),family=modeled?modelFamily(doc,entityId):subject?[subject]:[];
+    const modeled=source.layer==='model',subject=entity(entityId),composite=modeled&&compositeModelEvidence(doc,entityId),family=modeled?modelPreviewEntities(doc,entityId):subject?[subject]:[];
+    if(composite&&(!frameId||!modelPreviewGeometry(doc,entityId,{...source,frameId,showCandidates:true,observations:doc.observations})))return null;
     const models=family.flatMap(subject=>{const geometry=frameId?entityGeometryForLayer(subject,{...source,frameId,showCandidates:true,observations:doc.observations}):null;const reps=(subject.representations||[]).filter((rep:any)=>(modeled||rep.kind===source.layer)&&geometry?.representationIds.includes(rep.id));return subject.visible!==false?reps.map((rep:any)=>({subject,rep})):[];});
-    if(!models.length||family[0]?.visible===false||models.some(({subject,rep})=>!representationAvailable(subject,rep,frameId,true)||!loadedRepresentations.has(subject.id+'/'+rep.id)))return null;
+    if(!models.length||subject?.visible===false||models.some(({subject,rep})=>!representationAvailable(subject,rep,frameId,true)||!loadedRepresentations.has(subject.id+'/'+rep.id)))return null;
     const saved={camera,layers,selection,radius,center,width:canvas.width,height:canvas.height,canvasStyle:canvas.style.cssText,photoStyle:photo.style.cssText};
     try{
       // ponytail: one synchronous capture reuses the scene GPU buffers; restore
       // before yielding so object previews cannot change scene navigation.
       captureSize={w:640,h:640,cw:640,ch:640};
       // Studio shading lifts display shadows only; mesh colors/materials remain unchanged.
-      layers={...layers,studio:true,modelOnly:modeled,entityId:undefined,entityIds:family.map(e=>e.id),representationIds:models.map(({rep})=>rep.id),observationEntityId:entityId,observationId:source.observationId,observations:doc.observations,imageId:source.imageId??layers.imageId,axisEntityId:entityId,showAxes:true,observed_surface:source.layer==='observed_surface',point_cloud:source.layer==='point_cloud',generated_mesh:modeled,primitive:modeled,showCandidates:true,showBounds:false,editable:false};
+      layers={...layers,studio:true,modelOnly:modeled,entityId:undefined,entityIds:family.map(e=>e.id),representationIds:models.map(({rep})=>rep.id),observationEntityId:entityId,observationId:source.observationId,observations:doc.observations,imageId:source.imageId??layers.imageId,axisEntityId:composite?undefined:entityId,showAxes:!composite,observed_surface:source.layer==='observed_surface',point_cloud:source.layer==='point_cloud',generated_mesh:modeled,primitive:modeled,showCandidates:true,showBounds:false,editable:false};
       selection={};dimensions();camera=fittedCamera(mode,models.length===1?models[0]:undefined);const captureCanvas=document.createElement('canvas');if(!captureCanvas.getContext('2d'))throw Error('canvas_2d_unavailable');draw(false,captureCanvas);return captureCanvas.toDataURL('image/png');
     }finally{
       camera=saved.camera;layers=saved.layers;selection=saved.selection;radius=saved.radius;center=saved.center;captureSize=null;
