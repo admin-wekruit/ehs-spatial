@@ -1,3 +1,4 @@
+import type { SurfacePick } from "./viewer/native-math";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { SpatialView } from "./App";
 import { PhotoView } from "./PhotoView";
@@ -225,7 +226,7 @@ export function ReportScene({
   onFeedback?: (entityId: string) => void;
   onClearSelection?: () => void;
 }) {
-  const { t } = useI18n(), container = useRef<HTMLElement>(null),
+  const { t, language } = useI18n(), container = useRef<HTMLElement>(null),
     objectList = useRef<HTMLDivElement>(null), objectSearch = useRef<HTMLInputElement>(null), currentPreviewKey = useRef(""), panePrefix = useId();
   const [layer, setLayer] = useState<Layer>(() => revision.document.entities.some(entity =>
     !entity.sourceContext && activeModel(entity)?.sourceValidity !== "stale" && activeModel(entity)) ? "model" : "observed_surface"),
@@ -245,7 +246,16 @@ export function ReportScene({
   const camera = cameraForImage(document, imageId);
   const geometryOptions: GeometryOptions = { layer, frameId: camera?.coordinateFrameId || (!imageId ? document.coordinateFrames[0]?.id : "") || "", showCandidates: true, imageId, observations: document.observations };
   const [measurement, setMeasurement] = useState<SceneMeasurement | null>(null), [measureRegion, setMeasureRegion] = useState<MeasureRegion | null>(null), [drawingRegion, setDrawingRegion] = useState(false);
-  useEffect(() => { setMeasurement(null); setMeasureRegion(null); setDrawingRegion(false); }, [revision.id, selection.entityId]);
+  const [measurePoints,setMeasurePoints]=useState<SurfacePick[]>([]),[pickingPoints,setPickingPoints]=useState(false),[pointError,setPointError]=useState(false);
+  useEffect(() => { setMeasurement(null); setMeasureRegion(null); setDrawingRegion(false); setMeasurePoints([]); setPickingPoints(false); }, [revision.id, selection.entityId]);
+  useEffect(()=>{if(layer!=="model"){setMeasurePoints([]);setPickingPoints(false);setMeasurement(null);}},[layer]);
+  function startPointPicking(start:boolean) { setPickingPoints(start); setMeasurePoints([]); setMeasurement(null); setPointError(false); if(start){setDrawingRegion(false);setLayer("model");setFocused("spatial");setMobileSection("views");} }
+  function pickMeasurementPoint(hit:SurfacePick|null) {
+    if(!pickingPoints)return;
+    if(!hit||measurePoints.length>0&&hit.coordinateFrameId!==measurePoints[0].coordinateFrameId){setPointError(true);return;}
+    setPointError(false);const next=[...measurePoints,hit].slice(0,3);setMeasurePoints(next);
+    if(next.length===3){setPickingPoints(false);setMobileSection("inspector");}
+  }
   const planOptions = scenePlanOptions(document, cadLayer, true, imageId);
   const availability = sceneAvailability(document, planOptions, layer);
   const referenceImageId = selected ? cadReferenceImage(document, selected) : null;
@@ -469,10 +479,10 @@ export function ReportScene({
                 <div className="report-scene-pane-body">
                   {pane === "photo" && <><PhotoView document={document} imageId={imageId} selectedId={selection.entityId} onSelect={selectEntity} draw={draw} onBox={onBox} showBounds={allBounds} />
                     {camera && allBounds && <PhotoAxes revision={revision} camera={camera} layer={layer} selectedId={selection.entityId} observationId={selection.observationId} allBounds={allBounds} />}</>}
-                  {pane === "spatial" && <><SpatialView revision={revision} selection={selection} onSelect={selectEntity} onCommit={noEdit} mode="free" cameraId={camera?.id || null}
+                  {pane === "spatial" && <>{pickingPoints && <div className="cad-measure-guide" role="status">{language === "zh" ? `第 ${measurePoints.length+1}/3 点：${["第一条边上的点","两条边相交的顶点","第二条边上的点"][measurePoints.length]}。点击模型表面，拖动可旋转。` : `Point ${measurePoints.length+1}/3: ${["first edge","shared vertex","second edge"][measurePoints.length]}. Click the model surface; drag to rotate.`}{pointError && <strong>{language === "zh" ? " 未点到模型表面，请重选。" : " No model surface hit. Try again."}</strong>} <button onClick={()=>startPointPicking(false)}>{language === "zh" ? "取消取点" : "Cancel picking"}</button></div>}<SpatialView revision={revision} selection={selection} onSelect={selectEntity} onCommit={noEdit} mode="free" cameraId={camera?.id || null}
                     modelPreview={previewRequest} onModelPreview={(key, image) => { if (key === currentPreviewKey.current) setModelPreview({ key, image }); }}
-                    onAssetStates={(revisionId, states) => setModelLoads({ revisionId, states })}
-                    layers={{ measurement: layer === "model" ? measurement : null, modelOnly: layer === "model", observed_surface: layer === "observed_surface", generated_mesh: layer === "model", primitive: layer === "model", point_cloud: layer === "point_cloud", allBounds, showBounds: allBounds, showCandidates: true, editable: false, opacity: 1, imageId, observationEntityId: selected?.id, observationId: selection.observationId, observations: document.observations }} />
+                    onAssetStates={(revisionId, states) => setModelLoads({ revisionId, states })} onMeasurementPoint={pickMeasurementPoint}
+                    layers={{ pickingPoints, measurePoints, measurement: layer === "model" ? measurement : null, modelOnly: layer === "model", observed_surface: layer === "observed_surface", generated_mesh: layer === "model", primitive: layer === "model", point_cloud: layer === "point_cloud", allBounds, showBounds: allBounds, showCandidates: true, editable: false, opacity: 1, imageId, observationEntityId: selected?.id, observationId: selection.observationId, observations: document.observations }} />
                     {!hasRepresentation && <div className="report-scene-stage-note">{t("sceneNoRepresentation")}</div>}</>}
                   {pane === "cad" && availability.planEmpty && <div className="report-scene-plan-empty" role="status"><strong>{t("scenePlanUnavailable")}</strong><p>{t(availability.planEmpty)}</p><small>{t("sceneSelectionRetained")}</small></div>}
                   {pane === "cad" && !availability.planEmpty && <CadView key={revision.id + cadLayer} document={document} selectedId={selection.entityId} onSelect={selectPlanEntity} geometryOptions={planOptions} measurement={cadLayer === "model" ? measurement : null} region={cadLayer === "model" ? measureRegion : null} drawingRegion={drawingRegion} onRegion={region => { setMeasureRegion(region); setDrawingRegion(false); setMobileSection("inspector"); }} />}
@@ -492,7 +502,7 @@ export function ReportScene({
         </div>
         <aside className="report-scene-inspector" id={`${panePrefix}-inspector`} aria-label={t("sceneInspector")}>
           <header><h3>{t("sceneInspector")}</h3>{selected && <span>{selected.id.slice(0, 8)}</span>}</header>
-          <div className="report-scene-inspector-content">{selected && <SpatialMeasurements key={revision.id + selected.id} revision={revision} selectedId={selected.id} region={measureRegion} drawing={drawingRegion} onResult={setMeasurement} onDraw={() => { setDrawingRegion(!drawingRegion); if (!drawingRegion) { setCadLayer("model"); setFocused("cad"); setMobileSection("views"); } }} />}{inspector ?? <p className="report-scene-inspector-empty">{t("sceneReadOnly")}</p>}</div>
+          <div className="report-scene-inspector-content">{selected && <SpatialMeasurements key={revision.id + selected.id} revision={revision} selectedId={selected.id} points={measurePoints} pickingPoints={pickingPoints} onPickPoints={startPointPicking} region={measureRegion} drawing={drawingRegion} onResult={setMeasurement} onDraw={() => { setDrawingRegion(!drawingRegion); if (!drawingRegion) { setCadLayer("model"); setFocused("cad"); setMobileSection("views"); } }} />}{inspector ?? <p className="report-scene-inspector-empty">{t("sceneReadOnly")}</p>}</div>
         </aside>
       </div>
     </section>

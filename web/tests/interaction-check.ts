@@ -329,3 +329,20 @@ assert.deepEqual(linkedPlans[1].polygons,linkedPlans[0].polygons,"Composite CAD 
 assert.deepEqual(linkedPlans[1].representationIds,[model.id]);
 model.planProjection = {...model.planProjection as Record<string, unknown>, assetSha256:"stale"};
 assert.equal(planShapes(compositePlan,referenceOptions).length,0,"An invalid component projection cannot produce composite CAD");
+
+// Three-point angles use 3D rays from the second point, including obtuse angles.
+const { threePointAngle, rayMeshPoint } = await import('../src/viewer/native-math.ts');
+for (const degrees of [0,30,90,135,180]) {
+  const radians=degrees*Math.PI/180;
+  const result=threePointAngle([[1,0,0],[0,0,0],[Math.cos(radians),Math.sin(radians),0]]);
+  assert.ok(Math.abs(result.value-degrees)<1e-6);
+  assert.ok(result.arc.every(p=>p.every(Number.isFinite)));
+}
+assert.throws(()=>threePointAngle([[0,0,0],[0,0,0],[1,1,0]]));
+assert.throws(()=>threePointAngle([[NaN,0,0],[0,0,0],[1,1,0]]));
+const triVertices=new Float32Array([0,0,0,...Array(9).fill(0),2,0,0,...Array(9).fill(0),0,2,0,...Array(9).fill(0)]);
+assert.deepEqual(rayMeshPoint(triVertices,new Uint32Array([0,1,2]),[.5,.5,2],[0,0,-1])?.point,[.5,.5,0]);
+assert.equal(rayMeshPoint(triVertices,new Uint32Array([0,1,2]),[3,3,2],[0,0,-1]),null);
+assert.equal(rayMeshPoint(triVertices,new Uint32Array([0,1,2]),[.5,.5,2],[0,0,1]),null);
+assert.deepEqual(rayMeshPoint(triVertices,new Uint32Array([2,1,0]),[.5,.5,2],[0,0,-1])?.point,[.5,.5,0]);
+console.log('PASS: 3D three-point acute/obtuse/straight angles, degenerate rejection and mesh surface picking');

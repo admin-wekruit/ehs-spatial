@@ -48,3 +48,32 @@ export function fitCamera(points:Vec[],back:Vec,up:Vec,aspect:number,orthographi
   const orthoHeight=Math.max(radius*.01,...local.map(p=>2*Math.max(Math.abs(p[1]),Math.abs(p[0])/aspect)/.85));
   return {eye:add(target,scale(z,distance)),target,up:y,exact:false,orthographic,orthoHeight,fov};
 }
+
+export type SurfacePick = { point: Vec; entityId: string; representationId: string; coordinateFrameId: string };
+export function threePointAngle(points: Vec[]) {
+  if(points.length!==3||points.some(p=>p.length!==3||!p.every(Number.isFinite)))throw Error('measurement_points_invalid');
+  const [a,b,c]=points,u=add(a,scale(b,-1)),v=add(c,scale(b,-1)),length=Math.min(Math.hypot(...u),Math.hypot(...v));
+  if(length<1e-8)throw Error('measurement_points_coincident');
+  const first=unit(u),second=unit(v),cosine=Math.max(-1,Math.min(1,dot(first,second))),angle=Math.acos(cosine);
+  let tangent=add(second,scale(first,-cosine));
+  if(Math.hypot(...tangent)<1e-8)tangent=cross(first,Math.abs(first[0])<.8?[1,0,0]:[0,1,0]);
+  tangent=unit(tangent);
+  const arc=Array.from({length:33},(_,i)=>add(b,scale(add(scale(first,Math.cos(angle*i/32)),scale(tangent,Math.sin(angle*i/32))),length*.3)));
+  return {value:angle*180/Math.PI,arc,labelPoint:arc[16]};
+}
+
+// ponytail: linear triangle traversal only on a measurement click, after GPU
+// object picking. Add a per-mesh BVH if individual selectable meshes grow larger.
+export function rayMeshPoint(vertices: Float32Array,indices: Uint32Array,origin: Vec,direction: Vec) {
+  let nearest=Infinity,hit:Vec|null=null;
+  for(let i=0;i<indices.length;i+=3){
+    const a=Array.from(vertices.subarray(indices[i]*12,indices[i]*12+3)),b=Array.from(vertices.subarray(indices[i+1]*12,indices[i+1]*12+3)),c=Array.from(vertices.subarray(indices[i+2]*12,indices[i+2]*12+3));
+    const e1=add(b,scale(a,-1)),e2=add(c,scale(a,-1)),p=cross(direction,e2),det=dot(e1,p);
+    if(Math.abs(det)<=1e-12*Math.hypot(...e1)*Math.hypot(...e2)*Math.hypot(...direction))continue;
+    const t=add(origin,scale(a,-1)),u=dot(t,p)/det;if(u<0||u>1)continue;
+    const q=cross(t,e1),v=dot(direction,q)/det;if(v<0||u+v>1)continue;
+    const distance=dot(e2,q)/det;if(distance<0||distance>=nearest)continue;
+    nearest=distance;hit=add(origin,scale(direction,distance));
+  }
+  return hit?{point:hit,distance:nearest}:null;
+}

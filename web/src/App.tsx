@@ -1062,6 +1062,7 @@ export function SpatialView({
   modelPreview,
   onModelPreview,
   onAssetStates,
+  onMeasurementPoint,
 }: {
   revision: Revision;
   selection: Selection;
@@ -1072,16 +1073,17 @@ export function SpatialView({
   layers: Record<string, any>;
   modelPreview?: { entityId: string; frameId: string; layer: import("./core").GeometryLayer; imageId?: string | null; observationId?: string | null; mode: "free" | "front" | "side" | "top"; requestKey: string };
   onModelPreview?: (requestKey: string, image: string) => void;
+  onMeasurementPoint?: (point: import("./viewer/native-math").SurfacePick | null) => void;
   onAssetStates?: (revisionId: string, states: import("./types").RepresentationLoadState[]) => void;
 }) {
   const host = useRef<HTMLDivElement>(null),
     runtime = useRef<any>(null),
-    callbacks = useRef({ onSelect, onCommit, revision, selection, modelPreview, onModelPreview, onAssetStates }),
+    callbacks = useRef({ onSelect, onCommit, revision, selection, modelPreview, onModelPreview, onAssetStates, onMeasurementPoint }),
     capturedKey = useRef<string | null>(null),
     { language, t } = useI18n(),
     [status, setStatus] = useState("loadingModel"),
     [error, setError] = useState<unknown>();
-  callbacks.current = { onSelect, onCommit, revision, selection, modelPreview, onModelPreview, onAssetStates };
+  callbacks.current = { onSelect, onCommit, revision, selection, modelPreview, onModelPreview, onAssetStates, onMeasurementPoint };
   const viewCameraKey = mode === "photo" ? cameraId : currentCameras(revision.document).find(camera => camera.id === cameraId)?.coordinateFrameId;
   function refreshModelPreview() {
     const current = callbacks.current, request = current.modelPreview;
@@ -1103,7 +1105,8 @@ export function SpatialView({
         locale: language,
         layers,
         onEvent: (event: any) => {
-          if (event.type === "selectionIntent") {
+          if (event.type === "measurementPoint") callbacks.current.onMeasurementPoint?.(event.hit);
+          else if (event.type === "selectionIntent") {
             const d = callbacks.current.revision.document,
               c = d.cameras.find((c) => c.id === event.cameraId);
             const hit =
