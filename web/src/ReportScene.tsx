@@ -256,8 +256,12 @@ export function ReportScene({
     r.id === e.activeModelRepresentationId && r.placementState === "unconfirmed" && ["imported_proposal", "requires_alignment_confirmation"].includes(r.placementReason || "")));
   const selectedOverlay = selected && camera ? photoOverlay(document, selected, camera, layer, selection.observationId) : null;
   const objects = document.entities.filter((entity) => !entity.sourceContext);
+  const visibleObjects = objects.filter(entity => entity.visible !== false);
   const modelObjects = objects.filter(entity => activeModel(entity) && entityGeometryForLayer(entity, { ...geometryOptions, layer: "model" }));
   const referenceSurfaces = objects.filter(entity => entityGeometryForLayer(entity, { ...geometryOptions, layer: "model" })?.geometryKind === "observed");
+  const compositePreviews = visibleObjects.filter(entity => !modelObjects.includes(entity) && !referenceSurfaces.includes(entity) &&
+    compositeModelEvidence(document, entity.id) && modelPreviewGeometry(document, entity.id, { ...geometryOptions, layer: "model" }));
+  const missingModels = visibleObjects.length - modelObjects.length - referenceSurfaces.length - compositePreviews.length;
   const modelCandidates = modelObjects.filter(entity => activeModel(entity)?.placementState !== "confirmed").length;
   const modelFrameMismatch = (entity: Entity) => {
     const rep = activeModel(entity);
@@ -444,7 +448,7 @@ export function ReportScene({
           <nav className="report-scene-view-switch report-scene-mobile-views" aria-label={t("sceneViews")}>
             {paneOrder.map((pane) => <button key={pane} aria-pressed={(focused || "photo") === pane} aria-controls={`${panePrefix}-${pane}`} onClick={() => chooseView(pane)}>{t(viewNames[pane])}</button>)}
           </nav>
-          {layer === "model" && <p className="report-scene-notice" data-model-coverage={modelObjects.length} data-model-loaded={readyModels.length} data-reference-surfaces={referenceSurfaces.length}><strong>{modelObjects.length} / {objects.filter(entity => entity.visible !== false).length} {t("sceneModelCoverage")}</strong> · {readyModels.length} / {modelObjects.length} {t("sceneModelLoaded")}{pendingModels > 0 && <> · {pendingModels} {t("sceneModelLoading")}</>}{failedModels.length > 0 && <> · {failedModels.length} {t("sceneModelLoadFailed")}</>}{modelCandidates > 0 && <> · {modelCandidates} {t("sceneModelCandidateCount")}</>} · {t("sceneModelCoverageMeaning")}{referenceSurfaces.length > 0 && <> · {referenceSurfaces.length} {t("observed_reference_surface")}</>}</p>}
+          {layer === "model" && <p className="report-scene-notice" data-model-coverage={modelObjects.length} data-model-loaded={readyModels.length} data-reference-surfaces={referenceSurfaces.length} data-composite-previews={compositePreviews.length} data-missing-models={missingModels}><strong>{modelObjects.length} / {visibleObjects.length} {t("sceneModelCoverage")}</strong>{referenceSurfaces.length > 0 && <> · {referenceSurfaces.length} {t("sceneReferenceSurfaceCount")}</>}{compositePreviews.length > 0 && <> · {compositePreviews.length} {t("sceneCompositePreviewCount")}</>} · {missingModels} {t("sceneMissingModelCount")} · {readyModels.length} / {modelObjects.length} {t("sceneModelLoaded")}{pendingModels > 0 && <> · {pendingModels} {t("sceneModelLoading")}</>}{failedModels.length > 0 && <> · {failedModels.length} {t("sceneModelLoadFailed")}</>}{modelCandidates > 0 && <> · {modelCandidates} {t("sceneModelCandidateCount")}</>} · {t("sceneModelCoverageMeaning")}</p>}
           {hasCandidates && <p className="report-scene-notice">{t("sceneCandidateNotice")}</p>}
           <div className="report-scene-grid">
             {paneOrder.map((pane, index) => (
