@@ -18,7 +18,7 @@ def providers_for_new_capture(repo, *, verdict='pass'):
     providers['generation'] = provider('generation', lambda payload: {
         'vertices':np.array([[-1.2,-1.2,2.],[-.2,-1.2,2.],[-.2,1.2,2.],[-1.2,1.2,2.]]),
         'faces':np.array([[0,1,2],[0,2,3]]), 'proposedObjectToNative':np.eye(4)})
-    providers['model_review'] = provider('model_review', lambda payload: inventory_review_response(payload) if payload.get('mode') == 'inventory' else {'review':{
+    providers['model_review'] = provider('model_review', lambda payload: inventory_review_response(payload) if payload.get('mode') in ('inventory', 'workcell_scope') else {'review':{
         'status':verdict, 'reason':'synthetic contract fixture',
         'observationIds':[view['observationId'] for view in payload['views']],
         'visibleShapeIssues':[] if verdict == 'pass' else ['visible structure differs'],
@@ -70,7 +70,7 @@ def test_empty_discovery_cannot_hide_unavailable_capture_geometry(tmp_path, reta
         pytest.fail('Empty discovery must not invent a model target')
     providers['generation'] = provider('generation', unexpected_model_call)
     providers['model_review'] = provider('model_review', lambda payload: inventory_review_response(payload)
-        if payload.get('mode') == 'inventory' else unexpected_model_call(payload))
+        if payload.get('mode') in ('inventory', 'workcell_scope') else unexpected_model_call(payload))
 
     document, result = run_capture_pipeline(repo, blobs, repo.job, providers)
     assert result['status'] == result['analysis']['status'] == 'incomplete'
@@ -124,7 +124,7 @@ def test_capture_uses_reviewed_alternate_owned_photo_and_replays_both_candidates
         generated.append((payload['entityId'], payload['imageId']))
         return original_generation(payload)
     def review(payload):
-        if payload.get('mode') == 'inventory':
+        if payload.get('mode') in ('inventory', 'workcell_scope'):
             return inventory_review_response(payload)
         reviewed.append(deepcopy(payload))
         accepted = len(generated) == 2
@@ -165,7 +165,7 @@ def test_capture_does_not_try_another_photo_without_valid_alternate_view_review(
     repo = Repo(blobs)
     providers = providers_for_new_capture(repo)
     def review(payload):
-        if payload.get('mode') == 'inventory':
+        if payload.get('mode') in ('inventory', 'workcell_scope'):
             return inventory_review_response(payload)
         if action == 'unknown':
             raise TimeoutError('Unknown review outcome')
@@ -294,7 +294,7 @@ def test_unknown_model_outcome_stops_remaining_objects(tmp_path, monkeypatch, st
     providers['discovery'] = bundle(repo)['discovery']  # Multiple independent targets.
     if failure == 'timeout':
         def timeout(payload):
-            if payload.get('mode') == 'inventory':
+            if payload.get('mode') in ('inventory', 'workcell_scope'):
                 return inventory_review_response(payload)
             raise TimeoutError('uncertain result')
         providers[stage] = provider(stage, timeout)

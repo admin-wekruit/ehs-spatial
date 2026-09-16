@@ -980,3 +980,25 @@ def test_inventory_research_loader_rejects_stale_baseline_hash_before_call(tmp_p
     with pytest.raises(PlatformError,match='research_input_hash_mismatch'):
         reconstruction.run_research_job(repo,blobs,job)
     assert not repo.calls
+
+
+def test_scope_research_freezes_all_photos_without_mutating_scene(tmp_path, monkeypatch):
+    from test_platform_reconstruction import inventory_review_response
+    repo, blobs, manifest, prior = preparation(tmp_path, monkeypatch, 'model_review', owned_observation=True)
+    protocol = {k: prior['protocol'][k] for k in ('id', 'stage', 'purpose', 'projectId', 'branchId',
+        'baselineRevision', 'metricDefinitions', 'policyThresholds', 'split', 'callLimits')}
+    protocol.update(mode='workcell_scope', imageIds=[i['id'] for i in reversed(repo.capture['images'])])
+    frozen = cli.prepare(protocol, repo, blobs, manifest, prior['protocol']['runtimeManifest'])
+    assert len(frozen['payload']['images']) == 2
+    assert frozen['payload']['entities']
+    before = deepcopy(repo.document)
+    spec = reconstruction.providers_from_manifest(manifest, _research=True)['model_review']
+    monkeypatch.setattr(reconstruction, 'providers_from_manifest', lambda *a, **kw: {
+        'model_review': replace(spec, invoke=inventory_review_response, records_dispatch=False)})
+    job = {**repo.job, 'kind': 'validate_model', 'config': {'researchProtocolSha256': digest(frozen['protocol'])}}
+    result = reconstruction.run_research_stage(repo, blobs, job, 'model_review', frozen['payload'],
+        frozen['images'], manifest, frozen['protocol'])
+    assert result['status'] == 'succeeded', result
+    assert repo.document == before
+    assert result['outputValidation'][0]['admissionStatus'] == 'accepted'
+    assert len(repo.calls) == 1

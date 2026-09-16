@@ -131,3 +131,47 @@ f5f4b1d4-bb55-4c13-ba02-b44e706340f2: 26 in-scope records, 24 independent models
 0 source-reference errors. Historical publications are unchanged. This is a
 coverage result; physical placement and independent shape review retain their
 existing uncertainty. No paid model call was required for the exclusion.
+
+## Reusable workcell scope sanity check, 2026-09-16
+
+`run_capture_pipeline` now runs a single capture-level scope review after discovery,
+segmentation and association, before it freezes generation targets. It uses the
+existing bounded model-review provider, cache and charged-call ledger. Original
+photos and owned observation boxes determine membership; generated mesh poses,
+object count targets and distance from the scene center are not exclusion evidence.
+
+Every entity and owned observation must occur exactly once in the response. An
+object is automatically excluded only if the target workcell is established and
+all of its supplied views place it outside with visible boundary evidence. Missing
+photos, conflicting views, uncertain boundaries and in-scope components preserve
+the object for review. Manual scope decisions prevail. A failed scope review stops
+new object-generation calls; scope uncertainty prevents a complete pipeline status.
+Standalone-object captures do not require a workcell boundary. Exclusions reuse the
+shared source-context contract for generation, CAD, browser selection and EHS.
+
+The `workcell-scope-v2` request uses temporary short identifiers only inside the VLM
+transport, restoring exact business IDs before admission. The frozen input retains
+original image hashes, observation revisions, boxes and mask IDs. This avoids
+spending the input budget on repeated UUIDs and history. The research CLI supports
+`mode=workcell_scope` with 1–4 explicitly selected owned photos; it preserves their
+frozen order and never changes a published revision.
+
+Real three-photo experiment on the original 28-record revision:
+- Job: `8fcc6f01-fc72-5a66-929c-0d79cf52be2d`.
+- Received source response: `cc3b942d-ba8e-4ae6-8107-f0d6efd00f49`.
+- One actual generation request; 10,306 prompt tokens and 4,533 output tokens.
+- Correctly marked the neighboring right fence as outside. It marked the small
+  robot-area indicator as inside based on source imagery. Floating reconstructed
+  geometry therefore must remain a placement issue, not automatic background removal.
+- Initial admission exposed a photo-order mismatch in the research consumer. The
+  consumer now follows frozen image order; the exact saved response was re-admitted
+  with no additional model call. The original job result remains unchanged.
+- Two earlier preflights rejected oversized requests before generation. All three
+  reservations remain in the ordinary cost ledger under the cumulative USD40 cap.
+- Evidence: `.platform/model-correspondence/model-completion/pipeline-audit/hosted-sam3d-coarse/scope-live-v3.admitted.json`.
+
+This validates the shared scope path on the existing workcell and its failure
+contracts, not universal recognition accuracy or completion of fresh-image model
+provider release gates. Current public coverage remains 26/26 displayable geometry
+(24 independent models, ground reference, composite preview); physical placement
+and independent shape-review limitations are unchanged.

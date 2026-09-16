@@ -98,6 +98,12 @@ def provider(stage,fn,model=None,paid=False):
 
 
 def inventory_review_response(payload):
+    if payload['mode'] == 'workcell_scope':
+        return {'review': {'inputSha256': payload['inputSha256'], 'targetEstablished': True,
+            'targetDescription': 'Synthetic foreground workcell', 'entities': [
+                {'entityId': e['entityId'], 'views': [{'observationId': o['id'], 'relation': 'inside',
+                    'evidence': 'Inside synthetic workcell', 'boundaryEvidence': ''} for o in e['observations']]}
+                for e in payload['entities']]}}
     assert payload['mode'] == 'inventory'
     return {'review':{'inventorySha256':payload['inventorySha256'],
         'observationIds':[o['id'] for o in payload['observations']],

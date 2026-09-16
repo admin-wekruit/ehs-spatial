@@ -92,7 +92,7 @@ def chain(repo, tmp_path, monkeypatch):
                 'officialPosedVertices': transform_points(vertices, pose), 'pins': RECGEN_PINS,
                 'telemetry': {'actualCostUsd': 0}, 'providerRequestId': 'synthetic-generation'}
     def review_transport(value):
-        if value.get('mode') == 'inventory':
+        if value.get('mode') in ('inventory', 'workcell_scope'):
             return inventory_review_response(value)
         reviewed.append(deepcopy(value))
         return {'review': {'status': 'pass', 'reason': 'Synthetic visible plane matches both source cameras.',
@@ -450,8 +450,8 @@ def test_user_edit_during_analysis_prevents_same_job_generation_reservation(chai
     stopped = dispatch(chain, chain.capture['job']['id'], analysis=True)
     assert len(masks) == 4 and len(edits) == 1
     assert not generated and not chain.reviewed
-    assert stopped['result']['generation']['errors']
-    assert {error['code'] for error in stopped['result']['generation']['errors']} == {'pipeline_base_revision_changed'}
+    assert stopped['result']['pipelineStatus'] == 'scope_review_required'
+    assert {error['code'] for error in stopped['result']['errors']} == {'pipeline_base_revision_changed'}
     assert all(call['provider'] != 'generation' for call in model_calls(chain))
     assert not stopped['headAdvanced'] and stopped['resultRevisionId']
     assert chain.repo.get_project(chain.scene['project']['id'])['revision']['id'] == edits[0]['revision']['id']

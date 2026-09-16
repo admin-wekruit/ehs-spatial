@@ -7,8 +7,9 @@ An explicit geometry/depth/discovery stage instead selects owned capture imageId
 and requires no prior entities, masks or geometry. Depth/discovery select one photo.
 Segmentation runtime validation selects an explicit owned entityId/observationId;
 its original photo and saved box are used without requiring a previous mask.
-Model-review runtime validation requires mode=inventory and one explicit owned
-imageId; it freezes that image's saved observations and never updates the scene.
+Model-review runtime validation uses mode=inventory for one owned photo or
+mode=workcell_scope for 1–4 owned photos. Both freeze source observations and
+never update the scene.
 Configuration and budget come from the existing platform runtime environment.
 --prepare performs reads only; --submit enqueues the prepared envelope for the
 ordinary worker. Neither command invokes a model or modifies a scene head.
@@ -39,7 +40,7 @@ def prepare(protocol, repository, blobs, provider_manifest, runtime_manifest):
     if (stage == 'generation' and ('entityId' not in protocol or 'imageIds' in protocol)
             or stage in ('geometry', 'depth', 'discovery', 'model_review') and any(k in protocol for k in ('entityId', 'observationId', 'seed'))
             or stage in ('discovery', 'model_review') and protocol['purpose'] != 'runtime_validation'
-            or stage == 'model_review' and protocol.get('mode') != 'inventory'
+            or stage == 'model_review' and protocol.get('mode') not in ('inventory', 'workcell_scope')
             or stage != 'model_review' and 'mode' in protocol
             or stage == 'segmentation' and (not {'entityId', 'observationId'} <= set(protocol) or
                 any(k in protocol for k in ('imageIds', 'seed')) or protocol['purpose'] != 'runtime_validation')):
@@ -56,7 +57,7 @@ def prepare(protocol, repository, blobs, provider_manifest, runtime_manifest):
             payload, images, snapshot, refs = _research_segmentation_input(repository, blobs, job, protocol['entityId'], protocol['observationId'])
             protocol['sourceObservation'] = snapshot
         else:
-            payload, images = _research_capture_input(repository, blobs, job, stage, protocol.get('imageIds'))
+            payload, images = _research_capture_input(repository, blobs, job, stage, protocol.get('imageIds'), mode=protocol.get('mode'))
             refs = sorted([{'assetId': i['assetId'], 'sha256': i['sha256']} for i in images], key=lambda r: r['assetId'])
         if stage not in provider_manifest or stage not in runtime_manifest:
             raise PlatformError('provider_not_configured', 409, stage=stage)
