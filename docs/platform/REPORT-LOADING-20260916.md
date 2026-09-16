@@ -57,6 +57,12 @@ does not claim that all geometry loads in the metadata request time.
   photo/CAD/model; drag rotates scene; no console warnings/errors. Total page text
   including closed details after selection was 82,161 characters, of which 21,255
   were in `pre` elements, rather than tens of megabytes of audit JSON.
+- Public browser check after deployment: refresh to visible report heading in
+  2.307 s in the existing browser session (not a cold-cache benchmark); all 24
+  independent models subsequently loaded. Actual drag changed scene orientation;
+  selecting the cart retained its identity in CAD and photograph; CAD remained
+  26/26. No console errors or warnings were reported during this check. Pages
+  deployment `95ef8c2251ff306c1c149f0b272367255466b4eb` succeeded.
 
 Database-backed publication tests were skipped without `PANOPTES_TEST_DATABASE_URL`;
 the changed API projection is covered with an injected repository in the runnable
