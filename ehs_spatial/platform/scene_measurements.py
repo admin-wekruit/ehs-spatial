@@ -14,7 +14,7 @@ from .spatial import transform_matrix, transform_points, primitive_mesh, affine
 from .blender_export import mesh_from_asset
 
 
-def fitted_plane(triangles):
+def fitted_plane(triangles, *, narrow=False):
     """Deterministic area-weighted dominant surface fit, including thin double-sided panels."""
     t = np.asarray(triangles, float)
     crosses = np.cross(t[:, 1]-t[:, 0], t[:, 2]-t[:, 0])
@@ -24,7 +24,8 @@ def fitted_plane(triangles):
     if not len(t):
         raise PlatformError('measurement_no_surface', 422)
     centers = t.mean(1); normals = crosses/(2*area[:, None])
-    span = float(np.linalg.norm(np.ptp(t.reshape(-1, 3), axis=0)))
+    centroid = (centers*area[:, None]).sum(0)/area.sum()
+    span = float(2*np.linalg.norm(t.reshape(-1, 3)-centroid, axis=1).max())
     tolerance = max(span*.01, 1e-9)
     # ponytail: 64 deterministic area quantiles bound candidate cost; this selects
     # one dominant flat face, not every face of arbitrary curved machinery.
@@ -42,14 +43,66 @@ def fitted_plane(triangles):
     sums = faces.sum(1); center = (weights[:, None]*sums/3).sum(0)
     moment = (np.einsum('n,nki,nkj->ij', weights, faces, faces)+np.einsum('n,ni,nj->ij', weights, sums, sums))/12
     values, axes = np.linalg.eigh(moment-np.outer(center, center))
-    if values[1] <= 1e-15 or values[1]/max(values[2], 1e-15) < .01 or max(values[0], 0)/values[1] > .02:
+    if values[1] <= 1e-15 or values[1]/max(values[2], 1e-15) < (.002 if narrow else .01) or max(values[0], 0)/values[1] > (.08 if narrow else .02):
         raise PlatformError('measurement_no_stable_plane', 422)
     normal = axes[:, 0]; points = faces.reshape(-1, 3)
     local = (points-center)@axes[:, 1:]
     lo, hi = local.min(0), local.max(0)
     outline = [center+axes[:, 1]*x+axes[:, 2]*y for x, y in [(lo[0],lo[1]),(hi[0],lo[1]),(hi[0],hi[1]),(lo[0],hi[1]),(lo[0],lo[1])]]
     return dict(center=center, normal=normal, outline=np.asarray(outline), areaFraction=fraction,
-                residual=float(np.sqrt(max(values[0], 0))), span=span)
+                residual=float(np.sqrt(max(values[0], 0))), span=span, points=points)
+
+
+def fitted_bend(triangles):
+    """Two supported sheet faces of ONE mesh, with an interior angle at their hinge."""
+    t = np.asarray(triangles, float)
+    try:
+        a = fitted_plane(t, narrow=True)
+        cross = np.cross(t[:, 1]-t[:, 0], t[:, 2]-t[:, 0])
+        area = np.linalg.norm(cross, axis=1)/2
+        normals = cross/np.maximum(2*area[:, None], 1e-30)
+        # ponytail: this bounded two-plane fit covers a single visible fold with
+        # at least 20 degrees of normal separation. Multiple/rounded folds need
+        # explicit surface selection, not a forced two-plane answer.
+        remaining = (area > 1e-15) & (np.abs(normals@a['normal']) < np.cos(np.deg2rad(20)))
+        if not remaining.any(): raise ValueError()
+        b = fitted_plane(t[remaining], narrow=True)
+        b['areaFraction'] *= float(area[remaining].sum()/area.sum())
+        if min(a['areaFraction'], b['areaFraction']) < .1 or a['areaFraction']+b['areaFraction'] < .6:
+            raise ValueError()
+        axis = np.cross(a['normal'], b['normal']); length = np.linalg.norm(axis)
+        if length < np.sin(np.deg2rad(10)): raise ValueError()
+        axis /= length
+        center = (a['center']+b['center'])/2
+        matrix = np.stack([a['normal'], b['normal'], axis])
+        origin = center+np.linalg.solve(matrix, [(a['center']-center)@a['normal'], (b['center']-center)@b['normal'], 0])
+        intervals=[]; directions=[]; widths=[]
+        for surface in (a,b):
+            points=surface['points']; along=(points-origin)@axis
+            intervals.append((float(along.min()),float(along.max())))
+            ray=surface['center']-origin; ray-=axis*(ray@axis)
+            width=np.linalg.norm(ray)
+            if width < max(surface['residual']*2.5, a['span']*.01): raise ValueError()
+            ray/=width; across=(points-origin)@ray
+            # The intersection must meet the supported edge of BOTH patches,
+            # not merely intersect their infinite planes somewhere off-model.
+            tolerance=max(a['span']*.03, surface['residual']*3)
+            if across.min()>tolerance or across.min() < -tolerance: raise ValueError()
+            directions.append(ray); widths.append(float(across.max()))
+        lo=max(i[0] for i in intervals); hi=min(i[1] for i in intervals)
+        if hi-lo < .25*min(i[1]-i[0] for i in intervals): raise ValueError()
+        hinge=np.array([origin+axis*lo,origin+axis*hi])
+        # Draw the cross-section near a shared edge so the bend is legible.
+        vertex=hinge[0]+(hinge[1]-hinge[0])*.05
+        cosine=float(np.clip(directions[0]@directions[1],-1,1))
+        angle=float(np.arccos(cosine)); radius=min(widths)*.65
+        tangent=directions[1]-cosine*directions[0]; tangent/=np.linalg.norm(tangent)
+        arc=np.array([vertex+radius*(directions[0]*np.cos(v)+tangent*np.sin(v)) for v in np.linspace(0,angle,33)])
+        return dict(value=float(np.degrees(angle)),surfaces=[a,b],hinge=hinge,
+                    rays=np.array([vertex+directions[0]*radius,vertex,vertex+directions[1]*radius]),
+                    arc=arc,labelPoint=arc[len(arc)//2])
+    except (ValueError, np.linalg.LinAlgError, PlatformError):
+        raise PlatformError('measurement_no_stable_bend',422) from None
 
 
 def _point_triangle(p, triangle):
@@ -129,10 +182,10 @@ def surface_distance(a,b, *, seconds=15):
 
 
 def measure_scene(revision, kind, entity_a, entity_b, region, load_asset):
-    if kind not in ('angle','inclination','distance','occupancy'):
+    if kind not in ('angle','inclination','bend','distance','occupancy'):
         raise PlatformError('measurement_kind_invalid',422)
     doc=revision['document']; models=[]; refs=[]
-    ids=[entity_a] if kind in ('occupancy','inclination') else [entity_a,entity_b]
+    ids=[entity_a] if kind in ('occupancy','inclination','bend') else [entity_a,entity_b]
     if len(set(ids)) != len(ids) or any(not i for i in ids):
         raise PlatformError('measurement_choose_objects',422)
     for id in ids:
@@ -154,7 +207,13 @@ def measure_scene(revision, kind, entity_a, entity_b, region, load_asset):
     if frame is None: raise PlatformError('measurement_frame_mismatch',422)
     if any(frame!=frame_id for _,frame in models): raise PlatformError('measurement_frame_mismatch',422)
     result={'revisionId':revision['id'],'kind':kind,'coordinateFrameId':frame_id,'source':'model_inference','references':refs,'lines':[],'quality':{},'unit':'native','value':None}
-    if kind in ('angle','inclination'):
+    if kind=='bend':
+        bend=fitted_bend(models[0][0])
+        result.update(value=bend['value'],unit='deg',method='same-mesh-two-surface-interior-bend-v1',labelPoint=bend['labelPoint'].tolist())
+        result['quality']={'surfaceFits':[{'areaFraction':p['areaFraction'],'rmsResidualNative':p['residual']} for p in bend['surfaces']]}
+        result['lines']=[{'points':p['outline'].tolist(),'color':color} for p,color in zip(bend['surfaces'],['#e36b23','#168bba'])]
+        result['lines'] += [{'points':bend[key].tolist(),'color':color} for key,color in [('hinge','#b56ce2'),('rays','#edbe38'),('arc','#86e342')]]
+    elif kind in ('angle','inclination'):
         a=fitted_plane(models[0][0])
         if kind=='inclination':
             normal=np.asarray((frame.get('ground') or {}).get('normal',[]),float)

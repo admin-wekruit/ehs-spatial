@@ -113,3 +113,53 @@ print('PASS: board inclination, vertical deviation, arbitrary ground normal and 
 with TestClient(app) as client:
  response=client.get('/api/revisions/revision/measurements',params={'kind':'inclination','entityA':'a'})
  assert response.status_code==200 and response.json()['value']==0
+
+# Intrinsic fold: rays run from the shared hinge into each sheet, preserving
+# the obtuse interior angle and ignoring world/ground/camera orientation.
+from ehs_spatial.platform import scene_measurements as measurements
+assert hasattr(measurements,'fitted_bend'), 'Missing same-object two-surface bend measurement'
+def folded_sheet(degrees, narrow=.25):
+ angle=np.deg2rad(degrees)
+ def panel(direction,width):
+  p=np.array([[0,0,0],[2,0,0],[2,0,0]+direction*width,direction*width])
+  return p[[[0,1,2],[0,2,3]]]
+ return np.concatenate([panel(np.array([0,1,0]),1),panel(np.array([0,np.cos(angle),np.sin(angle)]),narrow)])
+for degrees in (60,90,135,150):
+ sheet=folded_sheet(degrees)
+ for triangles in (sheet,sheet@rot.T+[4,-3,2],np.concatenate([sheet,sheet[:,::-1]])):
+  bend=measurements.fitted_bend(triangles)
+  assert abs(bend['value']-degrees)<1e-5, (degrees,bend['value'])
+  hinge=np.asarray(bend['hinge'])
+  assert np.linalg.norm(hinge[1]-hinge[0])>1.9
+  assert len(bend['surfaces'])==2
+# A single plane and separated planes cannot claim an intrinsic shared fold.
+for triangles in (square,np.concatenate([square,square@rot.T+[0,0,5]])):
+ try: measurements.fitted_bend(triangles)
+ except PlatformError as e: assert e.code=='measurement_no_stable_bend'
+ else: raise AssertionError('No shared fold was present')
+fold=folded_sheet(135); mesh=MeshData(fold.reshape(-1,3),np.arange(len(fold)*3).reshape(-1,3))
+bend_revision=deepcopy(revision); rep=bend_revision['document']['entities'][0]['representations'][0]
+rep.update(kind='generated_mesh',assetId='bend');bend_revision['document']['assets']=[{'id':'bend'}]
+bend_revision['document']['coordinateFrames'][0].pop('ground',None)
+result=measure_scene(bend_revision,'bend','a',None,None,lambda _:mesh)
+assert abs(result['value']-135)<1e-5 and len(result['references'])==1
+app_bend=FastAPI();register_measurement_routes(app_bend,lambda _:bend_revision,lambda _:mesh)
+with TestClient(app_bend) as client:
+ response=client.get('/api/revisions/revision/measurements',params={'kind':'bend','entityA':'a'})
+ assert response.status_code==200 and abs(response.json()['value']-135)<1e-5
+print('PASS: shared two-sheet bend, obtuse angles, narrow flange, rigid transform, winding, disconnected rejection and HTTP')
+# Noisy reconstructed surfaces must also retain their angle under rigid pose.
+rng=np.random.default_rng(17); noisy=[]
+for direction,width in [(np.array([0.,1.,0.]),1.),(np.array([0.,-2**-.5,2**-.5]),.25)]:
+ grid=np.array([[[x,0.,0.]+direction*y for y in np.linspace(0,width,9)] for x in np.linspace(0,2,21)])
+ grid+=np.cross([1,0,0],direction)*(.04*(np.linspace(0,1,9)**2))[None,:,None]
+ grid+=rng.normal(0,.0003,grid.shape)
+ for x in range(20):
+  for y in range(8):noisy.extend([grid[[x,x+1,x+1],[y,y,y+1]],grid[[x,x+1,x],[y,y+1,y+1]]])
+noisy=np.array(noisy)
+baseline=measurements.fitted_bend(noisy)['value']
+for degrees in (20,45,80):
+ rad=np.deg2rad(degrees); turn=np.array([[np.cos(rad),-np.sin(rad),0],[np.sin(rad),np.cos(rad),0],[0,0,1]])@rot
+ assert abs(measurements.fitted_bend(noisy@turn.T+[3,1,-2])['value']-baseline)<1e-6, 'Noisy fold angle must be rigid-pose invariant'
+print('PASS: noisy reconstructed fold rotation invariance')
+assert abs(fitted_plane(square)['span']-fitted_plane(square@turn.T)['span'])<1e-10, 'Fit tolerance must not depend on world axes'

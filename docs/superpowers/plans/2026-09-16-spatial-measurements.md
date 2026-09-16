@@ -46,3 +46,42 @@ Acceptance: each result names the two objects or explicit region, describes the 
 - Reused the existing mesh point picker with a two-point count, keeping three-point measurement separately available. The vertex marker is now the first point in this mode. Source model, placement and quality evidence remain attached.
 - Tests cover vertical/horizontal/30/60-degree edges, arbitrary and reversed ground normals, reversed endpoint order, and invalid ground. Frontend checks and production build passed. Local browser verification completed two surface picks and displayed the red reference and green arc at point 1; the manual example is not claimed as the user's exact physical edge measurement.
 - Public check: source `d780aea`, Pages `76162be`, deployment `35149844316` succeeded. In the public narrow viewport, the default mode required exactly two points, completed a manual surface selection, and showed the red vertical at point 1 with the green angle arc. The inspector and 3D label agreed (70.29 degrees for those test picks). This verifies the defined measurement and UI, not exact recovery of the user's annotated physical edge.
+
+## Same-panel intrinsic bend — 2026-09-16
+
+The user clarified that the guard wing itself comprises two adjoining sheet faces.
+The requested quantity is their interior bend (flat 180°, right-angle fold 90°),
+not the previously delivered edge/vertical, whole-plane/ground, or arbitrary
+three-point examples. Those example values do not answer this request.
+
+Implemented `kind=bend` on the existing measurement endpoint. The same active
+posed mesh supplies both area-weighted face fits. The second fit excludes normals
+within 20° of the first. Both faces need >=10% total mesh area and >=60% combined
+support, a shared supported hinge interval, and stable plane fits. Narrow flange
+fits allow a 0.002 in-plane variance ratio and 0.08 residual variance ratio;
+existing whole-plane measurements retain their previous fit quality thresholds.
+An unsupported, separated, flat, or ambiguous pair produces no bend value.
+This is a bounded single-fold measurement, not a general multiple-fold detector.
+
+Rays run from the fitted hinge into the respective sheet faces, preserving obtuse
+interior angles. Orange/blue outline the fitted faces, purple marks the hinge,
+and green marks the interior arc. The same overlay is now captured in the isolated
+object preview as well as the scene/CAD views, only when all referenced objects
+belong to that preview. The default measurement is the intrinsic panel bend.
+
+The shared plane-fit tolerance now uses an area-centroid bounding sphere radius,
+rather than a world-axis bounding-box diagonal. The latter changed the real wing's
+fitted angle by 0.216° after a rigid rotation; the corrected actual-mesh difference
+is below 2e-9°. This fixes the geometric source of the drift.
+
+Validation: `python tests/check_scene_measurements.py`, `npm --prefix web run check`,
+and production TypeScript/Vite build pass. Analytic checks cover 60/90/135/150°,
+narrow flanges, reversed/double winding, rigid transforms, noisy surfaces,
+disconnected/no-fold rejection, same-object HTTP measurement without ground,
+and preservation of existing distance/plane/region behavior.
+
+Local browser: report d6c2d4d3, entity 965e797a (left guard wing), revision f5f4b1d4.
+Clicked Calculate & annotate; result 145.4384° (display 145.4°; 34.6° from flat).
+Expanded isolated model and selected front view; the arc sits at the user's marked
+side-profile fold, with both fitted faces visible. This remains a model estimate;
+placement and reconstruction quality are not upgraded to field verification.

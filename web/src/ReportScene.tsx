@@ -302,7 +302,7 @@ export function ReportScene({
   const selectedModelFailed = layer === "model" && !selectedReference ? selectedModels.some(entity => modelState(entity)?.state === "error") : sourceReps.some(rep => modelStates.some(state => state.entityId === selected?.id && state.representationId === rep.id && state.assetId === rep.assetId && state.state === "error"));
   const selectedModelWrongFrame = layer === "model" && selectedFamily.some(modelFrameMismatch);
   const selectedModelStale = layer === "model" && selectedFamily.some(entity => activeModel(entity)?.sourceValidity === "stale");
-  const previewKey = JSON.stringify([revision.id, selected?.id, layer, imageId, selection.observationId, layer === "model" ? selected && modelPreviewSignature(document, selected.id) : sourceReps.map(rep => [rep, document.assets.find(asset => asset.id === rep.assetId)]), geometryOptions.frameId, previewMode]);
+  const previewKey = JSON.stringify([revision.id, selected?.id, layer, imageId, selection.observationId, layer === "model" ? selected && modelPreviewSignature(document, selected.id) : sourceReps.map(rep => [rep, document.assets.find(asset => asset.id === rep.assetId)]), geometryOptions.frameId, previewMode, measurement]);
   currentPreviewKey.current = previewKey;
   const previewRequest = selected && previewGeometry ? { entityId: selected.id, frameId: geometryOptions.frameId, layer, imageId, observationId: selection.observationId, mode: previewMode, requestKey: previewKey } : undefined;
   const previewImage = modelPreview?.key === previewKey ? modelPreview.image : null;
