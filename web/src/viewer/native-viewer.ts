@@ -175,7 +175,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
     }
     if(!captureCanvas)for(const [i,pick] of (layers.measurePoints||[]).entries()){
       if(pick.coordinateFrameId!==frameId)continue;const p=project(pick.point);if(!p)continue;
-      const circle=document.createElementNS(svg.namespaceURI,'circle');for(const[k,v]of Object.entries({cx:p[0],cy:p[1],r:5,fill:i===1?'#edbe38':'#e36b23',stroke:'#fff','stroke-width':2}))circle.setAttribute(k,String(v));svg.append(circle);
+      const circle=document.createElementNS(svg.namespaceURI,'circle');for(const[k,v]of Object.entries({cx:p[0],cy:p[1],r:5,fill:i===(layers.measureVertexIndex??1)?'#edbe38':'#e36b23',stroke:'#fff','stroke-width':2}))circle.setAttribute(k,String(v));svg.append(circle);
       const label=document.createElementNS(svg.namespaceURI,'text');label.textContent=String(i+1);for(const[k,v]of Object.entries({x:p[0]+7,y:p[1]+16,fill:'#fff',stroke:'#182a31','stroke-width':3,'paint-order':'stroke','font-size':15}))label.setAttribute(k,String(v));svg.append(label);
       if(i)line(project(layers.measurePoints[i-1].point),p,'#edbe38',2);
     }

@@ -346,3 +346,16 @@ assert.equal(rayMeshPoint(triVertices,new Uint32Array([0,1,2]),[3,3,2],[0,0,-1])
 assert.equal(rayMeshPoint(triVertices,new Uint32Array([0,1,2]),[.5,.5,2],[0,0,1]),null);
 assert.deepEqual(rayMeshPoint(triVertices,new Uint32Array([2,1,0]),[.5,.5,2],[0,0,-1])?.point,[.5,.5,0]);
 console.log('PASS: 3D three-point acute/obtuse/straight angles, degenerate rejection and mesh surface picking');
+
+// The annotated slope is the edge direction against a vertical through its start.
+const { verticalEdgeAngle } = await import('../src/viewer/native-math.ts');
+for(const degrees of [0,30,60,90]) {
+  const end=[Math.sin(degrees*Math.PI/180),0,-Math.cos(degrees*Math.PI/180)];
+  const result=verticalEdgeAngle([[0,0,0],end],[0,0,2]);
+  assert.ok(Math.abs(result.value-degrees)<1e-6);
+  assert.deepEqual(result.verticalEnd,[0,0,-1]);
+  assert.ok(Math.abs(verticalEdgeAngle([end,[0,0,0]],[0,0,-1]).value-degrees)<1e-6);
+}
+assert.equal(verticalEdgeAngle([[0,0,0],[0,-1,0]],[0,1,0]).value,0);
+for(const normal of [[],[0,0,0],[NaN,0,1]])assert.throws(()=>verticalEdgeAngle([[0,0,0],[1,0,0]],normal));
+console.log('PASS: edge-to-vertical slope, start vertex, arbitrary ground and reversed pick order');

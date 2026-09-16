@@ -77,3 +77,11 @@ export function rayMeshPoint(vertices: Float32Array,indices: Uint32Array,origin:
   }
   return hit?{point:hit,distance:nearest}:null;
 }
+
+export function verticalEdgeAngle(points:Vec[],groundNormal:Vec) {
+  if(points.length!==2||points.some(p=>p.length!==3||!p.every(Number.isFinite)))throw Error('measurement_points_invalid');
+  if(!Array.isArray(groundNormal)||groundNormal.length!==3||!groundNormal.every(Number.isFinite)||Math.hypot(...groundNormal)<1e-8)throw Error('measurement_ground_missing');
+  const [start,end]=points,edge=add(end,scale(start,-1)),normal=unit(groundNormal);
+  const verticalEnd=add(start,scale(normal,Math.hypot(...edge)*(dot(edge,normal)>0?1:-1)));
+  return {...threePointAngle([verticalEnd,start,end]),verticalEnd};
+}
