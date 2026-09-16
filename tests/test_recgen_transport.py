@@ -11,7 +11,8 @@ from ehs_spatial.platform.reconstruction import ProviderResponseError
 from ehs_spatial.platform.recgen_transport import invoke
 
 
-def test_unknown_call_is_cancelled_persisted_and_never_automatically_resubmitted(tmp_path, monkeypatch):
+@pytest.mark.parametrize('builtin_poll_timeout', [False, True])
+def test_unknown_call_is_cancelled_persisted_and_never_automatically_resubmitted(tmp_path, monkeypatch, builtin_poll_timeout):
     events = []
     clock = [0.]
     class PollTimeout(Exception): pass
@@ -25,7 +26,7 @@ def test_unknown_call_is_cancelled_persisted_and_never_automatically_resubmitted
         def get(self, timeout):
             assert 0 < timeout <= 10
             clock[0] += timeout
-            raise PollTimeout()
+            raise TimeoutError() if builtin_poll_timeout else PollTimeout()
         def cancel(self, **kwargs): events.append(('cancel', kwargs))
     class Function:
         object_id = 'fu-pinned'
@@ -48,6 +49,7 @@ def test_unknown_call_is_cancelled_persisted_and_never_automatically_resubmitted
         assert caught.value.outcome == 'outcome_unknown'
         assert caught.value.telemetry['providerRequestId'] == 'fc-test'
         assert caught.value.telemetry['workerElapsedSeconds'] >= 0
+        assert clock[0] >= 240, 'A normal SDK poll timeout must not terminate running inference'
     state = json.loads(next(tmp_path.glob('*/dispatch.json')).read_text())
     assert state['status'] == 'outcome_unknown' and state['providerRequestId'] == 'fc-test'
     assert events.count('spawn') == 1
@@ -60,11 +62,33 @@ def test_unknown_call_is_cancelled_persisted_and_never_automatically_resubmitted
     assert events.count('spawn') == 2, 'Different seeds must never reuse another dispatch journal'
     assert len(list(tmp_path.glob('*/dispatch.json'))) == 2
 
+    retry = payload()
+    retry['_researchProtocol'] = {'id':'same-input-reviewed-retry', 'dispatchAttemptId':'operator-reviewed-terminal-retry-1'}
+    for _ in range(2):
+        with pytest.raises(ProviderResponseError):
+            invoke(retry, config)
+    assert events.count('spawn') == 3, 'An explicit new attempt is distinct; the same attempt never respawns'
+    old_protocol = payload()
+    old_protocol['_researchProtocol'] = {'id':'different-protocol-id-only'}
+    with pytest.raises(ProviderResponseError):
+        invoke(old_protocol, config)
+    assert events.count('spawn') == 3, 'A protocol label alone must not bypass the original journal'
 
-@pytest.mark.parametrize('failure', ['cancelled', 'lease_lost', 'database_unavailable', 'download', 'mesh_download'])
+
+def test_installed_modal_pending_result_raises_builtin_timeout_without_network():
+    import asyncio
+    functions = pytest.importorskip('modal._functions')
+    async def pending(**kwargs):
+        return SimpleNamespace(outputs=[], num_unfinished_inputs=1)
+    with pytest.raises(TimeoutError):
+        asyncio.run(functions._Invocation.poll_function(SimpleNamespace(pop_function_call_outputs=pending), timeout=10))
+
+
+@pytest.mark.parametrize('failure', ['cancelled', 'lease_lost', 'database_unavailable', 'function_timeout', 'download', 'mesh_download'])
 def test_live_ownership_loss_terminates_call_and_download_failure_keeps_receipt(tmp_path, monkeypatch, failure):
     events, dispatched = [], {}
     class PollTimeout(Exception): pass
+    class FunctionTimeout(PollTimeout): pass
     class Upload:
         def __enter__(self): return self
         def __exit__(self, *args): pass
@@ -74,6 +98,7 @@ def test_live_ownership_loss_terminates_call_and_download_failure_keeps_receipt(
         def get(self, timeout):
             assert timeout <= 10
             events.append('poll')
+            if failure == 'function_timeout': raise FunctionTimeout()
             if failure in ('download', 'mesh_download'):
                 return {'volume_path':f"jobs/{dispatched['id']}/result", 'files':{
                     'object.glb':'a' * 64, 'output.json':hashlib.sha256(record).hexdigest()}}
@@ -115,3 +140,16 @@ def test_live_ownership_loss_terminates_call_and_download_failure_keeps_receipt(
         assert events[-1] == ('cancel', {'terminate_containers':True})
     state = json.loads(next(tmp_path.glob('*/dispatch.json')).read_text())
     assert state['providerRequestId'] == 'fc-receipt'
+    assert state['failureType'].endswith('OSError' if failure in ('download','mesh_download') else
+        'ConnectionError' if failure == 'database_unavailable' else 'FunctionTimeout' if failure == 'function_timeout' else 'PlatformError')
+
+
+@pytest.mark.parametrize('attempt', [None, '', ' ', 1, 'a' * 129, '../retry'])
+def test_invalid_explicit_dispatch_attempt_rejected_before_provider(attempt):
+    from test_recgen_research import research_configuration
+    from ehs_spatial.platform.reconstruction import _validate_research_protocol
+    _, protocol = research_configuration(payload(), [])
+    protocol['dispatchAttemptId'] = attempt
+    with pytest.raises(PlatformError) as caught:
+        _validate_research_protocol(protocol)
+    assert caught.value.code == 'invalid_research_dispatch_attempt'

@@ -1511,6 +1511,8 @@ def _validate_research_protocol(protocol):
                 "entityId","inputAssetHashes","payloadSha256","providerManifestSha256","callLimits"}
     if not isinstance(protocol,dict) or not required <= set(protocol):
         raise PlatformError("frozen_research_protocol_required",409)
+    if "dispatchAttemptId" in protocol and (not isinstance(protocol["dispatchAttemptId"],str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}",protocol["dispatchAttemptId"])):
+        raise PlatformError("invalid_research_dispatch_attempt",409)
     if protocol["purpose"] not in ("runtime_validation","quality_validation"):
         raise PlatformError("invalid_research_purpose",409)
     if any(not isinstance(protocol[k],str) or not protocol[k] for k in ("id","baselineRevision","entityId","split")) or not isinstance(protocol["metricDefinitions"],dict) or not protocol["metricDefinitions"] or not isinstance(protocol["policyThresholds"],dict):

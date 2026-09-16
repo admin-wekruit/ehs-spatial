@@ -30,9 +30,13 @@ def invoke(payload, config, *, is_current=None):
     sha = hashlib.sha256(data).hexdigest()
     # ponytail: local durable journal is sufficient for the single research worker;
     # multiple hosts must move this dispatch claim into the repository transaction.
+    protocol = payload.get('_researchProtocol', {})
+    # An explicit reviewed retry is a new reservation; an absent attempt ID keeps
+    # the original identity so an unresolved journal can never become invisible.
     identity = digest({'payloadSha256':sha, 'entityId':request.entity_id, 'seed':request.seed,
-        'pins':RECGEN_PINS, 'runtime':payload.get('_researchProtocol', {}).get('runtimeManifest'),
-        'functionId':config['modalFunctionId']})
+        'pins':RECGEN_PINS, 'runtime':protocol.get('runtimeManifest'),
+        'functionId':config['modalFunctionId'],
+        **({'dispatchAttemptId':protocol['dispatchAttemptId']} if 'dispatchAttemptId' in protocol else {})})
     root = Path(os.environ['PANOPTES_RECGEN_JOURNAL']) / identity
     root.mkdir(parents=True, exist_ok=True)
     state_path = root / 'dispatch.json'
@@ -93,13 +97,15 @@ def invoke(payload, config, *, is_current=None):
                 try:
                     manifest = call.get(timeout=min(10, remaining))
                     break
-                except modal.exception.TimeoutError as exc:
+                except (TimeoutError, modal.exception.TimeoutError) as exc:
                     # Poll timeout means the same invocation is still running;
                     # function execution/expiry timeouts are terminal failures.
-                    if type(exc) is not modal.exception.TimeoutError:
+                    if type(exc) not in (TimeoutError, modal.exception.TimeoutError):
                         raise
-        except Exception:
-            state['status'] = 'outcome_unknown'
+        except Exception as exc:
+            state.update(status='outcome_unknown', wallSeconds=time.time()-state['dispatchedAt'],
+                failureType=type(exc).__module__+'.'+type(exc).__qualname__,
+                failureCode=exc.code if isinstance(exc, PlatformError) else None)
             try:
                 try:
                     _save(state_path, state)
@@ -134,8 +140,13 @@ def invoke(payload, config, *, is_current=None):
                 record = decoded
         if 'output.json' not in files:
             raise PlatformError('recgen_output_record_missing', 409)
-    except Exception:
-        raise failure() from None
+    except Exception as exc:
+        state.update(failureType=type(exc).__module__+'.'+type(exc).__qualname__,
+            failureCode=exc.code if isinstance(exc, PlatformError) else None)
+        try:
+            _save(state_path, state)
+        finally:
+            raise failure() from None
     result = {'providerRequestId':state['providerRequestId'], 'runtimeEvidence':record,
               'telemetry':{'gpuElapsedSeconds':record.get('gpu_function_seconds'),
                 'workerElapsedSeconds':state.get('wallSeconds'), 'timingMethod':'provider_function_and_local_wall',
