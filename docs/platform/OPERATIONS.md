@@ -54,9 +54,9 @@ forks and new model jobs remain in the full platform.
    ```
 
    The publication container reserves 6 GiB with four concurrent inputs. On
-   2026-09-16, a fresh local process loading fifteen verified bundles and serving
+   2026-09-16, a fresh local process loading sixteen verified bundles and serving
    four simultaneous GETs of the largest 76,627,499-byte publication peaked at
-   3,869,310,976 bytes RSS. All four response hashes matched. This includes local
+   5,039,538,176 bytes RSS. All four response hashes matched. This includes local
    serialization and client buffers, but excludes Modal runtime overhead. The
    previous 3 GiB / 32-input setting had inadequate headroom; remeasure after
    adding bundles. The loader shares immutable revisions only after comparing

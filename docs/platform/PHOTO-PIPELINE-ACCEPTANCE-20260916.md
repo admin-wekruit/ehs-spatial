@@ -64,6 +64,20 @@ reassociation path; stale imported geometry is not reactivated. A local browser
 check selected the floor from CAD and verified the same photo-4 observation,
 entity, 3D reference surface and details. The old publication remains immutable.
 
+The 16-bundle publication catalog was deployed on 2026-09-16. Its local integrity
+check passed 920 exact read responses and 869 byte-verified assets. Public GETs
+of the new and old publications returned 200 and matched their complete frozen
+payloads; their revision document hashes also matched. Computer-use verification
+on the public GitHub Pages report cleared selection, selected the floor directly
+from current-model CAD, and confirmed the same entity, photo-4 observation and
+3D reference surface. Switching back to observed CAD restored 78/81 coverage;
+the header still accurately reports two current models and one reference surface.
+The first public navigation remained loading for over 90 seconds before rendering;
+the later two-second API reads do not establish acceptable cold-start performance.
+These checks validate the source-link repair, not complete modeling or the
+fresh-photo release gate. Private receipts are `live-api-verification.json` and
+`live-browser-verification.json` in `review-existing-ui/030-floor-source-equivalence/`.
+
 ## Reusable path and measured stage executions
 
 Capture analysis, explicit object generation and quality review use immutable
