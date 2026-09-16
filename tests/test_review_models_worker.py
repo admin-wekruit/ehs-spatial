@@ -7,7 +7,7 @@ from ehs_spatial.platform import reconstruction
 from ehs_spatial.platform.correspondence import audit_correspondence
 from panoptes_worker.__main__ import run_job
 from test_capture_worker_chain import chain, dispatch, model_calls, start_research, successor, user_edit
-from test_platform_backend import identity, repo
+from test_platform_backend import identity, project, repo
 
 
 def existing_model_job(chain):
@@ -128,3 +128,47 @@ def test_rejected_review_cache_older_than_asset_listing_is_reused_without_dispat
     assert replay['result']['stages'][0]['status'] == 'cached'
     assert replay['result']['newModelCalls'] == 0 and len(dispatched) == 1
     assert len(model_calls(chain)) == calls
+
+
+@pytest.mark.parametrize('outcome', ['succeeded', 'failed', 'uncached_response'])
+def test_completed_competing_call_between_cache_miss_and_reservation_is_never_dispatched_twice(repo, tmp_path, monkeypatch, outcome):
+    from ehs_spatial.platform.contracts import PlatformError
+    from ehs_spatial.platform.storage import LocalBlobStore
+    from test_platform_reconstruction import provider
+    blobs = repo.blobs = LocalBlobStore(tmp_path)
+    cap, scene = project(repo)
+    jobs = [repo.claim_job(repo.create_job(scene['project']['id'], cap, {'requestId':identity(),
+        'branchId':scene['branch']['id'], 'baseRevisionId':scene['revision']['id'],
+        'kind':'review_models', 'inputs':{'entityIds':['fixture']}})['id']) for _ in range(2)]
+    dispatched = []
+    def invoke(payload):
+        dispatched.append(payload)
+        if outcome == 'uncached_response':
+            raise reconstruction.ProviderResponseError({'actualCostUsd':0})
+        return {'providerError':'known failure'} if outcome == 'failed' else {'value':'known result'}
+    providers = {'model_review':provider('model_review', invoke)}
+    first, competing = [reconstruction._Stages(repo, blobs, job, providers) for job in jobs]
+    original_lookup, missed = repo.get_stage_cache, False
+    def lookup(project_id, key):
+        nonlocal missed
+        if not missed:
+            missed = True
+            assert original_lookup(project_id, key) is None
+            # Other job completes after this cache miss, before this reservation.
+            try:
+                first.call('model_review', [], {'fixture':True})
+            except PlatformError as error:
+                assert error.code in ('provider_failed', 'provider_response_invalid')
+            return None
+        return original_lookup(project_id, key)
+    monkeypatch.setattr(repo, 'get_stage_cache', lookup)
+    if outcome == 'succeeded':
+        result, _ = competing.call('model_review', [], {'fixture':True})
+        assert result == {'value':'known result'}
+    else:
+        expected = 'provider_failed' if outcome == 'failed' else 'provider_response_unavailable'
+        with pytest.raises(PlatformError, match=expected):
+            competing.call('model_review', [], {'fixture':True})
+    assert len(dispatched) == 1 and sum(row['newModelCalls'] for row in competing.records) == 0
+    with repo._connect() as connection:
+        assert connection.execute('SELECT count(*) AS count FROM model_calls').fetchone()['count'] == 1

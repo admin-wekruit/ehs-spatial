@@ -139,6 +139,15 @@ class _Stages:
     def checkpoint(self, document, stage):
         return self.put(document,{"kind":"analysis_checkpoint","captureId":document["captureId"],"stage":stage,"pipelineVersion":PIPELINE_VERSION})
 
+    def _cached_result(self, stage, key, asset):
+        self.records.append({"stage":stage,"cacheKey":key,"status":"cached","assetId":asset["id"],"newModelCalls":0})
+        envelope = self.load(asset)
+        if envelope.get("cacheKey") != key or envelope.get("stage") != stage:
+            raise PlatformError("stage_cache_integrity_error",409)
+        if envelope["output"].get("providerError"):
+            raise PlatformError("provider_failed",502,stage=stage)
+        return envelope["output"],asset
+
     def call(self, stage, images, payload, refs=(), *, research_protocol=None):
         provider = self.providers.get(stage)
         if provider is None:
@@ -153,19 +162,18 @@ class _Stages:
         key = stage_cache_key(stage,[{"imageId":x["id"],"sha256":x["sha256"],"pixelMapping":x.get("pixelMapping",[])} for x in images],provider.pins,{"payloadSha256":digest(_packed(payload))},refs)
         cached = self.repo.get_stage_cache(self.job['projectId'], key)
         if cached:
-            self.records.append({"stage":stage,"cacheKey":key,"status":"cached","assetId":cached["id"],"newModelCalls":0})
-            envelope = self.load(cached)
-            if envelope.get("cacheKey") != key or envelope.get("stage") != stage:
-                raise PlatformError("stage_cache_integrity_error",409)
-            if envelope["output"].get("providerError"):
-                raise PlatformError("provider_failed",502,stage=stage)
-            return envelope["output"],cached
+            return self._cached_result(stage, key, cached)
         try:
             call = self.repo.reserve_model_call(self.job["id"],self.job["attemptToken"],provider.name,provider.pins["model"],key,provider.estimated_cost_usd,
                 code_sha256=digest({"code":provider.pins.get("codeRevision")}),model_sha256=digest({"model":provider.pins}),adapter_sha256=digest({"adapter":PIPELINE_VERSION}),input_sha256=digest(_packed(payload)),paid=provider.paid)
         except PlatformError as exc:
             if exc.code == "model_call_already_reserved" and exc.params.get("status") in ("reserved","outcome_unknown"):
                 raise PlatformError("provider_outcome_unknown",409,stage=stage) from None
+            if exc.code == "model_call_already_reserved" and exc.params.get("status") in ("succeeded","failed"):
+                cached = self.repo.get_stage_cache(self.job['projectId'], key)
+                if cached:
+                    return self._cached_result(stage, key, cached)
+                raise PlatformError("provider_response_unavailable",409,stage=stage) from None
             raise
         started = time.monotonic()
         try:

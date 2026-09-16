@@ -497,7 +497,7 @@ class PostgresRepository:
             existing = connection.execute("SELECT * FROM model_calls WHERE job_id=%s AND request_key=%s", (job_id, request_key)).fetchone()
             if existing is None:
                 existing = connection.execute("""SELECT * FROM model_calls WHERE project_id=%s AND provider=%s
-                    AND model=%s AND request_key=%s AND status IN ('reserved','outcome_unknown')
+                    AND model=%s AND request_key=%s
                     ORDER BY created_at LIMIT 1""", (job['project_id'], provider, model, request_key)).fetchone()
             if existing:
                 raise PlatformError("model_call_already_reserved", 409, modelCallId=str(existing["id"]), status=existing["status"])
