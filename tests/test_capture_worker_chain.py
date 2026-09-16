@@ -204,7 +204,8 @@ def test_partial_multiphoto_analysis_survives_every_successor_and_final_model_ac
     assert analysis['status'] == 'incomplete'
     assert len(analysis['errors']) == 1
     assert analysis['errors'][0]['stage'] == 'depth' and analysis['errors'][0]['code'] == 'depth_source_grid_mismatch'
-    context = {'jobId': analyzed['id'], 'baseRevisionId': analyzed['baseRevisionId'], 'result': analysis}
+    context = {'jobId': analyzed['id'], 'baseRevisionId': analyzed['baseRevisionId'],
+               'result': {**analysis, 'review': analyzed['result']['review']}}
     original = deepcopy(chain.repo.get_revision(analyzed['resultRevisionId'])['document'])
     finished = analyzed
     count = 0
@@ -219,7 +220,7 @@ def test_partial_multiphoto_analysis_survives_every_successor_and_final_model_ac
         assert count <= 6  # Two independent objects, each prepare/generate/attach.
     assert count == 6 and len(chain.generated) == len(chain.reviewed) == 2
     assert all(row['status'] == 'accepted' for row in finished['result']['processed'])
-    assert finished['result']['captureAnalysis']['result'] == analysis
+    assert finished['result']['captureAnalysis']['result'] == context['result']
     final = chain.repo.get_revision(finished['resultRevisionId'])['document']
     assert final['observations'] == original['observations']
     assert {e['id'] for e in final['entities']} == {e['id'] for e in original['entities']}

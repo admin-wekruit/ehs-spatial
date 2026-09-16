@@ -181,7 +181,7 @@ def test_research_capture_defers_preparation_until_analysis_revision_is_persiste
     assert successor['inputs']['entityIds'] == [e['id'] for e in document['entities'] if not e.get('sourceContext')]
     assert 'baseRevisionId' not in successor  # finish_job supplies the actual new revision.
     assert successor['config']['captureAnalysis'] == {'jobId':job['id'], 'baseRevisionId':job['baseRevisionId'],
-        'result':result['analysis']}
+        'result':{**result['analysis'], 'review':result['review']}}
     assert all(event[1] != 'generation' for event in repo.events if event[0] == 'reserve')
 
 
@@ -238,3 +238,52 @@ def test_foreign_cad_reference_is_rejected_before_any_provider_call(tmp_path):
     with pytest.raises(PlatformError, match='cad_reference_image_not_found'):
         run_capture_pipeline(repo, blobs, job, providers_for_new_capture(repo))
     assert not repo.calls
+
+
+@pytest.mark.parametrize('projection_fails', [False, True])
+def test_research_continuation_preserves_retained_review_outcome(tmp_path, monkeypatch, projection_fails):
+    from ehs_spatial.platform import reconstruction
+    from ehs_spatial.platform.reconstruction_pipeline import _result
+
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    providers = providers_for_new_capture(repo)
+    document, baseline = run_capture_pipeline(repo, blobs, repo.job, providers)
+    retained = next(e for e in document['entities'] if e.get('activeModelRepresentationId'))
+    model = next(r for r in retained['representations'] if r['id'] == retained['activeModelRepresentationId'])
+    model.pop('qualityBinding')  # A retained model needs fresh review.
+    for frame in document['coordinateFrames']:
+        frame['ground'] = {'normal': [0., 0., 1.]}
+    stages = _Stages(repo, blobs, repo.job, {})
+    _, _, images = reconstruction._capture(repo, blobs, repo.job)
+    evidence = stages.put({'new': 'visible target'}, {'kind': 'discovery'})
+    reconstruction._discover(document, images[0], {'items': [
+        {'label': 'new separate target', 'box': [6, 0, 11, 12]}]}, evidence)
+    monkeypatch.setattr(reconstruction, 'run_analysis', lambda *_: (document, deepcopy(baseline['analysis'])))
+    if projection_fails:
+        def invalid_projection(*args, **kwargs):
+            raise PlatformError('projection_geometry_invalid', 422)
+        monkeypatch.setattr(reconstruction, '_refresh_plan_projections', invalid_projection)
+    job = {**repo.job, 'config': {
+        'providerManifest': {'generation': {'pins': {'model': 'TRI-ML/RecGen'}}},
+        'researchPreparation': {'authority': {'source': 'database_admin'}}}}
+
+    _, result = run_capture_pipeline(repo, blobs, job, providers)
+    assert result['analysis']['status'] == 'succeeded'
+    assert result['review']['status'] == ('incomplete' if projection_fails else 'succeeded')
+    assert result['review']['stages']  # Actual synthetic-provider retained review ran.
+    if projection_fails:
+        assert any(error['code'] == 'projection_geometry_invalid' for error in result['review']['errors'])
+    frozen = result['_continuation']['config']['captureAnalysis']
+    ancestor = frozen['result']
+    assert ancestor['review'] == result['review']
+    assert ancestor['errors'] == result['analysis']['errors'] + result['review']['errors']
+    assert ancestor['stages'] == result['analysis']['stages'] + result['review']['stages']
+    # The pending new model is accepted later. Its parent's temporary modeling
+    # status must not become a permanent failure, but prior review errors must.
+    final = _result('attach', [{'entityId': 'new-target', 'status': 'accepted'}], [], capture_analysis=frozen)
+    assert result['status'] == 'incomplete' and result['pipelineStatus'] == 'modeling_pending'
+    assert final['status'] == ('incomplete' if projection_fails else 'succeeded')
+    assert final['errors'] == ancestor['errors']
+    result['review']['stages'].clear()
+    assert ancestor['review']['stages'] and ancestor['stages']
