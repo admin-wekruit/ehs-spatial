@@ -54,3 +54,6 @@ export type Selection = {
   observationId: string | null;
   cameraId: string | null;
 };
+
+export type PublicationView = components["schemas"]["PublicationView"];
+export type ReportEditSummary = components["schemas"]["ReportEditSummary"];

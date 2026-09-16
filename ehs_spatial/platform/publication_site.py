@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import gzip
 import hashlib
 import json
 from pathlib import Path
@@ -12,7 +13,7 @@ from uuid import UUID
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, Response
 from fastapi.exceptions import RequestValidationError
 
 from .contracts import PlatformError
@@ -27,12 +28,8 @@ def immutable_route(path: str):
     return path.startswith(("/api/publications/", "/api/revisions/", "/api/assets/"))
 
 
-def create_app(catalog_dir: str | Path, *, allowed_origins: list[str], feedback=None):
-    """Each immediate publication-ID directory contains one unchanged export."""
-    for origin in allowed_origins:
-        parsed = urlsplit(origin)
-        if parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment:
-            raise ValueError("CORS requires explicit HTTP(S) origins without paths")
+def read_catalog(catalog_dir: str | Path):
+    """Verify every immutable payload and blob before publishing a serving index."""
     root = Path(catalog_dir).resolve()
     if (root / "bundle.json").exists():
         raise ValueError("Expected a publication catalog, not a single bundle")
@@ -40,6 +37,7 @@ def create_app(catalog_dir: str | Path, *, allowed_origins: list[str], feedback=
     if not directories:
         raise ValueError("Publication catalog is empty")
     responses, files, bundles, revisions = {}, {}, [], {}
+    from .publication_view import publication_view
 
     def shared_revision(revision):
         # Exports repeat frozen revisions across routes and publications. Share
@@ -104,6 +102,9 @@ def create_app(catalog_dir: str | Path, *, allowed_origins: list[str], feedback=
                 if path in responses and responses[path] != value:
                     raise ValueError(f"Conflicting immutable route payload: {path}")
                 responses[path] = value
+        responses[f"/api/publications/{publication['id']}/view"] = publication_view(publication, detail)
+        for edit in publication["snapshot"].get("editBatches") or []:
+            responses[f"/api/publications/{publication['id']}/edits/{edit['id']}"] = edit
         bundles.append((created_at, publication["id"], bundle))
 
     # Choose a whole project projection by publication time, never filesystem
@@ -133,6 +134,63 @@ def create_app(catalog_dir: str | Path, *, allowed_origins: list[str], feedback=
     responses["/api/publications"] = {"items": [bundle["responses"]["/api/publications"]["items"][0] for _, _, bundle in bundles]}
     responses["/api/projects"] = {"items": projects}
     responses["/api/policies"] = {"items": list(policies.values())}
+    return responses, files
+
+
+def compile_catalog(catalog_dir: str | Path, output_dir: str | Path):
+    """Run verification once at deployment, then pre-encode immutable HTTP bodies.
+
+    The deployment image is immutable. Runtime serves those exact verified bytes
+    instead of parsing all historical snapshots and rehashing all blobs on boot.
+    """
+    root, output = Path(catalog_dir).resolve(), Path(output_dir).resolve()
+    output.mkdir(parents=True, exist_ok=True)
+    responses, files = read_catalog(root)
+    index = {"schemaVersion": 1, "routes": {}, "assets": {}}
+    for route, value in responses.items():
+        body = json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode()
+        sha = hashlib.sha256(body).hexdigest()
+        name = sha + ".json.gz"
+        if not (output / name).exists():
+            temporary = output / (name + ".pending")
+            temporary.write_bytes(gzip.compress(body, compresslevel=3, mtime=0))
+            temporary.replace(output / name)
+        index["routes"][route] = {"file": name, "sha256": sha, "sizeBytes": len(body)}
+    for asset_id, (path, record) in files.items():
+        index["assets"][asset_id] = {"path": str(path.relative_to(root)),
+            **{key: record[key] for key in ("sha256", "sizeBytes", "mediaType")}}
+    temporary = output / "index.pending.json"
+    temporary.write_text(json.dumps(index, separators=(",", ":")))
+    temporary.replace(output / "index.json")
+    return {"routes": len(responses), "assets": len(files)}
+
+
+def create_app(catalog_dir: str | Path, *, allowed_origins: list[str], feedback=None, prepared_dir: str | Path | None = None):
+    """Each immediate publication-ID directory contains one unchanged export."""
+    for origin in allowed_origins:
+        parsed = urlsplit(origin)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment:
+            raise ValueError("CORS requires explicit HTTP(S) origins without paths")
+    prepared = Path(prepared_dir).resolve() if prepared_dir else None
+    index = None
+    if prepared:
+        index = json.loads((prepared / "index.json").read_text())
+        if index["schemaVersion"] != 1:
+            raise ValueError("Unsupported prepared publication index")
+        responses = {}
+        files = {asset_id: (Path(catalog_dir) / item["path"], item) for asset_id, item in index["assets"].items()}
+    else:
+        responses, files = read_catalog(catalog_dir)
+
+    def get_record(path):
+        if not prepared:
+            return responses.get(path)
+        record = index["routes"].get(path)
+        if record is None:
+            return None
+        with gzip.open(prepared / record["file"], "rt", encoding="utf-8") as stream:
+            return json.load(stream)
+
     app = FastAPI(title="Panoptes published report", docs_url=None, redoc_url=None, openapi_url=None)
 
     def error(status, code):
@@ -154,7 +212,7 @@ def create_app(catalog_dir: str | Path, *, allowed_origins: list[str], feedback=
 
     if feedback is not None:
         def feedback_scope(publication_id, request):
-            publication = responses.get("/api/publications/" + str(publication_id))
+            publication = get_record("/api/publications/" + str(publication_id))
             if publication is None:
                 raise PlatformError("publication_not_found", 404)
             authorization = request.headers.get("authorization", "")
@@ -174,7 +232,7 @@ def create_app(catalog_dir: str | Path, *, allowed_origins: list[str], feedback=
 
         @app.get("/api/publications/{publication_id}/identity-suggestions")
         def identity_suggestions(publication_id: UUID):
-            publication = responses.get("/api/publications/" + str(publication_id))
+            publication = get_record("/api/publications/" + str(publication_id))
             if publication is None:
                 raise PlatformError("publication_not_found", 404)
             return JSONResponse(feedback.identity_suggestions(publication), headers={"Cache-Control": "no-store"})
@@ -191,14 +249,37 @@ def create_app(catalog_dir: str | Path, *, allowed_origins: list[str], feedback=
         })
 
     @app.api_route("/api/{path:path}", methods=["GET", "HEAD"])
-    def record(path: str):
-        value = responses.get("/api/" + path)
+    def record(path: str, request: Request):
+        route = "/api/" + path
+        headers = {"Cache-Control": "public,max-age=31536000,immutable" if immutable_route(route) else "no-cache",
+                   "X-Content-Type-Options": "nosniff"}
+        if prepared:
+            entry = index["routes"].get(route)
+            if entry is None:
+                return error(404, "record_not_found")
+            headers.update({"ETag": '"' + entry["sha256"] + '"', "Vary": "Accept-Encoding"})
+            if request.headers.get("if-none-match") == headers["ETag"]:
+                return Response(status_code=304, headers=headers)
+            body_path = prepared / entry["file"]
+            encodings = request.headers.get("accept-encoding", "").lower().split(",")
+            accepts_gzip = any(part.strip().split(";")[0] in ("gzip", "*") and
+                               not re.search(r";\s*q=0(?:\.0*)?(?:\s*;|$)", part) for part in encodings)
+            if accepts_gzip:
+                headers["Content-Encoding"] = "gzip"
+                return FileResponse(body_path, media_type="application/json", headers=headers)
+            def decoded():
+                with gzip.open(body_path, "rb") as stream:
+                    while chunk := stream.read(64 * 1024):
+                        yield chunk
+            headers["Content-Length"] = str(entry["sizeBytes"])
+            return StreamingResponse(iter(()) if request.method == "HEAD" else decoded(), media_type="application/json", headers=headers)
+        value = responses.get(route)
         if value is None:
             return error(404, "record_not_found")
-        immutable = immutable_route("/api/" + path)
-        return JSONResponse(value, headers={"Cache-Control": "public,max-age=31536000,immutable" if immutable else "no-cache", "X-Content-Type-Options": "nosniff"})
+        return JSONResponse(value, headers=headers)
 
-    app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=3)
+    if not prepared:
+        app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=3)
     class PublicationCORS:
         def __init__(self, app):
             self.read = CORSMiddleware(app, allow_origins=allowed_origins, allow_methods=["GET", "HEAD", "OPTIONS"],

@@ -263,6 +263,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/publications/{publication_id}/view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Report View */
+        get: operations["report_view_api_publications__publication_id__view_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/publications/{publication_id}/edits/{edit_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Report Edit */
+        get: operations["report_edit_api_publications__publication_id__edits__edit_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/publications/{publication_id}": {
         parameters: {
             query?: never;
@@ -1422,6 +1456,8 @@ export interface components {
             supersedesDecisionId: string | null;
             /** Agentturnid */
             agentTurnId?: string | null;
+            /** Representationbindings */
+            representationBindings?: components["schemas"]["SourceRepresentationEquivalence"][];
         };
         /** Items[AgentTurn] */
         Items_AgentTurn_: {
@@ -1987,6 +2023,32 @@ export interface components {
              */
             observedSurfaceObjectCount: number;
         };
+        /** PublicationView */
+        PublicationView: {
+            publication: components["schemas"]["Publication"];
+            project: components["schemas"]["Project"];
+            branch: components["schemas"]["Branch"];
+            /** Branches */
+            branches: components["schemas"]["Branch"][];
+            /** Edits */
+            edits: components["schemas"]["ReportEditSummary"][];
+        };
+        /** ReportEditSummary */
+        ReportEditSummary: {
+            /** Id */
+            id: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Baserevisionid */
+            baseRevisionId: string;
+            /** Revisionid */
+            revisionId: string;
+            /** Operationtypes */
+            operationTypes: string[];
+        };
         /** Representation */
         Representation: {
             /** Id */
@@ -2187,12 +2249,64 @@ export interface components {
             /** Sha256 */
             sha256: string;
         };
+        /** SourceIdentityPointer */
+        SourceIdentityPointer: {
+            /** Assetid */
+            assetId: string;
+            /** Sha256 */
+            sha256: string;
+            /** Jsonpointer */
+            jsonPointer: string;
+            /** Role */
+            role?: ("raw_source_reference" | "native_mask_provenance") | null;
+        };
         /** SourceObservationRevision */
         SourceObservationRevision: {
             /** Observationid */
             observationId: string;
             /** Revision */
             revision: number;
+        };
+        /** SourceRepresentationEquivalence */
+        SourceRepresentationEquivalence: {
+            /**
+             * Kind
+             * @default same_source_indexed_mesh
+             * @constant
+             */
+            kind: "same_source_indexed_mesh";
+            /** Entityid */
+            entityId: string;
+            /** Representationid */
+            representationId: string;
+            representationAsset: components["schemas"]["SourceIdentityEvidence"];
+            transformSnapshot: components["schemas"]["Transform"];
+            /** Sourcerepresentationid */
+            sourceRepresentationId: string;
+            sourceRepresentationAsset: components["schemas"]["SourceIdentityEvidence"];
+            sourceGeometryAsset: components["schemas"]["SourceIdentityEvidence"];
+            sourceFaceAsset?: components["schemas"]["SourceIdentityEvidence"] | null;
+            sourceTransformSnapshot: components["schemas"]["Transform"];
+            observationRef: components["schemas"]["SourceObservationRevision"];
+            /** Imageid */
+            imageId: string;
+            /** Imagesha256 */
+            imageSha256: string;
+            sourceRef: components["schemas"]["SourceIdentityPointer"];
+            sourceRecordRef: components["schemas"]["SourceIdentityPointer"];
+            observationRecordRef: components["schemas"]["SourceIdentityPointer"];
+            geometryBinding: components["schemas"]["GeometryBinding"];
+            /** Canonicalmasksha256 */
+            canonicalMaskSha256: string;
+            /** Canonicalshape */
+            canonicalShape: [
+                number,
+                number
+            ];
+            /** Geometryrole */
+            geometryRole?: "floor" | null;
+            /** Evidencerefs */
+            evidenceRefs?: components["schemas"]["SourceIdentityPointer"][];
         };
         /** SourceText */
         SourceText: {
@@ -3984,6 +4098,195 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Items_PublicationSummary_"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    report_view_api_publications__publication_id__view_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                publication_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicationView"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    report_edit_api_publications__publication_id__edits__edit_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                publication_id: string;
+                edit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Bad Request */

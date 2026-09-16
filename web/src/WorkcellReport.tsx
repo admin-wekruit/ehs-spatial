@@ -4,6 +4,7 @@ import {
   type IdentitySuggestion,
   downloadAsset,
   downloadJSON,
+  downloadReportEdit,
   id,
   owner,
   PUBLICATION_ID,
@@ -46,12 +47,22 @@ import type {
   ProjectDetail,
   Publication,
   PublicationSummary,
+  PublicationView,
+  ReportEditSummary,
   Review,
   Revision,
   SceneDocument,
   Selection,
 } from "./types";
 import "./workcell-report.css";
+
+function ReportEditDownload({publicationId, editId}:{publicationId:string;editId:string}) {
+  const {t}=useI18n(), [loading,setLoading]=useState(false), [error,setError]=useState<unknown>();
+  return <span className="report-download"><button disabled={loading} onClick={async()=>{
+    setLoading(true);setError(undefined);
+    try{await downloadReportEdit(publicationId,editId);}catch(error){setError(error);}finally{setLoading(false);}
+  }}>{t(loading ? "loading" : "reportTechnical")} JSON ↓</button><ErrorNotice error={error}/></span>;
+}
 
 export function ReportDownload({
   assetId,
@@ -182,7 +193,8 @@ export function WorkcellReport({
     [jobs, setJobs] = useState<Job[]>([]),
     [history, setHistory] = useState<PublicationSummary[]>([]),
     [newestPublication, setNewestPublication] = useState<PublicationSummary>(),
-    [events, setEvents] = useState<EditBatch[]>([]);
+    [events, setEvents] = useState<EditBatch[]>([]),
+    [reportEdits, setReportEdits] = useState<ReportEditSummary[]>([]);
   const [objectListRequest, setObjectListRequest] = useState(0),
     [generation, setGeneration] = useState(0);
   const [assessment, setAssessment] = useState<AssessmentSummary>();
@@ -207,22 +219,24 @@ export function WorkcellReport({
     setHistory([]);
     setNewestPublication(undefined);
     setEvents([]);
+    setReportEdits([]);
     startedReviewJobs.current.clear();
     setReviewMode(false);
     setAgentOpen(false);
     setBox(null);
     setDraw(false);
     (async () => {
-      const [pub, publications] = await Promise.all([
-        publicationId ? request<Publication>("/api/publications/" + publicationId) : Promise.resolve(undefined),
+      const [view, publications] = await Promise.all([
+        publicationId ? request<PublicationView>("/api/publications/" + publicationId + "/view") : Promise.resolve(undefined),
         request<{ items: PublicationSummary[] }>("/api/publications"),
       ]);
+      const pub = view?.publication;
       const pid = pub?.projectId || projectId!;
       if (pub && publications.items.some(p => p.id === pub.id)) {
         // ponytail: scan newer snapshots in API order; include branchId in summaries if long multi-branch histories make these reads costly.
         for (const item of publications.items.filter(p => p.projectId === pid)) {
           if (item.id === pub.id) break;
-          const candidate = await request<Publication>("/api/publications/" + item.id);
+          const {publication: candidate} = await request<PublicationView>("/api/publications/" + item.id + "/view");
           if (candidate.projectId !== pub.projectId || candidate.snapshot.revision.branchId !== pub.snapshot.revision.branchId) continue;
           const destination = currentPublicationURL(pub, candidate, location.href);
           if (!live) return;
@@ -231,7 +245,8 @@ export function WorkcellReport({
           break;
         }
       }
-      const d = await request<ProjectDetail>("/api/projects/" + pid);
+      const d: ProjectDetail = view ? {project:view.project, branch:view.branch, branches:view.branches, revision:view.publication.snapshot.revision}
+        : await request<ProjectDetail>("/api/projects/" + pid);
       const revision =
         pub?.snapshot.revision ||
         (requestedRevision
@@ -252,6 +267,7 @@ export function WorkcellReport({
       if (!live) return;
       setDetail(next);
       setPublication(pub);
+      setReportEdits(view?.edits || []);
       setCanManage(can);
       appliedHead.current = revision.id;
       const params = new URLSearchParams(location.hash.split("?")[1] || "");
@@ -685,9 +701,8 @@ export function WorkcellReport({
   const modelWorkbenchURL = contextURL("#/projects/" + project.id + "/workbench?revision=" + revision.id, { selection, imageId, box: null, reviewMode: false, agentOpen: false });
   const pendingGeometry = objects.filter(e => !e.representations?.length || e.representations.some(r => r.placementState === "unconfirmed")).length;
   const assessmentState = assessment?.revisionId === revision.id ? assessment.state : "loading";
-  const exactEvents =
-    publication?.snapshot.editBatches ||
-    events.filter((e) => e.revisionId === revision.id);
+  const exactEvents: ReportEditSummary[] = publication ? reportEdits :
+    events.filter(e => e.revisionId === revision.id).map(e => ({...e, operationTypes:e.operations.map(operation => operation.type)}));
   return (
     <article
       className={"workcell-report" + (reviewMode ? " is-reviewing" : "")}
@@ -1078,23 +1093,16 @@ export function WorkcellReport({
               {exactEvents.map((e) => (
                 <li key={e.id}>
                   <strong>
-                    {e.operations.map((o) => t(o.type)).join(" · ") ||
+                    {e.operationTypes.map(type => t(type)).join(" · ") ||
                       t("checkpoint")}
                   </strong>
                   <span>
                     {e.baseRevisionId.slice(0, 8)} → {e.revisionId.slice(0, 8)}
                   </span>
                   <ReportDate value={e.createdAt} />
-                  <details>
-                    <summary>{t("reportTechnical")}</summary>
-                    <pre>
-                      {JSON.stringify(
-                        { before: e.inverseOperations, after: e.operations },
-                        null,
-                        2,
-                      )}
-                    </pre>
-                  </details>
+                  {publication ? <ReportEditDownload publicationId={publication.id} editId={e.id} /> :
+                    <button onClick={() => downloadJSON(events.find(event => event.id === e.id), `edit-${e.id}.json`)}>{t("reportTechnical")} JSON ↓</button>}
+
                 </li>
               ))}
             </ol>

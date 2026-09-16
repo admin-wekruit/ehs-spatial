@@ -49,17 +49,27 @@ forks and new model jobs remain in the full platform.
    modify a report. Model calls require an explicit model and reserved budget.
 
    ```sh
+   .venv/bin/python scripts/prepare_publication_site.py \
+     --catalog .platform/publication-catalog --output .platform/publication-http
    PANOPTES_PUBLICATION_CATALOG="$PWD/.platform/publication-catalog" \
+     PANOPTES_PUBLICATION_HTTP="$PWD/.platform/publication-http" \
      .venv/bin/modal deploy modal_apps/publication_site.py
    ```
 
-   The publication container reserves 6 GiB with four concurrent inputs. On
-   2026-09-16, a fresh local process loading sixteen verified bundles and serving
+   Preparation verifies every frozen response and asset, then writes compressed
+   HTTP bodies and an index. The immutable deployment serves those files without
+   parsing historical bundles or rehashing assets on cold start. Re-run preparation
+   whenever the catalog changes. The report requests `/api/publications/{id}/view`;
+   complete edit events are downloaded only on demand from `/edits/{editId}`.
+   Original publication and asset routes remain byte-content equivalent.
+
+   The publication container reserves 6 GiB with four concurrent inputs. Before
+   prepared serving was introduced on 2026-09-16, a
+   fresh local process loading sixteen verified bundles and serving
    four simultaneous GETs of the largest 76,627,499-byte publication peaked at
    5,039,538,176 bytes RSS. All four response hashes matched. This includes local
    serialization and client buffers, but excludes Modal runtime overhead. The
-   previous 3 GiB / 32-input setting had inadequate headroom; remeasure after
-   adding bundles. The loader shares immutable revisions only after comparing
+   previous 3 GiB / 32-input setting had inadequate headroom. The build-time loader shares immutable revisions only after comparing
    their complete contents, and rejects conflicting records or corrupt assets.
    On macOS, the command below reports peak RSS in bytes:
 

@@ -1,7 +1,9 @@
 """Deploy an immutable, verified publication catalog for public report viewing.
 
 Export each publication into CATALOG/PUBLICATION_ID with
-scripts/export_platform_publication.py, preserving previous directories, then run:
+scripts/export_platform_publication.py, preserving previous directories. Prepare
+verified HTTP files with scripts/prepare_publication_site.py --catalog CATALOG
+--output .platform/publication-http, then run:
   PANOPTES_PUBLICATION_CATALOG=/absolute/catalog .venv/bin/modal deploy modal_apps/publication_site.py
 
 The website remains on GitHub Pages. Frozen metadata/assets remain immutable;
@@ -19,6 +21,7 @@ import modal
 
 ROOT = Path(__file__).resolve().parents[1]
 catalog = Path(os.environ.get("PANOPTES_PUBLICATION_CATALOG", ROOT / ".platform/publication-catalog"))
+prepared = Path(os.environ.get("PANOPTES_PUBLICATION_HTTP", ROOT / ".platform/publication-http"))
 app = modal.App("panoptes-publications")
 feedback_data = modal.Volume.from_name("panoptes-publication-feedback", create_if_missing=True)
 feedback_config = {key: os.environ.get(key, "") for key in (
@@ -45,8 +48,9 @@ image = (
     .env({"PYTHONPATH": "/app", **feedback_config})
     .add_local_file(ROOT / "ehs_spatial/__init__.py", "/app/ehs_spatial/__init__.py")
     .add_local_dir(catalog, "/publications")
+    .add_local_dir(prepared, "/publication-http")
 )
-for module in ("__init__", "publication_site", "feedback", "contracts", "agent_service", "repository", "identity"):
+for module in ("__init__", "publication_site", "publication_view", "feedback", "contracts", "agent_service", "repository", "identity"):
     image = image.add_local_file(ROOT / f"ehs_spatial/platform/{module}.py", f"/app/ehs_spatial/platform/{module}.py")
 
 
@@ -68,5 +72,5 @@ def web():
     feedback = FeedbackService("/feedback/feedback.sqlite", provider=provider, total_budget=total,
                                call_reservation=reservation, checkpoint=feedback_data.commit)
 
-    server = create_app("/publications", allowed_origins=["https://admin-wekruit.github.io"], feedback=feedback)
+    server = create_app("/publications", allowed_origins=["https://admin-wekruit.github.io"], feedback=feedback, prepared_dir="/publication-http")
     return persistent_feedback_app(server, feedback_data, lambda path: FEEDBACK_PATH.fullmatch(path) or IDENTITY_SUGGESTIONS_PATH.fullmatch(path))

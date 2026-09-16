@@ -266,3 +266,12 @@ export async function downloadAsset(id: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 export const id = () => crypto.randomUUID();
+
+// Stream historical scene snapshots into a download, without parsing/stringifying
+// megabytes of inverse operations on the UI thread.
+export async function downloadReportEdit(publicationId:string,editId:string){
+  const response=await fetch(API_ORIGIN+`/api/publications/${encodeURIComponent(publicationId)}/edits/${encodeURIComponent(editId)}`,{credentials:"omit",redirect:"error"});
+  if(!response.ok)throw new ApiError(response.status,"asset_download_failed");
+  const url=URL.createObjectURL(await response.blob()),a=document.createElement("a");
+  a.href=url;a.download=`edit-${editId}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}

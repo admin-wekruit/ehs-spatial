@@ -762,6 +762,22 @@ class Publication(OwnedRecord):
     snapshot: PublicationSnapshot
 
 
+class ReportEditSummary(DTO):
+    id: str
+    createdAt: Timestamp
+    baseRevisionId: str
+    revisionId: str
+    operationTypes: list[str]
+
+
+class PublicationView(DTO):
+    publication: Publication
+    project: Project
+    branch: Branch
+    branches: list[Branch]
+    edits: list[ReportEditSummary]
+
+
 class Health(DTO):
     status: Literal["ok"]
     schemaVersion: Literal[1]

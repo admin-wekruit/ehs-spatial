@@ -18,7 +18,7 @@ from .contracts import (AgentRequest, CreateBranch, CreateProject, EditRequest, 
                         JobRequest, PlatformError, PublicationRequest, capability_sha,
                         AgentTurn, Asset, AssetRecord, Branch, Capture, CaptureCreated,
                         Commit, EditBatch, ErrorResponse, Health, Items, Job, Project,
-                        ProjectDetail, Publication, PublicationSummary, Revision)
+                        ProjectDetail, Publication, PublicationSummary, PublicationView, Revision)
 from .executor import dispatch_pending
 
 MAX_UPLOAD_BYTES = 32 * 1024 * 1024
@@ -204,6 +204,20 @@ def create_app(*, repository, blobs, executor=None, agent_service=None, policy_s
     @app.get("/api/publications", response_model=Items[PublicationSummary], response_model_exclude_unset=True)
     def publications():
         return repository.list_publications()
+
+    @app.get("/api/publications/{publication_id}/view", response_model=PublicationView, response_model_exclude_unset=True)
+    def report_view(publication_id: UUID):
+        from .publication_view import publication_view
+        pub = repository.get_publication(str(publication_id))
+        return publication_view(pub, repository.get_project(pub["projectId"]))
+
+    @app.get("/api/publications/{publication_id}/edits/{edit_id}")
+    def report_edit(publication_id: UUID, edit_id: UUID):
+        pub = repository.get_publication(str(publication_id))
+        edit = next((item for item in pub["snapshot"].get("editBatches") or [] if item["id"] == str(edit_id)), None)
+        if edit is None:
+            raise PlatformError("edit_not_found", 404)
+        return edit
 
     @app.get("/api/publications/{publication_id}", response_model=Publication, response_model_exclude_unset=True)
     def publication(publication_id: UUID):
