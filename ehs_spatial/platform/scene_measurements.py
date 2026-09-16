@@ -9,7 +9,7 @@ import numpy as np
 from shapely import polygons, union_all, get_parts
 from shapely.geometry import Polygon
 
-from .contracts import PlatformError
+from .contracts import PlatformError, digest
 from .spatial import transform_matrix, transform_points, primitive_mesh, affine
 from .blender_export import mesh_from_asset
 
@@ -281,8 +281,79 @@ def measure_scene(revision, kind, entity_a, entity_b, region, load_asset):
     return result
 
 
-def register_measurement_routes(app, get_revision, load_asset):
+BEND_ALGORITHM = "same-mesh-two-surface-interior-bend-v1"
+BEND_ANALYSIS_ROUTE = "bend-analysis-v1"
+
+
+def bend_input(document, entity):
+    rep = next((r for r in entity.get('representations') or []
+                if r['id'] == entity.get('activeModelRepresentationId')), None)
+    asset = next((a for a in document['assets'] if rep and a['id'] == rep.get('assetId')), None)
+    frame = next((f for f in document['coordinateFrames'] if rep and f['id'] == rep.get('coordinateFrameId')), None)
+    return digest({'algorithm': BEND_ALGORITHM, 'entityId': entity['id'], 'representation': rep,
+                   'asset': asset, 'pose': entity.get('currentModelTransform'), 'frame': frame})
+
+
+def saved_bends(revision):
+    """Read saved exact-input outcomes only; never load assets on report open."""
+    items = []
+    for entity in revision['document']['entities']:
+        if entity.get('sourceContext') or entity.get('visible') is False:
+            continue
+        fingerprint = bend_input(revision['document'], entity)
+        saved = entity.get('bendAnalysis') or {}
+        row = dict(saved) if saved.get('inputSha256') == fingerprint else {'status': 'not_processed'}
+        row.update(entityId=entity['id'], inputSha256=fingerprint)
+        if row.get('result'):
+            row['result'] = {**row['result'], 'revisionId': revision['id']}
+        items.append(row)
+    return {'revisionId': revision['id'], 'algorithm': BEND_ALGORITHM, 'items': items}
+
+
+def analyze_bends(revision, load_asset, *, persist=False, cache=None):
+    """Processing/publication stage. Cache binds geometry, pose and algorithm."""
+    analysis = saved_bends(revision)
+    entities = {e['id']: e for e in revision['document']['entities']}
+    cache = {} if cache is None else cache
+    for row in analysis['items']:
+        entity = entities[row['entityId']]
+        if row['status'] in ('not_processed', 'failed'):
+            cached = cache.get(row['inputSha256'])
+            if cached and cached['status'] != 'failed':
+                row.update(cached)
+            else:
+                try:
+                    result = measure_scene(revision, 'bend', entity['id'], None, None, load_asset)
+                    result.pop('revisionId', None)
+                    row.update(status='measured', result=result)
+                except PlatformError as error:
+                    status = ('unsupported' if error.code in ('measurement_no_stable_bend', 'measurement_no_surface')
+                              else 'skipped' if error.code == 'measurement_model_missing' else 'failed')
+                    row.update(status=status, reason=error.code)
+                    row.pop('result', None)
+                except (ValueError, TypeError, KeyError, OSError):
+                    row.update(status='failed', reason='measurement_invalid_geometry')
+                    row.pop('result', None)
+        stored = {**row}
+        if row.get('result'):
+            stored['result'] = {k:v for k,v in row['result'].items() if k != 'revisionId'}
+            row['result'] = {**stored['result'], 'revisionId': revision['id']}
+        cache[row['inputSha256']] = stored
+        if persist:
+            entity['bendAnalysis'] = stored
+    return analysis
+
+
+def register_measurement_routes(app, get_revision, load_asset, get_analysis=None):
     from fastapi import Query
+    @app.get('/api/revisions/{revision_id}/' + BEND_ANALYSIS_ROUTE)
+    def bend_analysis(revision_id: str):
+        saved = get_analysis(revision_id) if get_analysis else None
+        if saved is not None: return saved
+        revision = get_revision(revision_id)
+        if revision is None: raise PlatformError('revision_not_found', 404)
+        return saved_bends(revision)
+
     @app.get('/api/revisions/{revision_id}/measurements')
     def measurement(revision_id: str, kind: str, entityA: str, entityB: str | None = None,
                     region: str | None = Query(default=None, max_length=12000)):

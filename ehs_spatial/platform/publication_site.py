@@ -146,6 +146,12 @@ def compile_catalog(catalog_dir: str | Path, output_dir: str | Path):
     root, output = Path(catalog_dir).resolve(), Path(output_dir).resolve()
     output.mkdir(parents=True, exist_ok=True)
     responses, files = read_catalog(root)
+    from .scene_measurements import analyze_bends, BEND_ANALYSIS_ROUTE
+    cache = {}
+    for route, revision in list(responses.items()):
+        if route.startswith('/api/revisions/') and route.count('/') == 3:
+            responses[route + '/' + BEND_ANALYSIS_ROUTE] = analyze_bends(
+                revision, lambda aid: files[aid][0].read_bytes(), cache=cache)
     index = {"schemaVersion": 1, "routes": {}, "assets": {}}
     for route, value in responses.items():
         body = json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode()
@@ -243,7 +249,8 @@ def create_app(catalog_dir: str | Path, *, allowed_origins: list[str], feedback=
         if asset_id not in files:
             raise PlatformError("asset_not_found", 404)
         return files[asset_id][0].read_bytes()
-    register_measurement_routes(app, lambda rid: get_record("/api/revisions/" + rid), measurement_asset)
+    register_measurement_routes(app, lambda rid: get_record("/api/revisions/" + rid), measurement_asset,
+        lambda rid: get_record("/api/revisions/" + rid + "/bend-analysis-v1"))
 
     @app.api_route("/api/assets/{asset_id}/content", methods=["GET", "HEAD"])
     def content(asset_id: str):

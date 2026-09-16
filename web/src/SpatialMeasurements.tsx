@@ -14,7 +14,10 @@ export type SceneMeasurement = {
   lines: { points: number[][]; color: string }[]; labelPoint: number[];
   quality: { surfaceFits?: { areaFraction: number; rmsResidualNative: number }[]; deviationFromVerticalDeg?: number; groundReference?: { normal?: number[] | null }; regionFraction?: number };
 };
-export function SpatialMeasurements({ revision, selectedId, region, drawing, onDraw, onResult, points, pickingPoints, onPickPoints }: {
+export type BendAnalysis = { revisionId: string; algorithm: string; items: BendOutcome[] };
+export type BendOutcome = { entityId: string; inputSha256: string; status: "measured" | "unsupported" | "skipped" | "failed" | "not_processed"; reason?: string; result?: SceneMeasurement };
+export function SpatialMeasurements({ revision, selectedId, savedBend, region, drawing, onDraw, onResult, points, pickingPoints, onPickPoints }: {
+  savedBend?: BendOutcome;
   points: SurfacePick[]; pickingPoints: boolean; onPickPoints: (start:boolean, count?:2|3) => void;
   revision: Revision; selectedId: string; region: MeasureRegion | null; drawing: boolean;
   onDraw: () => void; onResult: (result: SceneMeasurement | null) => void;
@@ -27,9 +30,10 @@ export function SpatialMeasurements({ revision, selectedId, region, drawing, onD
   const selected = revision.document.entities.find(e => e.id === selectedId), model = selected && activeModel(selected);
   const objects = revision.document.entities.filter(e => e.id !== selectedId && e.visible !== false && !e.sourceContext && activeModel(e)?.coordinateFrameId === model?.coordinateFrameId && activeModel(e)?.sourceValidity !== "stale" && activeModel(e));
   useEffect(() => {
-    pending.current?.abort(); setBusy(false); setResult(null); setError(""); onResult(null);
+    const saved = kind === "bend" && savedBend?.status === "measured" ? savedBend.result || null : null;
+    pending.current?.abort(); setBusy(false); setResult(saved); setError(""); onResult(saved);
     return () => pending.current?.abort();
-  }, [revision.id, selectedId, kind, target, region, drawing, points, onResult]);
+  }, [revision.id, selectedId, kind, target, region, drawing, points, onResult, savedBend]);
   async function calculate() {
     pending.current?.abort(); const controller = new AbortController(); pending.current = controller;
     setBusy(true); setError(""); setResult(null); onResult(null);
@@ -79,6 +83,9 @@ export function SpatialMeasurements({ revision, selectedId, region, drawing, onD
         <option value="occupancy">{text("区域投影占用", "Projected region overlap")}</option>
       </select></label>
       <p><b>{text("对象 A：", "Object A: ")}</b>{selected?.label}</p>
+      {kind === "bend" && savedBend && <p className="saved-bend-status">{text(
+        savedBend.status === "measured" ? "处理流程已计算并保存，打开报告自动读取。" : savedBend.status === "unsupported" ? "处理流程已检查：当前模型未检出稳定折弯。可从上方「已识别折弯」选择其他板件。" : savedBend.status === "not_processed" ? "当前模型尚无有效的已保存分析。" : savedBend.status === "skipped" ? "当前对象没有可用于折弯分析的有效独立模型。" : "处理流程未能完成此对象的计算。",
+        savedBend.status === "measured" ? "Calculated and saved during processing; loaded with the report." : savedBend.status === "unsupported" ? "Processed: no stable bend detected in this model. Choose a detected bend above." : savedBend.status === "not_processed" ? "No saved analysis for the current model." : savedBend.status === "skipped" ? "No valid independent model for bend analysis." : "Processing could not complete this object's calculation.")}{savedBend.status === "failed" && <small> {errors[savedBend.reason || ""] || savedBend.reason}</small>}</p>}
       {kind === "edge_angle" || kind === "edge_vertical" ? <>
         <p>{kind === "edge_vertical" ? text("在同一条斜边上选：① 上端点（角的顶点）→ ② 下端点。系统从①画竖直参考线，绿色弧线显示斜边偏离竖直的角度。", "Pick the same sloping edge: ① upper endpoint (angle vertex) → ② lower endpoint. A vertical reference starts at ①; the green arc measures the edge angle to vertical.") : text("依次选择：① 第一条边上的点 → ② 两边交点（顶点）→ ③ 第二条边上的点。测量三维夹角，第二点决定角的位置。", "Pick ① a point on the first edge → ② the shared vertex → ③ a point on the second edge. The second point is the angle vertex.")}</p>
         <button type="button" onClick={()=>onPickPoints(!pickingPoints,pointCount)}>{text(pickingPoints ? "取消取点" : points.length ? "重新取点" : pointCount === 2 ? "选取斜边两端" : "在 3D 中选择三个点", pickingPoints ? "Cancel picking" : points.length ? "Pick again" : pointCount === 2 ? "Pick edge endpoints" : "Pick three points in 3D")}</button>
@@ -88,7 +95,7 @@ export function SpatialMeasurements({ revision, selectedId, region, drawing, onD
         {objects.map(e => <option key={e.id} value={e.id}>{e.label || e.id}</option>)}
       </select></label> : <><button type="button" onClick={onDraw}>{text(drawing ? "取消圈定" : region ? "重新圈定 CAD 区域" : "圈定 CAD 区域", drawing ? "Cancel drawing" : region ? "Redraw CAD region" : "Draw CAD region")}</button>
         <p>{text(region ? "已圈定临时区域。此区域不代表已确认的安全区。" : "在 CAD 中点击矩形的两个对角；也可用方向键移动光标，Enter 确认。", region ? "Temporary region set. It is not a verified safety zone." : "Click two opposite rectangle corners in CAD, or move the cursor with arrow keys and press Enter.")}</p></>}
-      <button type="button" className="measure-calculate" disabled={busy || drawing || pickingPoints || ((kind === "edge_angle" || kind === "edge_vertical") ? points.length!==pointCount : kind === "occupancy" ? !region : (kind === "angle" || kind === "distance") && !objects.some(e => e.id === target))} onClick={calculate}>{text(busy ? "正在计算…" : "计算并标注", busy ? "Calculating…" : "Calculate & annotate")}</button>
+      <button type="button" className="measure-calculate" disabled={busy || drawing || pickingPoints || ((kind === "edge_angle" || kind === "edge_vertical") ? points.length!==pointCount : kind === "occupancy" ? !region : (kind === "angle" || kind === "distance") && !objects.some(e => e.id === target))} onClick={calculate}>{text(busy ? "正在计算…" : kind === "bend" && savedBend?.status === "measured" ? "重新计算并标注" : "计算并标注", busy ? "Calculating…" : kind === "bend" && savedBend?.status === "measured" ? "Recalculate & annotate" : "Calculate & annotate")}</button>
       {error && <p role="alert">{errors[error] || text("测量失败，请重试。", "Measurement failed. Please retry.")} <small>{error}</small></p>}
       {result && <div className="measurement-result" role="status">
         <output>{Number(result.value.toPrecision(4))} {result.unit === "deg" ? "°" : text(result.unit === "native2" ? "原生单位²" : "原生单位", result.unit === "native2" ? "native units²" : "native units")}</output>

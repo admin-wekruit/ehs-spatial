@@ -117,6 +117,14 @@ def run_job(repository, blobs, job_id, providers=None):
                 continuation = result.pop('_continuation', None)
             else:
                 raise PlatformError('unsupported_job_kind', 422, kind=job['kind'])
+            if document is not None:
+                from ehs_spatial.platform.scene_measurements import analyze_bends
+                def measurement_asset(identity):
+                    asset = repository.get_asset(identity)
+                    return blobs.get(asset['storageKey'], asset['sha256'], asset['sizeBytes'])
+                analysis = analyze_bends({'id': '', 'document': document}, measurement_asset, persist=True)
+                result['bendAnalysis'] = {'algorithm': analysis['algorithm'],
+                    'outcomes': [{k:v for k,v in row.items() if k != 'result'} for row in analysis['items']]}
             status = result.get('status', 'succeeded')
         except PlatformError as exc:
             from ehs_spatial.platform.reconstruction import UNKNOWN_OUTCOME_CODES

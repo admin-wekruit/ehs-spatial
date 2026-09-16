@@ -2,7 +2,8 @@ import type { SurfacePick } from "./viewer/native-math";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { SpatialView } from "./App";
 import { PhotoView } from "./PhotoView";
-import { SpatialMeasurements, type SceneMeasurement, type MeasureRegion } from "./SpatialMeasurements";
+import { request } from "./api";
+import { SpatialMeasurements, type BendAnalysis, type SceneMeasurement, type MeasureRegion } from "./SpatialMeasurements";
 import { CadView } from "./CadView";
 import { useI18n } from "./i18n";
 import { cameraForImage, activeModel, compositeModelEvidence, modelPreviewEntities, modelPreviewGeometry, modelPreviewSignature, observationsFor, entityGeometryForLayer, jsonObject, planShapes, cadReferenceImage, scenePlanOptions, sourceDimensions, sourceScale, type GeometryOptions, type PlanOptions } from "./core";
@@ -245,10 +246,22 @@ export function ReportScene({
     selected = document.entities.find((entity) => entity.id === selection.entityId);
   const camera = cameraForImage(document, imageId);
   const geometryOptions: GeometryOptions = { layer, frameId: camera?.coordinateFrameId || (!imageId ? document.coordinateFrames[0]?.id : "") || "", showCandidates: true, imageId, observations: document.observations };
-  const [measurement, setMeasurement] = useState<SceneMeasurement | null>(null), [measureRegion, setMeasureRegion] = useState<MeasureRegion | null>(null), [drawingRegion, setDrawingRegion] = useState(false);
+  const [rawMeasurement, setMeasurement] = useState<SceneMeasurement | null>(null), [measureRegion, setMeasureRegion] = useState<MeasureRegion | null>(null), [drawingRegion, setDrawingRegion] = useState(false);
+  const [bendAnalysis, setBendAnalysis] = useState<BendAnalysis | null>(null), [bendError, setBendError] = useState(false), [showAngles, setShowAngles] = useState(true);
+  useEffect(() => {
+    const controller = new AbortController(); setBendAnalysis(null); setBendError(false);
+    request<BendAnalysis>(`/api/revisions/${revision.id}/bend-analysis-v1`, { signal: controller.signal })
+      .then(value => { if (!controller.signal.aborted) setBendAnalysis(value); })
+      .catch(() => { if (!controller.signal.aborted) setBendError(true); });
+    return () => controller.abort();
+  }, [revision.id]);
+  const bendRows = bendAnalysis?.revisionId === revision.id ? bendAnalysis.items : [];
+  const detectedBends = bendRows.filter(row => row.status === "measured" && row.result);
+  const savedBend = bendRows.find(row => row.entityId === selected?.id);
+  const measurement = (showAngles || rawMeasurement?.unit !== "deg") && rawMeasurement?.revisionId === revision.id && rawMeasurement.references.some(ref => ref.entityId === selected?.id) ? rawMeasurement : null;
   const [measurePoints,setMeasurePoints]=useState<SurfacePick[]>([]),[pickingPoints,setPickingPoints]=useState(false),[pointError,setPointError]=useState(false),[pointCount,setPointCount]=useState<2|3>(2);
-  useEffect(() => { setMeasurement(null); setMeasureRegion(null); setDrawingRegion(false); setMeasurePoints([]); setPickingPoints(false); }, [revision.id, selection.entityId]);
-  useEffect(()=>{if(layer!=="model"){setMeasurePoints([]);setPickingPoints(false);setMeasurement(null);}},[layer]);
+  useEffect(() => { setMeasureRegion(null); setDrawingRegion(false); setMeasurePoints([]); setPickingPoints(false); }, [revision.id, selection.entityId]);
+  useEffect(()=>{if(layer!=="model"){setMeasurePoints([]);setPickingPoints(false);}},[layer]);
   function startPointPicking(start:boolean, count:2|3=3) { setPointCount(count); setPickingPoints(start); setMeasurePoints([]); setMeasurement(null); setPointError(false); if(start){setDrawingRegion(false);setLayer("model");setFocused("spatial");setMobileSection("views");} }
   function pickMeasurementPoint(hit:SurfacePick|null) {
     if(!pickingPoints)return;
@@ -413,6 +426,14 @@ export function ReportScene({
           <button className="report-scene-fullscreen" onClick={fullscreen} aria-pressed={isFullscreen} aria-label={t(isFullscreen ? "sceneExitFullscreen" : "sceneFullscreen")}>⛶ <span>{t(isFullscreen ? "sceneExitFullscreen" : "sceneFullscreen")}</span></button>
         </div>
       </header>
+      <div className="report-bend-analysis" aria-label={language === "zh" ? "已保存的折弯分析" : "Saved bend analysis"}>
+        <span>{language === "zh" ? bendError ? "折弯分析加载失败，请刷新重试" : !bendAnalysis ? "读取已保存的折弯分析…" : `已保存折弯分析 · ${detectedBends.length} 个已识别 · ${bendRows.filter(row => row.status === "failed").length} 个计算未完成` : bendError ? "Could not load bend analysis; refresh to retry" : !bendAnalysis ? "Loading saved bend analysis…" : `Saved bends · ${detectedBends.length} detected · ${bendRows.filter(row => row.status === "failed").length} calculations incomplete`}</span>
+        <label>{language === "zh" ? "已识别折弯" : "Detected bend"}<select value={detectedBends.some(row => row.entityId === selected?.id) ? selected!.id : ""} onChange={e => { if(e.target.value) { selectEntity(e.target.value); setLayer("model"); } }}>
+          <option value="">{language === "zh" ? "选择有折弯结果的对象" : "Choose an object with a detected bend"}</option>
+          {detectedBends.map(row => <option key={row.entityId} value={row.entityId}>{document.entities.find(entity => entity.id === row.entityId)?.label || row.entityId} · {row.result!.value.toFixed(1)}°</option>)}
+        </select></label>
+        <label className="report-scene-check"><input type="checkbox" checked={showAngles} onChange={e => setShowAngles(e.target.checked)} />{language === "zh" ? "显示角度标注" : "Show angle annotations"}</label>
+      </div>
       {newerReport && <div className="report-scene-history-notice" role="status"><span>{t("sceneHistoricalReport")}</span><a href={newerReport.href} title={newerReport.title}>{t("sceneLatestReport")} ↗</a></div>}
       {fullscreenError && <p className="report-scene-notice" role="status">{t("sceneFullscreenUnavailable")}</p>}
       <nav className="report-scene-section-tabs" aria-label={t("sceneWorkspace")}>
@@ -509,7 +530,7 @@ export function ReportScene({
         </div>
         <aside className="report-scene-inspector" id={`${panePrefix}-inspector`} aria-label={t("sceneInspector")}>
           <header><h3>{t("sceneInspector")}</h3>{selected && <span>{selected.id.slice(0, 8)}</span>}</header>
-          <div className="report-scene-inspector-content">{selected && <SpatialMeasurements key={revision.id + selected.id} revision={revision} selectedId={selected.id} points={measurePoints} pickingPoints={pickingPoints} onPickPoints={startPointPicking} region={measureRegion} drawing={drawingRegion} onResult={setMeasurement} onDraw={() => { setDrawingRegion(!drawingRegion); if (!drawingRegion) { setCadLayer("model"); setFocused("cad"); setMobileSection("views"); } }} />}{inspector ?? <p className="report-scene-inspector-empty">{t("sceneReadOnly")}</p>}</div>
+          <div className="report-scene-inspector-content">{selected && <SpatialMeasurements key={revision.id + selected.id} revision={revision} selectedId={selected.id} savedBend={savedBend} points={measurePoints} pickingPoints={pickingPoints} onPickPoints={startPointPicking} region={measureRegion} drawing={drawingRegion} onResult={setMeasurement} onDraw={() => { setDrawingRegion(!drawingRegion); if (!drawingRegion) { setCadLayer("model"); setFocused("cad"); setMobileSection("views"); } }} />}{inspector ?? <p className="report-scene-inspector-empty">{t("sceneReadOnly")}</p>}</div>
         </aside>
       </div>
     </section>

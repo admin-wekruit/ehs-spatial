@@ -163,3 +163,70 @@ for degrees in (20,45,80):
  assert abs(measurements.fitted_bend(noisy@turn.T+[3,1,-2])['value']-baseline)<1e-6, 'Noisy fold angle must be rigid-pose invariant'
 print('PASS: noisy reconstructed fold rotation invariance')
 assert abs(fitted_plane(square)['span']-fitted_plane(square@turn.T)['span'])<1e-10, 'Fit tolerance must not depend on world axes'
+
+# Processing persists every outcome; report reads never decode a mesh.
+from ehs_spatial.platform.scene_measurements import analyze_bends, saved_bends
+from unittest.mock import patch
+candidate=deepcopy(revision)
+for e in candidate['document']['entities']:
+ e['measurements']={'existing':123}
+value={'revisionId':'old','kind':'bend','value':135.,'unit':'deg','references':[], 'lines':[], 'labelPoint':[0,0,0]}
+def computed(rev,kind,entity_a,*args):
+ if entity_a=='b': raise PlatformError('measurement_no_stable_bend',422)
+ return {**value,'revisionId':rev['id']}
+with patch('ehs_spatial.platform.scene_measurements.measure_scene',side_effect=computed) as compute:
+ analysis=analyze_bends(candidate,load,persist=True)
+ assert compute.call_count==2
+ assert [r['status'] for r in analysis['items']]==['measured','unsupported']
+ assert candidate['document']['entities'][0]['measurements']['existing']==123
+ assert saved_bends(candidate)==analysis
+ candidate['id']='new-revision'
+ again=analyze_bends(candidate,load,persist=True)
+ assert compute.call_count==2 and again['items'][0]['result']['revisionId']=='new-revision'
+ candidate['document']['entities'][0]['representations'][0]['transform']['position'][0]+=1
+ assert saved_bends(candidate)['items'][0]['status']=='not_processed'
+ analyze_bends(candidate,load,persist=True)
+ assert compute.call_count==3
+ candidate['document']['entities'][1]['sourceContext']=True
+ assert len(saved_bends(candidate)['items'])==1
+with patch('ehs_spatial.platform.scene_measurements.measure_scene',side_effect=PlatformError('asset_not_found',404)):
+ candidate['document']['entities'][0]['representations'][0]['transform']['scale'][0]+=1
+ failed=analyze_bends(candidate,load,persist=True)
+ assert failed['items'][0]['status']=='failed' and failed['items'][0]['reason']=='asset_not_found'
+api=FastAPI();register_measurement_routes(api,lambda _:candidate,load)
+with TestClient(api) as client:
+ with patch('ehs_spatial.platform.scene_measurements.measure_scene',side_effect=AssertionError('read must not compute')):
+  assert client.get('/api/revisions/new-revision/bend-analysis-v1').json()==saved_bends(candidate)
+print('PASS: persistent per-object outcomes, exact-input reuse, pose invalidation, exclusions and compute-free report reads')
+
+# All scene-producing worker paths share this stage before saving a revision.
+from panoptes_worker.__main__ import run_job
+from uuid import uuid4
+class WorkerRepository:
+ def claim_job(self,identity): return {'id':identity,'kind':'generate_scene','attemptToken':'test','config':{}}
+ def finish_job(self,identity,token,status,document=None,result=None):
+  assert status=='succeeded'
+  assert all('bendAnalysis' in e for e in document['entities'])
+  assert len(result['bendAnalysis']['outcomes'])==2
+  return result
+worker_scene=deepcopy(revision['document'])
+with patch('ehs_spatial.platform.reconstruction.run_generation',return_value=(worker_scene,{'status':'succeeded'})):
+ run_job(WorkerRepository(),None,str(uuid4()),providers={})
+
+# Publication builds write an independent derivative; serving it does not read
+# a full revision or compute a mesh, and original revision bytes stay unchanged.
+from ehs_spatial.platform.publication_site import compile_catalog, create_app
+from tempfile import TemporaryDirectory
+unchanged=deepcopy(revision)
+with TemporaryDirectory() as directory:
+ with patch('ehs_spatial.platform.publication_site.read_catalog',return_value=({'/api/revisions/revision':revision},{})):
+  compile_catalog(directory,Path(directory)/'prepared')
+ assert revision==unchanged
+ app=create_app(directory,allowed_origins=[],prepared_dir=Path(directory)/'prepared')
+ with TestClient(app) as client, patch('ehs_spatial.platform.scene_measurements.measure_scene',side_effect=AssertionError('GET computed geometry')):
+  payload=client.get('/api/revisions/revision/bend-analysis-v1').json()
+  assert len(payload['items'])==2 and all(row['status']!='not_processed' for row in payload['items'])
+app=FastAPI()
+register_measurement_routes(app,lambda _:(_ for _ in ()).throw(AssertionError('parsed full revision')),load,lambda _:analysis)
+with TestClient(app) as client: assert client.get('/api/revisions/revision/bend-analysis-v1').json()==analysis
+print('PASS: shared worker stage, immutable publication derivative, prepared compute-free/full-revision-free reads')
