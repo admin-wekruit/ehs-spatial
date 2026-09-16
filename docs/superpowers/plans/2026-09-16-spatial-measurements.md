@@ -115,3 +115,10 @@ observed-surface load-scope checks. Local UI expanded 04 Free 3D, dragged the mo
 scrolled to zoom, calculated 145.4 degrees, then dragged again: mesh, XYZ axes,
 face outlines and angle arc rotate together. Pan reuses the unchanged native
 right-button/Shift branch; automated browser drag does not expose a modifier.
+
+Published source 832a7c1 / Pages 3c77174, successful Pages run 35154135520.
+Reloaded the user's public report and opened 04 Free 3D: a real canvas replaces
+its PNG. Actual drag changes the object orientation; wheel changes its scale.
+Calculated the left wing's 145.4-degree bend on the public service, returned to
+04 and verified the attached angle/XYZ overlay; left this view open. Local UI
+also checked right wing 146.9 degrees and fixed-side-to-free switching.
