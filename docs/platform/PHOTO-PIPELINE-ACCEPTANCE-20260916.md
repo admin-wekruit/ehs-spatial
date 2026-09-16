@@ -135,6 +135,26 @@ not proof that a new uploaded workcell finishes with accepted models.
 
 ## Shared review and failure behavior
 
+Normal generation now consumes a validated shape review's `alternate_view`
+action. The first explicit or best-supported source is preserved; a rejected
+candidate can then use another already-owned source photo of the same entity,
+at most once per supplied image. Every candidate remains bound to its original
+call and every applicable observation is still reviewed. Only an accepted
+candidate activates; ready/accepted entity lists remain unique. The same provider,
+budget ledger and cache apply, and unknown outcomes stop further paid calls.
+`correct_mask` does not supply an actual corrected mask or box, so it does not
+silently rewrite evidence or repeat the unchanged segmentation input.
+
+Explicit resegmentation now also stops on the shared unknown-outcome codes,
+preserving successful earlier observations and reporting unprocessed observation
+IDs. Known failures still allow independent observations to proceed. The focused
+three-file suite passed 128 tests, including alternate-view acceptance, candidate
+retention, explicit first anchors and a zero-new-call cache replay. These are
+synthetic-provider control-flow checks, not a successful real-model release run.
+The existing capture-worker, pipeline-outbox, retained-review worker and
+correspondence suites also passed 60 tests using isolated PostgreSQL schemas,
+with no database skips or real provider calls.
+
 `review_models` reuses the same mesh/CAD/source validator as new generation. The
 existing models were checked with fixed job inputs and zero new provider calls.
 090 retained all original models and transforms: 16 rows are geometrically
@@ -302,6 +322,23 @@ The reproducible CPU audits are `030-joint-geometry-identity-audit.md` and
 - The public feedback deployment serves frozen reports. It does not expose the
   full project's upload/inference API; production inference deployment remains a
   separate unfinished release gate.
+
+A subsequent read-only deployment audit confirmed the local API uses loopback
+PostgreSQL, local blobs and a local executor. Its model-call budget and journal
+are configured, but its ordinary provider manifest is empty. The existing full
+ASGI application can serve API and frontend on the same origin; no new login or
+CORS feature is required for that topology. A persistent public host and verified
+provider configuration have not been established. Reusing the same durable
+model-call ledger is mandatory when moving it; new projects do not reset the cap.
+
+The follow-up authenticated SAM3D check still returned `403 GatedRepo` with
+`account_access_not_approved`, without starting remote compute. The latest Modal
+billing read shows USD0.92887294 posted across the two inference apps, but supplies
+neither per-request attribution nor a finality watermark. FAL request-billing
+access still returns 403. These reads establish no additional safely reclaimable
+reservation; actual billed task cost remains unknown. The private receipts are
+`hf-access-followup-20260916.json` and
+`actual-billing-reconciliation-refresh.json` under `review-existing-ui/`.
 
 The original USD20 authorization is cumulative: USD17.56 remains reserved for
 model calls, with USD2 retained for other costs. The successful MoGe reservation
