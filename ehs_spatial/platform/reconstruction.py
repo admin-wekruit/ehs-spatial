@@ -370,15 +370,37 @@ def _original_mask_polygons(mask):
     return rings,metadata
 
 
+def _segmentation_response(image, box, response):
+    """Reject demonstrable box/output contradictions; never clip provider pixels."""
+    mask = np.asarray(response.get('mask'))
+    if mask.dtype != bool or mask.shape != (image['height'], image['width']):
+        raise PlatformError('mask_image_grid_mismatch', 409)
+    submitted = _sam_box({'image':image, 'box':box})
+    x0,y0,x1,y1 = submitted
+    count = int(mask.sum())
+    intersection = int(mask[y0:y1,x0:x1].sum())
+    metrics = {'width':mask.shape[1], 'height':mask.shape[0], 'maskPixelCount':count,
+        'submittedBox':submitted, 'boxIntersectionPixelCount':intersection}
+    if not count:
+        raise PlatformError('segmentation_empty', 409, **metrics)
+    if not intersection:
+        raise PlatformError('segmentation_box_disjoint', 409, **metrics)
+    if count == mask.size and submitted != [0,0,image['width'],image['height']]:
+        raise PlatformError('segmentation_full_image_for_local_box', 409, **metrics)
+    return mask,metrics
+
+
 def _save_observation_mask(document,observation,image,response,evidence,stages):
-    mask = np.asarray(response.get("mask"),dtype=bool)
-    if mask.shape != (image["height"],image["width"]):
-        raise PlatformError("mask_image_grid_mismatch",observationId=observation["id"])
+    try:
+        mask,_ = _segmentation_response(image, observation['originalPixelBox'], response)
+    except PlatformError as exc:
+        raise PlatformError(exc.code, exc.status, observationId=observation['id'],
+            outputAssetId=evidence['id'], **exc.params) from None
     stream = io.BytesIO()
     Image.fromarray(mask.astype(np.uint8)*255).save(stream,format="PNG")
     asset = stages.put(stream.getvalue(),{"kind":"observation_mask","observationId":observation["id"],"sourceRefs":[_ref(evidence)]},"image/png")
     polygons,polygonization = _original_mask_polygons(mask)
-    observation.update(maskAssetId=asset["id"],maskStatus="present" if mask.any() else "empty",geometrySupport=None,
+    observation.update(maskAssetId=asset["id"],maskStatus="present",geometrySupport=None,
         maskPolygonization=polygonization,polygonCoordinateConvention="pixel_edges",fillRule="evenodd")
     # This PNG is in original pixels. An imported canonical mask belongs to the
     # previous observation revision and must not override this replacement.
@@ -388,14 +410,12 @@ def _save_observation_mask(document,observation,image,response,evidence,stages):
     else:
         observation["originalPixelPolygons"] = polygons
     missing = [x for x in observation.get("missingEvidence",[]) if x not in ("segmentation_empty","mask_polygon_complexity_limit")]
-    if not mask.any():
-        missing.append("segmentation_empty")
     if polygons is None:
         missing.append("mask_polygon_complexity_limit")
     observation["missingEvidence"] = missing
     observation["sourceRefs"].append(_ref(evidence))
     _include(document,asset)
-    # The retained box is discovery evidence, including for empty/complex masks.
+    # The retained box is discovery evidence, including for complex masks.
     return mask
 
 
@@ -2229,6 +2249,7 @@ def run_research_stage(repository,blobs,job,stage,payload,images,provider_manife
         payload = {**payload,"_researchProtocol":protocol}
     response,asset = stages.call(stage,images,payload,[_ref(protocol_asset)],research_protocol=protocol)
     validation = None
+    errors = []
     if stage in ('geometry','depth'):
         _, document, captured = _capture(repository,blobs,job)
         selected = {image['id'] for image in images}
@@ -2240,14 +2261,17 @@ def run_research_stage(repository,blobs,job,stage,payload,images,provider_manife
         else:
             validation = [_depth_response(captured[0],response)]
     elif stage == 'segmentation':
-        mask = np.asarray(response.get('mask'))
-        if mask.dtype != bool or mask.shape != (payload['image']['height'], payload['image']['width']):
-            raise PlatformError('mask_image_grid_mismatch', 409)
         validation = [{'imageId':payload['image']['imageId'], 'observationId':protocol['observationId'],
-            'width':mask.shape[1], 'height':mask.shape[0], 'maskPixelCount':int(mask.sum()),
-            'submittedBox':payload['submittedBox'], 'qualityStatus':'not_evaluated_against_physical_ground_truth'}]
+            'qualityStatus':'not_evaluated_against_physical_ground_truth'}]
+        try:
+            mask,metrics = _segmentation_response(payload['image'], payload['box'], response)
+            validation[0].update(metrics, admissionStatus='accepted')
+        except PlatformError as exc:
+            validation[0].update(exc.params, admissionStatus='rejected', reason=exc.code)
+            errors.append({'stage':stage, 'observationId':protocol['observationId'],
+                'code':exc.code, 'outputAssetId':asset['id']})
         mask_id = protocol['sourceObservation']['maskAssetId']
-        if mask_id:
+        if mask_id and not errors:
             source = repository.get_revision(job['baseRevisionId'])['document']
             with Image.open(io.BytesIO(_scene_asset_bytes(source, mask_id, stages))) as image:
                 reference = np.asarray(image.convert('L')) > 0
@@ -2257,8 +2281,9 @@ def run_research_stage(repository,blobs,job,stage,payload,images,provider_manife
                 comparison.update(status='compared_existing_mask', referencePixelCount=int(reference.sum()),
                     intersectionOverUnion=float(np.count_nonzero(reference & mask) / union) if union else None)
             validation[0]['referenceMaskComparison'] = comparison
-    return {"status":"succeeded","scope":"research_only","protocolAssetId":protocol_asset["id"],"outputAssetId":asset["id"],"stages":stages.records,
+    return {"status":"incomplete" if errors else "succeeded","scope":"research_only","protocolAssetId":protocol_asset["id"],"outputAssetId":asset["id"],"stages":stages.records,
             "newModelCalls":sum(s["newModelCalls"] for s in stages.records),"productReleaseStatus":"not_changed","sceneRevision":None,
+            **({'errors':errors} if errors else {}),
             **({'outputValidation':validation} if validation is not None else {})}
 
 

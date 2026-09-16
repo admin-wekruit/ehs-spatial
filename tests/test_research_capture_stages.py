@@ -392,10 +392,11 @@ def test_discovery_preserves_jpeg_payload_mime_and_bytes(tmp_path, monkeypatch):
 
 
 def fake_sam_transport(monkeypatch, failure=None):
-    import json
+    import numpy as np
     import fal_client
     import fal_client.client
     import httpx
+    from ehs_spatial.providers.sam3 import encode_coco_rle
 
     events, requests = [], []
     def post(url, **kwargs):
@@ -420,7 +421,9 @@ def fake_sam_transport(monkeypatch, failure=None):
                 return {'rle':[], 'scores':[]}
             if failure == 'invalid_response_type':
                 return ['received but not a response object']
-            return {'rle':[json.dumps({'size':[9,13], 'counts':[0,117]})], 'scores':[.9]}
+            mask = np.zeros((9,13),bool)
+            mask[2:8,1:11] = True
+            return {'rle':[encode_coco_rle(mask)], 'scores':[.9]}
         return SimpleNamespace(request_id=kwargs['request_id'], get=get)
     monkeypatch.setattr(fal_client, 'SyncClient', lambda: SimpleNamespace(
         _client=nullcontext(SimpleNamespace(post=post))))
@@ -495,9 +498,11 @@ def test_segmentation_research_output_must_be_boolean_source_grid(tmp_path, monk
         'researchProtocolSha256':digest(frozen['protocol'])}}
     before = digest(repo.document)
     for _ in range(2):
-        with pytest.raises(PlatformError):
-            reconstruction.run_research_stage(repo, blobs, job, 'segmentation',
-                frozen['payload'], frozen['images'], manifest, frozen['protocol'])
+        result = reconstruction.run_research_stage(repo, blobs, job, 'segmentation',
+            frozen['payload'], frozen['images'], manifest, frozen['protocol'])
+        assert result['status'] == 'incomplete' and result['outputAssetId']
+        assert result['outputValidation'][0]['admissionStatus'] == 'rejected'
+        assert result['errors'][0]['code'] == 'mask_image_grid_mismatch'
     assert len(repo.calls) == 1
     assert digest(repo.document) == before
 

@@ -488,15 +488,17 @@ def test_original_mask_rings_survive_crop_resize_holes_single_pixels_and_resegme
     original = deepcopy(document)
     oid = document["observations"][0]["id"]
     mask = np.zeros_like(mask)
-    empty,_ = run_segmentation(repo,blobs,{**repo.job,"inputs":{"observationId":oid}},providers)
+    empty,rejected = run_segmentation(repo,blobs,{**repo.job,"inputs":{"observationId":oid}},providers)
     observation = next(o for o in empty["observations"] if o["id"] == oid)
-    check(observation,mask)
-    assert observation["revision"] == 2 and observation["maskStatus"] == "empty"
-    assert observation["originalPixelPolygons"] == [] and "segmentation_empty" in observation["missingEvidence"]
+    assert observation == next(o for o in original['observations'] if o['id'] == oid)
+    assert rejected['status'] == 'incomplete' and rejected['errors'][0]['code'] == 'segmentation_empty'
     assert any(oid in entity["observationRefs"] for entity in empty["entities"])
     assert repo.document == original
     repo.document = empty
     mask[::2,::2] = True
+    # A distinct provider revision supplies this different synthetic response;
+    # the rejected old response remains cached and is never silently retried.
+    providers['segmentation'] = provider('segmentation',lambda _:{'mask':mask},model='complex-mask-fixture')
     monkeypatch.setattr("ehs_spatial.platform.reconstruction.MAX_MASK_POLYGON_RUNS",2)
     limited,_ = run_segmentation(repo,blobs,{**repo.job,"inputs":{"observationId":oid}},providers)
     observation = next(o for o in limited["observations"] if o["id"] == oid)
