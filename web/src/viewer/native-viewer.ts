@@ -12,7 +12,8 @@ export type SceneViewer=ReturnType<typeof mountSceneViewer>;
 export function representationPass(entity:any,representation:any,frameId:string|null,layers:any) {
   const available=!!entity&&(!layers.entityId||entity.id===layers.entityId)&&(!layers.entityIds||layers.entityIds.includes(entity.id))&&
     (!layers.modelOnly||!entity.sourceContext&&['generated_mesh','primitive'].includes(representation.kind))&&
-    representationAvailable(entity,representation,frameId,!!layers.showCandidates)&&representationInPhoto(entity,representation,layers.imageId,layers.observations);
+    (!layers.representationIds||layers.representationIds.includes(representation.id))&&
+    representationAvailable(entity,representation,frameId,!!layers.showCandidates)&&representationInPhoto(entity,representation,layers.imageId,layers.observations,entity.id===layers.observationEntityId?layers.observationId:undefined);
   const visible=available&&layers[representation.kind]!==false;
   const cloudOnly=layers.point_cloud!==false&&['observed_surface','generated_mesh','primitive'].every(kind=>layers[kind]===false);
   // Pick actual observed triangles in a cloud view, never invisible generated
@@ -25,7 +26,7 @@ export function selectionGeometry(document:SceneDocument,entity:any,frameId:stri
   const cloudOnly=layers.point_cloud!==false&&['observed_surface','generated_mesh','primitive'].every(kind=>layers[kind]===false);
   const layer:GeometryLayer=cloudOnly?'point_cloud':layers.generated_mesh!==false||layers.primitive!==false?'model':'observed_surface';
   const subject=preview?{...entity,currentModelTransform:preview}:entity;
-  const options={layer,frameId,showCandidates:!!layers.showCandidates,imageId:layers.imageId,observations:document.observations};
+  const options={layer,frameId,showCandidates:!!layers.showCandidates,imageId:layers.imageId,observations:document.observations,observationId:entity.id===layers.observationEntityId?layers.observationId:undefined};
   const geometry=layer==='model'?modelFamilyGeometry(preview?{...document,entities:document.entities.map(e=>e.id===subject.id?subject:e)}:document,subject.id,options):entityGeometryForLayer(subject,options);
   return geometry?{...geometry,editable:geometry.geometryKind==='model'&&layers.editable!==false}:{corners:[] as Vec[],transform:undefined,axisSpace:'native',editable:false};
 }
@@ -179,9 +180,11 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
     if(layers.axisEntityId){const axes=selectedAxes(layers.axisEntityId);if(axes)ps.push(axes.origin,...axes.axes.map(axis=>axis.end));}
     return fitCamera(ps.length?ps:boundsCorners({min:[-1,-1,-1],max:[1,1,1]}),back,vup,Math.max(captureSize?.w||stage.clientWidth,1)/Math.max(captureSize?.h||stage.clientHeight,1),['top','front','side'].includes(mode));
   }
-  function captureModel(entityId:string,mode:'free'|'front'|'side'|'top',expectedRevisionId:string,expectedFrameId?:string){
+  function capturePreview(entityId:string,mode:'free'|'front'|'side'|'top',expectedRevisionId:string,expectedFrameId?:string,source:{layer:GeometryLayer;imageId?:string|null;observationId?:string|null}={layer:'model'}){
     if(disposed||revisionId!==expectedRevisionId||expectedFrameId!==undefined&&expectedFrameId!==frameId||gl!.isContextLost())return null;
-    const family=modelFamily(doc,entityId),models=family.flatMap(subject=>{const rep=activeModel(subject);return rep&&subject.visible!==false?[{subject,rep}]:[];});
+    const modeled=source.layer==='model',subject=entity(entityId),family=modeled?modelFamily(doc,entityId):subject?[subject]:[];
+    const geometry=!modeled&&subject&&frameId?entityGeometryForLayer(subject,{...source,frameId,showCandidates:true,observations:doc.observations}):null;
+    const models=family.flatMap(subject=>{const reps=modeled?[activeModel(subject)]:(subject.representations||[]).filter((rep:any)=>rep.kind===source.layer&&geometry?.representationIds.includes(rep.id));return subject.visible!==false?reps.filter(Boolean).map((rep:any)=>({subject,rep})):[];});
     if(!models.length||family[0]?.visible===false||models.some(({subject,rep})=>!representationAvailable(subject,rep,frameId,true)||!loadedRepresentations.has(subject.id+'/'+rep.id)))return null;
     const saved={camera,layers,selection,radius,center,width:canvas.width,height:canvas.height,canvasStyle:canvas.style.cssText,photoStyle:photo.style.cssText};
     try{
@@ -189,7 +192,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
       // before yielding so object previews cannot change scene navigation.
       captureSize={w:640,h:640,cw:640,ch:640};
       // Studio shading lifts display shadows only; mesh colors/materials remain unchanged.
-      layers={...layers,studio:true,modelOnly:true,entityId:undefined,entityIds:family.map(e=>e.id),axisEntityId:entityId,showAxes:true,observed_surface:false,point_cloud:false,generated_mesh:true,primitive:true,showCandidates:true,showBounds:false,editable:false};
+      layers={...layers,studio:true,modelOnly:modeled,entityId:undefined,entityIds:family.map(e=>e.id),representationIds:models.map(({rep})=>rep.id),observationEntityId:entityId,observationId:source.observationId,observations:doc.observations,imageId:source.imageId??layers.imageId,axisEntityId:entityId,showAxes:true,observed_surface:source.layer==='observed_surface',point_cloud:source.layer==='point_cloud',generated_mesh:modeled,primitive:modeled,showCandidates:true,showBounds:false,editable:false};
       selection={};dimensions();camera=fittedCamera(mode,models.length===1?models[0]:undefined);const captureCanvas=document.createElement('canvas');if(!captureCanvas.getContext('2d'))throw Error('canvas_2d_unavailable');draw(false,captureCanvas);return captureCanvas.toDataURL('image/png');
     }finally{
       camera=saved.camera;layers=saved.layers;selection=saved.selection;radius=saved.radius;center=saved.center;captureSize=null;
@@ -256,5 +259,5 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
   listen(stage,'pointercancel',()=>{if(axisDrag)preview.clear();axisDrag=null;drag=null;emit('transformPreview',{operations:[]});draw();});listen(canvas,'contextmenu',(e:Event)=>e.preventDefault());
   listen(canvas,'wheel',(e:WheelEvent)=>{if(!camera||camera.exact)return;e.preventDefault();navigationVersion++;const offset=add(camera.eye,scale(camera.target,-1)),factor=Math.exp(e.deltaY*.0012);if(camera.orthographic)camera.orthoHeight=Math.max(radius*.02,Math.min(radius*50,camera.orthoHeight!*factor));else camera.eye=add(camera.target,scale(offset,Math.max(radius*.02,Math.min(radius*50,Math.hypot(...offset)*factor))/Math.hypot(...offset)));draw();},{passive:false});
   listen(canvas,'webglcontextlost',(e:Event)=>{e.preventDefault();loadedRepresentations.clear();for(const[key,state]of assetStates)if(state.state==='ready')assetStates.set(key,{...state,state:'error',vertexCount:0,triangleCount:0,errorCode:'gpu_context_lost'});loadProgress();emit('contextLost');});listen(canvas,'webglcontextrestored',()=>emit('loadError',{code:'viewer_remount_required'}));const observer=new ResizeObserver(()=>draw());observer.observe(stage);
-  return {setScene,captureModel,setSelection(value:any){selection={...value};draw();},setCamera,setLayers(value:any){layers={...layers,...value};if(layers.imageId)frameId=cameraForImage(doc,layers.imageId)?.coordinateFrameId||null;dimensions();draw();},previewOperations(ops:any[]){for(const op of ops)if(op.type==='setTransform')previewTransform(op.entityId,op.transform||op);draw();},clearPreview(){preview.clear();draw();},resize(){draw();},dispose(){if(disposed)return;disposed=true;epoch++;photoEpoch++;abort.abort();photoAbort.abort();if(photoObjectURL)URL.revokeObjectURL(photoObjectURL);observer.disconnect();cleanups.forEach(fn=>fn());release();shaders.forEach(s=>gl.deleteShader(s));gl.deleteProgram(program);gl.getExtension('WEBGL_lose_context')?.loseContext();photo.removeAttribute('src');stage.remove();}};
+  return {setScene,capturePreview,setSelection(value:any){selection={...value};draw();},setCamera,setLayers(value:any){layers={...layers,...value};if(layers.imageId)frameId=cameraForImage(doc,layers.imageId)?.coordinateFrameId||null;dimensions();draw();},previewOperations(ops:any[]){for(const op of ops)if(op.type==='setTransform')previewTransform(op.entityId,op.transform||op);draw();},clearPreview(){preview.clear();draw();},resize(){draw();},dispose(){if(disposed)return;disposed=true;epoch++;photoEpoch++;abort.abort();photoAbort.abort();if(photoObjectURL)URL.revokeObjectURL(photoObjectURL);observer.disconnect();cleanups.forEach(fn=>fn());release();shaders.forEach(s=>gl.deleteShader(s));gl.deleteProgram(program);gl.getExtension('WEBGL_lose_context')?.loseContext();photo.removeAttribute('src');stage.remove();}};
 }

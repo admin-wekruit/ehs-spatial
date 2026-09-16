@@ -45,10 +45,10 @@ assert.equal(model.placementState,'unconfirmed','Rendering cannot confirm placem
 
 const source=await readFile(new URL('../src/viewer/native-viewer.ts',import.meta.url),'utf8');
 const parsed=ts.createSourceFile('native-viewer.ts',source,ts.ScriptTarget.ES2022,true,ts.ScriptKind.TS);
-const wanted=['captureModel','fittedCamera','fittingPoints','corners','dimensions','model','primitive','selectedGeometry','selectedAxes'];
+const wanted=['capturePreview','fittedCamera','fittingPoints','corners','dimensions','model','primitive','selectedGeometry','selectedAxes'];
 const declarations=[];let drawSource;const visit=node=>{if(ts.isFunctionDeclaration(node)&&node.name?.text==='draw')drawSource=node.getText(parsed);if(ts.isFunctionDeclaration(node)&&wanted.includes(node.name?.text))declarations.push(node.getText(parsed));ts.forEachChild(node,visit);};visit(parsed);
 assert.equal(declarations.length,wanted.length);
-const code=ts.transpileModule(declarations.join('\n')+'\nglobalThis.capture=captureModel;globalThis.primitiveMesh=primitive;globalThis.axesFor=selectedAxes;', {compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+const code=ts.transpileModule(declarations.join('\n')+'\nglobalThis.capture=capturePreview;globalThis.primitiveMesh=primitive;globalThis.axesFor=selectedAxes;', {compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
 const gpu=document.entities.flatMap(entity=>entity.representations.map(representation=>({entityId:entity.id,representation,mesh:{bounds:model.bounds,matrix:math.identity()}})));
 let shots=[],failCapture=false;
 const canvas={width:900,height:500,style:{cssText:'original-canvas'},toDataURL(){if(failCapture)throw Error('capture failed');shots.push({camera:structuredClone(scope.camera),studio:scope.layers.studio,axes:scope.axesFor(scope.layers.axisEntityId),size:scope.captureSize,entities:gpu.filter(scope.visible).map(g=>g.entityId),representations:gpu.filter(scope.visible).map(g=>g.representation.id)});return 'data:image/png;base64,actual-model';}};
@@ -99,6 +99,33 @@ assert.equal(scope.capture('missing','free','revision'),null,'No invented bounds
 failCapture=true;assert.throws(()=>scope.capture('a','top','revision'),/capture failed/);for(const key of Object.keys(original))assert.equal(scope[key],original[key],'Errors restore scene navigation too');
 assert.equal(JSON.stringify(document),before,'Preview rendering leaves source state and placement confirmation unchanged');
 failCapture=false;
+// Source previews use the same resolver and exact photo/observation as the scene.
+const sourceObservation={id:'source-observation',imageId:'photo',revision:3},otherObservation={id:'other-observation',imageId:'photo',revision:1};
+document.observations.push(sourceObservation,otherObservation);missing.observationRefs=[sourceObservation.id,otherObservation.id];
+const exactSurface={...observed,id:'exact-surface',assetId:'exact-asset',sourceRefs:[{observationId:sourceObservation.id,imageId:'photo',revision:3}],transform:{...transform,position:[2,3,4]}},otherSurface={...exactSurface,id:'other-surface',sourceRefs:[{observationId:otherObservation.id,imageId:'photo',revision:1}]};
+missing.representations.push(exactSurface,otherSurface);
+for(const representation of [exactSurface,otherSurface])gpu.push({entityId:missing.id,representation,mesh:{bounds:model.bounds,matrix:math.identity()}});
+const sourceRequest={layer:'observed_surface',imageId:'photo',observationId:sourceObservation.id};
+assert.equal(scope.capture('missing','free','revision','frame',sourceRequest),null,'An observed representation must finish GPU upload before its preview appears');
+scope.loadedRepresentations.add('missing/exact-surface');scope.loadedRepresentations.add('missing/other-surface');
+for(const mode of ['free','front','side','top']){
+ assert.ok(scope.capture('missing',mode,'revision','frame',sourceRequest));
+ assert.deepEqual(shots.at(-1).representations,['exact-surface'],'Only the selected observation mesh appears, not another observation from the same photograph');
+ assert.equal(shots.at(-1).axes.geometry.axisSpace,'native','Observed axes use their native frame, never an active model pose');
+ assert.deepEqual([...shots.at(-1).axes.origin],[2,3,4]);
+ for(const key of Object.keys(original))assert.equal(scope[key],original[key],'Observed capture restores the main view after every orientation');
+}
+assert.equal(scope.capture('missing','free','revision','frame',{...sourceRequest,imageId:'other-photo'}),null,'Another photo cannot reuse the selected observation mesh');
+assert.equal(scope.capture('missing','free','revision','frame',{...sourceRequest,observationId:'foreign-observation'}),null,'An unowned observation never falls back to the same photo');
+assert.equal(scope.capture('missing','free','revision','frame',{...sourceRequest,layer:'point_cloud'}),null,'A point-cloud preview cannot substitute observed mesh triangles');
+assert.equal(scope.capture('missing','free','revision','frame',{layer:'model'}),null,'Returning to current models stays missing; no source fallback');
+exactSurface.sourceRefs[0].revision=2;
+assert.equal(scope.capture('missing','free','revision','frame',sourceRequest),null,'Stale observation revision references do not display current evidence');
+exactSurface.sourceRefs[0].revision=3;
+const sourceLayers={...strict,modelOnly:false,observed_surface:true,generated_mesh:false,primitive:false,imageId:'photo',observations:document.observations,observationEntityId:missing.id,observationId:sourceObservation.id};
+assert.deepEqual(missing.representations.filter(rep=>representationPass(missing,rep,'frame',sourceLayers).visible).map(rep=>rep.id),['exact-surface'],'Main scene and capture choose the identical selected observation representation');
+assert.ok(representationPass(a,observed,'frame',sourceLayers).visible,'Selecting an observation does not hide unrelated objects in the same photograph');
+missing.representations.splice(1);delete missing.observationRefs;document.observations.splice(0);gpu.splice(-2);
 const assembly={id:'assembly',activeModelRepresentationId:null,currentModelTransform:{...transform,position:[100,0,0]},representations:[]};
 document.entities.push(assembly);a.parentEntityId=assembly.id;b.parentEntityId=assembly.id;
 assert.equal(core.editableTransform(assembly,document),assembly.currentModelTransform,'An empty-residual assembly retains a transform control for its family');
@@ -163,7 +190,7 @@ const ast=ts.createSourceFile('App.tsx',app,ts.ScriptTarget.ES2022,true,ts.Scrip
 const component=ast.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='SpatialView');
 const executable=ts.transpileModule(component.getText(ast).replace('export function','function'),{compilerOptions:{target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText;
 const hooks=[];let cursor=0,effects=[],events,mounts=0,disposeCount=0;const ready=new Set(),results=[],cameras=[];
-const runtime={setScene(){},setSelection(){},setLayers(){},setCamera(value){cameras.push(value);},dispose(){disposeCount++;},captureModel(id){return ready.has(id)?'data:image/png;base64,'+id:null;}};
+const runtime={setScene(){},setSelection(){},setLayers(){},setCamera(value){cameras.push(value);},dispose(){disposeCount++;},capturePreview(id,_mode,_revision,_frame,request){return ready.has(id+'/'+(request?.layer||'model'))?'data:image/png;base64,'+id+':'+(request?.layer||'model'):null;}};
 const bridge=vm.createContext({React:{createElement:(type,props,...children)=>({type,props:props||{},children})},
  useRef(initial){const i=cursor++;return hooks[i]??={current:initial};},useState(initial){const i=cursor++;if(!(i in hooks))hooks[i]=initial;return [hooks[i],value=>{hooks[i]=typeof value==='function'?value(hooks[i]):value;}];},
  useEffect(fn,deps){const i=cursor++,old=hooks[i];if(!old||deps.some((value,j)=>!Object.is(value,old[j]))){hooks[i]=deps;effects.push(fn);}},
@@ -174,13 +201,17 @@ let props={revision:{id:'revision',document:bridgeDocument},selection:{entityId:
 function render(){cursor=0;effects=[];const tree=bridge.SpatialView(props);const bind=node=>{if(node?.props?.className==='native-viewer')node.props.ref.current={};for(const child of node?.children||[])if(child&&typeof child==='object')bind(child);};bind(tree);for(const effect of effects)effect();return tree;}
 render();assert.equal(results.length,0);
 props={...props,selection:{entityId:'b'},modelPreview:{entityId:'b',mode:'front',requestKey:'b-key'}};render();
-ready.add('a');events({type:'loadProgress',phase:'assets'});assert.equal(results.length,0,'Late A loading does not satisfy B');
+ready.add('a/model');events({type:'loadProgress',phase:'assets'});assert.equal(results.length,0,'Late A loading does not satisfy B');
 events({type:'loadError',entityId:'a',code:'late_a_failure'});
 let bridgeTree=render();assert.equal(bridgeTree.children.find(node=>node?.type===bridge.ErrorNotice).props.error,undefined,'A late failure for A never replaces the selected B state');
 events({type:'loadError',entityId:'b',code:'b_failure'});bridgeTree=render();
 assert.equal(bridgeTree.children.find(node=>node?.type===bridge.ErrorNotice).props.error.message,'b_failure','A failure belongs to its selected model');
-ready.add('b');events({type:'loadProgress',phase:'assets'});assert.deepEqual(results,[{key:'b-key',image:'data:image/png;base64,b'}]);
+ready.add('b/model');events({type:'loadProgress',phase:'assets'});assert.deepEqual(results,[{key:'b-key',image:'data:image/png;base64,b:model'}]);
 events({type:'renderReady',phase:'scene'});assert.equal(results.length,1,'Later source events do not overwrite a completed current preview');
+const oldCount=results.length;
+props={...props,modelPreview:{entityId:'b',mode:'front',layer:'observed_surface',imageId:'photo',observationId:'observation',requestKey:'b-source-key'}};render();
+events({type:'loadProgress',phase:'assets'});assert.equal(results.length,oldCount,'A previously loaded model cannot satisfy a current observed-surface request');
+ready.add('b/observed_surface');events({type:'loadProgress',phase:'assets'});assert.deepEqual(results.at(-1),{key:'b-source-key',image:'data:image/png;base64,b:observed_surface'});
 props={...props,layers:{...strict,modelOnly:false,generated_mesh:false,primitive:false,observed_surface:true}};render();assert.equal(cameras.length,2,'Changing representation refits the existing scene viewer');
 props={...props,cameraId:'camera-2'};render();assert.equal(cameras.length,2,'Selecting another source photo in the same frame preserves the free-view camera');
 props={...props,cameraId:'camera-3'};render();assert.equal(cameras.length,3,'Changing the native frame refits its own scene');

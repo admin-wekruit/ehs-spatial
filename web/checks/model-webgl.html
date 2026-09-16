@@ -59,15 +59,15 @@ try{
   assert(pixels(tint(red))>100&&pixels(tint(blue))>100,'Parent selection highlights the union of its real parts');
   viewer.setSelection({entityId:'a'});assert(pixels(tint(red))>100&&pixels(blue)>100&&pixels(tint(blue))===0,'Child selection highlights only its own real mesh');
   const before=canvas.toDataURL();
-  for(const mode of ['free','front','side','top'])assert(viewer.captureModel('assembly',mode,'revision','native')?.startsWith('data:image/png'),'An empty-residual parent produces a real family preview');
+  for(const mode of ['free','front','side','top'])assert(viewer.capturePreview('assembly',mode,'revision','native')?.startsWith('data:image/png'),'An empty-residual parent produces a real family preview');
   assert(canvas.toDataURL()===before,'Capturing family previews restores the main camera and selection pixels');
   viewer.previewOperations([{type:'setTransform',entityId:'assembly',transform:pose(101)}]);
   assert(canvas.toDataURL()!==before,'A parent drag preview applies the real world delta to its part meshes');
   viewer.clearPreview();assert(canvas.toDataURL()===before,'Clearing a family preview restores every part');
-  assert(['bad','empty','partial'].every(id=>viewer.captureModel(id,'front','revision')===null),'Failed, empty or partially uploaded models never produce a substitute preview');
-  assert(viewer.captureModel('assembly','front','old-revision')===null,'An old revision cannot publish into the current preview');
+  assert(['bad','empty','partial'].every(id=>viewer.capturePreview(id,'front','revision')===null),'Failed, empty or partially uploaded models never produce a substitute preview');
+  assert(viewer.capturePreview('assembly','front','old-revision')===null,'An old revision cannot publish into the current preview');
   entities.find(entity=>entity.id==='bad').parentEntityId='assembly';
-  assert(viewer.captureModel('assembly','front','revision')===null,'A failed child blocks publication of an incomplete family preview');
+  assert(viewer.capturePreview('assembly','front','revision')===null,'A failed child blocks publication of an incomplete family preview');
   let releaseLeft;leftGate=new Promise(resolve=>{releaseLeft=resolve;});
   const loading=structuredClone(scene);loading.captureId='late-edit';
   const pending=viewer.setScene({id:'before-edit',document:loading});
@@ -75,7 +75,7 @@ try{
   await viewer.setScene({id:'after-edit',document:edited});releaseLeft();await pending;
   viewer.setCamera('front');viewer.setSelection({entityId:null});
   assert(pixels([0,.1,0])>100,'An asset finishing after a material edit uses the current representation, never the old in-flight metadata');
-  assert(viewer.captureModel('a','front','after-edit')?.startsWith('data:image/png'),'The completed current representation supplies the current-revision preview');
+  assert(viewer.capturePreview('a','front','after-edit')?.startsWith('data:image/png'),'The completed current representation supplies the current-revision preview');
   // Material alpha uses actual GLB decoding, GPU composition and the production pick pass.
   async function alphaMesh(id,z,factor,alphaMode='BLEND',textureAlpha=null,vertexAlpha=1,alphaCutoff=.5){
     const chunks=[],views=[];let bytes=0;

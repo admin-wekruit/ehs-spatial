@@ -1064,7 +1064,7 @@ export function SpatialView({
   mode: ViewerMode;
   cameraId: string | null;
   layers: Record<string, any>;
-  modelPreview?: { entityId: string; frameId: string; mode: "free" | "front" | "side" | "top"; requestKey: string };
+  modelPreview?: { entityId: string; frameId: string; layer: import("./core").GeometryLayer; imageId?: string | null; observationId?: string | null; mode: "free" | "front" | "side" | "top"; requestKey: string };
   onModelPreview?: (requestKey: string, image: string) => void;
   onAssetStates?: (revisionId: string, states: import("./types").RepresentationLoadState[]) => void;
 }) {
@@ -1081,7 +1081,7 @@ export function SpatialView({
     const current = callbacks.current, request = current.modelPreview;
     if (!request || !current.onModelPreview || capturedKey.current === request.requestKey) return;
     try {
-      const image = runtime.current?.captureModel(request.entityId, request.mode, current.revision.id, request.frameId);
+      const image = runtime.current?.capturePreview(request.entityId, request.mode, current.revision.id, request.frameId, request);
       if (image && callbacks.current.modelPreview?.requestKey === request.requestKey) {
         capturedKey.current = request.requestKey;
         current.onModelPreview(request.requestKey, image);

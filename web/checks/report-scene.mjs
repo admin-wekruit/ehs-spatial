@@ -498,6 +498,34 @@ part.currentModelTransform={...transform,coordinateFrameId:'unregistered'};tree=
 assert.equal(spatialHost()[0].props.modelPreview,undefined);
 assert.ok(nodes(tree).some(node=>node.children.includes('sceneModelWrongFrame')),'Wrong-frame geometry has a distinct reason rather than a false missing-model or loaded state');
 assert.ok(partPreviewKey);
+// Explicit representation selection governs the fourth pane without changing model coverage.
+uiDocument=structuredClone(cadSwitchDocument);hooks.length=0;uiImageId='photo';
+const sourcePreviewEntity=uiDocument.entities.find(entity=>entity.id==='object');sourcePreviewEntity.activeModelRepresentationId=null;
+uiDocument.entities.find(entity=>entity.id==='no-geometry').activeModelRepresentationId='keep-model-mode';
+uiDocument.entities.find(entity=>entity.id==='no-geometry').representations=[{...structuredClone(rep),id:'keep-model-mode'}];
+uiSelection={entityId:'object',cameraId:'camera',observationId:'observation'};tree=renderWorkspace();
+const setRepresentation=layer=>{nodes(tree).find(node=>node.type==='select').props.onChange({target:{value:layer}});tree=renderWorkspace();};
+setRepresentation('model');
+assert.equal(spatialHost()[0].props.modelPreview,undefined);assert.ok(nodes(tree).some(node=>node.children.includes('sceneObjectModelMissing')));
+const unchangedCoverage=nodes(tree).find(node=>node.props['data-model-coverage']!==undefined).props['data-model-coverage'];
+setRepresentation('observed_surface');
+const observedRequest=spatialHost()[0].props.modelPreview;
+assert.equal(observedRequest.layer,'observed_surface');assert.equal(observedRequest.imageId,'photo');assert.equal(observedRequest.observationId,'observation');
+assert.ok(nodes(tree).some(node=>node.children.includes('sceneSelectedSurface')),'The fourth pane clearly labels observed surface evidence');
+assert.ok(nodes(tree).some(node=>node.children.includes('sceneObservedCoverage')),'Source-visible coverage is explicit');
+assert.equal(spatialHost()[0].props.layers.observationId,'observation','The scene uses the same selected observation');
+spatialHost()[0].props.onModelPreview(observedRequest.requestKey,'data:image/png;base64,source-observation');tree=renderWorkspace();
+assert.ok(nodes(tree).some(node=>node.type==='img'&&node.props.src==='data:image/png;base64,source-observation'));
+uiSelection={...uiSelection,observationId:'unowned'};tree=renderWorkspace();
+assert.equal(spatialHost()[0].props.modelPreview,undefined);assert.ok(nodes(tree).some(node=>node.children.includes('sceneEvidenceMissing')));
+assert.ok(!nodes(tree).some(node=>node.type==='img'&&node.props.src==='data:image/png;base64,source-observation'),'An observation change discards the previous snapshot');
+uiSelection={...uiSelection,observationId:'observation'};uiImageId='photo-2';tree=renderWorkspace();assert.equal(spatialHost()[0].props.modelPreview,undefined,'A photo change cannot reuse mismatched source geometry');
+uiImageId='photo';setRepresentation('model');
+spatialHost()[0].props.onModelPreview(observedRequest.requestKey,'data:image/png;base64,late-source');tree=renderWorkspace();
+assert.equal(spatialHost()[0].props.modelPreview,undefined);assert.ok(nodes(tree).some(node=>node.children.includes('sceneObjectModelMissing')));
+assert.ok(!nodes(tree).some(node=>node.type==='img'&&node.props.src==='data:image/png;base64,late-source'));
+assert.equal(nodes(tree).find(node=>node.props['data-model-coverage']!==undefined).props['data-model-coverage'],unchangedCoverage,'Switching to evidence cannot increase model coverage');
+setRepresentation('observed_surface');assert.equal(spatialHost()[0].props.modelPreview.layer,'observed_surface','Reverse switching restores the explicit source request');
 console.log(
   "report scene: 68-record unified evidence inventory, observed extents/scale, no duplicate table, linked no-geometry selection, mobile navigation, photo projection, floor semantics and one WebGL passed",
 );
