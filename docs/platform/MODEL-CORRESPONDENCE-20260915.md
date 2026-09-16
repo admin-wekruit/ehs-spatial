@@ -24,6 +24,39 @@ The remaining eleven records contain 21 valid source mesh assets with 387,996
 triangles, but no hidden or inactive complete object models. Source surface
 availability does not close the complete-model generation or identity gaps.
 
+The two CPU-only weight-access diagnostics were reconciled against the account
+bill at USD 0.00001680 combined. Total task spend remains unknown; the broader
+account's inference and publication costs are not automatically attributed to this
+task. No new GPU inference was started. The USD 20 total limit remains in force.
+An existing function lookup and weight cache do not establish a validated new
+inference run or an exact deployed-source hash.
+
+The remaining input review freezes #12's narrower source observation in an actual
+RGB/mask/pointmap/camera payload. A separate, unaccepted candidate retains all 17
+model identities, 86 observation identities and 28 CAD projections while correcting
+126 clearly visible guard pixels from the mixed residual observation. Sparse
+wire-tray evidence and partial parent-mesh matches are inspection artifacts only;
+they do not count as complete object models. Reproducible private inputs and checks
+are in `.platform/model-correspondence/remaining-input-repair/`.
+
+The fourth-pane preview now follows the explicitly selected representation. Source
+mode uses the current photo/observation's actual mesh or point cloud, while model
+mode continues to require the active model family. A source surface is not counted
+as an additional completed model. Shared selection rejects mismatched observation
+ownership/revisions and discards late snapshots after selection or mode changes.
+Model-view, renderer, renderer-selection and report-scene checks passed, including
+the frozen document's 28 CAD contours across three photos and three modes. TypeScript
+and the production build passed. Local computer-use checks covered #15/#16, photo
+switches, CAD reverse selection and source/model switching.
+
+Source commits `2e2c969` and `93cf34d` are pushed. Pages commit `1d8e885` passed
+[deployment 35045271703](https://github.com/admin-wekruit/panoptes-workcell-report/actions/runs/35045271703).
+Public HTML matches the release build. Public computer use showed #15's actual
+red/yellow observed surface and XYZ, then the missing-model state when explicitly
+returning to model mode. The report was restored to four views and no selection:
+17/28 model records, 17/17 loaded, CAD 28/28. No new scene/publication or inference
+was produced by this display fix; complete 28-record model delivery remains open.
+
 ## Current partial delivery: 17 model records, 28 CAD records
 
 Publication `33f588d0-12ac-4415-b8bc-873c9c9417b1` freezes revision
