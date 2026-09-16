@@ -240,6 +240,70 @@ call ledger. Its reviewed release evidence and pinned model are required just as
 for discovery. The reviewer receives source photos, masks and actual rendered
 candidate meshes; numerical silhouette agreement alone cannot accept a shape.
 
+Discovery and model review use the pinned adapters
+`gemini-bounded-discovery-v2` and `gemini-bounded-model-review-v3`, respectively,
+with `provider: "gemini"`, `model: "gemini-3.5-flash"` and a reservation of at
+least USD0.10 per call. The same complete native request is sent to CountTokens
+and GenerateContent, including every image and the response schema. Inputs above
+16,384 tokens are rejected; combined thinking/output is capped at 8,192 tokens.
+No views are silently removed and no automatic generation retry is permitted.
+Returned ID, usage and request-count evidence remain with the stage artifact.
+A failed preflight conservatively retains its reservation; it is not treated as
+permission to spend the same budget again. Known request/count/limit failures are
+terminal failures with allowlisted phase, code, request hash and token counts;
+they record `generationAttempted: false`. Transport failure after generation
+starts remains unknown. No provider exception text enters these diagnostics.
+
+Every normal capture reviews each photo's discovered inventory before
+segmentation through the same `model_review` provider in inventory mode. The
+review receives the original image and an immutable snapshot of owned observation
+IDs, revisions, boxes and evidence. It can add visibly distinct missed instances
+through the shared discovery admission path, or retain unresolved regions. It
+cannot rename or merge existing identities. Review additions continue through
+the ordinary segmentation, association, geometry, generation and CAD path.
+The model prompt includes every observation's ID, semantic evidence and box plus
+the original image dimensions. Repeated source references and pixel mappings stay
+in the frozen input, outside the model prompt; no object or view is truncated.
+
+`document.inventoryReview` retains one historical review per source image. A
+review is `assessed` or `needs_information`, scoped to visible content with
+`certainty: not_ground_truth`; it is not proof of hidden-object completeness.
+Failed discovery/review and unresolved regions keep analysis incomplete while
+valid independent observations remain available. Appending photos preserves prior
+review evidence and unresolved qualifications. An unknown paid outcome stops
+subsequent paid stages; cached replay uses the same source-bound input.
+
+When analysis continues into per-object reconstruction, its original result is
+carried in server-owned `captureAnalysis` through every successor. A later model
+success cannot erase an earlier photo's analysis failure or a retained model's
+failed review; the final result keeps their errors, stage records and review
+evidence, including when the last generation fails without another successor.
+The handoff does not inherit the temporary `modeling_pending` status, so a valid
+analysis and review can still finish successfully after generation.
+Client configuration cannot supply or replace this context.
+Publications collect the declared nested analysis/review/generation artifacts,
+checkpoints and prepared-input references, with the existing project ownership,
+hash and blob verification. Arbitrary configuration and error strings are not
+interpreted as asset references.
+
+Owned-photo research preparation also accepts `stage: "discovery"` with
+`purpose: "runtime_validation"` and exactly one captured `imageIds` entry. It
+requires no prior objects or geometry and rejects arbitrary replacement payloads.
+The runtime manifest binds both local adapter file hashes and google-genai
+2.11.0. Empty or malformed discovery remains an incomplete artifact, never a
+completed empty workcell. Runtime validation cannot enable a quality gate.
+
+The same research entry accepts `stage: "model_review"`, `mode: "inventory"`,
+`purpose: "runtime_validation"` and exactly one owned image. It freezes the
+baseline scene's saved inventory, rederives it before dispatch, and admits the
+review only on a disposable scene copy. It does not substitute an unattached
+discovery artifact for saved observations or advance the branch.
+
+Inventory admission failures retain the raw output and a typed rejection reason.
+Coverage mismatches identify missing owned observations and count unexpected or
+duplicate IDs; they never fill in the model's missing answers. The same diagnostics
+flow through ordinary analysis and research validation.
+
 For explicitly configured noncommercial RecGen research, set the server-only
 `PANOPTES_RESEARCH_PREPARATION` path to a JSON record containing `authority`,
 `budgetAtPreparation`, `runtimeManifest`, `callLimits`, `metricDefinitions`,
