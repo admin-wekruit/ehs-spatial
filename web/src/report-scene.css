@@ -168,6 +168,8 @@
 .report-model-preview button { min-height: 30px; padding: 4px 9px; border: 1px solid #9aac9b; border-radius: 3px; background: #f6f8f2; color: #243c31; font-size: 11px; }
 .report-model-preview button[aria-pressed="true"] { background: #d7e4d2; border-color: #50755a; }
 .report-model-image { position: relative; flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; }
+.report-model-preview > nav small { align-self: center; color: #52665a; font-size: 11px; }
+.report-model-image > .spatial-view { position: absolute; inset: 0; }
 .report-model-image img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .report-model-preview > footer { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 10px; padding: 7px 10px; font-size: 11px; }
 .report-model-preview > footer button { margin-left: auto; }

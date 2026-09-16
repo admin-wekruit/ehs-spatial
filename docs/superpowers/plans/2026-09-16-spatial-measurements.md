@@ -93,3 +93,25 @@ Selected object model → Front: the public screenshot shows the two face outlin
 hinge, and 145.4° arc at the requested fold. Left this view open for the user.
 The right wing (82f289b3) also computes successfully at 146.9004° on the same path.
 Local scene drag verification retained the 145.4° result and attached geometry.
+
+## Interactive isolated object and additional panel scan
+
+The 04 Free 3D tab was a captured PNG, so pointer navigation could not work.
+It now mounts the existing SpatialView with only the selected entity's resolved
+representations (or linked assembly parts). Fixed front/side/top retain their
+existing captures. Free mode stops requesting redundant captures. Reused native
+orbit, right/Shift pan, wheel zoom, fit, axes, and measurement projection;
+isolated single-surface fitting now uses the same plane-aware initial camera as
+its former capture. No scene-wide second asset load or continuous render loop.
+
+Scanned all 24 active independent models with the existing intrinsic-bend service.
+Left and right guard wings yield 145.4384 and 146.9004 degrees. Other panels did
+not produce a stable adjoining two-face fit; this does not prove their physical
+surfaces are flat. The detector remains a single supported bend, not arbitrary
+multi-fold reconstruction. Cart/control-button meshes hit the complexity guard.
+
+Validation: frontend checks and production build pass; added isolated/assembly/
+observed-surface load-scope checks. Local UI expanded 04 Free 3D, dragged the model,
+scrolled to zoom, calculated 145.4 degrees, then dragged again: mesh, XYZ axes,
+face outlines and angle arc rotate together. Pan reuses the unchanged native
+right-button/Shift branch; automated browser drag does not expose a modifier.

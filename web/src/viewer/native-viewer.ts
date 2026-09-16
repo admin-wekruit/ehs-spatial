@@ -198,6 +198,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
     camera=fittedCamera(mode);photoEpoch++;photoAbort.abort();photo.hidden=true;draw();
   }
   function fittedCamera(mode:string,sheet?:{subject:any;rep:any}){
+    if(!sheet&&layers.entityIds?.length===1){const tasks=sceneRepresentationTasks(doc,frameId,layers);if(tasks.length===1)sheet={subject:tasks[0].e,rep:tasks[0].r};}
     const frame=doc.coordinateFrames.find((f:any)=>f.id===frameId),up=unit(frame?.ground?.normal||[0,0,1]),reference=currentCameras(doc).find((c:any)=>c.coordinateFrameId===frameId),rawFront=reference?reference.cameraToWorld.slice(0,3).map((r:Vec)=>-r[2]):[0,-1,0];let planar=add(rawFront,scale(up,-dot(rawFront,up)));if(Math.hypot(...planar)<1e-6){const axis=Math.abs(up[0])<.8?[1,0,0]:[0,1,0];planar=add(axis,scale(up,-dot(axis,up)));}const front=unit(planar),right=unit(cross(up,front)),ps=fittingPoints();
     let back=mode==='top'?up:mode==='side'?right:mode==='front'?front:unit(add(add(front,scale(right,.45)),scale(up,.55))),vup=mode==='top'?scale(front,-1):up;
     const plane=sheet?.rep.sourceDerivation?.planarModeling?.plane;

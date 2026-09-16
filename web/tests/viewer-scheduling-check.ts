@@ -21,3 +21,13 @@ const cloud={...evidence,observed_surface:false,point_cloud:true};
 assert.deepEqual(sceneRepresentationTasks(document,'f',cloud).map(({r})=>r.id),['cloud']);
 assert.deepEqual(sceneRepresentationTasks(document,'different-frame',model),[]);
 console.log('viewer scheduling and layer loading checks passed');
+
+// The isolated viewer must load only its selected representations, including
+// linked parts, without decoding the rest of the scene a second time.
+document.entities[0].sourceContext=false;
+document.entities.push({id:'neighbor',activeModelRepresentationId:'neighbor-model',representations:[rep('neighbor-model','generated_mesh')]} as any);
+assert.deepEqual(sceneRepresentationTasks(document,'f',{...model,entityIds:['object'],representationIds:['model']}).map(({r})=>r.id),['model']);
+assert.deepEqual(sceneRepresentationTasks(document,'f',{...model,entityIds:['object','neighbor'],representationIds:['model','neighbor-model']}).map(({r})=>r.id),['model','neighbor-model']);
+assert.deepEqual(sceneRepresentationTasks(document,'f',{...evidence,entityIds:['object'],representationIds:['observed']}).map(({r})=>r.id),['observed']);
+assert.deepEqual(sceneRepresentationTasks(document,'f',{...model,entityIds:['object'],representationIds:['missing']}).map(({r})=>r.id),[]);
+console.log('PASS: isolated model, assembly and observed-surface loading scopes');
