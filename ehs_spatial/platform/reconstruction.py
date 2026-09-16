@@ -886,6 +886,9 @@ def _associate_and_surfaces(document,frames,canonical,masks,stages, *, rebuild_s
     source_merges = apply_source_equivalences(document, verified, base_revision_id=stages.job['baseRevisionId'],
         masks=masks, read_asset=lambda aid:_scene_asset_bytes(document,aid,stages)) if verified else []
     associations = _associate_identities(document, frames, masks, stages)
+    if source_merges:
+        _refresh_plan_projections(document, stages, representation_ids={pair['representationId']
+            for pair in verified if pair.get('kind') == 'same_source_indexed_mesh'})
     surface_errors = []
     associations['sourceEquivalences'] = {'verifiedPairCount':len(verified), 'merges':source_merges, 'skipped':skipped}
     lookup = {o["id"]:o for o in document["observations"]}

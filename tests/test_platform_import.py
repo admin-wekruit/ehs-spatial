@@ -679,3 +679,33 @@ def test_new_import_packages_same_source_mesh_proof_with_existing_native_readers
     assert proof['pairs'][0]['kind']=='same_source_indexed_mesh'
     assert len(imported['observations'])==1 and len(imported['entities'])==2
     assert not next(e for e in imported['entities'] if e['id']==proof['pairs'][0]['entityId'])['observationRefs']
+
+
+def test_source_equivalence_refreshes_cad_in_normal_reassociation(tmp_path):
+    from ehs_spatial.platform import reconstruction
+    from ehs_spatial.platform.storage import LocalBlobStore
+    from scripts.import_report_evidence import import_source_equivalences
+    from scripts.research.reprocess_object_identity import assert_source_conserved
+    from test_platform_reconstruction import Repo
+    document, source, stored, include, manifest, arrays, before = native_representation_source_fixture(tmp_path)
+    observation = document['observations'][0]
+    source_id = observation['sourceRefs'][0]['assetId']
+    masks = {observation['id']:arrays['mask']}
+    import_source_equivalences(document,source,source_id,[],masks,include,read_asset=stored.__getitem__,
+        read_source=lambda name,sha:(tmp_path/name).read_bytes(),read_import_asset=lambda record:packed_asset(tmp_path,record))
+    document['geometryEvidence']['frames'][0]['assets']['canonical.png'] = observation['imageId']
+    blobs = LocalBlobStore(tmp_path/'blobs')
+    repo = Repo(blobs)
+    repo.assets = [{**a,**blobs.put(stored[a['id']],a['mediaType']),'projectId':repo.pid} for a in document['assets']]
+    repo.document = document
+    updated,result = reconstruction.run_reassociation(repo,blobs,{**repo.job,'kind':'reassociate_scene','inputs':{}},{})
+    assert result['status']=='succeeded' and result['newModelCalls']==0 and not repo.calls
+    assert result['association']['sourceEquivalences']['verifiedPairCount']==1
+    assert_source_conserved(document,updated)
+    owner = next(e for e in updated['entities'] if observation['id'] in e['observationRefs'])
+    reference = next(r for r in owner['representations'] if r.get('sourceKind')=='observed_reference_surface')
+    projection = reference.get('planProjection')
+    assert projection and projection['imageId']==observation['imageId']
+    assert projection['observationId']==observation['id'] and projection['observationRevision']==observation['revision']
+    assert projection['assetId']==reference['assetId'] and projection['transformSnapshot']==reference['transform']
+    assert projection['polygons']
