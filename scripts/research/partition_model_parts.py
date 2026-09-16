@@ -14,7 +14,9 @@ from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
 from ehs_spatial.platform.contracts import PlatformError, canonical, digest, validate_document
+from ehs_spatial.platform.blender_export import mesh_from_asset
 from ehs_spatial.platform.identity import set_part_relation
+from ehs_spatial.platform.reconstruction import _plan_projection
 from ehs_spatial.platform.spatial import partition_packed_mesh
 
 
@@ -81,10 +83,14 @@ def partition_document(source, manifest, payload):
                 'sourceRepresentationId': rep['id'], 'sourceRevisionId': manifest['sourceRevisionId'],
                 'manifestSha256': partition_id, 'transformSha256': digest(source_pose),
                 'sourcePlacementSource': deepcopy(rep.get('placementSource'))}
-            # Projection/bounds caches describe the old full mesh; recompute from
-            # the actual derived geometry when a view asks for them.
+            # The reader only accepts a projection bound to these exact bytes
+            # and pose; the old full-mesh cache cannot describe a partition.
             for field in ('planProjection', 'modelProjection', 'coverage'):
                 derived_rep.pop(field, None)
+            projection = _plan_projection(document, derived_rep, mesh_from_asset(data, derived_asset),
+                                          derived_asset['sha256'], source_pose)
+            if projection is not None:
+                derived_rep['planProjection'] = projection
             item.setdefault('representations', []).append(derived_rep)
             item['activeModelRepresentationId'] = representation_id
             document['assets'].append(derived_asset)

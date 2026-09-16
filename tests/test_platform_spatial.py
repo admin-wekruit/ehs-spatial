@@ -812,6 +812,24 @@ def test_face_partition_rejects_guesses_overlap_gaps_stale_evidence_and_wrong_so
         partition_document(source, manifest, payload[:-4])
 
 
+def test_face_partition_saves_projection_of_each_derived_mesh():
+    from scripts.research.partition_model_parts import partition_document
+    from ehs_spatial.platform.contracts import digest
+    source, manifest, payload, _, _ = packed_partition_case()
+    source['coordinateFrames'][0]['ground'] = {'normal': [0., 0., 1.]}
+    manifest['documentSha256'] = digest(source)
+    document, assets = partition_document(source, manifest, payload)
+    for entity in document['entities']:
+        rep = next(r for r in entity['representations'] if r['id'] == entity['activeModelRepresentationId'])
+        projection = rep.get('planProjection')
+        assert projection is not None, 'Every derived parent/child mesh needs its own CAD projection'
+        assert projection['methodVersion'] == 'indexed-mesh-triangle-union-v1'
+        assert projection['assetId'] == rep['assetId'] != manifest['sourceAssetId']
+        assert projection['assetSha256'] == hashlib.sha256(assets[rep['assetId']]).hexdigest()
+        assert projection['transformSnapshot'] == entity['currentModelTransform']
+        assert projection['polygons'] or projection['lines']
+
+
 @pytest.mark.skipif(not BLENDER.exists(), reason='real Blender executable not installed')
 def test_real_blender_part_collections_preserve_world_geometry_and_reopen(tmp_path):
     from scripts.research.partition_model_parts import partition_document

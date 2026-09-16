@@ -744,6 +744,7 @@ export function planShapes(document: SceneDocument, options: PlanOptions = {}) {
       const projections = (entity.representations || []).filter(rep => geometry.representationIds.includes(rep.id)).flatMap(rep => {
         const saved = jsonObject(rep.planProjection), asset = document.assets.find(asset => asset.id === rep.assetId);
         const modeled = ["generated_mesh", "primitive"].includes(rep.kind);
+        const referenceSurface = (options.layer || "model") === "model" && isCurrentReferenceSurface(entity, rep, document.observations);
         const transform = modeled ? entity.currentModelTransform || rep.transform : rep.transform;
         const snapshot = jsonObject(saved?.transformSnapshot);
         const unchanged = sameJSON(snapshot, transform);
@@ -757,7 +758,7 @@ export function planShapes(document: SceneDocument, options: PlanOptions = {}) {
             !sameJSON(saved.groundNormalSnapshot, normal) || !samePlane || (!unchanged && !translated) ||
             (rep.kind === "primitive" ? saved.assetId != null || saved.assetSha256 != null || !sameJSON(saved.primitiveSnapshot, rep.primitive)
               : !asset?.sha256 || saved.assetId !== rep.assetId || saved.assetSha256 !== asset.sha256) ||
-            (!modeled && (saved.imageId !== imageId || !observation || observation.imageId !== saved.imageId ||
+            (!modeled && ((!referenceSurface && saved.imageId !== imageId) || !observation || observation.imageId !== saved.imageId ||
               observation.revision !== saved.observationRevision || !entity.observationRefs?.includes(observation.id) ||
               !(rep.sourceRefs || []).some(raw => { const ref = jsonObject(raw); return ref?.observationId === observation.id && ref.revision === observation.revision; })))) return [];
         const points = (value: unknown): value is number[][] => Array.isArray(value) &&

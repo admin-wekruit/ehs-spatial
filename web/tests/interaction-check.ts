@@ -131,6 +131,50 @@ assert.equal(
 );
 modeled.coordinateFrames[0].ground = { normal: [0, 0, 1] };
 assert.equal(planShapes(modeled).length, 0, "Grounded model bounds without a mesh projection are not a CAD contour");
+// Scene reference geometry can come from a different source exposure than the
+// entity's observed-layer CAD reference, while retaining exact source revision checks.
+const referencePlan = structuredClone(doc), floor = entity("floor");
+const plane = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]];
+referencePlan.coordinateFrames[0].ground = {normal: [0, 0, 1]};
+referencePlan.reportEvidence = {plan: {coordinateFrameId: "f", nativeToFloor: plane}};
+referencePlan.observations = [
+  {id: "source", revision: 1, imageId: "source-photo", originalPixelBox: [0, 0, 10, 10]},
+  {id: "cad", revision: 1, imageId: "cad-photo", originalPixelBox: [0, 0, 10, 10]},
+];
+referencePlan.cameras = ["source-photo", "cad-photo"].map(imageId => ({
+  id: imageId, imageId, coordinateFrameId: "f", width: 10, height: 10,
+  K: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], cameraToWorld: structuredClone(plane),
+})) as SceneDocument["cameras"];
+referencePlan.geometryBindings = Object.fromEntries(referencePlan.cameras.map(camera =>
+  [camera.imageId, {geometrySolutionId: "solution", cameraId: camera.id}]));
+floor.observationRefs = ["source", "cad"];
+floor.cadReference = {referenceImageId: "cad-photo", source: "explicit_reference_image", status: "resolved", sourceRefs: [{observationId: "cad", revision: 1}]};
+const reference = {id: "reference", kind: "observed_surface", sourceKind: "observed_reference_surface",
+  assetId: "surface", coordinateFrameId: "f", transform: structuredClone(transform),
+  bounds: {min: [0, 0, 0], max: [2, 2, 0]}, placementState: "confirmed",
+  sourceRefs: [{observationId: "source", revision: 1, imageId: "source-photo"}],
+  planProjection: {methodVersion: "indexed-mesh-triangle-union-v1", coordinateFrameId: "f",
+    assetId: "surface", assetSha256: "surface-hash", imageId: "source-photo", observationId: "source", observationRevision: 1,
+    transformSnapshot: structuredClone(transform), groundNormalSnapshot: [0, 0, 1], nativeToPlane: plane,
+    polygons: [{exterior: [[0, 0], [2, 0], [2, 2], [0, 0]], holes: []}], lines: []}};
+floor.representations = [reference] as any;
+referencePlan.entities = [floor]; referencePlan.assets = [{id: "surface", sha256: "surface-hash"}] as any;
+const referenceOptions = {scope: "scene", layer: "model", frameId: "f"} as const;
+assert.equal(planShapes(referencePlan, referenceOptions).length, 1, "Model reference surface uses its own current source photo");
+referencePlan.observations[0].revision = 2;
+assert.equal(planShapes(referencePlan, referenceOptions).length, 0, "Stale reference-source revision remains rejected");
+referencePlan.observations[0].revision = 1;
+reference.planProjection.imageId = "wrong-photo";
+assert.equal(planShapes(referencePlan, referenceOptions).length, 0, "Reference projection must still match its own source photo");
+reference.planProjection.imageId = "source-photo";
+const ordinaryPlan = structuredClone(referencePlan), ordinary = ordinaryPlan.entities[0].representations![0];
+delete ordinary.sourceKind;
+ordinary.sourceRefs = [{observationId: "source", revision: 1}, {observationId: "cad", revision: 1}];
+assert.equal(planShapes(ordinaryPlan, {...referenceOptions, layer: "observed_surface"}).length, 0,
+  "Ordinary observed geometry cannot project a different photo than its CAD reference");
+ordinaryPlan.entities[0].cadReference = {referenceImageId: "source-photo", source: "explicit_reference_image", status: "resolved", sourceRefs: [{observationId: "source", revision: 1}]};
+assert.equal(planShapes(ordinaryPlan, {...referenceOptions, layer: "observed_surface"}).length, 1,
+  "Ordinary observed geometry remains visible for its exact source photo");
 const edited = previewOperations(modeled, [
   {
     type: "setTransform",
