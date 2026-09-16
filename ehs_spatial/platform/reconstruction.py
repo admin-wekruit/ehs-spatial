@@ -600,7 +600,8 @@ def _associate_identities(document, frames, masks, stages):
 def _verified_source_equivalences(document, masks, stages):
     """Verify exact immutable source instances, never infer identity from overlap."""
     from ..providers.sam3 import decode_coco_rle
-    from .contracts import SourceObservationEquivalence
+    from .contracts import SourceObservationEquivalence, SourceRepresentationEquivalence
+    from .identity import verify_source_representation
     observations = {o['id']:o for o in document['observations']}
     assets = {a['id']:a for a in document['assets']}
     loaded, verified, skipped = {}, [], []
@@ -622,6 +623,23 @@ def _verified_source_equivalences(document, masks, stages):
             if not isinstance(proof, dict) or proof.get('schemaVersion') != 1 or proof.get('kind') != 'same_source_observation_equivalences':
                 raise ValueError('unsupported source proof')
             for index, raw in enumerate(proof['pairs']):
+                if raw.get('kind') == 'same_source_indexed_mesh':
+                    raw = SourceRepresentationEquivalence.model_validate(raw).model_dump(mode='json')
+                    pointer = {**proof_ref,'jsonPointer':f'/pairs/{index}'}
+                    consumed = any(pointer in binding.get('evidenceRefs',[]) for decision in document.get('identityDecisions',[])
+                        if decision['source']=='source_binding' and decision['decision']=='same'
+                        for binding in decision.get('representationBindings',[]))
+                    if consumed:
+                        skipped.append({'representationId':raw['representationId'],'code':'source_equivalence_already_applied'})
+                        continue
+                    ref = raw['observationRef']
+                    if ref['observationId'] in observations and observations[ref['observationId']].get('revision',1)!=ref['revision']:
+                        skipped.append({'observationIds':[ref['observationId']],'code':'source_equivalence_observation_revised'})
+                        continue
+                    pair = verify_source_representation(document,raw,masks,lambda aid:_scene_asset_bytes(document,aid,stages))
+                    pair['evidenceRefs'].append(pointer)
+                    verified.append(pair)
+                    continue
                 pair = SourceObservationEquivalence.model_validate(raw).model_dump(mode='json')
                 refs = pair['observationRefs']
                 if any(ref['observationId'] not in observations for ref in refs):
@@ -865,7 +883,8 @@ def _save_observed_surface(document, entity, frame, record, mask, stages, observ
 def _associate_and_surfaces(document,frames,canonical,masks,stages, *, rebuild_surfaces=True, new_observation_ids=None, refresh_observation_ids=None, invalidated_measurement_ids=()):
     from .identity import apply_source_equivalences
     verified, skipped = _verified_source_equivalences(document, masks, stages)
-    source_merges = apply_source_equivalences(document, verified, base_revision_id=stages.job['baseRevisionId']) if verified else []
+    source_merges = apply_source_equivalences(document, verified, base_revision_id=stages.job['baseRevisionId'],
+        masks=masks, read_asset=lambda aid:_scene_asset_bytes(document,aid,stages)) if verified else []
     associations = _associate_identities(document, frames, masks, stages)
     surface_errors = []
     associations['sourceEquivalences'] = {'verifiedPairCount':len(verified), 'merges':source_merges, 'skipped':skipped}

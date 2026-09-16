@@ -448,7 +448,7 @@ def test_floor_role_requires_pinned_native_mesh_membership(tmp_path, monkeypatch
     source['floor_reference']={'path':'floor.json','sha256':floor_sha,'coordinate_system':'Another descriptive wording'}
     path.write_text(json.dumps(source))
     # Geometry-cloud import has its own end-to-end test; isolate floor binding here.
-    monkeypatch.setattr('scripts.import_geometry_evidence.import_geometry_evidence',lambda *args:{})
+    monkeypatch.setattr('scripts.import_geometry_evidence.import_geometry_evidence',lambda *args:{'frames':[]})
     def put(data,media_type,metadata):
         sha=hashlib.sha256(data).hexdigest()
         return {'id':str(uuid5(NAMESPACE_URL,sha)),'sha256':sha,'sizeBytes':len(data),'mediaType':media_type,'metadata':metadata}
@@ -471,3 +471,211 @@ def test_floor_role_requires_pinned_native_mesh_membership(tmp_path, monkeypatch
     (tmp_path/'floor.json').write_bytes(floor_raw+b' ')
     with pytest.raises(PlatformError,match='import_floor_evidence_hash_mismatch'):
         floor_evidence(tmp_path,source)
+
+
+def native_representation_source_fixture(tmp_path):
+    """An unnamed imported mesh and one already-owned exact source observation."""
+    from copy import deepcopy
+    path = make_public_scene(tmp_path)
+    source = json.loads(path.read_bytes())
+    points = np.stack([*np.meshgrid(np.arange(8) * .01, np.arange(6) * .01), np.full((6, 8), 2)], -1).astype('<f4')
+    grid = np.arange(48).reshape(6, 8)
+    faces = np.concatenate([np.stack([grid[:-1,:-1], grid[:-1,1:], grid[1:,:-1]], -1).reshape(-1,3),
+                            np.stack([grid[:-1,1:], grid[1:,1:], grid[1:,:-1]], -1).reshape(-1,3)]).astype('<u4')
+    vertices = np.c_[points.reshape(-1,3), np.tile([0,0,1,.5,.5,.5], (48,1))].astype('<f4')
+    raw = vertices.tobytes() + faces.tobytes()
+    packed = gzip.compress(raw); (tmp_path/'context.bin.gz').write_bytes(packed)
+    mesh = source['objects'][0]['mesh']
+    mesh.update(vertex_count=48, index_byte_offset=vertices.nbytes, index_count=faces.size)
+    mesh['asset'].update(bytes=len(raw), packed_bytes=len(packed), sha256=hashlib.sha256(raw).hexdigest())
+    source['objects'] = [source['objects'][0]]
+    source['objects'][0].update(id='unrelated-import-id', label='No semantic hint', role=None)
+    source['unavailable_objects'] = []
+    source['floor_plane'] = [0,0,1,-2]
+    region = source['observed_regions'][0]
+    face_ids = np.arange(len(faces),dtype='<u4').tobytes()
+    packed_faces = gzip.compress(face_ids); (tmp_path/'region.faces.gz').write_bytes(packed_faces)
+    region['context_id'] = 'unrelated-import-id'
+    region['faces'] = {'count':len(faces),'asset':{'path':'region.faces.gz','bytes':len(face_ids),
+        'packed_bytes':len(packed_faces),'sha256':hashlib.sha256(face_ids).hexdigest()}}
+    region['mask']['bbox_xyxy'] = [0,0,8,6]
+    region['source_bbox']['bbox_xyxy'] = [0,0,8,6]
+    sam = json.dumps({'rle': [json.dumps({'size':[6,8], 'counts':[0,48]})]}).encode()
+    (tmp_path/'one-instance.json').write_bytes(sam)
+    region['provenance'] = {'source_image_sha256':hashlib.sha256((tmp_path/'photo.png').read_bytes()).hexdigest(),
+        'source_refs':[{'type':'text-sam','path':'one-instance.json','pointer':['rle',0], 'instance':0,
+                       'sha256':hashlib.sha256(sam).hexdigest(),'label':'floor'}]}
+    path.write_text(json.dumps(source))
+    stored = {}
+    def put(data, media_type, metadata):
+        sha = hashlib.sha256(data).hexdigest(); aid = str(uuid5(NAMESPACE_URL, sha)); stored[aid] = data
+        return {'id':aid, 'sha256':sha, 'sizeBytes':len(data), 'mediaType':media_type, 'metadata':metadata}
+    document, manifest = import_document(path, put)
+    def include(data, media, metadata, key=None):
+        asset = put(data, media, metadata)
+        if asset['id'] not in {a['id'] for a in document['assets']}:
+            document['assets'].append({**asset, **metadata})
+        return asset['id']
+    refs = {}
+    for name, array in {'pts3d.npy':points,'valid_mask.npy':np.ones((6,8),bool),
+            'content_valid_mask.npy':np.ones((6,8),bool),'conf.npy':np.ones((6,8)),
+            'intrinsics.npy':np.asarray(source['cameras'][0]['K']), 'camera_to_world.npy':np.eye(4)}.items():
+        buffer = io.BytesIO(); np.save(buffer,array,allow_pickle=False)
+        refs[name] = include(buffer.getvalue(),'application/x-npy',{'kind':'native_geometry_evidence'})
+    camera = document['cameras'][0]; refs['input'] = camera['imageId']
+    frame = {'sourceFrameId':'camera-a','cameraId':camera['id'],'assets':refs}
+    geometry = {'coordinateFrameId':camera['coordinateFrameId'],'frames':[frame]}
+    geometry['manifestAssetId'] = include(json.dumps(geometry).encode(),'application/json',{'kind':'native_geometry_manifest'})
+    document['geometryEvidence'] = geometry
+    document['captureId'] = 'source-capture'
+    from ehs_spatial.platform.identity import migrate_document
+    document = migrate_document(document, base_revision_id='source-revision')
+    # include remains attached to this exact prepared document, as production preparation does.
+    return document, source, stored, include, manifest, {'points':points, 'mask':np.ones((6,8),bool)}, deepcopy(document)
+
+
+def test_exact_imported_mesh_source_equivalence_keeps_one_observation_and_actual_cad(tmp_path):
+    from copy import deepcopy
+    from ehs_spatial.platform.identity import apply_source_equivalences, resolve_entity_id
+    from ehs_spatial.platform.contracts import validate_document
+    from ehs_spatial.platform.reconstruction import _verified_source_equivalences, _plan_projection
+    from ehs_spatial.platform.blender_export import mesh_from_asset
+    from scripts.import_report_evidence import import_source_equivalences
+    from types import SimpleNamespace
+    document, source, stored, include, manifest, arrays, before = native_representation_source_fixture(tmp_path)
+    observation = document['observations'][0]
+    current_owner = next(e for e in document['entities'] if observation['id'] in e['observationRefs'])
+    current_owner['representations'][0]['sourceValidity'] = 'stale'
+    rebuilt = deepcopy(current_owner['representations'][0])
+    rebuilt.update(id='current-rebuilt-observation',sourceValidity='current',sourceRefs=[{
+        'observationId':observation['id'],'revision':observation['revision'],'imageId':observation['imageId']}])
+    current_owner['representations'].append(rebuilt)
+    before = deepcopy(document)
+    masks = {observation['id']:arrays['mask']}
+    source_id = observation['sourceRefs'][0]['assetId']
+    result = import_source_equivalences(document, source, source_id, [], masks, include,
+        read_asset=stored.__getitem__, read_source=lambda name, sha:(tmp_path/name).read_bytes(), read_import_asset=lambda record:packed_asset(tmp_path,record))
+    assert result['representationPairCount'] == 1
+    assert document['entities'] == before['entities'] and document['observations'] == before['observations']
+    assets = {a['id']:a for a in document['assets']}
+    stages = SimpleNamespace(repo=SimpleNamespace(get_asset=lambda aid:{**assets[aid],'projectId':'project','storageKey':aid}),
+        blobs=SimpleNamespace(get=lambda key,sha,size:stored[key]), job={'projectId':'project'})
+    verified, skipped = _verified_source_equivalences(document,masks,stages)
+    assert not skipped and len(verified) == 1
+    merged = apply_source_equivalences(document,verified,base_revision_id='source-revision',masks=masks,read_asset=stored.__getitem__)
+    owner_id, old_id = manifest['entityIds']['tiny'], manifest['entityIds']['unrelated-import-id']
+    assert len(merged) == 1 and resolve_entity_id(document,old_id) == owner_id
+    owner = next(e for e in document['entities'] if e['id'] == owner_id)
+    assert owner['observationRefs'] == [observation['id']] and owner['activeModelRepresentationId'] is None
+    assert next(r for r in owner['representations'] if r['id']==rebuilt['id']) == rebuilt
+    assert next(r for r in owner['representations'] if r['id']==verified[0]['sourceRepresentationId'])['sourceValidity']=='stale'
+    assert document['observations'] == before['observations'] and document['cameras'] == before['cameras']
+    assert document['coordinateFrames'] == before['coordinateFrames']
+    assert document['identityDecisions'][-1]['source'] == 'source_binding'
+    previous = next(e for e in before['entities'] if e['id']==old_id)['representations'][0]
+    rep = next(r for r in owner['representations'] if r['id']==previous['id'])
+    assert {k:v for k,v in rep.items() if k not in ('sourceRefs','sourceKind')} == {k:v for k,v in previous.items() if k not in ('sourceRefs','sourceKind')}
+    assert rep['sourceRefs'][:len(previous['sourceRefs'])] == previous['sourceRefs']
+    assert rep['sourceKind'] == 'observed_reference_surface'
+    asset=assets[rep['assetId']]; mesh=mesh_from_asset(stored[asset['id']],{**asset,**asset['metadata']})
+    projection=_plan_projection(document,rep,mesh,asset['sha256'])
+    assert projection['imageId']==observation['imageId'] and projection['observationId']==observation['id'] and projection['polygons']
+    validate_document(document)
+    unchanged=deepcopy(document)
+    assert apply_source_equivalences(document,verified,base_revision_id='source-revision',masks=masks,read_asset=stored.__getitem__)==[]
+    assert document==unchanged
+    # The consumed immutable proof remains lineage after a legitimate new mask
+    # revision or geometry solution. It cannot reactivate historical geometry.
+    observation['revision'] += 1
+    current_observation = next(o for o in document['observations'] if o['id']==observation['id'])
+    current_observation['revision'] = observation['revision']
+    rep['sourceValidity'] = 'stale'
+    document['geometryBindings'][observation['imageId']]['geometrySolutionId']='new-geometry-solution'
+    validate_document(document)
+    verified,skipped = _verified_source_equivalences(document,masks,stages)
+    assert verified==[] and skipped[0]['code']=='source_equivalence_already_applied'
+
+
+@pytest.mark.parametrize('tamper', ['stale_observation','forged_asset','different_mesh','generated_mesh',
+    'translated_native_meshes','foreign_image','different_frame','ambiguous_owner','mask','no_proof','source_face_selection'])
+def test_imported_representation_proof_rejects_forged_or_changed_sources_atomically(tmp_path,tamper):
+    from copy import deepcopy
+    from ehs_spatial.platform.identity import apply_source_equivalences
+    from scripts.import_report_evidence import import_source_equivalences
+    document,source,stored,include,manifest,arrays,_ = native_representation_source_fixture(tmp_path)
+    observation=document['observations'][0]; masks={observation['id']:arrays['mask']}
+    import_source_equivalences(document,source,observation['sourceRefs'][0]['assetId'],[],masks,include,
+        read_asset=stored.__getitem__,read_source=lambda path,sha:(tmp_path/path).read_bytes(),read_import_asset=lambda record:packed_asset(tmp_path,record))
+    proof_ref=document['sourceIdentityEvidence'][-1]
+    pair=json.loads(stored[proof_ref['assetId']])['pairs'][0]
+    pair['evidenceRefs'].append({**proof_ref,'jsonPointer':'/pairs/0'})
+    reps={r['id']:r for e in document['entities'] for r in e['representations']}
+    if tamper=='stale_observation': observation['revision']+=1
+    elif tamper=='forged_asset': pair['representationAsset']['sha256']='0'*64
+    elif tamper=='different_mesh':
+        aid=pair['sourceRepresentationAsset']['assetId']; data=bytearray(stored[aid]); data[0:4]=np.float32(.02).tobytes()
+        newid=include(bytes(data),'application/octet-stream',next(a for a in document['assets'] if a['id']==aid)['metadata'])
+        reps[pair['sourceRepresentationId']]['assetId']=newid
+        pair['sourceRepresentationAsset']={'assetId':newid,'sha256':hashlib.sha256(data).hexdigest()}
+    elif tamper=='generated_mesh':
+        for rid in (pair['representationId'],pair['sourceRepresentationId']): reps[rid]['kind']='generated_mesh'
+    elif tamper=='translated_native_meshes':
+        for rid,key in ((pair['representationId'],'transformSnapshot'),(pair['sourceRepresentationId'],'sourceTransformSnapshot')):
+            reps[rid]['transform']['position'][0]=1
+            pair[key]=deepcopy(reps[rid]['transform'])
+    elif tamper=='foreign_image': pair['imageId']='unrelated-image'
+    elif tamper=='different_frame': reps[pair['representationId']]['coordinateFrameId']='unrelated-frame'
+    elif tamper=='ambiguous_owner': document['entities'][0]['observationRefs']=[observation['id']]
+    elif tamper=='mask': masks[observation['id']]=~arrays['mask']
+    elif tamper=='no_proof': pair['evidenceRefs']=[]
+    elif tamper=='source_face_selection':
+        # Both current mesh assets still agree. Only the immutable source record's
+        # face selection differs, so matching current metadata cannot prove lineage.
+        old_source=pair['sourceRecordRef']['assetId']
+        data=stored[pair['sourceFaceAsset']['assetId']]
+        data=np.frombuffer(data,dtype='<u4')[::-1].copy().tobytes()
+        aid=include(data,'application/octet-stream',{'kind':'source_identity_geometry'})
+        checksum=hashlib.sha256(data).hexdigest()
+        pair['sourceFaceAsset']={'assetId':aid,'sha256':checksum}
+        source['observed_regions'][0]['faces']['asset']['sha256']=checksum
+        data=json.dumps(source).encode(); aid=include(data,'application/json',{'kind':'import_source'})
+        def remap(value):
+            if isinstance(value,dict):
+                for key,child in value.items():
+                    if key in ('assetId','sourceAssetId') and child==old_source: value[key]=aid
+                    else: remap(child)
+            elif isinstance(value,list):
+                for child in value: remap(child)
+        for key in ('entities','observations','cameras'): remap(document[key])
+        for key in ('sourceRecordRef','observationRecordRef'):
+            pair[key].update(assetId=aid,sha256=hashlib.sha256(data).hexdigest())
+    before=deepcopy(document)
+    with pytest.raises(PlatformError):
+        apply_source_equivalences(document,[pair],base_revision_id='source-revision',masks=masks,read_asset=stored.__getitem__)
+    assert document==before
+
+
+def test_new_import_packages_same_source_mesh_proof_with_existing_native_readers(tmp_path,monkeypatch):
+    from copy import deepcopy
+    document,source,stored,_,_,_,_ = native_representation_source_fixture(tmp_path)
+    geometry=deepcopy(document['geometryEvidence'])
+    assets={a['id']:a for a in document['assets']}
+    def import_geometry(root,path,source,document,manifest,include,ident,frame_id):
+        ids={geometry['manifestAssetId'],*(aid for frame in geometry['frames'] for aid in frame['assets'].values())}
+        for aid in ids:
+            asset=assets[aid]
+            include(stored[aid],asset['mediaType'],asset.get('metadata',{}))
+        return deepcopy(geometry)
+    monkeypatch.setattr('scripts.import_geometry_evidence.import_geometry_evidence',import_geometry)
+    monkeypatch.setattr('scripts.import_public_scene.import_observation_masks',lambda *args:{})
+    monkeypatch.setattr('scripts.import_public_scene.observation_mask_sources',lambda *args:({},[],[]))
+    saved={}
+    def put(data,media,metadata):
+        sha=hashlib.sha256(data).hexdigest(); aid=str(uuid5(NAMESPACE_URL,sha)); saved[aid]=data
+        return {'id':aid,'sha256':sha,'sizeBytes':len(data),'mediaType':media,'metadata':metadata}
+    imported,manifest=import_document(tmp_path/'scene.json',put,geometry_root=tmp_path)
+    assert manifest['sourceIdentity']['representationPairCount']==1
+    proof=json.loads(saved[imported['sourceIdentityEvidence'][0]['assetId']])
+    assert proof['pairs'][0]['kind']=='same_source_indexed_mesh'
+    assert len(imported['observations'])==1 and len(imported['entities'])==2
+    assert not next(e for e in imported['entities'] if e['id']==proof['pairs'][0]['entityId'])['observationRefs']

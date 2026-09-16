@@ -10,7 +10,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import ValidationError
 
-from .contracts import GeometryBinding, IdentityDecision, MeasurementEvidence, PartRelation, PlatformError, SetPartRelationOperation, SourceIdentityEvidence, SourceObservationEquivalence, canonical, digest
+from .contracts import GeometryBinding, IdentityDecision, MeasurementEvidence, PartRelation, PlatformError, SetPartRelationOperation, SourceIdentityEvidence, SourceObservationEquivalence, SourceRepresentationEquivalence, canonical, digest
 
 
 MODEL_KINDS = frozenset(("generated_mesh", "primitive"))
@@ -445,7 +445,136 @@ def remap_attachments(document, *, base_revision_id, affected_entity_ids):
             record["entityIds"] = _unique(targets)
 
 
-def apply_source_equivalences(document, verified_pairs, *, base_revision_id):
+def verify_source_representation(document, value, masks, read_asset):
+    """Verify a duplicate imported observed mesh against registered source bytes."""
+    import hashlib
+    import io
+    import json
+    import numpy as np
+    from PIL import Image
+    from scipy.spatial.transform import Rotation
+    from .blender_export import mesh_from_asset
+    from .spatial import transform_matrix
+    from ..providers.sam3 import decode_coco_rle
+
+    pair = _typed(SourceRepresentationEquivalence, value, 'invalid_source_representation_proof')
+    assets = {a['id']:a for a in document['assets']}
+    owners = observation_owners(document)
+    observations = {o['id']:o for o in document['observations']}
+    entities = {e['id']:e for e in document['entities']}
+    loaded = {}
+    def raw(ref):
+        asset = assets.get(ref['assetId'])
+        _require(asset is not None and asset.get('sha256') == ref['sha256'], 'identity_asset_evidence_mismatch')
+        if ref['assetId'] not in loaded:
+            data = read_asset(ref['assetId'])
+            _require(hashlib.sha256(data).hexdigest() == ref['sha256'] and len(data) == asset['sizeBytes'], 'identity_asset_evidence_mismatch')
+            loaded[ref['assetId']] = data
+        return loaded[ref['assetId']]
+    def pointed(ref):
+        value = json.loads(raw(ref))
+        for token in ref['jsonPointer'].split('/')[1:]:
+            token = token.replace('~1','/').replace('~0','~')
+            value = value[int(token)] if isinstance(value,list) else value[token]
+        return value
+    try:
+        ref = pair['observationRef']; observation = observations.get(ref['observationId'])
+        _require(observation is not None and ref['observationId'] in owners, 'identity_observation_scope_invalid')
+        _require(observation.get('revision',1) == ref['revision'], 'identity_observation_revision_mismatch')
+        owner = entities[owners[ref['observationId']]]
+        imported_id = pair['entityId'] if pair['entityId'] in entities else resolve_entity_id(document,pair['entityId'])
+        imported = entities[imported_id]
+        _require(imported_id == owner['id'] or not imported['observationRefs'], 'source_representation_not_orphan')
+        _require(not imported.get('sourceContext'), 'source_representation_not_orphan')
+        rep = next(r for r in imported['representations'] if r['id']==pair['representationId'])
+        source_rep = next(r for r in owner['representations'] if r['id']==pair['sourceRepresentationId'])
+        _require(rep['kind'] == source_rep['kind'] == 'observed_surface', 'source_representation_not_observed')
+        _require(rep['transform'] == pair['transformSnapshot'] == source_rep['transform'] == pair['sourceTransformSnapshot'], 'source_representation_transform_mismatch')
+        frame_id = rep['transform']['coordinateFrameId']
+        _require(rep['coordinateFrameId'] == source_rep['coordinateFrameId'] == frame_id, 'source_representation_frame_mismatch')
+        _require(rep['assetId'] == pair['representationAsset']['assetId'] and source_rep['assetId'] == pair['sourceRepresentationAsset']['assetId'], 'source_representation_asset_mismatch')
+        _require(observation['imageId'] == pair['imageId'], 'source_equivalence_image_mismatch')
+        raw({'assetId':pair['imageId'],'sha256':pair['imageSha256']})
+        binding = pair['geometryBinding']
+        geometry = document.get('geometryEvidence') or {}
+        _require(geometry.get('manifestAssetId') == binding['geometrySolutionId'] and geometry.get('coordinateFrameId') == frame_id, 'source_representation_frame_mismatch')
+        raw({'assetId':binding['geometrySolutionId'],'sha256':assets[binding['geometrySolutionId']]['sha256']})
+        if document['schemaVersion'] == 2:
+            _require(document['geometryBindings'].get(pair['imageId']) == binding, 'source_representation_frame_mismatch')
+        camera = next(c for c in document['cameras'] if c['id']==binding['cameraId'])
+        _require(camera['imageId'] == pair['imageId'] and camera['coordinateFrameId'] == frame_id, 'source_representation_frame_mismatch')
+        source_ref, observed_ref = pair['sourceRecordRef'], pair['observationRecordRef']
+        _require(source_ref['assetId'] == observed_ref['assetId'], 'source_representation_source_mismatch')
+        _require(all(len(r['jsonPointer'].split('/'))==3 and r['jsonPointer'].split('/')[1] in ('objects','observed_regions','unavailable_regions') for r in (source_ref,observed_ref)), 'source_representation_source_mismatch')
+        source, observed = pointed(source_ref), pointed(observed_ref)
+        def bound(item, ref, record_id):
+            return any(r.get('assetId') == ref['assetId'] and r.get('sourceRecordId') == record_id for r in item.get('sourceRefs',[]) if isinstance(r,dict))
+        _require(source.get('source') == observed.get('source') == 'observed' and bound(rep,source_ref,source['id']) and bound(source_rep,observed_ref,observed['id']) and bound(observation,observed_ref,observed['id']), 'source_representation_source_mismatch')
+        _require(any(e.get('operation')=='offline_import' and e.get('sourceAssetId')==source_ref['assetId'] and e.get('sourceRecordId')==source['id'] for e in imported.get('lineage',[])), 'source_representation_source_mismatch')
+        fid = observed.get('reference_frame')
+        _require(source.get('frame_ids') == [fid] and any(r.get('assetId')==source_ref['assetId'] and r.get('sourceCameraId')==fid for r in camera.get('sourceRefs',[])), 'source_representation_frame_mismatch')
+        original = json.loads(raw(source_ref))
+        records = {r['id']:r for key in ('objects','observed_regions','unavailable_regions') for r in original.get(key,[])}
+        def original_pose(record):
+            record = records[record['context_id']] if record.get('faces') else record
+            _require(record.get('source')=='observed' and fid in record.get('frame_ids',[]), 'source_representation_frame_mismatch')
+            value = record['transform']; result = np.eye(4)
+            result[:3,:3] = Rotation.from_euler('xyz',value['rotation_deg'],degrees=True).as_matrix() @ np.diag(value['scale'])
+            result[:3,3] = value['position']
+            return result
+        _require(all(np.allclose(transform_matrix(rep['transform']),original_pose(record),atol=1e-12,rtol=0) for record in (source,observed)), 'source_representation_transform_mismatch')
+        source_camera = next(c for c in original['cameras'] if c['id']==fid)
+        _require(camera['K'] == source_camera.get('original_K',source_camera['K']) and camera['cameraToWorld'] == source_camera['camera_to_world'], 'source_representation_camera_mismatch')
+        _require(observed.get('provenance',{}).get('source_image_sha256') == pair['imageSha256'], 'source_equivalence_image_mismatch')
+        _require(source.get('mesh',{}).get('asset',{}).get('sha256') == pair['representationAsset']['sha256'], 'source_representation_asset_mismatch')
+        mask_asset = assets.get(observation.get('maskAssetId'),{})
+        _require(observed.get('mask',{}).get('sha256') == mask_asset.get('sha256') and mask_asset.get('sha256') is not None, 'source_equivalence_mask_mismatch')
+        mask_bytes = raw({'assetId':mask_asset['id'],'sha256':mask_asset['sha256']})
+        candidates = [r for r in observed['provenance'].get('source_refs',[]) if isinstance(r,dict) and r.get('type')=='text-sam'
+            and r.get('sha256')==pair['sourceRef']['sha256'] and r.get('pointer')==['rle',r.get('instance')]
+            and type(r.get('instance')) is int and r['instance']>=0 and pair['sourceRef']['jsonPointer']==f"/rle/{r['instance']}"]
+        _require(len(candidates)==1, 'source_equivalence_instance_mismatch')
+        encoded = pointed(pair['sourceRef']); height,width = pair['canonicalShape']
+        mask = decode_coco_rle(encoded if isinstance(encoded,str) else json.dumps(encoded),height=height,width=width).astype(bool)
+        with Image.open(io.BytesIO(mask_bytes)) as image:
+            stored_mask = np.asarray(image.convert('L'))>0
+        _require(observed['mask'].get('resolution')=='canonical' and observed['mask'].get('shape_hw')==pair['canonicalShape']
+            and np.array_equal(stored_mask,mask), 'source_equivalence_mask_mismatch')
+        mappings = [m['matrix'] for m in observation.get('pixelMapping',[]) if m.get('source')=='canonical_pixels' and m.get('target')=='original_pixels']
+        _require(len(mappings)==1 and np.allclose(np.asarray(source_camera['K']) @ np.linalg.inv(np.asarray(camera['K'])) @ np.asarray(mappings[0]),np.eye(3),atol=1e-8,rtol=0), 'source_equivalence_image_mismatch')
+        _require(list(mask.shape)==pair['canonicalShape'] and np.array_equal(masks.get(observation['id']),mask)
+            and hashlib.sha256(mask.tobytes()).hexdigest()==pair['canonicalMaskSha256'], 'source_equivalence_mask_mismatch')
+        role = 'floor' if candidates[0].get('label')=='floor' else None
+        _require(pair.get('geometryRole') == role, 'source_representation_role_mismatch')
+        meshes = [mesh_from_asset(raw(ref),{**assets[ref['assetId']],**assets[ref['assetId']].get('metadata',{})})
+                  for ref in (pair['representationAsset'],pair['sourceRepresentationAsset'])]
+        geometry_record = records[observed['context_id']] if observed.get('faces') else observed
+        mesh_record = geometry_record['mesh']
+        _require(pair['sourceGeometryAsset']['sha256']==mesh_record['asset']['sha256'] and mesh_record.get('stride')==9
+            and mesh_record.get('index_type')=='uint32', 'source_representation_asset_mismatch')
+        original_mesh = mesh_from_asset(raw(pair['sourceGeometryAsset']),{'format':'panoptes-mesh-v1','byteLayout':{
+            'byteOffset':mesh_record['byte_offset'],'vertexCount':mesh_record['vertex_count'],
+            'indexByteOffset':mesh_record['index_byte_offset'],'indexCount':mesh_record['index_count']}})
+        vertices, faces = original_mesh.vertices, original_mesh.faces
+        if observed.get('faces'):
+            face_ref = pair.get('sourceFaceAsset')
+            _require(face_ref is not None and face_ref['sha256']==observed['faces']['asset']['sha256'], 'source_representation_asset_mismatch')
+            selected = np.frombuffer(raw(face_ref),dtype='<u4')
+            _require(len(selected)==observed['faces']['count'] and len(np.unique(selected))==len(selected)
+                and len(selected)>0 and selected.max()<len(faces), 'source_representation_mesh_mismatch')
+            used, remapped = np.unique(faces[selected],return_inverse=True)
+            vertices, faces = vertices[used], remapped.reshape(-1,3)
+        else:
+            _require(pair.get('sourceFaceAsset') is None, 'source_representation_asset_mismatch')
+        _require(np.array_equal(vertices,meshes[1].vertices) and np.array_equal(faces,meshes[1].faces), 'source_representation_mesh_mismatch')
+        _require(np.array_equal(meshes[0].vertices,meshes[1].vertices) and np.array_equal(meshes[0].faces,meshes[1].faces)
+                 and len(meshes[0].faces)>0, 'source_representation_mesh_mismatch')
+    except (KeyError, IndexError, StopIteration, TypeError, ValueError) as exc:
+        raise PlatformError('invalid_source_representation_proof',422) from exc
+    return pair
+
+
+def apply_source_equivalences(document, verified_pairs, *, base_revision_id, masks=None, read_asset=None):
     """Consume producer-verified immutable source/mask pairs before geometry.
 
     The producer must verify JSON pointers, source RLE and actual canonical mask
@@ -461,6 +590,16 @@ def apply_source_equivalences(document, verified_pairs, *, base_revision_id):
     proof_assets = {(r['assetId'], r['sha256']) for r in document.get('sourceIdentityEvidence', [])}
     pairs, graph = [], {}
     for value in verified_pairs:
+        if value.get('kind') == 'same_source_indexed_mesh':
+            _require(read_asset is not None and masks is not None, 'source_representation_verification_required')
+            pair = verify_source_representation(document,value,masks,read_asset)
+            _require(any((r['assetId'],r['sha256']) in proof_assets for r in pair['evidenceRefs']), 'source_equivalence_proof_required')
+            first = pair['entityId'] if pair['entityId'] in {e['id'] for e in document['entities']} else resolve_entity_id(document,pair['entityId'])
+            second = owners[pair['observationRef']['observationId']]
+            if first != second:
+                graph.setdefault(first,set()).add(second); graph.setdefault(second,set()).add(first)
+                pairs.append((pair,first,second))
+            continue
         pair = _typed(SourceObservationEquivalence, value, 'invalid_source_observation_equivalence')
         pair['observationRefs'].sort(key=lambda ref:ref['observationId'])
         pair['evidenceRefs'].sort(key=canonical)
@@ -480,7 +619,7 @@ def apply_source_equivalences(document, verified_pairs, *, base_revision_id):
         if first != second:
             graph.setdefault(first, set()).add(second)
             graph.setdefault(second, set()).add(first)
-            pairs.append(pair)
+            pairs.append((pair,first,second))
     # Work on a private copy so a conflict in any connected group is atomic.
     working, results = deepcopy(document), []
     remaining = set(graph)
@@ -494,31 +633,71 @@ def apply_source_equivalences(document, verified_pairs, *, base_revision_id):
         remaining -= component
         entities = {e['id']: e for e in working['entities']}
         ids = sorted(component)
-        group_pairs = sorted([p for p in pairs if owners[p['observationRefs'][0]['observationId']] in component], key=canonical)
+        group_pairs = sorted([p for p,first,_ in pairs if first in component], key=canonical)
+        representation_pairs = [p for p in group_pairs if p.get('kind')=='same_source_indexed_mesh']
         source_groups = [d for d in effective_decisions(document) if d['source'] == 'source_binding' and d['decision'] == 'same']
         def source_group_size(entity_id):
             return max([len({observations[oid]['imageId'] for group in d['observationGroups'] for oid in group})
                         for d in source_groups if {owners.get(oid) for group in d['observationGroups'] for oid in group} == {entity_id}] or [0])
-        survivor = min(ids, key=lambda entity_id:(-source_group_size(entity_id), entity_id))
+        survivor = min(ids, key=lambda entity_id:(-bool(entities[entity_id]['observationRefs']), -source_group_size(entity_id), entity_id))
         groups = [sorted(entities[eid]['observationRefs']) for eid in ids]
         evidence = [{'kind':'observation', 'observationId':oid, 'observationRevision':observations[oid].get('revision', 1)} for group in groups for oid in group]
         asset_refs = {(r['assetId'], r['sha256']) for p in group_pairs for r in [p['sourceRef'], *p['evidenceRefs']]}
+        asset_refs.update((p[key]['assetId'],p[key]['sha256']) for p in representation_pairs
+                          for key in ('representationAsset','sourceRepresentationAsset','sourceGeometryAsset','sourceFaceAsset','sourceRecordRef','observationRecordRef') if p.get(key))
         evidence += [{'kind':'asset', 'assetId':asset_id, 'sha256':sha} for asset_id, sha in sorted(asset_refs)]
         evidence.append({'kind':'method', 'name':'same_source_observation_equivalence', 'version':'1', 'configSha256':digest(group_pairs)})
         decision_id = str(uuid5(NAMESPACE_URL, 'source-equivalence:' + digest([base_revision_id, groups, evidence])))
         decision = {'id':decision_id, 'decision':'same', 'source':'source_binding', 'baseRevisionId':base_revision_id,
                     'entityIds':ids, 'observationGroups':groups, 'survivorId':survivor, 'evidenceRefs':evidence,
                     'reason':'Same immutable source artifact and RLE instance, mapped photo, and verified equal canonical masks', 'supersedesDecisionId':None}
+        if representation_pairs:
+            decision['representationBindings'] = deepcopy(representation_pairs)
+            decision['reason'] = 'Exact indexed imported observed meshes, native pose/frame, and current owned source mask/RLE instance'
         _record_decision(working, decision, base_revision_id, source_binding=True)
         operation = {'type':'mergeEntities', 'entityIds':ids, 'survivorId':survivor, 'decisionId':decision_id,
                      'activeModelRepresentationId':entities[survivor]['activeModelRepresentationId']}
         apply_identity_operation(working, operation, base_revision_id=base_revision_id)
+        kept = next(e for e in working['entities'] if e['id']==survivor)
+        for pair in representation_pairs:
+            rep = next(r for r in kept['representations'] if r['id']==pair['representationId'])
+            source = {**pair['observationRef'],'imageId':pair['imageId'],'imageSha256':pair['imageSha256']}
+            if source not in rep.setdefault('sourceRefs',[]):
+                rep['sourceRefs'].append(source)
+            if pair.get('geometryRole') == 'floor':
+                rep['sourceKind'] = 'observed_reference_surface'
+                kept['geometryRole'] = 'floor'
+                kept['geometryRoleSourceRefs'] = deepcopy(pair['evidenceRefs']) + [deepcopy(pair['sourceRef'])]
         results.append(operation)
     if results:
         validate_document(working)
         document.clear()
         document.update(working)
     return results
+
+
+def _source_representation_groups(document, decision):
+    """Empty source groups need persisted, asset-bound representation evidence."""
+    bindings = decision.get('representationBindings') or []
+    if decision['source'] != 'source_binding' or not bindings:
+        return False
+    _require(len(decision['entityIds'])==len(decision['observationGroups']), 'identity_observation_groups_invalid')
+    assets = {a['id']:a for a in document['assets']}
+    reps = {r['id']:r for e in document['entities'] for r in e.get('representations',[])}
+    covered = set()
+    for value in bindings:
+        pair = _typed(SourceRepresentationEquivalence,value,'invalid_source_representation_proof')
+        rep = reps.get(pair['representationId'])
+        _require(rep is not None and rep['kind']=='observed_surface' and rep['assetId']==pair['representationAsset']['assetId']
+            and rep['transform']==pair['transformSnapshot'], 'source_representation_asset_mismatch')
+        _require(pair['entityId'] in decision['entityIds'] and pair['observationRef']['observationId'] in {oid for g in decision['observationGroups'] for oid in g}, 'identity_observation_scope_invalid')
+        for ref in (pair['representationAsset'],pair['sourceRepresentationAsset'],pair['sourceGeometryAsset'],pair.get('sourceFaceAsset'),pair['sourceRecordRef'],pair['observationRecordRef'],pair['sourceRef'],*pair['evidenceRefs']):
+            if ref is None:
+                continue
+            _require(assets.get(ref['assetId'],{}).get('sha256')==ref['sha256'], 'identity_asset_evidence_mismatch')
+        _require(any(ref in document.get('sourceIdentityEvidence',[]) or any(p['assetId']==ref['assetId'] and p['sha256']==ref['sha256'] for p in document.get('sourceIdentityEvidence',[])) for ref in pair['evidenceRefs']), 'source_equivalence_proof_required')
+        covered.add(pair['entityId'])
+    return all(group or eid in covered for eid,group in zip(decision['entityIds'],decision['observationGroups']))
 
 
 def _record_decision(document, value, base_revision_id, *, source_binding=False):
@@ -531,7 +710,7 @@ def _record_decision(document, value, base_revision_id, *, source_binding=False)
     ids, groups = decision["entityIds"], decision["observationGroups"]
     _require(len(ids) == len(set(ids)) and set(ids) <= set(entities), "identity_entity_scope_invalid")
     refs = [oid for group in groups for oid in group]
-    _require(len(refs) == len(set(refs)) and (decision["source"] == "manual" or all(groups)), "identity_observation_groups_invalid")
+    _require(len(refs) == len(set(refs)) and (decision["source"] == "manual" or all(groups) or source_binding and _source_representation_groups(document,decision)), "identity_observation_groups_invalid")
     expected = [entities[eid].get("observationRefs", []) for eid in ids]
     split = decision["decision"] == "different" and len(ids) == 1
     _require(not split or all(groups), "identity_observation_groups_invalid")
@@ -722,7 +901,7 @@ def validate_identity_document(document):
         seen.add(decision["id"])
         groups = decision["observationGroups"]
         refs = [oid for group in groups for oid in group]
-        _require((decision["source"] == "manual" or all(groups)) and len(refs) == len(set(refs)) and set(refs) <= set(observations), "identity_observation_groups_invalid")
+        _require((decision["source"] == "manual" or all(groups) or _source_representation_groups(document,decision)) and len(refs) == len(set(refs)) and set(refs) <= set(observations), "identity_observation_groups_invalid")
         for ref in decision["evidenceRefs"]:
             if ref["kind"] == "observation":
                 _require(ref["observationId"] in refs and ref["observationRevision"] <= observations[ref["observationId"]].get("revision", 1), "identity_observation_revision_mismatch")

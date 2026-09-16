@@ -145,7 +145,7 @@ def import_observation_masks(geometry_root, source, document, manifest, include)
     return {"attachedObservationIds": [row[1]["id"] for row in prepared], "sourceViewCount": len(records), "newModelCalls": 0}
 
 
-def import_source_equivalences(document, source, source_asset_id, records, masks, include):
+def import_source_equivalences(document, source, source_asset_id, records, masks, include, *, read_asset=None, read_source=None, read_import_asset=None):
     """Package exact shared SAM instances, never infer identity from mask overlap."""
     from ehs_spatial.providers.sam3 import decode_coco_rle
 
@@ -227,11 +227,109 @@ def import_source_equivalences(document, source, source_asset_id, records, masks
                 "evidenceRefs": [{"role": "native_mask_provenance", "assetId": native_id, "sha256": hashlib.sha256(record["sourceRaw"]).hexdigest(), "jsonPointer": record["jsonPointer"] + "/provenance"},
                     {"role": "raw_source_reference", "assetId": source_asset_id, "sha256": assets[source_asset_id]["sha256"], "jsonPointer": pointer + "/source_mask/ref"}]})
             seen.add(ids)
+    representation_pairs = []
+    if read_asset is not None and document.get('geometryEvidence'):
+        from ehs_spatial.platform.identity import verify_source_representation
+        from ehs_spatial.platform.contracts import PlatformError
+        source_records = {row['id']:(f'/{key}/{index}',row) for key in ('objects','observed_regions','unavailable_regions')
+                          for index,row in enumerate(source.get(key,[])) if row.get('source')=='observed' and row.get('id')}
+        geometry = document['geometryEvidence']
+        def asset_ref(aid):
+            return {'assetId':aid,'sha256':next(a['sha256'] for a in document['assets'] if a['id']==aid)}
+        def source_ref(record_id):
+            return {**asset_ref(source_asset_id),'jsonPointer':source_records[record_id][0]}
+        def original_asset(spec):
+            existing = next((a for a in document['assets'] if a.get('sha256')==spec['sha256']),None)
+            if existing:
+                return asset_ref(existing['id'])
+            if read_import_asset is None:
+                return None
+            data = read_import_asset(spec)
+            if hashlib.sha256(data).hexdigest()!=spec['sha256']:
+                raise PlatformError('import_report_source_hash_mismatch',422)
+            return asset_ref(include(data,'application/octet-stream',{'kind':'source_identity_geometry'}))
+        def bound_reps(entity,record_id):
+            return [r for r in entity.get('representations',[]) if r.get('kind')=='observed_surface' and any(
+                ref.get('assetId')==source_asset_id and ref.get('sourceRecordId')==record_id for ref in r.get('sourceRefs',[]) if isinstance(ref,dict))]
+        # ponytail: imported inventories are bounded; exact full-array comparison
+        # avoids any spatial index or approximate identity inference.
+        for imported in document['entities']:
+            if imported.get('observationRefs') or imported.get('sourceContext'):
+                continue
+            for lineage in imported.get('lineage',[]):
+                record_id = lineage.get('sourceRecordId')
+                if lineage.get('operation')!='offline_import' or lineage.get('sourceAssetId')!=source_asset_id or record_id not in source_records:
+                    continue
+                _, mesh_record = source_records[record_id]
+                if len(mesh_record.get('frame_ids',[]))!=1 or not mesh_record.get('mesh'):
+                    continue
+                fid = mesh_record['frame_ids'][0]
+                camera = cameras.get(fid)
+                if camera is None:
+                    continue
+                candidates = []
+                for owner in document['entities']:
+                    for oid in owner.get('observationRefs',[]):
+                        observation = observations[oid]
+                        if observation['imageId']!=camera['imageId'] or oid not in masks:
+                            continue
+                        for ref in observation.get('sourceRefs',[]):
+                            observed_id = ref.get('sourceRecordId') if isinstance(ref,dict) and ref.get('assetId')==source_asset_id else None
+                            if observed_id not in source_records:
+                                continue
+                            observed = source_records[observed_id][1]
+                            face_count = observed['faces']['count'] if observed.get('faces') else observed.get('mesh',{}).get('index_count',-3)//3
+                            if face_count != mesh_record['mesh']['index_count']//3:
+                                continue
+                            context = source_records.get(observed.get('context_id'),(None,observed))[1]
+                            if not context.get('mesh'):
+                                continue
+                            geometry_ref = original_asset(context['mesh']['asset'])
+                            face_ref = original_asset(observed['faces']['asset']) if observed.get('faces') else None
+                            if geometry_ref is None or observed.get('faces') and face_ref is None:
+                                continue
+                            for sam in observed.get('provenance',{}).get('source_refs',[]):
+                                if not isinstance(sam,dict) or sam.get('type')!='text-sam' or type(sam.get('instance')) is not int or sam['instance']<0 or sam.get('pointer')!=['rle',sam['instance']] or not sam.get('sha256'):
+                                    continue
+                                existing = next((a for a in document['assets'] if a.get('sha256')==sam['sha256']),None)
+                                if existing:
+                                    sam_id = existing['id']
+                                elif read_source is not None and sam.get('path'):
+                                    sam_raw = read_source(sam['path'],sam['sha256'])
+                                    if hashlib.sha256(sam_raw).hexdigest()!=sam['sha256']:
+                                        raise PlatformError('import_report_source_hash_mismatch',422)
+                                    sam_id = include(sam_raw,'application/json',{'kind':'identity_source_segmentation'})
+                                else:
+                                    continue
+                                for rep in bound_reps(imported,record_id):
+                                    for original_rep in bound_reps(owner,observed_id):
+                                        pair = {'kind':'same_source_indexed_mesh','entityId':imported['id'],'representationId':rep['id'],
+                                            'representationAsset':asset_ref(rep['assetId']),'transformSnapshot':deepcopy(rep['transform']),
+                                            'sourceRepresentationId':original_rep['id'],'sourceRepresentationAsset':asset_ref(original_rep['assetId']),
+                                            'sourceGeometryAsset':geometry_ref,'sourceFaceAsset':face_ref,
+                                            'sourceTransformSnapshot':deepcopy(original_rep['transform']),
+                                            'observationRef':{'observationId':oid,'revision':observation['revision']},
+                                            'imageId':observation['imageId'],'imageSha256':assets[observation['imageId']]['sha256'],
+                                            'sourceRef':{**asset_ref(sam_id),'jsonPointer':f"/rle/{sam['instance']}"},
+                                            'sourceRecordRef':source_ref(record_id),'observationRecordRef':source_ref(observed_id),
+                                            'geometryBinding':{'geometrySolutionId':geometry['manifestAssetId'],'cameraId':camera['id']},
+                                            'canonicalShape':list(masks[oid].shape),'canonicalMaskSha256':hashlib.sha256(np.ascontiguousarray(masks[oid],dtype=np.bool_).tobytes()).hexdigest(),
+                                            'geometryRole':'floor' if sam.get('label')=='floor' else None,'evidenceRefs':[]}
+                                        try:
+                                            candidates.append(verify_source_representation(document,pair,masks,read_asset))
+                                        except PlatformError as exc:
+                                            unavailable.append({'representationId':rep['id'],'observationId':oid,'reason':exc.code})
+                if len({p['observationRef']['observationId'] for p in candidates})==1:
+                    unique = {p['representationId']:p for p in sorted(candidates,key=lambda p:p['sourceRepresentationId'],reverse=True)}
+                    representation_pairs.extend(unique.values())
+    pairs.extend(representation_pairs)
     if pairs:
-        payload = json.dumps({"schemaVersion": 1, "kind": "same_source_observation_equivalences", "pairs": sorted(pairs, key=lambda p: [r["observationId"] for r in p["observationRefs"]])}, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+        payload = json.dumps({"schemaVersion": 1, "kind": "same_source_observation_equivalences", "pairs": sorted(pairs, key=lambda p: json.dumps(p,sort_keys=True))}, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
         identity = include(payload, "application/json", {"kind": "source_identity_evidence"})
-        document["sourceIdentityEvidence"] = [{"assetId": identity, "sha256": hashlib.sha256(payload).hexdigest()}]
-    return {"pairCount": len(pairs), "unavailable": unavailable, "newModelCalls": 0}
+        reference = {"assetId": identity, "sha256": hashlib.sha256(payload).hexdigest()}
+        if reference not in document.setdefault('sourceIdentityEvidence',[]):
+            document['sourceIdentityEvidence'].append(reference)
+    return {"pairCount": len(pairs), "representationPairCount":len(representation_pairs), "unavailable": unavailable, "newModelCalls": 0}
 
 
 def canonical_observation_masks(document, read_asset):

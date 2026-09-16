@@ -202,7 +202,13 @@ def prepare(scan_reference, profiles, output):
             canonical_masks, mask_errors = canonical_observation_masks(document, lambda aid: checked(registry[aid]["file"]))
             if mask_errors:
                 raise ValueError("Prepared source masks are incomplete: " + str(mask_errors))
-            source_identity = import_source_equivalences(document, source, by_sha[profile["sourceScene"]["sha256"]], identity_records, canonical_masks, include)
+            from scripts.import_report_evidence import _path
+            from scripts.import_public_scene import packed_asset
+            identity_root = profile.get('geometryRoot') or (str(Path(profile['maskSourceManifest']['path']).parent) if profile.get('maskSourceManifest') else None)
+            source_identity = import_source_equivalences(document, source, by_sha[profile["sourceScene"]["sha256"]], identity_records, canonical_masks, include,
+                read_asset=lambda aid:checked(registry[aid]['file']),
+                read_source=(lambda name,sha:checked({'path':str(_path(identity_root,name)),'sha256':sha})) if identity_root else None,
+                read_import_asset=lambda record:packed_asset(source_root,record))
             status = "ready_from_verified_source"
         assert before["entities"] == document["entities"]
         assert len(before["observations"]) == len(document["observations"])

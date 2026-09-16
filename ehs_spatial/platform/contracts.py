@@ -261,6 +261,7 @@ class IdentityDecision(DTO):
     reason: str = Field(min_length=1, max_length=8000)
     supersedesDecisionId: str | None
     agentTurnId: str | None = None
+    representationBindings: list[SourceRepresentationEquivalence] = Field(default_factory=list)
 
 
 class MeasurementEvidence(DTO):
@@ -300,6 +301,30 @@ class SourceObservationEquivalence(DTO):
     canonicalMaskSha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     canonicalShape: tuple[Annotated[int, Field(gt=0)], Annotated[int, Field(gt=0)]]
     evidenceRefs: list[SourceIdentityPointer] = Field(min_length=1)
+
+
+class SourceRepresentationEquivalence(DTO):
+    kind: Literal['same_source_indexed_mesh'] = 'same_source_indexed_mesh'
+    entityId: str = Field(min_length=1)
+    representationId: str = Field(min_length=1)
+    representationAsset: SourceIdentityEvidence
+    transformSnapshot: Transform
+    sourceRepresentationId: str = Field(min_length=1)
+    sourceRepresentationAsset: SourceIdentityEvidence
+    sourceGeometryAsset: SourceIdentityEvidence
+    sourceFaceAsset: SourceIdentityEvidence | None = None
+    sourceTransformSnapshot: Transform
+    observationRef: SourceObservationRevision
+    imageId: str = Field(min_length=1)
+    imageSha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    sourceRef: SourceIdentityPointer
+    sourceRecordRef: SourceIdentityPointer
+    observationRecordRef: SourceIdentityPointer
+    geometryBinding: GeometryBinding
+    canonicalMaskSha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    canonicalShape: tuple[Annotated[int, Field(gt=0)], Annotated[int, Field(gt=0)]]
+    geometryRole: Literal['floor'] | None = None
+    evidenceRefs: list[SourceIdentityPointer] = Field(default_factory=list)
 
 
 class GeometryBinding(DTO):

@@ -277,7 +277,7 @@ def import_document(scene_path, put_asset, *, legacy_root=None, observation_root
     raster_bytes = {}
     def include(data, media_type, metadata, source_key=None):
         asset = put_asset(data, media_type, metadata)
-        if media_type == "application/json" or (geometry_root and media_type in ("image/png", "application/x-npy")):
+        if media_type == "application/json" or geometry_root:
             raster_bytes[asset["id"]] = data
         ref = {**asset, **metadata}
         if asset["id"] not in {a["id"] for a in document["assets"]}:
@@ -519,10 +519,11 @@ def import_document(scene_path, put_asset, *, legacy_root=None, observation_root
         document["geometryEvidence"] = import_geometry_evidence(geometry_root, scene_path, source, document, manifest, include, ident, frame_id)
         manifest["observationMasks"] = import_observation_masks(geometry_root, source, document, manifest, include)
         _, source_records, _ = observation_mask_sources(geometry_root, source)
-        if source_records:
-            masks, mask_errors = canonical_observation_masks(document, raster_bytes.__getitem__)
-            manifest["sourceIdentity"] = import_source_equivalences(document, source, source_asset, source_records, masks, include)
-            manifest["sourceIdentity"]["maskErrors"] = mask_errors
+        masks, mask_errors = canonical_observation_masks(document, raster_bytes.__getitem__)
+        manifest["sourceIdentity"] = import_source_equivalences(document, source, source_asset, source_records, masks, include,
+            read_asset=raster_bytes.__getitem__, read_source=lambda path,sha:source_path(geometry_root,path).read_bytes(),
+            read_import_asset=lambda record:packed_asset(root,record))
+        manifest["sourceIdentity"]["maskErrors"] = mask_errors
         if report:
             geometry = document["geometryEvidence"]
             for field, label, meaning in (
