@@ -4,6 +4,78 @@ from .identity import MODEL_KINDS, model_family, validate_part_relations
 from .spatial import primitive_mesh
 
 
+def model_quality_binding(document, entity, rep, *, transform=None):
+    """Snapshot a just-reviewed saved model; only its recording path creates this proof.
+
+    Use the canonical saved pose and asset hash, avoiding float32 mesh and
+    matrix/quaternion roundtrip differences from the provider's scoring inputs.
+    """
+    from copy import deepcopy
+    assets = {asset['id']: asset for asset in document['assets']}
+    observations = {observation['id']: observation for observation in document['observations']}
+    cameras = {camera['id']: camera for camera in document['cameras']}
+    quality = rep.get('qualityEvidence') or {}
+    if not isinstance(quality, dict):
+        raise PlatformError('model_quality_not_accepted')
+    geometric, review = quality.get('geometric') or {}, quality.get('shapeReview') or {}
+    if not isinstance(geometric, dict) or not isinstance(review, dict):
+        raise PlatformError('model_quality_not_accepted')
+    own = entity.get('observationRefs') or []
+    if (quality.get('status') != 'accepted' or quality.get('entityId') != entity['id']
+            or geometric.get('status') != 'observed_consistent' or review.get('status') != 'pass'
+            or quality.get('missingEvidence') or review.get('visibleShapeIssues') or review.get('nextAction') != 'none'
+            or not own or sorted(review.get('observationIds') or []) != sorted(own)):
+        raise PlatformError('model_quality_not_accepted')
+
+    def asset_hash(identity):
+        sha = assets.get(identity, {}).get('sha256')
+        if not isinstance(sha, str) or len(sha) != 64:
+            raise PlatformError('model_quality_source_unavailable')
+        return sha
+
+    evidence = quality.get('evidenceRef') or {}
+    candidate = quality.get('candidateRef') or {}
+    if (not isinstance(evidence, dict) or not isinstance(candidate, dict)
+            or evidence.get('sha256') != asset_hash(evidence.get('assetId'))
+            or candidate.get('sha256') != asset_hash(candidate.get('assetId'))
+            or evidence not in rep.get('sourceRefs', []) or candidate not in rep.get('sourceRefs', [])
+            or digest({key: value for key, value in quality.items() if key != 'evidenceRef'}) != evidence['sha256']):
+        raise PlatformError('model_quality_evidence_mismatch')
+    pose = rep['transform'] if transform is None else transform
+    validate_transform(pose, {frame['id'] for frame in document['coordinateFrames']})
+    if pose['coordinateFrameId'] != rep['coordinateFrameId']:
+        raise PlatformError('model_quality_source_mismatch')
+    views = []
+    scored = geometric.get('perView') or []
+    if (not isinstance(scored, list) or any(not isinstance(view, dict) for view in scored)
+            or sorted(view.get('observationId', '') for view in scored) != sorted(own)):
+        raise PlatformError('model_quality_source_mismatch')
+    for oid in sorted(own):
+        observation = observations[oid]
+        image_id = observation['imageId']
+        binding = document['geometryBindings'][image_id]
+        camera = cameras[binding['cameraId']]
+        if (camera['imageId'] != image_id or camera['coordinateFrameId'] != rep['coordinateFrameId']
+                or any(oid in other.get('observationRefs', []) for other in document['entities'] if other['id'] != entity['id'])):
+            raise PlatformError('model_quality_source_mismatch')
+        score = next(item for item in scored if item['observationId'] == oid)
+        view = {'observationId': oid, 'observationRevision': observation['revision'], 'imageId': image_id,
+            'coordinateFrameId': camera['coordinateFrameId'], 'maskComplete': observation.get('maskComplete') is True,
+            'sourceHashes': {'image': asset_hash(image_id), 'mask': asset_hash(observation.get('maskAssetId')),
+                'geometry': asset_hash(binding['geometrySolutionId']),
+                'camera': score['sourceHashes']['camera']}}
+        if score.get('status') != 'observed_consistent' or any(score.get(key) != value for key, value in view.items()):
+            raise PlatformError('model_quality_source_mismatch')
+        # Scoring uses the canonical camera; the scene camera retains original
+        # pixel intrinsics. Both remain pinned through the geometry asset.
+        view['sceneCameraSha256'] = digest(camera)
+        views.append(view)
+    return {'schemaVersion': 1, 'entityId': entity['id'], 'representationId': rep['id'],
+        'assetId': rep.get('assetId'), 'assetSha256': asset_hash(rep['assetId']) if rep.get('assetId') else None,
+        'primitiveSha256': digest(rep['primitive']) if rep.get('primitive') is not None else None,
+        'transformSnapshot': deepcopy(pose), 'qualityEvidenceSha256': digest(quality), 'views': views}
+
+
 def audit_correspondence(document):
     """Report every non-context entity without changing the coverage denominator.
 
@@ -166,6 +238,15 @@ def audit_correspondence(document):
                 errors.append({'code': 'part_source_model_inactive', 'representationId': active_id})
                 available = False
         current = available and not errors and not document_errors
+        quality = (active or {}).get('qualityEvidence') or {}
+        quality = quality if isinstance(quality, dict) else {}
+        quality_current = False
+        if current:
+            try:
+                quality_current = active.get('qualityBinding') == model_quality_binding(document, entity, active,
+                    transform=entity.get('currentModelTransform') or active['transform'])
+            except (PlatformError, ValueError, TypeError, KeyError):
+                pass
         if declared and not available:
             reasons.extend(sorted({error['code'] for error in errors}))
         references = [r for r in entity.get('representations', []) if r.get('kind') == 'observed_surface' and
@@ -184,7 +265,8 @@ def audit_correspondence(document):
             'activeModelRepresentationId': active_id, 'modelDeclared': declared, 'modelCurrent': current,
             'modelAvailable': available,
             'placementState': (active or {}).get('placementState'), 'shapeStatus': (active or {}).get('shapeStatus'),
-            'qualityStatus': ((active or {}).get('qualityEvidence') or {}).get('status', 'unreviewed'),
+            'qualityStatus': quality.get('status', 'unreviewed'),
+            'qualityCurrent': quality_current,
             'category': 'model' if available else 'reference' if reference_ids and not errors else 'unresolved',
             'referenceRepresentationIds': reference_ids, 'sourceErrors': errors, 'unmodeledReasons': reasons,
             'cad': {'status': 'unvalidated' if caches else 'absent', 'representationIds': caches,

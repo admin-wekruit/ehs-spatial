@@ -75,7 +75,10 @@ def quality_case(*, review_status="pass"):
         frames[image["id"]], masks[oid] = frame, mask
         records[image["id"]] = {"rgb": np.full((24, 36, 3), 60 + i * 20, np.uint8),
                                  "points": points, "inputToCanonical": np.eye(3), "originalShape": (24, 36)}
-        document["geometryBindings"][image["id"]] = {"geometrySolutionId": geometry["id"]}
+        camera_id = 'camera-' + letter
+        document['cameras'].append({'id': camera_id, 'imageId': image['id'], 'coordinateFrameId': 'native',
+            'width': 36, 'height': 24, 'K': k.tolist(), 'cameraToWorld': c2w.tolist()})
+        document["geometryBindings"][image["id"]] = {"geometrySolutionId": geometry["id"], 'cameraId': camera_id}
     entity = {"id": "entity", "label": "fixture panel", "observationRefs": list(observations),
               "representations": [], "activeModelRepresentationId": None, "currentModelTransform": None}
     document["entities"], document["observations"] = [entity], list(observations.values())
