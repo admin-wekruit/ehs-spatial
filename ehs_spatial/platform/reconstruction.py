@@ -657,6 +657,7 @@ def _refresh_plan_projections(document, stages, *, frame_ids=None, entity_ids=No
     from .blender_export import mesh_from_asset
     from .spatial import primitive_mesh
 
+    declared_assets = {asset['id']: asset for asset in document['assets']}
     for entity in document['entities']:
         if entity.get('sourceContext') or entity_ids is not None and entity['id'] not in entity_ids:
             continue
@@ -668,7 +669,8 @@ def _refresh_plan_projections(document, stages, *, frame_ids=None, entity_ids=No
                 rep.pop('planProjection', None)
                 continue
             asset = stages.repo.get_asset(rep['assetId']) if rep.get('assetId') else None
-            mesh = mesh_from_asset(_scene_asset_bytes(document, rep['assetId'], stages), {**asset, **asset.get('metadata', {})}) if asset else primitive_mesh(rep['primitive'])
+            mesh = mesh_from_asset(_scene_asset_bytes(document, rep['assetId'], stages),
+                                   {**asset, **asset.get('metadata', {}), **declared_assets[rep['assetId']]}) if asset else primitive_mesh(rep['primitive'])
             projection = _plan_projection(document, rep, mesh, asset['sha256'] if asset else None,
                                           entity.get('currentModelTransform') if modeled else None)
             if projection is None:

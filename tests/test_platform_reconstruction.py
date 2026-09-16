@@ -895,6 +895,31 @@ def test_plan_projection_keeps_vertical_edges_and_current_model_pose_without_con
     assert 'planProjection' not in rep
 
 
+def test_projection_refresh_uses_frozen_scene_mesh_layout_and_checks_hash(tmp_path):
+    from ehs_spatial.platform.reconstruction import _save_mesh, _include, _refresh_plan_projections
+    from ehs_spatial.platform.spatial import primitive_mesh
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    stages = _Stages(repo, blobs, repo.job, {})
+    asset = _save_mesh(stages, primitive_mesh({'type':'box', 'dimensions':[1.,2.,3.]}), {})
+    doc = deepcopy(repo.document)
+    _include(doc, asset)
+    # Partition assets retain their layout in the immutable scene declaration.
+    next(a for a in repo.assets if a['id'] == asset['id'])['metadata'] = {}
+    frame_id = str(uuid4())
+    doc['coordinateFrames'] = [{'id':frame_id, 'ground':{'normal':[0.,0.,1.]}}]
+    doc['reportEvidence'] = {'plan':{'coordinateFrameId':frame_id, 'nativeToFloor':np.eye(4).tolist()}}
+    pose = {'coordinateFrameId':frame_id, 'position':[0.,0.,0.], 'quaternion':[0.,0.,0.,1.], 'scale':[1.,1.,1.]}
+    rep = {'id':str(uuid4()), 'kind':'generated_mesh', 'assetId':asset['id'], 'coordinateFrameId':frame_id, 'transform':pose}
+    doc['entities'] = [{'id':str(uuid4()), 'representations':[rep], 'activeModelRepresentationId':rep['id'], 'currentModelTransform':pose}]
+    _refresh_plan_projections(doc, stages)
+    assert rep['planProjection']['polygons']
+    assert rep['planProjection']['assetSha256'] == asset['sha256']
+    next(a for a in doc['assets'] if a['id'] == asset['id'])['sha256'] = '0' * 64
+    with pytest.raises(PlatformError, match='scene_asset_hash_mismatch'):
+        _refresh_plan_projections(doc, stages)
+
+
 def test_scene_cad_references_preserve_sources_and_do_not_rebuild_geometry(tmp_path, monkeypatch):
     from ehs_spatial.platform import reconstruction
     blobs = LocalBlobStore(tmp_path)
