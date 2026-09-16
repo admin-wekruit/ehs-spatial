@@ -183,7 +183,7 @@ def test_discovery_persisted_even_if_geometry_fails_no_retry_on_unknown_outcome(
     calls = len(repo.calls)
     _,second = run_analysis(repo,blobs,repo.job,providers)
     assert len(repo.calls) == calls
-    assert any(e["code"] == "model_call_already_reserved" for e in second["errors"])
+    assert any(e["code"] == "provider_outcome_unknown" for e in second["errors"])
 
 
 def test_missing_budget_and_release_gates_prevent_any_live_call(tmp_path,monkeypatch):

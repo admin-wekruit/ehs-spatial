@@ -104,6 +104,53 @@ bundles outside Git. Exporting into an existing directory is refused.
 
 Paid invocation additionally requires an explicit nonnegative `PANOPTES_PAID_BUDGET_USD`. No value means paid calls cannot begin. The agent also requires `PANOPTES_AGENT_MODEL`, `PANOPTES_AGENT_CALL_BUDGET_USD`, and its server-side provider credential. Browsing, editing, selection, rule evaluation, export and cached-result viewing do not call a VLM.
 
+### Capture-to-model continuation
+
+`analyze_capture` now uses `run_capture_pipeline`. It retains discovery, geometry,
+masks and stable entity IDs, freezes explicit modeling targets and runs generation
+and per-view quality assessment. Only geometrically consistent candidates with a
+passing independent `model_review` are activated. A pass never confirms metric
+scale, hidden geometry or physical placement. Missing review configuration keeps
+the candidate and its exact `needs_information` reason.
+
+The optional `model_review` provider uses the existing Gemini adapter and charged
+call ledger. Its reviewed release evidence and pinned model are required just as
+for discovery. The reviewer receives source photos, masks and actual rendered
+candidate meshes; numerical silhouette agreement alone cannot accept a shape.
+
+For explicitly configured noncommercial RecGen research, set the server-only
+`PANOPTES_RESEARCH_PREPARATION` path to a JSON record containing `authority`,
+`budgetAtPreparation`, `runtimeManifest`, `callLimits`, `metricDefinitions`,
+`policyThresholds`, `split` and `purpose` (`maskErosionEnabled` is optional).
+Use actual audited records from research preparation; configuration is not proof
+that the model has passed quality gates. This setting is frozen into new jobs and
+cannot be supplied through public job configuration. Live database authority,
+source hashes and remaining budget are rechecked when the research child queues.
+
+The analysis revision commits before `reconstruct_scene` prepares its immutable
+input. `validate_model` continues to return research artifacts only. A subsequent
+attachment worker checks the exact protocol/cache graph, reviews the candidate,
+and commits a new scene revision before preparing the next entity. Each successor
+is inserted in the same transaction as its parent result. Duplicate execution
+does not create a second successor; branch changes, cancellation and unknown paid
+outcomes stop continuation. The result identifies `continuationJobId` or
+`continuationStopped` so a partial pipeline cannot look like completed modeling.
+
+The correspondence audit separates current source metadata, model availability,
+CAD validation and shape quality. At the end of the capture chain, the worker
+validates CAD using hash-verified mesh bytes and the same triangle projection
+function that creates its contours. It compares geometry, frame, pose, source
+observations and holes, keeping model and observed CAD coverage separate.
+Missing floor reference, stale sources, missing models and unreviewed shapes
+remain explicit incomplete results. A CAD cache's presence is not validation.
+Accepted shape review is bound to the saved mesh hash, canonical pose, entity,
+complete observation set and source camera/image/mask/geometry hashes. Changing
+any reviewed input invalidates `qualityCurrent`; a historical `accepted` status
+alone cannot complete a resumed job. Ground observations remain reference
+surfaces and do not trigger object generation.
+Synthetic transport tests verify the durable path without incurring inference
+cost; real model and new-photo acceptance remain separate release gates.
+
 Run `PYTHONPATH=. .venv/bin/python scripts/preflight_sam3d.py --runtime-manifest docs/platform/sam3d-runtime.example.json --provider-manifest docs/platform/sam3d-provider.example.json` to check the SAM3D configuration without loading a model or reserving work. The examples pin the official code and weight revisions inspected on 2026-09-15; unresolved values are null and all release checks remain unverified. Exit 1 lists every unmet configuration gate. This preflight never establishes runtime quality or approves evidence itself.
 
 The runtime image must be built and audited before recording its registry content digest in `PANOPTES_MODEL_RUNTIME_MANIFEST`. The official [setup](https://github.com/facebookresearch/sam-3d-objects/blob/f91db411c50efee93d8db7aeb323885650f6f722/doc/setup.md) requires Linux and an NVIDIA GPU with at least 32 GB VRAM. Code and checkpoints use the custom [SAM License](https://github.com/facebookresearch/sam-3d-objects/blob/f91db411c50efee93d8db7aeb323885650f6f722/LICENSE). A Modal `huggingface` secret alone does not prove access to the manually gated checkpoint repository. Record actual access and mesh-only dependency checks, official posed-mesh agreement, external-pointmap/no-internal-depth execution, and quality results against the same pins. Fill the existing provider evidence fields only with their resulting artifact hashes; then deploy `modal_apps/platform_models.py`. An explicitly authorized budget and per-call reservation remain required before inference. Historical RecGen services and their non-commercial checkpoints are not the SAM3D deployment.

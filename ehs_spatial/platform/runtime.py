@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import json
 from pathlib import Path
 
 from .config import PlatformConfig
@@ -19,6 +20,14 @@ def services(config=None):
     repository.blobs = blobs
     from .reconstruction import provider_snapshot_from_env
     repository.execution_config = {"providerManifest": provider_snapshot_from_env()}
+    preparation_path = os.environ.get('PANOPTES_RESEARCH_PREPARATION')
+    if preparation_path:
+        preparation = json.loads(Path(preparation_path).read_text())
+        allowed = {'authority','budgetAtPreparation','runtimeManifest','callLimits',
+                   'metricDefinitions','policyThresholds','split','purpose','maskErosionEnabled'}
+        if not isinstance(preparation,dict) or set(preparation)-allowed:
+            raise ValueError('Invalid server research preparation')
+        repository.execution_config['researchPreparation'] = preparation
     return repository, blobs
 
 

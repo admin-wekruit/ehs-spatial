@@ -94,7 +94,9 @@ def test_attach_consumes_cached_generation_and_activates_only_real_quality_accep
     document, result, continuation = run_reconstruction_pipeline(repo, blobs, attach, providers)
     assert repo.document == before and len(generated) == 1
     assert continuation is None and result['status'] == 'incomplete'
-    assert result['cadValidationStatus'] == 'requires_renderer_validation'
+    assert result['cadValidationStatus'] == 'incomplete'
+    assert result['cadPendingEntityIds'] == [entity['id']]
+    assert result['correspondence']['cadValidationMethod'] == 'byte-verified-indexed-mesh-projection-v1'
     target = next(e for e in document['entities'] if e['id'] == entity['id'])
     model = next(rep for rep in target['representations'] if rep['kind'] == 'generated_mesh')
     assert model['placementState'] == 'unconfirmed' and model['shapeStatus'] == 'research_only'

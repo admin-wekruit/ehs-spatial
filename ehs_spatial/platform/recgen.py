@@ -154,7 +154,7 @@ def source_grid_crop(source_rgb, source_mask, canonical_depth, canonical_K, sour
             'sourceCropXYXY':box, 'maskSource':'original_pixels'}}
 
 
-def build_payload(document, entity_id, observation_ids, anchor_observation_id, images, frames, records, masks, get_asset, *, seed=0):
+def build_payload(document, entity_id, observation_ids, anchor_observation_id, images, frames, records, masks, get_asset, *, seed=0, mask_erosion_enabled=None, source_crops=None):
     """Freeze only explicitly reviewed same-entity observations, with no implicit views."""
     entities = {e['id']:e for e in document['entities']}
     entity = entities.get(entity_id)
@@ -167,6 +167,8 @@ def build_payload(document, entity_id, observation_ids, anchor_observation_id, i
         raise PlatformError('recgen_observation_selection_invalid', 422)
     image_lookup = {image['id']:image for image in images}
     ordered = [anchor_observation_id] + [oid for oid in observation_ids if oid != anchor_observation_id]
+    if source_crops is not None and (not isinstance(source_crops, dict) or set(source_crops) - set(ordered)):
+        raise PlatformError('recgen_observation_selection_invalid', 422)
     views = []
     for oid in ordered:
         observation = observations[oid]
@@ -187,7 +189,14 @@ def build_payload(document, entity_id, observation_ids, anchor_observation_id, i
             'coordinateFrameId':frame.coordinate_frame_id, 'rgb':records[image_id]['rgb'],
             'depth':np.where(frame.support(), depth, 0).astype(np.float32), 'mask':masks[oid],
             'K':frame.K, 'cameraToWorld':frame.camera_to_world})
+        if source_crops is not None and oid in source_crops:
+            crop = source_crops[oid]
+            if not isinstance(crop, dict) or set(crop) != {'rgb', 'depth', 'mask', 'K', 'pixelMapping'}:
+                raise PlatformError('recgen_crop_input_invalid', 422)
+            views[-1].update(crop)
     payload = {'entityId':entity_id, 'anchorObservationId':anchor_observation_id, 'views':views, 'seed':seed}
+    if mask_erosion_enabled is not None:
+        payload['maskErosionEnabled'] = mask_erosion_enabled
     RecGenRequest.from_payload(payload)
     return payload
 

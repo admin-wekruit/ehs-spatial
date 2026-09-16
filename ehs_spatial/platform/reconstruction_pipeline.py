@@ -2,7 +2,7 @@
 from copy import deepcopy
 
 from .contracts import PlatformError, digest
-from .correspondence import audit_correspondence
+from .correspondence import audit_correspondence, validate_cad_correspondence
 from .recgen import RECGEN_PINS, validate_frozen_source
 from .reconstruction import (
     UNKNOWN_OUTCOME_CODES, _Stages, _assess_generation, _capture, _establish_cad_references,
@@ -18,16 +18,21 @@ def _next(entity_ids, processed):
             'entityIds': entity_ids, 'processed': processed}, 'config': {}} if entity_ids else None
 
 
-def _result(phase, processed, remaining, *, stages=(), document=None, **extra):
+def _result(phase, processed, remaining, *, stages=(), document=None, correspondence=None, **extra):
     result = {'status': 'incomplete' if remaining or any(row['status'] not in ('accepted', 'retained') for row in processed) else 'succeeded',
               'pipelineVersion': 'revision-research-attachment-v1', 'phase': phase,
               'processed': processed, 'remainingEntityIds': remaining, 'stages': list(stages),
               'newModelCalls': sum(row.get('newModelCalls', 0) for row in stages),
               'placementConfirmedEntityIds': [], 'scope': 'research_only', **extra}
     if document is not None:
-        result['correspondence'] = audit_correspondence(document)
-        if result['correspondence']['rows']:
-            result.update(status='incomplete', cadValidationStatus='requires_renderer_validation')
+        audit = result['correspondence'] = correspondence or audit_correspondence(document)
+        cad_pending = [row['entityId'] for row in audit['rows'] if row['cad']['status'] != 'validated']
+        quality_pending = [row['entityId'] for row in audit['rows']
+                           if row['category'] == 'model' and not row.get('qualityCurrent')]
+        result.update(cadValidationStatus='incomplete' if cad_pending else 'validated',
+                      cadPendingEntityIds=cad_pending, qualityPendingEntityIds=quality_pending)
+        if cad_pending or quality_pending or audit['documentErrors'] or audit['summary']['sourceErrorCount'] or audit['summary']['unresolvedCount']:
+            result['status'] = 'incomplete'
     return result
 
 
@@ -123,7 +128,8 @@ def run_reconstruction_pipeline(repository, blobs, job, providers=None):
                             'config': {'researchProtocolSha256': digest(prepared['validation']['protocol']), 'pipeline': pipeline}}
             return None, _result(phase, processed, remaining, validationAssetId=asset['id'],
                                  validationSha256=asset['sha256']), continuation
-        return None, _result(phase, processed, [], document=source), None
+        audit = validate_cad_correspondence(source, _Stages(repository, blobs, job, {}))
+        return None, _result(phase, processed, [], document=source, correspondence=audit), None
 
     entity_id = inputs.get('entityId')
     research = repository.get_job(inputs['researchJobId'])
@@ -177,6 +183,7 @@ def run_reconstruction_pipeline(repository, blobs, job, providers=None):
         unknown |= code in UNKNOWN_OUTCOME_CODES
     remaining = pending[1:]
     result = _result(phase, processed, remaining, stages=stages.records, document=document,
+                     correspondence=validate_cad_correspondence(document, stages) if not remaining else None,
                      researchJobId=research['id'], candidateRef=_ref(evidence))
     if unknown:
         result.update(status='incomplete', stoppedReason='provider_outcome_unknown')

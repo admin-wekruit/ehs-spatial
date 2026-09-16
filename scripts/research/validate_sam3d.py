@@ -8,7 +8,6 @@ Configuration and budget come from the existing platform runtime environment.
 ordinary worker. Neither command invokes a model or modifies a scene head.
 """
 import argparse
-from decimal import Decimal
 import json
 import os
 from pathlib import Path
@@ -19,31 +18,7 @@ from ehs_spatial.platform.reconstruction import (
     _Stages, _capture, _load_geometry, _load_masks, _packed,
     provider_snapshot_from_env, providers_from_manifest, validate_research_manifest,
 )
-
-
-def admin_context(repository, connection, project_id, branch_id, base_id):
-    authority = connection.execute("""SELECT current_user AS role,
-        has_table_privilege(current_user,'jobs','INSERT') AND
-        has_table_privilege(current_user,'assets','INSERT') AS permitted"""
-    ).fetchone()
-    if not authority["permitted"]:
-        raise PlatformError("admin_job_required", 403)
-    repository._branch(connection, project_id, branch_id)
-    revision = repository._revision(connection, project_id, base_id)
-    if str(revision["branch_id"]) != branch_id:
-        raise PlatformError("research_baseline_branch_mismatch", 409)
-    return {"source": "database_admin", "databaseRole": authority["role"]}, revision
-
-
-def check_budget(repository, connection, protocol):
-    budget = repository.paid_budget
-    if budget is None or budget <= 0:
-        raise PlatformError("paid_budget_not_configured", 409)
-    total = Decimal(str(protocol["callLimits"]["maxTotalCostUsd"]))
-    spent = connection.execute("SELECT COALESCE(sum(COALESCE(actual_cost,estimated_cost)),0) AS cost FROM model_calls").fetchone()["cost"]
-    if total > budget or spent + total > budget:
-        raise PlatformError("paid_budget_exceeded", 409)
-    return {"configuredBudgetUsd": str(budget), "spentOrReservedUsd": str(spent)}
+from ehs_spatial.platform.research_authority import admin_context, check_budget, validate_prepared
 
 
 def prepare(protocol, repository, blobs, provider_manifest, runtime_manifest):
@@ -110,6 +85,7 @@ def prepare(protocol, repository, blobs, provider_manifest, runtime_manifest):
 def submit(prepared, repository, blobs):
     from psycopg.types.json import Jsonb
     from ehs_spatial.platform.postgres import _wire
+    repository.blobs = blobs
     frozen = prepared["validation"]
     if digest(frozen) != prepared["sha256"] or frozen.get("schemaVersion") != 1 or frozen.get("authority", {}).get("source") != "database_admin":
         raise PlatformError("research_input_hash_mismatch", 409)
@@ -134,13 +110,7 @@ def submit(prepared, repository, blobs):
             if previous["request_sha256"].strip() != prepared["sha256"]:
                 raise PlatformError("research_idempotency_mismatch", 409)
             return _wire(previous)
-        check_budget(repository, connection, protocol)
-        scene_assets = {a["id"]: a for a in source["document"]["assets"]}
-        for ref in protocol["inputAssetHashes"]:
-            asset = repository._one(connection, "SELECT * FROM assets WHERE id=%s", (ref["assetId"],), code="asset_not_found")
-            if ref["assetId"] not in scene_assets or asset["sha256"].strip() != ref["sha256"] or scene_assets[ref["assetId"]]["sha256"] != ref["sha256"]:
-                raise PlatformError("research_input_hash_mismatch", 409)
-            blobs.get(asset["storage_key"], ref["sha256"], asset["size_bytes"])
+        authority = validate_prepared(repository, connection, frozen, prepared['sha256'])
         metadata = blobs.put(canonical(frozen), "application/json")
         metadata.update(id=str(uuid5(NAMESPACE_URL, model_namespace + "-validation-input:" + pid + ":" + prepared["sha256"])),
                         metadata={"kind": model_namespace + "_validation_input", "scope": "research_only"})
