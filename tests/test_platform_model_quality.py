@@ -236,3 +236,71 @@ def test_refinement_reassesses_native_resolution_after_sampled_search():
     assert result["accepted"] and result["fullResolutionReassessed"]
     assert result["after"]["perView"][0]["targetPixels"] == 27300
     assert result["after"]["perView"][0]["depthComparisonPixels"] > 26000
+
+
+def partitioned_family():
+    mesh, view = scene(rotated=True)
+    # Separate triangles are an exact assembly; neither residual alone covers it.
+    offset = np.array([.2, -.3, .4])
+    pose = np.eye(4)
+    pose[:3, 3] = offset
+    return mesh, view, [
+        {'entityId':'parent', 'parentEntityId':None, 'coordinateFrameId':'native',
+         'mesh':MeshData(mesh.vertices, mesh.faces[:1]), 'objectToNative':np.eye(4)},
+        {'entityId':'child', 'parentEntityId':'parent', 'coordinateFrameId':'native',
+         'mesh':MeshData(mesh.vertices-offset, mesh.faces[1:]), 'objectToNative':pose}]
+
+
+def test_family_scores_declared_union_on_parent_evidence_without_promoting_members():
+    from ehs_spatial.platform.model_quality import assess_model, assess_model_family
+    _, view, members = partitioned_family()
+    originals = [member['mesh'].vertices.copy() for member in members]
+    separate = [assess_model(m['mesh'],m['objectToNative'],[view]) for m in members]
+    assert all(r['status'] == 'observed_inconsistent' for r in separate)
+    result = assess_model_family('parent', members, [view])
+    assert result['assessmentScope'] == 'parent_family'
+    assert result['parentEntityId'] == 'parent'
+    assert result['status'] == 'observed_consistent'
+    assert result['perView'][0]['coverage'] == 1
+    assert result['semanticShapeStatus'] == result['physicalCalibrationStatus'] == 'not_assessed'
+    assert {m['entityId'] for m in result['familyMembers']} == {'parent','child'}
+    for member, original in zip(members, originals, strict=True):
+        assert np.array_equal(member['mesh'].vertices, original)
+    # Family evidence does not replace the member's separately owned mask.
+    assert assess_model(members[0]['mesh'],members[0]['objectToNative'],[view]) == separate[0]
+    changed = deepcopy(members)
+    changed[1]['entityId'] = 'another-child'
+    rebound = assess_model_family('parent',changed,[view])
+    assert rebound['perView'] == result['perView']
+    assert rebound['evidenceSha256'] != result['evidenceSha256']
+    changed[1]['objectToNative'][0,3] += .5
+    moved = assess_model_family('parent',changed,[view])
+    assert moved['evidenceSha256'] != rebound['evidenceSha256']
+    assert moved['perView'][0]['coverage'] < 1
+
+
+@pytest.mark.parametrize('corruption', ['unrelated','missing_parent','cycle','duplicate','frame','view_frame'])
+def test_family_rejects_unrelated_mesh_or_unregistered_frame(corruption):
+    from ehs_spatial.platform.model_quality import assess_model_family
+    _, view, members = partitioned_family()
+    if corruption == 'unrelated': members[1]['parentEntityId'] = 'someone-else'
+    elif corruption == 'missing_parent': members.pop(0)
+    elif corruption == 'cycle': members[0]['parentEntityId'] = 'child'
+    elif corruption == 'duplicate': members[1]['entityId'] = 'parent'
+    elif corruption == 'frame': members[1]['coordinateFrameId'] = 'unregistered'
+    else: view['coordinateFrameId'] = 'unregistered'
+    with pytest.raises(PlatformError):
+        assess_model_family('parent',members,[view])
+
+
+def test_family_keeps_all_parent_views_and_does_not_hide_bad_depth():
+    from ehs_spatial.platform.model_quality import assess_model_family
+    _, view, members = partitioned_family()
+    bad = deepcopy(view)
+    bad['observationId'] = 'another-observation'
+    bad['imageId'] = 'another-image'
+    bad['depth'][bad['mask']] = 2.
+    result = assess_model_family('parent',members,[view,bad])
+    assert result['status'] == 'observed_inconsistent'
+    assert result['perView'][0]['status'] == 'observed_consistent'
+    assert result['perView'][1]['relativeDepthP50'] > .9

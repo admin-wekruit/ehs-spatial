@@ -214,6 +214,54 @@ def assess_model(mesh, object_to_native, views):
     return _report(_ray_scene(parts), matrix, prepared, mesh_hash)
 
 
+def assess_model_family(parent_entity_id, members, views):
+    """Score an explicit mesh family against the parent's whole-object evidence.
+
+    Each member supplies entityId, parentEntityId, coordinateFrameId, mesh and
+    objectToNative. Callers supply the current declared family, including its
+    residual parent. This report never substitutes for members' own-view checks.
+    """
+    if (not isinstance(parent_entity_id, str) or not parent_entity_id or
+            not isinstance(members, (list, tuple)) or not members or
+            any(not isinstance(m, Mapping) or not isinstance(m.get('entityId'), str) or
+                not m['entityId'] or not isinstance(m.get('coordinateFrameId'), str) or
+                not m['coordinateFrameId'] or
+                m.get('parentEntityId') is not None and not isinstance(m['parentEntityId'], str)
+                for m in members)):
+        raise PlatformError('invalid_quality_family')
+    lookup = {m['entityId']: m for m in members}
+    if len(lookup) != len(members) or parent_entity_id not in lookup:
+        raise PlatformError('invalid_quality_family')
+    if lookup[parent_entity_id].get('parentEntityId') in lookup:
+        raise PlatformError('invalid_quality_family')
+    for identity in lookup:
+        seen = set()
+        while identity != parent_entity_id:
+            if identity not in lookup or identity in seen:
+                raise PlatformError('invalid_quality_family')
+            seen.add(identity)
+            identity = lookup[identity].get('parentEntityId')
+    frame = lookup[parent_entity_id]['coordinateFrameId']
+    if (any(m['coordinateFrameId'] != frame for m in members) or
+            isinstance(views, (list, tuple)) and any(isinstance(v, Mapping) and
+                v.get('coordinateFrameId') not in (None, frame) for v in views)):
+        raise PlatformError('quality_coordinate_frame_mismatch')
+    native_parts, bindings = [], []
+    for identity in sorted(lookup):
+        member = lookup[identity]
+        parts, matrix, _, mesh_hash = _prepare(member.get('mesh'), member.get('objectToNative'), [])
+        native_parts.extend(MeshData(transform_points(p.vertices, matrix), p.faces) for p in parts)
+        bindings.append({'entityId':identity, 'parentEntityId':member.get('parentEntityId'),
+                         'coordinateFrameId':frame, 'meshSha256':mesh_hash,
+                         'poseSha256':digest(matrix.tolist())})
+    combined = MeshData(native_parts[0].vertices, native_parts[0].faces, primitives=tuple(native_parts))
+    report = assess_model(combined, np.eye(4), views)
+    scope = {'assemblyVersion':'observed-model-family-v1', 'assessmentScope':'parent_family',
+             'parentEntityId':parent_entity_id, 'familyMembers':bindings}
+    return {**report, **scope,
+            'evidenceSha256':digest({'assessment':report['evidenceSha256'], **scope})}
+
+
 def render_model_views(mesh, object_to_native, views):
     """Native-camera RGB geometry previews, white background, no source-photo pixels.
 
