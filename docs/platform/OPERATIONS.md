@@ -104,6 +104,119 @@ bundles outside Git. Exporting into an existing directory is refused.
 
 Paid invocation additionally requires an explicit nonnegative `PANOPTES_PAID_BUDGET_USD`. No value means paid calls cannot begin. The agent also requires `PANOPTES_AGENT_MODEL`, `PANOPTES_AGENT_CALL_BUDGET_USD`, and its server-side provider credential. Browsing, editing, selection, rule evaluation, export and cached-result viewing do not call a VLM.
 
+The paid budget is a cumulative ceiling against the database's `model_calls`
+ledger, including estimates reserved for calls whose actual cost is unknown.
+It is not a fresh allowance for each job or process restart. Set the ceiling from
+the authorization for the current task, allowing separately for deployment and
+other costs outside that ledger; there is no universal dollar default.
+The running API and its workers must use the same authorized ceiling and ledger.
+The local executor's subprocess inherits the **API process environment**: setting
+variables only in a separate preparation/submission shell does not configure it.
+Set them before starting the API; restart it after an environment change. Hosted
+workers need the corresponding server configuration too.
+
+RecGen dispatch also requires `PANOPTES_RECGEN_JOURNAL`, an absolute, durable,
+writable directory inherited by the worker. Preserve its existing dispatch
+records across restarts and reconciliation; a new directory is not a retry of an
+unknown call. The current journal supports one research worker host. Multiple
+hosts require moving the dispatch claim into the repository transaction before
+enabling that topology. Credentials and these runtime settings stay on the
+server, outside frozen report inputs.
+
+### Prepare and submit a first geometry or depth validation
+
+The existing `scripts.research.validate_sam3d` command also accepts explicit
+`geometry` and `depth` stages. An owned capture with uploaded photos is sufficient:
+its scene may have no entities, masks or meshes. Geometry selects one to four
+captured image IDs; depth selects exactly one. Preparation reads the immutable
+baseline revision and owned asset bytes, then freezes the selected photos,
+pixel mapping, hashes, provider and runtime configuration. It accepts no caller
+photo paths. Omitting `imageIds` selects all captured photos, subject to the same
+stage limits. Generation retains its entity, mask and geometry requirements.
+
+Set `PANOPTES_PROVIDER_MANIFEST` and `PANOPTES_MODEL_RUNTIME_MANIFEST` to reviewed,
+secret-free JSON files. The selected provider must be paid, have a positive
+`estimatedCostUsd` within the call limit, and have license evidence bound to the
+same pins. `purpose: "runtime_validation"` permits the first measured run with
+runtime and quality evidence still `unverified`; it does not manufacture those
+receipts. Quality validation additionally requires runtime evidence, and product
+execution requires all release gates. Document the scope and dependency limits
+of actual license review in its artifact.
+
+Example protocol template (replace the illustrative UUIDs with an owned capture's
+project, branch, revision and image IDs; the $1 limit is illustrative and must be
+separately authorized):
+
+```json
+{
+  "id": "geometry-runtime-validation-001",
+  "stage": "geometry",
+  "purpose": "runtime_validation",
+  "projectId": "00000000-0000-4000-8000-000000000001",
+  "branchId": "00000000-0000-4000-8000-000000000002",
+  "baselineRevision": "00000000-0000-4000-8000-000000000003",
+  "imageIds": ["00000000-0000-4000-8000-000000000004"],
+  "metricDefinitions": {"sourceGrid": "Returned image IDs and raster mappings correspond to every frozen input photo."},
+  "policyThresholds": {},
+  "split": "runtime-validation",
+  "callLimits": {"maxCalls": 1, "maxCostPerCallUsd": 1, "maxTotalCostUsd": 1}
+}
+```
+
+An immutable Modal image can supply the geometry/depth runtime without rebuilding
+an already verified image. For example, the following runtime template uses
+public Apache MapAnything pins; replace the illustrative image ID and adapter
+hash with the audited image and `sha256` of `modal_apps/platform_models.py` being
+deployed. Its installed `mapanything` distribution must record the
+exact `codeRevision` in `direct_url.json`, not just a matching package version:
+
+```json
+{
+  "geometry": {
+    "pins": {
+      "model": "facebook/map-anything-apache",
+      "modelRevision": "00f9c245bbcb60522d1ed7f9e9d88462c6e3f38a",
+      "codeRevision": "3d10cf7a3016fc0f9bb13a071ee66c47b10be0d9",
+      "adapter": "capture-v1-per-image-cache"
+    },
+    "modalImageId": "im-AAAAAAAAAAAAAAAAAAAAAA",
+    "distribution": "mapanything",
+    "adapterSourceSha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}
+```
+
+Use exactly one of `modalImageId` (`im-` followed by 22 alphanumeric characters)
+or `runtimeImage` (a registry reference ending in `@sha256:` plus 64 hex digits).
+The geometry provider route is `panoptes-platform-models` / `MapAnythingApache` /
+`run`; depth uses `MoGe3` / `run`, distribution `moge`, model
+`Ruicheng/moge-3-vitl` and its reviewed immutable code/weight revisions. Provider
+pins must equal runtime pins. Deploy `modal_apps/platform_models.py` with that
+runtime configuration. Each research invocation binds its frozen runtime hash to
+the deployed configuration and checks the returned hash and pins. Geometry/depth
+also require the exact 64-hex `adapterSourceSha256`; workers compare it with their
+actual adapter file bytes before model loading and inference. Recompute that
+hash and prepare a new validation envelope after changing adapter code.
+
+```sh
+.venv/bin/python -m scripts.research.validate_sam3d --prepare \
+  --protocol .platform/research/protocol.json \
+  --output .platform/research/prepared.json
+.venv/bin/python -m scripts.research.validate_sam3d \
+  --submit .platform/research/prepared.json
+```
+
+`--prepare` reads the configured database and blobs and writes a new local file;
+it performs no provider calls, reservations or scene writes. `--submit` rechecks
+database authority, source bytes and cumulative budget, then registers the frozen
+input and enqueues one durable `validate_model` job. Submission itself does not
+invoke a model; the normal dispatcher may start the worker immediately. The
+worker reserves the call in the shared ledger before invocation. Repeating an
+identical submission reuses the job; changed inputs under its ID are rejected.
+Results are research artifacts with `scope: "research_only"`,
+`productReleaseStatus: "not_changed"` and no scene revision. A successful stage
+does not establish complete fresh-photo reconstruction or approve product release.
+
 ### Capture-to-model continuation
 
 `analyze_capture` now uses `run_capture_pipeline`. It retains discovery, geometry,
@@ -153,7 +266,7 @@ cost; real model and new-photo acceptance remain separate release gates.
 
 Run `PYTHONPATH=. .venv/bin/python scripts/preflight_sam3d.py --runtime-manifest docs/platform/sam3d-runtime.example.json --provider-manifest docs/platform/sam3d-provider.example.json` to check the SAM3D configuration without loading a model or reserving work. The examples pin the official code and weight revisions inspected on 2026-09-15; unresolved values are null and all release checks remain unverified. Exit 1 lists every unmet configuration gate. This preflight never establishes runtime quality or approves evidence itself.
 
-The runtime image must be built and audited before recording its registry content digest in `PANOPTES_MODEL_RUNTIME_MANIFEST`. The official [setup](https://github.com/facebookresearch/sam-3d-objects/blob/f91db411c50efee93d8db7aeb323885650f6f722/doc/setup.md) requires Linux and an NVIDIA GPU with at least 32 GB VRAM. Code and checkpoints use the custom [SAM License](https://github.com/facebookresearch/sam-3d-objects/blob/f91db411c50efee93d8db7aeb323885650f6f722/LICENSE). A Modal `huggingface` secret alone does not prove access to the manually gated checkpoint repository. Record actual access and mesh-only dependency checks, official posed-mesh agreement, external-pointmap/no-internal-depth execution, and quality results against the same pins. Fill the existing provider evidence fields only with their resulting artifact hashes; then deploy `modal_apps/platform_models.py`. An explicitly authorized budget and per-call reservation remain required before inference. Historical RecGen services and their non-commercial checkpoints are not the SAM3D deployment.
+The SAM3D runtime image must be built and audited before recording its registry content digest in `PANOPTES_MODEL_RUNTIME_MANIFEST`. The official [setup](https://github.com/facebookresearch/sam-3d-objects/blob/f91db411c50efee93d8db7aeb323885650f6f722/doc/setup.md) requires Linux and an NVIDIA GPU with at least 32 GB VRAM. Code and checkpoints use the custom [SAM License](https://github.com/facebookresearch/sam-3d-objects/blob/f91db411c50efee93d8db7aeb323885650f6f722/LICENSE). A Modal `huggingface` secret alone does not prove access to the manually gated checkpoint repository. Record actual access and mesh-only dependency checks, official posed-mesh agreement, external-pointmap/no-internal-depth execution, and quality results against the same pins. Fill the existing provider evidence fields only with their resulting artifact hashes; then deploy `modal_apps/platform_models.py`. An explicitly authorized budget and per-call reservation remain required before inference. Historical RecGen services and their non-commercial checkpoints are not the SAM3D deployment.
 
 Build the image with the official VCS package at the example's code revision, then run `python scripts/prepare_sam3d_mesh_source.py` inside that image before sealing it. The script resolves the installed distribution, verifies both original source hashes, and applies `modal_apps/sam3d_mesh_only.patch` once. This preserves the official mesh decoder and vertex-color/axis conversion while avoiding the unconditional Gaussian-output lookup; optional Gaussian renderer loading moves to the function that uses it. The runtime overrides depth and both Gaussian decoder configurations before Hydra construction. Its existing mesh-only flags disable texture baking and layout refinement. This does not remove or approve all dependencies in the image.
 
