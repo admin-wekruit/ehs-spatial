@@ -862,6 +862,11 @@ function Workbench({
         },
       });
       setStatus("queued");
+      const [route, query = ""] = location.hash.split("?");
+      const params = new URLSearchParams(query);
+      params.delete("revision");
+      params.set("branch", detail.branch.id);
+      navigate(route + "?" + params);
     } catch (e) {
       setError(e);
     }
@@ -1605,6 +1610,7 @@ function Workspace({
                 ? () => onJob("generate_object", selected ? [selected.id] : [])
                 : undefined
             }
+            onReview={canWrite && onJob && selected ? () => onJob("review_models", [selected.id]) : undefined}
           />
           {selected && <IdentityReview revision={revision} entityId={selected.id} canWrite={canWrite&&!busy} onSelect={select} onApply={async(ops,context)=>onCommit(ops,context)} onSuggest={()=>{}} onAgent={ids=>{setIdentityEntityIds(ids);setPanel("agent");}}/>}</>
         ) : (
@@ -1632,6 +1638,7 @@ function EntityInspector({
   onCommit,
   busy,
   onGenerate,
+  onReview,
   canConfirmPlacement = false,
 }: {
   entity: Entity | null;
@@ -1642,6 +1649,7 @@ function EntityInspector({
   ) => unknown;
   busy: boolean;
   onGenerate?: () => unknown;
+  onReview?: () => unknown;
   canConfirmPlacement?: boolean;
 }) {
   const { t } = useI18n(),
@@ -1671,7 +1679,7 @@ function EntityInspector({
     <div className="entity-inspector">
       <p className="eyebrow">{t("selection")}</p>
       <h2>{entity.label || entity.id}</h2>
-      <ModelEvidence entity={entity} onCommit={onCommit} disabled={busy} />
+      <ModelEvidence entity={entity} onCommit={onCommit} onReview={onReview} disabled={busy} />
       {referenceSurface && <p className="evidence-note">{t("sceneReferenceSurface")}</p>}
       <Badge value={evidenceStatus.photoKey} />
       {evidenceStatus.identityKey && <p className="evidence-note">{t(evidenceStatus.identityKey)}</p>}

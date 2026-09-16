@@ -131,6 +131,7 @@ function contextURL(
 ) {
   const [route, query = ""] = hash.split("?");
   const params = new URLSearchParams(query);
+  if (params.has("revision") && context.selection.revisionId) params.set("revision", context.selection.revisionId);
   for (const [key, value] of Object.entries({
     object: context.selection.entityId,
     observation: context.selection.observationId,
@@ -188,7 +189,8 @@ export function WorkcellReport({
   const [evaluationRecords, setEvaluationRecords] = useState<{ revisionId: string; evaluations: Evaluation[] | null }>();
   const saving = useRef(false),
     alive = useRef(true),
-    appliedHead = useRef<string | undefined>(undefined);
+    appliedHead = useRef<string | undefined>(undefined),
+    startedReviewJobs = useRef(new Set<string>());
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -205,6 +207,7 @@ export function WorkcellReport({
     setHistory([]);
     setNewestPublication(undefined);
     setEvents([]);
+    startedReviewJobs.current.clear();
     setReviewMode(false);
     setAgentOpen(false);
     setBox(null);
@@ -338,10 +341,11 @@ export function WorkcellReport({
         );
         if (!active) return;
         setJobs(response.items);
-        // A completed task can advance a live report, never a publication or explicitly pinned revision.
-        if (!publicationId && !requestedRevision && !saving.current) {
+        // A pinned view follows only a review explicitly started here; publications remain immutable.
+        if (!publicationId && !saving.current) {
           const updated = response.items.some(
             (j) =>
+              (!requestedRevision || startedReviewJobs.current.has(j.id)) &&
               j.headAdvanced &&
               j.resultRevisionId &&
               j.resultRevisionId !== appliedHead.current &&
@@ -400,6 +404,7 @@ export function WorkcellReport({
     if (next !== location.hash) window.history.replaceState(null, "", next);
   }, [
     detail?.revision.id,
+    selection.revisionId,
     selection.entityId,
     selection.observationId,
     imageId,
@@ -526,6 +531,28 @@ export function WorkcellReport({
       return saved;
     } finally {
       saving.current = false;
+      if (alive.current) setBusy(false);
+    }
+  }
+  async function reviewModel(entityId: string) {
+    if (!detail || !canWrite || saving.current) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      const task = await request<Job>(`/api/projects/${detail.project.id}/jobs`, {
+        method: "POST", projectId: detail.project.id,
+        body: { requestId: id(), branchId: detail.branch.id, baseRevisionId: detail.revision.id,
+          kind: "review_models", inputs: { entityIds: [entityId] }, config: {} },
+      });
+      if (alive.current) {
+        startedReviewJobs.current.add(task.id);
+        setJobs(previous => [task, ...previous]);
+        setNotice("queued");
+        setGeneration(value => value + 1);
+      }
+    } catch (failure) {
+      if (alive.current) setError(failure);
+    } finally {
       if (alive.current) setBusy(false);
     }
   }
@@ -783,7 +810,9 @@ export function WorkcellReport({
           inspector={<>
             {!(reviewMode && agentOpen) && <div className="report-selection-details">
               {entity ? <>
-                <ObjectFacts entity={entity} document={doc} /><ModelEvidence entity={entity} onCommit={canWrite ? operations => apply(operations) : undefined} disabled={busy} />
+                <ObjectFacts entity={entity} document={doc} /><ModelEvidence entity={entity} onCommit={canWrite ? operations => apply(operations) : undefined}
+                  onReview={canWrite ? () => reviewModel(entity.id) : undefined}
+                  disabled={busy || jobs.some(task => task.kind === "review_models" && ["pending_dispatch", "queued", "running"].includes(task.status) && Array.isArray(task.inputs.entityIds) && task.inputs.entityIds.includes(entity.id))} />
                 <IdentityReview revision={revision} entityId={entity.id} canWrite={canWrite && !busy} publicationId={readOnly ? publication?.id : undefined} onSelect={select} onApply={apply}
                   onSuggest={suggestion => { select(suggestion.entityIds[0]); setIdentitySuggestion(suggestion); setReviewMode(true); setAgentOpen(true); }}
                   onAgent={entityIds => { setIdentityEntityIds(entityIds); setReviewMode(true); setAgentOpen(true); }} />

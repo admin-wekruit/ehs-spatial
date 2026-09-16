@@ -7,6 +7,19 @@ export const measurementLabelKeys: Record<string, string> = {
 };
 
 export const identityMessages: Record<string, [string, string]> = {
+  review_models: ['重新检查模型', 'Review current model'],
+  modelReviewTitle: ['上次模型检查', 'Last model review'],
+  modelReviewAccepted: ['检查通过', 'Passed review'],
+  modelReviewRejected: ['有不一致', 'Mismatch found'],
+  modelReviewNeedsInformation: ['证据不足', 'More evidence needed'],
+  modelReviewNotRun: ['尚未检查', 'Not reviewed'],
+  modelReviewGeometry: ['照片与几何', 'Photo and geometry'],
+  modelReviewGeometryConsistent: ['观测一致', 'Observed consistency'],
+  modelReviewGeometryInconsistent: ['观测不一致', 'Observed mismatch'],
+  modelReviewShape: ['外形复核', 'Shape review'],
+  modelReviewScope: ['结果对应检查时保存的照片、模型和姿态；修改后需重新检查，不代表现场尺寸已实测。', 'Results describe the photographs, model and pose saved at review time. Review again after changes; this does not establish measured site dimensions.'],
+  modelReviewFamilyScope: ['检查范围：此对象与其全部子部件组成的整体。', 'Review scope: this object together with all its child components.'],
+  modelReviewNotConfigured: ['外形复核服务尚未配置。', 'The shape-review service is not configured.'],
   observed_depth_surface: ['照片观测生成的表面模型', 'Photo-derived surface mesh'],
   observed_reference_surface: ['观测参考面（非完整实体模型）', 'Observed reference surface (not a complete object model)'],
   inferred_planar_surface_from_observed_depth: ['推定平面模型', 'Inferred planar model'],

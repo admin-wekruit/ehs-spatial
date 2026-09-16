@@ -100,6 +100,22 @@ bundles outside Git. Exporting into an existing directory is refused.
 
 ## Models and budget
 
+An owned live workcell or model workbench can run **Review models** for the
+selected current model. This submits the durable `review_models` job with an
+explicit `entityIds` list and fixed `baseRevisionId`; it does not regenerate or
+move the model. The capture pipeline also reviews retained models through this
+same worker path. Parent objects are checked together with their child parts,
+and that scope is shown in the result.
+
+The result records geometry checks against the object's own saved photographs,
+optional configured shape review, and CAD correspondence. Missing evidence or a
+missing shape-review provider produces an incomplete result, never an approval.
+Only new review evidence and derived projection metadata are written to a new
+scene revision. A model/pose/source change invalidates its previous approval.
+Reports display the last review with its saved scope; frozen publications never
+follow a live job. The live page follows a review it started and retains the
+selected object when the job advances the branch.
+
 `PANOPTES_PROVIDER_MANIFEST` is a local JSON deployment manifest. Its reviewed, secret-free fields are frozen into each job at enqueue time. Workers read that snapshot; a changed deployment does not change an already accepted job. Each stage has provider pins and license/runtime/quality evidence. Missing or failed gates stop that stage. There is no automatic alternate model route.
 
 Paid invocation additionally requires an explicit nonnegative `PANOPTES_PAID_BUDGET_USD`. No value means paid calls cannot begin. The agent also requires `PANOPTES_AGENT_MODEL`, `PANOPTES_AGENT_CALL_BUDGET_USD`, and its server-side provider credential. Browsing, editing, selection, rule evaluation, export and cached-result viewing do not call a VLM.
