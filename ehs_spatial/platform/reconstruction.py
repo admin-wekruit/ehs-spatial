@@ -1370,11 +1370,47 @@ def _load_masks(document, canonical, stages):
         evidence = observation.get('maskEvidence') or {}
         try:
             if evidence.get('canonicalMaskAssetId'):
-                if evidence.get('geometryManifestAssetId') != record.get('geometryManifestAssetId') or not np.allclose(evidence['inputToCanonical'], record['inputToCanonical'], atol=1e-6):
-                    raise PlatformError('mask_geometry_mapping_mismatch', 409)
-                mask = np.load(io.BytesIO(_scene_asset_bytes(document, evidence['canonicalMaskAssetId'], stages)), allow_pickle=False).astype(bool)
-                if mask.shape != record['points'].shape[:2]:
-                    raise PlatformError('mask_geometry_grid_mismatch', 409)
+                current = (evidence.get('geometryManifestAssetId') == record.get('geometryManifestAssetId')
+                    and np.allclose(evidence['inputToCanonical'], record['inputToCanonical'], atol=1e-6))
+                if current:
+                    mask = np.load(io.BytesIO(_scene_asset_bytes(document, evidence['canonicalMaskAssetId'], stages)), allow_pickle=False).astype(bool)
+                    current = mask.shape == record['points'].shape[:2]
+                if not current:
+                    # A canonical raster belongs to one geometry solution. Re-derive
+                    # only from its owned, hash-pinned original; retain historical evidence.
+                    try:
+                        assets = {a['id']:a for a in document['assets']}
+                        original_id = evidence['originalMaskAssetId']
+                        original = assets[original_id]
+                        photo = assets[image_id]
+                        if (original_id != observation.get('maskAssetId') or not original.get('sha256')
+                                or not photo.get('sha256') or tuple(evidence['originalShape']) != tuple(record['originalShape'])):
+                            raise ValueError('original binding differs')
+                        with Image.open(io.BytesIO(_scene_asset_bytes(document, image_id, stages))) as image:
+                            if (image.height, image.width) != tuple(evidence['originalShape']):
+                                raise ValueError('source image grid differs')
+                        refs = [r for r in evidence.get('sourceRefs', []) if isinstance(r, dict)
+                            and r.get('imageSha256') == photo['sha256'] and r.get('sourceRecordId')
+                            and any(isinstance(s, dict) and s.get('sourceRecordId') == r['sourceRecordId']
+                                and s.get('imageSha256') == photo['sha256'] for s in observation.get('sourceRefs', []))]
+                        if len(refs) != 1 or not assets.get(refs[0]['assetId'], {}).get('sha256'):
+                            raise ValueError('original source is not owned')
+                        ref = refs[0]
+                        if ref.get('sha256', assets[ref['assetId']]['sha256']) != assets[ref['assetId']]['sha256']:
+                            raise ValueError('source hash differs')
+                        view = json.loads(_scene_asset_bytes(document, ref['assetId'], stages))
+                        for token in ref['jsonPointer'].split('/')[1:]:
+                            token = token.replace('~1', '/').replace('~0', '~')
+                            view = view[int(token)] if isinstance(view, list) else view[token]
+                        if view['frame_id'] != ref['sourceFrameId'] or view['sha256']['mask.png'] != original['sha256']:
+                            raise ValueError('original source mask differs')
+                        with Image.open(io.BytesIO(_scene_asset_bytes(document, original_id, stages))) as image:
+                            if image.format != 'PNG' or len(image.getbands()) != 1 or (image.height, image.width) != tuple(evidence['originalShape']):
+                                raise ValueError('original mask grid differs')
+                            mask = np.asarray(image.convert('L')) > 0
+                        mask = _canonical_mask(mask, record)
+                    except (KeyError, IndexError, TypeError, ValueError, OSError):
+                        raise PlatformError('mask_original_evidence_invalid', 409) from None
             elif observation.get('maskAssetId'):
                 with Image.open(io.BytesIO(_scene_asset_bytes(document, observation['maskAssetId'], stages))) as image:
                     mask = np.asarray(image.convert('L')) > 0

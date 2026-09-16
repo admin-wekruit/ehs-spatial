@@ -832,6 +832,64 @@ def test_append_photos_registers_new_solution_preserves_source_and_reuses_duplic
     validate_document(updated)
 
 
+@pytest.mark.parametrize('fault', [None, 'missing_original', 'foreign_mask', 'wrong_image', 'wrong_shape',
+    'source_mask_hash', 'source_frame', 'source_record', 'unowned_source', 'unhashed_original'])
+def test_stale_canonical_mask_uses_only_verified_original_grid(tmp_path, fault):
+    from ehs_spatial.platform.reconstruction import _load_masks
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs, size=(8, 12))
+    document = repo.document
+    photo = document['assets'][0]
+    def save(raw, media, metadata):
+        asset = repo.register_asset(repo.pid, {**blobs.put(raw, media), 'metadata':metadata})
+        document['assets'].append(asset)
+        return asset
+    original = np.zeros((8, 12), np.uint8)
+    original[1:6, 3:8] = 255
+    raw = io.BytesIO(); Image.fromarray(original).save(raw, format='PNG')
+    original_asset = save(raw.getvalue(), 'image/png', {'sourceRecordId':'first-owner-of-shared-mask-bytes'})
+    raw = io.BytesIO(); np.save(raw, np.ones((8, 8), bool), allow_pickle=False)
+    cached = save(raw.getvalue(), 'application/x-npy', {})
+    view = {'frame_id':'frame', 'sha256':{'mask.png':original_asset['sha256']}}
+    if fault == 'source_mask_hash': view['sha256']['mask.png'] = '0' * 64
+    if fault == 'source_frame': view['frame_id'] = 'other-frame'
+    source = save(json.dumps({'views':[view]}).encode(), 'application/json', {})
+    evidence = {'originalMaskAssetId':original_asset['id'], 'canonicalMaskAssetId':cached['id'],
+        'originalShape':[8, 12], 'canonicalShape':[8, 8], 'geometryManifestAssetId':'old-geometry',
+        'inputToCanonical':[[.5,0,1.75],[0,.5,1.75],[0,0,1]],
+        'sourceRefs':[{'assetId':source['id'], 'jsonPointer':'/views/0', 'sourceRecordId':'candidate',
+            'sourceFrameId':'frame', 'imageSha256':photo['sha256']}]}
+    observation = {'id':'observation', 'imageId':photo['id'], 'maskAssetId':original_asset['id'],
+        'maskEvidence':evidence, 'sourceRefs':[{'sourceRecordId':'candidate', 'imageSha256':photo['sha256']}]}
+    document['observations'] = [observation]
+    # New non-square grid uses original pixel centres 1,3,5,...; the old all-positive
+    # padded cache must never determine the resampled support.
+    record = {'originalShape':(8,12), 'geometrySolutionId':'new-geometry', 'points':np.zeros((4,6,3)),
+        'inputToCanonical':np.array([[.5,0,-.25],[0,.5,-.25],[0,0,1]])}
+    if fault == 'missing_original': evidence.pop('originalMaskAssetId')
+    if fault == 'foreign_mask': observation['maskAssetId'] = cached['id']
+    if fault == 'wrong_image': observation['imageId'] = document['assets'][1]['id']
+    if fault == 'wrong_shape': evidence['originalShape'] = [12,8]
+    if fault == 'source_record': evidence['sourceRefs'][0]['sourceRecordId'] = 'other-candidate'
+    if fault == 'unowned_source': document['assets'].remove(source)
+    if fault == 'unhashed_original': original_asset.pop('sha256')
+    before, events = deepcopy(document), deepcopy(repo.events)
+    masks, errors = _load_masks(document, {observation['imageId']:record}, _Stages(repo,blobs,repo.job,{}))
+    assert document == before and repo.events == events and repo.calls == []
+    if fault:
+        assert masks == {} and errors[0]['observationId'] == 'observation'
+    else:
+        assert errors == []
+        np.testing.assert_array_equal(masks['observation'], original[1::2,1::2] > 0)
+        assert masks['observation'].shape == (4,6) and int(masks['observation'].sum()) == 9
+        # Matching cache bindings retain their bytes; no derivation or source read.
+        current = {**record, 'geometryManifestAssetId':'old-geometry',
+            'points':np.zeros((8,8,3)), 'inputToCanonical':np.asarray(evidence['inputToCanonical'])}
+        evidence.pop('originalMaskAssetId')
+        current_masks, current_errors = _load_masks(document, {photo['id']:current}, _Stages(repo,blobs,repo.job,{}))
+        assert current_errors == [] and current_masks['observation'].all()
+
+
 def test_resegmentation_uses_replacement_mask_and_only_invalidates_its_observation_sources(tmp_path):
     from ehs_spatial.platform.reconstruction import _load_geometry, _load_masks
     blobs = LocalBlobStore(tmp_path)
