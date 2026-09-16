@@ -86,6 +86,23 @@ def apply_operations(source: dict, operations: list[dict], *, base_revision_id: 
         elif kind == 'setPartRelation':
             from .identity import set_part_relation
             set_part_relation(document, operation, base_revision_id=base_revision_id)
+        elif kind == 'setWorkcellScope':
+            from .identity import model_family
+            item = entity(operation.get('entityId'))
+            included, reason = operation.get('included'), operation.get('reason')
+            if type(included) is not bool or not isinstance(reason, str) or not reason.strip() or len(reason) > 8000:
+                raise PlatformError('invalid_workcell_scope', 422)
+            family = model_family(document, item['id'])
+            if any(member.get('sourceContext') and not member.get('workcellScopeDecision') for member in family):
+                raise PlatformError('capture_context_not_workcell_object', 422)
+            for member in family:
+                previous = member.get('workcellScopeDecision') or {}
+                decision = {'included':included, 'source':'manual_assertion', 'reason':reason,
+                    'baseRevisionId':base_revision_id, 'rootEntityId':item['id'],
+                    'previousVisible':previous.get('previousVisible', member.get('visible', True))}
+                member['workcellScopeDecision'] = decision
+                member['sourceContext'] = not included
+                member['visible'] = decision['previousVisible'] if included else False
         elif kind == 'confirmPlacement':
             item = entity(operation.get('entityId'))
             active_id = item.get('activeModelRepresentationId')

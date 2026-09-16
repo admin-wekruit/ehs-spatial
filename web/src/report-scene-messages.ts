@@ -45,6 +45,7 @@ export const reportSceneMessages: Record<string, [string, string]> = {
   sceneSelectEvidence: ["选择一个对象查看观测证据", "Select an object to inspect its observed evidence"],
   sceneOpenEvidenceScene: ["在证据场景中查看", "Open evidence scene"],
   sceneModelScene: ["模型场景", "Model scene"],
+  sceneExcludedObjects: ["已按工位范围排除", "Excluded from this workcell scope"],
   sceneGeometryCoverage: ["条对象记录有对应的可显示几何", "object records have corresponding displayable geometry"],
   sceneIndependentModelCount: ["个独立模型", "independent models"],
   sceneModelCoverage: ["条对象记录有可显示的当前模型", "object records have a displayable current model"],

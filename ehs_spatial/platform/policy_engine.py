@@ -171,15 +171,17 @@ def evaluate_document(scene, policy_id, policy_document, context):
     """Keep target membership before checking geometry; missing data stays visible."""
     from ..contracts import Entity3D, SceneMap
     from ..policy import PolicySpec, evaluate_policy
+    # Scope is explicit; hiding a model alone never removes it from safety targets.
+    entities = [e for e in scene["entities"] if not e.get("sourceContext")]
     annotations = scene.get("annotations", [])
     assertion = next((a for a in reversed(annotations) if a.get("kind") == "policy_applicability" and a.get("policyId") == policy_id), None)
     applicability = assertion.get("value", "unknown") if assertion and _evidence_refs(scene, assertion.get("sourceRefs")) else "unknown"
-    output = execute_jdm(policy_document["jdm"], applicability, [e["label"] for e in scene["entities"]])
+    output = execute_jdm(policy_document["jdm"], applicability, [e["label"] for e in entities])
     application = output["applicability"] if applicability != "unknown" else "unknown"
     if application != "applicable":
         return [{"id": str(uuid4()), "entityId": None, "applicability": application, "machineResult": None, "facts": [], "missingEvidence": [] if application == "not_applicable" else ["applicability_confirmation"]}]
     check = output["check"]
-    targets = [e for e in scene["entities"] if not check.get("subjectLabels") or e["label"] in check["subjectLabels"]] if check["kind"] == "manual" else [e for e in scene["entities"] if e["label"] in check["spec"]["subject_labels"]]
+    targets = [e for e in entities if not check.get("subjectLabels") or e["label"] in check["subjectLabels"]] if check["kind"] == "manual" else [e for e in entities if e["label"] in check["spec"]["subject_labels"]]
     if not targets:
         return [{"id": str(uuid4()), "entityId": None, "applicability": "applicable", "machineResult": "INSUFFICIENT_EVIDENCE", "facts": [], "missingEvidence": ["target_inventory_confirmation"]}]
     findings = []
@@ -193,7 +195,7 @@ def evaluate_document(scene, policy_id, policy_document, context):
                 finding["missingEvidence"].append(check["requirement"])
         else:
             spec = PolicySpec(policy_id=policy_id, source_text="versioned JDM", **check["spec"])
-            candidates = [target, *[e for e in scene["entities"] if e["label"] in spec.object_labels and e["id"] != target["id"]]]
+            candidates = [target, *[e for e in entities if e["label"] in spec.object_labels and e["id"] != target["id"]]]
             geometry, frames, errors = [], set(), []
             for e in candidates:
                 facts = e.get("measurements", {})

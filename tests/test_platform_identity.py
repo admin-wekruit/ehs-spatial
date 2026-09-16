@@ -791,3 +791,50 @@ def test_identity_merge_remaps_part_parents_and_split_requires_explicit_child_ow
     with pytest.raises(PlatformError, match='identity_split_part_parent_requires_detach'):
         apply_operations(merged, [{'type': 'recordIdentityDecision', 'decision': split_decision},
             {'type': 'splitEntity', 'entityId': 'entity-1', 'decisionId': split_decision['id'], 'groups': []}], base_revision_id=BASE)
+
+
+def test_workcell_scope_preserves_sources_and_restores_visibility():
+    source = migrate_document(source_scene(), base_revision_id=BASE)
+    source['entities'][0]['visible'] = False
+    operation = {'type': 'setWorkcellScope', 'entityId': 'entity-1', 'included': False,
+                 'reason': 'User excludes the adjacent workcell'}
+    doc, inverse = apply_operations(source, [operation], base_revision_id=BASE)
+    assert inverse[0]['document'] == source
+    assert doc['observations'] == source['observations'] and doc['assets'] == source['assets']
+    excluded = doc['entities'][0]
+    assert excluded['sourceContext'] and excluded['visible'] is False
+    assert excluded['representations'] == source['entities'][0]['representations']
+    assert excluded['workcellScopeDecision']['baseRevisionId'] == BASE
+    assert doc['entities'][1] == source['entities'][1]
+    restored, _ = apply_operations(doc, [{**operation, 'included': True}], base_revision_id=BASE)
+    assert restored['entities'][0]['sourceContext'] is False
+    assert restored['entities'][0]['visible'] is False  # Preserve pre-existing display choice.
+    assert len(restored['entities']) == len(source['entities'])
+    with pytest.raises(PlatformError, match='invalid_workcell_scope'):
+        apply_operations(source, [{**operation, 'included': 'false'}])
+    source['entities'][0]['sourceContext'] = True
+    with pytest.raises(PlatformError, match='capture_context_not_workcell_object'):
+        apply_operations(source, [operation])
+
+
+def test_safety_targets_respect_workcell_scope_but_not_display_visibility(monkeypatch):
+    from ehs_spatial.platform import policy_engine
+    source = source_scene()
+    source['annotations'].append({'id': 'applicable', 'kind': 'policy_applicability',
+        'policyId': 'policy', 'value': 'applicable', 'sourceRefs': [{'observationId': 'observation-1'}]})
+    source['entities'][1]['visible'] = False
+    seen = []
+    def execute(jdm, applicability, labels):
+        seen.extend(labels)
+        return {'applicability': applicability, 'check': {'kind': 'manual', 'requirement': 'functional_test'}}
+    monkeypatch.setattr(policy_engine, 'execute_jdm', execute)
+    doc, _ = apply_operations(source, [{'type': 'setWorkcellScope', 'entityId': 'entity-1',
+                                      'included': False, 'reason': 'Outside the selected workcell'}])
+    findings = policy_engine.evaluate_document(doc, 'policy', {'jdm': {}}, 'reconstruction')
+    assert [f['entityId'] for f in findings] == ['entity-2']
+    assert len(seen) == 1 and findings[0]['machineResult'] == 'INSUFFICIENT_EVIDENCE'
+    doc, _ = apply_operations(doc, [{'type': 'setWorkcellScope', 'entityId': 'entity-2',
+                                  'included': False, 'reason': 'Outside the selected workcell'}])
+    findings = policy_engine.evaluate_document(doc, 'policy', {'jdm': {}}, 'reconstruction')
+    assert findings[0]['machineResult'] == 'INSUFFICIENT_EVIDENCE'
+    assert findings[0]['missingEvidence'] == ['target_inventory_confirmation']

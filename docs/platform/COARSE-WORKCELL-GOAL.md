@@ -7,7 +7,9 @@ existing charges and unresolved reservations.
 
 ## Delivery
 
-The current 28 report records must each resolve to selectable, visible geometry
+The current workcell scope contains 26 report records, after the user explicitly
+excluded the adjacent-cell fence and floating indicator. All 28 source record IDs
+remain retained. Each in-scope record must resolve to selectable, visible geometry
 in the browser and to the same identity in the source photo and CAD. Ordinary
 objects need approximate models; ground needs its observed reference surface;
 an assembly needs an explicit link to its modeled components without duplicated
@@ -73,7 +75,8 @@ placement. Missing views and conflicting main-body depth cannot pass.
 
 ## Executable acceptance
 
-- Freeze and retain all current 28 record IDs. Every row has a photo link, a
+- Freeze and retain all original 28 record IDs; explicitly excluded records stay
+  archived as source context. Every in-scope row has a photo link, a
   model/reference/component binding, its native transform and model-derived CAD.
 - Validate mesh bytes, entity ownership and CAD/model transform equality.
 - In the deployed browser, select each row and select back from CAD/3D; verify
@@ -111,3 +114,20 @@ The current all-record CAD audit passed: 26/26 active model projections and 28/2
 observed projections validated; zero source-reference errors. The final browser
 check must separately confirm the composite row and ground reference, as backend
 counts alone previously missed a front-end composite projection gap.
+
+## Explicit workcell boundary, 2026-09-16
+
+The user marked the adjacent-cell fence (d22e72d1-ca73-5ea4-a5f3-68057d7af6dd)
+and floating indicator (a214c225-ba7a-5550-9af8-5bea16c2cfe4) for exclusion.
+The shared `setWorkcellScope` edit records this manual decision and its base
+revision, retains observations/assets/representations, and uses existing source
+context and visibility semantics for model targets, CAD and the report. Explicit
+scope affects safety targets; display visibility alone does not. Inclusion can
+be restored and ordinary edit-batch undo preserves the full original document.
+
+Publication d6c2d4d3-4769-4526-a0f7-73de34fa2f5b fixes revision
+f5f4b1d4-bb55-4c13-ba02-b44e706340f2: 26 in-scope records, 24 independent models,
+1 reference surface, 1 composite preview, 0 unresolved geometry bindings and
+0 source-reference errors. Historical publications are unchanged. This is a
+coverage result; physical placement and independent shape review retain their
+existing uncertainty. No paid model call was required for the exclusion.
