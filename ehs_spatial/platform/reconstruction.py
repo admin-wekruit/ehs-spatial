@@ -168,7 +168,8 @@ class _Stages:
             raise
         started = time.monotonic()
         try:
-            result = provider.invoke(payload)
+            result = (provider.invoke(payload, is_current=lambda:self.repo.heartbeat_job(self.job['id'], self.job['attemptToken']))
+                      if provider.pins.get('model') == 'TRI-ML/RecGen' else provider.invoke(payload))
             if not isinstance(result,dict):
                 raise ProviderResponseError(_telemetry({}))
         except Exception as exc:
@@ -1449,10 +1450,10 @@ def providers_from_manifest(snapshot: Mapping[str,Any], *, _research=False) -> d
                 return _unpacked(result)
         elif stage == "generation" and pins.get('model') == 'TRI-ML/RecGen' and _research:
             from .recgen import RecGenRequest, adapt_output
-            def invoke(payload, *, config=config):
+            def invoke(payload, *, config=config, is_current=None):
                 from .recgen_transport import invoke as transport
                 request = RecGenRequest.from_payload(payload)
-                result = transport(payload, config)
+                result = transport(payload, config, is_current=is_current)
                 if not isinstance(result, dict):
                     raise ProviderResponseError(_telemetry(result))
                 if result.get('providerError'):

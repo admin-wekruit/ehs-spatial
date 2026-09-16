@@ -252,7 +252,10 @@ def test_research_factory_retains_received_usage_and_native_scene_assembly(tmp_p
     vertices = np.array([[0., 0, 0], [1, 0, 0], [0, 1, 1]])
     pose = np.diag([.25, .5, .75, 1.])
     calls = []
-    def invoke(payload, config):
+    ownership_checks = []
+    monkeypatch.setattr(repo, 'heartbeat_job', lambda *args:ownership_checks.append(args) or True, raising=False)
+    def invoke(payload, config, *, is_current):
+        assert is_current()
         calls.append(payload)
         return {'vertices':vertices, 'faces':np.array([[0, 1, 2]]), 'objectToCamera':pose,
             'colors':np.ones((3, 4)),
@@ -263,6 +266,7 @@ def test_research_factory_retains_received_usage_and_native_scene_assembly(tmp_p
     before = deepcopy(repo.document)
     result = run_research_stage(repo, blobs, job, 'generation', value, selected_images, manifest, protocol)
     assert len(calls) == 1 and result['sceneRevision'] is None and repo.document == before
+    assert ownership_checks == [(job['id'], job['attemptToken'])]
     assert repo.calls[-1]['response']['workerElapsedSeconds'] == 2
     assert repo.calls[-1]['response']['providerRequestId'] == 'reviewed-call'
     assert repo.calls[-1]['actual_cost'] is None
