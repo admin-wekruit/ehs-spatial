@@ -271,7 +271,7 @@ def segmentation_source(tmp_path, monkeypatch, *, jpeg=False, masked=False):
     monkeypatch.setattr(cli, 'admin_context', lambda *a: (
         {'source':'database_admin'}, {'document':repository.document}))
     monkeypatch.setattr(cli, 'check_budget', lambda *a: {'configuredBudgetUsd':'.01'})
-    pins = {'model':'fal-ai/sam-3-1/image-rle', 'adapter':'sam3.1-text-box-pixel-coverage-v2'}
+    pins = {'model':'fal-ai/sam-3-1/image-rle', 'adapter':'sam3.1-text-box-original-roi-v3'}
     manifest = {'segmentation':{'provider':'fal', 'pins':pins, 'paid':True, 'estimatedCostUsd':.01,
         'releaseEvidence':{'pins':pins, 'license':{'status':'passed', 'artifactSha256':'c' * 64},
             'runtime':{'status':'unverified'}, 'quality':{'status':'unverified'}}}}
@@ -296,12 +296,14 @@ def test_segmentation_prepares_owned_observation_without_geometry(tmp_path, monk
     assert not repo.document['coordinateFrames'] and not repo.document['cameras'] and not repo.calls
     assert frozen['payload']['box'] == observation['originalPixelBox'] == [1.2, 2.3, 10.4, 7.8]
     assert frozen['payload']['submittedBox'] == [1, 2, 11, 8]
-    assert set(frozen['payload']) == {'image', 'box', 'submittedBox', 'prompt', 'promptSource'}
+    assert set(frozen['payload']) == {'image', 'box', 'submittedBox', 'prompt', 'promptSource', 'roi'}
     assert frozen['payload']['prompt'] == repo.document['entities'][0]['label']
     assert frozen['payload']['promptSource'] == {'kind':'entity_label', 'entityId':protocol['entityId'], 'label':frozen['payload']['prompt']}
     assert frozen['protocol']['sourceObservation'] == {
         'entityId':protocol['entityId'], 'observationId':observation['id'],
         'promptSource':frozen['payload']['promptSource'],
+        'roi':{'pixelMapping':frozen['payload']['roi']['pixelMapping'], 'imageSha256':frozen['payload']['roi']['image']['sha256'],
+            'submittedBox':frozen['payload']['roi']['submittedBox']},
         **{k:observation[k] for k in ('revision','imageId','originalPixelBox','pixelMapping','maskAssetId')}}
     expected_ids = {observation['imageId']}
     if masked:
@@ -364,7 +366,7 @@ def test_segmentation_missing_saved_label_stops_before_reservation(tmp_path, mon
 @pytest.mark.parametrize('bad', ['box', 'submitted_box', 'payload_extra', 'snapshot_revision',
     'snapshot_mapping', 'snapshot_image', 'entity_id', 'observation_id', 'image_bytes',
     'source_revision', 'source_mapping', 'source_box', 'source_ownership',
-    'source_label', 'prompt_source', 'snapshot_label'])
+    'source_label', 'prompt_source', 'snapshot_label', 'roi_pixels', 'roi_mapping', 'roi_box', 'roi_hash'])
 def test_segmentation_rejects_rehashed_forgery_before_reservation(tmp_path, monkeypatch, bad):
     repo, blobs, manifest, runtime, protocol = segmentation_source(tmp_path, monkeypatch)
     frozen = cli.prepare(protocol, repo, blobs, manifest, runtime)
@@ -384,6 +386,10 @@ def test_segmentation_rejects_rehashed_forgery_before_reservation(tmp_path, monk
     elif bad == 'source_label': repo.document['entities'][0]['label'] = 'different saved label'
     elif bad == 'prompt_source': payload['promptSource']['entityId'] = 'other-entity'
     elif bad == 'snapshot_label': protocol['sourceObservation']['promptSource']['label'] = 'different label'
+    elif bad == 'roi_pixels': payload['roi']['image']['dataUri'] += 'AAAA'
+    elif bad == 'roi_mapping': payload['roi']['pixelMapping']['matrix'][0][2] += 1
+    elif bad == 'roi_box': payload['roi']['submittedBox'][0] += 1
+    elif bad == 'roi_hash': protocol['sourceObservation']['roi']['imageSha256'] = 'f' * 64
     else: repo.document['entities'][0]['observationRefs'] = []
     protocol['payloadSha256'] = digest(payload)
     job = {**repo.job, 'kind':'validate_model', 'config':{'researchProtocolSha256':digest(protocol)}}

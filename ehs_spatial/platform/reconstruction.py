@@ -34,7 +34,7 @@ MAP_PINS = {"model": "facebook/map-anything-apache", "modelRevision": "00f9c245b
             "codeRevision": "3d10cf7a3016fc0f9bb13a071ee66c47b10be0d9", "adapter": PIPELINE_VERSION}
 MAX_MASK_POLYGON_RUNS = 100_000
 UNKNOWN_OUTCOME_CODES = {'provider_outcome_unknown', 'response_persistence_failed'}
-SAM_BOX_ADAPTER = 'sam3.1-text-box-pixel-coverage-v2'
+SAM_BOX_ADAPTER = 'sam3.1-text-box-original-roi-v3'
 SAM_FAL_CLIENT_VERSION = '1.0.0'
 
 
@@ -259,6 +259,23 @@ def _image_payload(image):
     return {"imageId":image["id"],"dataUri":"data:"+image["mediaType"]+";base64,"+base64.b64encode(image["bytes"]).decode(),"width":image["width"],"height":image["height"],"sha256":image["sha256"]}
 
 
+def _segmentation_roi(image, box):
+    """Three box-long-sides of context, clipped to real original pixels, without resize."""
+    x0,y0,x1,y1 = _sam_box({'image':image, 'box':box})
+    side = 3 * max(x1-x0, y1-y0)
+    left,top = (x0+x1-side)//2, (y0+y1-side)//2
+    bounds = [max(0,left), max(0,top), min(image['width'],left+side), min(image['height'],top+side)]
+    left,top,right,bottom = bounds
+    local_box = [box[0]-left, box[1]-top, box[2]-left, box[3]-top]
+    mapping = {'methodVersion':'source-box-3x-context-v1', 'source':'original_pixels', 'target':'segmentation_pixels',
+        'coordinateConvention':'pixel_centers', 'sourceImageId':image.get('imageId',image.get('id')),
+        'sourceImageSha256':image['sha256'], 'sourceShapeHW':[image['height'],image['width']],
+        'targetShapeHW':[bottom-top,right-left], 'sourceCropXYXY':bounds,
+        'matrix':[[1,0,-left],[0,1,-top],[0,0,1]]}
+    return {'box':local_box, 'submittedBox':_sam_box({'image':{'width':right-left,'height':bottom-top}, 'box':local_box}),
+        'pixelMapping':mapping}
+
+
 def _segmentation_input(document, observation, image):
     """Use the sole owning entity's saved label verbatim for text-and-box input."""
     owners = [entity for entity in document['entities'] if observation['id'] in entity.get('observationRefs', [])]
@@ -271,6 +288,15 @@ def _segmentation_input(document, observation, image):
     payload = {'image':image, 'box':deepcopy(observation['originalPixelBox']), 'prompt':label,
         'promptSource':{'kind':'entity_label', 'entityId':entity['id'], 'label':label}}
     payload['submittedBox'] = _sam_box(payload)
+    roi = _segmentation_roi(image, payload['box'])
+    with Image.open(io.BytesIO(base64.b64decode(image['dataUri'].split(',',1)[1],validate=True))) as source:
+        crop = source.convert('RGB').crop(roi['pixelMapping']['sourceCropXYXY'])
+    stream = io.BytesIO()
+    crop.save(stream,format='PNG')
+    raw = stream.getvalue()
+    roi['image'] = _image_payload({'id':image['imageId'], 'mediaType':'image/png', 'bytes':raw,
+        'width':crop.width, 'height':crop.height, 'sha256':hashlib.sha256(raw).hexdigest()})
+    payload['roi'] = roi
     return payload
 
 
@@ -387,6 +413,24 @@ def _original_mask_polygons(mask):
 
 def _segmentation_response(image, box, response):
     """Reject demonstrable box/output contradictions; never clip provider pixels."""
+    if 'pixelMapping' in response:
+        roi = _segmentation_roi(image, box)
+        if response['pixelMapping'] != roi['pixelMapping']:
+            raise PlatformError('segmentation_pixel_mapping_mismatch', 409)
+        height,width = roi['pixelMapping']['targetShapeHW']
+        # Admission happens in the provider grid before zeros outside the ROI
+        # could conceal a full-raster prediction for a smaller interior box.
+        try:
+            cropped,metrics = _segmentation_response({'height':height,'width':width},roi['box'],{'mask':response.get('mask')})
+        except PlatformError as exc:
+            raise PlatformError(exc.code,exc.status,**exc.params,pixelMapping=roi['pixelMapping']) from None
+        left,top,right,bottom = roi['pixelMapping']['sourceCropXYXY']
+        mask = np.zeros((image['height'],image['width']),bool)
+        mask[top:bottom,left:right] = cropped
+        mapped,original_metrics = _segmentation_response(image,box,{'mask':mask})
+        boundary = bool(cropped[0].any() or cropped[-1].any() or cropped[:,0].any() or cropped[:,-1].any())
+        return mapped,{**original_metrics, 'providerGrid':metrics, 'pixelMapping':roi['pixelMapping'],
+            'cropBoundaryTouched':boundary}
     mask = np.asarray(response.get('mask'))
     if mask.dtype != bool or mask.shape != (image['height'], image['width']):
         raise PlatformError('mask_image_grid_mismatch', 409)
@@ -1902,8 +1946,9 @@ def _sam_invoke(payload, *, on_dispatched):
     import fal_client
     from fal_client.client import QUEUE_URL_FORMAT, SyncRequestHandle
     from ..providers.sam3 import decode_coco_rle
-    image = payload["image"]
-    x0,y0,x1,y1 = _sam_box(payload)
+    roi = payload['roi']
+    image = roi['image']
+    x0,y0,x1,y1 = _sam_box(roi)
     prompt = payload.get('prompt')
     if not isinstance(prompt, str) or not prompt.strip():
         raise PlatformError('segmentation_label_required', 422)
@@ -1939,6 +1984,7 @@ def _sam_invoke(payload, *, on_dispatched):
     except Exception:
         raise ProviderResponseError(_telemetry(metadata)) from None
     return {"mask":mask.astype(bool),"selectedCandidate":selected,"candidateRles":rles,"scores":scores,"providerRequestId":handle.request_id,
+            "pixelMapping":deepcopy(roi['pixelMapping']),"providerImageSha256":image['sha256'],
             "telemetry":{"usage":response.get("usage")}}
 
 
@@ -2223,7 +2269,9 @@ def _research_segmentation_input(repository, blobs, job, entity_id, observation_
     snapshot = {'entityId':entity_id, 'observationId':observation_id, 'revision':observation['revision'],
         'imageId':observation['imageId'], 'originalPixelBox':deepcopy(observation['originalPixelBox']),
         'pixelMapping':deepcopy(observation.get('pixelMapping', [])), 'maskAssetId':observation.get('maskAssetId'),
-        'promptSource':deepcopy(payload['promptSource'])}
+        'promptSource':deepcopy(payload['promptSource']),
+        'roi':{'pixelMapping':deepcopy(payload['roi']['pixelMapping']), 'imageSha256':payload['roi']['image']['sha256'],
+            'submittedBox':deepcopy(payload['roi']['submittedBox'])}}
     refs = [{'assetId':image['assetId'], 'sha256':image['sha256']} for image in images]
     if snapshot['maskAssetId']:
         declared = next((a for a in source['assets'] if a['id'] == snapshot['maskAssetId']), None)

@@ -208,7 +208,9 @@ def test_analysis_resegmentation_and_research_share_exact_owned_text_box_input(t
     seen = []
     def segment(payload):
         seen.append(deepcopy(payload))
-        return original(payload)
+        response = original(payload)
+        left,top,right,bottom = payload['roi']['pixelMapping']['sourceCropXYXY']
+        return {'mask':response['mask'][top:bottom,left:right], 'pixelMapping':payload['roi']['pixelMapping']}
     providers['segmentation'] = replace(providers['segmentation'], invoke=segment)
     repo.document, result = run_analysis(repo, blobs, repo.job, providers)
     assert result['status'] == 'succeeded'
