@@ -354,6 +354,64 @@ def test_imported_bounds_measures_exact_photo_binding_without_automatic_acceptan
     assert rejected['entities'][1]['missingEvidence']==['source_observation_binding_pending']
 
 
+@pytest.mark.parametrize('parametric', [False, True])
+@pytest.mark.parametrize('with_report', [False, True])
+def test_exact_candidate_inputs_pin_owned_observations_with_or_without_report(tmp_path, parametric, with_report):
+    from copy import deepcopy
+    from ehs_spatial.platform.correspondence import audit_correspondence
+    from ehs_spatial.platform.identity import migrate_document
+
+    path = make_parametric_scene(tmp_path)[0] if parametric else make_public_scene(tmp_path)
+    source = json.loads(path.read_text())
+    image_sha = hashlib.sha256((tmp_path/'photo.png').read_bytes()).hexdigest()
+    source['object_evidence'] = 'evidence.json'
+    source['objects'][1]['measurements'] = {'source': {
+        'candidate_id': 'generated', 'frame_id': 'camera-a', 'image_sha256': image_sha, 'mask_sha256': 'a'*64}}
+    evidence = {'candidates': [{'id': 'generated', 'label': 'Different display name', 'frame_id': 'camera-a',
+        'mask': {'sha256': 'a'*64, 'bbox': [1, 1, 3, 4], 'resolution': 'original', 'shape_hw': [6, 8]}}]}
+    evidence_path = tmp_path/'evidence.json'
+    evidence_path.write_text(json.dumps(evidence))
+    path.write_text(json.dumps(source))
+    if with_report:
+        view = {'frame_id': 'camera-a', 'bbox': [1, 1, 3, 4], 'polygons': []}
+        (tmp_path/'report.json').write_text(json.dumps({'reconstruction_run_id': source['run_id'], 'scene_url': path.name,
+            'frames': [{'id': 'camera-a', 'url': 'photo.png'}],
+            'objects': [{'id': 'report-row', 'scene_object_id': 'generated', 'views': [view, view]}], 'plan': {}}))
+    before = {p: p.read_bytes() for p in tmp_path.iterdir() if p.is_file()}
+    def put(data, media_type, metadata):
+        sha = hashlib.sha256(data).hexdigest()
+        return {'id': str(uuid5(NAMESPACE_URL, sha)), 'sha256': sha, 'sizeBytes': len(data), 'mediaType': media_type, 'metadata': metadata}
+
+    document, manifest = import_document(path, put)
+    entity = next(e for e in document['entities'] if e['id'] == manifest['entityIds']['generated'])
+    rep = entity['representations'][0]
+    inputs = [ref for ref in rep['sourceRefs'] if ref.get('observationId')]
+    assert len(inputs) == 1  # Repeated report views reuse the already pinned candidate input.
+    observation = next(o for o in document['observations'] if o['id'] == inputs[0]['observationId'])
+    assert entity['observationRefs'] == [observation['id']]
+    assert inputs[0] == {**observation['sourceRefs'][0], 'observationId': observation['id'], 'revision': 1,
+        'imageId': observation['imageId'], 'sha256': hashlib.sha256(before[evidence_path]).hexdigest()}
+    assert inputs[0]['binding'] == 'exact_candidate_id_and_image_sha256' and inputs[0]['imageSha256'] == image_sha
+    assert all(ref['role'] == 'model_artifact' for ref in rep['sourceRefs'] if not ref.get('observationId'))
+    document['captureId'] = str(uuid5(NAMESPACE_URL, 'exact-candidate-capture'))
+    current = migrate_document(document, base_revision_id=str(uuid5(NAMESPACE_URL, 'exact-candidate-revision')))
+    audited = next(row for row in audit_correspondence(current)['rows'] if row['entityId'] == entity['id'])
+    assert audited['modelCurrent'] and audited['sourceErrors'] == []
+    assert all(p.read_bytes() == raw for p, raw in before.items())
+    assert import_document(path, put)[1]['documentSha256'] == manifest['documentSha256']
+    if not with_report:
+        for key, invalid in [('candidate_id', 'unrelated'), ('frame_id', 'unrelated'),
+                             ('image_sha256', 'b'*64), ('mask_sha256', 'b'*64)]:
+            changed = deepcopy(source)
+            changed['objects'][1]['measurements']['source'][key] = invalid
+            path.write_text(json.dumps(changed))
+            rejected, _ = import_document(path, put)
+            model = rejected['entities'][1]
+            assert model['observationRefs'] == []
+            assert all(not ref.get('observationId') for ref in model['representations'][0]['sourceRefs'])
+            assert model['missingEvidence'] == ['source_observation_binding_pending']
+
+
 def test_floor_role_requires_pinned_native_mesh_membership(tmp_path, monkeypatch):
     path = make_public_scene(tmp_path)
     source = json.loads(path.read_text())

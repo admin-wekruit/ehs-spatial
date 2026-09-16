@@ -491,6 +491,13 @@ def import_document(scene_path, put_asset, *, legacy_root=None, observation_root
                                  "role": "model_artifact", "binding": "verified_cylinder_parameters", "proof": proof}]
                 vertices = primitive_mesh(primitive).vertices
                 kind, asset_id = "primitive", None
+            for oid in item["observationRefs"]:
+                observation = next(o for o in document["observations"] if o["id"] == oid)
+                for ref in observation["sourceRefs"]:
+                    if ref.get("binding") == "exact_candidate_id_and_image_sha256":
+                        source_refs.append({**deepcopy(ref), "observationId": oid, "revision": observation["revision"],
+                            "imageId": observation["imageId"],
+                            "sha256": next(a["sha256"] for a in document["assets"] if a["id"] == ref["assetId"])})
             item["representations"].append({"id": ident("representation", old_id), "kind": kind, "assetId": asset_id,
                 "coordinateFrameId": frame_id, "transform": transform, "primitive": primitive, "placementState": "confirmed" if kind == "observed_surface" else "unconfirmed",
                 "placementReason": "imported_observed_surface" if kind == "observed_surface" else "imported_proposal",
