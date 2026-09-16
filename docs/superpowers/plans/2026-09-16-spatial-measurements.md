@@ -85,3 +85,11 @@ Clicked Calculate & annotate; result 145.4384° (display 145.4°; 34.6° from fl
 Expanded isolated model and selected front view; the arc sits at the user's marked
 side-profile fold, with both fitted faces visible. This remains a model estimate;
 placement and reconstruction quality are not upgraded to field verification.
+
+Public acceptance: source b831e2a, Pages 026b7d0, successful Pages run 35153202836;
+Modal publication service redeployed. Reloaded the user's public report, opened
+Object details, clicked Calculate & annotate, and received 145.4°. Switched to
+Selected object model → Front: the public screenshot shows the two face outlines,
+hinge, and 145.4° arc at the requested fold. Left this view open for the user.
+The right wing (82f289b3) also computes successfully at 146.9004° on the same path.
+Local scene drag verification retained the 145.4° result and attached geometry.
