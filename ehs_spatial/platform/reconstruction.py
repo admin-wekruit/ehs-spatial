@@ -1117,13 +1117,24 @@ def _review_inventory(document,image,stages):
 def _admit_inventory_review(document,image,payload,response,evidence):
     """Admit a fully validated review atomically; existing identities stay intact."""
     _include(document,evidence)
+    failure_reason, failure_params = 'malformed_review', {}
     try:
         review = _InventoryReviewResponse.model_validate(response['review'])
+        failure_reason = 'stale_inventory_snapshot'
+        if _inventory_review_input(document,image) != payload:
+            raise ValueError('Review must bind the current source inventory')
         ids = [o['id'] for o in payload['observations']]
-        if (review.inventorySha256 != payload['inventorySha256'] or
-                _inventory_review_input(document,image) != payload or
-                len(review.observationIds) != len(set(review.observationIds)) or set(review.observationIds) != set(ids)):
-            raise ValueError('Review must bind the exact current source inventory')
+        failure_reason = 'inventory_hash_mismatch'
+        if review.inventorySha256 != payload['inventorySha256']:
+            raise ValueError('Review must bind the source inventory hash')
+        expected, returned = set(ids), set(review.observationIds)
+        if len(review.observationIds) != len(returned) or returned != expected:
+            failure_reason = 'observation_coverage_mismatch'
+            failure_params = {'missingObservationIds':[oid for oid in ids if oid not in returned],
+                'unexpectedObservationCount':sum(oid not in expected for oid in review.observationIds),
+                'duplicateObservationCount':len(review.observationIds)-len(returned),
+                'expectedObservationCount':len(ids),'returnedObservationCount':len(review.observationIds)}
+            raise ValueError('Review must name each owned observation exactly once')
         def original_box(item):
             y0,x0,y1,x1 = item.box_2d
             if not (0 <= x0 < x1 <= 1000 and 0 <= y0 < y1 <= 1000):
@@ -1132,19 +1143,26 @@ def _admit_inventory_review(document,image,payload,response,evidence):
         items = []
         instances = {(label['label'],tuple(o['originalPixelBox']),label.get('evidence',''))
             for o in payload['observations'] for label in o['labelEvidence']}
-        for item in review.additions:
+        for index,item in enumerate(review.additions):
+            failure_reason, failure_params = 'malformed_box', {'section':'additions','index':index}
             box = original_box(item)
             key = (item.label,tuple(box),item.evidence)
             if key in instances:
+                failure_reason = 'duplicate_addition'
                 raise ValueError('Review repeats an exact inventory item')
             instances.add(key)
             items.append({'label':item.label,'box':box,'evidence':item.evidence,'geometryRole':item.geometry_role})
-        unresolved = [{'box':original_box(region),'evidence':region.evidence} for region in review.unresolvedRegions]
+        unresolved = []
+        for index,region in enumerate(review.unresolvedRegions):
+            failure_reason, failure_params = 'malformed_box', {'section':'unresolvedRegions','index':index}
+            unresolved.append({'box':original_box(region),'evidence':region.evidence})
         # Validate the entire addition batch before admitting any new identities.
+        failure_reason, failure_params = 'invalid_addition', {}
         scratch = deepcopy(document)
         _discover(scratch,image,{'items':items},evidence)
     except (ValueError,TypeError,KeyError,PlatformError):
-        raise PlatformError('inventory_review_invalid',409,outputAssetId=evidence['id']) from None
+        raise PlatformError('inventory_review_invalid',409,outputAssetId=evidence['id'],
+            reason=failure_reason,**failure_params) from None
     document['observations'],document['entities'] = scratch['observations'],scratch['entities']
     added = [o['id'] for o in document['observations'] if o['imageId']==image['id'] and o['id'] not in ids]
     return {'imageId':image['id'],'imageSha256':image['sha256'],'inventorySha256':payload['inventorySha256'],
@@ -2535,8 +2553,9 @@ def run_research_stage(repository,blobs,job,stage,payload,images,provider_manife
                     'imageId':image['id'], 'outputAssetId':asset['id']})
         except (PlatformError, ValueError, TypeError, KeyError) as exc:
             code = exc.code if isinstance(exc,PlatformError) else 'inventory_review_invalid'
-            validation[0].update(admissionStatus='rejected', reason=code)
-            errors.append({'stage':stage, 'code':code, 'outputAssetId':asset['id']})
+            params = exc.params if isinstance(exc,PlatformError) else {'reason':'malformed_review'}
+            validation[0].update(admissionStatus='rejected', reason=code, params=params)
+            errors.append({'stage':stage, 'code':code, 'params':params, 'outputAssetId':asset['id']})
     elif stage == 'segmentation':
         validation = [{'imageId':payload['image']['imageId'], 'observationId':protocol['observationId'],
             'qualityStatus':'not_evaluated_against_physical_ground_truth'}]

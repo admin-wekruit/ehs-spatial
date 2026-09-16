@@ -918,7 +918,7 @@ def test_inventory_research_requires_explicit_runtime_mode_and_one_photo(tmp_pat
     assert not repo.calls
 
 
-@pytest.mark.parametrize('outcome', ['empty_valid','addition','unresolved','wrong_hash','foreign_observation'])
+@pytest.mark.parametrize('outcome', ['empty_valid','addition','unresolved','wrong_hash','foreign_observation','missing_observation'])
 def test_inventory_research_admits_on_disposable_scene_and_replays_cached_result(tmp_path,monkeypatch,outcome):
     repo,blobs,manifest,frozen = preparation(tmp_path,monkeypatch,'model_review',owned_observation=outcome!='empty_valid')
     payload,protocol = frozen['payload'],frozen['protocol']
@@ -932,6 +932,7 @@ def test_inventory_research_admits_on_disposable_scene_and_replays_cached_result
         review['unresolvedRegions'] = [{'box_2d':[700,700,900,900],'evidence':'Boundary partly hidden.'}]
     elif outcome == 'wrong_hash': review['inventorySha256'] = 'f'*64
     elif outcome == 'foreign_observation': review['observationIds'] = ['foreign-observation']
+    elif outcome == 'missing_observation': review['observationIds'] = []
     spec = reconstruction.providers_from_manifest(manifest,_research=True)['model_review']
     monkeypatch.setattr(reconstruction,'providers_from_manifest',lambda *a,**kw:{
         'model_review':replace(spec,invoke=lambda request:{'review':deepcopy(review)},records_dispatch=False)})
@@ -946,7 +947,17 @@ def test_inventory_research_admits_on_disposable_scene_and_replays_cached_result
         assert result['productReleaseStatus'] == 'not_changed'
         validation = result['outputValidation'][0]
         assert validation['qualityStatus'] == 'not_evaluated_against_physical_ground_truth'
-        assert validation['admissionStatus'] == ('rejected' if outcome in ('wrong_hash','foreign_observation') else 'accepted')
+        assert validation['admissionStatus'] == ('rejected' if outcome in ('wrong_hash','foreign_observation','missing_observation') else 'accepted')
+        if validation['admissionStatus'] == 'rejected':
+            params = validation['params']
+            assert params == result['errors'][0]['params']
+            assert params['outputAssetId'] == result['outputAssetId']
+            assert params['reason'] == ('inventory_hash_mismatch' if outcome=='wrong_hash' else 'observation_coverage_mismatch')
+            if outcome != 'wrong_hash':
+                assert params['missingObservationIds'] == [o['id'] for o in payload['observations']]
+                assert params['unexpectedObservationCount'] == int(outcome=='foreign_observation')
+                assert params['duplicateObservationCount'] == 0
+                assert 'foreign-observation' not in canonical(params).decode()
         if outcome in ('empty_valid','addition','unresolved'):
             assert len(validation['addedObservationIds']) == int(outcome=='addition')
             assert validation['inventoryReviewStatus'] == ('needs_information' if outcome=='unresolved' else 'assessed')

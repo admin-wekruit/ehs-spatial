@@ -189,7 +189,7 @@ def test_inventory_review_additions_flow_through_segmentation_and_one_cross_phot
     validate_document(document)
 
 
-@pytest.mark.parametrize('bad', ['hash','foreign_id','duplicate_id','blank_evidence','bad_box','duplicate_item'])
+@pytest.mark.parametrize('bad', ['hash','foreign_id','missing_id','duplicate_id','blank_evidence','bad_box','duplicate_item'])
 def test_invalid_inventory_review_preserves_original_objects_and_raw_cached_result(tmp_path,bad):
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)
@@ -204,6 +204,7 @@ def test_invalid_inventory_review_preserves_original_objects_and_raw_cached_resu
         r['additions'] = [addition]
         if bad == 'hash': r['inventorySha256'] = 'a'*64
         elif bad == 'foreign_id': r['observationIds'] = ['foreign']
+        elif bad == 'missing_id': r['observationIds'] = []
         elif bad == 'duplicate_id': r['observationIds'] *= 2
         elif bad == 'blank_evidence': addition['evidence'] = ' '
         elif bad == 'bad_box': r['unresolvedRegions'] = [{'box_2d':[0,0,1001,1000],'evidence':'Uncertain.'}]
@@ -215,6 +216,18 @@ def test_invalid_inventory_review_preserves_original_objects_and_raw_cached_resu
     assert len(document['observations']) == 2 and all(o['maskAssetId'] for o in document['observations'])
     errors = [e for e in result['errors'] if e['stage'] == 'inventory_review']
     assert len(errors) == 2 and all(e['code']=='inventory_review_invalid' and e['imageId'] for e in errors)
+    expected_reason = {'hash':'inventory_hash_mismatch','foreign_id':'observation_coverage_mismatch',
+        'missing_id':'observation_coverage_mismatch','duplicate_id':'observation_coverage_mismatch',
+        'blank_evidence':'malformed_review','bad_box':'malformed_box','duplicate_item':'duplicate_addition'}[bad]
+    assert all(e['params']['reason']==expected_reason for e in errors)
+    for error in errors:
+        params = error['params']
+        if bad in ('foreign_id','missing_id','duplicate_id'):
+            owned = [o['id'] for o in document['observations'] if o['imageId']==error['imageId']]
+            assert params['missingObservationIds'] == ([] if bad=='duplicate_id' else owned)
+            assert params['unexpectedObservationCount'] == int(bad=='foreign_id')
+            assert params['duplicateObservationCount'] == int(bad=='duplicate_id')
+            assert 'foreign' not in json.dumps(params)
     assert all(any(a['id']==e['params']['outputAssetId'] for a in document['assets']) for e in errors)
     calls = len(repo.calls)
     _,again = run_analysis(repo,blobs,repo.job,providers)
@@ -240,8 +253,10 @@ def test_inventory_admission_rechecks_current_source_snapshot(tmp_path,change):
     elif change == 'payload_snapshot': payload['observations'][0]['labelEvidence'][0]['evidence'] = 'Forged evidence'
     else: payload['image']['dataUri'] += 'AAAA'
     before = deepcopy(document)
-    with pytest.raises(PlatformError,match='inventory_review_invalid'):
+    with pytest.raises(PlatformError,match='inventory_review_invalid') as caught:
         _admit_inventory_review(document,image,payload,response,evidence)
+    assert caught.value.params['reason'] == 'stale_inventory_snapshot'
+    assert 'missingObservationIds' not in caught.value.params
     assert document == before
     assert not repo.calls
 
@@ -1378,3 +1393,27 @@ def test_cad_reference_job_pins_same_project_source_manifest(tmp_path, monkeypat
     with pytest.raises(PlatformError, match='source_cad_manifest_scope_mismatch'):
         reconstruction.run_reassociation(repo, blobs, job, {})
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize('extra_ids', [False,True])
+def test_inventory_coverage_diagnostic_names_only_owned_missing_observations(tmp_path,extra_ids):
+    from ehs_spatial.platform.reconstruction import _capture,_discover,_inventory_review_input,_admit_inventory_review
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    _,document,images = _capture(repo,blobs,repo.job)
+    image,evidence = images[0],repo.assets[0]
+    _discover(document,image,{'items':[{'label':f'fixture-{i}','box':[0,0,5,12]}
+        for i in range(41)]},evidence)
+    payload = _inventory_review_input(document,image)
+    ids = [o['id'] for o in payload['observations']]
+    response = inventory_review_response(payload)
+    response['review']['observationIds'] = ids[:-2]+([ids[0],'UNTRUSTED-FOREIGN-ID'] if extra_ids else [])
+    before = deepcopy(document)
+    with pytest.raises(PlatformError,match='inventory_review_invalid') as caught:
+        _admit_inventory_review(document,image,payload,response,evidence)
+    assert caught.value.params == {'outputAssetId':evidence['id'],'reason':'observation_coverage_mismatch',
+        'missingObservationIds':ids[-2:],'unexpectedObservationCount':int(extra_ids),
+        'duplicateObservationCount':int(extra_ids),'expectedObservationCount':41,
+        'returnedObservationCount':41 if extra_ids else 39}
+    assert 'UNTRUSTED-FOREIGN-ID' not in json.dumps(caught.value.params)
+    assert document == before and not repo.calls
