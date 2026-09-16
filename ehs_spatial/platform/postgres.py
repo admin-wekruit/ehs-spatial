@@ -273,6 +273,12 @@ class PostgresRepository:
         with self._connect() as connection:
             return _wire(self._one(connection, "SELECT * FROM assets WHERE id=%s", (asset_id,), code="asset_not_found"))
 
+    def get_stage_cache(self, project_id, cache_key):
+        with self._connect() as connection:
+            return _wire(connection.execute("""SELECT * FROM assets WHERE project_id=%s
+                AND metadata->>'kind'='stage_cache' AND metadata->>'cacheKey'=%s
+                ORDER BY created_at,id LIMIT 1""", (project_id, cache_key)).fetchone())
+
     def create_capture(self, project_id, capability, body, images):
         mode = body.get("captureMode", "initial")
         if mode not in ("initial", "append"):
@@ -489,11 +495,15 @@ class PostgresRepository:
             connection.execute("SELECT pg_advisory_xact_lock(728611937)")
             job = self._one(connection, "SELECT *,lease_expires_at>now() AS lease_valid FROM jobs WHERE id=%s FOR UPDATE", (job_id,), code="job_not_found")
             existing = connection.execute("SELECT * FROM model_calls WHERE job_id=%s AND request_key=%s", (job_id, request_key)).fetchone()
+            if existing is None:
+                existing = connection.execute("""SELECT * FROM model_calls WHERE project_id=%s AND provider=%s
+                    AND model=%s AND request_key=%s AND status IN ('reserved','outcome_unknown')
+                    ORDER BY created_at LIMIT 1""", (job['project_id'], provider, model, request_key)).fetchone()
             if existing:
                 raise PlatformError("model_call_already_reserved", 409, modelCallId=str(existing["id"]), status=existing["status"])
             if job["status"] != "running" or job["cancel_requested"] or str(job["attempt_token"]) != str(attempt_token) or not job["lease_valid"]:
                 raise PlatformError("stale_job_attempt", 409)
-            if job['kind'] in ('analyze_capture', 'reconstruct_scene') or (job['kind'] == 'validate_model' and isinstance(job['config'].get('pipeline'), dict)):
+            if job['kind'] in ('analyze_capture', 'reconstruct_scene', 'review_models') or (job['kind'] == 'validate_model' and isinstance(job['config'].get('pipeline'), dict)):
                 branch = self._branch(connection, job['project_id'], job['branch_id'])
                 if branch['head_revision_id'] != job['base_revision_id']:
                     raise PlatformError('pipeline_base_revision_changed', 409)

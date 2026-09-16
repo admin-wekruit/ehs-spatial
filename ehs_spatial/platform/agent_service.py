@@ -38,7 +38,8 @@ answer/needs_information/error use message. proposal uses message and operations
 tool_call uses tool and arguments. Available tools:
 get_entity {entityId}; get_observations {entityId}; list_entities {}; list_versions {};
 get_job {jobId}; list_policies {}; test_policy {jdm,tests}; draft_policy {jdm,tests,limitations,sourceRefs,message}; propose_operations {operations,message};
-start_job {kind: generate_object|generate_scene|segment_object|reassociate_scene|export_glb|export_blender,entityIds?}.
+start_job {kind: generate_object|generate_scene|review_models|segment_object|reassociate_scene|export_glb|export_blender,entityIds?}.
+review_models requires explicit entityIds and reviews their current models/families without regeneration or changing placement.
 Generation requires explicit reviewed entityIds. Exclude reference floors, existing active models,
 and assemblies/parts that need geometry partitioning. Resolve mixed observations before requesting a batch.
 Policy changes are drafts against the pinned policy revision and never activate themselves. Use only IDs in supplied evidence. No shell, paths, URLs, arbitrary code, credentials.
@@ -238,9 +239,11 @@ class AgentService:
             return {"kind": "proposal", "operations": arguments["operations"], "message": arguments.get("message", ""), "baseRevisionId": turn["baseRevisionId"], "applied": False}
         if name == "start_job":
             kind = arguments.get("kind")
-            if kind not in {"generate_object", "generate_scene", "segment_object", "reassociate_scene", "export_glb", "export_blender"}:
+            if kind not in {"generate_object", "generate_scene", "review_models", "segment_object", "reassociate_scene", "export_glb", "export_blender"}:
                 raise PlatformError("agent_job_kind_invalid", 422)
             ids = arguments.get("entityIds", [entity_id] if entity_id else [])
+            if kind == "review_models" and (not isinstance(ids, list) or not ids or any(not isinstance(e, str) for e in ids) or len(set(ids)) != len(ids)):
+                raise PlatformError("review_targets_required", 422)
             if any(e not in {x["id"] for x in scene["entities"]} for e in ids):
                 raise PlatformError("agent_scope_not_found", 422)
             inputs = {"entityIds": ids, "observationId": turn["request"].get("observationId"), "imageId": turn["request"].get("imageId"), "box": turn["request"].get("box")}

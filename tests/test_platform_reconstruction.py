@@ -49,6 +49,10 @@ class Repo:
         return {"id":rid,"document":deepcopy(self.document)}
     def get_asset(self,aid):
         return deepcopy(next(a for a in self.assets if a["id"] == aid))
+    def get_stage_cache(self,pid,key):
+        return deepcopy(next((a for a in self.assets if a['projectId'] == pid
+            and a.get('metadata', {}).get('kind') == 'stage_cache'
+            and a['metadata'].get('cacheKey') == key), None))
     def reserve_model_call(self,*args,**kwargs):
         if kwargs.get("paid") and self.paid_budget is None:
             raise PlatformError("paid_budget_not_configured",409)

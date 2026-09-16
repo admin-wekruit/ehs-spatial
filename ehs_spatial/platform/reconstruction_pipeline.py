@@ -115,6 +115,17 @@ def run_reconstruction_pipeline(repository, blobs, job, providers=None):
             except PlatformError as error:
                 retained = error.code in ('generation_reference_surface', 'generation_part_workflow_required',
                     'generation_model_already_present', 'composite_evidence_not_independent_model')
+                if retained and rows.get(entity_id, {}).get('modelDeclared') and not rows[entity_id].get('qualityCurrent'):
+                    from .reconstruction import run_model_review
+                    document, review = run_model_review(repository, blobs,
+                        {**job, 'kind':'review_models', 'inputs':{'entityIds':[entity_id]}}, providers)
+                    processed.extend(review['reviews'])
+                    remaining = pending[index + 1:]
+                    result = _result(phase, processed, remaining, document=document,
+                        correspondence=review['correspondence'], stages=review['stages'], review=review)
+                    if review.get('stoppedReason'):
+                        result['stoppedReason'] = review['stoppedReason']
+                    return document, result, None if review.get('stoppedReason') else _next(remaining, processed)
                 processed.append({'entityId': entity_id, 'status': 'retained' if retained else 'needs_information', 'reason': error.code})
                 continue
             stages = _Stages(repository, blobs, job, {})

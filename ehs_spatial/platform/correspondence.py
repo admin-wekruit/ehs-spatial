@@ -4,6 +4,35 @@ from .identity import MODEL_KINDS, model_family, validate_part_relations
 from .spatial import primitive_mesh
 
 
+def model_family_quality_binding(document, entity):
+    """Pin the actual current family, including relations and each saved pose."""
+    from copy import deepcopy
+    assets = {asset['id']: asset for asset in document['assets']}
+    observations = {observation['id']: observation for observation in document['observations']}
+    members = []
+    for member in sorted(model_family(document, entity['id']), key=lambda value: value['id']):
+        rep = next((rep for rep in member.get('representations', [])
+                    if rep['id'] == member.get('activeModelRepresentationId')), None)
+        if rep is None or rep['kind'] not in MODEL_KINDS or rep.get('sourceValidity') == 'stale':
+            raise PlatformError('quality_family_model_unavailable', entityId=member['id'])
+        pose = member.get('currentModelTransform') or rep['transform']
+        validate_transform(pose, {frame['id'] for frame in document['coordinateFrames']})
+        if pose['coordinateFrameId'] != rep['coordinateFrameId']:
+            raise PlatformError('quality_coordinate_frames_unregistered')
+        members.append({'entityId': member['id'], 'parentEntityId': member.get('parentEntityId'),
+            'partRelation': deepcopy(member.get('partRelation')), 'representationId': rep['id'],
+            'assetId': rep.get('assetId'),
+            'assetSha256': assets[rep['assetId']]['sha256'] if rep.get('assetId') else None,
+            'assetRecordSha256': digest(assets[rep['assetId']]) if rep.get('assetId') else None,
+            'primitive': deepcopy(rep.get('primitive')), 'transform': deepcopy(pose),
+            'sourceRefsSha256': digest((rep.get('sourceRefs') or []) + (rep.get('provenance') or {}).get('sourceRefs', [])),
+            'observations': [{'observationId':oid, 'sha256':digest(observations[oid])}
+                             for oid in sorted(member.get('observationRefs', []))]})
+    if len({member['transform']['coordinateFrameId'] for member in members}) != 1:
+        raise PlatformError('quality_coordinate_frames_unregistered')
+    return members
+
+
 def model_quality_binding(document, entity, rep, *, transform=None):
     """Snapshot a just-reviewed saved model; only its recording path creates this proof.
 
@@ -35,10 +64,11 @@ def model_quality_binding(document, entity, rep, *, transform=None):
 
     evidence = quality.get('evidenceRef') or {}
     candidate = quality.get('candidateRef') or {}
+    refs = (rep.get('sourceRefs') or []) + (rep.get('qualityReviewRefs') or [])
     if (not isinstance(evidence, dict) or not isinstance(candidate, dict)
             or evidence.get('sha256') != asset_hash(evidence.get('assetId'))
             or candidate.get('sha256') != asset_hash(candidate.get('assetId'))
-            or evidence not in rep.get('sourceRefs', []) or candidate not in rep.get('sourceRefs', [])
+            or evidence not in refs or candidate not in refs
             or digest({key: value for key, value in quality.items() if key != 'evidenceRef'}) != evidence['sha256']):
         raise PlatformError('model_quality_evidence_mismatch')
     pose = rep['transform'] if transform is None else transform
@@ -70,10 +100,20 @@ def model_quality_binding(document, entity, rep, *, transform=None):
         # pixel intrinsics. Both remain pinned through the geometry asset.
         view['sceneCameraSha256'] = digest(camera)
         views.append(view)
+    family = None
+    if any(member.get('parentEntityId') == entity['id'] for member in document['entities']):
+        family = model_family_quality_binding(document, entity)
+        if geometric.get('assessmentScope') != 'parent_family' or quality.get('familyBinding') != family:
+            raise PlatformError('model_quality_family_mismatch')
+    elif quality.get('familyBinding') is not None or geometric.get('assessmentScope') == 'parent_family':
+        raise PlatformError('model_quality_family_mismatch')
     return {'schemaVersion': 1, 'entityId': entity['id'], 'representationId': rep['id'],
         'assetId': rep.get('assetId'), 'assetSha256': asset_hash(rep['assetId']) if rep.get('assetId') else None,
+        'assetRecordSha256': digest(assets[rep['assetId']]) if rep.get('assetId') else None,
         'primitiveSha256': digest(rep['primitive']) if rep.get('primitive') is not None else None,
-        'transformSnapshot': deepcopy(pose), 'qualityEvidenceSha256': digest(quality), 'views': views}
+        'transformSnapshot': deepcopy(pose), 'qualityEvidenceSha256': digest(quality), 'views': views,
+        'parentEntityId': entity.get('parentEntityId'), 'partRelation': deepcopy(entity.get('partRelation')),
+        'familyBinding': family}
 
 
 def audit_correspondence(document):
@@ -273,6 +313,12 @@ def audit_correspondence(document):
                 'reason': 'cache_metadata_requires_renderer_validation' if caches else 'no_current_projection_cache'}})
 
     by_id = {row['entityId']: row for row in rows}
+    for row in rows:
+        if row['qualityCurrent']:
+            # A parent's union proof cannot survive a stale/unowned member, even
+            # when the parent's own mesh and source observations are unchanged.
+            row['qualityCurrent'] = all(by_id.get(member['id'], {}).get('modelCurrent', False)
+                for member in model_family(document, row['entityId']))
     for row in rows:
         if row['activeModelRepresentationId'] is not None or row['category'] != 'unresolved':
             continue

@@ -103,6 +103,9 @@ def run_job(repository, blobs, job_id, providers=None):
             elif job['kind'] == 'reconstruct_scene':
                 from ehs_spatial.platform.reconstruction_pipeline import run_reconstruction_pipeline
                 document, result, continuation = run_reconstruction_pipeline(repository, blobs, job, providers)
+            elif job['kind'] == 'review_models':
+                from ehs_spatial.platform.reconstruction import run_model_review
+                document, result = run_model_review(repository, blobs, job, providers)
             elif job['kind'] in {'analyze_capture', 'generate_object', 'generate_scene', 'segment_object'}:
                 from ehs_spatial.platform import reconstruction
                 manifest = job['config'].get('providerManifest',{})

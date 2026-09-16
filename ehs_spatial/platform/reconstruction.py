@@ -124,14 +124,13 @@ def _telemetry(response):
 class _Stages:
     def __init__(self, repository, blobs, job, providers):
         self.repo,self.blobs,self.job,self.providers = repository,blobs,job,providers
-        self.records, self.assets = [], repository.list_project_records(job["projectId"],"assets")["items"]
+        self.records = []
 
     def put(self, value, metadata, media_type="application/json"):
         data = value if isinstance(value,bytes) else canonical(_packed(value))
         blob = self.blobs.put(data,media_type)
         blob["metadata"] = metadata
         asset = self.repo.register_asset(self.job["projectId"],blob,self.job["id"])
-        self.assets.append(asset)
         return asset
 
     def load(self, asset):
@@ -152,7 +151,7 @@ class _Stages:
                 raise PlatformError("research_call_budget_invalid",409)
         provider.validate(stage,research_protocol=research_protocol)
         key = stage_cache_key(stage,[{"imageId":x["id"],"sha256":x["sha256"],"pixelMapping":x.get("pixelMapping",[])} for x in images],provider.pins,{"payloadSha256":digest(_packed(payload))},refs)
-        cached = next((a for a in self.assets if a.get("metadata",{}).get("kind") == "stage_cache" and a["metadata"].get("cacheKey") == key),None)
+        cached = self.repo.get_stage_cache(self.job['projectId'], key)
         if cached:
             self.records.append({"stage":stage,"cacheKey":key,"status":"cached","assetId":cached["id"],"newModelCalls":0})
             envelope = self.load(cached)
@@ -182,6 +181,7 @@ class _Stages:
             metadata = exc.telemetry if isinstance(exc,ProviderResponseError) else _telemetry({})
             outcome = exc.outcome if isinstance(exc,ProviderResponseError) else "outcome_unknown"
             self.repo.complete_model_call(call["id"],outcome,actual_cost=metadata.get("actualCostUsd"),response={**metadata,"elapsedSeconds":time.monotonic()-started,"error":{"code":"provider_response_invalid" if outcome == "failed" else "provider_outcome_unknown"},"stage":stage})
+            self.records.append({**metadata,"stage":stage,"cacheKey":key,"status":outcome,"elapsedSeconds":time.monotonic()-started,"newModelCalls":1})
             raise PlatformError("provider_response_invalid" if outcome == "failed" else "provider_outcome_unknown",502,stage=stage) from None
         metadata = _telemetry(result)
         # A response has arrived; even invalid data must never trigger a duplicate call.
@@ -189,6 +189,7 @@ class _Stages:
             asset = self.put({"stage":stage,"cacheKey":key,"output":result},{"kind":"stage_cache","stage":stage,"cacheKey":key,"providerPins":dict(provider.pins),"pipelineVersion":PIPELINE_VERSION})
         except Exception:
             self.repo.complete_model_call(call["id"],"outcome_unknown",actual_cost=metadata.get("actualCostUsd"),response={**metadata,"elapsedSeconds":time.monotonic()-started,"error":{"code":"response_persistence_failed"},"stage":stage})
+            self.records.append({**metadata,"stage":stage,"cacheKey":key,"status":"outcome_unknown","elapsedSeconds":time.monotonic()-started,"newModelCalls":1})
             raise PlatformError("response_persistence_failed",502,stage=stage) from None
         elapsed = time.monotonic()-started
         status = "failed" if result.get("providerError") else "succeeded"
@@ -1391,10 +1392,18 @@ def _assess_generation(document, entity, observations, response, evidence, frame
             if correction['accepted']:
                 response = {**response, 'proposedObjectToNative':np.asarray(correction['objectToNative'])}
                 geometric = correction['after']
+    quality, accepted = _review_model_geometry(document, entity, mesh, response.get('proposedObjectToNative'),
+        geometric, evidence, views, missing, records, stages, correction=correction)
+    return response, quality, accepted
+
+
+def _review_model_geometry(document, entity, mesh, pose, geometric, evidence, views, missing, records, stages,
+                           *, correction=None, family_binding=None):
+    """The same source-bound shape review for newly generated and retained geometry."""
     review = {'status':'needs_information','reason':'shape_review_not_configured'}
     if pose is not None and views and not missing and 'model_review' in stages.providers:
         from .model_quality import render_model_views
-        rendered = render_model_views(mesh, np.asarray(response['proposedObjectToNative']), views)
+        rendered = render_model_views(mesh, np.asarray(pose), views)
         pairs = []
         for view, candidate in zip(views, rendered, strict=True):
             source = np.asarray(records[view['imageId']]['rgb'])
@@ -1403,6 +1412,8 @@ def _assess_generation(document, entity, observations, response, evidence, frame
                 'mask':_png_data_uri(view['mask'].astype(np.uint8)*255)})
         payload = {'entityId':entity['id'], 'label':entity['label'], 'candidateAssetSha256':evidence['sha256'],
                    'geometryEvidence':geometric, 'views':pairs, 'reviewVersion':'observed-shape-v1'}
+        if family_binding is not None:
+            payload['familyBinding'] = family_binding
         images = [{'id':v['imageId'], 'sha256':v['sourceHashes']['image']} for v in views]
         try:
             raw_review, review_asset = stages.call('model_review',images,payload,[_ref(evidence)])
@@ -1418,9 +1429,123 @@ def _assess_generation(document, entity, observations, response, evidence, frame
         'geometric':geometric, 'shapeReview':review, 'missingEvidence':missing,
         'correction':correction, 'status':'accepted' if accepted else 'rejected' if review['status'] == 'fail' or geometric['status']=='observed_inconsistent' else 'needs_information',
         'physicalPlacementConfirmed':False}
+    if family_binding is not None:
+        result['familyBinding'] = family_binding
     asset = stages.put(result, {'kind':'model_quality','entityId':entity['id'],'sourceRefs':[_ref(evidence)]})
     _include(document,asset)
-    return response, {**result, 'evidenceRef':_ref(asset)}, accepted
+    return {**result, 'evidenceRef':_ref(asset)}, accepted
+
+
+def run_model_review(repository, blobs, job, providers=None, *, context=None):
+    """Review explicit current models without generating, moving or replacing them."""
+    from .blender_export import mesh_from_asset
+    from .correspondence import (audit_correspondence, model_family_quality_binding,
+                                 model_quality_binding, validate_cad_correspondence)
+    from .identity import model_family
+    from .model_quality import assess_model, assess_model_family
+    from .spatial import primitive_mesh, transform_matrix
+    document = deepcopy(repository.get_revision(job['baseRevisionId'])['document']) if context is None else context
+    requested = job.get('inputs', {}).get('entityIds')
+    entities = {entity['id']: entity for entity in document['entities']}
+    if (not isinstance(requested, list) or not requested or any(not isinstance(eid, str) for eid in requested)
+            or len(set(requested)) != len(requested)):
+        raise PlatformError('review_targets_required', 422)
+    if any(eid not in entities for eid in requested):
+        raise PlatformError('entity_not_found', 404)
+    if providers is None:
+        manifest = job.get('config', {}).get('providerManifest', {})
+        providers = providers_from_manifest({'model_review': manifest['model_review']}) if 'model_review' in manifest else {}
+    stages = _Stages(repository, blobs, job, {key:value for key,value in providers.items() if key == 'model_review'})
+    rows = {row['entityId']: row for row in audit_correspondence(document)['rows']}
+    results, errors, stopped = [], [], None
+    observations = {observation['id']: observation for observation in document['observations']}
+    try:
+        frames, records = _load_geometry(document, [], stages)
+        masks, mask_errors = _load_masks(document, records, stages)
+        geometry_error = None
+    except PlatformError as exc:
+        frames, records, masks, mask_errors, geometry_error = {}, {}, {}, [], exc.code
+
+    def current_mesh(entity):
+        row = rows.get(entity['id'], {})
+        if not row.get('modelCurrent'):
+            raise PlatformError('review_current_model_required', entityId=entity['id'])
+        rep = next(rep for rep in entity['representations'] if rep['id'] == entity['activeModelRepresentationId'])
+        asset = repository.get_asset(rep['assetId']) if rep.get('assetId') else {}
+        declared = next((asset for asset in document['assets'] if asset['id'] == rep.get('assetId')), {})
+        mesh = (primitive_mesh(rep['primitive']) if rep['kind'] == 'primitive' else
+                mesh_from_asset(_scene_asset_bytes(document, rep['assetId'], stages), {**asset, **asset.get('metadata', {}), **declared}))
+        return rep, mesh, transform_matrix(entity.get('currentModelTransform') or rep['transform'])
+
+    for index, eid in enumerate(requested):
+        entity = entities[eid]
+        row = rows.get(eid, {})
+        if row.get('qualityCurrent'):
+            results.append({'entityId':eid, 'status':'accepted', 'reusedCurrentQuality':True,
+                            'representationId':entity['activeModelRepresentationId']})
+            continue
+        try:
+            rep, mesh, pose = current_mesh(entity)
+            if geometry_error:
+                raise PlatformError(geometry_error)
+            views, missing = _quality_views(document, entity, observations, frames, records, masks, stages)
+            missing.extend(error for error in mask_errors if error['observationId'] in entity['observationRefs'])
+            if not views or any(view['coordinateFrameId'] != rep['coordinateFrameId'] for view in views):
+                raise PlatformError('quality_view_unavailable' if not views else 'quality_coordinate_frames_unregistered')
+            family_binding = None
+            if any(member.get('parentEntityId') == eid for member in document['entities']):
+                family_binding = model_family_quality_binding(document, entity)
+                members, native_parts = [], []
+                for member in model_family(document, eid):
+                    member_rep, member_mesh, member_pose = current_mesh(member)
+                    members.append({'entityId':member['id'], 'parentEntityId':member.get('parentEntityId'),
+                        'coordinateFrameId':member_rep['coordinateFrameId'], 'mesh':member_mesh, 'objectToNative':member_pose})
+                    native_parts.extend(MeshData(transform_points(part.vertices, member_pose), part.faces, part.colors)
+                                        for part in member_mesh.primitives or (member_mesh,))
+                geometric = assess_model_family(eid, members, views)
+                mesh = MeshData(native_parts[0].vertices, native_parts[0].faces, primitives=tuple(native_parts))
+                pose = np.eye(4)
+            else:
+                geometric = assess_model(mesh, pose, views)
+            # Only review artifacts/metadata change. Source references, original
+            # mesh bytes, active selection and current pose remain untouched.
+            candidate = stages.put({'entityId':eid, 'representationId':rep['id'],
+                'assetSha256':repository.get_asset(rep['assetId'])['sha256'] if rep.get('assetId') else None,
+                'assetRecordSha256':digest(next(asset for asset in document['assets'] if asset['id'] == rep['assetId'])) if rep.get('assetId') else None,
+                'primitive':rep.get('primitive'), 'transform':entity.get('currentModelTransform') or rep['transform'],
+                'sourceRefs':rep.get('sourceRefs', []), 'familyBinding':family_binding}, {'kind':'model_review_input','entityId':eid})
+            _include(document, candidate)
+            quality, accepted = _review_model_geometry(document, entity, mesh, pose, geometric, candidate,
+                views, missing, records, stages, family_binding=family_binding)
+            rep['qualityEvidence'] = quality
+            rep['qualityReviewRefs'] = [_ref(candidate), quality['evidenceRef']]
+            rep.pop('qualityBinding', None)
+            if accepted:
+                rep['qualityBinding'] = model_quality_binding(document, entity, rep,
+                    transform=entity.get('currentModelTransform') or rep['transform'])
+            results.append({'entityId':eid, 'representationId':rep['id'], 'status':quality['status'],
+                'qualityEvidenceRef':quality['evidenceRef'], 'assessmentScope':geometric.get('assessmentScope', 'selected_model')})
+            reason = quality['shapeReview'].get('reason')
+            if reason in UNKNOWN_OUTCOME_CODES:
+                stopped = reason
+        except (PlatformError, ValueError, TypeError, KeyError) as exc:
+            code = exc.code if isinstance(exc, PlatformError) else 'review_model_invalid'
+            results.append({'entityId':eid, 'status':'needs_information', 'reason':code})
+            errors.append({'entityId':eid, 'code':code})
+            if code in UNKNOWN_OUTCOME_CODES:
+                stopped = code
+        if stopped:
+            results.extend({'entityId':later, 'status':'needs_information', 'reason':'review_stopped_after_unknown_outcome'}
+                           for later in requested[index + 1:])
+            break
+    correspondence = validate_cad_correspondence(document, stages)
+    cad_pending = [row['entityId'] for row in correspondence['rows'] if row['entityId'] in requested and row['cad']['status'] != 'validated']
+    return document, {'status':'succeeded' if all(row['status'] == 'accepted' for row in results) and not cad_pending and not errors else 'incomplete',
+        'reviews':results, 'acceptedEntityIds':[row['entityId'] for row in results if row['status'] == 'accepted'],
+        'errors':errors, 'stages':stages.records, 'newModelCalls':sum(row['newModelCalls'] for row in stages.records),
+        'correspondence':correspondence, 'cadValidationStatus':'incomplete' if cad_pending else 'validated',
+        'cadPendingEntityIds':cad_pending, 'placementConfirmedEntityIds':[],
+        **({'stoppedReason':stopped} if stopped else {})}
 
 
 def run_generation(repository,blobs,job,providers, *, context=None):
@@ -1518,13 +1643,27 @@ def run_capture_pipeline(repository, blobs, job, providers):
         return document, {'status':'incomplete','pipelineVersion':'capture-model-review-v1',
             'analysis':analysis,'planAssetId':plan_asset['id'],'stages':analysis.get('stages',[]),
             'errors':analysis['errors'],'pipelineStatus':'outcome_unknown','stoppedReason':'provider_outcome_unknown'}
+    from .correspondence import audit_correspondence, validate_cad_correspondence
+    retained = [row['entityId'] for row in audit_correspondence(document)['rows']
+                if row['modelDeclared'] and row['entityId'] not in targets and not row.get('qualityCurrent')]
+    review = {'status':'not_requested', 'reviews':[], 'errors':[], 'stages':[]}
+    if retained:
+        review_job = {**job, 'kind':'review_models', 'inputs':{'entityIds':retained}}
+        document, review = run_model_review(repository, blobs, review_job, providers, context=document)
+    if review.get('stoppedReason'):
+        return document, {'status':'incomplete', 'pipelineVersion':'capture-model-review-v1',
+            'analysis':analysis, 'review':review, 'planAssetId':plan_asset['id'],
+            'stages':analysis.get('stages',[])+review['stages'],
+            'errors':analysis.get('errors',[])+review['errors'],
+            'pipelineStatus':'outcome_unknown', 'stoppedReason':review['stoppedReason']}
     research_model = job.get('config',{}).get('providerManifest',{}).get('generation',{}).get('pins',{}).get('model') == 'TRI-ML/RecGen'
     if research_model and targets:
         # The next worker reads the persisted result revision. Never freeze a
         # research request against the upload revision while using new entities.
         result = {'status':'incomplete','pipelineVersion':'capture-model-review-v1',
-            'analysis':analysis,'planAssetId':plan_asset['id'],'stages':analysis.get('stages',[]),
-            'errors':analysis.get('errors',[]),'pipelineStatus':'modeling_pending'}
+            'analysis':analysis,'review':review,'planAssetId':plan_asset['id'],
+            'stages':analysis.get('stages',[])+review['stages'],
+            'errors':analysis.get('errors',[])+review['errors'],'pipelineStatus':'modeling_pending'}
         if job.get('config',{}).get('researchPreparation'):
             result['_continuation'] = {'kind':'reconstruct_scene','inputs':{
                 'phase':'prepare','entityIds':targets,'processed':[]},'config':{}}
@@ -1536,7 +1675,6 @@ def run_capture_pipeline(repository, blobs, job, providers):
     if targets:
         generation_job = {**job,'kind':'generate_scene','inputs':{**job['inputs'],'entityIds':targets}}
         document,generation = run_generation(repository,blobs,generation_job,providers,context=(document,images))
-    from .correspondence import validate_cad_correspondence
     correspondence = validate_cad_correspondence(document, stages)
     cad_pending = [row['entityId'] for row in correspondence['rows'] if row['cad']['status'] != 'validated']
     quality_pending = [row['entityId'] for row in correspondence['rows']
@@ -1545,11 +1683,11 @@ def run_capture_pipeline(repository, blobs, job, providers):
         and not correspondence['documentErrors'] and not correspondence['summary']['sourceErrorCount']
         and not correspondence['summary']['unresolvedCount'] and not cad_pending and not quality_pending)
     return document, {'status':'succeeded' if succeeded else 'incomplete','pipelineVersion':'capture-model-review-v1',
-        'analysis':analysis,'generation':generation,'correspondence':correspondence,'planAssetId':plan_asset['id'],
+        'analysis':analysis,'generation':generation,'review':review,'correspondence':correspondence,'planAssetId':plan_asset['id'],
         'cadValidationStatus':'incomplete' if cad_pending else 'validated',
         'cadPendingEntityIds':cad_pending, 'qualityPendingEntityIds':quality_pending,
-        'stages':analysis.get('stages',[])+generation.get('stages',[]),
-        'errors':analysis.get('errors',[])+generation.get('errors',[])}
+        'stages':analysis.get('stages',[])+review['stages']+generation.get('stages',[]),
+        'errors':analysis.get('errors',[])+review['errors']+generation.get('errors',[])}
 
 
 class _DiscoveredItem(BaseModel):
