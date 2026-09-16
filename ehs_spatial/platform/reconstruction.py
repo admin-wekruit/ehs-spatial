@@ -1835,10 +1835,11 @@ def _discovery_invoke(payload):
     from ..providers.gemini import GeminiAdapter, GEMINI_MODEL_ID, _response_format, _text_block
     from google.genai import interactions
     image = payload["image"]
+    header, encoded = image['dataUri'].split(',', 1)
     adapter = GeminiAdapter()
     response = adapter._create("platform.discovery",model=GEMINI_MODEL_ID,input=[
         _text_block("List distinct visible physical objects and separately identifiable components in this image. Use ordinary names, not a fixed taxonomy. Include small objects and partially occluded objects. Do not claim hidden geometry, dimensions, safety compliance, or certainty. Return one tight box_2d [ymin,xmin,ymax,xmax] in 0-1000 coordinates per visible instance, plus the visual evidence for its label. Do not merge a small attached component into its supporting assembly. Set geometry_role=floor only for a visibly supported hypothesis of the walking floor beneath the scene; tabletop, shelf, platform, and other flat object surfaces are not floor. Use unknown if ambiguous. This role is a hypothesis and does not establish a physical ground plane."),
-        interactions.ImageContent(data=image["dataUri"].split(",",1)[1],mime_type="image/png")],response_format=_response_format(_DiscoveryResponse))
+        interactions.ImageContent(data=encoded,mime_type=header.removeprefix('data:').removesuffix(';base64'))],response_format=_response_format(_DiscoveryResponse))
     usage = getattr(response,"usage",None)
     telemetry = {"usage":usage.model_dump(mode="json",exclude_none=True) if usage is not None else None}
     metadata = _telemetry({"telemetry":telemetry,"providerRequestId":getattr(response,"id",None)})

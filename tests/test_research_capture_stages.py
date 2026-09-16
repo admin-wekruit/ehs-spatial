@@ -371,6 +371,26 @@ def test_segmentation_jpeg_payload_preserves_original_bytes_and_hash(tmp_path, m
     assert (image['height'], image['width']) == (9, 13)
 
 
+def test_discovery_preserves_jpeg_payload_mime_and_bytes(tmp_path, monkeypatch):
+    import base64
+    from ehs_spatial.providers.gemini import GeminiAdapter
+    repo, blobs, manifest, runtime, protocol = segmentation_source(tmp_path, monkeypatch, jpeg=True)
+    frozen = cli.prepare(protocol, repo, blobs, manifest, runtime)
+    seen = []
+    def create(self, *args, **kwargs):
+        seen.extend(kwargs['input'])
+        return SimpleNamespace(id='discovery-fixture', usage=None)
+    monkeypatch.setattr(GeminiAdapter, '_create', create)
+    monkeypatch.setattr(GeminiAdapter, '_parse', lambda *a: (SimpleNamespace(items=[]), 'discovery-fixture'))
+    before = digest(repo.document)
+    result = reconstruction._discovery_invoke({'image':frozen['payload']['image']})
+    asset = repo.get_asset(frozen['images'][0]['assetId'])
+    raw = blobs.get(asset['storageKey'], asset['sha256'], asset['sizeBytes'])
+    assert seen[-1].mime_type == 'image/jpeg'
+    assert base64.b64decode(seen[-1].data) == raw
+    assert result['items'] == [] and digest(repo.document) == before and not repo.calls
+
+
 def fake_sam_transport(monkeypatch, failure=None):
     import json
     import fal_client
