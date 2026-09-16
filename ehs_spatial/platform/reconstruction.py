@@ -871,8 +871,8 @@ def _rebuild_observed_surfaces(document, frames, records, masks, stages):
                 if rep['kind'] == 'observed_surface' and rep['id'] not in replacements and rep.get('sourceValidity') != 'stale':
                     rep.update(sourceValidity='stale', supersededByRepresentationIds=replacements)
     contexts = _capture_context(working, frames, records, stages)
-    if len(contexts) != len(frames):
-        raise PlatformError('observed_context_unavailable', 409)
+    for image_id in sorted(frames.keys() - {result['imageId'] for result in contexts}):
+        errors.append({'stage':'capture_context', 'code':'observed_context_unavailable', 'imageId':image_id})
     replacements = [r['representationId'] for r in contexts]
     for entity in working['entities']:
         if entity.get('sourceContext'):

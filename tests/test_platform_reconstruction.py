@@ -791,8 +791,9 @@ def test_source_equivalence_verifier_rejects_nonobject_proof_document(tmp_path):
         _verified_source_equivalences(document, masks, stages)
 
 
-def test_observed_meshing_rejects_degenerate_faces_without_losing_supported_objects(tmp_path):
-    from ehs_spatial.platform.reconstruction import _mesh, _save_mesh, _include, run_reassociation
+@pytest.mark.parametrize('collapsed_photo', [False, True])
+def test_observed_meshing_rejects_degenerate_faces_without_losing_supported_objects(tmp_path, collapsed_photo):
+    from ehs_spatial.platform.reconstruction import _id, _mesh, _save_mesh, _include, run_reassociation
     from ehs_spatial.platform.spatial import MeshData
 
     valid, rgb = np.ones((2, 2), bool), np.full((2, 2, 3), 100, np.uint8)
@@ -825,11 +826,15 @@ def test_observed_meshing_rejects_degenerate_faces_without_losing_supported_obje
     def geometry(payload):
         response = geometry_response(payload['images'])
         for frame in response['frames']:
+            frame['points'] = frame['points'].copy()
             frame['points'][:, :5] = [0., 0., 2.]
+        if collapsed_photo:
+            response['frames'][0]['points'][:] = [0., 0., 2.]
         return response
     providers['geometry'] = provider('geometry', geometry)
     source, analysis = run_analysis(repo, blobs, repo.job, providers)
-    bad = [o for o in source['observations'] if o['originalPixelBox'][0] == 0]
+    bad = [o for o in source['observations'] if o['originalPixelBox'][0] == 0 or
+           collapsed_photo and o['imageId'] == repo.capture['images'][0]['id']]
     bad_ids = {o['id'] for o in bad}
     assert analysis['status'] == 'incomplete'
     assert {error['observationId'] for error in analysis['errors']} == bad_ids
@@ -843,6 +848,13 @@ def test_observed_meshing_rejects_degenerate_faces_without_losing_supported_obje
     stages = _Stages(repo, blobs, repo.job, {})
     asset = _save_mesh(stages, MeshData(np.zeros((3, 3), np.float32), np.array([[0, 1, 2]], np.uint32)), {})
     _include(source, asset)
+    if collapsed_photo:
+        image_id = repo.capture['images'][0]['id']
+        old_context = deepcopy(next(e for e in source['entities'] if e.get('sourceContext')))
+        old_context['id'] = _id(source['captureId'], 'capture_context', image_id)
+        old_context['representations'][0].update(id=str(uuid4()), assetId=asset['id'],
+            bounds={'min':[0., 0., 0.], 'max':[0., 0., 0.]}, sourceRefs=[{'imageId':image_id}])
+        source['entities'].append(old_context)
     good = next(r for e in source['entities'] if not e.get('sourceContext') for r in e['representations'])
     for entity in bad_entities:
         refs = [{'observationId':oid, 'revision':1} for oid in entity['observationRefs']]
@@ -857,7 +869,11 @@ def test_observed_meshing_rejects_degenerate_faces_without_losing_supported_obje
     job = {**repo.job, 'id':str(uuid4()), 'kind':'reassociate_scene', 'inputs':{'rebuildObservedSurfaces':True}}
     rebuilt, result = run_reassociation(repo, blobs, job, {})
     assert result['status'] == 'incomplete' and len(repo.calls) == call_count
-    assert {error['observationId'] for error in result['errors']} == bad_ids
+    assert {error['observationId'] for error in result['errors'] if error['stage'] == 'observed_surface'} == bad_ids
+    context_errors = [error for error in result['errors'] if error['stage'] == 'capture_context']
+    assert context_errors == ([{'stage':'capture_context', 'code':'observed_context_unavailable',
+                               'imageId':repo.capture['images'][0]['id']}] if collapsed_photo else [])
+    assert len(result['surfaceRebuild']['contexts']) == 2 - int(collapsed_photo)
     assert result['surfaceRebuild']['observationCount'] == len(source['observations']) - len(bad_ids)
     assert {e['id'] for e in rebuilt['entities']} == {e['id'] for e in source['entities']}
     for before, after in zip(source['entities'], rebuilt['entities']):
@@ -870,6 +886,8 @@ def test_observed_meshing_rejects_degenerate_faces_without_losing_supported_obje
                 assert rep == next(r for r in before['representations'] if r['id'] == rep['id'])
             elif not after.get('sourceContext'):
                 assert (rep.get('sourceValidity') == 'stale') == bool(set(after['observationRefs']) & bad_ids)
+            elif collapsed_photo and rep['sourceRefs'][0]['imageId'] == repo.capture['images'][0]['id']:
+                assert rep['sourceValidity'] == 'stale'
     validate_document(rebuilt)
 
 
