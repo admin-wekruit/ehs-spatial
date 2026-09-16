@@ -1781,10 +1781,11 @@ def _validate_research_runtime(protocol,pins,stage='generation'):
         registry = bool(re.fullmatch(r'[^\s]+@sha256:[0-9a-f]{64}', str(runtime.get('runtimeImage', ''))))
         modal_image = bool(re.fullmatch(r'im-[A-Za-z0-9]{22}', str(runtime.get('modalImageId', ''))))
         if (set(protocol.get('runtimeManifest') or {}) != {stage}
-                or set(runtime) - {'pins', 'runtimeImage', 'modalImageId', 'distribution'}
+                or set(runtime) - {'pins', 'runtimeImage', 'modalImageId', 'distribution', 'adapterSourceSha256'}
                 or ('runtimeImage' in runtime) == ('modalImageId' in runtime)
                 or not (registry or modal_image) or runtime.get('pins') != pins
                 or runtime.get('distribution') != ('mapanything' if stage == 'geometry' else 'moge')
+                or not re.fullmatch(r'[0-9a-f]{64}', str(runtime.get('adapterSourceSha256', '')))
                 or any(not re.fullmatch(r'[0-9a-f]{40}', str(pins.get(k, ''))) for k in ('codeRevision', 'modelRevision'))):
             raise PlatformError('research_runtime_unpinned', 409)
         return

@@ -33,6 +33,7 @@ def preparation(tmp_path, monkeypatch, stage):
         'releaseEvidence': {'pins': pins, 'license': {'status': 'passed', 'artifactSha256': 'c' * 64},
                             'runtime': {'status': 'unverified'}, 'quality': {'status': 'unverified'}}}}
     runtime = {stage: {'pins': pins, 'modalImageId': 'im-' + 'a' * 22,
+                       'adapterSourceSha256': 'f' * 64,
                        'distribution': 'mapanything' if stage == 'geometry' else 'moge'}}
     protocol = {'id': 'capture-stage-fixture', 'stage': stage, 'purpose': 'runtime_validation',
         'projectId': repo.pid, 'branchId': 'test-branch', 'baselineRevision': repo.rid,
@@ -61,6 +62,19 @@ def test_prepare_first_runtime_validation_without_an_entity_or_geometry(tmp_path
     spec.validate(stage, research_protocol=frozen['protocol'])
     with pytest.raises(PlatformError, match='provider_release_gate_unverified'):
         spec.validate(stage)
+
+
+@pytest.mark.parametrize('stage', ['geometry', 'depth'])
+@pytest.mark.parametrize('adapter_sha', [None, 'main', 'a' * 63])
+def test_capture_runtime_requires_an_immutable_adapter_source_hash(tmp_path, monkeypatch, stage, adapter_sha):
+    _, _, manifest, frozen = preparation(tmp_path, monkeypatch, stage)
+    runtime = frozen['protocol']['runtimeManifest'][stage]
+    if adapter_sha is None:
+        runtime.pop('adapterSourceSha256', None)
+    else:
+        runtime['adapterSourceSha256'] = adapter_sha
+    with pytest.raises(PlatformError, match='research_runtime_unpinned'):
+        reconstruction._validate_research_runtime(frozen['protocol'], manifest[stage]['pins'], stage)
 
 
 @pytest.mark.parametrize('changed', ['foreign_image', 'changed_pixels', 'two_stages', 'stage_mismatch', 'license', 'runtime_pin', 'source_hash', 'source_project', 'image_selection'])
