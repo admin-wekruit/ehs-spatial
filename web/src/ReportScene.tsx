@@ -228,7 +228,7 @@ export function ReportScene({
     objectList = useRef<HTMLDivElement>(null), objectSearch = useRef<HTMLInputElement>(null), currentPreviewKey = useRef(""), panePrefix = useId();
   const [layer, setLayer] = useState<Layer>(() => revision.document.entities.some(entity =>
     !entity.sourceContext && activeModel(entity)?.sourceValidity !== "stale" && activeModel(entity)) ? "model" : "observed_surface"),
-    [cadLayer, setCadLayer] = useState<"model" | "observed_surface">("observed_surface"),
+    [cadLayer, setCadLayer] = useState<"model" | "observed_surface">("model"),
     [allBounds, setAllBounds] = useState(false),
     [focused, setFocused] = useState<Pane | null>(null),
     [mobileSection, setMobileSection] = useState("views"),
@@ -258,8 +258,8 @@ export function ReportScene({
   const selectedOverlay = selected && camera ? photoOverlay(document, selected, camera, layer, selection.observationId) : null;
   const objects = document.entities.filter((entity) => !entity.sourceContext);
   const visibleObjects = objects.filter(entity => entity.visible !== false);
-  const modelObjects = objects.filter(entity => activeModel(entity) && entityGeometryForLayer(entity, { ...geometryOptions, layer: "model" }));
-  const referenceSurfaces = objects.filter(entity => entityGeometryForLayer(entity, { ...geometryOptions, layer: "model" })?.geometryKind === "observed");
+  const modelObjects = visibleObjects.filter(entity => activeModel(entity) && entityGeometryForLayer(entity, { ...geometryOptions, layer: "model" }));
+  const referenceSurfaces = visibleObjects.filter(entity => entityGeometryForLayer(entity, { ...geometryOptions, layer: "model" })?.geometryKind === "observed");
   const compositePreviews = visibleObjects.filter(entity => !modelObjects.includes(entity) && !referenceSurfaces.includes(entity) &&
     compositeModelEvidence(document, entity.id) && modelPreviewGeometry(document, entity.id, { ...geometryOptions, layer: "model" }));
   const missingModels = visibleObjects.length - modelObjects.length - referenceSurfaces.length - compositePreviews.length;
@@ -449,7 +449,7 @@ export function ReportScene({
           <nav className="report-scene-view-switch report-scene-mobile-views" aria-label={t("sceneViews")}>
             {paneOrder.map((pane) => <button key={pane} aria-pressed={(focused || "photo") === pane} aria-controls={`${panePrefix}-${pane}`} onClick={() => chooseView(pane)}>{t(viewNames[pane])}</button>)}
           </nav>
-          {layer === "model" && <p className="report-scene-notice" data-model-coverage={modelObjects.length} data-model-loaded={readyModels.length} data-reference-surfaces={referenceSurfaces.length} data-composite-previews={compositePreviews.length} data-missing-models={missingModels}><strong>{modelObjects.length} / {visibleObjects.length} {t("sceneModelCoverage")}</strong>{referenceSurfaces.length > 0 && <> · {referenceSurfaces.length} {t("sceneReferenceSurfaceCount")}</>}{compositePreviews.length > 0 && <> · {compositePreviews.length} {t("sceneCompositePreviewCount")}</>} · {missingModels} {t("sceneMissingModelCount")} · {readyModels.length} / {modelObjects.length} {t("sceneModelLoaded")}{pendingModels > 0 && <> · {pendingModels} {t("sceneModelLoading")}</>}{failedModels.length > 0 && <> · {failedModels.length} {t("sceneModelLoadFailed")}</>}{modelCandidates > 0 && <> · {modelCandidates} {t("sceneModelCandidateCount")}</>} · {t("sceneModelCoverageMeaning")}</p>}
+          {layer === "model" && <p className="report-scene-notice" data-geometry-coverage={modelObjects.length + referenceSurfaces.length + compositePreviews.length} data-model-coverage={modelObjects.length} data-model-loaded={readyModels.length} data-reference-surfaces={referenceSurfaces.length} data-composite-previews={compositePreviews.length} data-missing-models={missingModels}><strong>{modelObjects.length + referenceSurfaces.length + compositePreviews.length} / {visibleObjects.length} {t("sceneGeometryCoverage")}</strong> · {modelObjects.length} {t("sceneIndependentModelCount")}{referenceSurfaces.length > 0 && <> · {referenceSurfaces.length} {t("sceneReferenceSurfaceCount")}</>}{compositePreviews.length > 0 && <> · {compositePreviews.length} {t("sceneCompositePreviewCount")}</>} · {missingModels} {t("sceneMissingModelCount")} · {readyModels.length} / {modelObjects.length} {t("sceneModelLoaded")}{pendingModels > 0 && <> · {pendingModels} {t("sceneModelLoading")}</>}{failedModels.length > 0 && <> · {failedModels.length} {t("sceneModelLoadFailed")}</>}{modelCandidates > 0 && <> · {modelCandidates} {t("sceneModelCandidateCount")}</>} · {t("sceneModelCoverageMeaning")}</p>}
           {hasCandidates && <p className="report-scene-notice">{t("sceneCandidateNotice")}</p>}
           <div className="report-scene-grid">
             {paneOrder.map((pane, index) => (

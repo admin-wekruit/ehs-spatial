@@ -5,15 +5,36 @@ CAD and browser-visible model geometry, through the same analysis path for every
 new capture. Counts, downloadable Blender files and successful GPU processes are
 not acceptance of shape or correspondence.
 
+## User clarification: coarse workcell models
+
+The latest requested delivery is recognizable, approximate workcell modeling,
+not detailed replicas. Each object must retain its photo/CAD/model identity and
+plausible main shape, overall proportions, footprint, orientation and placement.
+Missing screws, cables, textures, small joints or individual fence bars alone do
+not justify regeneration. Wrong objects, merged neighbors, missing main bodies,
+grossly wrong placement and blocked major passages still require correction.
+Ground remains a reference surface; fine detail and physical calibration are not
+prerequisites for displaying a coarse model. Metric safety conclusions retain
+their separate evidence requirements.
+
+The shared shape-review input uses `coarse-layout-shape-v2`, so cached detailed
+reviews cannot masquerade as the new review. The separate numerical profile
+`coarse-layout-position-v1` requires 90% tolerant silhouette coverage (5% of the
+mask-box diagonal), depth median error at most 5%, and 80% of compared depth
+pixels within 15%. Exact coverage and depth P95 remain diagnostic fields; complete
+mask IoU/precision checks remain in force. Detailed mode and historical results
+are unchanged. These engineering criteria are recorded with each assessment;
+they do not certify physical dimensions or safety. The historical failed rows
+below need explicit reassessment; this note does not alter any published snapshot.
+
 ## Current report and remaining objects
 
-The current public publication is `18cab101-5464-40d3-9796-321dc237e5aa`, based on
+Before the coarse-model pass, the public publication was `18cab101-5464-40d3-9796-321dc237e5aa`, based on
 revision `31533a00-ffc2-4e52-9ea5-6ac973446a0e`. Its 28 records comprise 24
 model-bearing records, one ground reference, one unresolved composite record and
 two missing-model records. Models include actual parts and visible surfaces;
 these are not 24 independently verified complete solids. All placement and
-physical-scale uncertainty remains explicit. No candidate generated in the tests
-below was attached or published.
+physical-scale uncertainty remains explicit. This describes that immutable snapshot; later delivery is recorded below.
 
 The retained models were rechecked through durable `review_models` jobs. Eight
 model rows fail the multi-view geometric checks. The shared family evaluator uses
@@ -361,3 +382,39 @@ in `geometry/failure-diagnostics/`, and the cable-tray result plus CPU pose tria
 in `missing-model-inputs/photo1-only-recovery/`. Original photos and binary models
 remain outside Git. The authoritative budget snapshot is
 `.platform/model-correspondence/budget.json`.
+
+
+## Coarse-model delivery, 2026-09-16
+
+Publication `c34292d0-74f0-431d-b35e-4d280f1c2df6`, revision
+`892f684c-60d5-4c52-a214-53f9a66d62b9`, retains all 28 source record IDs.
+There are now 26 model-bearing records, one explicit observed ground reference,
+and one component-linked composite record. No ordinary object lacks a display
+model. This is geometry coverage, not 28 independently approved solids or
+physical-position certification.
+
+The adjacent fence reused the completed hosted SAM3D output and the shared native
+pose/refinement path. The last wire tray uses an explicitly requested approximate
+open frame. Its two owned source masks triangulate the main axis; original native
+pointmaps determine position. Two rails, nine approximate rungs and thickness are
+recorded shape assumptions. No additional paid call was made for this tray.
+
+The shared `generate_object` / `generate_scene` entry accepts an explicit
+`inputs.coarseFrames[entityId]` containing `observationIds` (two independent owned
+views), `barFraction`, and `rungCount`. It is an explicit shape choice for slender
+open frames, not an automatic substitute for any failed model. Degenerate axes,
+unregistered cameras, unowned observations and insufficient masks fail closed.
+
+Depth from the wire openings was contaminated by the background. A model-independent
+cross-view filter retains target depth only when its native point projects within
+two canonical pixels of the same object's explicitly selected mask in the other
+image. It preserves every view, all masks, original depth, non-target occluders,
+raw comparison results and rejected-support counts. Qualified support does not
+establish accuracy for the hidden object. Later model reviews use this same proof
+path; changing source evidence invalidates the existing binding.
+
+The coarse refiner now optimizes the same tolerant silhouette/depth criteria it
+uses for acceptance. The stricter detailed profile is unchanged. Shape approval,
+metric EHS eligibility and physical placement remain separate. The 030 workcell
+and automatic fresh-photo release gates recorded above remain open; the 090
+coverage result does not certify them.

@@ -6,11 +6,14 @@ Invalid evidence fails closed. No threshold here is a measured accuracy claim.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
+import io
 import re
 from collections.abc import Mapping
 
 import numpy as np
+from PIL import Image
 
 from .contracts import PlatformError, digest
 from .spatial import MeshData, affine, camera_intrinsics, matrix_to_transform, transform_points
@@ -24,6 +27,8 @@ THRESHOLDS = {"minimumTargetPixels": 8, "minimumDepthPixels": 8,
               "minimumCompleteMaskPrecision": .7, "occlusionRelativeDepth": .04,
               "meaningfulCoverageImprovement": .005, "meaningfulDepthImprovement": .002,
               "nonRegressionTolerance": 1e-6}
+COARSE_THRESHOLDS = {"silhouetteToleranceFraction": .05, "minimumTolerantCoverage": .9,
+                     "minimumDepthInlierFraction": .8}
 
 
 def _array_hash(value):
@@ -132,7 +137,7 @@ def _cast(scene, matrix, rays):
     return scene.cast_rays(o3d.core.Tensor(local), nthreads=1)
 
 
-def _score(scene, matrix, view):
+def _score(scene, matrix, view, *, coarse=False):
     binding = view["binding"]
     if "error" in view:
         return {**binding, "status": "insufficient_evidence", "scoreable": False, "reason": view["error"]}
@@ -152,17 +157,32 @@ def _score(scene, matrix, view):
     precision = overlap_count / visible_count if visible_count else 0.
     union = int((visible | target).sum())
     iou = overlap_count / union if union else None
+    coarse_metrics = {}
+    if coarse and count:
+        from scipy.ndimage import distance_transform_edt
+        y, x = np.nonzero(target)
+        tolerance = max(1., COARSE_THRESHOLDS['silhouetteToleranceFraction'] * np.hypot(np.ptp(x)+1, np.ptp(y)+1))
+        tolerant = int((distance_transform_edt(~visible)[target] <= tolerance).sum()) if visible.any() else 0
+        coarse_metrics = {'exactCoverage':coverage, 'silhouetteTolerancePixels':float(tolerance),
+                          'tolerantCoverage':tolerant/count,
+                          'depthInlierFraction':float(np.mean(residual <= THRESHOLDS['maximumRelativeDepthP95'])) if len(residual) else None}
     scoreable = count >= THRESHOLDS["minimumTargetPixels"] and depth_count >= THRESHOLDS["minimumDepthPixels"]
     reasons = []
     if not scoreable:
         status = "insufficient_evidence"
         reasons.append("insufficient_target_pixels" if count < THRESHOLDS["minimumTargetPixels"] else "insufficient_target_depth")
     else:
-        if coverage < THRESHOLDS["minimumCoverage"]:
+        if coarse and coarse_metrics['tolerantCoverage'] < COARSE_THRESHOLDS['minimumTolerantCoverage']:
+            reasons.append('coarse_extent_or_position_failed')
+        elif not coarse and coverage < THRESHOLDS["minimumCoverage"]:
             reasons.append("observed_coverage_failed")
         if binding["maskComplete"] and (iou < THRESHOLDS["minimumCompleteMaskIoU"] or precision < THRESHOLDS["minimumCompleteMaskPrecision"]):
             reasons.append("complete_mask_silhouette_failed")
-        if p50 is not None and (p50 > THRESHOLDS["maximumRelativeDepthP50"] or p95 > THRESHOLDS["maximumRelativeDepthP95"]):
+        # Coarse layout checks retain the median position requirement. Local
+        # omitted bars/holes may disagree; preserve P95 as a detailed diagnostic.
+        depth_tail_failed = (coarse_metrics.get('depthInlierFraction',0) < COARSE_THRESHOLDS['minimumDepthInlierFraction']
+                             if coarse and p50 is not None else p95 is not None and p95 > THRESHOLDS['maximumRelativeDepthP95'])
+        if p50 is not None and (p50 > THRESHOLDS["maximumRelativeDepthP50"] or depth_tail_failed):
             reasons.append("observed_depth_failed")
         if reasons:
             status = "observed_inconsistent"
@@ -179,22 +199,25 @@ def _score(scene, matrix, view):
             "unknownTargetDepthPixels": count - depth_count, "depthComparisonPixels": int(len(residual)),
             "overlapPixels": overlap_count, "predictedPixels": int(hit.sum()),
             "visiblePredictedPixels": visible_count, "occludedPredictedPixels": int(occluded.sum()),
-            "excludedDomainPixels": int((~domain).sum()), "sourceMaskPixels": int(view["mask"].sum())}
+            "excludedDomainPixels": int((~domain).sum()), "sourceMaskPixels": int(view["mask"].sum()), **coarse_metrics}
 
 
-def _report(scene, matrix, views, mesh_hash):
-    scores = [_score(scene, matrix, view) for view in views]
+def _report(scene, matrix, views, mesh_hash, *, coarse=False):
+    scores = [_score(scene, matrix, view, coarse=coarse) for view in views]
     statuses = [score["status"] for score in scores]
     status = ("insufficient_evidence" if not scores or "insufficient_evidence" in statuses else
               "observed_inconsistent" if "observed_inconsistent" in statuses else "observed_consistent")
     pose_hash = digest(matrix.tolist())
-    return {"version": THRESHOLDS_VERSION, "thresholds": dict(THRESHOLDS),
+    version = 'coarse-layout-position-v1' if coarse else THRESHOLDS_VERSION
+    thresholds = {**THRESHOLDS, **(COARSE_THRESHOLDS if coarse else {})}
+    return {"version": version, "thresholds": thresholds,
+            "acceptanceScope":"coarse_layout" if coarse else "observed_surface_alignment",
             "thresholdMeaning": "engineering_checks_not_accuracy_claims", "status": status,
             "semanticShapeStatus": "not_assessed", "physicalCalibrationStatus": "not_assessed",
             "meshSha256": mesh_hash, "poseSha256": pose_hash,
             "evidenceSha256": digest({"mesh": mesh_hash, "pose": pose_hash,
                                       "views": [v["binding"] for v in views],
-                                      "version": THRESHOLDS_VERSION, "thresholds": THRESHOLDS}),
+                                      "version": version, "thresholds": thresholds}),
             "viewCount": len(scores), "independentImageCount": len({s["imageId"] for s in scores if s.get("imageId")}),
             "scoreableViewCount": sum(s["scoreable"] for s in scores),
             "consistentViewCount": statuses.count("observed_consistent"),
@@ -202,7 +225,7 @@ def _report(scene, matrix, views, mesh_hash):
             "insufficientViewCount": statuses.count("insufficient_evidence"), "perView": scores}
 
 
-def assess_model(mesh, object_to_native, views):
+def assess_model(mesh, object_to_native, views, *, coarse=False):
     """Assess every supplied view at native resolution, without mutating geometry.
 
     A view requires observationId/revision, imageId, coordinateFrameId, sourceHashes,
@@ -211,10 +234,10 @@ def assess_model(mesh, object_to_native, views):
     maskComplete defaults to False. One failed or unscoreable view prevents acceptance.
     """
     parts, matrix, prepared, mesh_hash = _prepare(mesh, object_to_native, views)
-    return _report(_ray_scene(parts), matrix, prepared, mesh_hash)
+    return _report(_ray_scene(parts), matrix, prepared, mesh_hash, coarse=coarse)
 
 
-def assess_model_family(parent_entity_id, members, views):
+def assess_model_family(parent_entity_id, members, views, *, coarse=False):
     """Score an explicit mesh family against the parent's whole-object evidence.
 
     Each member supplies entityId, parentEntityId, coordinateFrameId, mesh and
@@ -255,7 +278,7 @@ def assess_model_family(parent_entity_id, members, views):
                          'coordinateFrameId':frame, 'meshSha256':mesh_hash,
                          'poseSha256':digest(matrix.tolist())})
     combined = MeshData(native_parts[0].vertices, native_parts[0].faces, primitives=tuple(native_parts))
-    report = assess_model(combined, np.eye(4), views)
+    report = assess_model(combined, np.eye(4), views, coarse=coarse)
     scope = {'assemblyVersion':'observed-model-family-v1', 'assessmentScope':'parent_family',
              'parentEntityId':parent_entity_id, 'familyMembers':bindings}
     return {**report, **scope,
@@ -299,6 +322,32 @@ def render_model_views(mesh, object_to_native, views):
     return images
 
 
+def build_model_review_payload(entity, mesh, object_to_native, geometric, candidate_ref,
+                               views, records, *, family_binding=None):
+    """Build the existing review wire input from already owned, derived evidence.
+
+    Rendering is CPU-only; this function performs no asset or provider I/O and
+    neither changes nor grants acceptance to the supplied geometry/evidence.
+    """
+    def png_data_uri(rgb):
+        output = io.BytesIO()
+        Image.fromarray(np.asarray(rgb, dtype=np.uint8)).save(output, format='PNG')
+        return 'data:image/png;base64,' + base64.b64encode(output.getvalue()).decode()
+
+    rendered = render_model_views(mesh, object_to_native, views)
+    pairs = [{'observationId':view['observationId'], 'observationRevision':view['observationRevision'],
+              'source':png_data_uri(records[view['imageId']]['rgb']),
+              'candidate':png_data_uri(candidate),
+              'mask':png_data_uri(view['mask'].astype(np.uint8) * 255)}
+             for view, candidate in zip(views, rendered, strict=True)]
+    payload = {'entityId':entity['id'], 'label':entity['label'],
+               'candidateAssetSha256':candidate_ref['sha256'], 'geometryEvidence':geometric,
+               'views':pairs, 'reviewVersion':'coarse-layout-shape-v2'}
+    if family_binding is not None:
+        payload['familyBinding'] = family_binding
+    return payload
+
+
 def _nonworsening(before, after):
     epsilon = THRESHOLDS["nonRegressionTolerance"]
     improved = False
@@ -320,16 +369,16 @@ def _nonworsening(before, after):
     return bool(improved)
 
 
-def refine_model_pose(mesh, object_to_native, views, max_iterations=80):
-    """Bounded rigid candidate only; no scale optimization or automatic placement approval."""
+def refine_model_pose(mesh, object_to_native, views, max_iterations=80, *, coarse=False, fit_scale=False):
+    """Bounded pose candidate; optional uniform scale for source-local generated shapes."""
     from scipy.optimize import minimize
     from scipy.spatial.transform import Rotation
-    if type(max_iterations) is not int or not 1 <= max_iterations <= 500:
+    if type(max_iterations) is not int or not 1 <= max_iterations <= 500 or type(coarse) is not bool or type(fit_scale) is not bool:
         raise PlatformError("invalid_quality_refinement_iterations")
     parts, initial, prepared, mesh_hash = _prepare(mesh, object_to_native, views)
     scene = _ray_scene(parts)
-    before = _report(scene, initial, prepared, mesh_hash)
-    result = {"method": "bounded_rigid_observed_alignment_v1", "accepted": False,
+    before = _report(scene, initial, prepared, mesh_hash, coarse=coarse)
+    result = {"method": "bounded_similarity_observed_alignment_v1" if fit_scale else "bounded_rigid_observed_alignment_v1", "accepted": False,
               "status": "insufficient_evidence", "objectToNative": initial.tolist(),
               "before": before, "after": before, "evaluations": 0, "fullResolutionReassessed": False}
     if not prepared or before["scoreableViewCount"] != len(prepared):
@@ -354,35 +403,53 @@ def refine_model_pose(mesh, object_to_native, views, max_iterations=80):
         sampled.append({**view, **{key: view[key][::stride, ::stride] for key in ("mask", "depth", "valid", "domain", "rays")}})
 
     def candidate(x):
-        rotation = Rotation.from_rotvec(x[3:]).as_matrix()
+        rotation = Rotation.from_rotvec(x[3:6]).as_matrix()
+        scale = float(np.exp(x[6])) if fit_scale else 1.
         matrix = initial.copy()
-        matrix[:3, :3] = rotation @ initial[:3, :3]
-        matrix[:3, 3] = center + rotation @ (initial[:3, 3] - center) + x[:3] * radius
+        matrix[:3, :3] = scale * rotation @ initial[:3, :3]
+        matrix[:3, 3] = center + scale * rotation @ (initial[:3, 3] - center) + x[:3] * radius
         return matrix
 
     def loss(scores):
         losses = []
         for score in scores:
-            value = 1 - score["coverage"]
+            value = 1 - (score["tolerantCoverage"] if coarse else
+                         score["iou"] if fit_scale else score["coverage"])
             value += min(score["relativeDepthP50"] if score["relativeDepthP50"] is not None else 1., 1.)
-            value += min(score["relativeDepthP95"] if score["relativeDepthP95"] is not None else 1., 1.)
+            value += (1 - (score['depthInlierFraction'] or 0.) if coarse else
+                      min(score["relativeDepthP95"] if score["relativeDepthP95"] is not None else 1., 1.))
+            if coarse:
+                value += max(0., 1 - score['depthComparisonPixels'] / THRESHOLDS['minimumDepthPixels'])
             if score["maskComplete"]:
                 value += 1 - score["iou"]
             losses.append(value)
         return max(losses) + .1 * sum(losses)
 
     def objective(x):
-        if np.max(np.abs(x[:3])) > .3 or np.linalg.norm(x[3:]) > .65:
+        if (np.max(np.abs(x[:3])) > (.4 if fit_scale else .3) or
+                np.linalg.norm(x[3:6]) > (1. if fit_scale else .65) or
+                fit_scale and abs(x[6]) > .7):
             return 100. + float(x @ x)
         result["evaluations"] += 1
-        return loss([_score(scene, candidate(x), view) for view in sampled])
+        return loss([_score(scene, candidate(x), view, coarse=coarse) for view in sampled])
 
-    simplex = np.vstack((np.zeros(6), np.diag([.025] * 3 + [.04] * 3)))
-    fit = minimize(objective, np.zeros(6), method="Nelder-Mead", options={
+    steps = [.025] * 3 + [.04] * 3 + ([.04] if fit_scale else [])
+    start = np.zeros(len(steps))
+    if fit_scale:
+        # Complete silhouettes supply a scale seed that crosses pixel plateaus;
+        # partial masks cannot estimate the full object area.
+        ratios = [s['targetPixels'] / s['predictedPixels'] for s in before['perView']
+                  if s['maskComplete'] and s['predictedPixels'] > 0]
+        if ratios:
+            start[6] = np.clip(.5*np.log(np.median(ratios)), -.5, .5)
+    simplex = np.vstack((start, start + np.diag(steps)))
+    fit = minimize(objective, start, method="Nelder-Mead", options={
         "initial_simplex": simplex, "maxiter": max_iterations, "xatol": .0005, "fatol": .0001})
     proposed = _pose(candidate(fit.x))
-    after = _report(scene, proposed, prepared, mesh_hash)
-    accepted = _nonworsening(before, after)
+    after = _report(scene, proposed, prepared, mesh_hash, coarse=coarse)
+    accepted = (_nonworsening(before, after) if not fit_scale and not coarse else
+                after['status'] == 'observed_consistent' and
+                (before['status'] != 'observed_consistent' or loss(after['perView']) < loss(before['perView'])))
     result.update(accepted=accepted, status="accepted" if accepted else "rejected",
                   fullResolutionReassessed=True, reason=None if accepted else "per_view_improvement_not_proven")
     if accepted:

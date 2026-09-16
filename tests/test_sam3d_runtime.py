@@ -246,6 +246,21 @@ def test_capture_adapter_source_pin_is_mandatory(monkeypatch, tmp_path, pin):
         worker._verify_distribution('geometry')
 
 
+def owned_research_input(repo, blobs, protocol):
+    from ehs_spatial.platform.contracts import digest
+    from ehs_spatial.platform.reconstruction import run_analysis, _research_sam3d_input, _packed
+    from test_platform_reconstruction import bundle
+    repo.document, result = run_analysis(repo, blobs, repo.job, bundle(repo))
+    assert result['status'] == 'succeeded'
+    entity = next(e for e in repo.document['entities'] if not e.get('sourceContext'))
+    payload, images, observation_id, refs = _research_sam3d_input(repo, blobs, repo.job, entity['id'])
+    protocol.update(entityId=entity['id'], observationId=observation_id, baselineRevision=repo.rid,
+                    inputHashes=[i['sha256'] for i in images], inputAssetHashes=refs,
+                    payloadSha256=digest(_packed(payload)))
+    repo.calls.clear()
+    return payload, images
+
+
 @pytest.mark.parametrize("failure", [None, "license", "runtime_for_quality", "purpose", "payload", "runtime_image", "source_audit", "budget", "insufficient_budget", "public_kind"])
 def test_research_worker_enforces_frozen_prerequisites_and_never_writes_scene(monkeypatch, tmp_path, failure):
     from copy import deepcopy
@@ -273,11 +288,7 @@ def test_research_worker_enforces_frozen_prerequisites_and_never_writes_scene(mo
     blobs = LocalBlobStore(tmp_path)
     repo = WorkerRepo(blobs)
     runtime, manifest, protocol = research_configuration()
-    image = repo.capture["images"][0]
-    image = {**image,"sha256":repo.get_asset(image["assetId"])["sha256"]}
-    payload = {"entityId":protocol["entityId"]}
-    protocol.update(baselineRevision=repo.rid, inputHashes=[image["sha256"]], payloadSha256=digest(payload),
-                    inputAssetHashes=[{"assetId":image["assetId"],"sha256":image["sha256"]}])
+    payload, images = owned_research_input(repo, blobs, protocol)
     if failure == "license": manifest["generation"]["releaseEvidence"]["license"] = {"status":"unverified"}
     if failure == "runtime_for_quality": protocol["purpose"] = "quality_validation"
     if failure == "purpose": protocol["purpose"] = "product"
@@ -288,7 +299,9 @@ def test_research_worker_enforces_frozen_prerequisites_and_never_writes_scene(mo
     repo.paid_budget = None if failure == "budget" else .009 if failure == "insufficient_budget" else .01
     frozen = {"schemaVersion":1,"projectId":repo.pid,"branchId":"test-branch","baseRevisionId":repo.rid,
         "baseDocumentSha256":digest(repo.document),"authority":{"source":"database_admin"},
-        "protocol":protocol,"payload":payload,"images":[image],"providerManifest":manifest}
+        "protocol":protocol,"payload":payload,"images":images,"providerManifest":manifest}
+    from ehs_spatial.platform.reconstruction import _packed
+    frozen['payload'] = _packed(payload)
     from ehs_spatial.platform.contracts import canonical
     asset = repo.register_asset(repo.pid,{**blobs.put(canonical(frozen),"application/json"),"metadata":{"kind":"sam3d_validation_input"}})
     repo.job.update(kind="generate_object" if failure == "public_kind" else "validate_model", branchId="test-branch", status="queued",
@@ -321,10 +334,7 @@ def test_unknown_research_call_cannot_charge_again(monkeypatch, tmp_path):
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)
     _, manifest, protocol = research_configuration()
-    image = repo.capture["images"][0]
-    image = {**image,"sha256":repo.get_asset(image["assetId"])["sha256"]}
-    payload = {"entityId":protocol["entityId"]}
-    protocol.update(baselineRevision=repo.rid,inputHashes=[image["sha256"]],payloadSha256=digest(payload))
+    payload, images = owned_research_input(repo, blobs, protocol)
     job = {**repo.job,"kind":"validate_model","config":{"researchProtocolSha256":digest(protocol)}}
     repo.paid_budget = 1
     calls = []
@@ -336,7 +346,7 @@ def test_unknown_research_call_cannot_charge_again(monkeypatch, tmp_path):
     monkeypatch.setattr("ehs_spatial.platform.reconstruction.providers_from_manifest",lambda *a,**k:{"generation":provider})
     for _ in range(2):
         with pytest.raises(PlatformError,match="provider_outcome_unknown"):
-            run_research_stage(repo,blobs,job,"generation",payload,[image],manifest,protocol)
+            run_research_stage(repo,blobs,job,"generation",payload,images,manifest,protocol)
     assert len(calls) == len(repo.calls) == 1 and repo.calls[0]["status"] == "outcome_unknown"
     assert "credential-bearing" not in str(repo.calls)
 
@@ -422,19 +432,34 @@ def test_admin_submit_and_worker_use_real_sql_idempotency_budget_and_fencing(rep
     blobs = LocalBlobStore(tmp_path)
     repo.blobs = blobs
     pid, bid = scene["project"]["id"], scene["branch"]["id"]
-    source = deepcopy(scene["revision"]["document"])
-    asset = repo.register_asset(pid,blobs.put(b"frozen-source-image","image/png"))
-    source["assets"].append(asset)
+    from uuid import uuid4
+    from test_platform_reconstruction import Repo, bundle
+    from ehs_spatial.platform.reconstruction import run_analysis, _research_sam3d_input, _packed
+    fixture = Repo(blobs)
+    capture = repo.create_capture(pid,cap,{'requestId':str(uuid4()),'branchId':bid,
+        'baseRevisionId':scene['revision']['id'],'target':'standalone_object'},
+        [{**asset,'metadata':{'width':12,'height':12,'pixelMapping':[]}} for asset in fixture.assets])
+    fixture.cid = capture['capture']['id']
+    fixture.capture['id'] = fixture.cid
+    fixture.document['captureId'] = fixture.cid
+    fixture.job['inputs']['captureId'] = fixture.cid
+    source, _ = run_analysis(fixture,blobs,fixture.job,bundle(fixture))
+    for asset in fixture.assets:
+        repo.register_asset(pid,asset)
     with repo._connect() as connection:
-        revision = repo._insert_revision(connection,pid,bid,source,parent=scene["revision"]["id"])
-    base_id = str(revision["id"])
+        revision = repo._insert_revision(connection,pid,bid,source,parent=capture['revision']['id'])
+    base_id = str(revision['id'])
     _, manifest, protocol = research_configuration()
-    payload = {"entityId":protocol["entityId"]}
-    protocol.update(baselineRevision=base_id,inputHashes=[asset["sha256"]],payloadSha256=digest(payload),
-                    inputAssetHashes=[{"assetId":asset["id"],"sha256":asset["sha256"]}])
-    frozen = {"schemaVersion":1,"projectId":pid,"branchId":bid,"baseRevisionId":base_id,
-        "baseDocumentSha256":digest(source),"authority":{"source":"database_admin"},"protocol":protocol,
-        "providerManifest":manifest,"payload":payload,"images":[{"id":asset["id"],"sha256":asset["sha256"]}]}
+    entity_id = source['entities'][0]['id']
+    payload, images, observation_id, refs = _research_sam3d_input(repo,blobs,
+        {'id':str(uuid4()),'kind':'validate_model','projectId':pid,'baseRevisionId':base_id,'inputs':{},'config':{}},entity_id,None,0)
+    payload = _packed(payload)
+    protocol.update(entityId=entity_id,observationId=observation_id,baselineRevision=base_id,
+                    inputHashes=[image['sha256'] for image in images],payloadSha256=digest(payload),
+                    inputAssetHashes=refs)
+    frozen = {'schemaVersion':1,'projectId':pid,'branchId':bid,'baseRevisionId':base_id,
+        'baseDocumentSha256':digest(source),'authority':{'source':'database_admin'},'protocol':protocol,
+        'providerManifest':manifest,'payload':payload,'images':images}
     prepared = {"validation":frozen,"sha256":digest(frozen)}
     for budget, code in ((None,"paid_budget_not_configured"),(Decimal(".009"),"paid_budget_exceeded")):
         repo.paid_budget = budget
@@ -465,7 +490,7 @@ def test_admin_submit_and_worker_use_real_sql_idempotency_budget_and_fencing(rep
         result = repo.get_job(job["id"])
     assert result["status"] == {"success":"succeeded","unknown":"outcome_unknown","cancelled":"cancelled","expired":"outcome_unknown"}[outcome]
     assert not result["headAdvanced"] and result["resultRevisionId"] is None
-    assert repo.get_project(pid)["branches"][0]["headRevisionId"] == scene["revision"]["id"]
+    assert repo.get_project(pid)["branches"][0]["headRevisionId"] == capture["revision"]["id"]
     assert submit(prepared,repo,blobs)["id"] == job["id"]
     run_job(repo,blobs,job["id"])
     assert len(calls) == 1

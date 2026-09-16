@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import math
 from typing import Any, Protocol
 from uuid import NAMESPACE_URL, uuid5
 
@@ -216,6 +217,68 @@ def apply_operations(source: dict, operations: list[dict], *, base_revision_id: 
             item.setdefault("observationRefs", []).append(observation["id"])
             if document["schemaVersion"] == 2 and "cadReference" in item:
                 from .identity import refresh_cad_reference
+                refresh_cad_reference(document, item)
+        elif kind == 'reviseObservationBox':
+            from .identity import refresh_cad_reference, source_observation_ids
+            if document['schemaVersion'] != 2:
+                raise PlatformError('identity_requires_scene_v2', 422)
+            item = entity(operation.get('entityId'))
+            oid = operation.get('observationId')
+            observation = next((o for o in document['observations'] if o['id'] == oid), None)
+            if observation is None:
+                raise PlatformError('observation_not_found', 404)
+            if [e['id'] for e in document['entities'] if oid in e.get('observationRefs', [])] != [item['id']]:
+                raise PlatformError('observation_owner_mismatch', 422)
+            if observation['imageId'] != operation.get('imageId'):
+                raise PlatformError('observation_image_mismatch', 422)
+            if type(operation.get('observationRevision')) is not int or operation['observationRevision'] != observation['revision']:
+                raise PlatformError('observation_revision_mismatch', 409)
+            image = next(a for a in document['assets'] if a['id'] == observation['imageId'])
+            width, height = [image.get(key, image.get('metadata', {}).get(key)) for key in ('width', 'height')]
+            if any(type(value) is not int or value <= 0 for value in (width, height)):
+                raise PlatformError('observation_image_dimensions_missing', 422)
+            box = operation.get('box')
+            if (not isinstance(box, list) or len(box) != 4 or
+                    any(type(value) not in (int, float) or not math.isfinite(value) for value in box) or
+                    not 0 <= box[0] < box[2] <= width or not 0 <= box[1] < box[3] <= height):
+                raise PlatformError('invalid_pixel_box', 422)
+            reason = operation.get('reason')
+            if not isinstance(reason, str) or not reason.strip() or len(reason) > 8000:
+                raise PlatformError('observation_box_reason_required', 422)
+            if box == observation['originalPixelBox']:
+                continue
+            ground_frames = set()
+            for frame in document['coordinateFrames']:
+                ground = frame.get('ground') or {}
+                if ground.get('source') not in ('manual', 'manual_assertion') and oid in source_observation_ids(document, item, ground.get('sourceRefs', [])):
+                    ground_frames.add(frame['id'])
+                    frame['ground'] = None
+                    frame['groundFit'] = {'status':'insufficient_evidence', 'reason':'source_observation_revised'}
+            affected = set()
+            for rep in item['representations']:
+                if oid in source_observation_ids(document, item, rep.get('sourceRefs', [])):
+                    affected.add(rep['id'])
+                    rep['sourceValidity'] = 'stale'
+                    rep.pop('qualityBinding', None)
+                    rep.pop('planProjection', None)
+            for measured in document['entities']:
+                for rep in measured['representations']:
+                    if rep['coordinateFrameId'] in ground_frames:
+                        rep.pop('planProjection', None)
+                records = {r['id']:r for r in measured.get('measurementEvidence', [])}
+                for key, selected in measured.get('measurementSelections', {}).items():
+                    record = records.get(selected, {})
+                    if (oid in record.get('observationRefs', []) or record.get('representationId') in affected or
+                            oid in source_observation_ids(document, item, record.get('sourceRefs', [])) or
+                            key in ('groundHeightNative', 'groundSupportRangeNative') and record.get('coordinateFrameId') in ground_frames):
+                        measured['measurementSelections'][key] = None
+                        measured['measurements'][key] = None
+            observation.update(originalPixelBox=deepcopy(box), revision=observation['revision'] + 1,
+                maskAssetId=None, maskStatus='missing', geometrySupport=None)
+            for key in ('maskEvidence', 'originalPixelPolygons', 'sourcePolygonsCanonical',
+                        'maskPolygonization', 'polygonCoordinateConvention', 'fillRule'):
+                observation.pop(key, None)
+            if 'cadReference' in item:
                 refresh_cad_reference(document, item)
         elif kind == "addCoordinateFrame":
             frame = operation.get("frame")

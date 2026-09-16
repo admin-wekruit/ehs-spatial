@@ -34,6 +34,103 @@ def test_quality_module_exists():
     assert importlib.util.find_spec("ehs_spatial.platform.model_quality") is not None
 
 
+def test_similarity_refinement_fits_scale_but_does_not_certify_missing_views():
+    from ehs_spatial.platform.model_quality import refine_model_pose, assess_model
+    mesh, view = scene()
+    center = mesh.vertices.mean(0)
+    small = MeshData(center + (mesh.vertices-center)*.75,mesh.faces)
+    result = refine_model_pose(small,np.eye(4),[view],max_iterations=300,coarse=True,fit_scale=True)
+    assert result['accepted'] and result['fullResolutionReassessed']
+    assert assess_model(small,np.array(result['objectToNative']),[view],coarse=True)['status']=='observed_consistent'
+    assert np.linalg.det(np.array(result['objectToNative'])[:3,:3]) > 0
+    unavailable=deepcopy(view);unavailable['imageId']='missing';unavailable['observationId']='missing';unavailable['valid'][:]=False
+    rejected=refine_model_pose(small,np.eye(4),[view,unavailable],coarse=True,fit_scale=True)
+    assert not rejected['accepted'] and rejected['status']=='insufficient_evidence'
+
+
+def test_coarse_layout_tolerates_small_gaps_but_rejects_wrong_position_and_depth():
+    from ehs_spatial.platform.model_quality import assess_model
+    _, view = scene()
+    view['maskComplete'] = False
+    vertices, faces = [], []
+    for column in range(7):
+        x = 5.5 + 3*column
+        quad = unproject_pixels(np.array([[x,3.5],[x+2,3.5],[x+2,16.5],[x,16.5]]),np.full(4,4.),view)
+        offset = len(vertices)
+        vertices.extend(quad)
+        faces.extend([[offset,offset+1,offset+2],[offset,offset+2,offset+3]])
+    mesh = MeshData(np.array(vertices),np.array(faces))
+    detailed = assess_model(mesh,np.eye(4),[view])
+    coarse = assess_model(mesh,np.eye(4),[view],coarse=True)
+    assert detailed['status'] == 'observed_inconsistent'
+    assert coarse['status'] == 'observed_consistent'
+    assert coarse['perView'][0]['exactCoverage'] < .8
+    assert coarse['perView'][0]['tolerantCoverage'] == 1
+    assert coarse['evidenceSha256'] != detailed['evidenceSha256']
+    assert coarse['acceptanceScope'] == 'coarse_layout'
+    for translation in ([2,0,0],[0,0,1],[20,0,0]):
+        wrong = np.eye(4)
+        wrong[:3,3] = translation
+        assert assess_model(mesh,wrong,[view],coarse=True)['status'] == 'observed_inconsistent'
+
+
+def test_coarse_depth_keeps_tail_diagnostic_and_rejects_displaced_main_body():
+    from ehs_spatial.platform.model_quality import assess_model
+    mesh, view = scene()
+    view['depth'][4:6,6:27] = 6.  # Limited local recess omitted in a coarse sheet.
+    detailed=assess_model(mesh,np.eye(4),[view])
+    coarse=assess_model(mesh,np.eye(4),[view],coarse=True)
+    assert detailed['status']=='observed_inconsistent' and coarse['status']=='observed_consistent'
+    assert coarse['perView'][0]['relativeDepthP95'] > .15
+    assert .8 < coarse['perView'][0]['depthInlierFraction'] < 1
+    view['depth'][4:10,6:27]=6.
+    assert assess_model(mesh,np.eye(4),[view],coarse=True)['status']=='observed_inconsistent'
+
+
+@pytest.mark.parametrize('with_family', [False, True])
+def test_review_payload_preserves_all_camera_views_and_inputs(with_family):
+    import base64
+    import io
+    from PIL import Image
+    from ehs_spatial.platform import model_quality
+    from ehs_spatial.platform.contracts import digest
+    from ehs_spatial.platform.reconstruction import _packed
+
+    assert hasattr(model_quality, 'build_model_review_payload')
+    mesh, first = scene(rotated=True)
+    second = deepcopy(first)
+    second.update(observationId='observation-b', observationRevision=2, imageId='image-b')
+    views = [second, first]
+    records = {'image-a': {'rgb': np.full((24, 36, 3), [120, 0, 0], np.uint8)},
+               'image-b': {'rgb': np.full((24, 36, 3), [0, 0, 180], np.uint8)}}
+    entity = {'id': 'object-a', 'label': 'source-owned object'}
+    candidate = {'assetId': 'candidate-a', 'sha256': 'e' * 64}
+    geometry = model_quality.assess_model(mesh, np.eye(4), views)
+    family = {'members': ['object-a', 'child']} if with_family else None
+    inputs = [entity, candidate, geometry, family, views, records, mesh.vertices, mesh.faces]
+    before = digest(_packed(inputs))
+    payload = model_quality.build_model_review_payload(entity, mesh, np.eye(4), geometry,
+        candidate, views, records, family_binding=family)
+    expected = {'entityId': entity['id'], 'label': entity['label'],
+        'candidateAssetSha256': candidate['sha256'], 'geometryEvidence': geometry,
+        'reviewVersion': 'coarse-layout-shape-v2'}
+    if family is not None:
+        expected['familyBinding'] = family
+    assert {key:value for key,value in payload.items() if key != 'views'} == expected
+    assert len(payload['views']) == 2
+    for item, view, render in zip(payload['views'], views,
+            model_quality.render_model_views(mesh, np.eye(4), views), strict=True):
+        assert item['observationId'] == view['observationId']
+        assert item['observationRevision'] == view['observationRevision']
+        for key, expected_pixels in [('source', records[view['imageId']]['rgb']),
+                ('candidate', render), ('mask', view['mask'].astype(np.uint8) * 255)]:
+            assert item[key].startswith('data:image/png;base64,')
+            with Image.open(io.BytesIO(base64.b64decode(item[key].split(',', 1)[1]))) as image:
+                assert np.array_equal(np.asarray(image), expected_pixels)
+    assert payload['views'][0]['candidate'] != payload['views'][0]['source']
+    assert digest(_packed(inputs)) == before
+
+
 def test_camera_centres_skew_non_square_rotated_and_source_binding():
     from ehs_spatial.platform.model_quality import assess_model
     mesh, view = scene(rotated=True)

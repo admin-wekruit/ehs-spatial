@@ -711,7 +711,7 @@ export function planShapes(document: SceneDocument, options: PlanOptions = {}) {
     Math.abs(Math.abs(dot(unit(rawPlane[2].slice(0, 3)), n)) - 1) < 1e-6
       ? (rawPlane as number[][])
       : [[...x, 0], [...y, 0], [...n, 0], [0, 0, 0, 1]];
-  return document.entities
+  const shapes = document.entities
     .filter((e) => e.visible !== false && !e.sourceContext)
     .flatMap((entity) => {
       const imageId = options.scope === "scene" ? cadReferenceImage(document, entity) : options.imageId;
@@ -806,6 +806,22 @@ export function planShapes(document: SceneDocument, options: PlanOptions = {}) {
         },
       ];
     });
+  if ((options.layer || "model") === "model") {
+    for (const entity of document.entities) {
+      if (entity.visible === false || entity.sourceContext || !compositeModelEvidence(document, entity.id)) continue;
+      const members = modelPreviewEntities(document, entity.id).filter(member => member.visible !== false);
+      const parts = members.map(member => shapes.find(shape => shape.entity.id === member.id));
+      // Reuse exact component contours. No enclosing box or invented composite solid.
+      if (!parts.length || parts.some(part => !part || part.geometryKind !== "model")) continue;
+      const present = parts.filter((part): part is typeof shapes[number] => !!part);
+      shapes.push({...present[0], entity,
+        polygons: present.flatMap(part => part.polygons), lines: present.flatMap(part => part.lines),
+        representationIds: [...new Set(present.flatMap(part => part.representationIds))],
+        min: [0, 1].map(k => Math.min(...present.map(part => part.min[k]))),
+        max: [0, 1].map(k => Math.max(...present.map(part => part.max[k])))});
+    }
+  }
+  return shapes;
 }
 
 function sameJSON(a: unknown, b: unknown): boolean {

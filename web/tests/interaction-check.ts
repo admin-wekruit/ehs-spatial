@@ -309,3 +309,23 @@ assert.deepEqual(
 console.log(
   "generated DTO nullable geometry and real worker result checks passed",
 );
+
+// Component-linked records project the exact same parts used by the 3D preview.
+const compositePlan = structuredClone(referencePlan);
+const part = compositePlan.entities[0]; part.id = "part";
+const model = part.representations![0];
+model.kind = "generated_mesh"; model.sourceKind = undefined;
+part.activeModelRepresentationId = model.id;
+const group = entity("composite"); group.observationRefs = ["boundary"];
+compositePlan.entities.push(group);
+compositePlan.observations.push({id:"boundary", revision:1, imageId:"source-photo", originalPixelBox:[0,0,10,10]});
+compositePlan.annotations = [{id:"mapping",kind:"observation_component_mapping",entityId:"composite",
+  representationType:"composite_source_evidence",independentObject:false,
+  unresolvedBoundaryObservationId:"boundary",unresolvedBoundaryObservationRevision:1,
+  targets:[{entityId:"part",activeModelRepresentationId:model.id,observationId:"source",observationRevision:1}]}];
+const linkedPlans = planShapes(compositePlan,referenceOptions);
+assert.equal(linkedPlans.length,2);
+assert.deepEqual(linkedPlans[1].polygons,linkedPlans[0].polygons,"Composite CAD keeps exact component outlines");
+assert.deepEqual(linkedPlans[1].representationIds,[model.id]);
+model.planProjection = {...model.planProjection as Record<string, unknown>, assetSha256:"stale"};
+assert.equal(planShapes(compositePlan,referenceOptions).length,0,"An invalid component projection cannot produce composite CAD");

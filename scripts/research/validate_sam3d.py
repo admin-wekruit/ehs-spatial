@@ -21,7 +21,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from ehs_spatial.platform.contracts import PlatformError, canonical, digest
 from ehs_spatial.platform.reconstruction import (
-    _Stages, _capture, _load_geometry, _load_masks, _packed, _research_stage, _research_capture_input, _research_segmentation_input,
+    _Stages, _capture, _load_geometry, _load_masks, _packed, _research_stage, _research_capture_input, _research_segmentation_input, _research_sam3d_input,
     provider_snapshot_from_env, providers_from_manifest, validate_research_manifest,
 )
 from ehs_spatial.platform.research_authority import admin_context, check_budget, validate_prepared
@@ -72,42 +72,10 @@ def prepare(protocol, repository, blobs, provider_manifest, runtime_manifest):
         return {'schemaVersion': 1, 'projectId': project_id, 'branchId': branch_id, 'baseRevisionId': base_id,
                 'baseDocumentSha256': base_sha, 'authority': authority, 'budgetAtPreparation': budget,
                 'protocol': protocol, 'providerManifest': manifest, 'payload': payload, 'images': images}
-    _, document, images = _capture(repository, blobs, job)
-    entity = next((e for e in document["entities"] if e["id"] == protocol["entityId"] and not e.get("sourceContext")), None)
-    if entity is None:
-        raise PlatformError("entity_not_found", 404)
-    observations = [o for o in document["observations"] if o["id"] in entity["observationRefs"] and o.get("maskAssetId")
-                    and (not protocol.get("observationId") or o["id"] == protocol["observationId"])]
-    if not observations:
-        raise PlatformError("generation_mask_required", 409)
-    anchor = max(observations, key=lambda o: ((o.get("geometrySupport") or {}).get("validPixelCount", 0), o["id"]))
-    stages = _Stages(repository, blobs, job, {})
-    frames, records = _load_geometry(document, images, stages)
-    masks, errors = _load_masks(document, records, stages)
-    if anchor["id"] not in masks:
-        raise PlatformError("research_mask_unavailable", 409)
-    image = next(i for i in images if i["id"] == anchor["imageId"])
-    frame = frames[image["id"]]
-    payload = {"entityId": entity["id"], "image": records[image["id"]]["rgb"], "mask": masks[anchor["id"]],
-               "points": frame.points, "valid": frame.valid, "K": frame.K, "cameraToWorld": frame.camera_to_world,
-               "coordinateFrameId": frame.coordinate_frame_id, "imageId": image["id"], "imageSha256": image["sha256"],
-               "seed": protocol.get("seed", 0)}
-    asset_ids = {image["assetId"], anchor["maskAssetId"], (anchor.get("maskEvidence") or {}).get("canonicalMaskAssetId"),
-                 (document.get("geometryBindings", {}).get(image["id"]) or {}).get("geometrySolutionId")}
-    historical = document.get("geometryEvidence") or {}
-    asset_ids.add(historical.get("manifestAssetId"))
-    for saved in historical.get("frames", []):
-        if saved["assets"]["input"] == image["id"]:
-            asset_ids.update(saved["assets"].values())
-    assets = [a for a in document["assets"] if a["id"] in asset_ids]
-    for reference in assets:
-        asset = repository.get_asset(reference["id"])
-        if asset["sha256"] != reference["sha256"]:
-            raise PlatformError("research_input_hash_mismatch", 409)
-        blobs.get(asset["storageKey"], asset["sha256"], asset["sizeBytes"])
+    payload, selected, observation_id, refs = _research_sam3d_input(repository, blobs, job, protocol["entityId"], protocol.get("observationId"), protocol.get("seed",0))
     manifest = {"generation": provider_manifest["generation"]}
-    protocol.update(observationId=anchor["id"], inputHashes=[image["sha256"]],
-                    inputAssetHashes=[{"assetId": a["id"], "sha256": a["sha256"]} for a in sorted(assets, key=lambda a: a["id"])],
+    protocol.update(observationId=observation_id, inputHashes=[i["sha256"] for i in selected],
+                    inputAssetHashes=refs,
                     payloadSha256=digest(_packed(payload)), providerManifestSha256=digest(manifest),
                     runtimeManifest={"generation": runtime_manifest["generation"]})
     validate_research_manifest(protocol, manifest)
@@ -117,7 +85,7 @@ def prepare(protocol, repository, blobs, provider_manifest, runtime_manifest):
     return {"schemaVersion": 1, "projectId": project_id, "branchId": branch_id, "baseRevisionId": base_id,
             "baseDocumentSha256": base_sha, "authority": authority, "budgetAtPreparation": budget,
             "protocol": protocol, "providerManifest": manifest, "payload": _packed(payload),
-            "images": [{k: image[k] for k in ("id", "assetId", "sha256", "pixelMapping") if k in image}]}
+            "images": selected}
 
 
 def submit(prepared, repository, blobs):

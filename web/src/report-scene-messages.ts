@@ -45,6 +45,8 @@ export const reportSceneMessages: Record<string, [string, string]> = {
   sceneSelectEvidence: ["选择一个对象查看观测证据", "Select an object to inspect its observed evidence"],
   sceneOpenEvidenceScene: ["在证据场景中查看", "Open evidence scene"],
   sceneModelScene: ["模型场景", "Model scene"],
+  sceneGeometryCoverage: ["条对象记录有对应的可显示几何", "object records have corresponding displayable geometry"],
+  sceneIndependentModelCount: ["个独立模型", "independent models"],
   sceneModelCoverage: ["条对象记录有可显示的当前模型", "object records have a displayable current model"],
   sceneModelCandidateCount: ["个模型放置待确认", "model placements await confirmation"],
   sceneModelCoverageMeaning: ["参考面与组合预览不计入模型数；缺模型对象仍保留照片证据。", "References and composite previews do not count as models; missing-model objects retain photograph evidence."],

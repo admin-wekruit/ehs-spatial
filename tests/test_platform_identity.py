@@ -405,6 +405,136 @@ def test_added_observation_refreshes_saved_cad_owners_without_changing_exposure_
     assert 'cadReference' not in preserved['entities'][0], 'A historical photo-scoped scene must not acquire a scene reference implicitly'
 
 
+def test_revise_observation_box_preserves_identity_and_invalidates_only_dependent_evidence():
+    doc = migrate_document(source_scene(), base_revision_id=BASE)
+    item, observation = doc['entities'][0], doc['observations'][0]
+    doc['assets'][0].update(width=20, height=20)
+    doc['assets'].append({'id':'old-mask', 'sha256':'a'*64})
+    observation.update(maskAssetId='old-mask', maskEvidence={'canonicalMaskAssetId':'old-mask'},
+        maskStatus='present', geometrySupport={'coordinateFrameId':'frame', 'validPixelCount':20},
+        originalPixelPolygons=[[[1,2],[4,2],[4,6]]], sourcePolygonsCanonical=[[[1,2],[4,2],[4,6]]])
+    model = item['representations'][0]
+    model.update(qualityBinding={'old':'proof'}, qualityEvidence={'status':'accepted'},
+        planProjection={'polygons':[]})
+    unrelated = deepcopy(doc['observations'][1])
+    unrelated['id'] = 'other-observation'
+    doc['observations'].append(unrelated)
+    item['observationRefs'].append(unrelated['id'])
+    other_model = deepcopy(model)
+    other_model.update(id='other-model', sourceRefs=[{'observationId':unrelated['id']}])
+    item['representations'].append(other_model)
+    item['cadReference'] = {'status':'resolved', 'referenceImageId':'image-1', 'source':'explicit_reference_image',
+        'sourceRefs':[{'observationId':observation['id'], 'revision':1}], 'evidenceRefs':[]}
+    operation = {'type':'reviseObservationBox', 'entityId':item['id'], 'observationId':observation['id'],
+        'observationRevision':1, 'imageId':'image-1', 'box':[2.5,3,8,10], 'reason':'Correct the visible source outline.'}
+    before = deepcopy(doc)
+    revised, inverse = apply_operations(doc, [operation], base_revision_id=BASE)
+    changed = revised['observations'][0]
+    assert changed['id'] == observation['id'] and changed['revision'] == 2
+    assert changed['originalPixelBox'] == operation['box']
+    assert changed['maskAssetId'] is None and changed['geometrySupport'] is None and changed['maskStatus'] == 'missing'
+    assert not {'maskEvidence','originalPixelPolygons','sourcePolygonsCanonical'} & changed.keys()
+    edited = revised['entities'][0]
+    assert edited['id'] == item['id'] and edited['observationRefs'] == item['observationRefs']
+    assert edited['activeModelRepresentationId'] == item['activeModelRepresentationId']
+    assert edited['currentModelTransform'] == item['currentModelTransform']
+    assert edited['representations'][0]['sourceValidity'] == 'stale'
+    assert not {'qualityBinding','planProjection'} & edited['representations'][0].keys()
+    assert edited['representations'][0]['qualityEvidence'] == model['qualityEvidence']
+    assert edited['representations'][1] == other_model
+    assert edited['measurementSelections']['height'] is None and edited['measurements']['height'] is None
+    assert edited['measurementEvidence'] == item['measurementEvidence']
+    assert edited['cadReference']['sourceRefs'] == [{'observationId':observation['id'], 'revision':2}]
+    assert revised['entities'][1:] == doc['entities'][1:]
+    assert revised['observations'][1:] == doc['observations'][1:]
+    assert revised['assets'] == doc['assets'] and revised['cameras'] == doc['cameras']
+    assert doc == before and inverse == [{'type':'restoreDocument', 'document':before}]
+    unchanged, _ = apply_operations(revised, [{**operation, 'observationRevision':2}], base_revision_id=BASE)
+    assert unchanged == revised
+
+
+@pytest.mark.parametrize('change,code', [
+    ({'entityId':'entity-2'}, 'observation_owner_mismatch'),
+    ({'imageId':'image-2'}, 'observation_image_mismatch'),
+    ({'observationRevision':2}, 'observation_revision_mismatch'),
+    ({'observationRevision':True}, 'observation_revision_mismatch'),
+    ({'box':[-1,2,4,6]}, 'invalid_pixel_box'),
+    ({'box':[1,2,21,6]}, 'invalid_pixel_box'),
+    ({'box':[1,2,4,21]}, 'invalid_pixel_box'),
+    ({'box':[1,2,1,6]}, 'invalid_pixel_box'),
+    ({'box':[1,2,float('nan'),6]}, 'invalid_pixel_box'),
+    ({'box':[1,2,True,6]}, 'invalid_pixel_box'),
+    ({'reason':' '}, 'observation_box_reason_required'),
+])
+def test_revise_observation_box_rejects_wrong_source_or_invalid_bounds(change, code):
+    doc = migrate_document(source_scene(), base_revision_id=BASE)
+    doc['assets'][0].update(width=20, height=20)
+    before = deepcopy(doc)
+    operation = {'type':'reviseObservationBox', 'entityId':'entity-1', 'observationId':'observation-1',
+        'observationRevision':1, 'imageId':'image-1', 'box':[2,3,8,10], 'reason':'Visible source correction.'}
+    with pytest.raises(PlatformError, match=code):
+        apply_operations(doc, [{**operation, **change}], base_revision_id=BASE)
+    assert doc == before
+
+
+def test_revised_box_flows_to_existing_segmentation_worker_with_new_revision(tmp_path):
+    from ehs_spatial.platform.reconstruction import run_analysis, run_segmentation
+    from ehs_spatial.platform.storage import LocalBlobStore
+    from test_platform_reconstruction import Repo, bundle, provider
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    providers = bundle(repo)
+    source, _ = run_analysis(repo, blobs, repo.job, providers)
+    for image in repo.capture['images']:
+        next(a for a in source['assets'] if a['id'] == image['id']).update(width=image['width'], height=image['height'])
+    observation = source['observations'][0]
+    owner = next(e for e in source['entities'] if observation['id'] in e['observationRefs'])
+    corrected = [1,1,5,11]
+    revised, _ = apply_operations(source, [{'type':'reviseObservationBox', 'entityId':owner['id'],
+        'observationId':observation['id'], 'observationRevision':observation['revision'],
+        'imageId':observation['imageId'], 'box':corrected, 'reason':'Source outline correction.'}], base_revision_id=repo.rid)
+    repo.document = revised
+    seen, original = [], providers['segmentation'].invoke
+    def segment(payload):
+        seen.append(payload)
+        return original(payload)
+    providers['segmentation'] = provider('segmentation', segment)
+    output, result = run_segmentation(repo, blobs, {**repo.job, 'kind':'segment_object',
+        'inputs':{'observationId':observation['id']}}, providers)
+    assert result['status'] == 'succeeded', result
+    assert len(seen) == 1 and seen[0]['box'] == corrected
+    changed = next(o for o in output['observations'] if o['id'] == observation['id'])
+    assert changed['revision'] == observation['revision'] + 2 and changed['maskAssetId']
+    assert next(e for e in output['entities'] if e['id'] == owner['id'])['observationRefs'] == owner['observationRefs']
+    assert source['observations'][0] == observation
+
+
+def test_revised_floor_box_expires_only_explicit_ground_dependencies():
+    doc = migrate_document(source_scene(), base_revision_id=BASE)
+    doc['assets'][0].update(width=20, height=20)
+    doc['coordinateFrames'][0]['ground'] = {'source':'observed_floor_mask_and_estimated_depth',
+        'normal':[0,1,0], 'sourceRefs':[{'observationId':'observation-1', 'revision':1}]}
+    other = doc['entities'][1]
+    other['representations'][0]['planProjection'] = {'polygons':[]}
+    record = {'id':'floor-dependent-height', 'measurementKey':'groundHeightNative', 'originalMeasurement':2,
+        'sourceEntityId':other['id'], 'sourceRevisionId':BASE, 'observationRefs':['observation-2'],
+        'coordinateFrameId':'frame', 'representationId':None}
+    other['measurementEvidence'].append(record)
+    other['measurementSelections']['groundHeightNative'] = record['id']
+    other['measurements']['groundHeightNative'] = 2
+    updated, _ = apply_operations(doc, [{'type':'reviseObservationBox', 'entityId':'entity-1',
+        'observationId':'observation-1', 'observationRevision':1, 'imageId':'image-1',
+        'box':[2,3,8,10], 'reason':'Revised visible floor extent.'}], base_revision_id=BASE)
+    assert updated['coordinateFrames'][0]['ground'] is None
+    actual = updated['entities'][1]
+    assert 'planProjection' not in actual['representations'][0]
+    assert 'sourceValidity' not in actual['representations'][0]
+    assert actual['measurementEvidence'] == other['measurementEvidence']
+    assert actual['measurementSelections']['groundHeightNative'] is None
+    assert actual['measurements']['groundHeightNative'] is None
+    assert actual['measurements']['height'] == other['measurements']['height']
+
+
 def test_invalid_split_is_atomic_and_no_source_representation_can_disappear():
     doc, _ = merge(migrate_document(source_scene(), base_revision_id=BASE))
     before = deepcopy(doc)
