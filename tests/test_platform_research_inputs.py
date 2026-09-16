@@ -1,5 +1,6 @@
 from copy import deepcopy
 import io
+from uuid import uuid4
 
 import numpy as np
 from PIL import Image
@@ -152,6 +153,26 @@ def test_revision_asset_hash_mismatch_rejected(source, asset_kind):
     identity = {'image': observation['imageId'], 'mask': observation['maskAssetId'],
                 'geometry': repo.document['geometryBindings'][observation['imageId']]['geometrySolutionId']}[asset_kind]
     next(a for a in repo.document['assets'] if a['id'] == identity)['sha256'] = 'f' * 64
+    with pytest.raises(PlatformError, match='research_input_hash_mismatch'):
+        prepare(source)
+
+
+def test_fork_inherited_assets_are_authorized_by_the_frozen_revision(source):
+    repo = source[0]
+    original_project = str(uuid4())
+    for asset in repo.assets:
+        asset['projectId'] = original_project
+    frozen = prepare(source)['validation']
+    assert frozen['projectId'] == repo.pid
+    assert validate_frozen_source(_unpacked(frozen['payload']), frozen['protocol'], repo.document)
+
+
+def test_foreign_asset_absent_from_frozen_revision_is_rejected(source):
+    repo, _, _, entity, *_ = source
+    observation = next(o for o in repo.document['observations'] if o['id'] == entity['observationRefs'][0])
+    forged = {**repo.get_asset(observation['maskAssetId']), 'id': str(uuid4()), 'projectId': str(uuid4())}
+    repo.assets.append(forged)
+    observation['maskAssetId'] = forged['id']
     with pytest.raises(PlatformError, match='research_input_hash_mismatch'):
         prepare(source)
 

@@ -98,7 +98,7 @@ def prepare_recgen_input(repository, blobs, job, entity_id, observation_ids,
         if not declared:
             raise PlatformError('research_input_hash_mismatch', 409)
         asset = repository.get_asset(identity)
-        if declared.get('sha256') != asset['sha256'] or asset.get('projectId') != job['projectId']:
+        if declared.get('sha256') != asset['sha256']:
             raise PlatformError('research_input_hash_mismatch', 409)
         blobs.get(asset['storageKey'], asset['sha256'], asset['sizeBytes'])
         frozen_assets.append({'assetId': identity, 'sha256': asset['sha256']})
