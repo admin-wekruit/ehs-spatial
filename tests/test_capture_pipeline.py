@@ -8,7 +8,7 @@ from ehs_spatial.platform.contracts import PlatformError, validate_document
 from ehs_spatial.platform.postgres import PostgresRepository
 from ehs_spatial.platform.reconstruction import _Stages, run_capture_pipeline
 from ehs_spatial.platform.storage import LocalBlobStore
-from test_platform_reconstruction import Repo, bundle, provider
+from test_platform_reconstruction import Repo, bundle, geometry_response, provider
 
 
 def providers_for_new_capture(repo, *, verdict='pass'):
@@ -52,6 +52,37 @@ def test_new_capture_runs_analysis_model_review_and_correspondence_once(tmp_path
     again,replayed = run_capture_pipeline(repo,blobs,repo.job,providers)
     assert replayed['status'] == 'incomplete' and len(repo.calls) == count
     assert [e['id'] for e in again['entities']] == [e['id'] for e in document['entities']]
+
+
+@pytest.mark.parametrize('retain_supported_photo', [False, True])
+def test_empty_discovery_cannot_hide_unavailable_capture_geometry(tmp_path, retain_supported_photo):
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    providers = bundle(repo)
+    providers['discovery'] = provider('discovery', lambda _: {'items':[]})
+    def geometry(payload):
+        response = geometry_response(payload['images'])
+        for frame in response['frames'][:1 if retain_supported_photo else 2]:
+            frame['points'] = np.broadcast_to([0., 0., 2.], frame['points'].shape).copy()
+        return response
+    providers['geometry'] = provider('geometry', geometry)
+    def unexpected_model_call(_):
+        pytest.fail('Empty discovery must not invent a model target')
+    providers['generation'] = provider('generation', unexpected_model_call)
+    providers['model_review'] = provider('model_review', unexpected_model_call)
+
+    document, result = run_capture_pipeline(repo, blobs, repo.job, providers)
+    assert result['status'] == result['analysis']['status'] == 'incomplete'
+    missing = {image['id'] for image in repo.capture['images'][:1 if retain_supported_photo else 2]}
+    assert result['errors'] == result['analysis']['errors']
+    assert {error['imageId'] for error in result['errors']} == missing
+    assert all(error['stage'] == 'capture_context' and error['code'] == 'observed_context_unavailable'
+               for error in result['errors'])
+    assert document['observations'] == [] and all(entity.get('sourceContext') for entity in document['entities'])
+    retained = {ref['imageId'] for entity in document['entities'] for rep in entity['representations'] for ref in rep['sourceRefs'] if 'imageId' in ref}
+    assert retained == {image['id'] for image in repo.capture['images']} - missing
+    assert repo.document['entities'] == []
+    validate_document(document)
 
 
 def test_bad_shape_is_retained_but_not_reported_as_completed_model(tmp_path):

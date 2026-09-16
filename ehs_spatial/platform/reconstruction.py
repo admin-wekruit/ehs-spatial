@@ -829,7 +829,7 @@ def _associate_and_surfaces(document,frames,canonical,masks,stages, *, rebuild_s
 
 
 def _capture_context(document,frames,canonical,stages):
-    results = []
+    results, errors = [], []
     # Each context retains one camera state; contexts are never fused across photos.
     for frame in frames.values():
         identity = _id(document['captureId'], 'capture_context', frame.image_id)
@@ -847,7 +847,9 @@ def _capture_context(document,frames,canonical,stages):
             if not any(e['id'] == identity for e in document['entities']):
                 document['entities'].append(entity)
             results.append({'imageId': frame.image_id, **result})
-    return results
+        else:
+            errors.append({'stage':'capture_context', 'code':'observed_context_unavailable', 'imageId':frame.image_id})
+    return results, errors
 
 
 def _rebuild_observed_surfaces(document, frames, records, masks, stages):
@@ -870,9 +872,8 @@ def _rebuild_observed_surfaces(document, frames, records, masks, stages):
             for rep in entity['representations']:
                 if rep['kind'] == 'observed_surface' and rep['id'] not in replacements and rep.get('sourceValidity') != 'stale':
                     rep.update(sourceValidity='stale', supersededByRepresentationIds=replacements)
-    contexts = _capture_context(working, frames, records, stages)
-    for image_id in sorted(frames.keys() - {result['imageId'] for result in contexts}):
-        errors.append({'stage':'capture_context', 'code':'observed_context_unavailable', 'imageId':image_id})
+    contexts, context_errors = _capture_context(working, frames, records, stages)
+    errors.extend(context_errors)
     replacements = [r['representationId'] for r in contexts]
     for entity in working['entities']:
         if entity.get('sourceContext'):
@@ -1065,7 +1066,9 @@ def run_analysis(repository,blobs,job,providers):
     else:
         errors.extend(association['surfaceErrors'])
     context_frames = {image_id: frame for image_id, frame in frames.items() if not is_append or image_id in lookup}
-    attempt("capture_context",lambda:_capture_context(document,context_frames,canonical,stages))
+    context = attempt("capture_context",lambda:_capture_context(document,context_frames,canonical,stages))
+    if context is not None:
+        errors.extend(context[1])
     ground_report = attempt("ground",lambda:_ground(document,frames,masks,stages)) if not is_append else {"status":"preserved_source_ground"}
     attempt('cad_references', lambda: _establish_cad_references(document, stages,
         job.get('inputs', {}).get('referenceImageId') or images[0]['id'], reference_source='capture_reference'))

@@ -837,7 +837,7 @@ def test_observed_meshing_rejects_degenerate_faces_without_losing_supported_obje
            collapsed_photo and o['imageId'] == repo.capture['images'][0]['id']]
     bad_ids = {o['id'] for o in bad}
     assert analysis['status'] == 'incomplete'
-    assert {error['observationId'] for error in analysis['errors']} == bad_ids
+    assert {error['observationId'] for error in analysis['errors'] if error['stage'] == 'observed_surface'} == bad_ids
     assert all(o['geometrySupport']['boundsNative'] is None and
                'observed_surface_unavailable' in o['missingEvidence'] for o in bad)
     bad_entities = [e for e in source['entities'] if set(e['observationRefs']) & bad_ids]
