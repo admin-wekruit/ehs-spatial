@@ -1,6 +1,8 @@
 import base64
+import hashlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from PIL import Image
@@ -74,7 +76,7 @@ class GeminiAdapter:
     def __init__(self, client: Any | None = None) -> None:
         self._client = client
 
-    def _interactions(self) -> Any:
+    def _get_client(self) -> Any:
         if self._client is None:
             try:
                 from google import genai
@@ -96,7 +98,89 @@ class GeminiAdapter:
                 )
             except Exception as exc:
                 raise ProviderError("gemini", "client", str(exc)) from exc
-        return self._client.interactions
+        return self._client
+
+    def _interactions(self) -> Any:
+        return self._get_client().interactions
+
+    def create_bounded_structured(
+        self, operation: str, *, input: list[object], response_format: dict,
+        max_input_tokens: int = 16384, max_output_tokens: int = 8192,
+    ) -> object:
+        """Count and generate one identical, stateless native Gemini request.
+
+        The caps include all input and combined thinking/output respectively.
+        Incomplete responses retain provider ID/usage for the caller to record
+        before `_parse`; transport failures remain ProviderError (unknown outcome).
+        """
+        try:
+            if (type(max_input_tokens) is not int or not 0 < max_input_tokens <= 16384
+                    or type(max_output_tokens) is not int or not 0 < max_output_tokens <= 8192):
+                raise ValueError("invalid bounded token limits")
+            if (not isinstance(response_format, dict)
+                    or set(response_format) != {"type", "mime_type", "schema"}
+                    or response_format["type"] != "text"
+                    or response_format["mime_type"] != "application/json"
+                    or not isinstance(response_format["schema"], dict)
+                    or not response_format["schema"] or not isinstance(input, list) or not input):
+                raise ValueError("bounded structured input and JSON schema required")
+            parts = []
+            for block in input:
+                value = block.model_dump(mode="json", exclude_none=True) if hasattr(block, "model_dump") else block
+                if not isinstance(value, dict):
+                    raise ValueError("unsupported bounded input")
+                if set(value) == {"type", "text"} and value["type"] == "text" and isinstance(value["text"], str):
+                    parts.append({"text": value["text"]})
+                elif (value.get("type") == "image"
+                        and set(value) <= {"type", "data", "mime_type", "resolution"}
+                        and value.get("resolution") in (None, "high")
+                        and value.get("mime_type") in {"image/png", "image/jpeg", "image/webp", "image/heic", "image/heif", "image/gif", "image/bmp", "image/tiff"}
+                        and isinstance(value.get("data"), str) and value["data"]):
+                    base64.b64decode(value["data"], validate=True)
+                    parts.append({"inlineData": {"data": value["data"], "mimeType": value["mime_type"]},
+                                  "mediaResolution": {"level": "MEDIA_RESOLUTION_HIGH"}})
+                else:
+                    raise ValueError("unsupported bounded input; use inline original images and text")
+            # ponytail: these two stateless stages need no conversation/tool
+            # conversion. Keep one native body so the full schema is counted.
+            encoded = json.dumps({"contents": [{"role": "user", "parts": parts}],
+                "generationConfig": {"responseMimeType": "application/json", "responseJsonSchema": response_format["schema"],
+                    "maxOutputTokens": max_output_tokens, "candidateCount": 1, "thinkingConfig": {"thinkingLevel": "LOW"}}},
+                sort_keys=True, separators=(",", ":"), allow_nan=False)
+            body = json.loads(encoded)
+            request_sha256 = hashlib.sha256(encoded.encode()).hexdigest()
+            client = self._get_client()
+            if client.vertexai:
+                raise ValueError("bounded Gemini request requires the Developer API")
+            http_options = {"timeout": 180_000, "retry_options": {"attempts": 1, "http_status_codes": [0]}}
+            # The typed Developer API count config omits schema support; the
+            # documented REST generateContentRequest counts the complete body.
+            count = client.models.count_tokens(model=GEMINI_MODEL_ID, contents=None,
+                config={"http_options": {**http_options, "extra_body": {
+                    "generateContentRequest": {"model": "models/" + GEMINI_MODEL_ID, **body}}}})
+            tokens = count.total_tokens
+            if type(tokens) is not int or not 0 < tokens <= max_input_tokens:
+                raise ValueError("bounded input token count invalid or exceeds limit")
+            response = client.models.generate_content(model=GEMINI_MODEL_ID, contents=None,
+                config={"automatic_function_calling": {"disable": True},
+                        "http_options": {**http_options, "extra_body": body}})
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise ProviderError("gemini", operation, str(exc)) from exc
+        candidates = response.candidates or []
+        reason = candidates[0].finish_reason.value if len(candidates) == 1 and candidates[0].finish_reason else None
+        parts = candidates[0].content.parts if len(candidates) == 1 and candidates[0].content else []
+        return SimpleNamespace(
+            status="completed" if reason == "STOP" else "incomplete", id=response.response_id,
+            output_text="".join(part.text for part in parts or [] if part.text is not None and not part.thought),
+            usage=response.usage_metadata, finish_reason=reason,
+            input_token_count=tokens, request_sha256=request_sha256,
+            budget_evidence={"model": GEMINI_MODEL_ID, "inputTokens": tokens,
+                "maxInputTokens": max_input_tokens, "maxOutputTokens": max_output_tokens,
+                "imageResolution": "high", "requestSha256": request_sha256,
+                "countMethod": "models.countTokens.generateContentRequest", "maximumGenerationPosts": 1},
+        )
 
     def _create(self, operation: str, **kwargs: object) -> object:
         try:
