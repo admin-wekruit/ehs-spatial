@@ -99,23 +99,51 @@ def bundle(repo):
         return {"items":[{"label":"unlisted ceramic fixture","box":[0,0,5,12]},{"label":"unlisted transparent bin","box":[7,0,12,12]},{"label":"tiny control","box":[5,0,6,1]}]}
     def geometry(payload):
         assert ("asset","analysis_checkpoint") in repo.events
-        frames = []
-        y,x = np.mgrid[:12,:12]
-        points = np.stack(((x-5.5)/5,(y-5.5)/5,np.full_like(x,2)),axis=-1).astype(float)
-        valid = np.ones((12,12),bool)
-        valid[0,5] = False
-        for image in payload["images"]:
-            frames.append({"imageId":image["imageId"],"points":points,"valid":valid,"K":np.array([[10,0,5.5],[0,10,5.5],[0,0,1]]),"cameraToWorld":np.eye(4),
-                           "rgb":np.full((12,12,3),100,np.uint8),"inputToCanonical":np.eye(3)})
-        return {"frames":frames}
+        return geometry_response(payload['images'])
     def segmentation(payload):
         x0,y0,x1,y1 = map(int,payload["box"])
         mask = np.zeros((12,12),bool)
         mask[y0:y1,x0:x1] = True
         return {"mask":mask}
     return {"discovery":provider("discovery",discover),"geometry":provider("geometry",geometry),
-            "depth":provider("depth",lambda payload:{"imageSha256":payload["image"]["sha256"]},"Ruicheng/moge-3-vitl"),
+            "depth":provider("depth",lambda payload:depth_response(payload['image']),"Ruicheng/moge-3-vitl"),
             "segmentation":provider("segmentation",segmentation)}
+
+
+def geometry_response(images):
+    frames = []
+    y,x = np.mgrid[:12,:12]
+    points = np.stack(((x-5.5)/5,(y-5.5)/5,np.full_like(x,2)),axis=-1).astype(float)
+    valid = np.ones((12,12),bool)
+    valid[0,5] = False
+    for image in images:
+        frames.append({'imageId':image['imageId'],'points':points,'valid':valid,
+            'K':np.array([[10,0,5.5],[0,10,5.5],[0,0,1]]),'cameraToWorld':np.eye(4),
+            'rgb':np.full((12,12,3),100,np.uint8),'inputToCanonical':np.eye(3)})
+    return {'frames':frames}
+
+
+def depth_response(image):
+    shape = (image['height'],image['width'])
+    points = np.zeros((*shape,3))
+    points[...,2] = 2
+    return {'imageId':image['imageId'], 'imageSha256':image['sha256'],
+            'points':points, 'mask':np.ones(shape,bool), 'depth':points[...,2],
+            'intrinsics':np.eye(3), 'inputToCanonical':np.eye(3)}
+
+
+@pytest.mark.parametrize('bad', ['photo','grid','nonfinite','negative','different_z'])
+def test_auxiliary_depth_must_belong_to_the_source_grid(bad):
+    from ehs_spatial.platform.reconstruction import _depth_response
+    image = {'id':'photo-a','imageId':'photo-a','sha256':'a'*64,'width':12,'height':12}
+    response = depth_response(image)
+    if bad == 'photo': response['imageId'] = 'photo-b'
+    elif bad == 'grid': response['mask'] = response['mask'][:-1]
+    elif bad == 'nonfinite': response['points'][0,0,0] = np.nan
+    elif bad == 'negative': response['depth'][0,0] = -1
+    else: response['depth'] = response['depth'].copy() + 1
+    with pytest.raises(PlatformError):
+        _depth_response(image,response)
 
 
 def test_generic_multiphoto_analysis_retains_tiny_objects_caches_frames_and_uses_no_floor(tmp_path):

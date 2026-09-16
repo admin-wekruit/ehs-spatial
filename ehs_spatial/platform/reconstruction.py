@@ -299,6 +299,25 @@ def _geometry(document,images,response,evidence, *, coordinate_frame_id=None):
     return frames,canonical
 
 
+def _depth_response(image, response):
+    """Validate the per-photo auxiliary depth contract before reporting stage success."""
+    try:
+        points, mask, depth = (np.asarray(response[k]) for k in ('points','mask','depth'))
+        mapping = np.asarray(response['inputToCanonical'], dtype=float)
+        shape = (image['height'], image['width'])
+        if (response['imageId'] != image['id'] or response['imageSha256'] != image['sha256']
+                or points.shape != (*shape,3) or mask.shape != shape or mask.dtype != bool
+                or depth.shape != shape or mapping.shape != (3,3) or not np.allclose(mapping,np.eye(3))):
+            raise PlatformError('depth_source_grid_mismatch')
+        camera_intrinsics(np.asarray(response['intrinsics'], dtype=float))
+        if (not np.isfinite(points[mask]).all() or not np.isfinite(depth[mask]).all()
+                or np.any(depth[mask] <= 0) or not np.allclose(points[...,2][mask],depth[mask],rtol=1e-5,atol=1e-6)):
+            raise PlatformError('invalid_depth_support')
+    except (KeyError, TypeError, ValueError):
+        raise PlatformError('provider_response_invalid') from None
+    return {'imageId':image['id'], 'width':shape[1], 'height':shape[0], 'validPixelCount':int(mask.sum())}
+
+
 def _canonical_mask(mask,record):
     shape = np.asarray(record["points"]).shape[:2]
     y,x = np.mgrid[:shape[0],:shape[1]]
@@ -978,7 +997,9 @@ def run_analysis(repository,blobs,job,providers):
                 frames,canonical = parsed
     for image in images:
         # Separate corrected product baseline: each call/cache sees one photo.
-        attempt("depth",lambda:stages.call("depth",[image],{"image":_image_payload(image)}))
+        output = attempt("depth",lambda:stages.call("depth",[image],{"image":_image_payload(image)}))
+        if output:
+            attempt("depth",lambda:_depth_response(image,output[0]))
     lookup = {i["id"]:i for i in images}
     for observation in document["observations"]:
         if observation['imageId'] not in lookup or (is_append and observation.get('maskAssetId')):
@@ -1886,9 +1907,21 @@ def run_research_stage(repository,blobs,job,stage,payload,images,provider_manife
     protocol_asset = stages.put({"protocol":protocol,"providerManifest":provider_manifest},{"kind":"frozen_research_protocol","scope":"research_only"})
     if stage in ("generation", "geometry", "depth"):
         payload = {**payload,"_researchProtocol":protocol}
-    _,asset = stages.call(stage,images,payload,[_ref(protocol_asset)],research_protocol=protocol)
+    response,asset = stages.call(stage,images,payload,[_ref(protocol_asset)],research_protocol=protocol)
+    validation = None
+    if stage in ('geometry','depth'):
+        _, document, captured = _capture(repository,blobs,job)
+        selected = {image['id'] for image in images}
+        captured = [image for image in captured if image['id'] in selected]
+        if stage == 'geometry':
+            frames,_ = _geometry(deepcopy(document),captured,response,asset)
+            validation = [{'imageId':f.image_id, 'width':f.points.shape[1], 'height':f.points.shape[0],
+                           'validPixelCount':int(f.support().sum())} for f in frames.values()]
+        else:
+            validation = [_depth_response(captured[0],response)]
     return {"status":"succeeded","scope":"research_only","protocolAssetId":protocol_asset["id"],"outputAssetId":asset["id"],"stages":stages.records,
-            "newModelCalls":sum(s["newModelCalls"] for s in stages.records),"productReleaseStatus":"not_changed","sceneRevision":None}
+            "newModelCalls":sum(s["newModelCalls"] for s in stages.records),"productReleaseStatus":"not_changed","sceneRevision":None,
+            **({'outputValidation':validation} if validation is not None else {})}
 
 
 def load_research_input(repository,blobs,job):

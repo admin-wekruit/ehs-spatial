@@ -12,7 +12,7 @@ from ehs_spatial.platform import reconstruction as reconstruction
 from ehs_spatial.platform.storage import LocalBlobStore
 from scripts.research import validate_sam3d as cli
 from test_platform_backend import repo, project, identity
-from test_platform_reconstruction import Repo
+from test_platform_reconstruction import Repo, geometry_response, depth_response
 
 
 def preparation(tmp_path, monkeypatch, stage):
@@ -125,7 +125,7 @@ def test_frozen_stage_loader_and_dispatch_leave_scene_and_release_unchanged(tmp_
     seen = []
     def invoke(payload):
         seen.append(payload)
-        return {'fixture': True}
+        return geometry_response(payload['images']) if stage == 'geometry' else depth_response(payload['image'])
     monkeypatch.setattr(reconstruction, 'providers_from_manifest', lambda *a, **kw: {
         stage: replace(spec, invoke=invoke)})
     job = {**repo.job, 'kind': 'validate_model', 'branchId': frozen['branchId'],
@@ -193,7 +193,7 @@ def test_admin_stage_submit_worker_and_ledger_are_idempotent(repo, tmp_path, mon
     spec = reconstruction.providers_from_manifest(manifest, _research=True)[stage]
     def invoke(payload):
         seen.append(payload)
-        return {'fixture': True}
+        return geometry_response(payload['images']) if stage == 'geometry' else depth_response(payload['image'])
     monkeypatch.setattr(reconstruction, 'providers_from_manifest', lambda *a, **kw: {
         stage: replace(spec, invoke=invoke)})
     result = run_job(repo, blobs, job['id'])
@@ -204,3 +204,20 @@ def test_admin_stage_submit_worker_and_ledger_are_idempotent(repo, tmp_path, mon
     run_job(repo, blobs, job['id'])
     assert len(seen) == 1
     assert manifest[stage]['releaseEvidence']['runtime']['status'] == 'unverified'
+
+
+@pytest.mark.parametrize('stage', ['geometry', 'depth'])
+def test_matching_pins_do_not_make_empty_stage_output_valid(tmp_path, monkeypatch, stage):
+    repo, blobs, manifest, frozen = preparation(tmp_path, monkeypatch, stage)
+    spec = reconstruction.providers_from_manifest(manifest, _research=True)[stage]
+    monkeypatch.setattr(reconstruction, 'providers_from_manifest', lambda *a, **kw: {
+        stage: replace(spec, invoke=lambda payload:{'pins':spec.pins})})
+    job = {**repo.job, 'kind':'validate_model', 'config':{
+        'researchProtocolSha256':digest(frozen['protocol'])}}
+    before = digest(repo.document)
+    for _ in range(2):
+        with pytest.raises(PlatformError):
+            reconstruction.run_research_stage(repo,blobs,job,stage,frozen['payload'],
+                frozen['images'],manifest,frozen['protocol'])
+    assert len(repo.calls) == 1  # Retain/reject known bad output; never rebill on replay.
+    assert digest(repo.document) == before
