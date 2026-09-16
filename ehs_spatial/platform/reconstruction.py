@@ -1918,24 +1918,36 @@ def run_generation(repository,blobs,job,providers, *, context=None):
             if not candidates:
                 raise PlatformError("generation_mask_required",409)
             anchor = anchors.get(entity['id']) or max(candidates,key=lambda x:((x.get("geometrySupport") or {}).get("validPixelCount",0),x["id"]))
-            image = next(i for i in images if i["id"] == anchor["imageId"])
-            asset = repository.get_asset(anchor["maskAssetId"])
-            if anchor['id'] not in loaded_masks:
-                raise PlatformError(mask_error_codes.get(anchor['id'],'generation_mask_required'),409)
-            mask = loaded_masks[anchor['id']]
-            f = frames[image["id"]]
-            payload = {"entityId":entity["id"],"image":canonical[image["id"]]["rgb"],"mask":mask,"points":f.points,"valid":f.valid,"K":f.K,"cameraToWorld":f.camera_to_world,
-                       "coordinateFrameId":f.coordinate_frame_id,"imageId":image["id"],"imageSha256":image["sha256"],"seed":job.get("config",{}).get("seed",0)}
-            response,evidence = stages.call("generation",[image],payload,[{"observationId":anchor["id"],"revision":anchor["revision"],"maskSha256":asset["sha256"]}])
-            response,quality,accept = _assess_generation(document,entity,observations,response,evidence,frames,canonical,loaded_masks,stages,f.coordinate_frame_id)
-            quality_results.append(quality)
-            _record_generated_representation(document, stages, entity, [observations[oid] for oid in entity['observationRefs']], f.coordinate_frame_id, response, evidence, activate=accept, quality=quality)
-            ready.append(entity["id"])
-            if accept:
-                accepted.append(entity['id'])
-            if quality['shapeReview'].get('reason') in UNKNOWN_OUTCOME_CODES:
-                stopped_reason = quality['shapeReview']['reason']
-                errors.append({'entityId':entity['id'], 'code':stopped_reason})
+            tried_images = set()
+            for anchor in [anchor, *sorted(candidates, key=lambda x:((x.get('geometrySupport') or {}).get('validPixelCount',0),x['id']), reverse=True)]:
+                if anchor['imageId'] in tried_images:
+                    continue
+                tried_images.add(anchor['imageId'])
+                image = next(i for i in images if i["id"] == anchor["imageId"])
+                asset = repository.get_asset(anchor["maskAssetId"])
+                if anchor['id'] not in loaded_masks:
+                    raise PlatformError(mask_error_codes.get(anchor['id'],'generation_mask_required'),409)
+                mask = loaded_masks[anchor['id']]
+                f = frames[image["id"]]
+                payload = {"entityId":entity["id"],"image":canonical[image["id"]]["rgb"],"mask":mask,"points":f.points,"valid":f.valid,"K":f.K,"cameraToWorld":f.camera_to_world,
+                           "coordinateFrameId":f.coordinate_frame_id,"imageId":image["id"],"imageSha256":image["sha256"],"seed":job.get("config",{}).get("seed",0)}
+                response,evidence = stages.call("generation",[image],payload,[{"observationId":anchor["id"],"revision":anchor["revision"],"maskSha256":asset["sha256"]}])
+                response,quality,accept = _assess_generation(document,entity,observations,response,evidence,frames,canonical,loaded_masks,stages,f.coordinate_frame_id)
+                quality_results.append(quality)
+                _record_generated_representation(document, stages, entity, [observations[oid] for oid in entity['observationRefs']], f.coordinate_frame_id, response, evidence, activate=accept, quality=quality)
+                if entity['id'] not in ready:
+                    ready.append(entity["id"])
+                if accept:
+                    accepted.append(entity['id'])
+                    break
+                review = quality['shapeReview']
+                if review.get('reason') in UNKNOWN_OUTCOME_CODES:
+                    stopped_reason = review['reason']
+                    errors.append({'entityId':entity['id'], 'code':stopped_reason})
+                    break
+                if not review.get('evidenceRef') or review.get('nextAction') != 'alternate_view':
+                    break
+            if stopped_reason:
                 break
         except PlatformError as exc:
             errors.append({"entityId":entity["id"],"code":exc.code})

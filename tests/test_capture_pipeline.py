@@ -97,7 +97,91 @@ def test_bad_shape_is_retained_but_not_reported_as_completed_model(tmp_path):
     assert result['correspondence']['summary']['unresolvedCount'] == 1
     entity = next(e for e in document['entities'] if not e.get('sourceContext'))
     assert not entity.get('activeModelRepresentationId')
-    assert any(r['kind'] == 'generated_mesh' for r in entity['representations'])
+    assert len([r for r in entity['representations'] if r['kind'] == 'generated_mesh']) == 2
+    assert sum(event == ('reserve', 'generation') for event in repo.events) == 2
+    assert result['generation']['shapeReadyEntityIds'] == [entity['id']]
+    assert len(result['generation']['qualityResults']) == 2
+
+
+@pytest.mark.parametrize('explicit_anchor', [False, True])
+def test_capture_uses_reviewed_alternate_owned_photo_and_replays_both_candidates(tmp_path, explicit_anchor):
+    from ehs_spatial.platform.reconstruction import run_analysis
+
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    providers = providers_for_new_capture(repo)
+    source, _ = run_analysis(repo, blobs, repo.job, providers)
+    entity = next(e for e in source['entities'] if not e.get('sourceContext'))
+    observations = [o for o in source['observations'] if o['id'] in entity['observationRefs']]
+    preferred = sorted(observations, key=lambda o:(o['geometrySupport']['validPixelCount'], o['id']), reverse=True)
+    initial = preferred[-1] if explicit_anchor else preferred[0]
+    job = deepcopy(repo.job)
+    if explicit_anchor:
+        job['inputs']['observationIds'] = [initial['id']]
+    generated, reviewed = [], []
+    original_generation = providers['generation'].invoke
+    def generate(payload):
+        generated.append((payload['entityId'], payload['imageId']))
+        return original_generation(payload)
+    def review(payload):
+        if payload.get('mode') == 'inventory':
+            return inventory_review_response(payload)
+        reviewed.append(deepcopy(payload))
+        accepted = len(generated) == 2
+        return {'review':{'status':'pass' if accepted else 'fail',
+            'reason':'Synthetic second source resolves the visible structure.',
+            'observationIds':[view['observationId'] for view in payload['views']],
+            'visibleShapeIssues':[] if accepted else ['First candidate contradicts visible structure.'],
+            'nextAction':'none' if accepted else 'alternate_view'}}
+    providers['generation'] = provider('generation', generate)
+    providers['model_review'] = provider('model_review', review)
+
+    document, result = run_capture_pipeline(repo, blobs, job, providers)
+    generation = result['generation']
+    assert generation['status'] == 'succeeded', generation
+    assert generated == [(entity['id'], initial['imageId']),
+        (entity['id'], next(o['imageId'] for o in observations if o['imageId'] != initial['imageId']))]
+    assert generation['shapeReadyEntityIds'] == generation['acceptedEntityIds'] == [entity['id']]
+    assert [q['status'] for q in generation['qualityResults']] == ['rejected', 'accepted']
+    assert all({v['observationId'] for v in p['views']} == set(entity['observationRefs']) for p in reviewed)
+    current = next(e for e in document['entities'] if e['id'] == entity['id'])
+    models = [r for r in current['representations'] if r['kind'] == 'generated_mesh']
+    assert len(models) == 2 and current['activeModelRepresentationId'] == models[1]['id']
+    assert all(model['qualityEvidence']['shapeReview']['evidenceRef'] for model in models)
+    assert result['correspondence']['summary']['coverageDenominator'] == 1
+    assert len([e for e in document['entities'] if not e.get('sourceContext')]) == 1
+    calls = len(repo.calls)
+    replay, replayed = run_capture_pipeline(repo, blobs, job, providers)
+    assert len(repo.calls) == calls and len(generated) == len(reviewed) == 2
+    replay_entity = next(e for e in replay['entities'] if e['id'] == entity['id'])
+    assert [r['id'] for r in replay_entity['representations'] if r['kind'] == 'generated_mesh'] == [r['id'] for r in models]
+    assert replayed['generation']['acceptedEntityIds'] == [entity['id']]
+    validate_document(document)
+
+
+@pytest.mark.parametrize('action', ['none', 'correct_mask', 'invalid_review', 'unknown'])
+def test_capture_does_not_try_another_photo_without_valid_alternate_view_review(tmp_path, action):
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    providers = providers_for_new_capture(repo)
+    def review(payload):
+        if payload.get('mode') == 'inventory':
+            return inventory_review_response(payload)
+        if action == 'unknown':
+            raise TimeoutError('Unknown review outcome')
+        return {'review':{'status':'fail', 'reason':'Synthetic unresolved visible structure.',
+            'observationIds':['foreign'] if action == 'invalid_review' else [v['observationId'] for v in payload['views']],
+            'visibleShapeIssues':['Visible structure differs.'],
+            'nextAction':'alternate_view' if action == 'invalid_review' else action}}
+    providers['model_review'] = provider('model_review', review)
+    document, result = run_capture_pipeline(repo, blobs, repo.job, providers)
+    assert result['generation']['status'] == 'incomplete'
+    assert sum(event == ('reserve', 'generation') for event in repo.events) == 1
+    entity = next(e for e in document['entities'] if not e.get('sourceContext'))
+    assert len([r for r in entity['representations'] if r['kind'] == 'generated_mesh']) == 1
+    assert not entity.get('activeModelRepresentationId')
+    if action == 'unknown':
+        assert result['generation']['stoppedReason'] == 'provider_outcome_unknown'
 
 
 @pytest.mark.parametrize('reference_only', [False, True])
