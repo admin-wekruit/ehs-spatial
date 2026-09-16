@@ -53,15 +53,22 @@ forks and new model jobs remain in the full platform.
      .venv/bin/modal deploy modal_apps/publication_site.py
    ```
 
-   The publication container reserves 3 GiB of memory. On 2026-09-15, loading
+   The publication container reserves 6 GiB of memory with four concurrent
+   inputs. On 2026-09-15, loading
    eleven frozen bundles in a fresh local Python process peaked at
    1,467,498,496 bytes of RSS (1,399.5 MiB), down from 2,361,081,856 bytes
    (2,251.7 MiB) before sharing repeated revisions. The loader compares each
    revision's complete content before sharing its read-only object across
    snapshots and routes; conflicting content and corrupt assets still reject
    the catalog. This measurement excludes Modal's runtime and concurrent
-   response serialization. Reserve that headroom and remeasure after adding
-   bundles. On macOS, the command below reports peak RSS in bytes:
+   response serialization. After adding the twelfth bundle, a fresh-process
+   check of four simultaneous GETs of the largest 76,169,341-byte publication
+   peaked at 2,800,664,576 bytes. All four responses matched the frozen hash.
+   The check includes local response serialization, gzip and client buffers,
+   but excludes Modal runtime overhead. This leaves about 3.39 GiB below the
+   current reservation; the former 3 GiB / 32-input setting had inadequate
+   headroom. Remeasure after adding bundles. On macOS, the command below
+   reports peak RSS in bytes:
 
    ```sh
    /usr/bin/time -l .venv/bin/python -c \

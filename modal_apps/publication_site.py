@@ -51,8 +51,8 @@ for module in ("__init__", "publication_site", "feedback", "contracts", "agent_s
 
 
 @app.function(image=image, volumes={"/feedback": feedback_data}, secrets=feedback_secrets,
-              cpu=1, memory=3072, timeout=180, scaledown_window=300, max_containers=1)
-@modal.concurrent(max_inputs=32)
+              cpu=1, memory=6144, timeout=180, scaledown_window=300, max_containers=1)
+@modal.concurrent(max_inputs=4)
 @modal.asgi_app()
 def web():
     from ehs_spatial.platform.publication_site import create_app, FEEDBACK_PATH, IDENTITY_SUGGESTIONS_PATH
