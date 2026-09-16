@@ -235,3 +235,329 @@ def test_matching_pins_do_not_make_empty_stage_output_valid(tmp_path, monkeypatc
                 frozen['images'],manifest,frozen['protocol'])
     assert len(repo.calls) == 1  # Retain/reject known bad output; never rebill on replay.
     assert digest(repo.document) == before
+
+
+def segmentation_source(tmp_path, monkeypatch, *, jpeg=False, masked=False):
+    """A persisted discovery observation, before any reconstruction or segmentation."""
+    import hashlib
+    import io
+    from pathlib import Path
+    import numpy as np
+    from PIL import Image
+
+    blobs = LocalBlobStore(tmp_path)
+    repository = Repo(blobs, size=(9, 13))
+    repository.paid_budget = .01
+    if jpeg:
+        raw = io.BytesIO()
+        Image.fromarray(np.full((9, 13, 3), 73, np.uint8)).save(raw, format='JPEG')
+        old = repository.capture['images'][0]['id']
+        asset = repository.register_asset(repository.pid, blobs.put(raw.getvalue(), 'image/jpeg'))
+        repository.capture['images'][0].update(id=asset['id'], assetId=asset['id'])
+        repository.document['assets'] = [a for a in repository.document['assets'] if a['id'] != old] + [asset]
+    image = repository.capture['images'][0]
+    source_asset = repository.get_asset(image['assetId'])
+    reconstruction._discover(repository.document, image, {'items':[
+        {'label':'small visible control', 'box':[1.2, 2.3, 10.4, 7.8]}]}, source_asset)
+    entity = repository.document['entities'][0]
+    observation = repository.document['observations'][0]
+    if masked:
+        raw = io.BytesIO()
+        Image.fromarray(np.ones((9, 13), np.uint8) * 255).save(raw, format='PNG')
+        asset = repository.register_asset(repository.pid, blobs.put(raw.getvalue(), 'image/png'))
+        repository.document['assets'].append(asset)
+        observation['maskAssetId'] = asset['id']
+    monkeypatch.setattr(repository, '_connect', lambda: nullcontext(None), raising=False)
+    monkeypatch.setattr(cli, 'admin_context', lambda *a: (
+        {'source':'database_admin'}, {'document':repository.document}))
+    monkeypatch.setattr(cli, 'check_budget', lambda *a: {'configuredBudgetUsd':'.01'})
+    pins = {'model':'fal-ai/sam-3-1/image-rle', 'adapter':'sam3.1-box-pixel-coverage-v1'}
+    manifest = {'segmentation':{'provider':'fal', 'pins':pins, 'paid':True, 'estimatedCostUsd':.01,
+        'releaseEvidence':{'pins':pins, 'license':{'status':'passed', 'artifactSha256':'c' * 64},
+            'runtime':{'status':'unverified'}, 'quality':{'status':'unverified'}}}}
+    runtime = {'segmentation':{'pins':pins, 'provider':'fal', 'endpoint':pins['model'],
+        'falClientVersion':'1.0.0',
+        'adapterSourceSha256':hashlib.sha256(Path(reconstruction.__file__).read_bytes()).hexdigest()}}
+    protocol = {'id':'segmentation-fixture', 'stage':'segmentation', 'purpose':'runtime_validation',
+        'projectId':repository.pid, 'branchId':'test-branch', 'baselineRevision':repository.rid,
+        'entityId':entity['id'], 'observationId':observation['id'],
+        'metricDefinitions':{'sourceGrid':'boolean mask uses the submitted original photo grid'},
+        'policyThresholds':{}, 'split':'test-only',
+        'callLimits':{'maxCalls':1, 'maxCostPerCallUsd':.01, 'maxTotalCostUsd':.01}}
+    return repository, blobs, manifest, runtime, protocol
+
+
+@pytest.mark.parametrize('masked', [False, True])
+def test_segmentation_prepares_owned_observation_without_geometry(tmp_path, monkeypatch, masked):
+    repo, blobs, manifest, runtime, protocol = segmentation_source(tmp_path, monkeypatch, masked=masked)
+    before = digest(repo.document)
+    frozen = cli.prepare(protocol, repo, blobs, manifest, runtime)
+    observation = repo.document['observations'][0]
+    assert not repo.document['coordinateFrames'] and not repo.document['cameras'] and not repo.calls
+    assert frozen['payload']['box'] == observation['originalPixelBox'] == [1.2, 2.3, 10.4, 7.8]
+    assert frozen['payload']['submittedBox'] == [1, 2, 11, 8]
+    assert set(frozen['payload']) == {'image', 'box', 'submittedBox'}
+    assert frozen['protocol']['sourceObservation'] == {
+        'entityId':protocol['entityId'], 'observationId':observation['id'],
+        **{k:observation[k] for k in ('revision','imageId','originalPixelBox','pixelMapping','maskAssetId')}}
+    expected_ids = {observation['imageId']}
+    if masked:
+        expected_ids.add(observation['maskAssetId'])
+    assert {r['assetId'] for r in frozen['protocol']['inputAssetHashes']} == expected_ids
+    assert frozen['protocol']['runtimeManifest'] == runtime
+    assert digest(repo.document) == before
+    provider = reconstruction.providers_from_manifest(manifest, _research=True)['segmentation']
+    assert provider.records_dispatch
+    provider.validate('segmentation', research_protocol=frozen['protocol'])
+    with pytest.raises(PlatformError, match='provider_release_gate_unverified'):
+        provider.validate('segmentation')
+
+
+@pytest.mark.parametrize('bad', ['missing_entity', 'missing_observation', 'image_selection', 'seed',
+                                'foreign_entity', 'foreign_observation', 'unowned_observation'])
+def test_segmentation_requires_exact_owned_observation_selection(tmp_path, monkeypatch, bad):
+    repo, blobs, manifest, runtime, protocol = segmentation_source(tmp_path, monkeypatch)
+    if bad == 'missing_entity': protocol.pop('entityId')
+    elif bad == 'missing_observation': protocol.pop('observationId')
+    elif bad == 'image_selection': protocol['imageIds'] = [repo.capture['images'][0]['id']]
+    elif bad == 'seed': protocol['seed'] = 0
+    elif bad == 'foreign_entity': protocol['entityId'] = 'foreign-entity'
+    elif bad == 'foreign_observation': protocol['observationId'] = 'foreign-observation'
+    else: repo.document['entities'][0]['observationRefs'] = []
+    with pytest.raises(PlatformError):
+        cli.prepare(protocol, repo, blobs, manifest, runtime)
+    assert not repo.calls
+
+
+@pytest.mark.parametrize('bad', ['box', 'submitted_box', 'payload_extra', 'snapshot_revision',
+    'snapshot_mapping', 'snapshot_image', 'entity_id', 'observation_id', 'image_bytes',
+    'source_revision', 'source_mapping', 'source_box', 'source_ownership'])
+def test_segmentation_rejects_rehashed_forgery_before_reservation(tmp_path, monkeypatch, bad):
+    repo, blobs, manifest, runtime, protocol = segmentation_source(tmp_path, monkeypatch)
+    frozen = cli.prepare(protocol, repo, blobs, manifest, runtime)
+    payload, protocol = frozen['payload'], frozen['protocol']
+    if bad == 'box': payload['box'][0] = 0.5
+    elif bad == 'submitted_box': payload['submittedBox'][0] = 0
+    elif bad == 'payload_extra': payload['prompt'] = 'a different object'
+    elif bad == 'snapshot_revision': protocol['sourceObservation']['revision'] += 1
+    elif bad == 'snapshot_mapping': protocol['sourceObservation']['pixelMapping'] = [{'forged':True}]
+    elif bad == 'snapshot_image': protocol['sourceObservation']['imageId'] = repo.capture['images'][1]['id']
+    elif bad == 'entity_id': protocol['entityId'] = 'foreign-entity'
+    elif bad == 'observation_id': protocol['observationId'] = 'foreign-observation'
+    elif bad == 'image_bytes': payload['image']['dataUri'] += 'AAAA'
+    elif bad == 'source_revision': repo.document['observations'][0]['revision'] += 1
+    elif bad == 'source_mapping': repo.document['observations'][0]['pixelMapping'] = [{'forged':True}]
+    elif bad == 'source_box': repo.document['observations'][0]['originalPixelBox'][0] = 0.5
+    else: repo.document['entities'][0]['observationRefs'] = []
+    protocol['payloadSha256'] = digest(payload)
+    job = {**repo.job, 'kind':'validate_model', 'config':{'researchProtocolSha256':digest(protocol)}}
+    with pytest.raises(PlatformError):
+        reconstruction.run_research_stage(repo, blobs, job, 'segmentation', payload,
+            frozen['images'], manifest, protocol)
+    assert not repo.calls
+
+
+def test_segmentation_jpeg_payload_preserves_original_bytes_and_hash(tmp_path, monkeypatch):
+    import base64
+    import hashlib
+    repo, blobs, manifest, runtime, protocol = segmentation_source(tmp_path, monkeypatch, jpeg=True)
+    frozen = cli.prepare(protocol, repo, blobs, manifest, runtime)
+    image = frozen['payload']['image']
+    asset = repo.get_asset(image['imageId'])
+    raw = blobs.get(asset['storageKey'], asset['sha256'], asset['sizeBytes'])
+    assert image['dataUri'].startswith('data:image/jpeg;base64,')
+    assert base64.b64decode(image['dataUri'].split(',', 1)[1]) == raw
+    assert image['sha256'] == hashlib.sha256(raw).hexdigest() == asset['sha256']
+    assert (image['height'], image['width']) == (9, 13)
+
+
+def fake_sam_transport(monkeypatch, failure=None):
+    import json
+    import fal_client
+    import fal_client.client
+    import httpx
+
+    events, requests = [], []
+    def post(url, **kwargs):
+        events.append('post')
+        requests.append((url, kwargs))
+        if failure == 'post_timeout':
+            raise httpx.ReadTimeout('test-only uncertain POST')
+        return httpx.Response(429 if failure == 'post_429' else 200,
+            request=httpx.Request('POST', url), json={'request_id':'sam-request-test',
+                'response_url':'https://queue.fal.run/test/response',
+                'status_url':'https://queue.fal.run/test/status',
+                'cancel_url':'https://queue.fal.run/test/cancel'})
+    def handle(**kwargs):
+        events.append('handle')
+        assert kwargs['request_id'] == 'sam-request-test'
+        def get():
+            events.append('get')
+            assert 'receipt' in events and events.index('receipt') < events.index('get')
+            if failure == 'get_timeout':
+                raise httpx.ReadTimeout('test-only unavailable result')
+            if failure == 'invalid_response':
+                return {'rle':[], 'scores':[]}
+            if failure == 'invalid_response_type':
+                return ['received but not a response object']
+            return {'rle':[json.dumps({'size':[9,13], 'counts':[0,117]})], 'scores':[.9]}
+        return SimpleNamespace(request_id=kwargs['request_id'], get=get)
+    monkeypatch.setattr(fal_client, 'SyncClient', lambda: SimpleNamespace(
+        _client=nullcontext(SimpleNamespace(post=post))))
+    monkeypatch.setattr(fal_client.client, 'SyncRequestHandle', handle)
+    monkeypatch.setattr(fal_client, 'submit', lambda *a, **kw: pytest.fail('retrying SDK submit must not be used'))
+    return events, requests
+
+
+@pytest.mark.parametrize('failure', [None, 'get_timeout', 'receipt_failure', 'invalid_response',
+                                   'invalid_response_type', 'post_timeout', 'post_429'])
+def test_sam_one_post_receipt_fence_and_no_charge_on_replay(tmp_path, monkeypatch, failure):
+    repo, blobs, manifest, runtime, protocol = segmentation_source(tmp_path, monkeypatch)
+    frozen = cli.prepare(protocol, repo, blobs, manifest, runtime)
+    before = digest(repo.document)
+    events, requests = fake_sam_transport(monkeypatch, failure)
+    def record_dispatch(call_id, attempt, request_id):
+        events.append('receipt')
+        assert attempt == repo.job['attemptToken']
+        call = next(c for c in repo.calls if c['id'] == call_id)
+        assert call['status'] == 'reserved' and request_id == 'sam-request-test'
+        if failure == 'receipt_failure':
+            raise PlatformError('job_attempt_stale', 409)
+        call['response'] = {'providerRequestId':request_id}
+    monkeypatch.setattr(repo, 'record_model_call_dispatch', record_dispatch, raising=False)
+    job = {**repo.job, 'kind':'validate_model', 'config':{
+        'researchProtocolSha256':digest(frozen['protocol'])}}
+    def run():
+        return reconstruction.run_research_stage(repo, blobs, job, 'segmentation',
+            frozen['payload'], frozen['images'], manifest, frozen['protocol'])
+    if failure:
+        for _ in range(2):
+            with pytest.raises(PlatformError):
+                run()
+    else:
+        result = run()
+        assert result['scope'] == 'research_only' and result['sceneRevision'] is None
+        assert result['newModelCalls'] == 1 and result['outputValidation']
+        assert run()['newModelCalls'] == 0
+    assert len(requests) == len(repo.calls) == 1
+    url, options = requests[0]
+    assert url == 'https://queue.fal.run/fal-ai/sam-3-1/image-rle'
+    assert options['follow_redirects'] is False
+    assert options['json']['box_prompts'] == [{'x_min':1, 'y_min':2, 'x_max':11, 'y_max':8}]
+    assert all(type(v) is int for v in options['json']['box_prompts'][0].values())
+    assert options['json']['prompt'] == ''
+    assert frozen['payload']['box'] == [1.2, 2.3, 10.4, 7.8]
+    if failure in ('post_timeout', 'post_429'):
+        assert events == ['post']
+    elif failure == 'receipt_failure':
+        assert events == ['post', 'receipt']
+    else:
+        assert events == ['post', 'receipt', 'handle', 'get']
+    call = repo.calls[0]
+    assert call['status'] == ('succeeded' if failure is None else
+        'failed' if failure in ('invalid_response', 'invalid_response_type') else 'outcome_unknown')
+    if failure not in ('post_timeout', 'post_429'):
+        assert call['response']['providerRequestId'] == 'sam-request-test'
+    assert digest(repo.document) == before
+    assert manifest['segmentation']['releaseEvidence']['runtime']['status'] == 'unverified'
+
+
+@pytest.mark.parametrize('bad', ['nonboolean', 'wrong_grid'])
+def test_segmentation_research_output_must_be_boolean_source_grid(tmp_path, monkeypatch, bad):
+    import numpy as np
+    repo, blobs, manifest, runtime, protocol = segmentation_source(tmp_path, monkeypatch)
+    frozen = cli.prepare(protocol, repo, blobs, manifest, runtime)
+    provider = reconstruction.providers_from_manifest(manifest, _research=True)['segmentation']
+    mask = np.ones((9,13), dtype=np.uint8) if bad == 'nonboolean' else np.ones((13,9), dtype=bool)
+    monkeypatch.setattr(reconstruction, 'providers_from_manifest', lambda *a, **kw: {
+        'segmentation':replace(provider, invoke=lambda payload:{'mask':mask}, records_dispatch=False)})
+    job = {**repo.job, 'kind':'validate_model', 'config':{
+        'researchProtocolSha256':digest(frozen['protocol'])}}
+    before = digest(repo.document)
+    for _ in range(2):
+        with pytest.raises(PlatformError):
+            reconstruction.run_research_stage(repo, blobs, job, 'segmentation',
+                frozen['payload'], frozen['images'], manifest, frozen['protocol'])
+    assert len(repo.calls) == 1
+    assert digest(repo.document) == before
+
+
+def test_segmentation_runtime_binding_detects_changed_adapter_bytes(tmp_path, monkeypatch):
+    from pathlib import Path
+    repo, blobs, manifest, runtime, protocol = segmentation_source(tmp_path, monkeypatch)
+    frozen = cli.prepare(protocol, repo, blobs, manifest, runtime)
+    altered = tmp_path / 'altered_adapter.py'
+    altered.write_bytes(Path(reconstruction.__file__).read_bytes() + b'\n# changed test adapter\n')
+    monkeypatch.setattr(reconstruction, '__file__', str(altered))
+    with pytest.raises(PlatformError, match='research_runtime_unpinned'):
+        reconstruction._validate_research_runtime(frozen['protocol'], manifest['segmentation']['pins'], 'segmentation')
+    assert not repo.calls
+
+
+@pytest.mark.parametrize('changed', ['missing_adapter_hash', 'sdk_version', 'license'])
+def test_segmentation_runtime_and_license_gate_before_call(tmp_path, monkeypatch, changed):
+    repo, blobs, manifest, runtime, protocol = segmentation_source(tmp_path, monkeypatch)
+    if changed == 'missing_adapter_hash':
+        runtime['segmentation'].pop('adapterSourceSha256')
+    elif changed == 'sdk_version':
+        runtime['segmentation']['falClientVersion'] = 'future-unreviewed-version'
+    else:
+        manifest['segmentation']['releaseEvidence']['license']['status'] = 'unverified'
+    with pytest.raises(PlatformError):
+        cli.prepare(protocol, repo, blobs, manifest, runtime)
+    assert not repo.calls
+
+
+@pytest.mark.parametrize('unknown', [False, True])
+def test_segmentation_admin_submit_real_worker_receipt_and_replay(repo, tmp_path, monkeypatch, unknown):
+    from decimal import Decimal
+    from panoptes_worker.__main__ import run_job
+    with monkeypatch.context() as local:
+        source, blobs, manifest, runtime, protocol = segmentation_source(tmp_path, local)
+    repo.blobs = blobs
+    cap, scene = project(repo)
+    pid, bid = scene['project']['id'], scene['branch']['id']
+    images = [{k:a[k] for k in ('storageKey','sha256','sizeBytes','mediaType')} for a in source.assets]
+    for image in images:
+        image['metadata'] = {'width':13, 'height':9, 'pixelMapping':[]}
+    capture = repo.create_capture(pid, cap, {'requestId':identity(), 'branchId':bid,
+        'baseRevisionId':scene['revision']['id'], 'target':'scene'}, images)
+    document = deepcopy(capture['revision']['document'])
+    image = capture['capture']['images'][0]
+    reconstruction._discover(document, image, {'items':[
+        {'label':'small visible control', 'box':[1.2,2.3,10.4,7.8]}]}, repo.get_asset(image['assetId']))
+    claimed = repo.claim_job(capture['job']['id'])
+    discovered = repo.finish_job(claimed['id'], claimed['attemptToken'], 'succeeded', document=document)
+    baseline = discovered['resultRevisionId']
+    protocol.update(projectId=pid, branchId=bid, baselineRevision=baseline,
+        entityId=document['entities'][0]['id'], observationId=document['observations'][0]['id'])
+    repo.paid_budget = Decimal('.01')
+    frozen = cli.prepare(protocol, repo, blobs, manifest, runtime)
+    prepared = {'validation':frozen, 'sha256':digest(frozen)}
+    job = cli.submit(prepared, repo, blobs)
+    assert cli.submit(prepared, repo, blobs)['id'] == job['id']
+    before = digest(repo.get_revision(baseline)['document'])
+    events, requests = fake_sam_transport(monkeypatch, 'get_timeout' if unknown else None)
+    original_dispatch = repo.record_model_call_dispatch
+    def record_dispatch(call_id, attempt, request_id):
+        result = original_dispatch(call_id, attempt, request_id)
+        with repo._connect() as connection:
+            row = connection.execute('SELECT * FROM model_calls WHERE id=%s', (call_id,)).fetchone()
+        assert row['status'] == 'reserved' and row['response']['providerRequestId'] == request_id
+        events.append('receipt')
+        return result
+    monkeypatch.setattr(repo, 'record_model_call_dispatch', record_dispatch)
+    result = run_job(repo, blobs, job['id'])
+    assert result['status'] == ('outcome_unknown' if unknown else 'succeeded')
+    assert result['result']['scope'] == 'research_only'
+    assert result['resultRevisionId'] is None and not result['headAdvanced']
+    assert run_job(repo, blobs, job['id'])['id'] == job['id']
+    assert len(requests) == 1 and events == ['post','receipt','handle','get']
+    with repo._connect() as connection:
+        calls = connection.execute('SELECT * FROM model_calls WHERE job_id=%s', (job['id'],)).fetchall()
+    assert len(calls) == 1 and calls[0]['response']['providerRequestId'] == 'sam-request-test'
+    assert calls[0]['status'] == ('outcome_unknown' if unknown else 'succeeded')
+    assert repo.get_project(pid)['branches'][0]['headRevisionId'] == baseline
+    assert digest(repo.get_revision(baseline)['document']) == before
+    assert not document['coordinateFrames'] and not document['observations'][0]['maskAssetId']
+    assert manifest['segmentation']['releaseEvidence']['quality']['status'] == 'unverified'
