@@ -1,4 +1,9 @@
-import type { Entity, SceneDocument } from "./types";
+import type { Entity, Representation, SceneDocument } from "./types";
+
+export function modelLabelKey(representation: Representation): string {
+  return representation.kind === "generated_mesh" && ["observed_depth_surface", "inferred_planar_surface_from_observed_depth"].includes(String(representation.sourceKind))
+    ? String(representation.sourceKind) : representation.kind;
+}
 
 /** Explicit model parts use absolute transforms in the same native frame. */
 export function modelFamily(document: SceneDocument, entityId: string): Entity[] {
@@ -46,7 +51,7 @@ export function entityEvidenceStatus(document: SceneDocument, entity: Entity) {
     models = representations.filter(rep => ["generated_mesh", "primitive"].includes(rep.kind)),
     active = models.find(rep => rep.id === entity.activeModelRepresentationId),
     observed = representations.find(rep => ["observed_surface", "point_cloud"].includes(rep.kind) && rep.sourceValidity !== "stale");
-  const modelKey = active?.sourceValidity === "stale" ? "identityModelStale" : active?.kind || observed?.kind ||
+  const modelKey = active?.sourceValidity === "stale" ? "identityModelStale" : (active ? modelLabelKey(active) : undefined) || observed?.kind ||
     (models.length ? "identitySourceModelsOnly" : representations.length ? "identitySourceStale" : "noGeometry");
   return { photoKey, identityKey, photoCount: images.size, modelKey };
 }

@@ -1,6 +1,67 @@
 # Object and model correspondence: implementation record
 
-## Delivered scene
+## Current partial delivery: 17 model records, 28 CAD records
+
+Publication `33f588d0-12ac-4415-b8bc-873c9c9417b1` freezes revision
+`03805b4c-89b4-4923-a8c2-86b21ef032e9`. This remains a partial model delivery;
+17/28 does not mean that the other eleven records have complete meshes.
+
+- The twelve existing models/components remain. Warning sign #18, station label
+  #19 and floor marking #20 now have source-photo-textured surface meshes. Their
+  original observed triangles and positions are preserved; hidden surfaces and
+  thickness have not been inferred.
+- Transparent guard sheets #11 and #13 now have explicit planar models, attached
+  as parts of the right fence. They use the exact source mask pixel boundaries,
+  a reviewed plane fit and a translucent material without a photograph of the
+  background. They are labeled inferred visible-region geometry, not measured
+  glass, complete solids, or confirmed placement.
+- Plane acceptance requires 90% held-out support, a 2%-of-diagonal residual bound,
+  and 5-degree spatial-split stability. The poster #27 fails these fixed gates
+  and was not admitted merely to increase the model count.
+- Mixed observation #21 is corrected without claiming another physical object:
+  2,863 source pixels go to the cart, 4,460 to the guard, and 2,022 remain explicitly
+  unresolved. All 9,345 pixels and the original observation are conserved. Two
+  new owned observations bring the current total to 86; original evidence remains
+  in immutable history.
+- Adding those observations exposed a shared save bug: CAD provenance hashes did
+  not refresh when an owner's observation list changed. `addObservation` now uses
+  the existing `refresh_cad_reference` contract. The two affected references were
+  repaired in a new revision; the other 26 contours were unchanged. CAD coverage
+  is 28/28 independently of the 17 modeled records.
+
+The five new assets and the partial observation correction used no new GPU/model
+inference calls. The USD 20 total authorization remains in force. Two previous
+CPU-only access diagnostics have no confirmed billed amount. The pinned SAM3D
+weights still return `403 GatedRepoError / account_access_not_approved` for the
+deployment account; checkpoint-dependent runtime and model-quality gates remain
+open. Existing placement and physical-scale uncertainty have not been upgraded.
+
+Remaining records are four fence/component input reviews (#12, #14, #23, #28),
+three signal/control geometry gaps (#15, #16, #26), one insufficient indicator
+input (#17), the rejected poster (#27), the floor reference (#10), and the mixed
+observation boundary (#21). The last two are not independent volumetric objects.
+
+Validation includes 32 identity/save-contract tests, two source-surface tests,
+renderer/material/selection checks, and actual WebGL alpha/picking checks. The
+export worker reopened the fixed scene in Blender successfully; the job correctly
+remains `incomplete` because model coverage and placement are still incomplete.
+Browser inspection verifies source-photo, CAD, scene and individual-model linkage;
+it is the browser-visible geometry, not successful export, that establishes model
+availability. Private reproducibility and review artifacts are under
+`.platform/model-correspondence/source-surface-release/`, `surface-models/`,
+`mixed-correction/`, `mixed-correction-v2/`, and `remaining-fences/`.
+
+The actual transparent-sheet preview initially faced almost edge-on. Its free
+individual view now follows the declared plane normal with inverse-transpose TRS;
+scene navigation and other view modes are unchanged. Computer use confirmed the
+readable sheet surface, retained translucency and XYZ. Independent data review
+verified all 345 scene assets, all 17 active models, the exact original triangle
+and texture bytes for the three source surfaces, and the conserved mask partition.
+All eleven public bundles pass 633 exact read-response checks and 590 byte-verified
+asset checks. Fresh catalog startup uses 2,158,821,376 bytes under the existing
+3 GiB reservation. No historical publication was overwritten.
+
+## Previous delivery: 12 model records
 
 Publication `10cb71d2-80dc-4cc8-b678-8ffc27bdf857` freezes revision
 `579a660e-2d3d-4030-b92c-63e536862f02`. It derives from revision

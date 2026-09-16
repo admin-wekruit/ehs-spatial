@@ -16,7 +16,7 @@ assert.deepEqual(point(transformMatrix({position:[1,2,3],quaternion:[0,0,Math.SQ
 assert.throws(()=>transformMatrix({position:[0,0,0],quaternion:[0,0,0,0],scale:[1,1,1]}));
 const buffer=new ArrayBuffer(3*36+12),vertices=new Float32Array(buffer,0,27),indices=new Uint32Array(buffer,108,3);vertices.set([0,0,1,0,0,1,1,0,0,1,0,1,0,0,1,0,1,0,0,1,1,0,0,1,0,0,1]);indices.set([0,1,2]);
 const meta={byteLayout:{stride:9,vertexCount:3,indexByteOffset:108,indexCount:3,indexType:'uint32'}};
-const meshes=readPacked(buffer,meta);assert.equal(meshes[0].vertices.length,33);assert.deepEqual([...meshes[0].indices],[0,1,2]);
+const meshes=readPacked(buffer,meta);assert.equal(meshes[0].vertices.length,36);assert.deepEqual([...meshes[0].indices],[0,1,2]);
 indices[2]=3;assert.throws(()=>readPacked(buffer,meta));assert.throws(()=>readGLB(new ArrayBuffer(24)));
 // The fourth stored vertex is not used by any drawn triangle. Keep its data,
 // but never let it enlarge rendered bounds; non-indexed points do use it.
@@ -26,7 +26,7 @@ for(let i=0;i<4;i++)packedVertices.set([...positions.slice(i*3,i*3+3),0,0,1,1,1,
 new Uint32Array(indexedPacked,144,3).set(used);
 const boundedPacked=readPacked(indexedPacked,{byteLayout:{stride:9,vertexCount:4,indexByteOffset:144,indexCount:3,indexType:'uint32'}})[0];
 assert.deepEqual(boundedPacked.bounds,{min:[0,0,1],max:[1,1,1]},'Packed mesh bounds use only vertices referenced by rendered indices');
-assert.equal(boundedPacked.vertices.length,44,'Computing rendered bounds does not discard original vertex data');
+assert.equal(boundedPacked.vertices.length,48,'Computing rendered bounds does not discard original vertex data');
 function indexedGLB(mode,indexed=true){
  const binary=new Uint8Array(positions.byteLength+used.byteLength);binary.set(new Uint8Array(positions.buffer));binary.set(new Uint8Array(used.buffer),positions.byteLength);
  const spec={asset:{version:'2.0'},scene:0,scenes:[{nodes:[0]}],nodes:[{mesh:0}],meshes:[{primitives:[{attributes:{POSITION:0},mode,...(indexed?{indices:1}:{})}]}],buffers:[{byteLength:binary.length}],bufferViews:[{buffer:0,byteOffset:0,byteLength:positions.byteLength},{buffer:0,byteOffset:positions.byteLength,byteLength:used.byteLength}],accessors:[{bufferView:0,componentType:5126,count:4,type:'VEC3'},{bufferView:1,componentType:5125,count:3,type:'SCALAR'}]};

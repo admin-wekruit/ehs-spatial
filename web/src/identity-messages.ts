@@ -7,6 +7,10 @@ export const measurementLabelKeys: Record<string, string> = {
 };
 
 export const identityMessages: Record<string, [string, string]> = {
+  observed_depth_surface: ['照片观测生成的表面模型', 'Photo-derived surface mesh'],
+  inferred_planar_surface_from_observed_depth: ['推定平面模型', 'Inferred planar model'],
+  identityVisibleSurfaceOnly: ['仅覆盖来源照片中的可见表面，背面和遮挡区域未补全。', 'Covers only the visible surface in the source photograph; rear and occluded surfaces are not reconstructed.'],
+  identityInferredPlaneOnly: ['由照片轮廓与估计深度推定可见平面；背面、遮挡区域和厚度未重建。', 'The visible plane is inferred from the photo outline and estimated depth; rear surfaces, occluded regions and thickness are not reconstructed.'],
   identityModelStale: ['当前模型已过期', 'Current model is stale'], identitySourceStale: ['来源已过期', 'Source is stale'], identitySourceModelsOnly: ['仅保留来源模型，未选当前模型', 'Source models retained; no current model'],
   identityModelStaleNote: ['当前模型的来源已变化，不能作为本版本的有效空间表示。旧资产和当前选择仍保留，需重新核对或生成。', 'The current model’s source changed, so it is not valid spatial evidence for this revision. Its asset and selection remain saved; review or regenerate it.'],
   recordIdentityDecision: ['记录跨照片身份决定', 'Record cross-photo identity decision'], mergeEntities: ['合并对象记录', 'Merge object records'], splitEntity: ['拆分对象记录', 'Split object record'],

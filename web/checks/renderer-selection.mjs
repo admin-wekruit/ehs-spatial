@@ -23,9 +23,9 @@ const gpu=(entityId,depth,representation=rep,indexCount=3)=>({entityId,represent
 function pixel(objects,selected='marking',override={},pick=false,exact=false){
  let depth=Infinity,depthFunc='LESS',selectedUniform=0,current,pixel=null;
  const gl={LESS:'LESS',LEQUAL:'LEQUAL',ELEMENT_ARRAY_BUFFER:'ELEMENT_ARRAY_BUFFER',COLOR_BUFFER_BIT:1,DEPTH_BUFFER_BIT:2,
-  isContextLost:()=>false,viewport(){},useProgram(){},clearColor(){},enable(){},disable(){},blendFunc(){},
+  isContextLost:()=>false,viewport(){},useProgram(){},clearColor(){},enable(){},disable(){},blendFunc(){},blendFuncSeparate(){},depthMask(){},
   clear(){depth=Infinity;pixel=null;},depthFunc(value){depthFunc=value;},bindBuffer(target,buffer){if(target==='ELEMENT_ARRAY_BUFFER')current=buffer;},
-  uniformMatrix4fv(){},uniform1f(name,value){if(name==='selected')selectedUniform=value;},uniform3f(){},uniform3fv(){},activeTexture(){},bindTexture(){},
+  uniformMatrix4fv(){},uniform1f(name,value){if(name==='selected')selectedUniform=value;},uniform3f(){},uniform3fv(){},uniform4fv(){},activeTexture(){},bindTexture(){},
   drawElements(){if(current.depth<depth||depthFunc==='LEQUAL'&&current.depth===depth){depth=current.depth;pixel={entityId:current.entityId,selected:!!selectedUniform};}},
  };
  const doc={entities:[context,marking,occluder]},layers={observed_surface:true,generated_mesh:true,primitive:true,point_cloud:false,showBounds:false,showCandidates:false,imageId:'photo',observations,...override};

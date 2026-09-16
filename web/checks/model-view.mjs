@@ -77,6 +77,21 @@ for(const mode of ['free','front','side','top']){
  const matrix=math.cameraMatrix(shot.camera,1,scope.radius);for(const axis of shot.axes.axes){const pixel=math.projected(matrix,axis.end,640,640);assert.ok(pixel&&pixel[0]>16&&pixel[0]<610&&pixel[1]>20&&pixel[1]<620,'Rotated/non-unit model axes and labels remain inside every preview');}
 }
 a.currentModelTransform=originalPose;
+scope.capture('a','free','revision');const ordinaryCamera=shots.at(-1).camera,normal=math.unit([1,-.45,0]),horizontal=math.unit(math.cross([0,0,1],normal));
+const sheetCorners=[[-1,-1],[1,-1],[1,1],[-1,1]].map(([x,y])=>math.add(math.scale(horizontal,x),[0,0,y]));
+model.sourceKind='inferred_planar_surface_from_observed_depth';model.sourceDerivation={planarModeling:{plane:[...normal,0]}};
+for(const pose of [originalPose,{...originalPose,quaternion:[Math.SQRT1_2,0,0,Math.SQRT1_2],scale:[2,3,4]}]){
+ a.currentModelTransform=pose;const unchanged=JSON.stringify(document),matrix=math.transformMatrix(pose),corners=sheetCorners.map(p=>math.point(matrix,p)),worldNormal=math.unit(math.cross(math.add(corners[1],math.scale(corners[0],-1)),math.add(corners[3],math.scale(corners[0],-1))));
+ scope.capture('a','free','revision');const shot=shots.at(-1),back=math.unit(math.add(shot.camera.eye,math.scale(shot.camera.target,-1)));
+ assert.ok(Math.abs(math.dot(back,worldNormal))>.95,'A declared sheet stays nearly face-on after rotation and non-uniform scale, never edge-on');
+ const vp=math.cameraMatrix(shot.camera,1,scope.radius),pixels=corners.map(p=>math.projected(vp,p,640,640));
+ const area=Math.abs(pixels.reduce((sum,p,i)=>sum+p[0]*pixels[(i+1)%4][1]-p[1]*pixels[(i+1)%4][0],0))/2;
+ assert.ok(area>10000,'The actual zero-thickness sheet projects a readable surface area');
+ assert.equal(JSON.stringify(document),unchanged,'Camera selection never changes the mesh, material, pose or source plane');
+ for(const key of Object.keys(original))assert.equal(scope[key],original[key],'A sheet preview restores the main scene navigation');
+}
+a.currentModelTransform=originalPose;delete model.sourceKind;delete model.sourceDerivation;
+scope.capture('a','free','revision');assert.deepEqual(shots.at(-1).camera,ordinaryCamera,'Ordinary model view semantics remain unchanged');
 assert.equal(scope.capture('a','free','old-revision'),null,'An old revision cannot supply a newer preview');
 assert.equal(scope.capture('a','free','revision','other-frame'),null,'A pending camera-frame change cannot publish geometry from the old frame');
 scope.loadedRepresentations.delete('a/model-a');assert.equal(scope.capture('a','free','revision'),null,'A partially loaded multi-mesh model is never published as a complete preview');scope.loadedRepresentations.add('a/model-a');
@@ -106,9 +121,9 @@ assert.notEqual(JSON.stringify(core.modelFamilySignature(document,'assembly')),m
 scope.loadedRepresentations.delete('b/model-b');
 assert.equal(scope.capture('assembly','front','revision'),null,'An assembly with a failed or pending part never publishes a partial preview');
 delete a.parentEntityId;delete b.parentEntityId;delete b.currentModelTransform;b.representations[0].assetId='asset-b';document.entities.pop();scope.loadedRepresentations.add('b/model-b');
-const cylinder=scope.primitiveMesh({kind:'cylinder',radius:2,height:3});assert.equal(cylinder.vertices.length/11,130);assert.equal(cylinder.indices.length,768,'Default 64-segment cylinder has the same cap-center topology as backend primitive_mesh');
-for(const mesh of [cylinder,scope.primitiveMesh({kind:'box',dimensions:[1,2,3]})])for(let i=0;i<mesh.vertices.length;i+=11)assert.deepEqual([...mesh.vertices.slice(i+6,i+9)],[1,1,1],'Primitive vertex color is neutral, so explicit material RGB is applied exactly once and the absent-material default matches export');
-assert.equal(scope.primitiveMesh({kind:'cylinder',radius:2,height:3,segments:8}).vertices.length/11,18);
+const cylinder=scope.primitiveMesh({kind:'cylinder',radius:2,height:3});assert.equal(cylinder.vertices.length/12,130);assert.equal(cylinder.indices.length,768,'Default 64-segment cylinder has the same cap-center topology as backend primitive_mesh');
+for(const mesh of [cylinder,scope.primitiveMesh({kind:'box',dimensions:[1,2,3]})])for(let i=0;i<mesh.vertices.length;i+=12)assert.deepEqual([...mesh.vertices.slice(i+6,i+9)],[1,1,1],'Primitive vertex color is neutral, so explicit material RGB is applied exactly once and the absent-material default matches export');
+assert.equal(scope.primitiveMesh({kind:'cylinder',radius:2,height:3,segments:8}).vertices.length/12,18);
 for(const segments of [7,257,8.5])assert.throws(()=>scope.primitiveMesh({kind:'cylinder',radius:2,height:3,segments}),/invalid_primitive/);
 assert.equal((source.match(/getContext\('webgl2'/g)||[]).length,1,'Object previews never allocate a second WebGL context');
 // Exercise the actual WebGL draw setup: studio affects presentation uniforms
@@ -116,7 +131,7 @@ assert.equal((source.match(/getContext\('webgl2'/g)||[]).length,1,'Object previe
 const displayed={};
 const displayScope=vm.createContext({disposed:false,camera:{exact:false},devicePixelRatio:1,
  modelFamily,
- gl:{isContextLost:()=>false,viewport(){},useProgram(){},clearColor(...rgba){displayed.background=rgba;},clear(){},enable(){},disable(){},uniformMatrix4fv(){},uniform1f(name,value){displayed[name]=value;}},
+ gl:{isContextLost:()=>false,viewport(){},useProgram(){},clearColor(...rgba){displayed.background=rgba;},clear(){},depthMask(){},enable(){},disable(){},uniformMatrix4fv(){},uniform1f(name,value){displayed[name]=value;}},
  viewSize:()=>({w:640,h:400,cw:640,ch:400}),canvas:{width:640,height:400,style:{}},photo:{style:{}},program:{},cameraMatrix:()=>[],radius:1,
  layers:{studio:true,lighting:false,showBounds:false},u:{lighting:'lighting'},gpu:[],selection:{},svg:{setAttribute(){},replaceChildren(){}},
 });
@@ -172,4 +187,4 @@ props={...props,cameraId:'camera-3'};render();assert.equal(cameras.length,3,'Cha
 props={...props,mode:'photo',cameraId:'camera'};render();assert.equal(cameras.length,4);
 props={...props,cameraId:'camera-2'};render();assert.equal(cameras.length,5,'Photo mode still follows each source camera');
 assert.equal(mounts,1);assert.equal(disposeCount,0,'Selection and layer changes retain the one mounted viewer');
-console.log('Model view: strict active models, candidate state, current transforms, same-GPU snapshots, restored camera after success/error, hidden-pane capture, exact cylinder tessellation and late A/B preview events passed');
+console.log('Model view: strict active models, candidate state, current transforms, face-on declared sheets after rotated non-uniform scale, same-GPU snapshots, restored camera after success/error, hidden-pane capture, exact cylinder tessellation and late A/B preview events passed');

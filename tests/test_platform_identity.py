@@ -381,6 +381,30 @@ def test_cad_reference_follows_merge_and_split_observation_ownership():
     assert ambiguous['cadReference']['status'] == 'unresolved' and ambiguous['cadReference']['source'] == 'ambiguous_sources'
 
 
+def test_added_observation_refreshes_saved_cad_owners_without_changing_exposure_or_geometry():
+    doc = migrate_document(source_scene(), base_revision_id=BASE)
+    item = doc['entities'][0]
+    reference = {'referenceImageId': 'image-1', 'status': 'resolved', 'source': 'explicit_reference_image',
+                 'sourceRefs': [{'observationId': 'observation-1', 'revision': 1}], 'evidenceRefs': [{'baseRevisionId': BASE}]}
+    item['cadReference'] = deepcopy(reference)
+    original = deepcopy(doc)
+    observations = [{**deepcopy(doc['observations'][i]), 'id': f'additional-{i}', 'revision': 3} for i in (0, 1)]
+    updated, inverse = apply_operations(doc, [{'type': 'addObservation', 'entityId': item['id'], 'observation': observation}
+                                             for observation in observations], base_revision_id=BASE)
+    actual = updated['entities'][0]
+    assert actual['cadReference'] == {**reference, 'sourceRefs': [
+        {'observationId': 'observation-1', 'revision': 1}, {'observationId': 'additional-0', 'revision': 3}]}
+    assert actual['observationRefs'] == item['observationRefs'] + ['additional-0', 'additional-1']
+    assert {k: v for k, v in actual.items() if k not in ('cadReference', 'observationRefs')} == {
+        k: v for k, v in item.items() if k not in ('cadReference', 'observationRefs')}
+    assert updated['entities'][1] == doc['entities'][1] and updated['assets'] == doc['assets']
+    assert doc == original and inverse == [{'type': 'restoreDocument', 'document': original}]
+    historical = deepcopy(doc)
+    historical['entities'][0].pop('cadReference')
+    preserved, _ = apply_operations(historical, [{'type': 'addObservation', 'entityId': item['id'], 'observation': observations[0]}])
+    assert 'cadReference' not in preserved['entities'][0], 'A historical photo-scoped scene must not acquire a scene reference implicitly'
+
+
 def test_invalid_split_is_atomic_and_no_source_representation_can_disappear():
     doc, _ = merge(migrate_document(source_scene(), base_revision_id=BASE))
     before = deepcopy(doc)

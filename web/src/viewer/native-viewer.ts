@@ -3,7 +3,7 @@ import {isReferenceSurface,modelFamily} from '../scene-semantics.ts';
 import {activeModel,modelFamilyGeometry,modelFamilyTransforms,entityGeometryForLayer,representationAvailable,representationInPhoto,cameraForImage,currentCameras,type GeometryLayer} from '../core.ts';
 import type {SceneDocument,RepresentationLoadState} from '../types';
 
-type Mesh={vertices:Float32Array;indices:Uint32Array;mode:number;matrix:ArrayLike<number>;texture?:Blob;bounds:{min:Vec;max:Vec}};
+type Mesh={vertices:Float32Array;indices:Uint32Array;mode:number;matrix:ArrayLike<number>;texture?:Blob;material?:{baseColorFactor:number[];alphaMode:'OPAQUE'|'MASK'|'BLEND';alphaCutoff:number};bounds:{min:Vec;max:Vec}};
 type GPU={mesh:Mesh;vertex:WebGLBuffer;index:WebGLBuffer;texture:WebGLTexture;entityId:string;representation:any};
 export type ViewerEvent={type:string;[key:string]:any};
 export type ViewerOptions={resolveAsset:(id:string)=>Promise<string|{url:string}>;locale?:string;onEvent?:(event:ViewerEvent)=>void};
@@ -35,9 +35,9 @@ export function readPacked(buffer:ArrayBuffer,metadata:any):Mesh[] {
   if(!layout||layout.stride!==9||layout.indexType!=='uint32')throw Error('unsupported_packed_mesh');
   const {byteOffset=0,vertexCount,indexByteOffset,indexCount}=layout;
   if(![byteOffset,vertexCount,indexByteOffset,indexCount].every(n=>Number.isSafeInteger(n)&&n>=0)||byteOffset%4||indexByteOffset%4||byteOffset+vertexCount*36>indexByteOffset||indexByteOffset+indexCount*4>buffer.byteLength||indexCount%3)throw Error('invalid_packed_mesh');
-  const source=new Float32Array(buffer,byteOffset,vertexCount*9),indices=new Uint32Array(buffer,indexByteOffset,indexCount).slice(),vertices=new Float32Array(vertexCount*11),bounds={min:[Infinity,Infinity,Infinity],max:[-Infinity,-Infinity,-Infinity]};
+  const source=new Float32Array(buffer,byteOffset,vertexCount*9),indices=new Uint32Array(buffer,indexByteOffset,indexCount).slice(),vertices=new Float32Array(vertexCount*12),bounds={min:[Infinity,Infinity,Infinity],max:[-Infinity,-Infinity,-Infinity]};
   if(source.some(n=>!Number.isFinite(n))||indices.some(n=>n>=vertexCount))throw Error('invalid_packed_mesh_data');
-  for(let i=0;i<vertexCount;i++)vertices.set(source.subarray(i*9,i*9+9),i*11);
+  for(let i=0;i<vertexCount;i++){vertices.set(source.subarray(i*9,i*9+9),i*12);vertices[i*12+11]=1;}
   for(const i of indices)for(let k=0;k<3;k++){bounds.min[k]=Math.min(bounds.min[k],source[i*9+k]);bounds.max[k]=Math.max(bounds.max[k],source[i*9+k]);}
   return [{vertices,indices,mode:4,matrix:identity(),bounds}];
 }
@@ -70,13 +70,14 @@ export function readGLB(buffer:ArrayBuffer):Mesh[] {
       if([normal,color,uv].some(a=>a&&a.count!==pos.count))throw Error('glb_attribute_count');
       const ix=p.indices===undefined?{data:Array.from({length:pos.count},(_,i)=>i)}:accessor(p.indices),indices=new Uint32Array(ix.data);
       if(ix.data.some(i=>!Number.isInteger(i)||i<0||i>=pos.count)||(p.mode??4)===4&&indices.length%3)throw Error('invalid_glb_indices');
-      const material=doc.materials?.[p.material],pbr=material?.pbrMetallicRoughness,factor=pbr?.baseColorFactor||[1,1,1,1],data=new Float32Array(pos.count*11),bounds={min:[Infinity,Infinity,Infinity],max:[-Infinity,-Infinity,-Infinity]};
-      for(let i=0;i<pos.count;i++){for(let k=0;k<3;k++){data[i*11+k]=pos.data[i*3+k];data[i*11+3+k]=normal?.data[i*3+k]??0;data[i*11+6+k]=(color?.data[i*color.width+k]??1)*factor[k];}data[i*11+9]=uv?.data[i*2]||0;data[i*11+10]=uv?.data[i*2+1]||0;}
+      const material=doc.materials?.[p.material],pbr=material?.pbrMetallicRoughness,factor=pbr?.baseColorFactor||[1,1,1,1],alphaMode=material?.alphaMode||'OPAQUE',alphaCutoff=material?.alphaCutoff??.5,data=new Float32Array(pos.count*12),bounds={min:[Infinity,Infinity,Infinity],max:[-Infinity,-Infinity,-Infinity]};
+      if(!['OPAQUE','MASK','BLEND'].includes(alphaMode)||!Number.isFinite(alphaCutoff)||alphaCutoff<0||!Array.isArray(factor)||factor.length!==4||factor.some((n:number)=>!Number.isFinite(n)||n<0||n>1)||color&&![3,4].includes(color.width))throw Error('invalid_glb_material');
+      for(let i=0;i<pos.count;i++){for(let k=0;k<3;k++){data[i*12+k]=pos.data[i*3+k];data[i*12+3+k]=normal?.data[i*3+k]??0;data[i*12+6+k]=color?.data[i*color.width+k]??1;}data[i*12+9]=uv?.data[i*2]||0;data[i*12+10]=uv?.data[i*2+1]||0;data[i*12+11]=color?.width===4?color.data[i*4+3]:1;}
       for(const i of indices)for(let k=0;k<3;k++){bounds.min[k]=Math.min(bounds.min[k],pos.data[i*3+k]);bounds.max[k]=Math.max(bounds.max[k],pos.data[i*3+k]);}
-      if(!normal&&(p.mode??4)===4)for(let i=0;i<indices.length;i+=3){const ids=[indices[i],indices[i+1],indices[i+2]],ps=ids.map(n=>pos.data.slice(n*3,n*3+3)),n=cross(add(ps[1],scale(ps[0],-1)),add(ps[2],scale(ps[0],-1)));for(const id of ids)for(let k=0;k<3;k++)data[id*11+3+k]+=n[k];}
+      if(!normal&&(p.mode??4)===4)for(let i=0;i<indices.length;i+=3){const ids=[indices[i],indices[i+1],indices[i+2]],ps=ids.map(n=>pos.data.slice(n*3,n*3+3)),n=cross(add(ps[1],scale(ps[0],-1)),add(ps[2],scale(ps[0],-1)));for(const id of ids)for(let k=0;k<3;k++)data[id*12+3+k]+=n[k];}
       let texture:Blob|undefined;const textureIndex=pbr?.baseColorTexture?.index;
       if(textureIndex!==undefined){if(!uv||pbr.baseColorTexture.texCoord||pbr.baseColorTexture.extensions)throw Error('unsupported_texture_coordinates');const img=doc.images?.[doc.textures?.[textureIndex]?.source];if(!img||img.uri||!['image/png','image/jpeg'].includes(img.mimeType))throw Error('unsupported_glb_texture');const v=view(img.bufferView);texture=new Blob([buffer.slice(binOffset+(v.byteOffset||0),binOffset+(v.byteOffset||0)+v.byteLength)],{type:img.mimeType});}
-      result.push({vertices:data,indices,mode:p.mode??4,matrix,texture,bounds});
+      result.push({vertices:data,indices,mode:p.mode??4,matrix,texture,material:{baseColorFactor:factor,alphaMode,alphaCutoff},bounds});
     }
     for(const child of node.children||[])walk(child,matrix);visiting.delete(id);
   }
@@ -85,10 +86,10 @@ export function readGLB(buffer:ArrayBuffer):Mesh[] {
 
 function primitive(spec:any):Mesh {
   const p=spec.parameters||spec,type=spec.kind||spec.primitiveType||spec.type;const vertices:number[]=[],indices:number[]=[];
-  if(type==='box'){const dims=p.dimensions;if(!Array.isArray(dims)||dims.length!==3)throw Error('invalid_primitive');if(!dims.every(v=>Number.isFinite(v)&&v>0))throw Error('invalid_primitive');for(const c of boundsCorners({min:dims.map(v=>-v/2),max:dims.map(v=>v/2)}))vertices.push(...c,0,0,1,1,1,1,0,0);indices.push(0,2,1,1,2,3,4,5,6,5,7,6,0,1,4,1,5,4,2,6,3,3,6,7,0,4,2,2,4,6,1,3,5,3,7,5);}
-  else if(type==='cylinder'){const r=p.radius,h=p.height,n=p.segments??64;if(!(Number.isFinite(r)&&r>0&&Number.isFinite(h)&&h>0&&Number.isInteger(n)&&n>=8&&n<=256))throw Error('invalid_primitive');for(let z=0;z<2;z++)for(let i=0;i<n;i++){const a=i*2*Math.PI/n;vertices.push(r*Math.cos(a),r*Math.sin(a),(z-.5)*h,Math.cos(a),Math.sin(a),0,1,1,1,0,0);}vertices.push(0,0,-h/2,0,0,-1,1,1,1,0,0,0,0,h/2,0,0,1,1,1,1,0,0);for(let i=0;i<n;i++){const j=(i+1)%n;indices.push(i,j,n+j,i,n+j,n+i,2*n,j,i,2*n+1,n+i,n+j);}}
+  if(type==='box'){const dims=p.dimensions;if(!Array.isArray(dims)||dims.length!==3)throw Error('invalid_primitive');if(!dims.every(v=>Number.isFinite(v)&&v>0))throw Error('invalid_primitive');for(const c of boundsCorners({min:dims.map(v=>-v/2),max:dims.map(v=>v/2)}))vertices.push(...c,0,0,1,1,1,1,0,0,1);indices.push(0,2,1,1,2,3,4,5,6,5,7,6,0,1,4,1,5,4,2,6,3,3,6,7,0,4,2,2,4,6,1,3,5,3,7,5);}
+  else if(type==='cylinder'){const r=p.radius,h=p.height,n=p.segments??64;if(!(Number.isFinite(r)&&r>0&&Number.isFinite(h)&&h>0&&Number.isInteger(n)&&n>=8&&n<=256))throw Error('invalid_primitive');for(let z=0;z<2;z++)for(let i=0;i<n;i++){const a=i*2*Math.PI/n;vertices.push(r*Math.cos(a),r*Math.sin(a),(z-.5)*h,Math.cos(a),Math.sin(a),0,1,1,1,0,0,1);}vertices.push(0,0,-h/2,0,0,-1,1,1,1,0,0,1,0,0,h/2,0,0,1,1,1,1,0,0,1);for(let i=0;i<n;i++){const j=(i+1)%n;indices.push(i,j,n+j,i,n+j,n+i,2*n,j,i,2*n+1,n+i,n+j);}}
   else throw Error('unsupported_primitive');
-  const min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity];for(let i=0;i<vertices.length;i+=11)for(let k=0;k<3;k++){min[k]=Math.min(min[k],vertices[i+k]);max[k]=Math.max(max[k],vertices[i+k]);}
+  const min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity];for(let i=0;i<vertices.length;i+=12)for(let k=0;k<3;k++){min[k]=Math.min(min[k],vertices[i+k]);max[k]=Math.max(max[k],vertices[i+k]);}
   return {vertices:new Float32Array(vertices),indices:new Uint32Array(indices),mode:4,matrix:identity(),bounds:{min,max}};
 }
 
@@ -104,10 +105,10 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
   let layers:any={observed_surface:true,generated_mesh:true,primitive:true,point_cloud:true,allBounds:false,opacity:.65,lighting:true,showCandidates:false};const cleanups:(()=>void)[]=[];
   const emit=(type:string,payload:any={})=>{if(!disposed)options.onEvent?.({type,...payload});};
   const program=gl.createProgram()!;const shaders:WebGLShader[]=[];
-  for(const [type,code]of [[gl.VERTEX_SHADER,`#version 300 es\nin vec3 p;in vec3 n;in vec3 c;in vec2 uv;uniform mat4 vp;uniform mat4 model;out vec3 color;out vec3 normal;out vec2 tex;void main(){gl_Position=vp*model*vec4(p,1.);gl_PointSize=2.;color=c;normal=transpose(inverse(mat3(model)))*n;tex=uv;}`],[gl.FRAGMENT_SHADER,`#version 300 es\nprecision highp float;in vec3 color;in vec3 normal;in vec2 tex;uniform sampler2D image;uniform vec3 pickColor;uniform vec3 tint;uniform float selected;uniform float pick;uniform float opacity;uniform float lighting;out vec4 outColor;void main(){if(pick>.5){outColor=vec4(pickColor,1.);return;}vec3 c=color*texture(image,tex).rgb*tint;float n=length(normal);if(lighting>1.5){c=pow(clamp(c,0.,1.),vec3(.72));if(n>.01){vec3 direction=normal/n;float key=abs(dot(direction,normalize(vec3(.3,.8,.6))));float fill=abs(dot(direction,normalize(vec3(-.7,.4,-.5))));c=c*(.78+.15*key+.07*fill)+vec3(.025*pow(key,16.));}}else if(lighting>.5&&n>.01)c*=.5+.5*abs(dot(normal/n,normalize(vec3(.3,.8,.6))));if(selected>.5)c=mix(c,vec3(.28,.86,.75),.4);outColor=vec4(c,opacity);}`]]as[number,string][]){const s=gl.createShader(type)!;gl.shaderSource(s,code);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s)||'shader_error');gl.attachShader(program,s);shaders.push(s);}
+  for(const [type,code]of [[gl.VERTEX_SHADER,`#version 300 es\nin vec3 p;in vec3 n;in vec3 c;in vec2 uv;in float a;uniform mat4 vp;uniform mat4 model;out vec3 color;out vec3 normal;out vec2 tex;out float vertexAlpha;void main(){gl_Position=vp*model*vec4(p,1.);gl_PointSize=2.;color=c;normal=transpose(inverse(mat3(model)))*n;tex=uv;vertexAlpha=a;}`],[gl.FRAGMENT_SHADER,`#version 300 es\nprecision highp float;in vec3 color;in vec3 normal;in vec2 tex;in float vertexAlpha;uniform sampler2D image;uniform vec4 baseColorFactor;uniform float alphaMode;uniform float alphaCutoff;uniform vec3 pickColor;uniform vec3 tint;uniform float selected;uniform float pick;uniform float opacity;uniform float lighting;out vec4 outColor;void main(){vec4 sampleColor=texture(image,tex);float alpha=vertexAlpha*sampleColor.a*baseColorFactor.a;if(alphaMode<.5)alpha=1.;else if(alphaMode<1.5){if(alpha<alphaCutoff)discard;alpha=1.;}else if(alpha<=0.)discard;if(pick>.5){outColor=vec4(pickColor,1.);return;}vec3 c=color*sampleColor.rgb*baseColorFactor.rgb*tint;float n=length(normal);if(lighting>1.5){c=pow(clamp(c,0.,1.),vec3(.72));if(n>.01){vec3 direction=normal/n;float key=abs(dot(direction,normalize(vec3(.3,.8,.6))));float fill=abs(dot(direction,normalize(vec3(-.7,.4,-.5))));c=c*(.78+.15*key+.07*fill)+vec3(.025*pow(key,16.));}}else if(lighting>.5&&n>.01)c*=.5+.5*abs(dot(normal/n,normalize(vec3(.3,.8,.6))));if(selected>.5)c=mix(c,vec3(.28,.86,.75),.4);outColor=vec4(c,alpha*opacity);}`]]as[number,string][]){const s=gl.createShader(type)!;gl.shaderSource(s,code);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s)||'shader_error');gl.attachShader(program,s);shaders.push(s);}
   gl.linkProgram(program);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error('shader_link_error');gl.useProgram(program);gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);
-  const u=Object.fromEntries(['vp','model','image','pickColor','selected','pick','opacity','lighting','tint'].map(n=>[n,gl.getUniformLocation(program,n)]));
-  const attrs=['p','n','c','uv'].map(n=>gl.getAttribLocation(program,n));for(const a of attrs)gl.enableVertexAttribArray(a);gl.uniform1i(u.image,0);
+  const u=Object.fromEntries(['vp','model','image','pickColor','selected','pick','opacity','lighting','tint','baseColorFactor','alphaMode','alphaCutoff'].map(n=>[n,gl.getUniformLocation(program,n)]));
+  const attrs=['p','n','c','uv','a'].map(n=>gl.getAttribLocation(program,n));for(const a of attrs)gl.enableVertexAttribArray(a);gl.uniform1i(u.image,0);
   function releaseMesh(g:GPU){gl!.deleteBuffer(g.vertex);gl!.deleteBuffer(g.index);gl!.deleteTexture(g.texture);}
   function release(){gpu.forEach(releaseMesh);gpu=[];loadedRepresentations.clear();assetStates.clear();}
   function entity(id:string){return doc.entities.find((e:any)=>e.id===id);}
@@ -127,7 +128,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
   function draw(pick=false,captureCanvas?:HTMLCanvasElement){
     if(disposed||!camera||gl!.isContextLost())return;const {w,h,cw,ch}=viewSize();if(!(cw>0&&ch>0))return;const dpr=Math.min(devicePixelRatio||1,2);canvas.style.width=photo.style.width=cw+'px';canvas.style.height=photo.style.height=ch+'px';const pw=Math.max(1,Math.round(cw*dpr)),ph=Math.max(1,Math.round(ch*dpr));if(canvas.width!==pw||canvas.height!==ph){canvas.width=pw;canvas.height=ph;}
     const background=layers.studio?[237/255,240/255,238/255]:[17/255,27/255,33/255];
-    gl!.viewport(0,0,pw,ph);gl!.useProgram(program);gl!.clearColor(pick?0:background[0],pick?0:background[1],pick?0:background[2],camera.exact&&!pick?0:1);gl!.clear(gl!.COLOR_BUFFER_BIT|gl!.DEPTH_BUFFER_BIT);if(camera.exact&&!pick){gl!.enable(gl!.BLEND);gl!.blendFunc(gl!.SRC_ALPHA,gl!.ONE_MINUS_SRC_ALPHA);}else gl!.disable(gl!.BLEND);
+    gl!.viewport(0,0,pw,ph);gl!.useProgram(program);gl!.clearColor(pick||camera.exact?0:background[0],pick||camera.exact?0:background[1],pick||camera.exact?0:background[2],camera.exact&&!pick?0:1);gl!.depthMask(true);gl!.clear(gl!.COLOR_BUFFER_BIT|gl!.DEPTH_BUFFER_BIT);
     const vp=cameraMatrix(camera,cw/ch,radius);gl!.uniformMatrix4fv(u.vp,false,vp);gl!.uniform1f(u.pick,pick?1:0);gl!.uniform1f(u.opacity,camera.exact&&!pick?layers.opacity:1);gl!.uniform1f(u.lighting,layers.studio?2:layers.lighting?1:0);
     // A selected observed surface can share its exact depth with scene context.
     // Draw it last with equal-depth acceptance; nearer geometry still occludes it.
@@ -136,8 +137,13 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
     // Unequal sampling would need source-mask area; nearer depth always wins.
     const pickRank=(g:GPU)=>entity(g.entityId)?.sourceContext?0:g.mesh.mode===4&&g.representation.kind==='observed_surface'&&g.representation.placementState==='confirmed'?2:1;
     const selectedIds=new Set(selection.entityId?modelFamily(doc,selection.entityId).map(e=>e.id):[]),isSelected=(g:GPU)=>['generated_mesh','primitive'].includes(g.representation.kind)?selectedIds.has(g.entityId):g.entityId===selection.entityId;
-    const drawing=pick?gpu.slice().sort((a,b)=>pickRank(a)-pickRank(b)||(pickRank(a)===2?b.mesh.indices.length-a.mesh.indices.length:0)||a.entityId.localeCompare(b.entityId)||a.representation.id.localeCompare(b.representation.id)):gpu.filter(g=>!isSelected(g)).concat(gpu.filter(isSelected));
-    for(const g of drawing){const pass=representationPass(entity(g.entityId),g.representation,frameId,layers),selected=pass.selectable&&isSelected(g);if(!(pick?pass.pick:pass.visible))continue;gl!.depthFunc(pick||selected?gl!.LEQUAL:gl!.LESS);const id=pass.selectable?doc.entities.findIndex((e:any)=>e.id===g.entityId)+1:0;gl!.bindBuffer(gl!.ARRAY_BUFFER,g.vertex);gl!.bindBuffer(gl!.ELEMENT_ARRAY_BUFFER,g.index);attrs.forEach((a,k)=>gl!.vertexAttribPointer(a,k===3?2:3,gl!.FLOAT,false,44,k*12));gl!.activeTexture(gl!.TEXTURE0);gl!.bindTexture(gl!.TEXTURE_2D,g.texture);gl!.uniformMatrix4fv(u.model,false,model(g));gl!.uniform1f(u.selected,selected?1:0);gl!.uniform3f(u.pickColor,(id&255)/255,((id>>8)&255)/255,((id>>16)&255)/255);const mat=['generated_mesh','primitive'].includes(g.representation.kind)?g.representation.material?.color:undefined;gl!.uniform3fv(u.tint,Array.isArray(mat)&&mat.length>=3?mat.slice(0,3):[1,1,1]);gl!.drawElements(g.mesh.mode===0?gl!.POINTS:gl!.TRIANGLES,g.mesh.indices.length,gl!.UNSIGNED_INT,0);}
+    const materialFor=(g:GPU)=>({...g.mesh.material,...(['generated_mesh','primitive'].includes(g.representation.kind)?g.representation.material:{})});
+    const blended=(g:GPU)=>materialFor(g).alphaMode==='BLEND';
+    const depth=(g:GPU)=>dot(add(point(model(g),g.mesh.bounds.min.map((n,k)=>(n+g.mesh.bounds.max[k])/2)),scale(camera!.eye,-1)),unit(add(camera!.target,scale(camera!.eye,-1))));
+    // ponytail: primitive-depth sorting covers separate sheets; intersecting translucent geometry needs per-triangle sorting or order-independent transparency.
+    const drawing=pick?gpu.slice().sort((a,b)=>pickRank(a)-pickRank(b)||(pickRank(a)===2?b.mesh.indices.length-a.mesh.indices.length:0)||a.entityId.localeCompare(b.entityId)||a.representation.id.localeCompare(b.representation.id)):gpu.filter(g=>!blended(g)&&!isSelected(g)).concat(gpu.filter(g=>!blended(g)&&isSelected(g)),gpu.filter(blended).sort((a,b)=>depth(b)-depth(a)||Number(isSelected(a))-Number(isSelected(b))||a.entityId.localeCompare(b.entityId)));
+    for(const g of drawing){const pass=representationPass(entity(g.entityId),g.representation,frameId,layers),selected=pass.selectable&&isSelected(g);if(!(pick?pass.pick:pass.visible))continue;const material=materialFor(g),blend=material.alphaMode==='BLEND';gl!.depthMask(pick||!blend);if(!pick&&(blend||camera.exact)){gl!.enable(gl!.BLEND);gl!.blendFuncSeparate(gl!.SRC_ALPHA,gl!.ONE_MINUS_SRC_ALPHA,gl!.ONE,gl!.ONE_MINUS_SRC_ALPHA);}else gl!.disable(gl!.BLEND);gl!.depthFunc(pick||selected?gl!.LEQUAL:gl!.LESS);const id=pass.selectable?doc.entities.findIndex((e:any)=>e.id===g.entityId)+1:0;gl!.bindBuffer(gl!.ARRAY_BUFFER,g.vertex);gl!.bindBuffer(gl!.ELEMENT_ARRAY_BUFFER,g.index);attrs.forEach((a,k)=>gl!.vertexAttribPointer(a,k===4?1:k===3?2:3,gl!.FLOAT,false,48,k===4?44:k*12));gl!.activeTexture(gl!.TEXTURE0);gl!.bindTexture(gl!.TEXTURE_2D,g.texture);gl!.uniformMatrix4fv(u.model,false,model(g));gl!.uniform1f(u.selected,selected?1:0);gl!.uniform3f(u.pickColor,(id&255)/255,((id>>8)&255)/255,((id>>16)&255)/255);gl!.uniform4fv(u.baseColorFactor,material.baseColorFactor||[1,1,1,1]);gl!.uniform1f(u.alphaMode,blend?2:material.alphaMode==='MASK'?1:0);gl!.uniform1f(u.alphaCutoff,material.alphaCutoff??.5);const mat=material.color;gl!.uniform3fv(u.tint,Array.isArray(mat)&&mat.length>=3?mat.slice(0,3):[1,1,1]);gl!.drawElements(g.mesh.mode===0?gl!.POINTS:gl!.TRIANGLES,g.mesh.indices.length,gl!.UNSIGNED_INT,0);}
+    gl!.depthMask(true);
     if(pick)return;const overlay=captureCanvas?.getContext('2d');if(overlay&&captureCanvas){captureCanvas.width=canvas.width;captureCanvas.height=canvas.height;overlay.drawImage(canvas,0,0);overlay.scale(canvas.width/w,canvas.height/h);}svg.setAttribute('viewBox',`0 0 ${w} ${h}`);svg.replaceChildren();const project=(p:Vec)=>{const q=projected(vp,p,cw,ch);return q?add(q,[(w-cw)/2,(h-ch)/2]):null;};
     const line=(a:Vec|null,b:Vec|null,color:string,width=1.5)=>{if(!a||!b)return null;const el=document.createElementNS(svg.namespaceURI,'line');for(const[k,v]of Object.entries({x1:a[0],y1:a[1],x2:b[0],y2:b[1],stroke:color,'stroke-width':width}))el.setAttribute(k,String(v));svg.append(el);if(overlay){overlay.beginPath();overlay.moveTo(a[0],a[1]);overlay.lineTo(b[0],b[1]);overlay.strokeStyle='#ffffff';overlay.lineWidth=width+2;overlay.stroke();overlay.strokeStyle=color;overlay.lineWidth=width;overlay.stroke();}return el;};
     if(layers.showBounds===false&&!layers.showAxes)return;
@@ -157,8 +163,19 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
     dimensions();const mode=typeof value==='string'?value:value?.mode||'free';if(value?.eye){navigationVersion++;camera=value;photo.hidden=true;draw();return;}
     camera=fittedCamera(mode);photoEpoch++;photoAbort.abort();photo.hidden=true;draw();
   }
-  function fittedCamera(mode:string){
-    const frame=doc.coordinateFrames.find((f:any)=>f.id===frameId),up=unit(frame?.ground?.normal||[0,0,1]),reference=currentCameras(doc).find((c:any)=>c.coordinateFrameId===frameId),rawFront=reference?reference.cameraToWorld.slice(0,3).map((r:Vec)=>-r[2]):[0,-1,0];let planar=add(rawFront,scale(up,-dot(rawFront,up)));if(Math.hypot(...planar)<1e-6){const axis=Math.abs(up[0])<.8?[1,0,0]:[0,1,0];planar=add(axis,scale(up,-dot(axis,up)));}const front=unit(planar),right=unit(cross(up,front)),back=mode==='top'?up:mode==='side'?right:mode==='front'?front:unit(add(add(front,scale(right,.45)),scale(up,.55))),vup=mode==='top'?scale(front,-1):up,ps=fittingPoints();
+  function fittedCamera(mode:string,sheet?:{subject:any;rep:any}){
+    const frame=doc.coordinateFrames.find((f:any)=>f.id===frameId),up=unit(frame?.ground?.normal||[0,0,1]),reference=currentCameras(doc).find((c:any)=>c.coordinateFrameId===frameId),rawFront=reference?reference.cameraToWorld.slice(0,3).map((r:Vec)=>-r[2]):[0,-1,0];let planar=add(rawFront,scale(up,-dot(rawFront,up)));if(Math.hypot(...planar)<1e-6){const axis=Math.abs(up[0])<.8?[1,0,0]:[0,1,0];planar=add(axis,scale(up,-dot(axis,up)));}const front=unit(planar),right=unit(cross(up,front)),ps=fittingPoints();
+    let back=mode==='top'?up:mode==='side'?right:mode==='front'?front:unit(add(add(front,scale(right,.45)),scale(up,.55))),vup=mode==='top'?scale(front,-1):up;
+    const plane=sheet?.rep.sourceDerivation?.planarModeling?.plane;
+    if(mode==='free'&&sheet?.rep.sourceKind==='inferred_planar_surface_from_observed_depth'&&Array.isArray(plane)&&plane.length===4&&plane.every(Number.isFinite)&&Math.hypot(...plane.slice(0,3))>1e-8){
+      const t=preview.get(sheet.subject.id)||sheet.subject.currentModelTransform||sheet.rep.transform;
+      // Plane normals follow inverse-transpose TRS; part poses are already absolute.
+      let normal=unit(point(transformMatrix({...t,position:[0,0,0],scale:[1,1,1]}),plane.slice(0,3).map((n:number,k:number)=>n/t.scale[k])));
+      if(dot(normal,rawFront)<0)normal=scale(normal,-1);
+      let vertical=add(up,scale(normal,-dot(up,normal)));
+      if(Math.hypot(...vertical)<1e-6){const axis=Math.abs(normal[2])<.8?[0,0,1]:[0,1,0];vertical=add(axis,scale(normal,-dot(axis,normal)));}
+      vup=unit(vertical);back=unit(add(add(normal,scale(unit(cross(vup,normal)),.25)),scale(vup,.15)));
+    }
     if(layers.axisEntityId){const axes=selectedAxes(layers.axisEntityId);if(axes)ps.push(axes.origin,...axes.axes.map(axis=>axis.end));}
     return fitCamera(ps.length?ps:boundsCorners({min:[-1,-1,-1],max:[1,1,1]}),back,vup,Math.max(captureSize?.w||stage.clientWidth,1)/Math.max(captureSize?.h||stage.clientHeight,1),['top','front','side'].includes(mode));
   }
@@ -173,7 +190,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
       captureSize={w:640,h:640,cw:640,ch:640};
       // Studio shading lifts display shadows only; mesh colors/materials remain unchanged.
       layers={...layers,studio:true,modelOnly:true,entityId:undefined,entityIds:family.map(e=>e.id),axisEntityId:entityId,showAxes:true,observed_surface:false,point_cloud:false,generated_mesh:true,primitive:true,showCandidates:true,showBounds:false,editable:false};
-      selection={};dimensions();camera=fittedCamera(mode);const captureCanvas=document.createElement('canvas');if(!captureCanvas.getContext('2d'))throw Error('canvas_2d_unavailable');draw(false,captureCanvas);return captureCanvas.toDataURL('image/png');
+      selection={};dimensions();camera=fittedCamera(mode,models.length===1?models[0]:undefined);const captureCanvas=document.createElement('canvas');if(!captureCanvas.getContext('2d'))throw Error('canvas_2d_unavailable');draw(false,captureCanvas);return captureCanvas.toDataURL('image/png');
     }finally{
       camera=saved.camera;layers=saved.layers;selection=saved.selection;radius=saved.radius;center=saved.center;captureSize=null;
       canvas.width=saved.width;canvas.height=saved.height;canvas.style.cssText=saved.canvasStyle;photo.style.cssText=saved.photoStyle;draw();
@@ -224,7 +241,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
         if(!current)throw Error('representation_not_found');
         for(const g of staged)g.representation=current;
         gpu.push(...staged);loadedRepresentations.add(key);
-        assetStates.set(key,{entityId:e.id,representationId:r.id,assetId:r.assetId||null,state:'ready',errorCode:null,vertexCount:meshes.reduce((sum,mesh)=>sum+mesh.vertices.length/11,0),triangleCount:meshes.reduce((sum,mesh)=>sum+(mesh.mode===4?mesh.indices.length/3:0),0)});
+        assetStates.set(key,{entityId:e.id,representationId:r.id,assetId:r.assetId||null,state:'ready',errorCode:null,vertexCount:meshes.reduce((sum,mesh)=>sum+mesh.vertices.length/12,0),triangleCount:meshes.reduce((sum,mesh)=>sum+(mesh.mode===4?mesh.indices.length/3:0),0)});
         dimensions();draw();
       }catch(error:any){gpu=gpu.filter(g=>!staged.includes(g));loadedRepresentations.delete(key);staged.forEach(releaseMesh);if(n===epoch&&!disposed&&error.name!=='AbortError'){assetStates.set(key,{entityId:e.id,representationId:r.id,assetId:r.assetId||null,state:'error',vertexCount:0,triangleCount:0,errorCode:error.message});emit('loadError',{code:error.message,entityId:e.id,representationId:r.id,assetId:r.assetId});}}
       if(n===epoch&&!disposed)loadProgress();

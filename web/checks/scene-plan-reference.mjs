@@ -22,6 +22,10 @@ for(const change of [d=>d.entities[0].cadReference.status='unresolved',d=>d.enti
  const changed=structuredClone(document);change(changed);assert.equal(cadReferenceImage(changed,changed.entities[0]),null);assert.equal(planShapes(changed,scenePlanOptions(changed,'observed_surface')).length,1,'Invalid reference provenance cannot be replaced with another photo');
 }
 const mixed=structuredClone(document);mixed.cameras[1].coordinateFrameId='unregistered-frame';assert.equal(scenePlanOptions(mixed,'observed_surface').frameId,'','Unregistered coordinate frames cannot be silently combined');
+const added=structuredClone(document);added.observations.push(observation('a-front-extra','front'));added.entities[0].observationRefs.push('a-front-extra');
+assert.equal(cadReferenceImage(added,added.entities[0]),null,'An ownership change requires refreshed exact reference evidence');
+added.entities[0].cadReference.sourceRefs.push({observationId:'a-front-extra',revision:1});
+assert.deepEqual(planShapes(added,scenePlanOptions(added,'observed_surface')).map(({entity,...shape})=>shape),expected.map(({entity,...shape})=>shape),'Refreshing reference owners preserves the exact existing source contours without inventing a new mesh');
 const historical=structuredClone(document);for(const entity of historical.entities)delete entity.cadReference;
 const historicalBefore=JSON.stringify(historical),historicalOptions=scenePlanOptions(historical,'observed_surface',true,'side');
 assert.equal(historicalOptions.scope,'photo','A snapshot without saved scene references retains its source-photo rendering contract');

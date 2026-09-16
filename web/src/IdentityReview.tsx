@@ -4,7 +4,7 @@ import { activeModel, currentEntityId, jsonObject, observationsFor } from './cor
 import { PhotoView } from './PhotoView';
 import { ErrorNotice } from './App';
 import { useI18n } from './i18n';
-import { entityEvidenceStatus } from './scene-semantics';
+import { entityEvidenceStatus, modelLabelKey } from './scene-semantics';
 import { identityDecisionKeys, measurementLabelKeys } from './identity-messages';
 import type { Entity, Operation, Revision, SceneDocument } from './types';
 
@@ -69,7 +69,7 @@ export function IdentityReview({revision, entityId, canWrite, publicationId, onS
       <div className="identity-decisions">{(['same','different','undecided'] as const).map(value=><button key={value} aria-pressed={decision===value} onClick={()=>{setDecision(value);setPreview(null);}}>{t({same:'identitySame',different:'identityDifferent',undecided:'identityUndecided'}[value])}</button>)}</div>
       <label className="field-label">{t('identityReason')}<textarea value={reason} onChange={event=>{setReason(event.target.value);setPreview(null);}}/></label>
       {decision==='same' && <><label className="field-label">{t('identityKeep')}<select value={survivorId} onChange={event=>{setSurvivor(event.target.value);setPreview(null);}}>{pair.map(entity=><option key={entity.id} value={entity.id}>{entity.label} · {entity.id.slice(0,8)}</option>)}</select></label>
-        <label className="field-label">{t('identityModel')}<select value={modelId||''} onChange={event=>{setModel(event.target.value||null);setPreview(null);}}><option value="">{t('identityNoModel')}</option>{models.map(({entity,rep})=><option key={rep.id} value={rep.id}>{entity.label} · {rep.id.slice(0,8)} · {t(rep.kind)}</option>)}</select></label></>}
+        <label className="field-label">{t('identityModel')}<select value={modelId||''} onChange={event=>{setModel(event.target.value||null);setPreview(null);}}><option value="">{t('identityNoModel')}</option>{models.map(({entity,rep})=><option key={rep.id} value={rep.id}>{entity.label} · {rep.id.slice(0,8)} · {t(modelLabelKey(rep))}</option>)}</select></label></>}
       {!!decisions.length && <label className="field-label">{t('identitySupersedes')}<select value={supersedes||''} onChange={event=>{setSupersedes(event.target.value||null);setPreview(null);}}><option value="">{t('identityNoSupersedes')}</option>{decisions.map(row=><option key={String(row.id)} value={String(row.id)}>{t(identityDecisionKeys[String(row.decision)] || 'identityDecisionUnknown')} · {String(row.reason)}</option>)}</select></label>}
       <button disabled={!reason.trim()||busy} onClick={prepare}>{t('identityPreview')}</button>
       {!publicationId&&canWrite&&<button onClick={()=>onAgent([first.id,second!.id])}>{t('agent')}</button>}

@@ -213,6 +213,9 @@ def apply_operations(source: dict, operations: list[dict], *, base_revision_id: 
                 raise PlatformError("invalid_observation")
             document["observations"].append(deepcopy(observation))
             item.setdefault("observationRefs", []).append(observation["id"])
+            if document["schemaVersion"] == 2 and "cadReference" in item:
+                from .identity import refresh_cad_reference
+                refresh_cad_reference(document, item)
         elif kind == "addCoordinateFrame":
             frame = operation.get("frame")
             if not isinstance(frame, dict) or not isinstance(frame.get("id"), str) or frame["id"] in frames or frame.get("source") != "manual_assertion" or frame.get("ground") is not None or frame.get("scale", {}).get("status") != "uncalibrated":

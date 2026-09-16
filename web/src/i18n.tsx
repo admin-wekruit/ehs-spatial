@@ -177,7 +177,7 @@ const messages: Record<string, [string, string]> = {
   model: ["当前模型", "Current model"],
   point_cloud: ["点云", "Point cloud"],
   observed_surface: ["观测表面", "Observed surface"],
-  generated_mesh: ["生成模型", "Generated mesh"],
+  generated_mesh: ["网格模型", "Mesh model"],
   primitive: ["参数模型", "Parametric model"],
   allBounds: ["全部范围", "All bounds"],
   opacity: ["模型透明度", "Model opacity"],

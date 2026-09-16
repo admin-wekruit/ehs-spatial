@@ -160,7 +160,7 @@ console.log('Identity split: exact observation/model partitions, retained cross-
 const evidenceModule={exports:{}}, evidenceSource=await readFile(new URL('../src/ModelEvidence.tsx',import.meta.url),'utf8');
 const evidenceCode=ts.transpileModule(evidenceSource,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText;
 let language=0;
-new Function('require','module','exports',evidenceCode)(name=>name==='./core'?core:name==='./identity-messages'?identityCopy:name==='./i18n'?{useI18n:()=>({t:key=>identityCopy.identityMessages[key]?.[language]||key})}:require(name),evidenceModule,evidenceModule.exports);
+new Function('require','module','exports',evidenceCode)(name=>name==='./core'?core:name==='./scene-semantics'?sceneSemantics:name==='./identity-messages'?identityCopy:name==='./i18n'?{useI18n:()=>({t:key=>identityCopy.identityMessages[key]?.[language]||key})}:require(name),evidenceModule,evidenceModule.exports);
 const evidenceEntity={...entity,representations:[{...models[0],placementState:'unconfirmed'}],measurementEvidence:[{id:'measurement',measurementKey:'projectedHull',sourceEntityId:'a',sourceRevisionId:'old',originalMeasurement:{evidence:'unchanged original record'}}]};
 for(language=0;language<2;language++) {
  const markup=renderToStaticMarkup(evidenceModule.exports.ModelEvidence({entity:evidenceEntity}));
@@ -173,6 +173,29 @@ for(language=0;language<2;language++) {
 }
 for(const entries of [identityCopy.identityDecisionKeys,identityCopy.measurementLabelKeys])for(const key of Object.values(entries))assert.equal(identityCopy.identityMessages[key].length,2);
 console.log('Identity copy: bilingual decision/placement/measurement labels, explicit unknown choice and retained original source record passed');
+
+const surfaceEntity={...evidenceEntity,activeModelRepresentationId:models[0].id,representations:[{...models[0],kind:'generated_mesh',primitive:null,assetId:'source-derived-mesh',sourceKind:'observed_depth_surface',coverage:'observed_visible_surface_only',sourceDerivation:{methodVersion:'native-observed-topology-original-photo-uv-v1',observationId:'source-observation',observationRevision:3},sourceRefs:[{observationId:'source-observation',revision:3}]}]};
+assert.equal(sceneSemantics.entityEvidenceStatus(document,surfaceEntity).modelKey,'observed_depth_surface');
+assert.equal(core.activeModel(surfaceEntity).kind,'generated_mesh','A source-derived surface uses the existing editable mesh contract');
+for(language=0;language<2;language++) {
+ const markup=renderToStaticMarkup(evidenceModule.exports.ModelEvidence({entity:surfaceEntity}));
+ assert.ok(markup.includes(identityCopy.identityMessages.observed_depth_surface[language]));
+ const coverageIndex=markup.indexOf(identityCopy.identityMessages.identityVisibleSurfaceOnly[language]);
+ assert.ok(coverageIndex>=0&&coverageIndex<markup.indexOf('<details'),'Visible-only coverage is readable before opening provenance details');
+ assert.ok(markup.includes('native-observed-topology-original-photo-uv-v1')&&markup.includes('source-observation'),'Stored derivation and observation evidence remain inspectable');
+ assert.ok(!renderToStaticMarkup(evidenceModule.exports.ModelEvidence({entity:evidenceEntity})).includes(identityCopy.identityMessages.observed_depth_surface[language]),'Generic meshes do not acquire invented photo-derived provenance');
+}
+console.log('Photo-derived surface: bilingual source label, visible-only coverage and retained derivation passed');
+
+const planarEntity={...surfaceEntity,representations:[{...surfaceEntity.representations[0],sourceKind:'inferred_planar_surface_from_observed_depth',coverage:'inferred_planar_visible_region',placementState:'unconfirmed'}]};
+assert.equal(sceneSemantics.entityEvidenceStatus(document,planarEntity).modelKey,'inferred_planar_surface_from_observed_depth');
+assert.equal(sceneSemantics.modelLabelKey({...planarEntity.representations[0],kind:'observed_surface'}),'observed_surface','A source observation does not acquire the active model label');
+for(language=0;language<2;language++) {
+ const markup=renderToStaticMarkup(evidenceModule.exports.ModelEvidence({entity:planarEntity}));
+ for(const key of ['inferred_planar_surface_from_observed_depth','identityInferredPlaneOnly','identityPlacementUnconfirmed'])assert.ok(markup.indexOf(identityCopy.identityMessages[key][language])>=0&&markup.indexOf(identityCopy.identityMessages[key][language])<markup.indexOf('<details'),'Inferred shape, partial coverage and pending placement remain visible');
+ assert.ok(!markup.includes(identityCopy.identityMessages.observed_depth_surface[language]),'An inferred plane is distinct from an observed depth surface');
+}
+console.log('Inferred plane: distinct bilingual source label, visible-region limitation and unconfirmed placement passed');
 
 // A source update must not silently switch the chosen model or claim it is current valid geometry.
 const staleEntity={...evidenceEntity,representations:[{...models[0],sourceValidity:'stale'},models[1]],activeModelRepresentationId:'model-a'};
