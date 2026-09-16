@@ -49,6 +49,11 @@ invoke a model or write a scene.
 | Per-photo depth | Job `e7dac120-c250-566f-9e09-db2ae001cd4c`, first original 030 photo | MoGe-3 returned the full 3024 by 4032 pixel grid. Source hash, raster, camera structure, valid finite positive depth and point-Z agreement passed. This is auxiliary model inference, not measured scene scale. |
 | Cable-tray generation | Job `d5c2fcb1-862e-5057-985a-a23b4f1c8940` | Existing RecGen research route returned a real mesh; multi-view placement/shape acceptance failed. It is not a replacement for the specified SAM3D production route. |
 
+MoGe returns normalized intrinsics (principal point 0.5, 0.5). Converting the
+projected UV to source pixel centres gives a full-grid self-reprojection p95 of
+0.000290 pixels and maximum 0.000805 pixels. This checks the returned camera/point
+convention, not agreement with a measured scene.
+
 Runtime validation retains unverified release gates. The first Map run predates
 mandatory adapter-file SHA binding; its original envelope and result remain
 unchanged. Subsequent geometry/depth deployments require the exact adapter-file
@@ -56,13 +61,20 @@ SHA as well as immutable model/code/image identities, and the frozen stage hash
 is checked before inference. MoGe's validation includes that adapter binding.
 A changed deployment cannot silently execute a differently pinned queued input.
 
+Generic geometry/depth dispatch now stores the original external invocation ID
+in the existing model-call ledger before waiting for the result. Completion and
+late results preserve that ID. A transient result-read failure remains unknown
+and does not cancel the valid computation or submit another paid request. A
+failed receipt transaction or lost attempt instead cancels only its newly spawned
+handle on a best-effort basis, retaining unknown status and its reservation.
+
 Both product and research paths validate returned geometry/depth contents before
 reporting stage success. A matching model name or pins with an empty, foreign-grid
 or invalid response fails. Hash-verified returned artifacts remain available for
 diagnosis, without a second paid request merely to repeat validation.
 
-The complete Python suite after these output-contract changes passed 1,011 tests;
-29 environment-dependent tests were skipped. This is code/transaction evidence,
+The complete Python suite after the output-contract and durable-receipt changes
+passed 1,032 tests; 29 environment-dependent tests were skipped. This is code/transaction evidence,
 not proof that a new uploaded workcell finishes with accepted models.
 
 ## Outstanding acceptance gates
@@ -85,6 +97,10 @@ calls whose exact costs have not been reconciled, with USD2 retained for other
 costs. This is a reservation, not a claim that USD18 was actually billed. Failed
 and unknown calls remain accounted. No further paid call is launched by treating
 an incomplete hourly bill as unused budget.
+
+The complete current 28-row acceptance matrix, including exact photo/mask/CAD
+provenance and a blocker for every record, is retained as
+`current-correspondence-acceptance.json` and `.md` in that private audit directory.
 
 Private reproducibility data is under
 `.platform/model-correspondence/model-completion/pipeline-audit/`: frozen stage
