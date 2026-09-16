@@ -23,6 +23,19 @@ from .base import ProviderError
 GEMINI_MODEL_ID = "gemini-3.5-flash"
 
 
+class BoundedPreflightError(ProviderError):
+    """Known rejection before generation; diagnostics contain no provider text."""
+    def __init__(self, code, phase, *, request_sha256=None, input_tokens=None, max_input_tokens=None):
+        self.diagnostics = {'code':code, 'phase':phase, 'generationAttempted':False}
+        if request_sha256 is not None:
+            self.diagnostics['requestSha256'] = request_sha256
+        if type(input_tokens) is int and input_tokens >= 0:
+            self.diagnostics['inputTokens'] = input_tokens
+        if type(max_input_tokens) is int and max_input_tokens > 0:
+            self.diagnostics['maxInputTokens'] = max_input_tokens
+        super().__init__('gemini', 'bounded.preflight', code)
+
+
 def _response_format(model_type: type[BaseModel]) -> dict[str, object]:
     return {
         "type": "text",
@@ -111,8 +124,10 @@ class GeminiAdapter:
 
         The caps include all input and combined thinking/output respectively.
         Incomplete responses retain provider ID/usage for the caller to record
-        before `_parse`; transport failures remain ProviderError (unknown outcome).
+        before `_parse`; generation transport failures remain unknown outcomes.
         """
+        phase, failure_code = 'request_validation', 'bounded_request_invalid'
+        request_sha256, tokens = None, None
         try:
             if (type(max_input_tokens) is not int or not 0 < max_input_tokens <= 16384
                     or type(max_output_tokens) is not int or not 0 < max_output_tokens <= 8192):
@@ -149,24 +164,35 @@ class GeminiAdapter:
                 sort_keys=True, separators=(",", ":"), allow_nan=False)
             body = json.loads(encoded)
             request_sha256 = hashlib.sha256(encoded.encode()).hexdigest()
+            failure_code = 'bounded_client_unavailable'
             client = self._get_client()
             if client.vertexai:
+                failure_code = 'bounded_developer_api_required'
                 raise ValueError("bounded Gemini request requires the Developer API")
             http_options = {"timeout": 180_000, "retry_options": {"attempts": 1, "http_status_codes": [0]}}
             # The typed Developer API count config omits schema support; the
             # documented REST generateContentRequest counts the complete body.
+            phase, failure_code = 'count_tokens', 'bounded_count_failed'
             count = client.models.count_tokens(model=GEMINI_MODEL_ID, contents=None,
                 config={"http_options": {**http_options, "extra_body": {
                     "generateContentRequest": {"model": "models/" + GEMINI_MODEL_ID, **body}}}})
             tokens = count.total_tokens
-            if type(tokens) is not int or not 0 < tokens <= max_input_tokens:
+            phase, failure_code = 'input_limit', 'bounded_token_count_invalid'
+            if type(tokens) is not int or tokens <= 0:
                 raise ValueError("bounded input token count invalid or exceeds limit")
+            failure_code = 'bounded_input_token_limit'
+            if tokens > max_input_tokens:
+                raise ValueError("bounded input token count invalid or exceeds limit")
+            phase = 'generation'
             response = client.models.generate_content(model=GEMINI_MODEL_ID, contents=None,
                 config={"automatic_function_calling": {"disable": True},
                         "http_options": {**http_options, "extra_body": body}})
-        except ProviderError:
-            raise
         except Exception as exc:
+            if phase != 'generation':
+                raise BoundedPreflightError(failure_code, phase, request_sha256=request_sha256,
+                    input_tokens=tokens, max_input_tokens=max_input_tokens) from None
+            if isinstance(exc, ProviderError):
+                raise
             raise ProviderError("gemini", operation, str(exc)) from exc
         candidates = response.candidates or []
         reason = candidates[0].finish_reason.value if len(candidates) == 1 and candidates[0].finish_reason else None

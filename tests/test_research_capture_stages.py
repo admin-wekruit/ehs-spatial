@@ -40,7 +40,7 @@ def preparation(tmp_path, monkeypatch, stage, *, owned_observation=False):
         from pathlib import Path
         from ehs_spatial.providers import gemini
         pins = {'model':'gemini-3.5-flash', 'adapter':
-            'gemini-bounded-discovery-v2' if stage == 'discovery' else 'gemini-bounded-model-review-v2'}
+            'gemini-bounded-discovery-v2' if stage == 'discovery' else 'gemini-bounded-model-review-v3'}
         repo.paid_budget = .1
         manifest = {stage:{'provider':'gemini', 'pins':pins, 'paid':True, 'estimatedCostUsd':.1,
             'releaseEvidence':{'pins':pins, 'license':{'status':'passed','artifactSha256':'c'*64},

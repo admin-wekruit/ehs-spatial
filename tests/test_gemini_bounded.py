@@ -138,7 +138,7 @@ def test_developer_api_budget_cannot_be_used_for_vertex_backend():
         raise AssertionError('Must reject before network')
     with genai.Client(vertexai=True, api_key='CPU-ONLY', http_options={
         'httpx_client': httpx.Client(transport=httpx.MockTransport(transport))}) as sdk:
-        with pytest.raises(ProviderError, match='Developer API'):
+        with pytest.raises(ProviderError, match='bounded_developer_api_required'):
             GeminiAdapter(sdk).create_bounded_structured('platform.discovery', input=inputs(), response_format=_response_format(Answer))
     assert not sent
 
@@ -219,12 +219,21 @@ def test_discovery_full_frame_scan_is_counted_and_sent_once_with_original_image(
     assert result['items'][0]['evidence'] == item['evidence']
 
 
-def test_inventory_review_mode_sends_exact_source_and_inventory_through_bounded_provider(monkeypatch):
+@pytest.mark.parametrize('observation_count', [1,41])
+def test_inventory_review_mode_sends_exact_source_and_inventory_through_bounded_provider(monkeypatch,observation_count):
+    from copy import deepcopy
     from ehs_spatial.platform import reconstruction
     from ehs_spatial.providers import gemini
-    inventory = [{'id':'observation-a','revision':3,'entityId':'entity-a','imageId':'image-a',
-        'originalPixelBox':[10,20,30,40],'labelEvidence':[{'label':'visible housing','evidence':'Blue outline.'}]}]
-    review = {'inventorySha256':'a'*64,'observationIds':['observation-a'],
+    inventory = [{'id':f'observation-{index}','revision':3,'entityId':'entity-a','imageId':'image-a',
+        'pixelMapping':[{'matrix':[[1,0,0],[0,1,0],[0,0,1]]}],
+        'sourceRefs':[{'assetId':'source-a','sha256':'b'*64}],
+        'originalPixelBox':[10,20,30,40],'labelEvidence':[{'label':'visible housing','evidence':'Blue outline.',
+            'geometryRole':'object','sourceRefs':[{'assetId':'source-a','sha256':'b'*64}]}]}
+        for index in range(observation_count)]
+    payload = {'mode':'inventory','inventorySha256':'a'*64,'observations':inventory,
+        'image':{'width':3024,'height':4032,'dataUri':'data:image/jpeg;base64,'+inputs()[1].data}}
+    original = deepcopy(payload)
+    review = {'inventorySha256':'a'*64,'observationIds':[o['id'] for o in inventory],
         'reason':'A separate visible outline was omitted.',
         'additions':[{'label':'attached control','evidence':'Distinct circular face beside the housing.',
             'box_2d':[200,300,250,350],'geometry_role':'unknown'}],'unresolvedRegions':[]}
@@ -237,14 +246,21 @@ def test_inventory_review_mode_sends_exact_source_and_inventory_through_bounded_
     with client(transport) as sdk:
         adapter = GeminiAdapter(sdk)
         monkeypatch.setattr(gemini,'GeminiAdapter',lambda:adapter)
-        result = reconstruction._model_review_invoke({'mode':'inventory','inventorySha256':'a'*64,
-            'observations':inventory,'image':{'dataUri':'data:image/jpeg;base64,'+inputs()[1].data}})
+        result = reconstruction._model_review_invoke(payload)
     assert [path.rsplit(':',1)[-1] for path,_ in sent] == ['countTokens','generateContent']
     counted = sent[0][1]['generateContentRequest']
     counted.pop('model')
     assert counted == sent[1][1]
     parts = counted['contents'][0]['parts']
-    assert len(parts)==3 and json.loads(parts[1]['text']) == {'inventorySha256':'a'*64,'observations':inventory}
+    assert len(parts)==3
+    compact = json.loads(parts[1]['text'])
+    assert compact == {'inventorySha256':'a'*64,'imageWidth':3024,'imageHeight':4032,
+        'boxConvention':'original-image pixels [xmin,ymin,xmax,ymax]',
+        'observations':[{'id':o['id'],'originalPixelBox':o['originalPixelBox'],
+            'labelEvidence':[{'label':'visible housing','evidence':'Blue outline.','geometryRole':'object'}]}
+            for o in inventory]}
+    assert payload == original
+    assert not any(key in parts[1]['text'] for key in ('sourceRefs','pixelMapping','entityId','revision'))
     assert parts[2]['inlineData'] == {'mimeType':'image/jpeg','data':inputs()[1].data}
     assert counted['generationConfig']['responseJsonSchema'] == reconstruction._InventoryReviewResponse.model_json_schema()
     assert result['review'] == review and result['providerRequestId']=='provider-request-1'
@@ -264,3 +280,72 @@ def test_unsupported_request_or_caps_fail_before_any_http(change):
     with client(transport) as sdk, pytest.raises(ProviderError):
         GeminiAdapter(sdk).create_bounded_structured('platform.discovery', **kwargs)
     assert not sent
+
+
+@pytest.mark.parametrize('failure', ['input_limit','count_transport','generation_transport'])
+def test_bounded_stage_distinguishes_preflight_without_releasing_or_repeating_reservation(tmp_path,failure):
+    from ehs_spatial.platform import reconstruction
+    from ehs_spatial.platform.contracts import PlatformError,canonical
+    from ehs_spatial.platform.storage import LocalBlobStore
+    from test_platform_reconstruction import Repo
+    sent=[]
+    secret='TEST-PRIVATE-PROVIDER-ERROR-DO-NOT-PERSIST'
+    def transport(request):
+        sent.append(request.url.path)
+        if request.url.path.endswith(':countTokens'):
+            if failure=='count_transport':
+                raise httpx.ReadTimeout(secret,request=request)
+            return httpx.Response(200,request=request,json={'totalTokens':17575 if failure=='input_limit' else 1234})
+        raise httpx.ReadTimeout(secret,request=request)
+    blobs=LocalBlobStore(tmp_path)
+    repo=Repo(blobs); repo.paid_budget=.3
+    pins={'model':GEMINI_MODEL_ID,'adapter':'test-only-bounded'}
+    # Synthetic release evidence only exercises the local HTTP mock/ledger.
+    evidence={'pins':pins,**{gate:{'status':'passed','artifactSha256':'a'*64}
+        for gate in ('license','runtime','quality')}}
+    with client(transport) as sdk:
+        adapter=GeminiAdapter(sdk)
+        def invoke(payload):
+            return adapter.create_bounded_structured('platform.discovery',input=inputs(),response_format=_response_format(Answer))
+        spec=reconstruction.ProviderSpec('gemini',pins,invoke,.1,evidence)
+        stages=reconstruction._Stages(repo,blobs,repo.job,{'discovery':spec})
+        expected='provider_outcome_unknown' if failure=='generation_transport' else 'provider_preflight_failed'
+        with pytest.raises(PlatformError,match=expected) as caught:
+            stages.call('discovery',[],{'frozen':'input'})
+        count=len(sent)
+        retry_code='provider_outcome_unknown' if failure=='generation_transport' else 'provider_response_unavailable'
+        with pytest.raises(PlatformError,match=retry_code):
+            stages.call('discovery',[],{'frozen':'input'})
+        assert len(sent)==count and len(repo.calls)==1
+    call=repo.calls[0]
+    assert call['estimate']==.1 and call['actual_cost'] is None
+    assert secret not in canonical(call).decode()
+    if failure=='generation_transport':
+        assert call['status']=='outcome_unknown' and 'preflight' not in call['response']
+        assert len(sent)==2 and sent[-1].endswith(':generateContent')
+    else:
+        assert call['status']=='failed' and len(sent)==1 and sent[0].endswith(':countTokens')
+        diagnostic=call['response']['preflight']
+        assert diagnostic==caught.value.params['preflight']==stages.records[0]['preflight']
+        assert diagnostic['generationAttempted'] is False and len(diagnostic['requestSha256'])==64
+        assert diagnostic['maxInputTokens']==16384
+        assert diagnostic['code']==('bounded_input_token_limit' if failure=='input_limit' else 'bounded_count_failed')
+        assert diagnostic['phase']==('input_limit' if failure=='input_limit' else 'count_tokens')
+        if failure=='input_limit':
+            assert diagnostic['inputTokens']==17575
+        else:
+            assert 'inputTokens' not in diagnostic
+
+
+@pytest.mark.parametrize('count', [None,False,0,-1])
+def test_invalid_token_count_has_safe_preflight_metadata_and_no_generation(count):
+    from ehs_spatial.providers.gemini import BoundedPreflightError
+    paths=[]
+    def transport(request):
+        paths.append(request.url.path)
+        return httpx.Response(200,request=request,json={'totalTokens':count})
+    with client(transport) as sdk,pytest.raises(BoundedPreflightError) as caught:
+        GeminiAdapter(sdk).create_bounded_structured('platform.discovery',input=inputs(),response_format=_response_format(Answer))
+    assert len(paths)==1 and paths[0].endswith(':countTokens')
+    assert caught.value.diagnostics['code']=='bounded_token_count_invalid'
+    assert caught.value.diagnostics['generationAttempted'] is False
