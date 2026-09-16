@@ -1,5 +1,29 @@
 # Object and model correspondence: implementation record
 
+## Follow-up investigation: generation route and reviewed inputs
+
+The SAM3D `403` does not describe the existing model generator. Read-only inspection
+found the deployed `lucida-private-assets.generate_object` function and its pinned
+RecGen/DINO weights still present. Nine historical RecGen calls succeeded; the
+current original-model set retains seven of those meshes and two later parameterized
+bollards. No new generation was invoked by this investigation. RecGen's recorded
+code/model terms are non-commercial, while the accepted platform specification
+explicitly pins SAM3D. Reusing RecGen for a research preview requires an explicit
+route decision; checkpoint denial alone is not evidence that all generation paths
+are unavailable.
+
+Generation also ignored reviewed anchor observations and always chose the largest
+valid-pixel count. Jobs can now freeze `inputs.observationIds`, exactly one owned,
+masked observation per explicit target entity. Invalid, repeated, extra, missing,
+or cross-target anchors fail before any provider reservation. Selection is recorded
+in existing model-call evidence and source references. Unspecified anchors retain
+the existing deterministic selection. All 39 reconstruction tests pass, including
+a regression that failed by selecting the larger contaminated candidate first.
+
+The remaining eleven records contain 21 valid source mesh assets with 387,996
+triangles, but no hidden or inactive complete object models. Source surface
+availability does not close the complete-model generation or identity gaps.
+
 ## Current partial delivery: 17 model records, 28 CAD records
 
 Publication `33f588d0-12ac-4415-b8bc-873c9c9417b1` freezes revision

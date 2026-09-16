@@ -1260,13 +1260,25 @@ def _generation_targets(document, job):
 def run_generation(repository,blobs,job,providers):
     _,document,images = _capture(repository,blobs,job)
     requested, entities = _generation_targets(document, job)
+    observations = {o["id"]:o for o in document["observations"]}
+    reviewed = job.get('inputs', {}).get('observationIds')
+    anchors = {}
+    if reviewed is not None:
+        if (not isinstance(reviewed, list) or len(reviewed) != len(entities)
+                or any(not isinstance(oid, str) for oid in reviewed) or len(set(reviewed)) != len(reviewed)):
+            raise PlatformError('generation_anchors_invalid', 422)
+        for oid in reviewed:
+            owners = [e for e in entities if oid in e['observationRefs']]
+            observation = observations.get(oid)
+            if len(owners) != 1 or owners[0]['id'] in anchors or not observation or not observation.get('maskAssetId'):
+                raise PlatformError('generation_anchors_invalid', 422)
+            anchors[owners[0]['id']] = observation
     stages = _Stages(repository,blobs,job,providers)
     errors,ready = [],[]
     try:
         frames,canonical = _load_geometry(document,images,stages)
     except PlatformError as exc:
         return document,{"status":"incomplete","errors":[{"code":exc.code}],"shapeReadyEntityIds":[],"placementConfirmedEntityIds":[]}
-    observations = {o["id"]:o for o in document["observations"]}
     loaded_masks, mask_errors = _load_masks(document,canonical,stages)
     mask_error_codes = {e['observationId']:e['code'] for e in mask_errors}
     for entity in entities:
@@ -1274,7 +1286,7 @@ def run_generation(repository,blobs,job,providers):
             candidates = [observations[x] for x in entity["observationRefs"] if observations[x].get("maskAssetId")]
             if not candidates:
                 raise PlatformError("generation_mask_required",409)
-            anchor = max(candidates,key=lambda x:((x.get("geometrySupport") or {}).get("validPixelCount",0),x["id"]))
+            anchor = anchors.get(entity['id']) or max(candidates,key=lambda x:((x.get("geometrySupport") or {}).get("validPixelCount",0),x["id"]))
             image = next(i for i in images if i["id"] == anchor["imageId"])
             asset = repository.get_asset(anchor["maskAssetId"])
             if anchor['id'] not in loaded_masks:

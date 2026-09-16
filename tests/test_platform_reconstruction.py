@@ -230,6 +230,48 @@ def test_shape_ready_does_not_invent_button_placement_and_segmentation_keeps_ide
     assert next(e for e in segmented['entities'] if e['id'] == tiny['id'])['cadReference']['sourceRefs'] == [{'observationId': oid, 'revision': 2}]
 
 
+def test_generation_uses_reviewed_observation_and_rejects_invalid_batch_before_calls(tmp_path):
+    from ehs_spatial.platform.spatial import primitive_mesh
+
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    providers = bundle(repo)
+    document, _ = run_analysis(repo, blobs, repo.job, providers)
+    targets = [e for e in document['entities'] if e['label'] in ('unlisted ceramic fixture', 'unlisted transparent bin')]
+    observations = {o['id']: o for o in document['observations']}
+    target, other = targets[:2]
+    preferred, broad = (observations[oid] for oid in target['observationRefs'])
+    preferred['geometrySupport']['validPixelCount'] = 1
+    broad['geometrySupport']['validPixelCount'] = 999
+    repo.document = document
+    seen = []
+    mesh = primitive_mesh({'type':'box', 'dimensions':[.1, .2, .3]})
+    def generate(payload):
+        seen.append(payload['imageId'])
+        return {'vertices':mesh.vertices, 'faces':mesh.faces, 'proposedObjectToNative':np.eye(4)}
+    providers['generation'] = provider('generation', generate)
+    job = {**repo.job, 'id':str(uuid4()), 'kind':'generate_scene', 'inputs':{
+        'entityIds':[target['id']], 'observationIds':[preferred['id']]}}
+    generated, result = run_generation(repo, blobs, job, providers)
+    assert seen == [preferred['imageId']], 'Reviewed input must not be replaced by a larger contaminated mask'
+    assert result['shapeReadyEntityIds'] == [target['id']]
+    model = next(r for e in generated['entities'] if e['id'] == target['id'] for r in e['representations'] if r['kind'] == 'generated_mesh')
+    assert {'observationId':preferred['id'], 'revision':preferred['revision']} in model['sourceRefs']
+    other_oid = other['observationRefs'][0]
+    calls = len(repo.calls)
+    for ids in ([], [preferred['id']], [preferred['id'], broad['id']],
+                [preferred['id'], preferred['id']], [preferred['id'], 'unknown'],
+                [preferred['id'], other_oid, broad['id']], 'not-a-list'):
+        with pytest.raises(PlatformError, match='generation_anchors_invalid'):
+            run_generation(repo, blobs, {**job, 'inputs':{'entityIds':[target['id'],other['id']], 'observationIds':ids}}, providers)
+        assert len(repo.calls) == calls, 'Invalid batch anchors must fail before any model reservation'
+    del observations[other_oid]['maskAssetId']
+    repo.document = document
+    with pytest.raises(PlatformError, match='generation_anchors_invalid'):
+        run_generation(repo, blobs, {**job, 'inputs':{'entityIds':[target['id'],other['id']], 'observationIds':[preferred['id'],other_oid]}}, providers)
+    assert len(repo.calls) == calls
+
+
 def test_frozen_provider_snapshot_not_mutable_deployment_and_research_does_not_publish(tmp_path,monkeypatch):
     from ehs_spatial.providers.gemini import GEMINI_MODEL_ID
     spec = provider("discovery",lambda _: {},GEMINI_MODEL_ID)
