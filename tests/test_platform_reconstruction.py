@@ -483,6 +483,61 @@ def test_discovery_persisted_even_if_geometry_fails_no_retry_on_unknown_outcome(
     assert any(e["code"] == "provider_outcome_unknown" for e in second["errors"])
 
 
+@pytest.mark.parametrize('failure,successful_first', [
+    ('timeout', False), ('persistence', False),
+    ('timeout', True), ('persistence', True), ('known_failure', False),
+])
+def test_resegmentation_stops_after_unknown_but_continues_known_failure(tmp_path, monkeypatch, failure, successful_first):
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    providers = bundle(repo)
+    repo.document, _ = run_analysis(repo, blobs, repo.job, providers)
+    selected = repo.document['observations'][:3 if successful_first else 2]
+    failure_index = int(successful_first)
+    before_calls, seen = len(repo.calls), []
+    original_segment = providers['segmentation'].invoke
+    def segment(payload):
+        seen.append(payload['box'])
+        if len(seen) == failure_index + 1:
+            if failure == 'timeout':
+                raise TimeoutError('Unknown remote outcome')
+            if failure == 'known_failure':
+                return {'providerError': {'code':'inference_failed'}}
+        return original_segment(payload)
+    providers['segmentation'] = provider('segmentation', segment, model='resegmentation-test')
+    original_put = _Stages.put
+    def put(stages, value, metadata, media_type='application/json'):
+        if (failure == 'persistence' and len(seen) == failure_index + 1
+                and metadata.get('kind') == 'stage_cache' and metadata.get('stage') == 'segmentation'):
+            raise OSError('Unable to retain the received response')
+        return original_put(stages, value, metadata, media_type)
+    monkeypatch.setattr(_Stages, 'put', put)
+    job = {**repo.job, 'id':str(uuid4()), 'kind':'segment_object',
+        'inputs':{'observationIds':[o['id'] for o in selected]}}
+    updated, result = run_segmentation(repo, blobs, job, providers)
+    unknown = failure != 'known_failure'
+    expected_calls = failure_index + 1 if unknown else len(selected)
+    assert len(seen) == len(repo.calls) - before_calls == expected_calls
+    code = {'timeout':'provider_outcome_unknown', 'persistence':'response_persistence_failed',
+        'known_failure':'provider_failed'}[failure]
+    assert {'observationId':selected[failure_index]['id'], 'code':code} in result['errors']
+    assert result['status'] == 'incomplete'
+    if unknown:
+        assert result['stoppedReason'] == code
+        assert result['unprocessedObservationIds'] == [o['id'] for o in selected[failure_index + 1:]]
+        assert repo.calls[-1]['status'] == 'outcome_unknown'
+    else:
+        assert 'stoppedReason' not in result and 'unprocessedObservationIds' not in result
+        assert [call['status'] for call in repo.calls[before_calls:]] == ['failed', 'succeeded']
+    for index, before in enumerate(selected):
+        after = next(o for o in updated['observations'] if o['id'] == before['id'])
+        revised = index < failure_index or not unknown and index > failure_index
+        assert after['revision'] == before['revision'] + int(revised)
+        if not revised:
+            assert after == before
+    validate_document(updated)
+
+
 def test_missing_budget_and_release_gates_prevent_any_live_call(tmp_path,monkeypatch):
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)

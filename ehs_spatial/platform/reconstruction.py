@@ -1536,8 +1536,8 @@ def run_segmentation(repository,blobs,job,providers):
     observations = [o for o in document["observations"] if o["id"] in requested]
     if not observations or len(observations) != len(set(requested)):
         raise PlatformError("observation_not_found",404)
-    errors, changed_observations, invalidated_measurements = [], set(), set()
-    for observation in observations:
+    errors, changed_observations, invalidated_measurements, stopped = [], set(), set(), {}
+    for index, observation in enumerate(observations):
         image = next(x for x in images if x["id"] == observation["imageId"])
         try:
             response,evidence = stages.call("segmentation",[image],_segmentation_input(document,observation,_image_payload(image)),observation["sourceRefs"])
@@ -1560,9 +1560,13 @@ def run_segmentation(repository,blobs,job,providers):
                             entity["measurementSelections"][key] = None
         except PlatformError as exc:
             errors.append({"observationId":observation["id"],"code":exc.code})
+            if exc.code in UNKNOWN_OUTCOME_CODES:
+                stopped = {"stoppedReason":exc.code,
+                    "unprocessedObservationIds":[later["id"] for later in observations[index + 1:]]}
+                break
     if not changed_observations:
         stages.checkpoint(document,"segmentation")
-        return document,{"status":"incomplete","stages":stages.records,"errors":errors}
+        return document,{"status":"incomplete","stages":stages.records,"errors":errors,**stopped}
     try:
         frames,canonical = _load_geometry(document,images,stages)
         masks, mask_errors = _load_masks(document,canonical,stages)
@@ -1574,7 +1578,7 @@ def run_segmentation(repository,blobs,job,providers):
     except PlatformError as exc:
         errors.append({"stage":"geometry_support","code":exc.code})
     stages.checkpoint(document,"segmentation")
-    return document,{"status":"incomplete" if errors else "succeeded","stages":stages.records,"errors":errors}
+    return document,{"status":"incomplete" if errors else "succeeded","stages":stages.records,"errors":errors,**stopped}
 
 
 def _generation_targets(document, job):
