@@ -185,6 +185,40 @@ def test_discovery_schema_requires_evidence_and_role_but_preserves_explicit_unkn
     assert {'evidence','geometry_role'} <= set(schema['required'])
 
 
+def test_discovery_full_frame_scan_is_counted_and_sent_once_with_original_image(monkeypatch):
+    from ehs_spatial.platform import reconstruction
+    from ehs_spatial.providers import gemini
+    sent = []
+    item = {'label':'visible component', 'box_2d':[100,200,500,800],
+            'evidence':'A distinct circular face attached to the larger housing.', 'geometry_role':'object'}
+    def transport(request):
+        sent.append((request.url.path, json.loads(request.content)))
+        if request.url.path.endswith(':countTokens'):
+            return httpx.Response(200, request=request, json={'totalTokens':1234})
+        return success(request, text=json.dumps({'items':[item]}))
+    with client(transport) as sdk:
+        adapter = GeminiAdapter(sdk)
+        monkeypatch.setattr(gemini, 'GeminiAdapter', lambda:adapter)
+        result = reconstruction._discovery_invoke({'image':{'width':3024,'height':4032,
+            'dataUri':'data:image/jpeg;base64,'+inputs()[1].data}})
+    assert [path.rsplit(':',1)[-1] for path, _ in sent] == ['countTokens','generateContent']
+    counted = sent[0][1]['generateContentRequest']
+    counted.pop('model')
+    assert counted == sent[1][1]
+    parts = counted['contents'][0]['parts']
+    assert len(parts) == 2
+    prompt = parts[0]['text']
+    for instruction in ('top to bottom and left to right', 'large structures and assemblies',
+            'smaller and attached components', 'same physical instance twice',
+            'original full image', 'nonblank visual evidence'):
+        assert instruction in prompt
+    assert base64.b64decode(parts[1]['inlineData']['data']) == b'exact original image bytes'
+    assert parts[1]['inlineData']['mimeType'] == 'image/jpeg'
+    assert counted['generationConfig']['responseJsonSchema'] == reconstruction._DiscoveryResponse.model_json_schema()
+    assert result['items'][0]['box'] == pytest.approx([604.8,403.2,2419.2,2016])
+    assert result['items'][0]['evidence'] == item['evidence']
+
+
 @pytest.mark.parametrize('change', [
     {'max_input_tokens': 16385}, {'max_output_tokens': 8193}, {'max_output_tokens': True},
     {'input': [{'type': 'image', 'uri': 'https://example.invalid/image.jpg', 'mime_type': 'image/jpeg'}]},
