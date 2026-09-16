@@ -49,3 +49,10 @@ Calculate click. The independent Modal worker deployment requires its preexistin
 audited image digest and DB/storage secret, neither configured in this shell;
 no new remote worker image is claimed. Shared worker source and publication path
 are updated; public report preparation does execute the analysis before release.
+
+Public acceptance: source 8eaa1b3, Pages 0ed1a2e, successful Pages run
+35157886657. Modal publication service redeployed with the prepared derivative.
+Current analysis GET is 12,886 bytes and contains all 26 in-scope outcomes. Reloaded
+the user's actual public tab without calculating: left wing 145.4 degrees appears
+in 04. Unchecking Show angle annotations removes it; selecting the right wing and
+rechecking shows 146.9 degrees. The detected-bend selector includes both objects.
