@@ -408,7 +408,17 @@ def _mesh(points,valid,rgb,mask):
     lengths = np.linalg.norm(vertices[faces]-vertices[np.roll(faces,1,axis=1)],axis=-1).max(axis=1)
     spacing = np.median(lengths)
     faces = faces[lengths <= max(spacing*4,1e-12)]
-    return MeshData(vertices.astype(np.float32),faces.astype(np.uint32),rgb[keep].astype(np.float32)/255) if len(faces) else None
+    # Preserve the discontinuity acceptance set before removing zero-area
+    # faces: deleting them first can raise spacing and admit unsupported bridges.
+    # Test stored float32 coordinates in float64 with no native-unit epsilon.
+    vertices = vertices.astype(np.float32)
+    triangles = vertices[faces].astype(np.float64)
+    normals = np.cross(triangles[:,1]-triangles[:,0], triangles[:,2]-triangles[:,0])
+    faces = faces[np.any(normals != 0, axis=1)]
+    if not len(faces):
+        return None
+    used, indices = np.unique(faces, return_inverse=True)
+    return MeshData(vertices[used], indices.reshape(-1, 3).astype(np.uint32), rgb[keep][used].astype(np.float32)/255)
 
 
 def _save_mesh(stages,mesh,metadata):
@@ -727,6 +737,16 @@ def _is_floor_reference(entity, observations):
 def _save_observed_surface(document, entity, frame, record, mask, stages, observation=None, *, project_to_plan=True):
     """Use complete native support inside the exact mask, before context carving."""
     mesh = _mesh(frame.points, frame.support(), record['rgb'], mask)
+    if observation:
+        missing = observation.get('missingEvidence', [])
+        if mesh is None:
+            observation['missingEvidence'] = list(dict.fromkeys([*missing, 'observed_surface_unavailable']))
+            for rep in entity['representations']:
+                if rep['kind'] == 'observed_surface' and any(ref.get('observationId') == observation['id']
+                        for ref in rep.get('sourceRefs', []) if isinstance(ref, dict)):
+                    rep['sourceValidity'] = 'stale'
+        elif 'observed_surface_unavailable' in missing:
+            observation['missingEvidence'] = [item for item in missing if item != 'observed_surface_unavailable']
     if mesh is None:
         return None
     source = {'observationId': observation['id'], 'revision': observation['revision'], 'imageId': frame.image_id} if observation else {'imageId': frame.image_id}
@@ -757,6 +777,7 @@ def _associate_and_surfaces(document,frames,canonical,masks,stages, *, rebuild_s
     verified, skipped = _verified_source_equivalences(document, masks, stages)
     source_merges = apply_source_equivalences(document, verified, base_revision_id=stages.job['baseRevisionId']) if verified else []
     associations = _associate_identities(document, frames, masks, stages)
+    surface_errors = []
     associations['sourceEquivalences'] = {'verifiedPairCount':len(verified), 'merges':source_merges, 'skipped':skipped}
     lookup = {o["id"]:o for o in document["observations"]}
     for entity in document["entities"]:
@@ -769,7 +790,7 @@ def _associate_and_surfaces(document,frames,canonical,masks,stages, *, rebuild_s
             support = masks[oid] & f.support()
             points = f.points[support]
             frame_record = next(x for x in document["coordinateFrames"] if x["id"] == f.coordinate_frame_id)
-            observation["geometrySupport"] = {"validPixelCount":len(points),"coordinateFrameId":f.coordinate_frame_id,"boundsNative":{"min":points.min(axis=0).tolist(),"max":points.max(axis=0).tolist()} if len(points) >= 8 else None,"sourceRefs":frame_record.get("sourceRefs") or [{"assetId":canonical[f.image_id]["geometryManifestAssetId"]}],
+            observation["geometrySupport"] = {"validPixelCount":len(points),"coordinateFrameId":f.coordinate_frame_id,"boundsNative":{"min":points.min(axis=0).tolist(),"max":points.max(axis=0).tolist()} if len(points) >= 8 and np.any(points != points[0]) else None,"sourceRefs":frame_record.get("sourceRefs") or [{"assetId":canonical[f.image_id]["geometryManifestAssetId"]}],
                 "coverage":"visible_support_only","uncertainty":{"status":"not_quantified","causes":["estimated_depth","occlusion","mask_boundary"]}}
             if len(points) >= 8 and (new_observation_ids is None or oid in new_observation_ids) and (refresh_observation_ids is None or oid in refresh_observation_ids):
                 candidates.append((len(points),oid,f,support))
@@ -778,7 +799,11 @@ def _associate_and_surfaces(document,frames,canonical,masks,stages, *, rebuild_s
         if not rebuild_surfaces:
             continue
         for _, oid, frame, _ in candidates:
-            _save_observed_surface(document, entity, frame, canonical[frame.image_id], masks[oid], stages, lookup[oid])
+            if _save_observed_surface(document, entity, frame, canonical[frame.image_id], masks[oid], stages, lookup[oid]) is None:
+                surface_errors.append({'stage':'observed_surface', 'code':'observed_surface_unavailable', 'entityId':entity['id'], 'observationId':oid})
+        candidates = [candidate for candidate in candidates if lookup[candidate[1]]['geometrySupport']['boundsNative'] is not None]
+        if not candidates:
+            continue
         _,oid,f,support = max(candidates,key=lambda x:(x[0],x[1]))
         observation = lookup[oid]
         selected_bounds = entity['measurements'].get('observedBounds')
@@ -799,6 +824,7 @@ def _associate_and_surfaces(document,frames,canonical,masks,stages, *, rebuild_s
         from .source_cad import refresh_source_cad_links
         refresh_source_cad_links(document, lambda aid: _scene_asset_bytes(document, aid, stages), masks)
     _association_evidence(document,associations,frames,masks)
+    associations['surfaceErrors'] = surface_errors
     return associations
 
 
@@ -827,7 +853,7 @@ def _capture_context(document,frames,canonical,stages):
 def _rebuild_observed_surfaces(document, frames, records, masks, stages):
     working = deepcopy(document)
     observations = {o['id']: o for o in working['observations']}
-    rebuilt = []
+    rebuilt, errors = [], []
     for entity in working['entities']:
         if entity.get('sourceContext'):
             continue
@@ -836,7 +862,8 @@ def _rebuild_observed_surfaces(document, frames, records, masks, stages):
             observation = observations[oid]
             result = _save_observed_surface(working, entity, frames[observation['imageId']], records[observation['imageId']], masks[oid], stages, observation, project_to_plan=False)
             if result is None:
-                raise PlatformError('observed_surface_unavailable', 409, observationId=oid)
+                errors.append({'stage':'observed_surface', 'code':'observed_surface_unavailable', 'entityId':entity['id'], 'observationId':oid})
+                continue
             replacements.append(result['representationId'])
             rebuilt.append({'entityId': entity['id'], 'observationId': oid, 'imageId': observation['imageId'], **result})
         if replacements:
@@ -857,7 +884,7 @@ def _rebuild_observed_surfaces(document, frames, records, masks, stages):
     validate_document(working)
     document.clear()
     document.update(working)
-    return {'methodVersion': 'full-native-observed-v2', 'observationCount': len(rebuilt), 'observations': rebuilt, 'contexts': contexts}
+    return {'methodVersion': 'full-native-observed-v2', 'observationCount': len(rebuilt), 'observations': rebuilt, 'contexts': contexts, 'errors': errors}
 
 
 def _ground(document,frames,masks,stages, *, affected_observation_ids=None):
@@ -1035,6 +1062,8 @@ def run_analysis(repository,blobs,job,providers):
     association = attempt("association",lambda:_associate_and_surfaces(document,frames,canonical,masks,stages,new_observation_ids={o["id"] for o in document["observations"] if o["imageId"] in lookup} if is_append else None)) if frames else None
     if association is None:
         _association_evidence(document,None,frames,masks)
+    else:
+        errors.extend(association['surfaceErrors'])
     context_frames = {image_id: frame for image_id, frame in frames.items() if not is_append or image_id in lookup}
     attempt("capture_context",lambda:_capture_context(document,context_frames,canonical,stages))
     ground_report = attempt("ground",lambda:_ground(document,frames,masks,stages)) if not is_append else {"status":"preserved_source_ground"}
@@ -1221,6 +1250,7 @@ def run_reassociation(repository, blobs, job, providers=None):
         if rebuild_surfaces:
             if not errors:
                 surface_rebuild = _rebuild_observed_surfaces(document, frames, records, masks, stages)
+                errors.extend(surface_rebuild['errors'])
         else:
             association = _associate_and_surfaces(document, frames, records, masks, stages, rebuild_surfaces=False)
     except PlatformError as exc:
@@ -1275,7 +1305,8 @@ def run_segmentation(repository,blobs,job,providers):
         frames,canonical = _load_geometry(document,images,stages)
         masks, mask_errors = _load_masks(document,canonical,stages)
         errors.extend(mask_errors)
-        _associate_and_surfaces(document,frames,canonical,masks,stages,refresh_observation_ids=changed_observations,invalidated_measurement_ids=invalidated_measurements)
+        association = _associate_and_surfaces(document,frames,canonical,masks,stages,refresh_observation_ids=changed_observations,invalidated_measurement_ids=invalidated_measurements)
+        errors.extend(association['surfaceErrors'])
         _ground(document,frames,masks,stages,affected_observation_ids=changed_observations)
         _establish_cad_references(document, stages, job.get('inputs', {}).get('referenceImageId'))
     except PlatformError as exc:

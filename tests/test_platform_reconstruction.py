@@ -791,6 +791,88 @@ def test_source_equivalence_verifier_rejects_nonobject_proof_document(tmp_path):
         _verified_source_equivalences(document, masks, stages)
 
 
+def test_observed_meshing_rejects_degenerate_faces_without_losing_supported_objects(tmp_path):
+    from ehs_spatial.platform.reconstruction import _mesh, _save_mesh, _include, run_reassociation
+    from ehs_spatial.platform.spatial import MeshData
+
+    valid, rgb = np.ones((2, 2), bool), np.full((2, 2, 3), 100, np.uint8)
+    for scale in (1e-30, 1., 1e30):
+        assert _mesh(np.zeros((2, 2, 3)), valid, rgb, valid) is None
+        line = np.array([[[0., 0., 0.], [1., 0., 0.]], [[2., 0., 0.], [3., 0., 0.]]]) * scale
+        assert _mesh(line, valid, rgb, valid) is None
+        mixed = np.array([[[0., 0., 0.], [0., 0., 0.]], [[0., 1., 0.], [1., 1., 0.]]]) * scale
+        mesh = _mesh(mixed, valid, rgb, valid)
+        assert mesh is not None and mesh.faces.tolist() == [[0, 2, 1]]
+        assert np.array_equal(mesh.vertices, mixed.reshape(-1, 3)[[1, 2, 3]].astype(np.float32))
+    discontinuous = np.zeros((4, 4, 3))
+    discontinuous[-1, -2:] = [[1., 0., 10.], [0., 1., 10.]]
+    assert _mesh(discontinuous, np.ones((4, 4), bool), np.zeros((4, 4, 3)), np.ones((4, 4), bool)) is None
+    y, x = np.mgrid[:4, :4]
+    isolated = np.stack((x, y, np.full_like(x, 2)), axis=-1).astype(float)
+    isolated[0, 0] = [1e20, 1e20, 1e20]
+    mask = np.zeros((4, 4), bool)
+    mask[0, 0] = mask[2:, 2:] = True
+    mesh = _mesh(isolated, mask, np.zeros((4, 4, 3)), mask)
+    assert mesh is not None and len(mesh.vertices) == 4
+    assert mesh.vertices.max(axis=0).tolist() == [3., 3., 2.]
+    assert mesh.colors.shape == (4, 3)
+
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    providers = bundle(repo)
+    providers['discovery'] = provider('discovery', lambda _: {'items': [
+        {'label':'collapsed support', 'box':[0, 0, 5, 12]}, {'label':'supported', 'box':[7, 0, 12, 12]}]})
+    def geometry(payload):
+        response = geometry_response(payload['images'])
+        for frame in response['frames']:
+            frame['points'][:, :5] = [0., 0., 2.]
+        return response
+    providers['geometry'] = provider('geometry', geometry)
+    source, analysis = run_analysis(repo, blobs, repo.job, providers)
+    bad = [o for o in source['observations'] if o['originalPixelBox'][0] == 0]
+    bad_ids = {o['id'] for o in bad}
+    assert analysis['status'] == 'incomplete'
+    assert {error['observationId'] for error in analysis['errors']} == bad_ids
+    assert all(o['geometrySupport']['boundsNative'] is None and
+               'observed_surface_unavailable' in o['missingEvidence'] for o in bad)
+    bad_entities = [e for e in source['entities'] if set(e['observationRefs']) & bad_ids]
+    assert all(not e['representations'] and not e['measurements'].get('observedBounds') for e in bad_entities)
+
+    # A previous version could have persisted degenerate surfaces. Keep their
+    # immutable bytes, but retire only the failed observation's observed reps.
+    stages = _Stages(repo, blobs, repo.job, {})
+    asset = _save_mesh(stages, MeshData(np.zeros((3, 3), np.float32), np.array([[0, 1, 2]], np.uint32)), {})
+    _include(source, asset)
+    good = next(r for e in source['entities'] if not e.get('sourceContext') for r in e['representations'])
+    for entity in bad_entities:
+        refs = [{'observationId':oid, 'revision':1} for oid in entity['observationRefs']]
+        old = {**deepcopy(good), 'id':str(uuid4()), 'assetId':asset['id'], 'sourceRefs':refs,
+               'bounds':{'min':[0., 0., 0.], 'max':[0., 0., 0.]}}
+        generated = {**deepcopy(good), 'id':str(uuid4()), 'kind':'generated_mesh', 'sourceRefs':deepcopy(refs)}
+        entity['representations'].extend([old, generated])
+        entity['activeModelRepresentationId'] = generated['id']
+        entity['currentModelTransform'] = deepcopy(generated['transform'])
+    repo.document = deepcopy(source)
+    call_count = len(repo.calls)
+    job = {**repo.job, 'id':str(uuid4()), 'kind':'reassociate_scene', 'inputs':{'rebuildObservedSurfaces':True}}
+    rebuilt, result = run_reassociation(repo, blobs, job, {})
+    assert result['status'] == 'incomplete' and len(repo.calls) == call_count
+    assert {error['observationId'] for error in result['errors']} == bad_ids
+    assert result['surfaceRebuild']['observationCount'] == len(source['observations']) - len(bad_ids)
+    assert {e['id'] for e in rebuilt['entities']} == {e['id'] for e in source['entities']}
+    for before, after in zip(source['entities'], rebuilt['entities']):
+        assert before['id'] == after['id']
+        for key in ('observationRefs', 'measurements', 'measurementEvidence', 'measurementSelections',
+                    'activeModelRepresentationId', 'currentModelTransform'):
+            assert before[key] == after[key]
+        for rep in after['representations']:
+            if rep['kind'] == 'generated_mesh':
+                assert rep == next(r for r in before['representations'] if r['id'] == rep['id'])
+            elif not after.get('sourceContext'):
+                assert (rep.get('sourceValidity') == 'stale') == bool(set(after['observationRefs']) & bad_ids)
+    validate_document(rebuilt)
+
+
 def test_full_observed_rebuild_preserves_identity_measurements_and_every_photo(tmp_path):
     from ehs_spatial.platform.reconstruction import run_reassociation
     blobs = LocalBlobStore(tmp_path)
