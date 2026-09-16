@@ -39,8 +39,10 @@ def _wire(row):
 
 def _job_asset_references(result):
     """Declared exporter/pipeline outputs; error params are not output assets."""
-    if not result:
+    if result is None:
         return
+    if not isinstance(result, dict):
+        raise PlatformError("publication_job_asset_invalid", 422)
     assets, stages = result.get("assets", []), result.get("stages", [])
     if not isinstance(assets, list) or any(not isinstance(ref, dict) or "id" not in ref for ref in assets) or not isinstance(stages, list) or any(not isinstance(stage, dict) for stage in stages):
         raise PlatformError("publication_job_asset_invalid", 422)
@@ -49,6 +51,15 @@ def _job_asset_references(result):
     for key in ("checkpointAssetId", "protocolAssetId", "outputAssetId"):
         if result.get(key) is not None:
             yield result[key], {}
+    if result.get("validationAssetId") is not None:
+        yield result["validationAssetId"], ({"sha256": result["validationSha256"]} if "validationSha256" in result else {})
+    for key in ("analysis", "review", "generation"):
+        yield from _job_asset_references(result.get(key))
+    if result.get("captureAnalysis") is not None:
+        capture = result["captureAnalysis"]
+        if not isinstance(capture, dict):
+            raise PlatformError("publication_job_asset_invalid", 422)
+        yield from _job_asset_references(capture.get("result"))
 
 
 class PostgresRepository:

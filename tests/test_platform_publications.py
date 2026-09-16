@@ -60,10 +60,11 @@ def test_publication_freezes_producer_and_consumer_jobs_output_assets_and_public
     assert PublicationSnapshot.model_validate(old_snapshot).jobs == []
 
 
+@pytest.mark.parametrize('nested', [None, 'analysis', 'review', 'generation', 'captureAnalysis'])
 @pytest.mark.parametrize("bad_ref,code", [("missing", "publication_asset_not_found"),
     ("foreign", "publication_job_asset_forbidden"), ("sha256", "publication_job_asset_integrity_conflict"),
     ("sizeBytes", "publication_job_asset_integrity_conflict"), ("invalid", "publication_job_asset_invalid")])
-def test_publication_rejects_unverified_job_outputs_atomically(repo, tmp_path, bad_ref, code):
+def test_publication_rejects_unverified_job_outputs_atomically(repo, tmp_path, bad_ref, code, nested):
     blobs = LocalBlobStore(tmp_path)
     repo.blobs = blobs
     cap, scene = project(repo)
@@ -80,10 +81,47 @@ def test_publication_rejects_unverified_job_outputs_atomically(repo, tmp_path, b
         ref["sizeBytes"] += 1
     elif bad_ref == "invalid":
         ref["id"] = "not-an-asset"
-    repo.finish_job(job["id"], job["attemptToken"], "succeeded", result={"assets": [ref]})
+    result = {'assets': [ref]}
+    if nested:
+        result = {nested: {'result': result} if nested == 'captureAnalysis' else result}
+    repo.finish_job(job["id"], job["attemptToken"], "succeeded", result=result)
     with pytest.raises(PlatformError, match=code):
         repo.create_publication(scene["project"]["id"], cap, publish_body(scene))
     assert repo.list_publications()["items"] == []
+
+
+def test_publication_keeps_nested_analysis_proof_without_following_configuration(repo, tmp_path):
+    repo.blobs = LocalBlobStore(tmp_path)
+    cap, scene = project(repo)
+    job = repo.claim_job(enqueue(repo, cap, scene)['id'])
+    checkpoint, stage, review, mesh, prepared, unrelated = [repo.register_asset(scene['project']['id'],
+        repo.blobs.put(name.encode(), 'application/octet-stream'), job['id'])
+        for name in ('checkpoint', 'stage', 'review', 'mesh', 'prepared', 'unrelated-private-configuration')]
+    analysis = {'checkpointAssetId': checkpoint['id'], 'stages': [{'stage': 'discovery', 'assetId': stage['id']}]}
+    result = {'captureAnalysis': {'jobId': identity(), 'baseRevisionId': scene['revision']['id'], 'result': analysis},
+        'analysis': deepcopy(analysis), 'review': {'outputAssetId': review['id']}, 'generation': {'assets': [mesh]},
+        'validationAssetId': prepared['id'], 'validationSha256': prepared['sha256'],
+        'config': {'assets': [unrelated]}, 'error': {'params': {'outputAssetId': unrelated['id']}}}
+    repo.finish_job(job['id'], job['attemptToken'], 'incomplete', result=result)
+    publication = repo.create_publication(scene['project']['id'], cap, publish_body(scene))
+    snapshot = publication['snapshot']
+    ids = [asset['assetId'] for asset in snapshot['assetManifest']]
+    assert len(ids) == len(set(ids)) == 5
+    assert set(ids) == {checkpoint['id'], stage['id'], review['id'], mesh['id'], prepared['id']}
+    assert snapshot['jobs'][0]['result'] == result
+    assert not ({'attemptToken', 'executorRef', 'lateResults', 'requestSha256'} & snapshot['jobs'][0].keys())
+
+
+def test_publication_checks_declared_prepared_input_hash(repo, tmp_path):
+    repo.blobs = LocalBlobStore(tmp_path)
+    cap, scene = project(repo)
+    job = repo.claim_job(enqueue(repo, cap, scene)['id'])
+    prepared = repo.register_asset(scene['project']['id'], repo.blobs.put(b'prepared', 'application/json'), job['id'])
+    repo.finish_job(job['id'], job['attemptToken'], 'incomplete',
+        result={'validationAssetId': prepared['id'], 'validationSha256': '0' * 64})
+    with pytest.raises(PlatformError, match='publication_job_asset_integrity_conflict'):
+        repo.create_publication(scene['project']['id'], cap, publish_body(scene))
+    assert repo.list_publications()['items'] == []
 
 
 def test_publication_rechecks_output_blob_bytes(repo, tmp_path):

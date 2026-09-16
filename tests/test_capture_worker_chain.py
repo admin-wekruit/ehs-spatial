@@ -229,6 +229,14 @@ def test_partial_multiphoto_analysis_survives_every_successor_and_final_model_ac
     calls_before = len(model_calls(chain))
     assert dispatch(chain, finished['id'])['result'] == finished['result']
     assert len(model_calls(chain)) == calls_before
+    published = chain.repo.create_publication(finished['projectId'], chain.cap, {
+        'requestId': identity(), 'sceneRevisionId': finished['resultRevisionId'], 'title': 'Partial analysis proof'})
+    snapshot = published['snapshot']
+    assert analyzed['id'] not in {job['id'] for job in snapshot['jobs']}
+    expected = {analysis['checkpointAssetId'], *(stage['assetId'] for stage in analysis['stages'] if stage.get('assetId'))}
+    manifest = [asset['assetId'] for asset in snapshot['assetManifest']]
+    assert expected <= set(manifest) and len(manifest) == len(set(manifest))
+    assert all(not ({'attemptToken', 'executorRef', 'lateResults', 'requestSha256'} & job.keys()) for job in snapshot['jobs'])
 
 
 def test_last_generation_failure_retains_ancestor_analysis_in_terminal_result(chain, monkeypatch):
