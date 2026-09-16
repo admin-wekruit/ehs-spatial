@@ -92,7 +92,7 @@ class ProviderSpec:
         if research_protocol is not None:
             _validate_research_protocol(research_protocol)
             purpose = research_protocol["purpose"]
-            if stage in ("generation", "geometry", "depth", "segmentation", "discovery"):
+            if stage in ("generation", "geometry", "depth", "segmentation", "discovery", "model_review"):
                 _validate_research_runtime(research_protocol,self.pins,stage)
         gates = ("license",) if purpose == "runtime_validation" else ("license","runtime") if purpose == "quality_validation" else ("license","quality","runtime")
         for gate in gates:
@@ -2154,7 +2154,7 @@ def providers_from_manifest(snapshot: Mapping[str,Any], *, _research=False) -> d
             from ..providers.gemini import GEMINI_MODEL_ID
             if pins.get("model") != GEMINI_MODEL_ID:
                 raise PlatformError("discovery_model_pin_mismatch")
-            adapter = 'gemini-bounded-discovery-v2' if stage == 'discovery' else 'gemini-bounded-model-review-v1'
+            adapter = 'gemini-bounded-discovery-v2' if stage == 'discovery' else 'gemini-bounded-model-review-v2'
             if config.get('provider') != 'gemini' or pins.get('adapter') != adapter:
                 raise PlatformError('gemini_adapter_pin_mismatch', 409, stage=stage)
             # The pinned request admits <=16,384 input and <=8,192 output/thinking
@@ -2265,7 +2265,7 @@ def _research_stage(protocol, provider_manifest):
     stage = protocol.get('stage', 'generation')
     if stage not in {'generation', 'geometry', 'depth', 'discovery', 'segmentation', 'model_review'} or set(provider_manifest) != {stage}:
         raise PlatformError('research_stage_mismatch', 409)
-    if stage == 'discovery' and protocol.get('purpose') != 'runtime_validation':
+    if stage in ('discovery', 'model_review') and protocol.get('purpose') != 'runtime_validation':
         raise PlatformError('invalid_research_purpose', 409)
     return stage
 
@@ -2281,9 +2281,11 @@ def _validate_research_protocol(protocol):
         raise PlatformError("invalid_research_purpose",409)
     stage = protocol.get('stage', 'generation')
     fields = ("id", "baselineRevision", "split") + (("entityId",) if stage == 'generation' else ('entityId', 'observationId') if stage == 'segmentation' else ())
-    if stage in ('segmentation', 'discovery') and protocol['purpose'] != 'runtime_validation':
+    if stage in ('segmentation', 'discovery', 'model_review') and protocol['purpose'] != 'runtime_validation':
         raise PlatformError('invalid_research_purpose', 409)
-    if stage == 'discovery' and any(k in protocol for k in ('entityId', 'observationId', 'seed')):
+    if stage in ('discovery', 'model_review') and any(k in protocol for k in ('entityId', 'observationId', 'seed')):
+        raise PlatformError('frozen_research_protocol_required', 409)
+    if stage == 'model_review' and protocol.get('mode') != 'inventory':
         raise PlatformError('frozen_research_protocol_required', 409)
     if any(not isinstance(protocol.get(k),str) or not protocol[k] for k in fields) or not isinstance(protocol["metricDefinitions"],dict) or not protocol["metricDefinitions"] or not isinstance(protocol["policyThresholds"],dict):
         raise PlatformError("frozen_research_protocol_required",409)
@@ -2298,7 +2300,7 @@ def _validate_research_protocol(protocol):
 
 
 def _validate_research_runtime(protocol,pins,stage='generation'):
-    if stage == 'discovery':
+    if stage in ('discovery', 'model_review'):
         from importlib.metadata import version
         from ..providers import gemini
         runtime = (protocol.get('runtimeManifest') or {}).get(stage) or {}
@@ -2307,7 +2309,7 @@ def _validate_research_runtime(protocol,pins,stage='generation'):
                     'geminiAdapterSourceSha256', 'googleGenaiVersion'} or
                 runtime.get('pins') != pins or runtime.get('provider') != 'gemini' or
                 runtime.get('endpoint') != gemini.GEMINI_MODEL_ID or pins.get('model') != gemini.GEMINI_MODEL_ID or
-                pins.get('adapter') != 'gemini-bounded-discovery-v2' or
+                pins.get('adapter') != ('gemini-bounded-discovery-v2' if stage == 'discovery' else 'gemini-bounded-model-review-v2') or
                 runtime.get('googleGenaiVersion') != '2.11.0' or version('google-genai') != '2.11.0' or
                 runtime.get('adapterSourceSha256') != hashlib.sha256(Path(__file__).read_bytes()).hexdigest() or
                 runtime.get('geminiAdapterSourceSha256') != hashlib.sha256(Path(gemini.__file__).read_bytes()).hexdigest()):
@@ -2357,7 +2359,7 @@ def validate_research_manifest(protocol, provider_manifest):
     if config.get("paid",True) is not True or type(cost) not in (int,float) or not np.isfinite(cost) or not 0 < cost <= protocol["callLimits"]["maxCostPerCallUsd"]:
         raise PlatformError("research_call_budget_invalid",409)
     if stage != 'generation':
-        if stage == 'discovery':
+        if stage in ('discovery', 'model_review'):
             if config.get('provider') != 'gemini':
                 raise PlatformError('research_runtime_unpinned', 409)
             _validate_research_runtime(protocol, config.get('pins', {}), stage)
@@ -2395,7 +2397,8 @@ def _research_capture_input(repository, blobs, job, stage, image_ids=None):
     """Freeze only bytes belonging to captured photos in this immutable source scene."""
     _, source, captured = _capture(repository, blobs, job)
     ids = [image['id'] for image in captured] if image_ids is None else image_ids
-    if (not isinstance(ids, list) or not ids or any(not isinstance(i, str) for i in ids)
+    if (stage == 'model_review' and image_ids is None or
+            not isinstance(ids, list) or not ids or any(not isinstance(i, str) for i in ids)
             or len(ids) != len(set(ids)) or not 1 <= len(ids) <= (4 if stage == 'geometry' else 1)):
         raise PlatformError('research_capture_images_invalid', 409)
     lookup = {image['id']: image for image in captured}
@@ -2410,6 +2413,8 @@ def _research_capture_input(repository, blobs, job, stage, image_ids=None):
     payload = {'images': [_image_payload(i) for i in selected]} if stage == 'geometry' else {'image': _image_payload(selected[0])}
     if stage == 'discovery':
         payload['discoveryContractVersion'] = 'geometry_role_v1'
+    elif stage == 'model_review':
+        payload = _inventory_review_input(source, selected[0])
     images = [{k: image[k] for k in ('id', 'assetId', 'sha256', 'pixelMapping') if k in image} for image in selected]
     return payload, images
 
@@ -2448,7 +2453,7 @@ def _validate_research_inputs(job, stage, payload, images, provider_manifest, pr
         raise PlatformError("admin_research_job_required",403)
     if protocol["baselineRevision"] != job["baseRevisionId"] or [i["sha256"] for i in images] != protocol["inputHashes"] or digest(_packed(payload)) != protocol["payloadSha256"] or (stage == "generation" and payload.get("entityId") != protocol["entityId"]):
         raise PlatformError("research_input_hash_mismatch",409)
-    if stage in ('geometry', 'depth', 'segmentation', 'discovery'):
+    if stage in ('geometry', 'depth', 'segmentation', 'discovery', 'model_review'):
         if repository is None or blobs is None:
             raise PlatformError('research_capture_source_required', 409)
         if stage == 'segmentation':
@@ -2501,6 +2506,21 @@ def run_research_stage(repository,blobs,job,stage,payload,images,provider_manife
                 raise PlatformError('discovery_empty', 409)
         except (PlatformError, ValueError, TypeError, KeyError) as exc:
             code = exc.code if isinstance(exc,PlatformError) else 'invalid_discovery_response'
+            validation[0].update(admissionStatus='rejected', reason=code)
+            errors.append({'stage':stage, 'code':code, 'outputAssetId':asset['id']})
+    elif stage == 'model_review':
+        _,document,captured = _capture(repository,blobs,job)
+        image = next(image for image in captured if image['id'] == images[0]['id'])
+        validation = [{'imageId':image['id'], 'mode':'inventory',
+            'qualityStatus':'not_evaluated_against_physical_ground_truth'}]
+        try:
+            report = _admit_inventory_review(deepcopy(document),image,payload,response,asset)
+            validation[0].update(report, admissionStatus='accepted')
+            if report['unresolvedRegions']:
+                errors.append({'stage':stage, 'code':'inventory_unresolved_regions',
+                    'imageId':image['id'], 'outputAssetId':asset['id']})
+        except (PlatformError, ValueError, TypeError, KeyError) as exc:
+            code = exc.code if isinstance(exc,PlatformError) else 'inventory_review_invalid'
             validation[0].update(admissionStatus='rejected', reason=code)
             errors.append({'stage':stage, 'code':code, 'outputAssetId':asset['id']})
     elif stage == 'segmentation':

@@ -7,6 +7,8 @@ An explicit geometry/depth/discovery stage instead selects owned capture imageId
 and requires no prior entities, masks or geometry. Depth/discovery select one photo.
 Segmentation runtime validation selects an explicit owned entityId/observationId;
 its original photo and saved box are used without requiring a previous mask.
+Model-review runtime validation requires mode=inventory and one explicit owned
+imageId; it freezes that image's saved observations and never updates the scene.
 Configuration and budget come from the existing platform runtime environment.
 --prepare performs reads only; --submit enqueues the prepared envelope for the
 ordinary worker. Neither command invokes a model or modifies a scene head.
@@ -27,16 +29,18 @@ from ehs_spatial.platform.research_authority import admin_context, check_budget,
 
 def prepare(protocol, repository, blobs, provider_manifest, runtime_manifest):
     allowed = {"id", "purpose", "projectId", "branchId", "baselineRevision", "entityId", "observationId",
-               "metricDefinitions", "policyThresholds", "split", "callLimits", "seed", "stage", "imageIds"}
-    required = allowed - {"observationId", "seed", "stage", "imageIds", "entityId"}
+               "metricDefinitions", "policyThresholds", "split", "callLimits", "seed", "stage", "imageIds", "mode"}
+    required = allowed - {"observationId", "seed", "stage", "imageIds", "entityId", "mode"}
     if not isinstance(protocol, dict) or not required <= set(protocol) or set(protocol) - allowed:
         raise PlatformError("frozen_research_protocol_required", 409)
     stage = protocol.get('stage', 'generation')
-    if stage not in ('generation', 'geometry', 'depth', 'segmentation', 'discovery'):
+    if stage not in ('generation', 'geometry', 'depth', 'segmentation', 'discovery', 'model_review'):
         raise PlatformError('research_stage_unsupported', 409)
     if (stage == 'generation' and ('entityId' not in protocol or 'imageIds' in protocol)
-            or stage in ('geometry', 'depth', 'discovery') and any(k in protocol for k in ('entityId', 'observationId', 'seed'))
-            or stage == 'discovery' and protocol['purpose'] != 'runtime_validation'
+            or stage in ('geometry', 'depth', 'discovery', 'model_review') and any(k in protocol for k in ('entityId', 'observationId', 'seed'))
+            or stage in ('discovery', 'model_review') and protocol['purpose'] != 'runtime_validation'
+            or stage == 'model_review' and protocol.get('mode') != 'inventory'
+            or stage != 'model_review' and 'mode' in protocol
             or stage == 'segmentation' and (not {'entityId', 'observationId'} <= set(protocol) or
                 any(k in protocol for k in ('imageIds', 'seed')) or protocol['purpose'] != 'runtime_validation')):
         raise PlatformError('frozen_research_protocol_required', 409)
@@ -47,7 +51,7 @@ def prepare(protocol, repository, blobs, provider_manifest, runtime_manifest):
     base_sha = digest(source["document"])
     job = {"id": str(uuid5(NAMESPACE_URL, protocol["id"])), "kind": "validate_model", "projectId": project_id,
            "baseRevisionId": base_id, "inputs": {}, "config": {}}
-    if stage in ('geometry', 'depth', 'segmentation', 'discovery'):
+    if stage in ('geometry', 'depth', 'segmentation', 'discovery', 'model_review'):
         if stage == 'segmentation':
             payload, images, snapshot, refs = _research_segmentation_input(repository, blobs, job, protocol['entityId'], protocol['observationId'])
             protocol['sourceObservation'] = snapshot

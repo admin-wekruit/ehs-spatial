@@ -15,7 +15,7 @@ from test_platform_backend import repo, project, identity
 from test_platform_reconstruction import Repo, geometry_response, depth_response
 
 
-def preparation(tmp_path, monkeypatch, stage):
+def preparation(tmp_path, monkeypatch, stage, *, owned_observation=False):
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)
     repo.paid_budget = .01
@@ -35,11 +35,12 @@ def preparation(tmp_path, monkeypatch, stage):
     runtime = {stage: {'pins': pins, 'modalImageId': 'im-' + 'a' * 22,
                        'adapterSourceSha256': 'f' * 64,
                        'distribution': 'mapanything' if stage == 'geometry' else 'moge'}}
-    if stage == 'discovery':
+    if stage in ('discovery','model_review'):
         import hashlib
         from pathlib import Path
         from ehs_spatial.providers import gemini
-        pins = {'model':'gemini-3.5-flash', 'adapter':'gemini-bounded-discovery-v2'}
+        pins = {'model':'gemini-3.5-flash', 'adapter':
+            'gemini-bounded-discovery-v2' if stage == 'discovery' else 'gemini-bounded-model-review-v2'}
         repo.paid_budget = .1
         manifest = {stage:{'provider':'gemini', 'pins':pins, 'paid':True, 'estimatedCostUsd':.1,
             'releaseEvidence':{'pins':pins, 'license':{'status':'passed','artifactSha256':'c'*64},
@@ -53,15 +54,21 @@ def preparation(tmp_path, monkeypatch, stage):
         'metricDefinitions': {'sourceGrid': 'source image and returned grid agree'},
         'policyThresholds': {}, 'split': 'test-only',
         'callLimits': {'maxCalls': 1, 'maxCostPerCallUsd': .01, 'maxTotalCostUsd': .01}}
-    if stage == 'discovery':
+    if stage in ('discovery','model_review'):
         protocol['callLimits'].update(maxCostPerCallUsd=.1,maxTotalCostUsd=.1)
-    if stage in ('depth','discovery'):
+    if stage in ('depth','discovery','model_review'):
         protocol['imageIds'] = [repo.capture['images'][0]['id']]
+    if stage == 'model_review':
+        protocol['mode'] = 'inventory'
+    if owned_observation:
+        reconstruction._discover(repo.document,repo.capture['images'][0],
+            {'items':[{'label':'control','box':[1,1,8,8],
+                'evidence':'A small circular face.','geometryRole':'object'}]},repo.assets[0])
     frozen = cli.prepare(protocol, repo, blobs, manifest, runtime)
     return repo, blobs, manifest, frozen
 
 
-@pytest.mark.parametrize('stage', ['geometry', 'depth', 'discovery'])
+@pytest.mark.parametrize('stage', ['geometry', 'depth', 'discovery', 'model_review'])
 def test_prepare_first_runtime_validation_without_an_entity_or_geometry(tmp_path, monkeypatch, stage):
     repo, blobs, manifest, frozen = preparation(tmp_path, monkeypatch, stage)
     assert not repo.document['entities'] and not repo.calls
@@ -730,14 +737,15 @@ def test_discovery_revalidates_owned_photo_even_after_envelope_rehash(tmp_path,m
     assert not repo.calls
 
 
+@pytest.mark.parametrize('stage', ['discovery','model_review'])
 @pytest.mark.parametrize('field,value', [('adapterSourceSha256','f'*64),
     ('geminiAdapterSourceSha256','f'*64),('googleGenaiVersion','future-unreviewed'),
     ('endpoint','different-model'),('provider','different-provider')])
-def test_discovery_runtime_binds_local_adapters_and_sdk(tmp_path,monkeypatch,field,value):
-    repo,blobs,manifest,frozen = preparation(tmp_path,monkeypatch,'discovery')
-    frozen['protocol']['runtimeManifest']['discovery'][field] = value
+def test_gemini_research_runtime_binds_local_adapters_and_sdk(tmp_path,monkeypatch,stage,field,value):
+    repo,blobs,manifest,frozen = preparation(tmp_path,monkeypatch,stage)
+    frozen['protocol']['runtimeManifest'][stage][field] = value
     with pytest.raises(PlatformError,match='research_runtime_unpinned'):
-        reconstruction._validate_research_runtime(frozen['protocol'],manifest['discovery']['pins'],'discovery')
+        reconstruction._validate_research_runtime(frozen['protocol'],manifest[stage]['pins'],stage)
     assert not repo.calls
 
 
@@ -779,13 +787,14 @@ def test_discovery_prepare_requires_exactly_one_owned_photo(tmp_path,monkeypatch
     assert not repo.calls
 
 
+@pytest.mark.parametrize('stage', ['discovery','model_review'])
 @pytest.mark.parametrize('empty', [False,True])
-def test_discovery_admin_worker_retains_artifact_without_scene_mutation(repo,tmp_path,monkeypatch,empty):
+def test_gemini_admin_worker_retains_artifact_without_scene_mutation(repo,tmp_path,monkeypatch,stage,empty):
     from decimal import Decimal
     from ehs_spatial.providers.gemini import GeminiAdapter
     from panoptes_worker.__main__ import run_job
     with monkeypatch.context() as local:
-        source,blobs,manifest,template = preparation(tmp_path,local,'discovery')
+        source,blobs,manifest,template = preparation(tmp_path,local,stage)
     repo.blobs = blobs
     cap,scene = project(repo)
     pid,bid = scene['project']['id'],scene['branch']['id']
@@ -799,14 +808,28 @@ def test_discovery_admin_worker_retains_artifact_without_scene_mutation(repo,tmp
         'policyThresholds','split','callLimits')}
     protocol.update(projectId=pid,branchId=bid,baselineRevision=baseline,
         imageIds=[capture['capture']['images'][0]['id']])
+    if stage == 'model_review':
+        protocol['mode'] = 'inventory'
     repo.paid_budget = Decimal('.1')
     frozen = cli.prepare(protocol,repo,blobs,manifest,template['protocol']['runtimeManifest'])
     prepared = {'validation':frozen,'sha256':digest(frozen)}
+    if stage == 'model_review':
+        for changed in ('inventory','baseline'):
+            forged = deepcopy(frozen)
+            if changed == 'inventory':
+                forged['payload']['observations'] = [{'id':'foreign-observation'}]
+                forged['protocol']['payloadSha256'] = digest(forged['payload'])
+            else:
+                forged['baseDocumentSha256'] = 'f'*64
+            with pytest.raises(PlatformError,match='research_input_hash_mismatch'):
+                cli.submit({'validation':forged,'sha256':digest(forged)},repo,blobs)
+        with repo._connect() as connection:
+            assert connection.execute('SELECT count(*) AS n FROM model_calls').fetchone()['n'] == 0
     job = cli.submit(prepared,repo,blobs)
     assert cli.submit(prepared,repo,blobs)['id'] == job['id']
     seen = []
     def create(self,operation,**kwargs):
-        assert operation == 'platform.discovery'
+        assert operation == 'platform.'+stage
         with repo._connect() as connection:
             calls = connection.execute('SELECT * FROM model_calls WHERE job_id=%s',(job['id'],)).fetchall()
         assert len(calls) == 1 and calls[0]['status'] == 'reserved'
@@ -815,12 +838,25 @@ def test_discovery_admin_worker_retains_artifact_without_scene_mutation(repo,tmp
             budget_evidence={'inputTokenCount':11,'maxInputTokens':16384,'maxOutputTokens':8192})
     parsed = SimpleNamespace(items=[] if empty else [SimpleNamespace(label='small control',
         box_2d=[100,100,600,600],evidence='visible fixture',geometry_role='object')])
+    if stage == 'model_review':
+        parsed = reconstruction._InventoryReviewResponse.model_validate({
+            'inventorySha256':frozen['payload']['inventorySha256'], 'observationIds':[],
+            'reason':'A visible fixture requires identification.' if empty else 'One visible control was omitted.',
+            'additions':[] if empty else [{'label':'control','box_2d':[100,100,600,600],
+                'evidence':'A small circular face.','geometry_role':'object'}],
+            'unresolvedRegions':[{'box_2d':[100,100,600,600],'evidence':'The boundary is unclear.'}] if empty else []})
     monkeypatch.setattr(GeminiAdapter,'create_bounded_structured',create)
     monkeypatch.setattr(GeminiAdapter,'_parse',lambda *a:(parsed,'discovery-request-fixture'))
     result = run_job(repo,blobs,job['id'])
     assert result['status'] == ('incomplete' if empty else 'succeeded')
-    assert result['result']['outputValidation'][0]['itemCount'] == (0 if empty else 1)
-    assert result['result']['outputValidation'][0]['completenessStatus'] == 'not_assessed'
+    validation = result['result']['outputValidation'][0]
+    if stage == 'discovery':
+        assert validation['itemCount'] == (0 if empty else 1)
+        assert validation['completenessStatus'] == 'not_assessed'
+    else:
+        assert len(validation['addedObservationIds']) == (0 if empty else 1)
+        assert validation['inventoryReviewStatus'] == ('needs_information' if empty else 'assessed')
+        assert validation['certainty'] == 'not_ground_truth'
     assert result['resultRevisionId'] is None and not result['headAdvanced']
     output = repo.get_asset(result['result']['outputAssetId'])
     stored = reconstruction._Stages(repo,blobs,job,{}).load(output)['output']
@@ -835,3 +871,101 @@ def test_discovery_admin_worker_retains_artifact_without_scene_mutation(repo,tmp
     assert repo.get_project(pid)['branches'][0]['headRevisionId'] == baseline
     assert repo.get_revision(baseline)['document'] == capture['revision']['document']
     assert not capture['revision']['document']['entities'] and not capture['revision']['document']['observations']
+
+
+@pytest.mark.parametrize('bad', ['foreign_observation','foreign_owner','missing_observation','box',
+    'label_evidence','pixel_mapping','source_revision','source_owner','mode','image_bytes'])
+def test_inventory_research_rederives_owned_snapshot_before_any_call(tmp_path,monkeypatch,bad):
+    repo,blobs,manifest,frozen = preparation(tmp_path,monkeypatch,'model_review',owned_observation=True)
+    payload,protocol = frozen['payload'],frozen['protocol']
+    observation = payload['observations'][0]
+    if bad == 'foreign_observation': observation['id'] = 'foreign-observation'
+    elif bad == 'foreign_owner': observation['entityId'] = 'foreign-entity'
+    elif bad == 'missing_observation': payload['observations'] = []
+    elif bad == 'box': observation['originalPixelBox'] = [2,2,9,9]
+    elif bad == 'label_evidence': observation['labelEvidence'][0]['label'] = 'forged-label'
+    elif bad == 'pixel_mapping': observation['pixelMapping'] = [{'forged':True}]
+    elif bad == 'source_revision': repo.document['observations'][0]['revision'] += 1
+    elif bad == 'source_owner': repo.document['entities'][0]['observationRefs'] = []
+    elif bad == 'mode': payload['mode'] = 'candidate'
+    else: payload['image']['dataUri'] += 'AAAA'
+    # Neither a recomputed inventory hash nor a rehashed outer envelope grants ownership.
+    payload['inventorySha256'] = digest({'imageId':payload['image']['imageId'],
+        'imageSha256':payload['image']['sha256'],'observations':payload['observations']})
+    protocol['payloadSha256'] = digest(payload)
+    job = {**repo.job,'kind':'validate_model','config':{'researchProtocolSha256':digest(protocol)}}
+    with pytest.raises(PlatformError):
+        reconstruction.run_research_stage(repo,blobs,job,'model_review',payload,frozen['images'],manifest,protocol)
+    assert not repo.calls
+
+
+@pytest.mark.parametrize('bad', ['missing_mode','candidate_mode','quality_validation','entity','observation','seed',
+    'missing_image_selection','two_images'])
+def test_inventory_research_requires_explicit_runtime_mode_and_one_photo(tmp_path,monkeypatch,bad):
+    repo,blobs,manifest,frozen = preparation(tmp_path,monkeypatch,'model_review')
+    protocol = {k:frozen['protocol'][k] for k in ('id','stage','purpose','mode','projectId','branchId',
+        'baselineRevision','metricDefinitions','policyThresholds','split','callLimits','imageIds')}
+    if bad == 'missing_mode': protocol.pop('mode')
+    elif bad == 'candidate_mode': protocol['mode'] = 'candidate'
+    elif bad == 'quality_validation': protocol['purpose'] = 'quality_validation'
+    elif bad == 'entity': protocol['entityId'] = 'entity'
+    elif bad == 'observation': protocol['observationId'] = 'observation'
+    elif bad == 'seed': protocol['seed'] = 0
+    elif bad == 'missing_image_selection': protocol.pop('imageIds')
+    else: protocol['imageIds'] = [i['id'] for i in repo.capture['images']]
+    with pytest.raises(PlatformError):
+        cli.prepare(protocol,repo,blobs,manifest,frozen['protocol']['runtimeManifest'])
+    assert not repo.calls
+
+
+@pytest.mark.parametrize('outcome', ['empty_valid','addition','unresolved','wrong_hash','foreign_observation'])
+def test_inventory_research_admits_on_disposable_scene_and_replays_cached_result(tmp_path,monkeypatch,outcome):
+    repo,blobs,manifest,frozen = preparation(tmp_path,monkeypatch,'model_review',owned_observation=outcome!='empty_valid')
+    payload,protocol = frozen['payload'],frozen['protocol']
+    review = {'inventorySha256':payload['inventorySha256'],
+        'observationIds':[o['id'] for o in payload['observations']], 'reason':'Visible content examined.',
+        'additions':[], 'unresolvedRegions':[]}
+    if outcome == 'addition':
+        review['additions'] = [{'label':'attached control','box_2d':[700,700,900,900],
+            'evidence':'Separate circular control face.','geometry_role':'object'}]
+    elif outcome == 'unresolved':
+        review['unresolvedRegions'] = [{'box_2d':[700,700,900,900],'evidence':'Boundary partly hidden.'}]
+    elif outcome == 'wrong_hash': review['inventorySha256'] = 'f'*64
+    elif outcome == 'foreign_observation': review['observationIds'] = ['foreign-observation']
+    spec = reconstruction.providers_from_manifest(manifest,_research=True)['model_review']
+    monkeypatch.setattr(reconstruction,'providers_from_manifest',lambda *a,**kw:{
+        'model_review':replace(spec,invoke=lambda request:{'review':deepcopy(review)},records_dispatch=False)})
+    job = {**repo.job,'kind':'validate_model','config':{'researchProtocolSha256':digest(protocol)}}
+    before = canonical(repo.document)
+    results = [reconstruction.run_research_stage(repo,blobs,job,'model_review',payload,
+        frozen['images'],manifest,protocol) for _ in range(2)]
+    valid = outcome in ('empty_valid','addition')
+    for result in results:
+        assert result['status'] == ('succeeded' if valid else 'incomplete')
+        assert result['scope'] == 'research_only' and result['sceneRevision'] is None
+        assert result['productReleaseStatus'] == 'not_changed'
+        validation = result['outputValidation'][0]
+        assert validation['qualityStatus'] == 'not_evaluated_against_physical_ground_truth'
+        assert validation['admissionStatus'] == ('rejected' if outcome in ('wrong_hash','foreign_observation') else 'accepted')
+        if outcome in ('empty_valid','addition','unresolved'):
+            assert len(validation['addedObservationIds']) == int(outcome=='addition')
+            assert validation['inventoryReviewStatus'] == ('needs_information' if outcome=='unresolved' else 'assessed')
+            assert validation['certainty'] == 'not_ground_truth'
+        output = reconstruction._Stages(repo,blobs,job,{}).load(repo.get_asset(result['outputAssetId']))
+        assert output['output']['review'] == review
+    assert len(repo.calls) == 1 and [r['newModelCalls'] for r in results] == [1,0]
+    assert canonical(repo.document) == before
+
+
+def test_inventory_research_loader_rejects_stale_baseline_hash_before_call(tmp_path,monkeypatch):
+    repo,blobs,manifest,frozen = preparation(tmp_path,monkeypatch,'model_review',owned_observation=True)
+    blob = blobs.put(canonical(frozen),'application/json')
+    blob['metadata'] = {'kind':'stage_validation_input','stage':'model_review','scope':'research_only'}
+    asset = repo.register_asset(repo.pid,blob)
+    job = {**repo.job,'kind':'validate_model','branchId':frozen['branchId'],
+        'inputs':{'validationAssetId':asset['id'],'validationSha256':asset['sha256']},
+        'config':{'researchProtocolSha256':digest(frozen['protocol'])}}
+    repo.document['observations'][0]['revision'] += 1
+    with pytest.raises(PlatformError,match='research_input_hash_mismatch'):
+        reconstruction.run_research_job(repo,blobs,job)
+    assert not repo.calls
