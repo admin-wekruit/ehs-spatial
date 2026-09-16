@@ -31,6 +31,31 @@ def load_worker(monkeypatch, tmp_path, *, stub_distribution=True):
     return worker
 
 
+@pytest.mark.parametrize('format_name,media_type', [('PNG', 'image/png'), ('JPEG', 'image/jpeg')])
+def test_source_image_preserves_bytes_and_verifies_declared_mime(monkeypatch, tmp_path, format_name, media_type):
+    import base64
+    import io
+    from PIL import Image
+    worker = load_worker(monkeypatch, tmp_path)
+    stream = io.BytesIO()
+    Image.fromarray(np.full((3, 5, 3), 73, np.uint8)).save(stream, format=format_name)
+    raw = stream.getvalue()
+    encoded = base64.b64encode(raw).decode()
+    record = {'dataUri':f'data:{media_type};base64,{encoded}',
+              'sha256':hashlib.sha256(raw).hexdigest(), 'height':3, 'width':5}
+    received, rgb = worker._image(record)
+    assert received == raw and rgb.shape == (3, 5, 3)
+    other = 'image/jpeg' if media_type == 'image/png' else 'image/png'
+    with pytest.raises(ValueError, match='MIME differs'):
+        worker._image({**record, 'dataUri':f'data:{other};base64,{encoded}'})
+    with pytest.raises(ValueError, match='PNG or JPEG'):
+        worker._image({**record, 'dataUri':f'data:image/webp;base64,{encoded}'})
+    with pytest.raises(ValueError, match='hash differs'):
+        worker._image({**record, 'sha256':'0' * 64})
+    with pytest.raises(ValueError, match='dimensions differ'):
+        worker._image({**record, 'width':6})
+
+
 def test_loader_removes_depth_and_gaussian_factories_before_hydra_recurses(monkeypatch, tmp_path):
     worker = load_worker(monkeypatch, tmp_path)
     constructed = []

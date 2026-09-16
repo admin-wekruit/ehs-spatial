@@ -113,13 +113,15 @@ def _image(record):
     from PIL import Image
     import numpy as np
     prefix,encoded = record["dataUri"].split(",",1)
-    if prefix != "data:image/png;base64":
-        raise ValueError("Expected normalized PNG bytes")
+    if prefix not in ('data:image/png;base64', 'data:image/jpeg;base64'):
+        raise ValueError("Expected PNG or JPEG bytes")
     raw = base64.b64decode(encoded,validate=True)
     import hashlib
     if hashlib.sha256(raw).hexdigest() != record["sha256"]:
         raise ValueError("Source image hash differs")
     with Image.open(io.BytesIO(raw)) as image:
+        if prefix != f'data:{Image.MIME.get(image.format)};base64':
+            raise ValueError('Source image MIME differs')
         rgb = np.asarray(image.convert("RGB"))
     if rgb.shape[:2] != (record["height"],record["width"]):
         raise ValueError("Source image dimensions differ")
