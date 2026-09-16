@@ -427,7 +427,7 @@ def test_discovery_preserves_jpeg_payload_mime_and_bytes(tmp_path, monkeypatch):
     assert result['items'] == [] and digest(repo.document) == before and not repo.calls
 
 
-def fake_sam_transport(monkeypatch, failure=None):
+def fake_sam_transport(monkeypatch, failure=None, *, response=None):
     import numpy as np
     import fal_client
     import fal_client.client
@@ -454,9 +454,13 @@ def fake_sam_transport(monkeypatch, failure=None):
             if failure == 'get_timeout':
                 raise httpx.ReadTimeout('test-only unavailable result')
             if failure == 'invalid_response':
-                return {'rle':[], 'scores':[]}
+                return {'rle':[], 'scores':[.9]}
+            if failure == 'empty_response':
+                return {'rle':[], 'scores':[], 'metadata':None}
             if failure == 'invalid_response_type':
                 return ['received but not a response object']
+            if response is not None:
+                return response
             mask = np.zeros((9,13),bool)
             mask[2:8,1:11] = True
             return {'rle':[encode_coco_rle(mask)], 'scores':[.9]}
@@ -569,8 +573,8 @@ def test_segmentation_runtime_and_license_gate_before_call(tmp_path, monkeypatch
     assert not repo.calls
 
 
-@pytest.mark.parametrize('unknown', [False, True])
-def test_segmentation_admin_submit_real_worker_receipt_and_replay(repo, tmp_path, monkeypatch, unknown):
+@pytest.mark.parametrize('outcome', ['success', 'unknown', 'empty'])
+def test_segmentation_admin_submit_real_worker_receipt_and_replay(repo, tmp_path, monkeypatch, outcome):
     from decimal import Decimal
     from panoptes_worker.__main__ import run_job
     with monkeypatch.context() as local:
@@ -598,7 +602,9 @@ def test_segmentation_admin_submit_real_worker_receipt_and_replay(repo, tmp_path
     job = cli.submit(prepared, repo, blobs)
     assert cli.submit(prepared, repo, blobs)['id'] == job['id']
     before = digest(repo.get_revision(baseline)['document'])
-    events, requests = fake_sam_transport(monkeypatch, 'get_timeout' if unknown else None)
+    unknown = outcome == 'unknown'
+    events, requests = fake_sam_transport(monkeypatch,
+        'get_timeout' if unknown else 'empty_response' if outcome == 'empty' else None)
     original_dispatch = repo.record_model_call_dispatch
     def record_dispatch(call_id, attempt, request_id):
         result = original_dispatch(call_id, attempt, request_id)
@@ -609,9 +615,12 @@ def test_segmentation_admin_submit_real_worker_receipt_and_replay(repo, tmp_path
         return result
     monkeypatch.setattr(repo, 'record_model_call_dispatch', record_dispatch)
     result = run_job(repo, blobs, job['id'])
-    assert result['status'] == ('outcome_unknown' if unknown else 'succeeded')
+    assert result['status'] == ('outcome_unknown' if unknown else 'incomplete' if outcome == 'empty' else 'succeeded')
     assert result['result']['scope'] == 'research_only'
     assert result['resultRevisionId'] is None and not result['headAdvanced']
+    if outcome == 'empty':
+        assert result['result']['outputAssetId']
+        assert result['result']['outputValidation'][0]['reason'] == 'segmentation_empty'
     assert run_job(repo, blobs, job['id'])['id'] == job['id']
     assert len(requests) == 1 and events == ['post','receipt','handle','get']
     with repo._connect() as connection:
@@ -622,3 +631,49 @@ def test_segmentation_admin_submit_real_worker_receipt_and_replay(repo, tmp_path
     assert digest(repo.get_revision(baseline)['document']) == before
     assert not document['coordinateFrames'] and not document['observations'][0]['maskAssetId']
     assert manifest['segmentation']['releaseEvidence']['quality']['status'] == 'unverified'
+
+
+def test_sam_empty_detection_is_retained_as_empty_evidence_without_replay(tmp_path, monkeypatch):
+    import numpy as np
+    repo, blobs, manifest, runtime, protocol = segmentation_source(tmp_path, monkeypatch)
+    frozen = cli.prepare(protocol, repo, blobs, manifest, runtime)
+    events, requests = fake_sam_transport(monkeypatch, 'empty_response')
+    def dispatched(call_id, attempt, request_id):
+        assert attempt == repo.job['attemptToken']
+        next(c for c in repo.calls if c['id'] == call_id)['response'] = {'providerRequestId':request_id}
+        events.append('receipt')
+    monkeypatch.setattr(repo, 'record_model_call_dispatch', dispatched, raising=False)
+    job = {**repo.job, 'kind':'validate_model', 'config':{
+        'researchProtocolSha256':digest(frozen['protocol'])}}
+    before = digest(repo.document)
+    results = [reconstruction.run_research_stage(repo, blobs, job, 'segmentation',
+        frozen['payload'], frozen['images'], manifest, frozen['protocol']) for _ in range(2)]
+    for result in results:
+        assert result['status'] == 'incomplete' and result['sceneRevision'] is None
+        assert result['outputValidation'][0]['reason'] == 'segmentation_empty'
+        assert result['outputValidation'][0]['admissionStatus'] == 'rejected'
+        assert result['errors'][0]['outputAssetId'] == result['outputAssetId']
+        stored = reconstruction._Stages(repo, blobs, job, {}).load(repo.get_asset(result['outputAssetId']))['output']
+        assert stored['candidateRles'] == stored['scores'] == [] and stored['selectedCandidate'] is None
+        assert stored['providerRequestId'] == 'sam-request-test'
+        assert stored['mask'].dtype == bool and stored['mask'].shape == (9,13)
+        assert not np.any(stored['mask'])
+    assert [result['newModelCalls'] for result in results] == [1,0]
+    assert results[0]['outputAssetId'] == results[1]['outputAssetId']
+    assert len(requests) == len(repo.calls) == 1 and repo.calls[0]['status'] == 'succeeded'
+    assert events == ['post','receipt','handle','get']
+    assert digest(repo.document) == before
+
+
+@pytest.mark.parametrize('response', [{}, {'rle':None,'scores':[]}, {'rle':[],'scores':None},
+    {'rle':[],'scores':[.9]}, {'rle':['1 1'],'scores':[]}])
+def test_sam_malformed_candidates_are_not_normalized_to_empty(tmp_path,monkeypatch,response):
+    repo,blobs,manifest,runtime,protocol = segmentation_source(tmp_path,monkeypatch)
+    frozen = cli.prepare(protocol,repo,blobs,manifest,runtime)
+    events,requests = fake_sam_transport(monkeypatch,response=response)
+    provider = reconstruction.providers_from_manifest(manifest,_research=True)['segmentation']
+    with pytest.raises(reconstruction.ProviderResponseError) as error:
+        provider.invoke(frozen['payload'],on_dispatched=lambda request_id:events.append('receipt'))
+    assert error.value.outcome == 'failed'
+    assert error.value.telemetry['providerRequestId'] == 'sam-request-test'
+    assert len(requests) == 1 and events == ['post','receipt','handle','get']

@@ -1926,13 +1926,16 @@ def _sam_invoke(payload, *, on_dispatched):
         raise ProviderResponseError(_telemetry(receipt), outcome='outcome_unknown') from None
     metadata = {**receipt, 'telemetry':{'usage':response.get('usage')} if isinstance(response,dict) else {}}
     try:
-        rles = response.get("rle") or []
+        rles = response.get("rle")
         rles = [rles] if isinstance(rles,str) else rles
-        scores = response.get("scores") or []
-        if not rles or len(scores) != len(rles) or not np.isfinite(np.asarray(scores, dtype=float)).all():
+        scores = response.get("scores")
+        if (not isinstance(rles,list) or not all(isinstance(rle,str) for rle in rles)
+                or not isinstance(scores,list) or len(scores) != len(rles)
+                or not np.isfinite(np.asarray(scores, dtype=float)).all()):
             raise ValueError('invalid segmentation candidates')
-        selected = int(np.argmax(scores))
-        mask = decode_coco_rle(rles[selected],height=image["height"],width=image["width"])
+        selected = int(np.argmax(scores)) if rles else None
+        mask = (decode_coco_rle(rles[selected],height=image["height"],width=image["width"]) if selected is not None
+                else np.zeros((image['height'],image['width']),dtype=bool))
     except Exception:
         raise ProviderResponseError(_telemetry(metadata)) from None
     return {"mask":mask.astype(bool),"selectedCandidate":selected,"candidateRles":rles,"scores":scores,"providerRequestId":handle.request_id,
