@@ -39,7 +39,16 @@ def create_app(catalog_dir: str | Path, *, allowed_origins: list[str], feedback=
     directories = sorted(path for path in root.iterdir() if path.is_dir())
     if not directories:
         raise ValueError("Publication catalog is empty")
-    responses, files, bundles = {}, {}, []
+    responses, files, bundles, revisions = {}, {}, [], {}
+
+    def shared_revision(revision):
+        # Exports repeat frozen revisions across routes and publications. Share
+        # only after comparing the complete payload; these records stay read-only.
+        shared = revisions.setdefault(revision["id"], revision)
+        if shared != revision:
+            raise ValueError(f"Conflicting immutable route payload: /api/revisions/{revision['id']}")
+        return shared
+
     for directory in directories:
         if str(UUID(directory.name)) != directory.name:
             raise ValueError("Catalog directories must be publication IDs")
@@ -56,6 +65,17 @@ def create_app(catalog_dir: str | Path, *, allowed_origins: list[str], feedback=
         revision = publication["snapshot"]["revision"]
         if revision["id"] != publication["sceneRevisionId"] or revision["projectId"] != bundle["projectId"] or saved["/api/revisions/" + revision["id"]] != revision:
             raise ValueError("Publication revision mismatch")
+        for path, value in saved.items():
+            if path.startswith("/api/revisions/"):
+                saved[path] = shared_revision(value)
+        for key in ("revision", "reconstructionRevision"):
+            if publication["snapshot"].get(key) is not None:
+                publication["snapshot"][key] = shared_revision(publication["snapshot"][key])
+        detail = saved["/api/projects/" + bundle["projectId"]]
+        if detail.get("revision") is not None:
+            detail["revision"] = shared_revision(detail["revision"])
+        history = saved["/api/projects/" + bundle["projectId"] + "/revisions"]
+        history["items"] = [shared_revision(item) for item in history["items"]]
         summaries = saved["/api/publications"]["items"]
         if len(summaries) != 1 or any(summaries[0][key] != publication[key] for key in ("id", "projectId", "sceneRevisionId", "createdAt")):
             raise ValueError("Publication summary mismatch")

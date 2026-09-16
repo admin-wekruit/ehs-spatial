@@ -3,6 +3,7 @@ import argparse
 from copy import deepcopy
 from datetime import datetime
 import hashlib
+import inspect
 import json
 from pathlib import Path
 import sys
@@ -133,10 +134,26 @@ def regressions():
         # and directory name. File order/export time must not choose the head.
         older, old = fixture(root, str(UUID(int=900)), "project-a", "revision-old", "asset-old", "2026-09-13T05:00:00.100000+01:00", "Older release")
         newer, new = fixture(root, str(UUID(int=2)), "project-a", "revision-new", "asset-new", "2026-09-12T23:00:00.100001-05:00", "Newer release")
+        old_revision = old["responses"]["/api/revisions/revision-old"]
+        new["responses"]["/api/publications/" + new["publicationId"]]["snapshot"]["reconstructionRevision"] = old_revision
+        new["responses"]["/api/revisions/revision-old"] = old_revision
+        new["responses"]["/api/projects/project-a/revisions"]["items"].append(old_revision)
+        (newer / "bundle.json").write_text(json.dumps(new))
         fixture(root, str(UUID(int=3)), "project-b", "revision-other", "asset-other", "2026-09-13T03:00:00+00:00", "Another project")
         publication_count, _, asset_count = check(root)
         assert publication_count == 3 and asset_count == 3
-        with TestClient(create_app(root, allowed_origins=[])) as client:
+        app = create_app(root, allowed_origins=[])
+        record = next(route.endpoint for route in app.routes if route.path == "/api/{path:path}")
+        saved = inspect.getclosurevars(record).nonlocals["responses"]
+        current = saved["/api/revisions/revision-new"]
+        assert saved["/api/publications/" + new["publicationId"]]["snapshot"]["revision"] is current
+        assert saved["/api/projects/project-a"]["revision"] is current
+        assert saved["/api/projects/project-a/revisions"]["items"][0] is current
+        historical = saved["/api/revisions/revision-old"]
+        assert saved["/api/publications/" + old["publicationId"]]["snapshot"]["revision"] is historical
+        assert saved["/api/publications/" + new["publicationId"]]["snapshot"]["reconstructionRevision"] is historical
+        assert saved["/api/projects/project-a/revisions"]["items"][1] is historical
+        with TestClient(app) as client:
             assert [item["id"] for item in client.get("/api/publications").json()["items"]] == [new["publicationId"], old["publicationId"], str(UUID(int=3))]
             assert client.get("/api/projects/project-a").json()["revision"]["id"] == "revision-new"
             assert client.get("/api/projects/project-a/revisions").json()["items"][0]["id"] == "revision-new"
@@ -149,6 +166,23 @@ def regressions():
             assert "catalog" in str(error)
         else:
             raise AssertionError("A single bundle was accepted as a catalog")
+        for location in (
+            ("/api/projects/project-a", "revision"),
+            ("/api/projects/project-a/revisions", "items", 0),
+            ("/api/publications/" + new["publicationId"], "snapshot", "reconstructionRevision"),
+        ):
+            broken = json.loads(json.dumps(new))
+            altered = broken["responses"]
+            for key in location:
+                altered = altered[key]
+            altered["document"]["annotations"].append({"id": "conflicting-content"})
+            (newer / "bundle.json").write_text(json.dumps(broken))
+            try:
+                create_app(root, allowed_origins=[])
+            except ValueError as error:
+                assert "Conflicting immutable route payload" in str(error)
+            else:
+                raise AssertionError(f"Conflicting embedded revision was shared: {location}")
         broken = deepcopy(new)
         broken["responses"]["/api/revisions/revision-old"] = {**old["responses"]["/api/revisions/revision-old"], "label": "silently replaced"}
         (newer / "bundle.json").write_text(json.dumps(broken))
@@ -169,7 +203,7 @@ def regressions():
             assert "hash mismatch" in str(error)
         else:
             raise AssertionError("Corrupt historical asset was accepted")
-    print("PASS: multi-publication history, precise time ordering, latest project projection, catalog union, old assets, immutable conflict, corruption, CORS, ranges and write rejection")
+    print("PASS: shared immutable revisions, full-content conflicts, multi-publication history, precise time ordering, latest project projection, catalog union, old assets, corruption, CORS, ranges and write rejection")
 
 
 if __name__ == "__main__":

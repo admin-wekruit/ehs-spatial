@@ -54,11 +54,19 @@ forks and new model jobs remain in the full platform.
    ```
 
    The publication container reserves 3 GiB of memory. On 2026-09-15, loading
-   ten frozen bundles with `create_app` in a fresh local Python process peaked
-   at 1,643,692,032 bytes of RSS (1,567.5 MiB), before Modal's container runtime and
-   request handling. Reserve response serialization headroom in addition to
-   catalog loading. Recheck startup RSS when expanding the catalog; keep complete
-   publication and asset hash verification.
+   eleven frozen bundles in a fresh local Python process peaked at
+   1,467,498,496 bytes of RSS (1,399.5 MiB), down from 2,361,081,856 bytes
+   (2,251.7 MiB) before sharing repeated revisions. The loader compares each
+   revision's complete content before sharing its read-only object across
+   snapshots and routes; conflicting content and corrupt assets still reject
+   the catalog. This measurement excludes Modal's runtime and concurrent
+   response serialization. Reserve that headroom and remeasure after adding
+   bundles. On macOS, the command below reports peak RSS in bytes:
+
+   ```sh
+   /usr/bin/time -l .venv/bin/python -c \
+     'from ehs_spatial.platform.publication_site import create_app; create_app(".platform/publication-catalog", allowed_origins=[])'
+   ```
 
 3. Build the website with `VITE_PUBLICATION_ID=PUBLICATION_UUID` and
    `VITE_API_ORIGIN` set to the returned HTTPS origin. Use a separate output path
