@@ -184,6 +184,7 @@ def audit_correspondence(document):
             'activeModelRepresentationId': active_id, 'modelDeclared': declared, 'modelCurrent': current,
             'modelAvailable': available,
             'placementState': (active or {}).get('placementState'), 'shapeStatus': (active or {}).get('shapeStatus'),
+            'qualityStatus': ((active or {}).get('qualityEvidence') or {}).get('status', 'unreviewed'),
             'category': 'model' if available else 'reference' if reference_ids and not errors else 'unresolved',
             'referenceRepresentationIds': reference_ids, 'sourceErrors': errors, 'unmodeledReasons': reasons,
             'cad': {'status': 'unvalidated' if caches else 'absent', 'representationIds': caches,
@@ -219,3 +220,148 @@ def audit_correspondence(document):
         'summary': {'entityCount': len(entities), 'coverageDenominator': len(rows), 'currentSourceModelCount': sum(r['modelCurrent'] for r in rows),
             **{category + 'Count': sum(r['category'] == category for r in rows) for category in ('model', 'reference', 'composite', 'unresolved')},
             'sourceErrorCount': sum(len(r['sourceErrors']) for r in rows)}}
+
+
+def validate_cad_correspondence(document, stages):
+    """Read-only CPU proof of current CAD caches against byte-verified mesh topology.
+
+    This verifies projected contours, not semantic shape or physical calibration.
+    Model CAD and observed CAD retain separate coverage denominators.
+    """
+    from copy import deepcopy
+    import numpy as np
+    from shapely import LineString, Polygon, union_all
+    from shapely.errors import GEOSException
+    from .blender_export import mesh_from_asset
+    from .reconstruction import _plan_plane, _plan_projection, _scene_asset_bytes
+
+    result = audit_correspondence(document)
+    entities = {entity['id']: entity for entity in document['entities']}
+    observations = {observation['id']: observation for observation in document['observations']}
+    assets = {asset['id']: asset for asset in document['assets']}
+    cameras = {camera['id']: camera for camera in document['cameras']}
+    frames = {frame['id'] for frame in document['coordinateFrames']}
+
+    def geometry(projection):
+        def points(value, ring=False):
+            array = np.asarray(value)
+            if (array.ndim != 2 or array.shape[1] != 2 or len(array) < (4 if ring else 2)
+                    or array.dtype.kind not in 'ifu' or not np.isfinite(array).all()
+                    or ring and not np.array_equal(array[0], array[-1])):
+                raise PlatformError('projection_geometry_invalid')
+            return array
+        polygons = [Polygon(points(p['exterior'], True), [points(h, True) for h in p['holes']])
+                    for p in projection['polygons']]
+        lines = [LineString(points(line)) for line in projection['lines']]
+        if any(not item.is_valid or item.is_empty for item in polygons + lines):
+            raise PlatformError('projection_geometry_invalid')
+        if not polygons and not lines:
+            raise PlatformError('projection_geometry_empty')
+        return union_all(polygons), union_all(lines)
+
+    def validate(entity, row, rep):
+        proof = {'representationId': rep['id'], 'status': 'invalid', 'reasons': [], 'meshBytesVerified': False}
+        try:
+            modeled = rep['kind'] in MODEL_KINDS
+            pose = (entity.get('currentModelTransform') or rep['transform']) if modeled else rep['transform']
+            validate_transform(pose, frames)
+            if pose['coordinateFrameId'] != rep['coordinateFrameId']:
+                raise PlatformError('projection_frame_mismatch')
+            if rep.get('sourceValidity') == 'stale':
+                raise PlatformError('stale_representation')
+            if _plan_plane(document, rep['coordinateFrameId']) is None:
+                return {**proof, 'status': 'absent', 'reasons': ['floor_plane_missing']}
+            saved = rep.get('planProjection')
+            if saved is None:
+                return {**proof, 'status': 'absent', 'reasons': ['no_current_projection_cache']}
+            snapshot = saved['transformSnapshot']
+            validate_transform(snapshot, frames)
+            translated = modeled and {**snapshot, 'position': pose['position']} == pose
+            if snapshot != pose and not translated:
+                raise PlatformError('projection_pose_mismatch')
+            if saved.get('coordinateFrameId') != rep['coordinateFrameId']:
+                raise PlatformError('projection_frame_mismatch')
+            asset = None
+            if rep['kind'] == 'primitive':
+                mesh = primitive_mesh(rep['primitive'])
+                if saved.get('assetId') is not None or saved.get('assetSha256') is not None or saved.get('primitiveSnapshot') != rep['primitive']:
+                    raise PlatformError('projection_asset_mismatch')
+            else:
+                asset = stages.repo.get_asset(rep['assetId'])
+                if assets.get(rep['assetId'], {}).get('sha256') != asset['sha256']:
+                    raise PlatformError('scene_asset_hash_mismatch')
+                payload = _scene_asset_bytes(document, rep['assetId'], stages)
+                mesh = mesh_from_asset(payload, {**asset, **asset.get('metadata', {}), **assets[rep['assetId']]})
+                proof['meshBytesVerified'] = True
+                if saved.get('assetId') != rep['assetId'] or saved.get('assetSha256') != asset['sha256']:
+                    raise PlatformError('projection_asset_mismatch')
+            current = _plan_projection(document, rep, mesh, asset['sha256'] if asset else None, pose)
+            if saved.get('methodVersion') != current['methodVersion']:
+                raise PlatformError('projection_method_mismatch')
+            plane = np.asarray(saved['nativeToPlane'], dtype=float)
+            if (saved.get('groundNormalSnapshot') != current['groundNormalSnapshot'] or plane.shape != (4, 4)
+                    or not np.allclose(plane, current['nativeToPlane'], rtol=1e-12, atol=1e-12)):
+                raise PlatformError('projection_plane_mismatch')
+            if result['documentErrors'] or any(error.get('representationId') in (None, rep['id']) for error in row['sourceErrors']):
+                raise PlatformError('source_correspondence_invalid')
+            if any(saved[key] != current.get(key) for key in ('observationId', 'observationRevision', 'imageId') if saved.get(key) is not None):
+                raise PlatformError('projection_source_mismatch')
+            if not modeled:
+                observation = observations.get(saved.get('observationId'), {})
+                binding = document.get('geometryBindings', {}).get(observation.get('imageId'), {})
+                camera = cameras.get(binding.get('cameraId'), {})
+                if (not observation or observation['id'] not in entity.get('observationRefs', [])
+                        or observation['revision'] != saved.get('observationRevision') or observation['imageId'] != saved.get('imageId')
+                        or camera.get('imageId') != observation['imageId'] or camera.get('coordinateFrameId') != rep['coordinateFrameId']
+                        or not any(ref.get('observationId') == observation['id'] and ref.get('revision') == observation['revision']
+                                   for ref in rep.get('sourceRefs', []))):
+                    raise PlatformError('projection_source_mismatch')
+                source = {'imageId': observation['imageId'], 'cameraId': camera['id'],
+                    'imageSha256': assets.get(observation['imageId'], {}).get('sha256'),
+                    'maskSha256': assets.get(observation.get('maskAssetId'), {}).get('sha256'),
+                    'geometrySolutionSha256': assets.get(binding.get('geometrySolutionId'), {}).get('sha256')}
+                if any(ref[field] != value for ref in rep.get('sourceRefs', []) if ref.get('observationId') == observation['id']
+                       for field, value in source.items() if field in ref):
+                    raise PlatformError('projection_source_mismatch')
+            expected = current if snapshot == pose else _plan_projection(document, rep, mesh, asset['sha256'] if asset else None, snapshot)
+            if not all(left.equals(right) for left, right in zip(geometry(saved), geometry(expected), strict=True)):
+                raise PlatformError('projection_geometry_mismatch')
+            proof.update(status='validated', assetId=rep.get('assetId'), assetSha256=asset['sha256'] if asset else None,
+                primitiveSnapshot=deepcopy(rep.get('primitive')), groundNormalSnapshot=deepcopy(current['groundNormalSnapshot']),
+                coordinateFrameId=rep['coordinateFrameId'], transformSnapshot=deepcopy(pose), cacheTransformSnapshot=deepcopy(snapshot),
+                poseRelation='exact' if snapshot == pose else 'translation', sourceRefsSha256=digest(rep.get('sourceRefs', [])),
+                projectionSha256=digest(saved), currentProjectionSha256=digest(current), nativeToPlane=deepcopy(current['nativeToPlane']),
+                vertexCount=len(mesh.vertices), triangleCount=len(mesh.faces), polygonCount=len(current['polygons']),
+                holeCount=sum(len(p['holes']) for p in current['polygons']), lineCount=len(current['lines']))
+        except PlatformError as error:
+            proof['reasons'].append(error.code)
+        except (ValueError, TypeError, KeyError, IndexError, OSError, GEOSException):
+            proof['reasons'].append('projection_geometry_invalid')
+        return proof
+
+    for row in result['rows']:
+        entity = entities[row['entityId']]
+        active = next((rep for rep in entity.get('representations', [])
+                       if rep['id'] == entity.get('activeModelRepresentationId') and rep['kind'] in MODEL_KINDS), None)
+        model = validate(entity, row, active) if active else {'status': 'absent', 'reasons': ['no_active_model']}
+        observed = [validate(entity, row, rep) for rep in entity.get('representations', [])
+                    if rep['kind'] == 'observed_surface' and rep.get('sourceValidity') != 'stale']
+        selected = [model] if active else [proof for proof in observed if proof['representationId'] in row['referenceRepresentationIds']]
+        status = 'validated' if selected and all(proof['status'] == 'validated' for proof in selected) else \
+            'invalid' if any(proof['status'] == 'invalid' for proof in selected) else 'absent'
+        row['cad'] = {'status': status, 'kind': 'model' if active else 'observed_reference' if selected else 'model',
+            'model': model, 'observed': observed, 'representationIds': [proof['representationId'] for proof in selected],
+            'reason': None if status == 'validated' else next((reason for proof in selected for reason in proof['reasons']), 'no_active_model')}
+    by_id = {row['entityId']: row for row in result['rows']}
+    for row in result['rows']:
+        if row['category'] == 'composite':
+            checks = row['cad']['observed'] + [by_id[identity]['cad']['model'] for identity in row['compositeTargetEntityIds']]
+            valid = bool(row['cad']['observed']) and all(proof['status'] == 'validated' for proof in checks)
+            row['cad'].update(status='validated' if valid else 'invalid', kind='component_mapping',
+                reason=None if valid else 'component_cad_unvalidated', targetEntityIds=row['compositeTargetEntityIds'],
+                representationIds=[proof['representationId'] for proof in checks if 'representationId' in proof])
+    result.update(cadValidationMethod='byte-verified-indexed-mesh-projection-v1',
+        scope='Source metadata and current CAD contour consistency. Semantic shape and physical calibration are not certified.')
+    result['summary'].update(validatedModelCadCount=sum(row['cad']['model']['status'] == 'validated' for row in result['rows']),
+        validatedObservedCadCount=sum(bool(row['cad']['observed']) and all(p['status'] == 'validated' for p in row['cad']['observed']) for row in result['rows']))
+    return result
