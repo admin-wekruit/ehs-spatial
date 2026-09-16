@@ -143,6 +143,48 @@ def test_developer_api_budget_cannot_be_used_for_vertex_backend():
     assert not sent
 
 
+@pytest.mark.parametrize('bad', ['missing_evidence', 'empty_evidence', 'blank_evidence', 'missing_role'])
+def test_discovery_rejects_missing_visual_evidence_or_role_with_usage_retained(monkeypatch, bad):
+    from ehs_spatial.platform import reconstruction
+    from ehs_spatial.providers import gemini
+    item = {'label':'control', 'box_2d':[100,100,200,200],
+            'evidence':'A red circular face within a yellow surround.', 'geometry_role':'unknown'}
+    if bad == 'missing_evidence':
+        item.pop('evidence')
+    elif bad == 'missing_role':
+        item.pop('geometry_role')
+    else:
+        item['evidence'] = '' if bad == 'empty_evidence' else ' \t\n '
+    sent = []
+    def transport(request):
+        sent.append(request.url.path)
+        if request.url.path.endswith(':countTokens'):
+            return httpx.Response(200, request=request, json={'totalTokens':1234})
+        return success(request, text=json.dumps({'items':[item]}))
+    with client(transport) as sdk:
+        adapter = GeminiAdapter(sdk)
+        monkeypatch.setattr(gemini, 'GeminiAdapter', lambda:adapter)
+        with pytest.raises(reconstruction.ProviderResponseError) as error:
+            reconstruction._discovery_invoke({'image':{'width':100,'height':100,
+                'dataUri':'data:image/jpeg;base64,'+inputs()[1].data}})
+    assert error.value.outcome == 'failed'
+    assert error.value.telemetry['providerRequestId'] == 'provider-request-1'
+    assert error.value.telemetry['usage']['prompt_token_count'] == 1234
+    assert error.value.telemetry['usage']['thoughts_token_count'] == 7
+    assert [path.rsplit(':',1)[-1] for path in sent] == ['countTokens','generateContent']
+
+
+@pytest.mark.parametrize('role', ['unknown','object','floor'])
+def test_discovery_schema_requires_evidence_and_role_but_preserves_explicit_unknown(role):
+    from ehs_spatial.platform.reconstruction import _DiscoveryResponse
+    item = {'label':'surface', 'box_2d':[100,100,200,200],
+            'evidence':'A continuous gray surface visible beneath the equipment.', 'geometry_role':role}
+    parsed = _DiscoveryResponse.model_validate({'items':[item]})
+    assert parsed.items[0].geometry_role == role and parsed.items[0].evidence == item['evidence']
+    schema = _DiscoveryResponse.model_json_schema()['$defs']['_DiscoveredItem']
+    assert {'evidence','geometry_role'} <= set(schema['required'])
+
+
 @pytest.mark.parametrize('change', [
     {'max_input_tokens': 16385}, {'max_output_tokens': 8193}, {'max_output_tokens': True},
     {'input': [{'type': 'image', 'uri': 'https://example.invalid/image.jpg', 'mime_type': 'image/jpeg'}]},

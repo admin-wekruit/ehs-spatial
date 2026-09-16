@@ -1853,8 +1853,8 @@ def run_capture_pipeline(repository, blobs, job, providers):
 class _DiscoveredItem(BaseModel):
     label: str = Field(min_length=1)
     box_2d: tuple[int,int,int,int]
-    evidence: str = ""
-    geometry_role: Literal["floor","object","unknown"] = "unknown"
+    evidence: str = Field(min_length=1, pattern=r"\S")
+    geometry_role: Literal["floor","object","unknown"]
 
 
 class _DiscoveryResponse(BaseModel):
