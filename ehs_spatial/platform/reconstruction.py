@@ -34,7 +34,7 @@ MAP_PINS = {"model": "facebook/map-anything-apache", "modelRevision": "00f9c245b
             "codeRevision": "3d10cf7a3016fc0f9bb13a071ee66c47b10be0d9", "adapter": PIPELINE_VERSION}
 MAX_MASK_POLYGON_RUNS = 100_000
 UNKNOWN_OUTCOME_CODES = {'provider_outcome_unknown', 'response_persistence_failed'}
-SAM_BOX_ADAPTER = 'sam3.1-box-pixel-coverage-v1'
+SAM_BOX_ADAPTER = 'sam3.1-text-box-pixel-coverage-v2'
 SAM_FAL_CLIENT_VERSION = '1.0.0'
 
 
@@ -257,6 +257,21 @@ def _include(document,asset):
 
 def _image_payload(image):
     return {"imageId":image["id"],"dataUri":"data:"+image["mediaType"]+";base64,"+base64.b64encode(image["bytes"]).decode(),"width":image["width"],"height":image["height"],"sha256":image["sha256"]}
+
+
+def _segmentation_input(document, observation, image):
+    """Use the sole owning entity's saved label verbatim for text-and-box input."""
+    owners = [entity for entity in document['entities'] if observation['id'] in entity.get('observationRefs', [])]
+    if len(owners) != 1 or owners[0].get('sourceContext') or image['imageId'] != observation['imageId']:
+        raise PlatformError('segmentation_owner_unresolved', 409, observationId=observation['id'])
+    entity = owners[0]
+    label = entity.get('label')
+    if not isinstance(label, str) or not label.strip():
+        raise PlatformError('segmentation_label_required', 422, entityId=entity['id'], observationId=observation['id'])
+    payload = {'image':image, 'box':deepcopy(observation['originalPixelBox']), 'prompt':label,
+        'promptSource':{'kind':'entity_label', 'entityId':entity['id'], 'label':label}}
+    payload['submittedBox'] = _sam_box(payload)
+    return payload
 
 
 def _discover(document,image,response,evidence):
@@ -1077,7 +1092,7 @@ def run_analysis(repository,blobs,job,providers):
         if observation['imageId'] not in lookup or (is_append and observation.get('maskAssetId')):
             continue
         image = lookup[observation["imageId"]]
-        output = attempt("segmentation",lambda:stages.call("segmentation",[image],{"image":_image_payload(image),"box":observation["originalPixelBox"]},observation["sourceRefs"]))
+        output = attempt("segmentation",lambda:stages.call("segmentation",[image],_segmentation_input(document,observation,_image_payload(image)),observation["sourceRefs"]))
         if not output:
             continue
         response,evidence = output
@@ -1309,7 +1324,7 @@ def run_segmentation(repository,blobs,job,providers):
     for observation in observations:
         image = next(x for x in images if x["id"] == observation["imageId"])
         try:
-            response,evidence = stages.call("segmentation",[image],{"image":_image_payload(image),"box":observation["originalPixelBox"]},observation["sourceRefs"])
+            response,evidence = stages.call("segmentation",[image],_segmentation_input(document,observation,_image_payload(image)),observation["sourceRefs"])
             _include(document,evidence)
             _save_observation_mask(document,observation,image,response,evidence,stages)
             observation["revision"] += 1
@@ -1889,7 +1904,10 @@ def _sam_invoke(payload, *, on_dispatched):
     from ..providers.sam3 import decode_coco_rle
     image = payload["image"]
     x0,y0,x1,y1 = _sam_box(payload)
-    arguments = {"image_url":image["dataUri"],"prompt":"","box_prompts":[{"x_min":x0,"y_min":y0,"x_max":x1,"y_max":y1}],
+    prompt = payload.get('prompt')
+    if not isinstance(prompt, str) or not prompt.strip():
+        raise PlatformError('segmentation_label_required', 422)
+    arguments = {"image_url":image["dataUri"],"prompt":prompt,"box_prompts":[{"x_min":x0,"y_min":y0,"x_max":x1,"y_max":y1}],
         "return_multiple_masks":True,"include_scores":True,"max_masks":3}
     receipt = {}
     try:
@@ -2190,7 +2208,7 @@ def _research_capture_input(repository, blobs, job, stage, image_ids=None):
 
 
 def _research_segmentation_input(repository, blobs, job, entity_id, observation_id):
-    """A saved observation selects the original photo/box; callers supply no pixels."""
+    """Saved ownership selects the original photo, box, and exact entity label."""
     source = repository.get_revision(job['baseRevisionId'])['document']
     owners = [entity for entity in source['entities'] if observation_id in entity.get('observationRefs', [])]
     observation = next((o for o in source['observations'] if o['id'] == observation_id), None)
@@ -2198,11 +2216,11 @@ def _research_segmentation_input(repository, blobs, job, entity_id, observation_
             type(observation.get('revision')) is not int or observation['revision'] < 1):
         raise PlatformError('research_input_hash_mismatch', 409)
     payload, images = _research_capture_input(repository, blobs, job, 'segmentation', [observation['imageId']])
-    payload['box'] = deepcopy(observation['originalPixelBox'])
-    payload['submittedBox'] = _sam_box(payload)
+    payload = _segmentation_input(source, observation, payload['image'])
     snapshot = {'entityId':entity_id, 'observationId':observation_id, 'revision':observation['revision'],
         'imageId':observation['imageId'], 'originalPixelBox':deepcopy(observation['originalPixelBox']),
-        'pixelMapping':deepcopy(observation.get('pixelMapping', [])), 'maskAssetId':observation.get('maskAssetId')}
+        'pixelMapping':deepcopy(observation.get('pixelMapping', [])), 'maskAssetId':observation.get('maskAssetId'),
+        'promptSource':deepcopy(payload['promptSource'])}
     refs = [{'assetId':image['assetId'], 'sha256':image['sha256']} for image in images]
     if snapshot['maskAssetId']:
         declared = next((a for a in source['assets'] if a['id'] == snapshot['maskAssetId']), None)

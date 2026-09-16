@@ -199,6 +199,36 @@ def test_generic_multiphoto_analysis_retains_tiny_objects_caches_frames_and_uses
     assert len(repo.calls) == calls
 
 
+def test_analysis_resegmentation_and_research_share_exact_owned_text_box_input(tmp_path):
+    from ehs_spatial.platform.reconstruction import _research_segmentation_input
+    blobs = LocalBlobStore(tmp_path)
+    repo = Repo(blobs)
+    providers = bundle(repo)
+    original = providers['segmentation'].invoke
+    seen = []
+    def segment(payload):
+        seen.append(deepcopy(payload))
+        return original(payload)
+    providers['segmentation'] = replace(providers['segmentation'], invoke=segment)
+    repo.document, result = run_analysis(repo, blobs, repo.job, providers)
+    assert result['status'] == 'succeeded'
+    assert seen and all(p['prompt'] == p['promptSource']['label'] for p in seen)
+    observation = repo.document['observations'][0]
+    entity = next(e for e in repo.document['entities'] if observation['id'] in e['observationRefs'])
+    entity['label'] = ' corrected saved label '
+    before = digest(repo.document)
+    old_calls = len(repo.calls)
+    run_segmentation(repo, blobs, {**repo.job, 'inputs':{'observationId':observation['id']}}, providers)
+    assert len(repo.calls) == old_calls + 1  # Saved label changes invalidate the old request cache.
+    expected, _, snapshot, _ = _research_segmentation_input(repo, blobs, repo.job, entity['id'], observation['id'])
+    assert seen[-1] == expected
+    assert expected['prompt'] == ' corrected saved label '
+    assert snapshot['promptSource'] == {'kind':'entity_label', 'entityId':entity['id'], 'label':entity['label']}
+    assert digest(repo.document) == before
+    run_segmentation(repo, blobs, {**repo.job, 'inputs':{'observationId':observation['id']}}, providers)
+    assert len(repo.calls) == old_calls + 1
+
+
 def test_discovery_persisted_even_if_geometry_fails_no_retry_on_unknown_outcome(tmp_path):
     blobs = LocalBlobStore(tmp_path)
     repo = Repo(blobs)

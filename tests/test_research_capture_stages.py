@@ -271,7 +271,7 @@ def segmentation_source(tmp_path, monkeypatch, *, jpeg=False, masked=False):
     monkeypatch.setattr(cli, 'admin_context', lambda *a: (
         {'source':'database_admin'}, {'document':repository.document}))
     monkeypatch.setattr(cli, 'check_budget', lambda *a: {'configuredBudgetUsd':'.01'})
-    pins = {'model':'fal-ai/sam-3-1/image-rle', 'adapter':'sam3.1-box-pixel-coverage-v1'}
+    pins = {'model':'fal-ai/sam-3-1/image-rle', 'adapter':'sam3.1-text-box-pixel-coverage-v2'}
     manifest = {'segmentation':{'provider':'fal', 'pins':pins, 'paid':True, 'estimatedCostUsd':.01,
         'releaseEvidence':{'pins':pins, 'license':{'status':'passed', 'artifactSha256':'c' * 64},
             'runtime':{'status':'unverified'}, 'quality':{'status':'unverified'}}}}
@@ -296,9 +296,12 @@ def test_segmentation_prepares_owned_observation_without_geometry(tmp_path, monk
     assert not repo.document['coordinateFrames'] and not repo.document['cameras'] and not repo.calls
     assert frozen['payload']['box'] == observation['originalPixelBox'] == [1.2, 2.3, 10.4, 7.8]
     assert frozen['payload']['submittedBox'] == [1, 2, 11, 8]
-    assert set(frozen['payload']) == {'image', 'box', 'submittedBox'}
+    assert set(frozen['payload']) == {'image', 'box', 'submittedBox', 'prompt', 'promptSource'}
+    assert frozen['payload']['prompt'] == repo.document['entities'][0]['label']
+    assert frozen['payload']['promptSource'] == {'kind':'entity_label', 'entityId':protocol['entityId'], 'label':frozen['payload']['prompt']}
     assert frozen['protocol']['sourceObservation'] == {
         'entityId':protocol['entityId'], 'observationId':observation['id'],
+        'promptSource':frozen['payload']['promptSource'],
         **{k:observation[k] for k in ('revision','imageId','originalPixelBox','pixelMapping','maskAssetId')}}
     expected_ids = {observation['imageId']}
     if masked:
@@ -314,7 +317,8 @@ def test_segmentation_prepares_owned_observation_without_geometry(tmp_path, monk
 
 
 @pytest.mark.parametrize('bad', ['missing_entity', 'missing_observation', 'image_selection', 'seed',
-                                'foreign_entity', 'foreign_observation', 'unowned_observation'])
+                                'foreign_entity', 'foreign_observation', 'unowned_observation',
+                                'ambiguous_owner', 'context_owner'])
 def test_segmentation_requires_exact_owned_observation_selection(tmp_path, monkeypatch, bad):
     repo, blobs, manifest, runtime, protocol = segmentation_source(tmp_path, monkeypatch)
     if bad == 'missing_entity': protocol.pop('entityId')
@@ -323,15 +327,44 @@ def test_segmentation_requires_exact_owned_observation_selection(tmp_path, monke
     elif bad == 'seed': protocol['seed'] = 0
     elif bad == 'foreign_entity': protocol['entityId'] = 'foreign-entity'
     elif bad == 'foreign_observation': protocol['observationId'] = 'foreign-observation'
+    elif bad == 'ambiguous_owner': repo.document['entities'].append({**repo.document['entities'][0], 'id':'other-owner'})
+    elif bad == 'context_owner': repo.document['entities'][0]['sourceContext'] = True
     else: repo.document['entities'][0]['observationRefs'] = []
     with pytest.raises(PlatformError):
         cli.prepare(protocol, repo, blobs, manifest, runtime)
     assert not repo.calls
+    if bad == 'ambiguous_owner':
+        with pytest.raises(PlatformError, match='observation_multiple_owners'):
+            reconstruction.run_segmentation(repo, blobs,
+                {**repo.job, 'inputs':{'observationId':protocol['observationId']}}, {})
+        assert not repo.calls
+    if bad in ('unowned_observation', 'context_owner'):
+        _, result = reconstruction.run_segmentation(repo, blobs,
+            {**repo.job, 'inputs':{'observationId':protocol['observationId']}}, {})
+        assert result['status'] == 'incomplete'
+        assert result['errors'][0]['code'] == 'segmentation_owner_unresolved'
+        assert not repo.calls
+
+
+@pytest.mark.parametrize('label', [None, '', '   ', 12])
+def test_segmentation_missing_saved_label_stops_before_reservation(tmp_path, monkeypatch, label):
+    repo, blobs, manifest, runtime, protocol = segmentation_source(tmp_path, monkeypatch)
+    repo.document['entities'][0]['label'] = label
+    # The observation still has a usable label; there is no alternate-source fallback.
+    assert repo.document['observations'][0]['labelEvidence'][0]['label']
+    with pytest.raises(PlatformError, match='segmentation_label_required'):
+        cli.prepare(protocol, repo, blobs, manifest, runtime)
+    document, result = reconstruction.run_segmentation(repo, blobs,
+        {**repo.job, 'inputs':{'observationId':protocol['observationId']}}, {})
+    assert result['status'] == 'incomplete'
+    assert result['errors'][0]['code'] == 'segmentation_label_required'
+    assert document['observations'][0]['maskAssetId'] is None and not repo.calls
 
 
 @pytest.mark.parametrize('bad', ['box', 'submitted_box', 'payload_extra', 'snapshot_revision',
     'snapshot_mapping', 'snapshot_image', 'entity_id', 'observation_id', 'image_bytes',
-    'source_revision', 'source_mapping', 'source_box', 'source_ownership'])
+    'source_revision', 'source_mapping', 'source_box', 'source_ownership',
+    'source_label', 'prompt_source', 'snapshot_label'])
 def test_segmentation_rejects_rehashed_forgery_before_reservation(tmp_path, monkeypatch, bad):
     repo, blobs, manifest, runtime, protocol = segmentation_source(tmp_path, monkeypatch)
     frozen = cli.prepare(protocol, repo, blobs, manifest, runtime)
@@ -348,6 +381,9 @@ def test_segmentation_rejects_rehashed_forgery_before_reservation(tmp_path, monk
     elif bad == 'source_revision': repo.document['observations'][0]['revision'] += 1
     elif bad == 'source_mapping': repo.document['observations'][0]['pixelMapping'] = [{'forged':True}]
     elif bad == 'source_box': repo.document['observations'][0]['originalPixelBox'][0] = 0.5
+    elif bad == 'source_label': repo.document['entities'][0]['label'] = 'different saved label'
+    elif bad == 'prompt_source': payload['promptSource']['entityId'] = 'other-entity'
+    elif bad == 'snapshot_label': protocol['sourceObservation']['promptSource']['label'] = 'different label'
     else: repo.document['entities'][0]['observationRefs'] = []
     protocol['payloadSha256'] = digest(payload)
     job = {**repo.job, 'kind':'validate_model', 'config':{'researchProtocolSha256':digest(protocol)}}
@@ -468,7 +504,7 @@ def test_sam_one_post_receipt_fence_and_no_charge_on_replay(tmp_path, monkeypatc
     assert options['follow_redirects'] is False
     assert options['json']['box_prompts'] == [{'x_min':1, 'y_min':2, 'x_max':11, 'y_max':8}]
     assert all(type(v) is int for v in options['json']['box_prompts'][0].values())
-    assert options['json']['prompt'] == ''
+    assert options['json']['prompt'] == frozen['payload']['prompt'] == 'small visible control'
     assert frozen['payload']['box'] == [1.2, 2.3, 10.4, 7.8]
     if failure in ('post_timeout', 'post_429'):
         assert events == ['post']
