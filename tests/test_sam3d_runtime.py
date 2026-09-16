@@ -1,5 +1,6 @@
 """Exercise the actual SAM3D loader and error boundary without GPU/model calls."""
 import importlib.util
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -136,6 +137,88 @@ def test_remote_research_runtime_mismatch_rejects_before_pipeline_imports(monkey
     # No torch/pytorch3d/pipeline setup: the body must reject the frozen pin first.
     with pytest.raises(ValueError, match="Frozen runtime manifest differs"):
         instance.run.__wrapped__(instance, {}, expectedRuntimeManifestSha256="0"*64)
+
+
+def test_analysis_images_and_runtime_are_immutable(monkeypatch, tmp_path):
+    from ehs_spatial.platform.contracts import digest
+    worker = load_worker(monkeypatch, tmp_path)
+    seen = []
+    image = SimpleNamespace(env=lambda values: seen.append(values) or 'pinned-image')
+    monkeypatch.setattr(worker.modal.Image, 'from_id', lambda identity: seen.append(identity) or image, raising=False)
+    worker.CONFIG['geometry'] = {
+        'modalImageId': 'im-' + 'a' * 22,
+        'pins': {'modelRevision': 'b' * 40, 'codeRevision': 'c' * 40},
+        'distribution': 'mapanything',
+        'adapterSourceSha256': hashlib.sha256(Path(worker.__file__).read_bytes()).hexdigest(),
+    }
+    assert worker._runtime_image('geometry') == 'pinned-image'
+    assert seen[0] == 'im-' + 'a' * 22
+    assert seen[1]['HF_HOME'] == '/cache/huggingface'
+    assert json.loads(seen[1]['PANOPTES_MODEL_RUNTIME_CONFIG']) == worker.CONFIG
+    frozen = digest(worker.CONFIG['geometry'])
+    assert worker._runtime_digest('geometry', frozen) == frozen
+    worker.CONFIG['geometry']['modalImageId'] = 'im-' + 'd' * 22
+    with pytest.raises(ValueError, match='Frozen runtime'):
+        worker._runtime_digest('geometry', frozen)
+    worker.CONFIG['geometry']['runtimeImage'] = 'registry.example/map@sha256:' + 'e' * 64
+    with pytest.raises(ValueError, match='Specify one'):
+        worker._runtime_image('geometry')
+    del worker.CONFIG['geometry']['runtimeImage']
+    worker.CONFIG['geometry']['modalImageId'] = 'latest'
+    with pytest.raises(ValueError, match='Invalid immutable'):
+        worker._runtime_image('geometry')
+
+
+def test_remote_import_uses_frozen_config_without_deployers_file(monkeypatch, tmp_path):
+    worker = load_worker(monkeypatch, tmp_path)
+    frozen = worker.CONFIG
+    monkeypatch.setenv('PANOPTES_MODEL_RUNTIME_CONFIG', json.dumps(frozen))
+    monkeypatch.setenv('PANOPTES_MODEL_RUNTIME_MANIFEST', str(tmp_path / 'not-on-remote.json'))
+    worker.__spec__.loader.exec_module(worker)
+    assert worker.CONFIG == frozen
+    assert hasattr(worker, 'SAM3DObjects')
+
+
+@pytest.mark.parametrize('stage', ['geometry', 'depth'])
+def test_capture_adapter_source_is_checked_at_load_and_each_inference(monkeypatch, tmp_path, stage):
+    from ehs_spatial.platform.contracts import digest
+    worker = load_worker(monkeypatch, tmp_path, stub_distribution=False)
+    source = tmp_path / 'deployed_platform_models.py'
+    source.write_bytes(Path(worker.__file__).read_bytes())
+    config = {'runtimeImage': 'registry.example/capture@sha256:' + 'a' * 64,
+        'pins': {'model': 'facebook/map-anything-apache' if stage == 'geometry' else 'Ruicheng/moge-3-vitl',
+                 'modelRevision': 'b' * 40, 'codeRevision': 'c' * 40},
+        'distribution': 'mapanything' if stage == 'geometry' else 'moge',
+        'adapterSourceSha256': hashlib.sha256(source.read_bytes()).hexdigest()}
+    monkeypatch.setenv('PANOPTES_MODEL_RUNTIME_CONFIG', json.dumps({stage: config}))
+    monkeypatch.setenv('PANOPTES_MODEL_RUNTIME_MANIFEST', str(tmp_path / 'not-on-remote.json'))
+    spec = importlib.util.spec_from_file_location('capture_worker_source_test', source)
+    deployed = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(deployed)
+    assert deployed.CONFIG == {stage: config}  # Frozen-env import does not require the deployer's file.
+    seen = []
+    monkeypatch.setattr(deployed.importlib.metadata, 'distribution', lambda name: seen.append(name) or SimpleNamespace(
+        read_text=lambda path: json.dumps({'vcs_info': {'commit_id': config['pins']['codeRevision']}})))
+    frozen = digest(config)
+    deployed._verify_distribution(stage)
+    assert deployed._runtime_digest(stage, frozen) == frozen
+    assert seen == [config['distribution']]
+    # The loaded module and CONFIG stay identical; only actual deployed source bytes change.
+    source.write_bytes(source.read_bytes() + b'\n# unexpected adapter change\n')
+    with pytest.raises(RuntimeError, match='adapter source'):
+        deployed._verify_distribution(stage)
+    assert seen == [config['distribution']]  # Rejected before distribution lookup/model loading.
+    klass = deployed.MapAnythingApache if stage == 'geometry' else deployed.MoGe3
+    with pytest.raises(RuntimeError, match='adapter source'):
+        klass().run.__wrapped__(klass(), {}, expectedRuntimeManifestSha256=frozen)
+
+
+@pytest.mark.parametrize('pin', [None, 'latest', '0' * 64])
+def test_capture_adapter_source_pin_is_mandatory(monkeypatch, tmp_path, pin):
+    worker = load_worker(monkeypatch, tmp_path, stub_distribution=False)
+    worker.CONFIG['geometry'] = {'adapterSourceSha256': pin}
+    with pytest.raises(RuntimeError, match='adapter source'):
+        worker._verify_distribution('geometry')
 
 
 @pytest.mark.parametrize("failure", [None, "license", "runtime_for_quality", "purpose", "payload", "runtime_image", "source_audit", "budget", "insufficient_budget", "public_kind"])

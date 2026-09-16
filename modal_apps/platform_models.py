@@ -1,7 +1,8 @@
 """Pinned model workers for the platform, distinct from historical NC services.
 
 Deploy only with PANOPTES_MODEL_RUNTIME_MANIFEST: stage -> pins, runtimeImage
-(registry @sha256 digest), distribution, and for SAM3D checkpointConfig.
+(registry @sha256 digest) or modalImageId, distribution, and for SAM3D checkpointConfig.
+Geometry/depth also require adapterSourceSha256 of this exact deployed file.
 Images must already contain the audited pinned GPU dependencies. This file does
 not claim that an image, HF access, native-pose fixture or quality gate has passed.
 """
@@ -21,7 +22,9 @@ import modal
 
 app = modal.App("panoptes-platform-models")
 manifest_path = os.environ.get("PANOPTES_MODEL_RUNTIME_MANIFEST")
-CONFIG = json.loads(Path(manifest_path).read_text()) if manifest_path else {}
+# Remote workers import this module without the deployer's local filesystem.
+frozen_config = os.environ.get("PANOPTES_MODEL_RUNTIME_CONFIG")
+CONFIG = json.loads(frozen_config) if frozen_config else json.loads(Path(manifest_path).read_text()) if manifest_path else {}
 
 
 def _timed_gpu(function):
@@ -49,17 +52,42 @@ def _timed_gpu(function):
     return measured
 
 
+def _verify_adapter_source(stage):
+    if (stage in ("geometry", "depth") and CONFIG[stage].get("adapterSourceSha256") !=
+            hashlib.sha256(Path(__file__).read_bytes()).hexdigest()):
+        raise RuntimeError("Deployed adapter source differs from frozen runtime")
+
+
 def _runtime_image(stage):
+    _verify_adapter_source(stage)
     config = CONFIG[stage]
-    if not re.search(r"@sha256:[a-f0-9]{64}$",config["runtimeImage"]):
-        raise ValueError("runtimeImage must use a content digest")
     for key in ("modelRevision","codeRevision"):
         if not re.fullmatch(r"[a-f0-9]{40}",config["pins"][key]):
             raise ValueError("Model and code require immutable revision pins")
-    return modal.Image.from_registry(config["runtimeImage"]).env({"HF_HOME":"/cache/huggingface"})
+    if ("runtimeImage" in config) == ("modalImageId" in config):
+        raise ValueError("Specify one immutable runtime image")
+    if "modalImageId" in config:
+        if stage not in {"geometry", "depth"} or not re.fullmatch(r"im-[A-Za-z0-9]{22}", config["modalImageId"]):
+            raise ValueError("Invalid immutable Modal image ID")
+        image = modal.Image.from_id(config["modalImageId"])
+    else:
+        if not re.fullmatch(r"[^\s]+@sha256:[a-f0-9]{64}",config["runtimeImage"]):
+            raise ValueError("runtimeImage must use a content digest")
+        image = modal.Image.from_registry(config["runtimeImage"])
+    return image.env({"HF_HOME":"/cache/huggingface",
+                      "PANOPTES_MODEL_RUNTIME_CONFIG":json.dumps(CONFIG,sort_keys=True,separators=(",",":"))})
+
+
+def _runtime_digest(stage, expected):
+    _verify_adapter_source(stage)
+    actual = hashlib.sha256(json.dumps(CONFIG[stage],sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()).hexdigest()
+    if expected is not None and expected != actual:
+        raise ValueError("Frozen runtime manifest differs from deployed runtime")
+    return actual
 
 
 def _verify_distribution(stage):
+    _verify_adapter_source(stage)
     config = CONFIG[stage]
     distribution = importlib.metadata.distribution(config["distribution"])
     provenance = distribution.read_text("direct_url.json")
@@ -127,7 +155,8 @@ def _views_with_mapping(paths):
 if "geometry" in CONFIG:
     if CONFIG["geometry"]["pins"]["model"] != "facebook/map-anything-apache":
         raise ValueError("Public platform requires Apache MapAnything weights")
-    @app.cls(image=_runtime_image("geometry"),gpu="A100",timeout=900,retries=0,max_containers=1)
+    @app.cls(image=_runtime_image("geometry"),gpu="A100",cpu=(2,2),memory=(8192,8192),
+             timeout=300,startup_timeout=300,retries=0,max_containers=1,scaledown_window=2)
     class MapAnythingApache:
         @modal.enter()
         def load(self):
@@ -138,7 +167,8 @@ if "geometry" in CONFIG:
 
         @modal.method()
         @_timed_gpu
-        def run(self,payload):
+        def run(self,payload,expectedRuntimeManifestSha256=None):
+            runtime_sha = _runtime_digest("geometry", expectedRuntimeManifestSha256)
             import numpy as np
             import torch
             images = payload["images"]
@@ -168,13 +198,14 @@ if "geometry" in CONFIG:
                 valid &= np.hypot(gx,gy)/np.maximum(depth,1e-6) < .08
                 frames.append({"imageId":source["imageId"],"points":array("pts3d"),"valid":valid,"rgb":rgb,"K":array("intrinsics"),
                     "cameraToWorld":array("camera_poses"),"inputToCanonical":mapping})
-            return {"frames":frames,"pins":CONFIG["geometry"]["pins"]}
+            return {"frames":frames,"pins":CONFIG["geometry"]["pins"],"runtimeManifestSha256":runtime_sha}
 
 
 if "depth" in CONFIG:
     if CONFIG["depth"]["pins"]["model"] != "Ruicheng/moge-3-vitl":
         raise ValueError("Depth stage requires MoGe3")
-    @app.cls(image=_runtime_image("depth"),gpu="L4",timeout=900,retries=0,max_containers=1)
+    @app.cls(image=_runtime_image("depth"),gpu="L4",cpu=(2,2),memory=(8192,8192),
+             timeout=300,startup_timeout=300,retries=0,max_containers=1,scaledown_window=2)
     class MoGe3:
         @modal.enter()
         def load(self):
@@ -185,7 +216,8 @@ if "depth" in CONFIG:
 
         @modal.method()
         @_timed_gpu
-        def run(self,payload):
+        def run(self,payload,expectedRuntimeManifestSha256=None):
+            runtime_sha = _runtime_digest("depth", expectedRuntimeManifestSha256)
             import numpy as np
             import torch
             _,rgb = _image(payload["image"])
@@ -194,7 +226,7 @@ if "depth" in CONFIG:
             with torch.inference_mode():
                 result = self.model.infer(tensor,use_fp16=True,apply_mask=False)
             arrays = {k:result[k].detach().cpu().numpy() for k in ("points","mask","intrinsics","depth")}
-            return {**arrays,"imageId":payload["image"]["imageId"],"imageSha256":payload["image"]["sha256"],"inputToCanonical":np.eye(3),"pins":CONFIG["depth"]["pins"]}
+            return {**arrays,"imageId":payload["image"]["imageId"],"imageSha256":payload["image"]["sha256"],"inputToCanonical":np.eye(3),"pins":CONFIG["depth"]["pins"],"runtimeManifestSha256":runtime_sha}
 
 
 if "generation" in CONFIG:
@@ -232,9 +264,7 @@ if "generation" in CONFIG:
         @modal.method()
         @_timed_gpu
         def run(self,payload,expectedRuntimeManifestSha256=None):
-            runtime_sha = hashlib.sha256(json.dumps(CONFIG["generation"],sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()).hexdigest()
-            if expectedRuntimeManifestSha256 is not None and expectedRuntimeManifestSha256 != runtime_sha:
-                raise ValueError("Frozen runtime manifest differs from deployed runtime")
+            runtime_sha = _runtime_digest("generation", expectedRuntimeManifestSha256)
             import numpy as np
             import torch
             from pytorch3d.transforms import quaternion_to_matrix
