@@ -228,6 +228,7 @@ export function ReportScene({
     objectList = useRef<HTMLDivElement>(null), objectSearch = useRef<HTMLInputElement>(null), currentPreviewKey = useRef(""), panePrefix = useId();
   const [layer, setLayer] = useState<Layer>(() => revision.document.entities.some(entity =>
     !entity.sourceContext && activeModel(entity)?.sourceValidity !== "stale" && activeModel(entity)) ? "model" : "observed_surface"),
+    [cadLayer, setCadLayer] = useState<"model" | "observed_surface">("observed_surface"),
     [allBounds, setAllBounds] = useState(false),
     [focused, setFocused] = useState<Pane | null>(null),
     [mobileSection, setMobileSection] = useState("views"),
@@ -242,7 +243,7 @@ export function ReportScene({
     selected = document.entities.find((entity) => entity.id === selection.entityId);
   const camera = cameraForImage(document, imageId);
   const geometryOptions: GeometryOptions = { layer, frameId: camera?.coordinateFrameId || (!imageId ? document.coordinateFrames[0]?.id : "") || "", showCandidates: true, imageId, observations: document.observations };
-  const planOptions = scenePlanOptions(document, "observed_surface", true, imageId);
+  const planOptions = scenePlanOptions(document, cadLayer, true, imageId);
   const availability = sceneAvailability(document, planOptions, layer);
   const referenceImageId = selected ? cadReferenceImage(document, selected) : null;
   const images = [...new Set([
@@ -454,6 +455,9 @@ export function ReportScene({
             {paneOrder.map((pane, index) => (
               <section className="report-scene-pane" id={`${panePrefix}-${pane}`} data-pane={pane} key={pane} aria-label={t(viewNames[pane])}>
                 <header><h3><span>{String(index + 1).padStart(2, "0")}</span>{t(pane === "spatial" ? availability.spatialTitle : viewNames[pane])}</h3>
+                  {pane === "cad" && <select className="report-scene-cad-layer" aria-label={t("sceneCadProjectionSource")} value={cadLayer} onChange={event => setCadLayer(event.target.value as "model" | "observed_surface")}>
+                    <option value="observed_surface">{t("sceneCadObservedProjection")}</option><option value="model">{t("sceneCadModelProjection")}</option>
+                  </select>}
                   {pane === "cad" && onOpenSourceCad && <button className="report-scene-source-cad" onClick={openSourceCad}>{t("sceneSourceCad")} ↗</button>}
                   <button className="report-scene-expand" aria-label={`${t(focused === pane ? "sceneQuad" : "sceneSingleView")} · ${t(viewNames[pane])}`}
                     title={t(focused === pane ? "sceneQuad" : "sceneSingleView")} onClick={() => chooseView(focused === pane ? null : pane)}>{focused === pane ? "⊞" : "↗"}</button>
@@ -467,7 +471,7 @@ export function ReportScene({
                     layers={{ modelOnly: layer === "model", observed_surface: layer === "observed_surface", generated_mesh: layer === "model", primitive: layer === "model", point_cloud: layer === "point_cloud", allBounds, showBounds: allBounds, showCandidates: true, editable: false, opacity: 1, imageId, observationEntityId: selected?.id, observationId: selection.observationId, observations: document.observations }} />
                     {!hasRepresentation && <div className="report-scene-stage-note">{t("sceneNoRepresentation")}</div>}</>}
                   {pane === "cad" && availability.planEmpty && <div className="report-scene-plan-empty" role="status"><strong>{t("scenePlanUnavailable")}</strong><p>{t(availability.planEmpty)}</p><small>{t("sceneSelectionRetained")}</small></div>}
-                  {pane === "cad" && !availability.planEmpty && <CadView key={revision.id} document={document} selectedId={selection.entityId} onSelect={selectPlanEntity} geometryOptions={planOptions} />}
+                  {pane === "cad" && !availability.planEmpty && <CadView key={revision.id + cadLayer} document={document} selectedId={selection.entityId} onSelect={selectPlanEntity} geometryOptions={planOptions} />}
                   {pane === "plan" && <div className="report-model-preview" data-model-entity={selected?.id || ""} data-preview-layer={layer}>
                     {previewGeometry && selected ? <>
                       <nav aria-label={t(layer === "model" ? "sceneModelOrientation" : "sceneEvidenceOrientation")}>{(["free", "front", "side", "top"] as const).map(mode => <button key={mode} aria-pressed={previewMode === mode} onClick={() => setPreviewMode(mode)}>{t(mode)}</button>)}</nav>
@@ -480,7 +484,7 @@ export function ReportScene({
               </section>
             ))}
           </div>
-          <p className="report-scene-selection-note"><span className="report-scene-reference-note">{t("sceneCadSource")} · {selected ? <>{t("sceneCadReference")}: {referenceImageId ? `${t("scenePhotoNumber")} ${images.findIndex(image => image.imageId === referenceImageId) + 1}` : t("sceneCadReferenceMissing")} · {t("sceneViewedPhoto")}: {imageId ? images.findIndex(image => image.imageId === imageId) + 1 : "—"}</> : t("sceneCadFixedState")}</span>{selected ? isReferenceSurface(document, selected) ? t("sceneReferenceSurface") : selectedOverlay ? t(selectedOverlay.axisSpace === "native" ? "sceneNativeAxis" : "sceneSourceAxis") : !entityGeometryForLayer(selected, geometryOptions) ? t("sceneNoGeometrySelection") : t("sceneNoPhotoAxes") : t("sceneReadOnly")}</p>
+          <p className="report-scene-selection-note"><span className="report-scene-reference-note">{t(cadLayer === "model" ? "sceneCadModelSource" : "sceneCadSource")} {cadLayer === "observed_surface" && <> · {selected ? <>{t("sceneCadReference")}: {referenceImageId ? `${t("scenePhotoNumber")} ${images.findIndex(image => image.imageId === referenceImageId) + 1}` : t("sceneCadReferenceMissing")} · {t("sceneViewedPhoto")}: {imageId ? images.findIndex(image => image.imageId === imageId) + 1 : "—"}</> : t("sceneCadFixedState")}</>}</span>{selected ? isReferenceSurface(document, selected) ? t("sceneReferenceSurface") : selectedOverlay ? t(selectedOverlay.axisSpace === "native" ? "sceneNativeAxis" : "sceneSourceAxis") : !entityGeometryForLayer(selected, geometryOptions) ? t("sceneNoGeometrySelection") : t("sceneNoPhotoAxes") : t("sceneReadOnly")}</p>
         </div>
         <aside className="report-scene-inspector" id={`${panePrefix}-inspector`} aria-label={t("sceneInspector")}>
           <header><h3>{t("sceneInspector")}</h3>{selected && <span>{selected.id.slice(0, 8)}</span>}</header>

@@ -1534,7 +1534,7 @@ function Workspace({
                   document={document}
                   selectedId={selectedId}
                   onSelect={selectPlanEntity}
-                  geometryOptions={scenePlanOptions(document, "observed_surface", !report, imageId)}
+                  geometryOptions={scenePlanOptions(document, representation as "model" | "observed_surface" | "point_cloud", !report, imageId)}
                 />
               </div>
               <div className="canvas-pane">
