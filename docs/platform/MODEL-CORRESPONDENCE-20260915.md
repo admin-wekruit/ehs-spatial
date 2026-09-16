@@ -61,6 +61,15 @@ All eleven public bundles pass 633 exact read-response checks and 590 byte-verif
 asset checks. Fresh catalog startup uses 2,158,821,376 bytes under the existing
 3 GiB reservation. No historical publication was overwritten.
 
+Released source commit: `b49f90a`. Pages commit:
+`f22444ce569d8378e9445b75591185b6d462be60`; its
+[deployment](https://github.com/admin-wekruit/panoptes-workcell-report/actions/runs/35042767329)
+succeeded. Public HTML matches the release build byte for byte. The
+[new public report](https://admin-wekruit.github.io/panoptes-workcell-report/app.html#/reports/33f588d0-12ac-4415-b8bc-873c9c9417b1)
+was reloaded through computer use: 17/17 models loaded, CAD 28/28, empty initial
+selection, then warning-sign and transparent-sheet selections with matching photo,
+CAD and individual-model views. The final public view was returned to no selection.
+
 ## Previous delivery: 12 model records
 
 Publication `10cb71d2-80dc-4cc8-b678-8ffc27bdf857` freezes revision
