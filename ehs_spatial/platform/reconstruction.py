@@ -34,6 +34,8 @@ MAP_PINS = {"model": "facebook/map-anything-apache", "modelRevision": "00f9c245b
             "codeRevision": "3d10cf7a3016fc0f9bb13a071ee66c47b10be0d9", "adapter": PIPELINE_VERSION}
 MAX_MASK_POLYGON_RUNS = 100_000
 UNKNOWN_OUTCOME_CODES = {'provider_outcome_unknown', 'response_persistence_failed'}
+SAM_BOX_ADAPTER = 'sam3.1-box-pixel-coverage-v1'
+SAM_FAL_CLIENT_VERSION = '1.0.0'
 
 
 def _packed(value):
@@ -90,7 +92,7 @@ class ProviderSpec:
         if research_protocol is not None:
             _validate_research_protocol(research_protocol)
             purpose = research_protocol["purpose"]
-            if stage in ("generation", "geometry", "depth"):
+            if stage in ("generation", "geometry", "depth", "segmentation"):
                 _validate_research_runtime(research_protocol,self.pins,stage)
         gates = ("license",) if purpose == "runtime_validation" else ("license","runtime") if purpose == "quality_validation" else ("license","quality","runtime")
         for gate in gates:
@@ -229,8 +231,11 @@ def _capture(repository,blobs,job):
             raise PlatformError("asset_not_in_scene",403)
         raw = blobs.get(asset["storageKey"],asset["sha256"],asset["sizeBytes"])
         with Image.open(io.BytesIO(raw)) as im:
+            media_type = Image.MIME.get(im.format)
+            if not media_type:
+                raise PlatformError('unsupported_image_format', 422)
             rgb = np.asarray(im.convert("RGB"))
-        images.append({**item,"sha256":asset["sha256"],"bytes":raw,"rgb":rgb,"width":rgb.shape[1],"height":rgb.shape[0]})
+        images.append({**item,"sha256":asset["sha256"],"bytes":raw,"rgb":rgb,"mediaType":media_type,"width":rgb.shape[1],"height":rgb.shape[0]})
     from .identity import migrate_document
     document = migrate_document(document, base_revision_id=job["baseRevisionId"]) if document["schemaVersion"] == 1 else deepcopy(document)
     document["captureId"] = capture_id
@@ -251,7 +256,7 @@ def _include(document,asset):
 
 
 def _image_payload(image):
-    return {"imageId":image["id"],"dataUri":"data:image/png;base64,"+base64.b64encode(image["bytes"]).decode(),"width":image["width"],"height":image["height"],"sha256":image["sha256"]}
+    return {"imageId":image["id"],"dataUri":"data:"+image["mediaType"]+";base64,"+base64.b64encode(image["bytes"]).decode(),"width":image["width"],"height":image["height"],"sha256":image["sha256"]}
 
 
 def _discover(document,image,response,evidence):
@@ -963,8 +968,11 @@ def _append_geometry(document, images, stages):
     asset = stages.repo.get_asset(anchor_id)
     raw = _scene_asset_bytes(document,anchor_id,stages)
     with Image.open(io.BytesIO(raw)) as image:
+        media_type = Image.MIME.get(image.format)
+        if not media_type:
+            raise PlatformError('unsupported_image_format', 422)
         rgb = np.asarray(image.convert('RGB'))
-    anchor = {'id':anchor_id,'sha256':asset['sha256'],'bytes':raw,'rgb':rgb,'width':rgb.shape[1],'height':rgb.shape[0]}
+    anchor = {'id':anchor_id,'sha256':asset['sha256'],'bytes':raw,'rgb':rgb,'mediaType':media_type,'width':rgb.shape[1],'height':rgb.shape[0]}
     worksets = [[anchor,*images[i:i+3]] for i in range(0,len(images),3)]
     reports, errors = [], []
     anchor_binding = deepcopy(document['geometryBindings'][anchor_id])
@@ -1845,25 +1853,49 @@ def _discovery_invoke(payload):
     return {"items":items,"providerRequestId":request_id,"telemetry":telemetry}
 
 
-def _sam_invoke(payload):
+def _sam_box(payload):
+    image = payload['image']
+    box = np.asarray(payload.get('box'), dtype=float)
+    if (box.shape != (4,) or not np.isfinite(box).all() or min(box) < 0 or
+            box[0] >= box[2] or box[1] >= box[3] or box[2] > image['width'] or box[3] > image['height']):
+        raise PlatformError('invalid_segmentation_box', 422)
+    return [int(np.floor(box[0])), int(np.floor(box[1])), int(np.ceil(box[2])), int(np.ceil(box[3]))]
+
+
+def _sam_invoke(payload, *, on_dispatched):
     import fal_client
+    from fal_client.client import QUEUE_URL_FORMAT, SyncRequestHandle
     from ..providers.sam3 import decode_coco_rle
     image = payload["image"]
-    x0,y0,x1,y1 = payload["box"]
-    # One explicit submission; the legacy SAM adapter retries unknown timeouts.
-    handle = fal_client.submit("fal-ai/sam-3-1/image-rle",arguments={"image_url":image["dataUri"],"box_prompts":[{"x_min":x0,"y_min":y0,"x_max":x1,"y_max":y1}],
-        "return_multiple_masks":True,"include_scores":True,"max_masks":3})
-    response = handle.get()
-    rles = response.get("rle") or []
-    rles = [rles] if isinstance(rles,str) else rles
-    scores = response.get("scores") or []
-    if not rles or len(scores) != len(rles):
-        raise ProviderResponseError(_telemetry({"providerRequestId":handle.request_id,"telemetry":{"usage":response.get("usage")}}))
-    selected = int(np.argmax(scores))
+    x0,y0,x1,y1 = _sam_box(payload)
+    arguments = {"image_url":image["dataUri"],"prompt":"","box_prompts":[{"x_min":x0,"y_min":y0,"x_max":x1,"y_max":y1}],
+        "return_multiple_masks":True,"include_scores":True,"max_masks":3}
+    receipt = {}
     try:
+        # fal-client 1.0.0 submit retries POSTs internally. Use its credential
+        # client for one POST; retain its handle only for read-only polling.
+        with fal_client.SyncClient()._client as client:
+            queued = client.post(QUEUE_URL_FORMAT + 'fal-ai/sam-3-1/image-rle', json=arguments, follow_redirects=False)
+            queued.raise_for_status()
+            data = queued.json()
+            receipt = {'providerRequestId':data['request_id']}
+            on_dispatched(data['request_id'])
+            handle = SyncRequestHandle(request_id=data['request_id'], response_url=data['response_url'],
+                status_url=data['status_url'], cancel_url=data['cancel_url'], client=client)
+            response = handle.get()
+    except Exception:
+        raise ProviderResponseError(_telemetry(receipt), outcome='outcome_unknown') from None
+    metadata = {**receipt, 'telemetry':{'usage':response.get('usage')} if isinstance(response,dict) else {}}
+    try:
+        rles = response.get("rle") or []
+        rles = [rles] if isinstance(rles,str) else rles
+        scores = response.get("scores") or []
+        if not rles or len(scores) != len(rles) or not np.isfinite(np.asarray(scores, dtype=float)).all():
+            raise ValueError('invalid segmentation candidates')
+        selected = int(np.argmax(scores))
         mask = decode_coco_rle(rles[selected],height=image["height"],width=image["width"])
     except Exception:
-        raise ProviderResponseError(_telemetry({"providerRequestId":handle.request_id,"telemetry":{"usage":response.get("usage")}})) from None
+        raise ProviderResponseError(_telemetry(metadata)) from None
     return {"mask":mask.astype(bool),"selectedCandidate":selected,"candidateRles":rles,"scores":scores,"providerRequestId":handle.request_id,
             "telemetry":{"usage":response.get("usage")}}
 
@@ -1913,6 +1945,9 @@ def providers_from_manifest(snapshot: Mapping[str,Any], *, _research=False) -> d
         elif stage == "segmentation":
             if pins.get("model") != "fal-ai/sam-3-1/image-rle":
                 raise PlatformError("segmentation_model_pin_mismatch")
+            from importlib.metadata import version
+            if config.get('provider') != 'fal' or pins.get('adapter') != SAM_BOX_ADAPTER or version('fal-client') != SAM_FAL_CLIENT_VERSION:
+                raise PlatformError('research_runtime_unpinned', 409)
             invoke = _sam_invoke
         elif stage in ("geometry","depth"):
             def invoke(payload, *, on_dispatched, stage=stage, config=config, pins=pins, research=_research):
@@ -1998,7 +2033,7 @@ def providers_from_manifest(snapshot: Mapping[str,Any], *, _research=False) -> d
                         "telemetry":{k:v for k,v in received.items() if k != "providerRequestId"},"providerRequestId":received.get("providerRequestId")}
         else:
             raise PlatformError("unknown_provider_stage",stage=stage)
-        providers[stage] = ProviderSpec(config["provider"],pins,invoke,config["estimatedCostUsd"],config["releaseEvidence"],config.get("paid",True),records_dispatch=stage in ('geometry','depth'))
+        providers[stage] = ProviderSpec(config["provider"],pins,invoke,config["estimatedCostUsd"],config["releaseEvidence"],config.get("paid",True),records_dispatch=stage in ('geometry','depth','segmentation'))
         # Gate each independent stage immediately before reserve/dispatch. An
         # unapproved geometry stage must not discard approved discovery evidence.
     return providers
@@ -2021,7 +2056,10 @@ def _validate_research_protocol(protocol):
         raise PlatformError("invalid_research_dispatch_attempt",409)
     if protocol["purpose"] not in ("runtime_validation","quality_validation"):
         raise PlatformError("invalid_research_purpose",409)
-    fields = ("id", "baselineRevision", "split") + (("entityId",) if protocol.get('stage', 'generation') == 'generation' else ())
+    stage = protocol.get('stage', 'generation')
+    fields = ("id", "baselineRevision", "split") + (("entityId",) if stage == 'generation' else ('entityId', 'observationId') if stage == 'segmentation' else ())
+    if stage == 'segmentation' and protocol['purpose'] != 'runtime_validation':
+        raise PlatformError('invalid_research_purpose', 409)
     if any(not isinstance(protocol.get(k),str) or not protocol[k] for k in fields) or not isinstance(protocol["metricDefinitions"],dict) or not protocol["metricDefinitions"] or not isinstance(protocol["policyThresholds"],dict):
         raise PlatformError("frozen_research_protocol_required",409)
     hashes = protocol["inputHashes"]
@@ -2035,6 +2073,16 @@ def _validate_research_protocol(protocol):
 
 
 def _validate_research_runtime(protocol,pins,stage='generation'):
+    if stage == 'segmentation':
+        runtime = (protocol.get('runtimeManifest') or {}).get(stage) or {}
+        if (set(protocol.get('runtimeManifest') or {}) != {stage} or
+                set(runtime) != {'pins', 'provider', 'endpoint', 'adapterSourceSha256', 'falClientVersion'} or
+                runtime.get('pins') != pins or runtime.get('provider') != 'fal' or
+                runtime.get('endpoint') != 'fal-ai/sam-3-1/image-rle' or pins.get('model') != runtime.get('endpoint') or
+                pins.get('adapter') != SAM_BOX_ADAPTER or runtime.get('falClientVersion') != SAM_FAL_CLIENT_VERSION or
+                runtime.get('adapterSourceSha256') != hashlib.sha256(Path(__file__).read_bytes()).hexdigest()):
+            raise PlatformError('research_runtime_unpinned', 409)
+        return
     if stage in ('geometry', 'depth'):
         runtime = (protocol.get('runtimeManifest') or {}).get(stage) or {}
         registry = bool(re.fullmatch(r'[^\s]+@sha256:[0-9a-f]{64}', str(runtime.get('runtimeImage', ''))))
@@ -2069,6 +2117,10 @@ def validate_research_manifest(protocol, provider_manifest):
     if config.get("paid",True) is not True or type(cost) not in (int,float) or not np.isfinite(cost) or not 0 < cost <= protocol["callLimits"]["maxCostPerCallUsd"]:
         raise PlatformError("research_call_budget_invalid",409)
     if stage != 'generation':
+        if stage == 'segmentation':
+            if config.get('provider') != 'fal':
+                raise PlatformError('research_runtime_unpinned', 409)
+            _validate_research_runtime(protocol, config.get('pins', {}), stage)
         if stage in ('geometry', 'depth'):
             if any(not isinstance(config.get(k), str) or not config[k] for k in ('provider', 'modalApp', 'modalClass', 'modalMethod')):
                 raise PlatformError('research_runtime_unpinned', 409)
@@ -2116,6 +2168,30 @@ def _research_capture_input(repository, blobs, job, stage, image_ids=None):
     return payload, images
 
 
+def _research_segmentation_input(repository, blobs, job, entity_id, observation_id):
+    """A saved observation selects the original photo/box; callers supply no pixels."""
+    source = repository.get_revision(job['baseRevisionId'])['document']
+    owners = [entity for entity in source['entities'] if observation_id in entity.get('observationRefs', [])]
+    observation = next((o for o in source['observations'] if o['id'] == observation_id), None)
+    if (observation is None or len(owners) != 1 or owners[0]['id'] != entity_id or owners[0].get('sourceContext') or
+            type(observation.get('revision')) is not int or observation['revision'] < 1):
+        raise PlatformError('research_input_hash_mismatch', 409)
+    payload, images = _research_capture_input(repository, blobs, job, 'segmentation', [observation['imageId']])
+    payload['box'] = deepcopy(observation['originalPixelBox'])
+    payload['submittedBox'] = _sam_box(payload)
+    snapshot = {'entityId':entity_id, 'observationId':observation_id, 'revision':observation['revision'],
+        'imageId':observation['imageId'], 'originalPixelBox':deepcopy(observation['originalPixelBox']),
+        'pixelMapping':deepcopy(observation.get('pixelMapping', [])), 'maskAssetId':observation.get('maskAssetId')}
+    refs = [{'assetId':image['assetId'], 'sha256':image['sha256']} for image in images]
+    if snapshot['maskAssetId']:
+        declared = next((a for a in source['assets'] if a['id'] == snapshot['maskAssetId']), None)
+        if declared is None:
+            raise PlatformError('research_input_hash_mismatch', 409)
+        _scene_asset_bytes(source, declared['id'], _Stages(repository, blobs, job, {}))
+        refs.append({'assetId':declared['id'], 'sha256':declared['sha256']})
+    return payload, images, snapshot, sorted(refs, key=lambda ref:ref['assetId'])
+
+
 def _validate_research_inputs(job, stage, payload, images, provider_manifest, protocol, source, *, repository=None, blobs=None):
     validate_research_manifest(protocol,provider_manifest)
     if stage != _research_stage(protocol, provider_manifest):
@@ -2124,11 +2200,16 @@ def _validate_research_inputs(job, stage, payload, images, provider_manifest, pr
         raise PlatformError("admin_research_job_required",403)
     if protocol["baselineRevision"] != job["baseRevisionId"] or [i["sha256"] for i in images] != protocol["inputHashes"] or digest(_packed(payload)) != protocol["payloadSha256"] or (stage == "generation" and payload.get("entityId") != protocol["entityId"]):
         raise PlatformError("research_input_hash_mismatch",409)
-    if stage in ('geometry', 'depth'):
+    if stage in ('geometry', 'depth', 'segmentation'):
         if repository is None or blobs is None:
             raise PlatformError('research_capture_source_required', 409)
-        expected, owned_images = _research_capture_input(repository, blobs, job, stage, [i['id'] for i in images])
-        refs = sorted([{'assetId': i['assetId'], 'sha256': i['sha256']} for i in owned_images], key=lambda r: r['assetId'])
+        if stage == 'segmentation':
+            expected, owned_images, snapshot, refs = _research_segmentation_input(repository, blobs, job, protocol['entityId'], protocol['observationId'])
+            if protocol.get('sourceObservation') != snapshot:
+                raise PlatformError('research_input_hash_mismatch', 409)
+        else:
+            expected, owned_images = _research_capture_input(repository, blobs, job, stage, [i['id'] for i in images])
+            refs = sorted([{'assetId': i['assetId'], 'sha256': i['sha256']} for i in owned_images], key=lambda r: r['assetId'])
         if (payload != expected or images != owned_images or protocol['inputAssetHashes'] != refs
                 or protocol.get('imageIds') != [i['id'] for i in owned_images]):
             raise PlatformError('research_input_hash_mismatch', 409)
@@ -2157,6 +2238,24 @@ def run_research_stage(repository,blobs,job,stage,payload,images,provider_manife
                            'validPixelCount':int(f.support().sum())} for f in frames.values()]
         else:
             validation = [_depth_response(captured[0],response)]
+    elif stage == 'segmentation':
+        mask = np.asarray(response.get('mask'))
+        if mask.dtype != bool or mask.shape != (payload['image']['height'], payload['image']['width']):
+            raise PlatformError('mask_image_grid_mismatch', 409)
+        validation = [{'imageId':payload['image']['imageId'], 'observationId':protocol['observationId'],
+            'width':mask.shape[1], 'height':mask.shape[0], 'maskPixelCount':int(mask.sum()),
+            'submittedBox':payload['submittedBox'], 'qualityStatus':'not_evaluated_against_physical_ground_truth'}]
+        mask_id = protocol['sourceObservation']['maskAssetId']
+        if mask_id:
+            source = repository.get_revision(job['baseRevisionId'])['document']
+            with Image.open(io.BytesIO(_scene_asset_bytes(source, mask_id, stages))) as image:
+                reference = np.asarray(image.convert('L')) > 0
+            comparison = {'assetId':mask_id, 'status':'incomparable_grid'}
+            if reference.shape == mask.shape:
+                union = int(np.count_nonzero(reference | mask))
+                comparison.update(status='compared_existing_mask', referencePixelCount=int(reference.sum()),
+                    intersectionOverUnion=float(np.count_nonzero(reference & mask) / union) if union else None)
+            validation[0]['referenceMaskComparison'] = comparison
     return {"status":"succeeded","scope":"research_only","protocolAssetId":protocol_asset["id"],"outputAssetId":asset["id"],"stages":stages.records,
             "newModelCalls":sum(s["newModelCalls"] for s in stages.records),"productReleaseStatus":"not_changed","sceneRevision":None,
             **({'outputValidation':validation} if validation is not None else {})}

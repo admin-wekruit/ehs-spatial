@@ -5,6 +5,8 @@ metricDefinitions, policyThresholds, split, callLimits (maxCalls=1,
 maxCostPerCallUsd, maxTotalCostUsd), and optional observationId/seed.
 An explicit geometry/depth stage instead selects owned capture imageIds and
 requires no prior entities, masks or geometry. Depth selects exactly one photo.
+Segmentation runtime validation selects an explicit owned entityId/observationId;
+its original photo and saved box are used without requiring a previous mask.
 Configuration and budget come from the existing platform runtime environment.
 --prepare performs reads only; --submit enqueues the prepared envelope for the
 ordinary worker. Neither command invokes a model or modifies a scene head.
@@ -17,7 +19,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from ehs_spatial.platform.contracts import PlatformError, canonical, digest
 from ehs_spatial.platform.reconstruction import (
-    _Stages, _capture, _load_geometry, _load_masks, _packed, _research_stage, _research_capture_input,
+    _Stages, _capture, _load_geometry, _load_masks, _packed, _research_stage, _research_capture_input, _research_segmentation_input,
     provider_snapshot_from_env, providers_from_manifest, validate_research_manifest,
 )
 from ehs_spatial.platform.research_authority import admin_context, check_budget, validate_prepared
@@ -30,10 +32,12 @@ def prepare(protocol, repository, blobs, provider_manifest, runtime_manifest):
     if not isinstance(protocol, dict) or not required <= set(protocol) or set(protocol) - allowed:
         raise PlatformError("frozen_research_protocol_required", 409)
     stage = protocol.get('stage', 'generation')
-    if stage not in ('generation', 'geometry', 'depth'):
+    if stage not in ('generation', 'geometry', 'depth', 'segmentation'):
         raise PlatformError('research_stage_unsupported', 409)
     if (stage == 'generation' and ('entityId' not in protocol or 'imageIds' in protocol)
-            or stage != 'generation' and any(k in protocol for k in ('entityId', 'observationId', 'seed'))):
+            or stage in ('geometry', 'depth') and any(k in protocol for k in ('entityId', 'observationId', 'seed'))
+            or stage == 'segmentation' and (not {'entityId', 'observationId'} <= set(protocol) or
+                any(k in protocol for k in ('imageIds', 'seed')) or protocol['purpose'] != 'runtime_validation')):
         raise PlatformError('frozen_research_protocol_required', 409)
     protocol = json.loads(canonical(protocol))
     project_id, branch_id, base_id = (protocol[k] for k in ("projectId", "branchId", "baselineRevision"))
@@ -42,13 +46,18 @@ def prepare(protocol, repository, blobs, provider_manifest, runtime_manifest):
     base_sha = digest(source["document"])
     job = {"id": str(uuid5(NAMESPACE_URL, protocol["id"])), "kind": "validate_model", "projectId": project_id,
            "baseRevisionId": base_id, "inputs": {}, "config": {}}
-    if stage in ('geometry', 'depth'):
-        payload, images = _research_capture_input(repository, blobs, job, stage, protocol.get('imageIds'))
+    if stage in ('geometry', 'depth', 'segmentation'):
+        if stage == 'segmentation':
+            payload, images, snapshot, refs = _research_segmentation_input(repository, blobs, job, protocol['entityId'], protocol['observationId'])
+            protocol['sourceObservation'] = snapshot
+        else:
+            payload, images = _research_capture_input(repository, blobs, job, stage, protocol.get('imageIds'))
+            refs = sorted([{'assetId': i['assetId'], 'sha256': i['sha256']} for i in images], key=lambda r: r['assetId'])
         if stage not in provider_manifest or stage not in runtime_manifest:
             raise PlatformError('provider_not_configured', 409, stage=stage)
         manifest = {stage: provider_manifest[stage]}
         protocol.update(imageIds=[i['id'] for i in images], inputHashes=[i['sha256'] for i in images],
-                        inputAssetHashes=sorted([{'assetId': i['assetId'], 'sha256': i['sha256']} for i in images], key=lambda r: r['assetId']),
+                        inputAssetHashes=refs,
                         payloadSha256=digest(payload), providerManifestSha256=digest(manifest),
                         runtimeManifest={stage: runtime_manifest[stage]})
         validate_research_manifest(protocol, manifest)
