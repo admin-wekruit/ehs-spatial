@@ -321,6 +321,45 @@ def test_capture_pipeline_reviews_retained_models_without_generation(retained, m
     assert repeated['review']['status'] == 'not_requested' and len(case.calls) == 1
 
 
+def test_review_derives_missing_and_stale_cad_but_preserves_current_cache(retained, monkeypatch):
+    case = retained
+    frame = next(frame for frame in case.repo.document['coordinateFrames'] if frame['id'] == case.rep['coordinateFrameId'])
+    frame['ground'] = {'normal':[0.,0.,1.]}
+    stages = reconstruction._Stages(case.repo, case.blobs, case.job, {})
+    reconstruction._refresh_plan_projections(case.repo.document, stages, entity_ids={case.entity['id']})
+    observed = {rep['id']:deepcopy(rep['planProjection']) for rep in case.entity['representations'] if rep['kind']=='observed_surface'}
+    case.rep.pop('planProjection')
+    before = deepcopy(case.repo.document)
+    calls, original = [], reconstruction._refresh_plan_projections
+    def refresh(*args, **kwargs):
+        calls.append(kwargs['representation_ids'])
+        return original(*args, **kwargs)
+    monkeypatch.setattr(reconstruction, '_refresh_plan_projections', refresh)
+    document, result = run(case)
+    assert result['cadValidationStatus'] == 'validated' and result['newModelCalls'] == 1
+    assert next(row for row in audit_correspondence(document)['rows'] if row['entityId']==case.entity['id'])['qualityCurrent']
+    assert calls == [{case.rep['id']}]
+    entity = next(entity for entity in document['entities'] if entity['id'] == case.entity['id'])
+    rep = next(rep for rep in entity['representations'] if rep['id'] == entity['activeModelRepresentationId'])
+    assert rep['planProjection']['polygons']
+    assert {rep['id']:rep['planProjection'] for rep in entity['representations'] if rep['kind']=='observed_surface'} == observed
+    conserved = without_quality(document)
+    next(rep for entity in conserved['entities'] for rep in entity['representations'] if rep['id']==case.rep['id']).pop('planProjection')
+    assert conserved == without_quality(before)
+    entity['currentModelTransform']['scale'][0] = .5
+    case.repo.document = document
+    repaired, result = run(case)
+    assert result['cadValidationStatus'] == 'validated' and calls == [{case.rep['id']}, {case.rep['id']}]
+    entity = next(entity for entity in repaired['entities'] if entity['id'] == case.entity['id'])
+    rep = next(rep for rep in entity['representations'] if rep['id'] == entity['activeModelRepresentationId'])
+    assert rep['planProjection']['transformSnapshot'] == entity['currentModelTransform']
+    current = deepcopy(rep['planProjection'])
+    case.repo.document = repaired
+    again, result = run(case)
+    assert result['cadValidationStatus'] == 'validated' and len(calls) == 2
+    assert next(rep for entity in again['entities'] for rep in entity['representations'] if rep['id']==case.rep['id'])['planProjection'] == current
+
+
 @pytest.mark.parametrize('unknown', [False, True])
 def test_direct_research_preparation_reviews_retained_models_before_next_revision(retained, unknown):
     from ehs_spatial.platform.reconstruction_pipeline import run_reconstruction_pipeline

@@ -690,7 +690,7 @@ def _plan_projection(document, rep, mesh, asset_sha256, transform=None):
     return result
 
 
-def _refresh_plan_projections(document, stages, *, frame_ids=None, entity_ids=None):
+def _refresh_plan_projections(document, stages, *, frame_ids=None, entity_ids=None, representation_ids=None):
     from .blender_export import mesh_from_asset
     from .spatial import primitive_mesh
 
@@ -699,6 +699,8 @@ def _refresh_plan_projections(document, stages, *, frame_ids=None, entity_ids=No
         if entity.get('sourceContext') or entity_ids is not None and entity['id'] not in entity_ids:
             continue
         for rep in entity['representations']:
+            if representation_ids is not None and rep['id'] not in representation_ids:
+                continue
             modeled = rep['kind'] in ('generated_mesh', 'primitive')
             if rep.get('sourceValidity') == 'stale' or rep['kind'] not in ('observed_surface', 'generated_mesh', 'primitive') or modeled and rep['id'] != entity.get('activeModelRepresentationId') or frame_ids is not None and rep['coordinateFrameId'] not in frame_ids:
                 continue
@@ -1546,7 +1548,36 @@ def run_model_review(repository, blobs, job, providers=None, *, context=None):
             results.extend({'entityId':later, 'status':'needs_information', 'reason':'review_stopped_after_unknown_outcome'}
                            for later in requested[index + 1:])
             break
+    from shapely.errors import GEOSException
+    projectable = {eid:[rep for rep in entities[eid]['representations']
+        if rep.get('sourceValidity') != 'stale' and (rep['kind'] == 'observed_surface' or
+            rep['kind'] in ('generated_mesh', 'primitive') and rep['id'] == entities[eid].get('activeModelRepresentationId'))]
+        for eid in requested}
+
+    def refresh_projections(identities):
+        changed = False
+        for eid, representations in projectable.items():
+            selected = [rep for rep in representations if rep['id'] in identities]
+            if not selected:
+                continue
+            before = {rep['id']:rep.get('planProjection') for rep in selected}
+            try:
+                _refresh_plan_projections(document, stages, entity_ids={eid}, representation_ids=set(before))
+            except (PlatformError, ValueError, TypeError, KeyError, IndexError, OSError, GEOSException) as exc:
+                errors.append({'entityId':eid, 'stage':'cad_projection',
+                    'code':exc.code if isinstance(exc, PlatformError) else 'projection_geometry_invalid'})
+            changed |= any(rep.get('planProjection') != before[rep['id']] for rep in selected)
+        return changed
+
+    refresh_projections({rep['id'] for representations in projectable.values() for rep in representations
+                         if rep.get('planProjection') is None})
     correspondence = validate_cad_correspondence(document, stages)
+    invalid = {proof['representationId'] for row in correspondence['rows'] if row['entityId'] in requested
+        for proof in [row['cad']['model'], *row['cad']['observed']]
+        if proof['status'] != 'validated' and proof.get('representationId')}
+    saved = {rep['id'] for representations in projectable.values() for rep in representations if rep.get('planProjection') is not None}
+    if refresh_projections(invalid & saved):
+        correspondence = validate_cad_correspondence(document, stages)
     cad_pending = [row['entityId'] for row in correspondence['rows'] if row['entityId'] in requested and row['cad']['status'] != 'validated']
     return document, {'status':'succeeded' if all(row['status'] == 'accepted' for row in results) and not cad_pending and not errors else 'incomplete',
         'reviews':results, 'acceptedEntityIds':[row['entityId'] for row in results if row['status'] == 'accepted'],
