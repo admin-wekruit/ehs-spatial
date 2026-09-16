@@ -336,38 +336,30 @@ def test_generation_uses_reviewed_observation_and_rejects_invalid_batch_before_c
     assert len(repo.calls) == calls
 
 
-def test_frozen_provider_snapshot_not_mutable_deployment_and_research_does_not_publish(tmp_path,monkeypatch):
+def test_frozen_provider_snapshot_not_mutable_deployment_preserves_release_gates(tmp_path,monkeypatch):
     from ehs_spatial.providers.gemini import GEMINI_MODEL_ID
     spec = provider("discovery",lambda _: {},GEMINI_MODEL_ID)
-    config = {"provider":"gemini","pins":dict(spec.pins),"estimatedCostUsd":.01,"releaseEvidence":dict(spec.release_evidence)}
+    pins = {**spec.pins, 'adapter':'gemini-bounded-discovery-v1'}
+    config = {"provider":"gemini","pins":pins,"estimatedCostUsd":.10,"releaseEvidence":{**spec.release_evidence, 'pins':pins}}
     path = tmp_path/"providers.json"
     path.write_text(json.dumps({"discovery":config}))
     monkeypatch.setenv("PANOPTES_PROVIDER_MANIFEST",str(path))
     frozen = provider_snapshot_from_env()
     path.write_text('{}')
     assert provider_snapshot_from_env() == {} and providers_from_manifest(frozen)["discovery"].pins["model"] == GEMINI_MODEL_ID
+    for cost in (.01, True):
+        with pytest.raises(PlatformError,match='gemini_call_budget_invalid'):
+            providers_from_manifest({'discovery':{**config, 'estimatedCostUsd':cost}})
+    with pytest.raises(PlatformError,match='gemini_adapter_pin_mismatch'):
+        providers_from_manifest({'discovery':{**config, 'pins':dict(spec.pins)}})
     path.write_text(json.dumps({"discovery":{**config,"releaseEvidence":{"credential":"do-not-copy"}}}))
     with pytest.raises(PlatformError,match="secret_in_provider_manifest"):
         provider_snapshot_from_env()
-    blobs = LocalBlobStore(tmp_path/"blobs")
-    repo = Repo(blobs)
     evidence = deepcopy(spec.release_evidence)
     evidence["quality"] = {"status":"unverified"}
     candidate = replace(spec,invoke=lambda _:{"items":[]},release_evidence=evidence,paid=True)
     with pytest.raises(PlatformError,match="provider_release_gate_unverified"):
         candidate.validate("discovery")
-    monkeypatch.setattr("ehs_spatial.platform.reconstruction.providers_from_manifest",lambda *a,**kw:{"discovery":candidate})
-    image = repo.capture["images"][0]
-    image = {**image,"sha256":repo.get_asset(image["assetId"])["sha256"]}
-    protocol = {"id":"heldout-fixture-only","stage":"discovery","purpose":"quality_validation","inputHashes":[image["sha256"]],"baselineRevision":repo.rid,
-                "metricDefinitions":{"retention":"discovered count"},"policyThresholds":{},"split":"heldout","entityId":"fixture",
-                "inputAssetHashes":[{"assetId":image["assetId"],"sha256":image["sha256"]}],"payloadSha256":digest({}),
-                "providerManifestSha256":digest(frozen),"callLimits":{"maxCalls":1,"maxCostPerCallUsd":.01,"maxTotalCostUsd":.01}}
-    repo.paid_budget = .01
-    job = {**repo.job,"kind":"validate_model","config":{"researchProtocolSha256":digest(protocol)}}
-    result = run_research_stage(repo,blobs,job,"discovery",{},[image],frozen,protocol)
-    assert result["status"] == "succeeded" and result["scope"] == "research_only" and result["sceneRevision"] is None
-    assert result["productReleaseStatus"] == "not_changed" and evidence["quality"]["status"] == "unverified"
 
 
 @pytest.mark.parametrize("outcome",["success","decode_failed","persistence_failed","gpu_failed"])

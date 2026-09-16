@@ -35,18 +35,33 @@ def preparation(tmp_path, monkeypatch, stage):
     runtime = {stage: {'pins': pins, 'modalImageId': 'im-' + 'a' * 22,
                        'adapterSourceSha256': 'f' * 64,
                        'distribution': 'mapanything' if stage == 'geometry' else 'moge'}}
+    if stage == 'discovery':
+        import hashlib
+        from pathlib import Path
+        from ehs_spatial.providers import gemini
+        pins = {'model':'gemini-3.5-flash', 'adapter':'gemini-bounded-discovery-v1'}
+        repo.paid_budget = .1
+        manifest = {stage:{'provider':'gemini', 'pins':pins, 'paid':True, 'estimatedCostUsd':.1,
+            'releaseEvidence':{'pins':pins, 'license':{'status':'passed','artifactSha256':'c'*64},
+                'runtime':{'status':'unverified'},'quality':{'status':'unverified'}}}}
+        runtime = {stage:{'pins':pins, 'provider':'gemini', 'endpoint':pins['model'],
+            'adapterSourceSha256':hashlib.sha256(Path(reconstruction.__file__).read_bytes()).hexdigest(),
+            'geminiAdapterSourceSha256':hashlib.sha256(Path(gemini.__file__).read_bytes()).hexdigest(),
+            'googleGenaiVersion':'2.11.0'}}
     protocol = {'id': 'capture-stage-fixture', 'stage': stage, 'purpose': 'runtime_validation',
         'projectId': repo.pid, 'branchId': 'test-branch', 'baselineRevision': repo.rid,
         'metricDefinitions': {'sourceGrid': 'source image and returned grid agree'},
         'policyThresholds': {}, 'split': 'test-only',
         'callLimits': {'maxCalls': 1, 'maxCostPerCallUsd': .01, 'maxTotalCostUsd': .01}}
-    if stage == 'depth':
+    if stage == 'discovery':
+        protocol['callLimits'].update(maxCostPerCallUsd=.1,maxTotalCostUsd=.1)
+    if stage in ('depth','discovery'):
         protocol['imageIds'] = [repo.capture['images'][0]['id']]
     frozen = cli.prepare(protocol, repo, blobs, manifest, runtime)
     return repo, blobs, manifest, frozen
 
 
-@pytest.mark.parametrize('stage', ['geometry', 'depth'])
+@pytest.mark.parametrize('stage', ['geometry', 'depth', 'discovery'])
 def test_prepare_first_runtime_validation_without_an_entity_or_geometry(tmp_path, monkeypatch, stage):
     repo, blobs, manifest, frozen = preparation(tmp_path, monkeypatch, stage)
     assert not repo.document['entities'] and not repo.calls
@@ -114,7 +129,7 @@ def test_stage_validation_rejects_forged_inputs_or_gates(tmp_path, monkeypatch, 
     assert repo.calls == []
 
 
-@pytest.mark.parametrize('stage', ['geometry', 'depth'])
+@pytest.mark.parametrize('stage', ['geometry', 'depth', 'discovery'])
 def test_frozen_stage_loader_and_dispatch_leave_scene_and_release_unchanged(tmp_path, monkeypatch, stage):
     repo, blobs, manifest, frozen = preparation(tmp_path, monkeypatch, stage)
     before = digest(repo.document)
@@ -125,6 +140,8 @@ def test_frozen_stage_loader_and_dispatch_leave_scene_and_release_unchanged(tmp_
     seen = []
     def invoke(payload):
         seen.append(payload)
+        if stage == 'discovery':
+            return {'items':[{'label':'small control','box':[1,1,8,8]}]}
         return geometry_response(payload['images']) if stage == 'geometry' else depth_response(payload['image'])
     monkeypatch.setattr(reconstruction, 'providers_from_manifest', lambda *a, **kw: {
         stage: replace(spec, invoke=invoke, records_dispatch=False)})
@@ -422,7 +439,7 @@ def test_discovery_preserves_jpeg_payload_mime_and_bytes(tmp_path, monkeypatch):
     def create(self, *args, **kwargs):
         seen.extend(kwargs['input'])
         return SimpleNamespace(id='discovery-fixture', usage=None)
-    monkeypatch.setattr(GeminiAdapter, '_create', create)
+    monkeypatch.setattr(GeminiAdapter, 'create_bounded_structured', create)
     monkeypatch.setattr(GeminiAdapter, '_parse', lambda *a: (SimpleNamespace(items=[]), 'discovery-fixture'))
     before = digest(repo.document)
     result = reconstruction._discovery_invoke({'image':frozen['payload']['image']})
@@ -683,3 +700,138 @@ def test_sam_malformed_candidates_are_not_normalized_to_empty(tmp_path,monkeypat
     assert error.value.outcome == 'failed'
     assert error.value.telemetry['providerRequestId'] == 'sam-request-test'
     assert len(requests) == 1 and events == ['post','receipt','handle','get']
+
+
+@pytest.mark.parametrize('bad', ['payload_extra','contract','pixels','foreign_image','source_hash',
+    'source_project','source_mapping','two_images','quality_validation','entity','seed'])
+def test_discovery_revalidates_owned_photo_even_after_envelope_rehash(tmp_path,monkeypatch,bad):
+    repo,blobs,manifest,frozen = preparation(tmp_path,monkeypatch,'discovery')
+    payload,protocol = frozen['payload'],frozen['protocol']
+    if bad == 'payload_extra': payload['prompt'] = 'replace the source request'
+    elif bad == 'contract': payload['discoveryContractVersion'] = 'unreviewed'
+    elif bad == 'pixels': payload['image']['dataUri'] += 'AAAA'
+    elif bad == 'foreign_image':
+        frozen['images'][0]['id'] = payload['image']['imageId'] = 'foreign-image'
+    elif bad == 'source_hash': repo.document['assets'][0]['sha256'] = 'f'*64
+    elif bad == 'source_project': repo.assets[0]['projectId'] = 'foreign-project'
+    elif bad == 'source_mapping': repo.capture['images'][0]['pixelMapping'] = [{'forged':True}]
+    elif bad == 'two_images':
+        other = repo.capture['images'][1]
+        frozen['images'].append({**other,'sha256':repo.get_asset(other['assetId'])['sha256']})
+        protocol['imageIds'] = [i['id'] for i in frozen['images']]
+        protocol['inputHashes'] = [i['sha256'] for i in frozen['images']]
+    elif bad == 'quality_validation': protocol['purpose'] = 'quality_validation'
+    elif bad == 'entity': protocol['entityId'] = 'invented-entity'
+    else: protocol['seed'] = 0
+    protocol['payloadSha256'] = digest(payload)
+    job = {**repo.job,'kind':'validate_model','config':{'researchProtocolSha256':digest(protocol)}}
+    with pytest.raises(PlatformError):
+        reconstruction.run_research_stage(repo,blobs,job,'discovery',payload,frozen['images'],manifest,protocol)
+    assert not repo.calls
+
+
+@pytest.mark.parametrize('field,value', [('adapterSourceSha256','f'*64),
+    ('geminiAdapterSourceSha256','f'*64),('googleGenaiVersion','future-unreviewed'),
+    ('endpoint','different-model'),('provider','different-provider')])
+def test_discovery_runtime_binds_local_adapters_and_sdk(tmp_path,monkeypatch,field,value):
+    repo,blobs,manifest,frozen = preparation(tmp_path,monkeypatch,'discovery')
+    frozen['protocol']['runtimeManifest']['discovery'][field] = value
+    with pytest.raises(PlatformError,match='research_runtime_unpinned'):
+        reconstruction._validate_research_runtime(frozen['protocol'],manifest['discovery']['pins'],'discovery')
+    assert not repo.calls
+
+
+@pytest.mark.parametrize('items,reason', [([], 'discovery_empty'),
+    ([{'label':'','box':[1,1,8,8]}], 'invalid_discovery_item'),
+    ([{'label':'control','box':[1,1,13,8]}], 'invalid_discovery_item'),
+    ([{'label':'control','box':[2,1,1,8]}], 'invalid_discovery_item'),
+    ([{'label':'control','box':[1,1,8,8],'geometryRole':'invented'}], 'invalid_discovery_geometry_role')])
+def test_discovery_invalid_or_empty_output_is_saved_without_scene_records(tmp_path,monkeypatch,items,reason):
+    repo,blobs,manifest,frozen = preparation(tmp_path,monkeypatch,'discovery')
+    spec = reconstruction.providers_from_manifest(manifest,_research=True)['discovery']
+    monkeypatch.setattr(reconstruction,'providers_from_manifest',lambda *a,**kw:{
+        'discovery':replace(spec,invoke=lambda payload:{'items':items},records_dispatch=False)})
+    protocol = frozen['protocol']
+    job = {**repo.job,'kind':'validate_model','config':{'researchProtocolSha256':digest(protocol)}}
+    before = digest(repo.document)
+    results = [reconstruction.run_research_stage(repo,blobs,job,'discovery',frozen['payload'],
+        frozen['images'],manifest,protocol) for _ in range(2)]
+    for result in results:
+        assert result['status'] == 'incomplete' and result['sceneRevision'] is None
+        assert result['outputValidation'][0]['reason'] == reason
+        assert result['outputValidation'][0]['completenessStatus'] == 'not_assessed'
+        assert result['errors'][0]['outputAssetId'] == result['outputAssetId']
+        asset = repo.get_asset(result['outputAssetId'])
+        assert reconstruction._Stages(repo,blobs,job,{}).load(asset)['output']['items'] == items
+    assert len(repo.calls) == 1 and [result['newModelCalls'] for result in results] == [1,0]
+    assert digest(repo.document) == before and not repo.document['observations'] and not repo.document['entities']
+
+
+@pytest.mark.parametrize('selection', [None, [], 'both'])
+def test_discovery_prepare_requires_exactly_one_owned_photo(tmp_path,monkeypatch,selection):
+    repo,blobs,manifest,frozen = preparation(tmp_path,monkeypatch,'discovery')
+    protocol = {k:frozen['protocol'][k] for k in ('id','stage','purpose','projectId','branchId',
+        'baselineRevision','metricDefinitions','policyThresholds','split','callLimits')}
+    if selection is not None:
+        protocol['imageIds'] = [i['id'] for i in repo.capture['images']] if selection == 'both' else selection
+    with pytest.raises(PlatformError,match='research_capture_images_invalid'):
+        cli.prepare(protocol,repo,blobs,manifest,frozen['protocol']['runtimeManifest'])
+    assert not repo.calls
+
+
+@pytest.mark.parametrize('empty', [False,True])
+def test_discovery_admin_worker_retains_artifact_without_scene_mutation(repo,tmp_path,monkeypatch,empty):
+    from decimal import Decimal
+    from ehs_spatial.providers.gemini import GeminiAdapter
+    from panoptes_worker.__main__ import run_job
+    with monkeypatch.context() as local:
+        source,blobs,manifest,template = preparation(tmp_path,local,'discovery')
+    repo.blobs = blobs
+    cap,scene = project(repo)
+    pid,bid = scene['project']['id'],scene['branch']['id']
+    images = [{k:a[k] for k in ('storageKey','sha256','sizeBytes','mediaType')} for a in source.assets]
+    for image in images:
+        image['metadata'] = {'width':12,'height':12,'pixelMapping':[]}
+    capture = repo.create_capture(pid,cap,{'requestId':identity(),'branchId':bid,
+        'baseRevisionId':scene['revision']['id'],'target':'scene'},images)
+    baseline = capture['revision']['id']
+    protocol = {k:template['protocol'][k] for k in ('id','stage','purpose','metricDefinitions',
+        'policyThresholds','split','callLimits')}
+    protocol.update(projectId=pid,branchId=bid,baselineRevision=baseline,
+        imageIds=[capture['capture']['images'][0]['id']])
+    repo.paid_budget = Decimal('.1')
+    frozen = cli.prepare(protocol,repo,blobs,manifest,template['protocol']['runtimeManifest'])
+    prepared = {'validation':frozen,'sha256':digest(frozen)}
+    job = cli.submit(prepared,repo,blobs)
+    assert cli.submit(prepared,repo,blobs)['id'] == job['id']
+    seen = []
+    def create(self,operation,**kwargs):
+        assert operation == 'platform.discovery'
+        with repo._connect() as connection:
+            calls = connection.execute('SELECT * FROM model_calls WHERE job_id=%s',(job['id'],)).fetchall()
+        assert len(calls) == 1 and calls[0]['status'] == 'reserved'
+        seen.append(kwargs)
+        return SimpleNamespace(id='discovery-request-fixture',usage=None,
+            budget_evidence={'inputTokenCount':11,'maxInputTokens':16384,'maxOutputTokens':8192})
+    parsed = SimpleNamespace(items=[] if empty else [SimpleNamespace(label='small control',
+        box_2d=[100,100,600,600],evidence='visible fixture',geometry_role='object')])
+    monkeypatch.setattr(GeminiAdapter,'create_bounded_structured',create)
+    monkeypatch.setattr(GeminiAdapter,'_parse',lambda *a:(parsed,'discovery-request-fixture'))
+    result = run_job(repo,blobs,job['id'])
+    assert result['status'] == ('incomplete' if empty else 'succeeded')
+    assert result['result']['outputValidation'][0]['itemCount'] == (0 if empty else 1)
+    assert result['result']['outputValidation'][0]['completenessStatus'] == 'not_assessed'
+    assert result['resultRevisionId'] is None and not result['headAdvanced']
+    output = repo.get_asset(result['result']['outputAssetId'])
+    stored = reconstruction._Stages(repo,blobs,job,{}).load(output)['output']
+    assert stored['providerRequestId'] == 'discovery-request-fixture'
+    assert stored['budgetEvidence']['inputTokenCount'] == 11
+    run_job(repo,blobs,job['id'])
+    assert len(seen) == 1
+    with repo._connect() as connection:
+        calls = connection.execute('SELECT * FROM model_calls WHERE job_id=%s',(job['id'],)).fetchall()
+    assert len(calls) == 1 and calls[0]['status'] == 'succeeded'
+    assert calls[0]['response']['providerRequestId'] == 'discovery-request-fixture'
+    assert repo.get_project(pid)['branches'][0]['headRevisionId'] == baseline
+    assert repo.get_revision(baseline)['document'] == capture['revision']['document']
+    assert not capture['revision']['document']['entities'] and not capture['revision']['document']['observations']

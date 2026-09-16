@@ -3,8 +3,8 @@
 Protocol input: id, purpose, projectId, branchId, baselineRevision, entityId,
 metricDefinitions, policyThresholds, split, callLimits (maxCalls=1,
 maxCostPerCallUsd, maxTotalCostUsd), and optional observationId/seed.
-An explicit geometry/depth stage instead selects owned capture imageIds and
-requires no prior entities, masks or geometry. Depth selects exactly one photo.
+An explicit geometry/depth/discovery stage instead selects owned capture imageIds
+and requires no prior entities, masks or geometry. Depth/discovery select one photo.
 Segmentation runtime validation selects an explicit owned entityId/observationId;
 its original photo and saved box are used without requiring a previous mask.
 Configuration and budget come from the existing platform runtime environment.
@@ -32,10 +32,11 @@ def prepare(protocol, repository, blobs, provider_manifest, runtime_manifest):
     if not isinstance(protocol, dict) or not required <= set(protocol) or set(protocol) - allowed:
         raise PlatformError("frozen_research_protocol_required", 409)
     stage = protocol.get('stage', 'generation')
-    if stage not in ('generation', 'geometry', 'depth', 'segmentation'):
+    if stage not in ('generation', 'geometry', 'depth', 'segmentation', 'discovery'):
         raise PlatformError('research_stage_unsupported', 409)
     if (stage == 'generation' and ('entityId' not in protocol or 'imageIds' in protocol)
-            or stage in ('geometry', 'depth') and any(k in protocol for k in ('entityId', 'observationId', 'seed'))
+            or stage in ('geometry', 'depth', 'discovery') and any(k in protocol for k in ('entityId', 'observationId', 'seed'))
+            or stage == 'discovery' and protocol['purpose'] != 'runtime_validation'
             or stage == 'segmentation' and (not {'entityId', 'observationId'} <= set(protocol) or
                 any(k in protocol for k in ('imageIds', 'seed')) or protocol['purpose'] != 'runtime_validation')):
         raise PlatformError('frozen_research_protocol_required', 409)
@@ -46,7 +47,7 @@ def prepare(protocol, repository, blobs, provider_manifest, runtime_manifest):
     base_sha = digest(source["document"])
     job = {"id": str(uuid5(NAMESPACE_URL, protocol["id"])), "kind": "validate_model", "projectId": project_id,
            "baseRevisionId": base_id, "inputs": {}, "config": {}}
-    if stage in ('geometry', 'depth', 'segmentation'):
+    if stage in ('geometry', 'depth', 'segmentation', 'discovery'):
         if stage == 'segmentation':
             payload, images, snapshot, refs = _research_segmentation_input(repository, blobs, job, protocol['entityId'], protocol['observationId'])
             protocol['sourceObservation'] = snapshot

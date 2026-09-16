@@ -92,7 +92,7 @@ class ProviderSpec:
         if research_protocol is not None:
             _validate_research_protocol(research_protocol)
             purpose = research_protocol["purpose"]
-            if stage in ("generation", "geometry", "depth", "segmentation"):
+            if stage in ("generation", "geometry", "depth", "segmentation", "discovery"):
                 _validate_research_runtime(research_protocol,self.pins,stage)
         gates = ("license",) if purpose == "runtime_validation" else ("license","runtime") if purpose == "quality_validation" else ("license","quality","runtime")
         for gate in gates:
@@ -1885,7 +1885,7 @@ def _png_data_uri(rgb):
 
 
 def _model_review_invoke(payload):
-    from ..providers.gemini import GeminiAdapter, GEMINI_MODEL_ID, _response_format, _text_block
+    from ..providers.gemini import GeminiAdapter, _response_format, _text_block
     from google.genai import interactions
     adapter = GeminiAdapter()
     inputs = [_text_block('Review whether the candidate mesh represents the SAME visible physical object/component as the source photographs. '
@@ -1899,7 +1899,7 @@ def _model_review_invoke(payload):
     for view in payload['views']:
         inputs.append(_text_block('Observation '+view['observationId']))
         inputs.extend(interactions.ImageContent(data=view[k].split(',',1)[1],mime_type='image/png') for k in ('source','candidate','mask'))
-    response = adapter._create('platform.model_review',model=GEMINI_MODEL_ID,input=inputs,response_format=_response_format(_ModelReviewResponse))
+    response = adapter.create_bounded_structured('platform.model_review',input=inputs,response_format=_response_format(_ModelReviewResponse))
     usage = getattr(response,'usage',None)
     telemetry = {'usage':usage.model_dump(mode='json',exclude_none=True) if usage is not None else None}
     metadata = _telemetry({'telemetry':telemetry,'providerRequestId':getattr(response,'id',None)})
@@ -1907,16 +1907,17 @@ def _model_review_invoke(payload):
         review,request_id = adapter._parse(response,_ModelReviewResponse,'platform.model_review')
     except Exception:
         raise ProviderResponseError(metadata) from None
-    return {'review':review.model_dump(mode='json'),'providerRequestId':request_id,'telemetry':telemetry}
+    return {'review':review.model_dump(mode='json'),'providerRequestId':request_id,'telemetry':telemetry,
+        'budgetEvidence':getattr(response,'budget_evidence',None)}
 
 
 def _discovery_invoke(payload):
-    from ..providers.gemini import GeminiAdapter, GEMINI_MODEL_ID, _response_format, _text_block
+    from ..providers.gemini import GeminiAdapter, _response_format, _text_block
     from google.genai import interactions
     image = payload["image"]
     header, encoded = image['dataUri'].split(',', 1)
     adapter = GeminiAdapter()
-    response = adapter._create("platform.discovery",model=GEMINI_MODEL_ID,input=[
+    response = adapter.create_bounded_structured("platform.discovery",input=[
         _text_block("List distinct visible physical objects and separately identifiable components in this image. Use ordinary names, not a fixed taxonomy. Include small objects and partially occluded objects. Do not claim hidden geometry, dimensions, safety compliance, or certainty. Return one tight box_2d [ymin,xmin,ymax,xmax] in 0-1000 coordinates per visible instance, plus the visual evidence for its label. Do not merge a small attached component into its supporting assembly. Set geometry_role=floor only for a visibly supported hypothesis of the walking floor beneath the scene; tabletop, shelf, platform, and other flat object surfaces are not floor. Use unknown if ambiguous. This role is a hypothesis and does not establish a physical ground plane."),
         interactions.ImageContent(data=encoded,mime_type=header.removeprefix('data:').removesuffix(';base64'))],response_format=_response_format(_DiscoveryResponse))
     usage = getattr(response,"usage",None)
@@ -1930,7 +1931,8 @@ def _discovery_invoke(payload):
     for item in parsed.items:
         y0,x0,y1,x1 = item.box_2d
         items.append({"label":item.label,"box":[x0*image["width"]/1000,y0*image["height"]/1000,x1*image["width"]/1000,y1*image["height"]/1000],"evidence":item.evidence,"geometryRole":item.geometry_role})
-    return {"items":items,"providerRequestId":request_id,"telemetry":telemetry}
+    return {"items":items,"providerRequestId":request_id,"telemetry":telemetry,
+        'budgetEvidence':getattr(response,'budget_evidence',None)}
 
 
 def _sam_box(payload):
@@ -2029,6 +2031,14 @@ def providers_from_manifest(snapshot: Mapping[str,Any], *, _research=False) -> d
             from ..providers.gemini import GEMINI_MODEL_ID
             if pins.get("model") != GEMINI_MODEL_ID:
                 raise PlatformError("discovery_model_pin_mismatch")
+            adapter = 'gemini-bounded-discovery-v1' if stage == 'discovery' else 'gemini-bounded-model-review-v1'
+            if config.get('provider') != 'gemini' or pins.get('adapter') != adapter:
+                raise PlatformError('gemini_adapter_pin_mismatch', 409, stage=stage)
+            # The pinned request admits <=16,384 input and <=8,192 output/thinking
+            # tokens. At the reviewed standard prices its ceiling is $0.098304.
+            cost = config.get('estimatedCostUsd')
+            if type(cost) not in (int, float) or not np.isfinite(cost) or cost < .10:
+                raise PlatformError('gemini_call_budget_invalid', 409, stage=stage)
             invoke = _discovery_invoke if stage == 'discovery' else _model_review_invoke
         elif stage == "segmentation":
             if pins.get("model") != "fal-ai/sam-3-1/image-rle":
@@ -2132,6 +2142,8 @@ def _research_stage(protocol, provider_manifest):
     stage = protocol.get('stage', 'generation')
     if stage not in {'generation', 'geometry', 'depth', 'discovery', 'segmentation', 'model_review'} or set(provider_manifest) != {stage}:
         raise PlatformError('research_stage_mismatch', 409)
+    if stage == 'discovery' and protocol.get('purpose') != 'runtime_validation':
+        raise PlatformError('invalid_research_purpose', 409)
     return stage
 
 
@@ -2146,8 +2158,10 @@ def _validate_research_protocol(protocol):
         raise PlatformError("invalid_research_purpose",409)
     stage = protocol.get('stage', 'generation')
     fields = ("id", "baselineRevision", "split") + (("entityId",) if stage == 'generation' else ('entityId', 'observationId') if stage == 'segmentation' else ())
-    if stage == 'segmentation' and protocol['purpose'] != 'runtime_validation':
+    if stage in ('segmentation', 'discovery') and protocol['purpose'] != 'runtime_validation':
         raise PlatformError('invalid_research_purpose', 409)
+    if stage == 'discovery' and any(k in protocol for k in ('entityId', 'observationId', 'seed')):
+        raise PlatformError('frozen_research_protocol_required', 409)
     if any(not isinstance(protocol.get(k),str) or not protocol[k] for k in fields) or not isinstance(protocol["metricDefinitions"],dict) or not protocol["metricDefinitions"] or not isinstance(protocol["policyThresholds"],dict):
         raise PlatformError("frozen_research_protocol_required",409)
     hashes = protocol["inputHashes"]
@@ -2161,6 +2175,21 @@ def _validate_research_protocol(protocol):
 
 
 def _validate_research_runtime(protocol,pins,stage='generation'):
+    if stage == 'discovery':
+        from importlib.metadata import version
+        from ..providers import gemini
+        runtime = (protocol.get('runtimeManifest') or {}).get(stage) or {}
+        if (set(protocol.get('runtimeManifest') or {}) != {stage} or
+                set(runtime) != {'pins', 'provider', 'endpoint', 'adapterSourceSha256',
+                    'geminiAdapterSourceSha256', 'googleGenaiVersion'} or
+                runtime.get('pins') != pins or runtime.get('provider') != 'gemini' or
+                runtime.get('endpoint') != gemini.GEMINI_MODEL_ID or pins.get('model') != gemini.GEMINI_MODEL_ID or
+                pins.get('adapter') != 'gemini-bounded-discovery-v1' or
+                runtime.get('googleGenaiVersion') != '2.11.0' or version('google-genai') != '2.11.0' or
+                runtime.get('adapterSourceSha256') != hashlib.sha256(Path(__file__).read_bytes()).hexdigest() or
+                runtime.get('geminiAdapterSourceSha256') != hashlib.sha256(Path(gemini.__file__).read_bytes()).hexdigest()):
+            raise PlatformError('research_runtime_unpinned', 409)
+        return
     if stage == 'segmentation':
         runtime = (protocol.get('runtimeManifest') or {}).get(stage) or {}
         if (set(protocol.get('runtimeManifest') or {}) != {stage} or
@@ -2205,6 +2234,10 @@ def validate_research_manifest(protocol, provider_manifest):
     if config.get("paid",True) is not True or type(cost) not in (int,float) or not np.isfinite(cost) or not 0 < cost <= protocol["callLimits"]["maxCostPerCallUsd"]:
         raise PlatformError("research_call_budget_invalid",409)
     if stage != 'generation':
+        if stage == 'discovery':
+            if config.get('provider') != 'gemini':
+                raise PlatformError('research_runtime_unpinned', 409)
+            _validate_research_runtime(protocol, config.get('pins', {}), stage)
         if stage == 'segmentation':
             if config.get('provider') != 'fal':
                 raise PlatformError('research_runtime_unpinned', 409)
@@ -2252,6 +2285,8 @@ def _research_capture_input(repository, blobs, job, stage, image_ids=None):
         if asset.get('projectId') != job['projectId'] or source_assets[asset['id']]['sha256'] != asset['sha256']:
             raise PlatformError('research_input_hash_mismatch', 409)
     payload = {'images': [_image_payload(i) for i in selected]} if stage == 'geometry' else {'image': _image_payload(selected[0])}
+    if stage == 'discovery':
+        payload['discoveryContractVersion'] = 'geometry_role_v1'
     images = [{k: image[k] for k in ('id', 'assetId', 'sha256', 'pixelMapping') if k in image} for image in selected]
     return payload, images
 
@@ -2290,7 +2325,7 @@ def _validate_research_inputs(job, stage, payload, images, provider_manifest, pr
         raise PlatformError("admin_research_job_required",403)
     if protocol["baselineRevision"] != job["baseRevisionId"] or [i["sha256"] for i in images] != protocol["inputHashes"] or digest(_packed(payload)) != protocol["payloadSha256"] or (stage == "generation" and payload.get("entityId") != protocol["entityId"]):
         raise PlatformError("research_input_hash_mismatch",409)
-    if stage in ('geometry', 'depth', 'segmentation'):
+    if stage in ('geometry', 'depth', 'segmentation', 'discovery'):
         if repository is None or blobs is None:
             raise PlatformError('research_capture_source_required', 409)
         if stage == 'segmentation':
@@ -2314,7 +2349,7 @@ def run_research_stage(repository,blobs,job,stage,payload,images,provider_manife
     providers = providers_from_manifest(provider_manifest,_research=True)
     stages = _Stages(repository,blobs,job,providers)
     protocol_asset = stages.put({"protocol":protocol,"providerManifest":provider_manifest},{"kind":"frozen_research_protocol","scope":"research_only"})
-    if stage in ("generation", "geometry", "depth"):
+    if stage in ("generation", "geometry", "depth", "discovery"):
         payload = {**payload,"_researchProtocol":protocol}
     response,asset = stages.call(stage,images,payload,[_ref(protocol_asset)],research_protocol=protocol)
     validation = None
@@ -2329,6 +2364,22 @@ def run_research_stage(repository,blobs,job,stage,payload,images,provider_manife
                            'validPixelCount':int(f.support().sum())} for f in frames.values()]
         else:
             validation = [_depth_response(captured[0],response)]
+    elif stage == 'discovery':
+        _,document,captured = _capture(repository,blobs,job)
+        image = next(image for image in captured if image['id'] == images[0]['id'])
+        validation = [{'imageId':image['id'], 'completenessStatus':'not_assessed',
+            'qualityStatus':'not_evaluated_against_physical_ground_truth'}]
+        try:
+            # Reuse normal discovery's response contract on a disposable document;
+            # research validates observations without adding any to the source scene.
+            _discover(deepcopy(document),image,response,asset)
+            validation[0].update(itemCount=len(response['items']), admissionStatus='accepted')
+            if not response['items']:
+                raise PlatformError('discovery_empty', 409)
+        except (PlatformError, ValueError, TypeError, KeyError) as exc:
+            code = exc.code if isinstance(exc,PlatformError) else 'invalid_discovery_response'
+            validation[0].update(admissionStatus='rejected', reason=code)
+            errors.append({'stage':stage, 'code':code, 'outputAssetId':asset['id']})
     elif stage == 'segmentation':
         validation = [{'imageId':payload['image']['imageId'], 'observationId':protocol['observationId'],
             'qualityStatus':'not_evaluated_against_physical_ground_truth'}]

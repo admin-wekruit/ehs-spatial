@@ -33,8 +33,8 @@ def chain(repo, tmp_path, monkeypatch):
                                                            'split', 'callLimits', 'runtimeManifest')}
     preparation.update(authority={'source': 'database_admin', 'databaseRole': 'test-only-prior'},
                        budgetAtPreparation={'configuredBudgetUsd': '1', 'spentOrReservedUsd': '0'})
-    review_pins = {'model': GEMINI_MODEL_ID, 'modelRevision': 'synthetic-test', 'adapter': 'synthetic-test'}
-    manifest['model_review'] = {'provider': 'synthetic-review-transport', 'pins': review_pins, 'estimatedCostUsd': .01,
+    review_pins = {'model': GEMINI_MODEL_ID, 'modelRevision': 'synthetic-test', 'adapter': 'gemini-bounded-model-review-v1'}
+    manifest['model_review'] = {'provider': 'gemini', 'pins': review_pins, 'estimatedCostUsd': .10,
         'paid': True, 'releaseEvidence': {'pins': review_pins,
             **{gate: {'status': 'passed', 'artifactSha256': 'f' * 64} for gate in ('license', 'quality', 'runtime')}}}
     repo.execution_config = {'providerManifest': manifest, 'researchPreparation': preparation}
