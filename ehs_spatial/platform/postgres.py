@@ -506,6 +506,26 @@ class PostgresRepository:
             return _wire(connection.execute("""INSERT INTO model_calls(id,project_id,job_id,attempt_token,provider,model,request_key,status,estimated_cost,code_sha256,model_sha256,adapter_sha256,input_sha256)
                 VALUES(%s,%s,%s,%s,%s,%s,%s,'reserved',%s,%s,%s,%s,%s) RETURNING *""", (uuid4(), job["project_id"], job_id, attempt_token, provider, model, request_key, estimate, code_sha256, model_sha256, adapter_sha256, input_sha256)).fetchone())
 
+    def record_model_call_dispatch(self, call_id, attempt_token, provider_request_id):
+        if not isinstance(provider_request_id, str) or not provider_request_id.strip():
+            raise PlatformError('invalid_provider_request_id')
+        with self._connect() as connection:
+            job = self._one(connection, """SELECT j.*,j.lease_expires_at>now() AS lease_valid
+                FROM jobs j JOIN model_calls m ON m.job_id=j.id WHERE m.id=%s FOR UPDATE OF j""",
+                (call_id,), code='model_call_not_found')
+            row = self._one(connection, 'SELECT * FROM model_calls WHERE id=%s FOR UPDATE', (call_id,), code='model_call_not_found')
+            if (job['status'] != 'running' or job['cancel_requested'] or not job['lease_valid']
+                    or str(job['attempt_token']) != str(attempt_token) or str(row['attempt_token']) != str(attempt_token)
+                    or row['status'] != 'reserved'):
+                raise PlatformError('stale_job_attempt', 409)
+            response = row['response'] or {}
+            if response.get('providerRequestId'):
+                if response['providerRequestId'] != provider_request_id:
+                    raise PlatformError('model_dispatch_conflict', 409)
+                return _wire(row)
+            return _wire(connection.execute('UPDATE model_calls SET response=%s,updated_at=now() WHERE id=%s RETURNING *',
+                (Jsonb({**response,'providerRequestId':provider_request_id}), call_id)).fetchone())
+
     def complete_model_call(self, call_id, status, actual_cost=None, response=None):
         if status not in ("succeeded", "failed", "outcome_unknown"):
             raise PlatformError("invalid_model_outcome")
@@ -513,19 +533,30 @@ class PostgresRepository:
             raise PlatformError("invalid_cost")
         with self._connect() as connection:
             row = self._one(connection, "SELECT * FROM model_calls WHERE id=%s FOR UPDATE", (call_id,), code="model_call_not_found")
+            previous = row['response'] or {}
+            request_id = previous.get('providerRequestId')
+            if request_id:
+                if (response or {}).get('providerRequestId') not in (None, request_id):
+                    raise PlatformError('model_dispatch_conflict', 409)
+                response = {**(response or {}), 'providerRequestId':request_id}
+            else:
+                request_id = (response or {}).get('providerRequestId')
             if row["status"] != "reserved":
                 if row["status"] == "outcome_unknown" and status in ("succeeded", "failed"):
-                    previous = row["response"] or {}
                     late = {"status": status, "actualCost": str(Decimal(str(actual_cost)).normalize()) if actual_cost is not None else None, "response": response}
                     if isinstance(previous, dict) and previous.get("lateOutcome"):
                         if previous["lateOutcome"] != late:
                             raise PlatformError("model_outcome_conflict", 409)
                         return _wire(row)
-                    return _wire(connection.execute("UPDATE model_calls SET actual_cost=COALESCE(%s,actual_cost),response=%s,updated_at=now() WHERE id=%s RETURNING *", (actual_cost, Jsonb({"previousResponse": previous, "lateOutcome": late}), call_id)).fetchone())
+                    return _wire(connection.execute("UPDATE model_calls SET actual_cost=COALESCE(%s,actual_cost),response=%s,updated_at=now() WHERE id=%s RETURNING *", (actual_cost, Jsonb({**({'providerRequestId':request_id} if request_id else {}), "previousResponse": previous, "lateOutcome": late}), call_id)).fetchone())
                 if row["status"] != status:
                     raise PlatformError("model_outcome_conflict", 409)
+                if status == 'outcome_unknown' and request_id and not previous.get('providerRequestId'):
+                    # Recovery may expire the reservation while spawn returns its ID.
+                    return _wire(connection.execute('UPDATE model_calls SET response=%s,updated_at=now() WHERE id=%s RETURNING *',
+                        (Jsonb({**previous,'providerRequestId':request_id}), call_id)).fetchone())
                 return _wire(row)
-            return _wire(connection.execute("UPDATE model_calls SET status=%s,actual_cost=%s,response=%s,updated_at=now() WHERE id=%s RETURNING *", (status, actual_cost, Jsonb(response), call_id)).fetchone())
+            return _wire(connection.execute("UPDATE model_calls SET status=%s,actual_cost=%s,response=%s,updated_at=now() WHERE id=%s RETURNING *", (status, actual_cost, Jsonb({**previous, **(response or {})} if previous else response), call_id)).fetchone())
 
     def create_publication(self, project_id, capability, body, *, evaluations=None, reviews=None):
         with self._connect() as connection:

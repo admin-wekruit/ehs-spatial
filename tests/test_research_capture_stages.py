@@ -127,7 +127,7 @@ def test_frozen_stage_loader_and_dispatch_leave_scene_and_release_unchanged(tmp_
         seen.append(payload)
         return geometry_response(payload['images']) if stage == 'geometry' else depth_response(payload['image'])
     monkeypatch.setattr(reconstruction, 'providers_from_manifest', lambda *a, **kw: {
-        stage: replace(spec, invoke=invoke)})
+        stage: replace(spec, invoke=invoke, records_dispatch=False)})
     job = {**repo.job, 'kind': 'validate_model', 'branchId': frozen['branchId'],
         'inputs': {'validationAssetId': asset['id'], 'validationSha256': asset['sha256']},
         'config': {'researchProtocolSha256': digest(frozen['protocol'])}}
@@ -149,21 +149,24 @@ def test_modal_stage_binds_the_reviewed_runtime_hash(tmp_path, monkeypatch, stag
     expected = digest(protocol['runtimeManifest'][stage])
     received = []
     response = {'pins': manifest[stage]['pins'], 'runtimeManifestSha256': expected}
-    def remote(payload, **kwargs):
+    def spawn(payload, **kwargs):
         received.append(kwargs)
-        return response
+        return SimpleNamespace(object_id='fc-test', get=lambda:response)
     monkeypatch.setitem(sys.modules, 'modal', SimpleNamespace(Cls=SimpleNamespace(
-        from_name=lambda *a: lambda: SimpleNamespace(run=SimpleNamespace(remote=remote)))))
+        from_name=lambda *a: lambda: SimpleNamespace(run=SimpleNamespace(spawn=spawn)))))
     provider = reconstruction.providers_from_manifest(manifest, _research=True)[stage]
-    provider.invoke({**frozen['payload'], '_researchProtocol': protocol})
+    receipts = []
+    provider.invoke({**frozen['payload'], '_researchProtocol': protocol}, on_dispatched=receipts.append)
     assert received == [{'expectedRuntimeManifestSha256': expected}]
     response['runtimeManifestSha256'] = 'e' * 64
     with pytest.raises(reconstruction.ProviderResponseError):
-        provider.invoke({**frozen['payload'], '_researchProtocol': protocol})
+        provider.invoke({**frozen['payload'], '_researchProtocol': protocol}, on_dispatched=receipts.append)
+    assert receipts == ['fc-test', 'fc-test']
 
 
 @pytest.mark.parametrize('stage', ['geometry', 'depth'])
-def test_admin_stage_submit_worker_and_ledger_are_idempotent(repo, tmp_path, monkeypatch, stage):
+@pytest.mark.parametrize('unknown', [False, True])
+def test_admin_stage_submit_worker_and_ledger_are_idempotent(repo, tmp_path, monkeypatch, stage, unknown):
     from decimal import Decimal
     from panoptes_worker.__main__ import run_job
     with monkeypatch.context() as local:
@@ -190,19 +193,30 @@ def test_admin_stage_submit_worker_and_ledger_are_idempotent(repo, tmp_path, mon
     job = cli.submit(prepared, repo, blobs)
     assert cli.submit(prepared, repo, blobs)['id'] == job['id']
     seen = []
-    spec = reconstruction.providers_from_manifest(manifest, _research=True)[stage]
-    def invoke(payload):
+    def spawn(payload, **options):
         seen.append(payload)
-        return geometry_response(payload['images']) if stage == 'geometry' else depth_response(payload['image'])
-    monkeypatch.setattr(reconstruction, 'providers_from_manifest', lambda *a, **kw: {
-        stage: replace(spec, invoke=invoke)})
+        def get():
+            with repo._connect() as connection:
+                row = connection.execute('SELECT * FROM model_calls WHERE job_id=%s', (job['id'],)).fetchone()
+            assert row['status'] == 'reserved' and row['response']['providerRequestId'] == 'fc-worker'
+            if unknown:
+                raise TimeoutError('provider result unavailable')
+            output = geometry_response(payload['images']) if stage == 'geometry' else depth_response(payload['image'])
+            return {**output, 'pins': manifest[stage]['pins'],
+                    'runtimeManifestSha256': options['expectedRuntimeManifestSha256']}
+        return SimpleNamespace(object_id='fc-worker', get=get, cancel=lambda **kw:None)
+    monkeypatch.setitem(sys.modules, 'modal', SimpleNamespace(Cls=SimpleNamespace(
+        from_name=lambda *a: lambda: SimpleNamespace(run=SimpleNamespace(spawn=spawn)))))
     result = run_job(repo, blobs, job['id'])
-    assert result['status'] == 'succeeded'
+    assert result['status'] == ('outcome_unknown' if unknown else 'succeeded')
     assert result['result']['scope'] == 'research_only'
     assert result['resultRevisionId'] is None and not result['headAdvanced']
     assert repo.get_project(pid)['branches'][0]['headRevisionId'] == capture['revision']['id']
     run_job(repo, blobs, job['id'])
     assert len(seen) == 1
+    with repo._connect() as connection:
+        calls = connection.execute('SELECT * FROM model_calls WHERE job_id=%s', (job['id'],)).fetchall()
+    assert len(calls) == 1 and calls[0]['response']['providerRequestId'] == 'fc-worker'
     assert manifest[stage]['releaseEvidence']['runtime']['status'] == 'unverified'
 
 
@@ -211,7 +225,7 @@ def test_matching_pins_do_not_make_empty_stage_output_valid(tmp_path, monkeypatc
     repo, blobs, manifest, frozen = preparation(tmp_path, monkeypatch, stage)
     spec = reconstruction.providers_from_manifest(manifest, _research=True)[stage]
     monkeypatch.setattr(reconstruction, 'providers_from_manifest', lambda *a, **kw: {
-        stage: replace(spec, invoke=lambda payload:{'pins':spec.pins})})
+        stage: replace(spec, invoke=lambda payload:{'pins':spec.pins}, records_dispatch=False)})
     job = {**repo.job, 'kind':'validate_model', 'config':{
         'researchProtocolSha256':digest(frozen['protocol'])}}
     before = digest(repo.document)

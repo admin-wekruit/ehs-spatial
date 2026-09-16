@@ -78,6 +78,7 @@ class ProviderSpec:
     estimated_cost_usd: float
     release_evidence: Mapping[str,Any]
     paid: bool = True
+    records_dispatch: bool = False
 
     def validate(self, stage: str, *, research_protocol=None):
         evidence = self.release_evidence
@@ -169,8 +170,12 @@ class _Stages:
             raise
         started = time.monotonic()
         try:
-            result = (provider.invoke(payload, is_current=lambda:self.repo.heartbeat_job(self.job['id'], self.job['attemptToken']))
-                      if provider.pins.get('model') == 'TRI-ML/RecGen' else provider.invoke(payload))
+            options = {}
+            if provider.records_dispatch:
+                options['on_dispatched'] = lambda request_id:self.repo.record_model_call_dispatch(call['id'], self.job['attemptToken'], request_id)
+            if provider.pins.get('model') == 'TRI-ML/RecGen':
+                options['is_current'] = lambda:self.repo.heartbeat_job(self.job['id'], self.job['attemptToken'])
+            result = provider.invoke(payload, **options)
             if not isinstance(result,dict):
                 raise ProviderResponseError(_telemetry({}))
         except Exception as exc:
@@ -1699,15 +1704,37 @@ def providers_from_manifest(snapshot: Mapping[str,Any], *, _research=False) -> d
                 raise PlatformError("segmentation_model_pin_mismatch")
             invoke = _sam_invoke
         elif stage in ("geometry","depth"):
-            def invoke(payload, *, stage=stage, config=config, pins=pins, research=_research):
+            def invoke(payload, *, on_dispatched, stage=stage, config=config, pins=pins, research=_research):
                 import modal
                 klass = modal.Cls.from_name(config["modalApp"],config["modalClass"])
                 expected = digest(payload['_researchProtocol']['runtimeManifest'][stage]) if research else None
                 options = {'expectedRuntimeManifestSha256': expected} if research else {}
-                result = getattr(klass(),config["modalMethod"]).remote(payload, **options)
-                if result.get("pins") != pins or (research and result.get('runtimeManifestSha256') != expected):
-                    raise ProviderResponseError(_telemetry(result))
-                return _unpacked(result)
+                call = getattr(klass(),config["modalMethod"]).spawn(payload, **options)
+                receipt = {'providerRequestId':call.object_id}
+                try:
+                    # Commit the recoverable invocation before waiting; never spawn
+                    # again after any uncertain dispatch or receipt failure.
+                    on_dispatched(call.object_id)
+                except Exception:
+                    try:
+                        call.cancel(terminate_containers=True)
+                    except Exception:
+                        pass  # Cancellation is uncertain too; retain the original ID.
+                    raise ProviderResponseError(_telemetry(receipt), outcome='outcome_unknown') from None
+                try:
+                    result = call.get()
+                except Exception:
+                    # A failed read must leave this invocation available for retrieval.
+                    raise ProviderResponseError(_telemetry(receipt), outcome='outcome_unknown') from None
+                if not isinstance(result, dict):
+                    raise ProviderResponseError(_telemetry(receipt))
+                result = {**result, **receipt}
+                try:
+                    if result.get("pins") != pins or (research and result.get('runtimeManifestSha256') != expected):
+                        raise ValueError('provider_runtime_mismatch')
+                    return _unpacked(result)
+                except Exception:
+                    raise ProviderResponseError(_telemetry(result)) from None
         elif stage == "generation" and pins.get('model') == 'TRI-ML/RecGen' and _research:
             from .recgen import RecGenRequest, adapt_output
             def invoke(payload, *, config=config, is_current=None):
@@ -1760,7 +1787,7 @@ def providers_from_manifest(snapshot: Mapping[str,Any], *, _research=False) -> d
                         "telemetry":{k:v for k,v in received.items() if k != "providerRequestId"},"providerRequestId":received.get("providerRequestId")}
         else:
             raise PlatformError("unknown_provider_stage",stage=stage)
-        providers[stage] = ProviderSpec(config["provider"],pins,invoke,config["estimatedCostUsd"],config["releaseEvidence"],config.get("paid",True))
+        providers[stage] = ProviderSpec(config["provider"],pins,invoke,config["estimatedCostUsd"],config["releaseEvidence"],config.get("paid",True),records_dispatch=stage in ('geometry','depth'))
         # Gate each independent stage immediately before reserve/dispatch. An
         # unapproved geometry stage must not discard approved discovery evidence.
     return providers
