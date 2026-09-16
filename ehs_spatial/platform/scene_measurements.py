@@ -129,10 +129,10 @@ def surface_distance(a,b, *, seconds=15):
 
 
 def measure_scene(revision, kind, entity_a, entity_b, region, load_asset):
-    if kind not in ('angle','distance','occupancy'):
+    if kind not in ('angle','inclination','distance','occupancy'):
         raise PlatformError('measurement_kind_invalid',422)
     doc=revision['document']; models=[]; refs=[]
-    ids=[entity_a] if kind=='occupancy' else [entity_a,entity_b]
+    ids=[entity_a] if kind in ('occupancy','inclination') else [entity_a,entity_b]
     if len(set(ids)) != len(ids) or any(not i for i in ids):
         raise PlatformError('measurement_choose_objects',422)
     for id in ids:
@@ -154,11 +154,24 @@ def measure_scene(revision, kind, entity_a, entity_b, region, load_asset):
     if frame is None: raise PlatformError('measurement_frame_mismatch',422)
     if any(frame!=frame_id for _,frame in models): raise PlatformError('measurement_frame_mismatch',422)
     result={'revisionId':revision['id'],'kind':kind,'coordinateFrameId':frame_id,'source':'model_inference','references':refs,'lines':[],'quality':{},'unit':'native','value':None}
-    if kind=='angle':
-        a,b=[fitted_plane(t) for t,_ in models]
+    if kind in ('angle','inclination'):
+        a=fitted_plane(models[0][0])
+        if kind=='inclination':
+            normal=np.asarray((frame.get('ground') or {}).get('normal',[]),float)
+            if normal.shape!=(3,) or not np.isfinite(normal).all() or np.linalg.norm(normal)<1e-8:
+                raise PlatformError('measurement_ground_missing',422)
+            normal=normal/np.linalg.norm(normal)
+            x=np.cross(normal,[1,0,0] if abs(normal[0])<.8 else [0,1,0]); x/=np.linalg.norm(x)
+            y=np.cross(normal,x); half=a['span']*.3
+            # This datum is parallel to ground through the panel center, not a
+            # claim that the physical floor lies at the panel's elevation.
+            outline=[a['center']+half*(u*x+v*y) for u,v in [(-1,-1),(1,-1),(1,1),(-1,1),(-1,-1)]]
+            b={'normal':normal,'center':a['center'],'span':a['span'],'outline':np.asarray(outline)}
+        else:
+            b=fitted_plane(models[1][0])
         cosine=float(np.clip(abs(a['normal']@b['normal']),0,1)); angle=float(np.degrees(np.arccos(cosine)))
         result.update(value=angle,unit='deg',method='dominant-surface-plane-acute-angle-v1')
-        result['quality']={'surfaceFits':[{'areaFraction':p['areaFraction'],'rmsResidualNative':p['residual']} for p in (a,b)]}
+        result['quality']={'surfaceFits':[{'areaFraction':p['areaFraction'],'rmsResidualNative':p['residual']} for p in ((a,) if kind=='inclination' else (a,b))]}
         result['lines']=[{'points':p['outline'].tolist(),'color':color} for p,color in [(a,'#e36b23'),(b,'#168bba')]]
         normal=b['normal'] if a['normal']@b['normal']>=0 else -b['normal']
         origin=(a['center']+b['center'])/2; size=min(a['span'],b['span'])*.25
@@ -168,6 +181,14 @@ def measure_scene(revision, kind, entity_a, entity_b, region, load_asset):
         if length>1e-9:
             arc=[origin+size*(a['normal']*np.cos(t)+tangent/length*np.sin(t)) for t in np.linspace(0,np.deg2rad(angle),25)]
             result['lines'].append({'points':[origin.tolist(),arc[0].tolist(),*[p.tolist() for p in arc],origin.tolist()],'color':'#edbe38'})
+        if kind=='inclination':
+            result['method']='dominant-surface-ground-inclination-v1'
+            result['quality'].update(deviationFromVerticalDeg=90-angle, groundReference=frame['ground'])
+            panel_normal=a['normal'] if a['normal']@b['normal']>=0 else -a['normal']
+            horizontal=cosine*b['normal']-panel_normal
+            horizontal=horizontal/np.linalg.norm(horizontal) if np.linalg.norm(horizontal)>1e-9 else x
+            arc=[origin+size*(horizontal*np.cos(t)+b['normal']*np.sin(t)) for t in np.linspace(0,np.deg2rad(angle),25)]
+            result['lines']=result['lines'][:2]+[{'points':[origin.tolist(),*[p.tolist() for p in arc],origin.tolist()],'color':'#edbe38'}]
         result['labelPoint']=origin.tolist()
     elif kind=='distance':
         distance,(a,b)=surface_distance(models[0][0],models[1][0])

@@ -87,3 +87,29 @@ try:measure_scene(broken,'occupancy','a',None,region,load)
 except PlatformError as e:assert e.code=='measurement_ground_missing'
 else:raise AssertionError('missing ground accepted')
 print('PASS: projection holes, immutable input, anisotropic normals, hidden/excluded/stale rejection and ground qualification')
+
+# Inclination compares the actual board plane with ground, not its local Z axis.
+for degrees in (0,30,80,90):
+ tilted=deepcopy(revision)
+ pose=tilted['document']['entities'][0]['representations'][0]['transform']
+ pose['quaternion']=[float(np.sin(np.deg2rad(degrees)/2)),0,0,float(np.cos(np.deg2rad(degrees)/2))]
+ inclination=measure_scene(tilted,'inclination','a',None,None,load)
+ assert abs(inclination['value']-degrees)<1e-6
+ assert abs(inclination['quality']['deviationFromVerticalDeg']-(90-degrees))<1e-6
+ assert len(inclination['references'])==1 and inclination['unit']=='deg'
+ arc=np.asarray(inclination['lines'][-1]['points'])
+ assert abs((arc[1]-arc[0])[2])<1e-8
+ panel_normal=np.array([0,-np.sin(np.deg2rad(degrees)),np.cos(np.deg2rad(degrees))])
+ assert abs((arc[-2]-arc[0])@panel_normal)<1e-8
+# Ground is a scene reference, not hardcoded world Z; reversed normal is equivalent.
+tilted['document']['coordinateFrames'][0]['ground']['normal']=[0,-2,0]
+assert measure_scene(tilted,'inclination','a',None,None,load)['value']<1e-6
+for normal in (None,[0,0,0],[0,float('nan'),1]):
+ invalid=deepcopy(revision); invalid['document']['coordinateFrames'][0]['ground']['normal']=normal
+ try:measure_scene(invalid,'inclination','a',None,None,load)
+ except PlatformError as e:assert e.code=='measurement_ground_missing'
+ else:raise AssertionError('Invalid ground must not produce an inclination')
+print('PASS: board inclination, vertical deviation, arbitrary ground normal and absent ground')
+with TestClient(app) as client:
+ response=client.get('/api/revisions/revision/measurements',params={'kind':'inclination','entityA':'a'})
+ assert response.status_code==200 and response.json()['value']==0
