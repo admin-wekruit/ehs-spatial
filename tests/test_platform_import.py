@@ -62,6 +62,52 @@ def test_generic_import_retains_context_small_masks_missing_mesh_and_native_came
     assert len(set(manifest['entityIds'].values()))==30
 
 
+def test_model_report_inputs_pin_exact_observation_versions_without_rewriting_sources(tmp_path):
+    path = make_public_scene(tmp_path)
+    source = json.loads(path.read_text())
+    Image.new('RGB', (8, 6), 'blue').save(tmp_path/'second.png')
+    source['cameras'].append({**source['cameras'][0], 'id': 'camera-b', 'image': 'second.png'})
+    path.write_text(json.dumps(source))
+    view = {'frame_id': 'camera-a', 'bbox': [1, 1, 2, 2], 'polygons': [[[1, 1], [1, 2], [2, 2]]]}
+    report = {'reconstruction_run_id': source['run_id'], 'scene_url': path.name,
+        'frames': [{'id': 'camera-a', 'url': 'photo.png'}, {'id': 'camera-b', 'url': 'second.png'}],
+        'objects': [{'id': 'report-object', 'scene_object_id': 'generated', 'views': [view, view, {**view, 'frame_id': 'camera-b'}]},
+                    {'id': 'unmapped', 'scene_object_id': 'absent', 'label': 'Proposal', 'views': [view]}], 'plan': {}}
+    report_path = tmp_path/'report.json'
+    report_path.write_text(json.dumps(report))
+    before = {p: p.read_bytes() for p in (path, report_path)}
+    stored = {}
+    def put(data, media_type, metadata):
+        sha = hashlib.sha256(data).hexdigest()
+        aid = str(uuid5(NAMESPACE_URL, sha))
+        stored[aid] = data
+        return {'id': aid, 'sha256': sha, 'sizeBytes': len(data), 'mediaType': media_type, 'metadata': metadata}
+    document, manifest = import_document(path, put)
+    entity = next(e for e in document['entities'] if e['id'] == manifest['entityIds']['generated'])
+    refs = entity['representations'][0]['sourceRefs']
+    artifact, evidence = refs
+    assert artifact['role'] == 'model_artifact' and artifact['sourceRecordId'] == 'generated'
+    assert artifact['sha256'] == hashlib.sha256(before[path]).hexdigest()
+    observation = next(o for o in document['observations'] if o['id'] == evidence['observationId'])
+    assert evidence['revision'] == observation['revision'] == 1
+    assert evidence['imageId'] == observation['imageId']
+    assert evidence['imageSha256'] == hashlib.sha256(stored[observation['imageId']]).hexdigest()
+    assert evidence['sha256'] == hashlib.sha256(before[report_path]).hexdigest()
+    assert evidence['sourceRecordId'] == 'generated' and evidence['sourceFrameId'] == 'camera-a'
+    assert evidence['jsonPointer'] == '/objects/0/views/0'
+    # A report-only camera is still available as evidence, but was not a declared model input.
+    assert len(entity['observationRefs']) == 2 and len(refs) == 2
+    assert document['reportEvidence']['objects'][1]['entityId'] is None
+    assert all(p.read_bytes() == raw for p, raw in before.items())
+    assert import_document(path, put)[1]['documentSha256'] == manifest['documentSha256']
+    from ehs_spatial.platform.identity import migrate_document
+    from ehs_spatial.platform.correspondence import audit_correspondence
+    document['captureId'] = str(uuid5(NAMESPACE_URL, 'test-import-capture'))
+    current = migrate_document(document, base_revision_id=str(uuid5(NAMESPACE_URL, 'test-import-revision')))
+    audited = next(r for r in audit_correspondence(current)['rows'] if r['entityId'] == entity['id'])
+    assert audited['modelCurrent'] and audited['sourceErrors'] == []
+
+
 def test_explicit_report_views_share_entity_reuse_anchor_and_retain_unmapped_evidence(tmp_path):
     path = make_public_scene(tmp_path)
     source = json.loads(path.read_text())
@@ -203,6 +249,8 @@ def test_parametric_import_restores_editable_dimensions_and_proves_source_surfac
     mesh = primitive_mesh(spec)
     assert rep['bounds'] == {'min':mesh.vertices.min(axis=0).tolist(), 'max':mesh.vertices.max(axis=0).tolist()}
     source_ref, mesh_ref, parameter_ref = rep['sourceRefs']
+    assert all(ref['role'] == 'model_artifact' for ref in rep['sourceRefs'])
+    assert all(ref['sha256'] == hashlib.sha256(stored[ref['assetId']]).hexdigest() for ref in rep['sourceRefs'])
     assert stored[source_ref['assetId']] == source_bytes
     assert mesh_ref['assetId'] == manifest['representationAssetIds']['generated']
     assert stored[parameter_ref['assetId']] == parameter_bytes

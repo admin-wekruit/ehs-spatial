@@ -475,7 +475,7 @@ def import_document(scene_path, put_asset, *, legacy_root=None, observation_root
             manifest["representationAssetIds"][old_id] = asset_id
             kind = "observed_surface" if record.get("source") == "observed" else "generated_mesh"
             primitive, material = None, None
-            source_refs = [{"assetId": source_asset, "sourceRecordId": old_id}]
+            source_refs = [{"assetId": source_asset, "sourceRecordId": old_id, "role": "model_artifact", "sha256": source_sha}]
             vertices = geometry[0][:, :3]
             if record.get("source") == "parametric":
                 from ehs_spatial.platform.spatial import primitive_mesh
@@ -485,8 +485,10 @@ def import_document(scene_path, put_asset, *, legacy_root=None, observation_root
                     raise PlatformError("import_parameter_material_not_uniform", 422)
                 material = {"color": colors[0].tolist()}
                 parameter_id = include(parameters_raw, "application/json", {"kind": "parametric_source", "sha256": proof["parameterSourceSha256"]}, record["metrics"]["parameter_source"])
-                source_refs += [{"assetId": asset_id, "sourceRecordId": old_id, "binding": "original_baked_mesh"},
-                                {"assetId": parameter_id, "sourceRecordId": old_id, "sha256": proof["parameterSourceSha256"], "binding": "verified_cylinder_parameters", "proof": proof}]
+                source_refs += [{"assetId": asset_id, "sourceRecordId": old_id, "binding": "original_baked_mesh", "role": "model_artifact",
+                                 "sha256": next(asset['sha256'] for asset in document['assets'] if asset['id'] == asset_id)},
+                                {"assetId": parameter_id, "sourceRecordId": old_id, "sha256": proof["parameterSourceSha256"],
+                                 "role": "model_artifact", "binding": "verified_cylinder_parameters", "proof": proof}]
                 vertices = primitive_mesh(primitive).vertices
                 kind, asset_id = "primitive", None
             item["representations"].append({"id": ident("representation", old_id), "kind": kind, "assetId": asset_id,

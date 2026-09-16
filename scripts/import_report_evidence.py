@@ -379,6 +379,8 @@ def import_report_evidence(scene_path, source, document, manifest, include, came
     entities = {entity["id"]: entity for entity in document["entities"]}
     observations = {observation["id"]: observation for observation in document["observations"]}
     assets = {asset["id"]: asset for asset in document["assets"]}
+    scene_source_id = manifest["assetIds"][Path(scene_path).name]
+    model_frames = {record['id']: record.get('frame_ids', []) for record in source.get('objects', [])}
     association_refs = {}
     for index, obj in enumerate(saved.get("objects", [])):
         source_record = obj.get("scene_object_id", obj["id"])
@@ -415,6 +417,16 @@ def import_report_evidence(scene_path, source, document, manifest, include, came
                     entity["observationRefs"].append(oid)
                     manifest["observationIds"].setdefault(source_record, oid)
                 observation["sourceRefs"].append(binding)
+                if fid in model_frames.get(source_record, []):
+                    for representation in entity['representations']:
+                        inputs = representation.get('sourceRefs', [])
+                        if not any(ref.get('assetId') == scene_source_id and ref.get('sourceRecordId') == source_record for ref in inputs):
+                            continue
+                        # Only declared model input frames get a revision pin;
+                        # other report views remain observation evidence.
+                        if not any(ref.get('observationId') == observation['id'] for ref in inputs):
+                            inputs.append({**deepcopy(binding), 'sha256': assets[source_id]['sha256'],
+                                'observationId': observation['id'], 'revision': observation['revision'], 'imageId': observation['imageId']})
                 converted["observationId"] = observation["id"]
                 association_refs.setdefault(entity_id, []).append(deepcopy(binding))
                 if "source_observation_binding_pending" in entity.get("missingEvidence", []):

@@ -120,4 +120,50 @@ def test_existing_model_with_unproved_import_link_is_not_reported_missing():
     assert result['rows'][0]['unmodeledReasons'] == []
     assert result['summary']['currentSourceModelCount'] == 0
     document['observations'][0]['sourceRefs'] = [{'assetId': 'archive', 'sourceRecordId': 'object-record'}]
+    assert not row(document)['modelCurrent']  # Frozen record identity does not pin an observation revision.
+    assert 'source_observation_revision_unrecorded' in {e['code'] for e in row(document)['sourceErrors']}
+
+
+def test_model_artifact_provenance_cannot_replace_versioned_observation_inputs():
+    document = scene()
+    document['assets'].append({'id': 'recipe', 'sha256': 'c'*64})
+    refs = document['entities'][0]['representations'][0]['sourceRefs']
+    artifact = {'assetId': 'recipe', 'sha256': 'c'*64, 'sourceRecordId': 'recipe-row', 'role': 'model_artifact'}
+    refs.append(artifact)
     assert row(document)['modelCurrent']
+    assert row(document)['sourceErrors'] == []
+    refs.pop(0)
+    assert 'source_observation_link_missing' in {e['code'] for e in row(document)['sourceErrors']}
+    refs.insert(0, {'observationId': 'observation', 'revision': 1, 'imageId': 'image'})
+    assert 'source_observation_stale' in {e['code'] for e in row(document)['sourceErrors']}
+    refs[0]['revision'] = 2
+    artifact['assetId'] = 'geometry'  # An existing unrelated asset must not inherit the recipe's pinned hash.
+    assert 'source_asset_hash_mismatch' in {e['code'] for e in row(document)['sourceErrors']}
+    artifact['assetId'] = 'missing'
+    assert 'source_asset_missing' in {e['code'] for e in row(document)['sourceErrors']}
+    artifact['assetId'] = 'recipe'
+    del artifact['sha256']
+    assert 'source_asset_hash_unrecorded' in {e['code'] for e in row(document)['sourceErrors']}
+
+
+def test_canonical_import_ref_checks_the_named_observation_and_exact_frozen_view():
+    document = scene()
+    document['assets'].extend([{'id': 'report', 'sha256': 'c'*64}, {'id': 'foreign-report', 'sha256': 'd'*64}])
+    frozen = {'assetId': 'report', 'sourceRecordId': 'raw-id', 'sourceFrameId': 'frame-a', 'jsonPointer': '/objects/0/views/0'}
+    document['observations'][0]['sourceRefs'] = [frozen]
+    ref = {**frozen, 'sha256': 'c'*64, 'observationId': 'observation', 'revision': 2,
+        'imageId': 'image', 'imageSha256': 'a'*64, 'cameraId': 'camera'}
+    document['entities'][0]['representations'][0]['sourceRefs'] = [ref]
+    assert row(document)['modelCurrent']
+    for key, value, code in [('assetId', 'foreign-report', 'source_record_link_unvalidated'),
+                             ('jsonPointer', '/objects/1/views/0', 'source_record_link_unvalidated'),
+                             ('cameraId', 'foreign-camera', 'source_camera_mismatch'),
+                             ('imageSha256', 'b'*64, 'source_asset_hash_mismatch')]:
+        bad = deepcopy(document)
+        bad['entities'][0]['representations'][0]['sourceRefs'][0][key] = value
+        assert code in {e['code'] for e in row(bad)['sourceErrors']}
+        assert not row(bad)['modelCurrent']
+    document['observations'].append({'id': 'other', 'revision': 2, 'imageId': 'image', 'sourceRefs': []})
+    document['entities'][0]['observationRefs'].append('other')
+    ref['observationId'] = 'other'
+    assert 'source_record_link_unvalidated' in {e['code'] for e in row(document)['sourceErrors']}

@@ -51,6 +51,8 @@ def audit_correspondence(document):
                     errors.append({'code': 'source_camera_unbound', 'observationId': oid})
                 elif frame_id is not None and camera.get('coordinateFrameId') != frame_id:
                     errors.append({'code': 'source_coordinate_frame_mismatch', 'observationId': oid})
+                if ref.get('cameraId') is not None and ref['cameraId'] != camera.get('id'):
+                    errors.append({'code': 'source_camera_mismatch', 'observationId': oid})
                 for field, aid in [('imageSha256', observation['imageId']), ('maskSha256', observation.get('maskAssetId')),
                                    ('geometrySolutionSha256', binding.get('geometrySolutionId'))]:
                     if field in ref and assets.get(aid, {}).get('sha256') != ref[field]:
@@ -62,11 +64,22 @@ def audit_correspondence(document):
                     errors.append({'code': 'source_asset_missing', 'assetId': ref['assetId']})
                 elif ref.get('sha256') is not None and asset.get('sha256') != ref['sha256']:
                     errors.append({'code': 'source_asset_hash_mismatch', 'assetId': ref['assetId']})
-            if 'sourceRecordId' in ref:
-                matched = any(source.get('assetId') == ref.get('assetId') and source.get('sourceRecordId') == ref['sourceRecordId']
-                    for oid in allowed for source in observations.get(oid, {}).get('sourceRefs', []) if isinstance(source, dict))
+            if ref.get('role') == 'model_artifact':
+                # Artifact records name recipes, source meshes or parameters;
+                # they never establish a versioned photo observation input.
+                if not ref.get('assetId') or oid is not None or ref.get('imageId') is not None:
+                    errors.append({'code': 'source_reference_role_invalid'})
+                if not ref.get('sha256'):
+                    errors.append({'code': 'source_asset_hash_unrecorded', 'assetId': ref.get('assetId')})
+            elif 'sourceRecordId' in ref:
+                matched = any(source.get('assetId') == ref.get('assetId') and source.get('sourceRecordId') == ref['sourceRecordId'] and
+                    all(key not in ref or source.get(key) == ref[key] for key in ('sourceFrameId', 'jsonPointer'))
+                    for source_oid in ([oid] if oid is not None else allowed)
+                    for source in observations.get(source_oid, {}).get('sourceRefs', []) if isinstance(source, dict))
                 if not ref.get('assetId') or not matched:
                     errors.append({'code': 'source_record_link_unvalidated', 'assetId': ref.get('assetId'), 'sourceRecordId': ref['sourceRecordId']})
+                elif oid is None:
+                    errors.append({'code': 'source_observation_revision_unrecorded', 'assetId': ref['assetId'], 'sourceRecordId': ref['sourceRecordId']})
                 linked |= matched
             if oid is None and ref.get('imageId') is not None:
                 if not any(observations.get(oid, {}).get('imageId') == ref['imageId'] for oid in allowed):
