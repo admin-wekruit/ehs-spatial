@@ -177,9 +177,8 @@ export function CadView({ document, selectedId, onSelect, geometryOptions }: {
           {gridY.map(value => { const y = cadScreen([0, value], view, size)[1]; return <g key={`v-${value}`}><line x1={0} x2={size.width} y1={y} y2={y} /><text x={4} y={y - 3}>{cadNumber(value)}</text></g>; })}
         </g>
         <g className="cad-geometry" data-selection={!!selected}>
-          {sorted.map(shape => <g key={shape.entity.id} role="button" tabIndex={0} aria-label={`#${numbers.get(shape.entity.id)} ${shape.entity.label || shape.entity.id}`} aria-pressed={shape.entity.id === selectedId}
-            data-cad-entity={shape.entity.id} data-cad-source={shape.projectionSource} className={`cad-object cad-${source(shape)}${shape.entity.id === selectedId ? " is-selected" : ""}`}
-            onKeyDown={event => { if (["Enter", " "].includes(event.key)) { event.preventDefault(); event.stopPropagation(); choose(shape.entity.id); } }}>
+          {sorted.map(shape => <g key={shape.entity.id}
+            data-cad-entity={shape.entity.id} data-cad-source={shape.projectionSource} className={`cad-object cad-${source(shape)}${shape.entity.id === selectedId ? " is-selected" : ""}`}>
             {shape.polygons.map((polygon, index) => <path key={"area-" + index} d={planPolygonPath(polygon, p => cadScreen(p, view, size))} fillRule="evenodd" />)}
             {shape.lines.map((line, index) => <path key={"line-" + index} d={"M " + line.map(p => cadScreen(p, view, size).join(",")).join(" L ")} style={{fill: "none"}} />)}
             <title>{`#${numbers.get(shape.entity.id)} ${shape.entity.label || shape.entity.id} · ${t(source(shape))}`}</title>
@@ -196,10 +195,13 @@ export function CadView({ document, selectedId, onSelect, geometryOptions }: {
           </g>}
         </g>}
         <g className="cad-callouts">
-          {callouts.map(label => <g key={label.id} data-cad-label={label.id} className={label.id === selectedId ? "is-selected" : ""}>
+          {callouts.map(label => <g key={label.id} className={label.id === selectedId ? "is-selected" : ""}>
             <path d={`M${label.anchor.join(",")}L${label.position.join(",")}`} />
-            <rect x={label.position[0] - 14} y={label.position[1] - 10} width={28} height={20} rx={3} />
-            <text x={label.position[0]} y={label.position[1] + 3.5} textAnchor="middle">{numbers.get(label.id)}</text>
+            <g data-cad-label={label.id} role="button" tabIndex={0} aria-label={`#${numbers.get(label.id)} ${entities.find(entity => entity.id === label.id)?.label || label.id}`} aria-pressed={label.id === selectedId}
+              onKeyDown={event => { if (["Enter", " "].includes(event.key)) { event.preventDefault(); event.stopPropagation(); choose(label.id); } }}>
+              <rect x={label.position[0] - 14} y={label.position[1] - 10} width={28} height={20} rx={3} />
+              <text x={label.position[0]} y={label.position[1] + 3.5} textAnchor="middle">{numbers.get(label.id)}</text>
+            </g>
           </g>)}
         </g>
         <g className="cad-scale" transform={`translate(16,${size.height - 28})`} aria-label={`${cadNumber(scaleLength)} ${units}`}>

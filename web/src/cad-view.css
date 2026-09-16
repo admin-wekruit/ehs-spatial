@@ -22,6 +22,8 @@
 .cad-object.is-selected path, .cad-object:focus-visible path { stroke: #c76c20; stroke-width: 2.2; fill: #e5a24c; fill-opacity: .12; stroke-dasharray: none; }
 .cad-object.cad-floor.is-selected path { fill-opacity: .035; }
 .cad-callouts { cursor: pointer; }
+.cad-callouts [role="button"] { outline: none; }
+.cad-callouts [role="button"]:focus-visible rect { stroke: #bf641b; stroke-width: 2; }
 .cad-callouts path { stroke: #9ba9a8; stroke-width: .7; fill: none; pointer-events: none; }
 .cad-callouts rect { fill: #fcfcf8; stroke: #bac8c9; stroke-width: .7; }
 .cad-callouts text { fill: #29434e; font: 600 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
