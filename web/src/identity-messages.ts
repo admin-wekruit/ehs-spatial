@@ -30,7 +30,7 @@ export const identityMessages: Record<string, [string, string]> = {
   recordIdentityDecision: ['记录跨照片身份决定', 'Record cross-photo identity decision'], mergeEntities: ['合并对象记录', 'Merge object records'], splitEntity: ['拆分对象记录', 'Split object record'],
   setActiveModelRepresentation: ['选择当前模型', 'Select current model'], selectMeasurementEvidence: ['选择量测来源', 'Select measurement source'],
   identityDecisionUnknown: ['决定状态未知', 'Decision status unknown'],
-  identityPlacementConfirmed: ['放置已确认', 'Placement confirmed'], identityPlacementUnconfirmed: ['放置待确认', 'Placement unconfirmed'], identityPlacementUnknown: ['放置状态未知', 'Placement status unknown'],
+  identityPlacementConfirmed: ['放置已确认', 'Placement confirmed'], identityPlacementUnconfirmed: ['位置尚未确认', 'Placement unconfirmed'], identityPlacementUnknown: ['放置状态未知', 'Placement status unknown'],
   identityNoMeasurement: ['未选定 · 数值未知', 'Not selected · value unknown'],
   identityMeasurementFrame: ['量测坐标系', 'Measurement coordinate frame'], identityMeasurementDimensions: ['来源尺寸', 'Source dimensions'],
   identityMeasurementWidth: ['来源宽度', 'Source width'], identityMeasurementDepth: ['来源深度', 'Source depth'], identityMeasurementHeight: ['来源地面法向高度', 'Source ground-normal height'],

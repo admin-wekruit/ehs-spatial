@@ -6,7 +6,7 @@ import type {SceneDocument,RepresentationLoadState} from '../types';
 type Mesh={vertices:Float32Array;indices:Uint32Array;mode:number;matrix:ArrayLike<number>;texture?:Blob;material?:{baseColorFactor:number[];alphaMode:'OPAQUE'|'MASK'|'BLEND';alphaCutoff:number};bounds:{min:Vec;max:Vec}};
 type GPU={mesh:Mesh;vertex:WebGLBuffer;index:WebGLBuffer;texture:WebGLTexture;entityId:string;representation:any};
 export type ViewerEvent={type:string;[key:string]:any};
-export type ViewerOptions={resolveAsset:(id:string)=>Promise<string|{url:string}>;locale?:string;onEvent?:(event:ViewerEvent)=>void};
+export type ViewerOptions={resolveAsset:(id:string)=>Promise<string|{url:string}>;locale?:string;onEvent?:(event:ViewerEvent)=>void;layers?:Record<string,any>};
 export type SceneViewer=ReturnType<typeof mountSceneViewer>;
 
 export function representationPass(entity:any,representation:any,frameId:string|null,layers:any) {
@@ -22,6 +22,21 @@ export function representationPass(entity:any,representation:any,frameId:string|
   // geometry or a bounding-box proxy. Visible context may occlude, but has ID 0.
   return {available,visible,pick:visible||available&&cloudOnly&&!entity.sourceContext&&representation.kind==='observed_surface'&&representation.placementState==='confirmed',selectable:available&&!entity.sourceContext};
 }
+
+// One repaint per browser frame; picking and preview capture explicitly flush.
+export function framePaint(paint:()=>void,request:(cb:()=>void)=>number,cancel:(id:number)=>void){
+  let pending:number|null=null;
+  return {request(){if(pending===null)pending=request(()=>{pending=null;paint();});},cancel(){if(pending!==null)cancel(pending);pending=null;}};
+}
+
+export function sceneRepresentationTasks(document:SceneDocument,frameId:string|null,layers:any){
+  const state={...layers,observations:document.observations};
+  return document.entities.flatMap(e=>(e.representations||[]).filter(r=>{
+    const pass=representationPass(e,r,frameId,state);
+    return (!['generated_mesh','primitive'].includes(r.kind)||r.id===e.activeModelRepresentationId)&&(pass.visible||pass.pick);
+  }).map(r=>({e,r})));
+}
+const taskKey=(tasks:ReturnType<typeof sceneRepresentationTasks>)=>JSON.stringify(tasks.map(({e,r})=>[e.id,r.id,r.assetId]));
 
 export function selectionGeometry(document:SceneDocument,entity:any,frameId:string|null,layers:any,preview?:Transform) {
   if(!entity||entity.sourceContext||entity.visible===false||!frameId||isReferenceSurface(document,entity)||(entity.representations||[]).some((rep:any)=>isCurrentReferenceSurface(entity,rep,document.observations)))return {corners:[] as Vec[],transform:undefined,axisSpace:'native',editable:false};
@@ -103,9 +118,9 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');Object.assign(svg.style,{position:'absolute',inset:'0',width:'100%',height:'100%',pointerEvents:'none'});stage.append(photo,canvas,svg);container.append(stage);
   const gl=canvas.getContext('webgl2',{alpha:true,antialias:true,preserveDrawingBuffer:true});if(!gl){stage.remove();throw Error('webgl_unavailable');}
   let disposed=false,epoch=0,photoEpoch=0,doc:any={entities:[],cameras:[],coordinateFrames:[]},revisionId='',selection:any={},camera:Camera|null=null,radius=1,center:Vec=[0,0,0],frameId:string|null=null,gpu:GPU[]=[],abort=new AbortController(),preview=new Map<string,Transform>(),drag:any=null,axisDrag:any=null;
-  let sceneAssetsSignature='',viewMode='free';let navigationVersion=0;let photoAbort=new AbortController(),photoObjectURL:string|null=null;
+  let sceneAssetsSignature='',loadedLayerKey='',viewMode='free';let navigationVersion=0;let photoAbort=new AbortController(),photoObjectURL:string|null=null;
   let captureSize:{w:number;h:number;cw:number;ch:number}|null=null;const loadedRepresentations=new Set<string>(),assetStates=new Map<string,RepresentationLoadState>();
-  let layers:any={observed_surface:true,generated_mesh:true,primitive:true,point_cloud:true,allBounds:false,opacity:.65,lighting:true,showCandidates:false};const cleanups:(()=>void)[]=[];
+  let layers:any={observed_surface:true,generated_mesh:true,primitive:true,point_cloud:true,allBounds:false,opacity:.65,lighting:true,showCandidates:false,...options.layers};const cleanups:(()=>void)[]=[];
   const emit=(type:string,payload:any={})=>{if(!disposed)options.onEvent?.({type,...payload});};
   const program=gl.createProgram()!;const shaders:WebGLShader[]=[];
   for(const [type,code]of [[gl.VERTEX_SHADER,`#version 300 es\nin vec3 p;in vec3 n;in vec3 c;in vec2 uv;in float a;uniform mat4 vp;uniform mat4 model;out vec3 color;out vec3 normal;out vec2 tex;out float vertexAlpha;void main(){gl_Position=vp*model*vec4(p,1.);gl_PointSize=2.;color=c;normal=transpose(inverse(mat3(model)))*n;tex=uv;vertexAlpha=a;}`],[gl.FRAGMENT_SHADER,`#version 300 es\nprecision highp float;in vec3 color;in vec3 normal;in vec2 tex;in float vertexAlpha;uniform sampler2D image;uniform vec4 baseColorFactor;uniform float alphaMode;uniform float alphaCutoff;uniform vec3 pickColor;uniform vec3 tint;uniform float selected;uniform float pick;uniform float opacity;uniform float lighting;out vec4 outColor;void main(){vec4 sampleColor=texture(image,tex);float alpha=vertexAlpha*sampleColor.a*baseColorFactor.a;if(alphaMode<.5)alpha=1.;else if(alphaMode<1.5){if(alpha<alphaCutoff)discard;alpha=1.;}else if(alpha<=0.)discard;if(pick>.5){outColor=vec4(pickColor,1.);return;}vec3 c=color*sampleColor.rgb*baseColorFactor.rgb*tint;float n=length(normal);if(lighting>1.5){c=pow(clamp(c,0.,1.),vec3(.72));if(n>.01){vec3 direction=normal/n;float key=abs(dot(direction,normalize(vec3(.3,.8,.6))));float fill=abs(dot(direction,normalize(vec3(-.7,.4,-.5))));c=c*(.78+.15*key+.07*fill)+vec3(.025*pow(key,16.));}}else if(lighting>.5&&n>.01)c*=.5+.5*abs(dot(normal/n,normalize(vec3(.3,.8,.6))));if(selected>.5)c=mix(c,vec3(.28,.86,.75),.4);outColor=vec4(c,alpha*opacity);}`]]as[number,string][]){const s=gl.createShader(type)!;gl.shaderSource(s,code);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s)||'shader_error');gl.attachShader(program,s);shaders.push(s);}
@@ -128,7 +143,11 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
   function fittingPoints(){const objects=gpu.filter(g=>visible(g)&&!entity(g.entityId)?.sourceContext);return objects.length?objects.flatMap(g=>boundsCorners(g.mesh.bounds).map(p=>point(model(g),p))):corners();}
   function dimensions(){const ps=fittingPoints();if(!ps.length)return;const min=[0,1,2].map(k=>Math.min(...ps.map(p=>p[k]))),max=[0,1,2].map(k=>Math.max(...ps.map(p=>p[k])));center=min.map((v,k)=>(v+max[k])/2);radius=Math.max(Math.hypot(...max.map((v,k)=>v-min[k]))/2,1e-4);}
   function viewSize(){if(captureSize)return captureSize;const w=stage.clientWidth,h=stage.clientHeight,ratio=camera?.exact?camera.frame.width/camera.frame.height:w/h,cw=Math.min(w,h*ratio),ch=cw/ratio;return {w,h,cw,ch};}
+  const repaint=framePaint(()=>drawNow(),cb=>requestAnimationFrame(cb),id=>cancelAnimationFrame(id));
   function draw(pick=false,captureCanvas?:HTMLCanvasElement){
+    if(pick||captureCanvas){repaint.cancel();drawNow(pick,captureCanvas);}else repaint.request();
+  }
+  function drawNow(pick=false,captureCanvas?:HTMLCanvasElement){
     if(disposed||!camera||gl!.isContextLost())return;const {w,h,cw,ch}=viewSize();if(!(cw>0&&ch>0))return;const dpr=Math.min(devicePixelRatio||1,2);canvas.style.width=photo.style.width=cw+'px';canvas.style.height=photo.style.height=ch+'px';const pw=Math.max(1,Math.round(cw*dpr)),ph=Math.max(1,Math.round(ch*dpr));if(canvas.width!==pw||canvas.height!==ph){canvas.width=pw;canvas.height=ph;}
     const background=layers.studio?[237/255,240/255,238/255]:[17/255,27/255,33/255];
     gl!.viewport(0,0,pw,ph);gl!.useProgram(program);gl!.clearColor(pick||camera.exact?0:background[0],pick||camera.exact?0:background[1],pick||camera.exact?0:background[2],camera.exact&&!pick?0:1);gl!.depthMask(true);gl!.clear(gl!.COLOR_BUFFER_BIT|gl!.DEPTH_BUFFER_BIT);
@@ -223,12 +242,12 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
       vertices:ready.reduce((sum,state)=>sum+state.vertexCount,0),triangles:ready.reduce((sum,state)=>sum+state.triangleCount,0),states});
   }
   async function setScene(revision:any){
-    const next=revision.document||revision;if(!next||!Array.isArray(next.entities)||!Array.isArray(next.cameras))throw Error('invalid_scene_document');const signature=JSON.stringify([next.entities.map((e:any)=>[e.id,e.activeModelRepresentationId,(e.representations||[]).map((r:any)=>[r.id,r.assetId,r.kind,r.primitive,r.placementState,r.placementReason,r.sourceValidity])]),next.assets]);
+    const next=revision.document||revision;if(!next||!Array.isArray(next.entities)||!Array.isArray(next.cameras))throw Error('invalid_scene_document');const nextFrame=layers.imageId?cameraForImage(next,layers.imageId)?.coordinateFrameId||null:currentCameras(next).find((c:any)=>c.id===selection.cameraId)?.coordinateFrameId||currentCameras(next)[0]?.coordinateFrameId||next.coordinateFrames?.[0]?.id||null;const tasks=sceneRepresentationTasks(next,nextFrame,layers),layerKey=taskKey(tasks);const signature=JSON.stringify([layerKey,next.entities.map((e:any)=>[e.id,e.activeModelRepresentationId,(e.representations||[]).map((r:any)=>[r.id,r.assetId,r.kind,r.primitive,r.placementState,r.placementReason,r.sourceValidity])]),next.assets]);
     if(signature===sceneAssetsSignature&&doc.captureId===next.captureId){doc=next;layers.observations=doc.observations;if(layers.imageId)frameId=cameraForImage(doc,layers.imageId)?.coordinateFrameId||null;revisionId=revision.id||'';preview.clear();for(const g of gpu){const r=entity(g.entityId)?.representations?.find((r:any)=>r.id===g.representation.id);if(r)g.representation=r;}dimensions();draw();loadProgress();return;}
-    sceneAssetsSignature=signature;const n=++epoch;abort.abort();abort=new AbortController();release();preview.clear();doc=next;layers.observations=doc.observations;revisionId=revision.id||'';frameId=currentCameras(doc).find((c:any)=>c.id===selection.cameraId)?.coordinateFrameId||currentCameras(doc)[0]?.coordinateFrameId||(!doc.cameras.length?doc.coordinateFrames?.[0]?.id:null)||null;
+    sceneAssetsSignature=signature;loadedLayerKey=layerKey;const n=++epoch;abort.abort();abort=new AbortController();release();preview.clear();doc=next;layers.observations=doc.observations;revisionId=revision.id||'';frameId=nextFrame;
     if(!camera){if(currentCameras(doc)[0])setCamera(currentCameras(doc)[0].id);else setCamera('free');}else if(camera.exact&&currentCameras(doc).some((c:any)=>c.id===camera!.frame.id))setCamera(camera.frame.id);
     emit('loadProgress',{phase:'metadata',loaded:0,total:doc.entities.length});
-    const fitVersion=navigationVersion,initialRadius=radius;const tasks=doc.entities.flatMap((e:any)=>(e.representations||[]).filter((r:any)=>(!['generated_mesh','primitive'].includes(r.kind)||r.id===e.activeModelRepresentationId)&&r.sourceValidity!=='stale'&&(r.placementState==='confirmed'||['requires_alignment_confirmation','imported_proposal'].includes(r.placementReason))).map((r:any)=>({e,r})));
+    const fitVersion=navigationVersion,initialRadius=radius;
     for(const {e,r}of tasks)assetStates.set(e.id+'/'+r.id,{entityId:e.id,representationId:r.id,assetId:r.assetId||null,state:'loading',vertexCount:0,triangleCount:0,errorCode:null});
     loadProgress();
     // Two downloads at a time bounds decode memory on phones. Late data may draw,
@@ -238,7 +257,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
       try{
         let meshes:Mesh[];
         if(r.kind==='primitive')meshes=[primitive(r.primitive)];
-        else{const src=await url(r.assetId);if(n!==epoch||disposed)return;const res=await fetch(src,{signal:abort.signal});if(!res.ok)throw Error('asset_download_failed');const bytes=await res.arrayBuffer();if(n!==epoch||disposed)return;emit('loadProgress',{phase:'gpu_upload',entityId:e.id,representationId:r.id,assetId:r.assetId,bytes:bytes.byteLength});const meta=doc.assets.find((a:any)=>a.id===r.assetId);meshes=(meta?.format||meta?.metadata?.format)==='panoptes-mesh-v1'?readPacked(bytes,meta):readGLB(bytes);}
+        else{if(!r.assetId)throw Error('missing_mesh_asset');const src=await url(r.assetId);if(n!==epoch||disposed)return;const res=await fetch(src,{signal:abort.signal});if(!res.ok)throw Error('asset_download_failed');const bytes=await res.arrayBuffer();if(n!==epoch||disposed)return;emit('loadProgress',{phase:'gpu_upload',entityId:e.id,representationId:r.id,assetId:r.assetId,bytes:bytes.byteLength});const meta=doc.assets.find((a:any)=>a.id===r.assetId);meshes=(meta?.format||meta?.metadata?.format)==='panoptes-mesh-v1'?readPacked(bytes,meta):readGLB(bytes);}
         if(!meshes.length)throw Error('empty_mesh');
         for(const mesh of meshes){const uploaded=await upload(mesh,e.id,r,n);if(uploaded)staged.push(uploaded);}
         if(n!==epoch||disposed){staged.forEach(releaseMesh);return;}
@@ -261,5 +280,5 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
   listen(stage,'pointercancel',()=>{if(axisDrag)preview.clear();axisDrag=null;drag=null;emit('transformPreview',{operations:[]});draw();});listen(canvas,'contextmenu',(e:Event)=>e.preventDefault());
   listen(canvas,'wheel',(e:WheelEvent)=>{if(!camera||camera.exact)return;e.preventDefault();navigationVersion++;const offset=add(camera.eye,scale(camera.target,-1)),factor=Math.exp(e.deltaY*.0012);if(camera.orthographic)camera.orthoHeight=Math.max(radius*.02,Math.min(radius*50,camera.orthoHeight!*factor));else camera.eye=add(camera.target,scale(offset,Math.max(radius*.02,Math.min(radius*50,Math.hypot(...offset)*factor))/Math.hypot(...offset)));draw();},{passive:false});
   listen(canvas,'webglcontextlost',(e:Event)=>{e.preventDefault();loadedRepresentations.clear();for(const[key,state]of assetStates)if(state.state==='ready')assetStates.set(key,{...state,state:'error',vertexCount:0,triangleCount:0,errorCode:'gpu_context_lost'});loadProgress();emit('contextLost');});listen(canvas,'webglcontextrestored',()=>emit('loadError',{code:'viewer_remount_required'}));const observer=new ResizeObserver(()=>draw());observer.observe(stage);
-  return {setScene,capturePreview,setSelection(value:any){selection={...value};draw();},setCamera,setLayers(value:any){layers={...layers,...value};if(layers.imageId)frameId=cameraForImage(doc,layers.imageId)?.coordinateFrameId||null;dimensions();draw();},previewOperations(ops:any[]){for(const op of ops)if(op.type==='setTransform')previewTransform(op.entityId,op.transform||op);draw();},clearPreview(){preview.clear();draw();},resize(){draw();},dispose(){if(disposed)return;disposed=true;epoch++;photoEpoch++;abort.abort();photoAbort.abort();if(photoObjectURL)URL.revokeObjectURL(photoObjectURL);observer.disconnect();cleanups.forEach(fn=>fn());release();shaders.forEach(s=>gl.deleteShader(s));gl.deleteProgram(program);gl.getExtension('WEBGL_lose_context')?.loseContext();photo.removeAttribute('src');stage.remove();}};
+  return {setScene,capturePreview,setSelection(value:any){selection={...value};draw();},setCamera,setLayers(value:any){layers={...layers,...value};if(layers.imageId)frameId=cameraForImage(doc,layers.imageId)?.coordinateFrameId||null;if(sceneAssetsSignature&&taskKey(sceneRepresentationTasks(doc,frameId,layers))!==loadedLayerKey)void setScene({id:revisionId,document:doc}).catch(error=>emit('loadError',{code:error.message}));dimensions();draw();},previewOperations(ops:any[]){for(const op of ops)if(op.type==='setTransform')previewTransform(op.entityId,op.transform||op);draw();},clearPreview(){preview.clear();draw();},resize(){draw();},dispose(){if(disposed)return;disposed=true;repaint.cancel();epoch++;photoEpoch++;abort.abort();photoAbort.abort();if(photoObjectURL)URL.revokeObjectURL(photoObjectURL);observer.disconnect();cleanups.forEach(fn=>fn());release();shaders.forEach(s=>gl.deleteShader(s));gl.deleteProgram(program);gl.getExtension('WEBGL_lose_context')?.loseContext();photo.removeAttribute('src');stage.remove();}};
 }

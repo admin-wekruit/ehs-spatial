@@ -49,7 +49,7 @@ export const reportSceneMessages: Record<string, [string, string]> = {
   sceneGeometryCoverage: ["条对象记录有对应的可显示几何", "object records have corresponding displayable geometry"],
   sceneIndependentModelCount: ["个独立模型", "independent models"],
   sceneModelCoverage: ["条对象记录有可显示的当前模型", "object records have a displayable current model"],
-  sceneModelCandidateCount: ["个模型放置待确认", "model placements await confirmation"],
+  sceneModelCandidateCount: ["个模型位置尚未确认", "model placements await confirmation"],
   sceneModelCoverageMeaning: ["参考面与组合预览不计入模型数；缺模型对象仍保留照片证据。", "References and composite previews do not count as models; missing-model objects retain photograph evidence."],
   sceneReferenceSurfaceCount: ["处地面/表面参考", "ground/surface references"],
   sceneCompositePreviewCount: ["项组合部件预览", "composite component previews"],
@@ -112,10 +112,10 @@ export const reportSceneMessages: Record<string, [string, string]> = {
     "This revision has no spatial assets of the selected kind.",
   ],
   sceneCandidateNotice: [
-    "含待确认的候选放置；显示位置不代表现场已验证。",
-    "Includes candidate placements awaiting confirmation; displayed poses are not verified site evidence.",
+    "模型位置、朝向和大小由照片估计，尚未完成位置确认；可自由旋转查看，不能据此认定现场尺寸或安全距离已验证。",
+    "Model position, orientation and size are estimated from photos and remain unconfirmed. You can freely rotate the view; site dimensions and safety distances are not verified.",
   ],
-  sceneCandidate: ["放置待确认", "Placement unconfirmed"],
+  sceneCandidate: ["位置尚未确认", "Placement unconfirmed"],
   sceneNoPhotoAxes: [
     "缺少同坐标系的相机或对象几何，原图中仅显示检测范围。",
     "A matching camera or object geometry is unavailable; the photograph shows detection bounds only.",

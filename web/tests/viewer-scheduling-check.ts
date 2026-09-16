@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+import {framePaint,sceneRepresentationTasks} from '../src/viewer/native-viewer.ts';
+import type {SceneDocument} from '../src/types.ts';
+let draws=0,seq=0;const frames=new Map<number,()=>void>();
+const paint=framePaint(()=>draws++,cb=>{frames.set(++seq,cb);return seq;},id=>{frames.delete(id);});
+for(let i=0;i<500;i++)paint.request();
+assert.equal(frames.size,1,'mouse-event bursts must schedule only one paint');
+const cb=[...frames.values()][0];frames.clear();cb();assert.equal(draws,1);
+paint.request();paint.cancel();assert.equal(frames.size,0,'dispose/capture must cancel pending paint');
+paint.request();assert.equal(frames.size,1,'painting resumes after a synchronous capture');
+const transform={coordinateFrameId:'f',position:[0,0,0],quaternion:[0,0,0,1],scale:[1,1,1]};
+const rep=(id:string,kind:string,imageId='photo')=>({id,kind,assetId:id,coordinateFrameId:'f',transform,placementState:'confirmed',sourceRefs:[{imageId,legacyObjectId:id}]});
+const document={entities:[{id:'object',observationRefs:['observation'],activeModelRepresentationId:'model',representations:[rep('model','generated_mesh'),rep('observed','observed_surface'),rep('other-photo','observed_surface','other'),rep('cloud','point_cloud')]},{id:'excluded',visible:false,activeModelRepresentationId:'excluded-model',representations:[rep('excluded-model','generated_mesh')]}],observations:[{id:'observation',imageId:'photo',revision:1}]} as unknown as SceneDocument;
+const model={modelOnly:true,generated_mesh:true,primitive:true,point_cloud:false,observed_surface:false,imageId:'photo',showCandidates:true};
+assert.deepEqual(sceneRepresentationTasks(document,'f',model).map(({r})=>r.id),['model'],'model view must not decode hidden point clouds, source meshes or excluded objects');
+// Context geometry has no object mask linkage; it is still required for evidence views.
+document.entities[0].sourceContext=true;
+const evidence={...model,modelOnly:false,generated_mesh:false,primitive:false,observed_surface:true};
+assert.deepEqual(sceneRepresentationTasks(document,'f',evidence).map(({r})=>r.id),['observed']);
+const cloud={...evidence,observed_surface:false,point_cloud:true};
+assert.deepEqual(sceneRepresentationTasks(document,'f',cloud).map(({r})=>r.id),['cloud']);
+assert.deepEqual(sceneRepresentationTasks(document,'different-frame',model),[]);
+console.log('viewer scheduling and layer loading checks passed');

@@ -1101,6 +1101,7 @@ export function SpatialView({
       viewer = mountSceneViewer(host.current, {
         resolveAsset,
         locale: language,
+        layers,
         onEvent: (event: any) => {
           if (event.type === "selectionIntent") {
             const d = callbacks.current.revision.document,

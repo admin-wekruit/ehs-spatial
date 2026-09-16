@@ -23,7 +23,7 @@ export const workcellMessages: Record<string, [string, string]> = {
   reportAssessmentScopeHint: ["下方历史检查资料单独保留，不作为本版本的合规结论。", "Historical checks are retained below and do not establish compliance for this revision."],
   reportAssessmentSavedHint: ["先查看需处理的检查记录，再核对对象、现场证据与规则适用性。", "Start with checks requiring attention, then inspect the objects, site evidence and rule applicability."],
   reportAttentionFindings: ["条检查记录需要关注", "check records need attention"],
-  reportAttentionGeometry: ["个对象缺少三维资产或放置待确认", "objects lack 3D assets or have unconfirmed placement"],
+  reportAttentionGeometry: ["个对象缺少三维资产或位置尚未确认", "objects lack 3D assets or have unconfirmed placement"],
   reportStartAssessment: ["确认适用规则与现场证据，开始评估", "Confirm applicable rules and site evidence to begin assessment"],
   reportAssessmentError: ["查看读取失败的原因", "Inspect the loading error"],
   reportImportScene: ['已有重建与证据导入', 'Import existing reconstruction and evidence'],
