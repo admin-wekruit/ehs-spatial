@@ -7,8 +7,9 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 import hmac
+import json
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 import psycopg
 from psycopg.rows import dict_row
@@ -61,7 +62,11 @@ class PostgresRepository:
         self.execution_config = deepcopy(execution_config or {"providerManifest": {}})
 
     def _job_config(self, client_config):
-        return {**deepcopy(client_config), **deepcopy(self.execution_config)}
+        client = {key:value for key,value in client_config.items()
+                  if key not in {'providerManifest','researchPreparation','researchProtocolSha256',
+                                 'pipeline','pipelineStage','pipelineStep','pipelineRootJobId','parentJobId',
+                                 'continuation','continuationJobId','continuationStopped','submittedBy'}}
+        return {**deepcopy(client), **deepcopy(self.execution_config)}
 
     @contextmanager
     def _connect(self):
@@ -337,7 +342,7 @@ class PostgresRepository:
             return _wire({"capture": capture, "revision": revision, "job": job})
 
     def create_job(self, project_id, capability, body):
-        if body["kind"] == "validate_model":
+        if body["kind"] in {"validate_model", "reconstruct_scene"}:
             raise PlatformError("admin_job_required", 403)
         with self._connect() as connection:
             self._auth(connection, project_id, capability)
@@ -400,9 +405,17 @@ class PostgresRepository:
                 row = connection.execute("UPDATE jobs SET cancel_requested=true,status=CASE WHEN status='running' THEN status ELSE 'cancelled' END,updated_at=now() WHERE id=%s RETURNING *", (job_id,)).fetchone()
             return _wire(row)
 
-    def finish_job(self, job_id, attempt_token, status, document=None, result=None, *, imported_capture=None):
+    def finish_job(self, job_id, attempt_token, status, document=None, result=None, *, imported_capture=None, continuation=None):
         if status not in ("succeeded", "incomplete", "failed", "outcome_unknown"):
             raise PlatformError("invalid_job_outcome")
+        if continuation is not None:
+            if (not isinstance(continuation, dict) or set(continuation) - {'kind','inputs','config'}
+                    or continuation.get('kind') not in ('reconstruct_scene','validate_model')
+                    or not isinstance(continuation.get('inputs', {}), dict)
+                    or not isinstance(continuation.get('config', {}), dict)
+                    or result is not None and not isinstance(result, dict)):
+                raise PlatformError('invalid_job_continuation', 422)
+            continuation = deepcopy(continuation)
         if document is not None:
             validate_document(document)
         with self._connect() as connection:
@@ -431,6 +444,41 @@ class PostgresRepository:
                 advanced = branch["head_revision_id"] == job["base_revision_id"]
                 if advanced:
                     connection.execute("UPDATE scene_branches SET head_revision_id=%s WHERE id=%s", (revision["id"], job["branch_id"]))
+            if continuation is not None and status in ('succeeded', 'incomplete'):
+                result = deepcopy(result or {})
+                branch = self._branch(connection, job['project_id'], job['branch_id'])
+                base_id = revision['id'] if revision else job['base_revision_id']
+                if branch['head_revision_id'] != base_id or revision is not None and not advanced:
+                    result['continuationStopped'] = 'branch_changed'
+                else:
+                    child_id = uuid5(job['id'], 'continuation')
+                    inputs = continuation.get('inputs', {})
+                    config = {**deepcopy(job['config']), **continuation.get('config', {})}
+                    if continuation['kind'] == 'validate_model':
+                        from .research_authority import validate_prepared
+                        if self.blobs is None:
+                            raise PlatformError('blob_store_not_configured', 503)
+                        asset = self._one(connection, 'SELECT * FROM assets WHERE project_id=%s AND id=%s',
+                            (job['project_id'], inputs.get('validationAssetId')), code='asset_not_found')
+                        sha = asset['sha256'].strip()
+                        if (sha != inputs.get('validationSha256') or
+                                asset.get('metadata', {}).get('kind') not in ('sam3d_validation_input', 'recgen_validation_input')):
+                            raise PlatformError('research_input_hash_mismatch', 409)
+                        try:
+                            frozen = json.loads(self.blobs.get(asset['storage_key'], sha, asset['size_bytes']))
+                        except (ValueError, TypeError):
+                            raise PlatformError('research_input_hash_mismatch', 409) from None
+                        if (not isinstance(frozen, dict) or any(frozen.get(key) != str(value) for key, value in
+                                [('projectId',job['project_id']), ('branchId',job['branch_id']), ('baseRevisionId',base_id)])
+                                or digest(frozen.get('protocol')) != config.get('researchProtocolSha256')):
+                            raise PlatformError('research_input_hash_mismatch', 409)
+                        config['submittedBy'] = validate_prepared(self, connection, frozen, sha)
+                    request = {'requestId': str(child_id), 'branchId': str(job['branch_id']),
+                               'baseRevisionId': str(base_id), 'kind': continuation['kind'], 'inputs': inputs, 'config': config}
+                    connection.execute("""INSERT INTO jobs(id,project_id,branch_id,base_revision_id,request_id,request_sha256,kind,inputs,config,status)
+                        VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending_dispatch')""",
+                        (child_id,job['project_id'],job['branch_id'],base_id,child_id,digest(request),continuation['kind'],Jsonb(inputs),Jsonb(config)))
+                    result['continuationJobId'] = str(child_id)
             return _wire(connection.execute("""UPDATE jobs SET status=%s,result=%s,result_revision_id=%s,head_advanced=%s,updated_at=now() WHERE id=%s RETURNING *""", (status, Jsonb(result), revision["id"] if revision else None, advanced, job_id)).fetchone())
 
     def reserve_model_call(self, job_id, attempt_token, provider, model, request_key, estimated_cost, *, code_sha256=None, model_sha256=None, adapter_sha256=None, input_sha256=None, paid=True):
