@@ -54,8 +54,16 @@ function renderMeasurements(candidate){
  for(const key of ['height','width','depth']){const cell=el('div','measurement-value'),value=m?.status==='available'?m.dimensions_native?.[key]:null;cell.append(el('span','',t(key)),el('strong','',Number.isFinite(value)?`${(value*(factor||1)).toFixed(3)}${factor?' m':''}`:'—'));values.append(cell);}
  panel.append(values);
  const angles=el('div','measurement-orientation');
- for(const [key,label] of [['planar_slope','planarSlope'],['principal_axis_tilt','axisTilt']]){const reading=m?.orientation?.[key],cell=el('div','measurement-value');cell.append(el('span','',t(label)),el('strong','',reading?.status==='available'&&Number.isFinite(reading.value_deg)?`${reading.value_deg.toFixed(1)}°`:t('unknown')));if(reading?.reason)cell.append(el('small','measurement-reason',reading.reason));angles.append(cell);}
+ for(const [key,label] of [['planar_slope','planarSlope'],['principal_axis_tilt','axisTilt']]){if(key==='planar_slope'&&spatial?.inclination_analysis)continue;const reading=m?.orientation?.[key],cell=el('div','measurement-value');cell.append(el('span','',t(label)),el('strong','',reading?.status==='available'&&Number.isFinite(reading.value_deg)?`${reading.value_deg.toFixed(1)}°`:t('unknown')));if(reading?.reason)cell.append(el('small','measurement-reason',reading.reason));angles.append(cell);}
  panel.append(angles,el('p','',m?.reason||(!m?t('measurementUnavailable'):t('dimensionBasis'))),el('p','',t('partialExtent')));
+ const analysis=spatial?.inclination_analysis;
+ if(analysis){
+  const details=el('details','measurement-orientation');details.append(el('summary','',`${t('planarSlope')} · ${analysis.surfaces.length}`));
+  for(const surface of analysis.surfaces){const cell=el('div','measurement-value');cell.append(el('span','',`#${surface.surfaceId}`),el('strong','',`${surface.inclinationDeg.toFixed(1)}°`));details.append(cell);}
+  details.append(el('p','',i18n.language==='en'?'Automatically computed from observed local surfaces; ground-direction error is unknown. These are estimates.':'处理时自动计算各局部面；地面方向误差未知，角度为几何估计。'));
+  if(!analysis.surfaces.length)details.append(el('p','',analysis.reason==='measurement_ground_missing'?(i18n.language==='en'?'Ground reference unavailable.':'缺少有效地面参考。'):analysis.status==='unsupported'?(i18n.language==='en'?'No local surface meets the saved area and flatness settings.':'未检出达到面积与平整度条件的局部面。'):(i18n.language==='en'?'No connected observed triangles.':'缺少连续的观测三角面。')));
+  panel.append(details);
+ }
  if(scale.source)panel.append(el('p','',`${t('scaleSource')}: ${scale.source==='moge_anchor'?t('scaleModel'):scale.source==='camera_height'?t('scaleHeight'):scale.source}`));
 }
 $('open-spatial').onclick=()=>{if(!current?.playgrounds.some(p=>p.id==='observed'))return;activePlaygroundId='observed';showTab('playgrounds');sendReportSelection();};

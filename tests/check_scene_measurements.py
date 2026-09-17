@@ -179,7 +179,8 @@ candidate=deepcopy(revision)
 for e in candidate['document']['entities']:
  e['measurements']={'existing':123}
 value={'revisionId':'old','kind':'bend','value':135.,'unit':'deg','references':[], 'lines':[], 'labelPoint':[0,0,0]}
-def computed(rev,kind,entity_a,*args):
+def computed(rev,kind,entity_a,*args,triangle_limit=500_000):
+ assert triangle_limit is None, 'Offline analysis must process complete geometry'
  if entity_a=='b': raise PlatformError('measurement_no_stable_bend',422)
  return {**value,'revisionId':rev['id']}
 with patch('ehs_spatial.platform.scene_measurements.measure_scene',side_effect=computed) as compute:

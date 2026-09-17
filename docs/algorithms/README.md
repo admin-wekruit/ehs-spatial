@@ -1,7 +1,7 @@
 # 算法与分析流程总表
 
 这是 Panoptes Platform 当前照片 → 对象 → CAD / 模型 → 测量 → 报告的统一入口。
-维护日期：2026-09-16；代码基线包含 `f790127`；本次实现版本为 `local-planar-inclinations-v1`，见下方验收记录。
+维护日期：2026-09-16；代码基线包含 `f790127`；本次实现版本为 `local-planar-inclinations-v2`，见下方验收记录。
 根 README 中四张照片、七种固定标签的说明属于早期 MVP，不代表当前 Platform 的完整流程。
 
 ## 使用与维护规则
@@ -131,9 +131,9 @@ flowchart LR
 地面倾角：拟合一个主要面，θ=acos(|面法向·地面法向|)，0° 水平、90° 竖直；偏离竖直=90°−θ。
 两面角：两个对象主要面的较小夹角。距离：三角面真实最近距离。区域占用：地面投影交集，不是三维碰撞。
 选点角：用户选定的三维线段/竖直参考，依赖实际命中点。输入与输出保留具体对象、资产、坐标系和单位。
-当前单网格超过 500,000 三角面拒绝计算；距离算法另有时间上限。倾角缺有效地面会拒绝，绝不换成世界 Z。
-自动局部面版本：`local-planar-inclinations-v1`。从当前姿态的实际三角网格提取多个连续支持面；候选不依赖物体名称、固定 ID 或是否叫“护板”。
-固定种子 0，按三角面面积采样 16,000 点；Open3D RANSAC 每次 128 轮、距离门槛为配置的一半、至多 64 个候选；剩余支持点少于 30 时停止。
+交互式测量单网格超过 500,000 三角面拒绝计算；离线倾角和折弯批处理读取完整网格。距离算法另有时间上限。倾角缺有效地面会拒绝，绝不换成世界 Z。
+自动局部面版本：`local-planar-inclinations-v2`。从当前姿态的实际三角网格提取多个连续支持面；候选不依赖物体名称、固定 ID 或是否叫“护板”。
+固定种子 0，按三角面面积采样 16,000 点；Open3D RANSAC 每次 128 轮、距离门槛为配置的一半、每轮至少移除 30 个支持点，最多自然终止于 16,000 / 30 轮；剩余支持点或候选支持少于 30 时停止，不在第 64 面截断。
 设计阶段评估过 `detect_planar_patches`，解析平面测试没有检出面，最终采用可复现的迭代 RANSAC；没有另加备用算法。
 候选支持要求所有三角形顶点距平面不超过容差、法向偏离不超过 10°。用面积加权法向拟合，并以实际三角面投影并集计算面积、连通区域和孔洞，不用检测框或凸包补满空隙。
 薄板正反面合并要求法向差≤5°、平面间距≤3倍距离容差、投影重叠≥较小面的80%；分离共面片保持独立。该规则无法仅从网格判别极近的独立平行层与真正的板厚。
@@ -146,7 +146,7 @@ flowchart LR
 法向波动使用面积加权角度 RMS；若地面带 `angularErrorDeg`，两者相加作为工程筛选估计，**不是严格误差上界或标定置信区间**。
 当前历史地面没有角度误差信息，因此所有结果标为 `direction_unverified`。页面默认列表明确为“含待确认估计”，暂按偏离竖直大于局部波动展示估计；确认非竖直的结果另按双方误差计算。
 “全部已测平面”可查看默认过滤掉的面；筛选不改后台结果。未知地面方向误差不等于无地面法向；缺法向则无法算角度。
-64 候选耗尽时保存 `partial` 和已测面；500,000 三角形输入上限仍沿用现有共享网格入口，超出即 `failed`。不把采样未覆盖称为不存在。
+离线处理已移除交互端的 500,000 三角形限制和固定 64 候选截断；交互端仍保留资源保护。16,000 点仍是有界采样，不把采样未覆盖称为不存在。
 验证：`tests/check_scene_measurements.py`；前端 `SpatialMeasurements.tsx` 对应模式。
 
 ### A11 自动分析与报告
@@ -154,8 +154,8 @@ flowchart LR
 输入绑定对象、representation、asset、pose、coordinate frame、算法版本；输出每对象保存的结果或明确失败状态。
 共享 worker 完成场景产物后执行 `analyze_bends` 与 `analyze_inclinations`；公共发布准备执行同一逻辑，为冻结 revision 写独立派生记录。倾角持久化在 `entity.inclinationAnalysis`，不混入身份/观测 measurements。
 `bend-analysis-v1` 是 HTTP 结构版本，计算方法当前为 v2，两者含义不同。
-公共报告已重算 19 个冻结 revision。当前场景 26 条：3 个有折弯结果、19 个未检出稳定折弯、2 个复杂度限制、2 个非独立模型跳过。
-独立 Modal worker 的线上升级仍需已有审核镜像及 DB/storage secret；公共报告已发布不代表独立 worker 已部署。
+公共报告已重算 19 个冻结 revision。当前场景 26 条：3 个有折弯结果、21 个未检出稳定折弯、0 个计算未完成、2 个非独立模型跳过。
+实际线上上传入口为 `panoptes-report-workspace::process_upload`，上传与纠正共用 `observed_scene.build_observed_scene`。2026-09-16 已部署自动局部面计算；独立 Postgres worker 尚未部署，不能把它当成实际上传入口。
 验证：`tests/check_planar_surfaces.py`、`tests/check_scene_measurements.py`、`tests/check_publication_site.py`、`tests/check_report_loading.py`。
 
 ### A12 EHS
@@ -171,12 +171,12 @@ ZEN 处理规则适用性，Python 计算数值事实。政策阈值必须属于
 目标：所有符合面积与平整度条件的局部面自动计算地面倾角；报告筛选非竖直面，可开关标注。
 实现已接入批处理、独立派生读取及报告选择。A09 折弯内角和 A10 地面倾角各自保留。
 
-- [逐 revision / 对象结果及真实模型来源](planar-inclination-validation.json)：19 个冻结 revision、801 条对象记录完成本轮处理；当前 26 对象得到 108 个局部面，15 个 measured、1 个 partial、6 个 unsupported、2 个 failed、2 个 skipped。
+- [逐 revision / 对象结果及真实模型来源](planar-inclination-validation.json)：19 个冻结 revision、801 条对象记录完成本轮处理；当前 26 对象得到 138 个局部面，17 个 measured、7 个 unsupported、2 个 skipped；0 个计算未完成。
 - 当前中央板两个面约 59.9° / 87.3°；右侧折板约 52.5° / 81.7° / 57.2°；左侧约 52.5° / 82.3° / 57.0°。这些是现有模型与地面参考的估计。
 - 原始对象数、CAD 和模型身份不被本次筛选改变。中央板自身折弯仍为 145.6°，与上述倾角不同。
-- `GET /api/revisions/f5f4b1d4-bb55-4c13-ba02-b44e706340f2/inclination-analysis-v1` 已在公共 API 返回 200、26 对象、108 面；GET 不重读完整 revision 或重新计算网格。
-- 当前源代码共享 worker 的测试已确认结果随产物保存；独立生产 worker 缺少 `PANOPTES_WORKER_IMAGE` 审核 digest 和 `PANOPTES_WORKER_SECRET` 配置，尚未部署，不能宣称新图片生产链路上线。
-- 用户红色左右斜板截图已登记哈希；核查公开目录全部 7 张不同源照片后，没有该截图对应的已配准模型，因此未对这两块板宣称角度验证。解析网格 0°/30°/60°/90° 用于算法验证，不冒充照片重建验证。
+- `GET /api/revisions/f5f4b1d4-bb55-4c13-ba02-b44e706340f2/inclination-analysis-v1` 已在公共 API 返回 200、26 对象、138 面；GET 不重读完整 revision 或重新计算网格。
+- 实际上传服务的共用观测几何步骤已接入同版检测器，生成 `inclination-analysis.json`；候选报告读取摘要，默认折叠，可展开。算法/读取器哈希参与不可变 revision，GET 不计算。
+- 红板原图已在旧项目 `runs/real-clean-03/input/image_01.jpeg` 找到，另有 real-clean-01/02 两个视角。旧查找只覆盖公开目录，结论不完整。复用保存深度/分割，副本上逐像素验证 RGB 映射（609,168 通道/图，最大差 1/255），保存原 provider 文件和哈希后补齐映射记录；未调用付费模型。三个视角分别得到 138/188/87 个观测局部面；这不是唯一物体计数。
 - 前端检查覆盖局部面切换、原图/CAD对应、标注开关和04自由旋转；刷新读取保存结果。公共页面最终验收和部署信息见下面发布记录。
 
 ## 方法参考
@@ -191,5 +191,19 @@ ZEN 处理规则适用性，Python 计算数值事实。政策阈值必须属于
 - 前端 Pages：`f51cb55`，[部署成功记录](https://github.com/admin-wekruit/panoptes-workcell-report/actions/runs/35168932135)。
 - 公共 API：`panoptes-publications`，2026-09-16 已部署；HTTP 倾角派生端点已验证。
 - Linux 生产同版镜像实际运行 Open3D 解析平面检测，输出 1 面、59.99999999998744°；[运行记录](https://modal.com/apps/wekruit-livekit-agents/main/ap-eVJenjBrRpkq5cVqkcoDNp)。这项验证不是独立生产 worker 部署。
-- [公开报告](https://admin-wekruit.github.io/panoptes-workcell-report/app.html#/reports/d6c2d4d3-4769-4526-a0f7-73de34fa2f5b)：刷新后自动读取 108 面；中央板面1显示59.88°、面2显示87.3°；右折板面1在02模型场景显示52.54°。04拖动后轮廓和标签跟随，关闭标注后轮廓/数值隐藏，重新选择折弯仍显示145.6°。窄屏通过“所选对象模型”或“对象详情”查看，宽屏保留四视图。
+- [公开报告](https://admin-wekruit.github.io/panoptes-workcell-report/app.html#/reports/d6c2d4d3-4769-4526-a0f7-73de34fa2f5b)：首轮发布读取 108 面（本次继续处理后为 138 面）；中央板面1显示59.88°、面2显示87.3°；右折板面1在02模型场景显示52.54°。04拖动后轮廓和标签跟随，关闭标注后轮廓/数值隐藏，重新选择折弯仍显示145.6°。窄屏通过“所选对象模型”或“对象详情”查看，宽屏保留四视图。
 - 通过的检查：`OMP_NUM_THREADS=1 .venv/bin/python tests/check_planar_surfaces.py`、`tests/check_scene_measurements.py`、`tests/check_publication_site.py`、`tests/check_report_loading.py`；`npm --prefix web run check`、`npm --prefix web run build`。构建仅有既有大分包提示，线上检查无浏览器错误日志。
+
+### 红板复核与持续处理
+
+- 三张照片仍保留独立坐标及分割观察；相似标签、相似面或截图位置不建立跨图身份。
+- 截图对应视角3：左红板局部面约40.17° / 55.70°，右红板约40.64° / 39.39°。其他视角估计明显不同，未校准地面和重建形变仍需跨视角复核；不得输出一个已验证现场角度。
+- 老输入的映射恢复仅限显式离线脚本 `scripts/restore_verified_image_mapping.py`；全部像素通过后才写入副本，不在生产推理中猜测缺失映射。正常新图沿用已记录的模型输入变换。
+- 私有报告仍需既有工作区登录；`real-clean-01/02/03` 未加入公开报告白名单。
+- 上传报告界面发布：`afd177c`；Pages检查通过 [运行记录](https://github.com/admin-wekruit/panoptes-workcell-report/actions/runs/35174570581)。
+
+- 折弯完整网格补算：载料车与按钮均完成检测，未检出达到现有折弯条件的面；保留 3 个已有折弯结果，当前 0 个计算未完成。
+- Linux / macOS 对同一观测网格重复检测存在候选拟合差异（视角1最大对应角差约0.98°、视角2约2.22°）；固定随机种子不能保证跨架构浮点结果逐位相同。报告使用保存的不可变结果，不在每次查看时重新拟合；这不是现场精度保证。
+
+- Linux 实图复跑：[运行成功记录](https://modal.com/apps/wekruit-livekit-agents/main/ap-h4oeDBm8PlkOMLpG8mgjMD)。三个视角检出138/188/88面；本地保存为138/188/87面。第三视角多出一个候选，最大对应角差约1.19°；逐位一致检查未通过，几何有效性检查通过。不得把固定种子写成跨平台严格复现或把该检查写成现场真值验证。
+- 最终报告页面：`d1c9d00`，[Pages成功记录](https://github.com/admin-wekruit/panoptes-workcell-report/actions/runs/35175335671)。公共倾角/折弯API逐字段等于本地准备产物；私有三个红板报告经既有会话认证返回200，匿名访问仍受限。

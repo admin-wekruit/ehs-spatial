@@ -4,7 +4,7 @@ import numpy as np
 from shapely import polygons, union_all, get_parts
 from shapely.geometry import Polygon
 
-VERSION = 'local-planar-inclinations-v1'
+VERSION = 'local-planar-inclinations-v2'
 # Native units, not metres. Persist these engineering settings with each result.
 DEFAULT_CONFIG = {'minAreaNative2': .02, 'distanceToleranceNative': .01, 'normalToleranceDeg': 10.}
 
@@ -29,13 +29,14 @@ def extract_planar_surfaces(triangles, config, *, diagnostics=None):
     cloud=o3d.geometry.PointCloud(o3d.utility.Vector3dVector(pts));cloud.normals=o3d.utility.Vector3dVector(normals[sampled])
     o3d.utility.random.seed(0)
     used=np.zeros(len(t),bool); results=[]
-    limit_reached=True
-    for _ in range(64):
-        if len(cloud.points)<30:
-            limit_reached=False;break
+    candidates=0
+    # Each accepted proposal removes >=30 samples, so completion is bounded by
+    # count // 30 without truncating the remaining candidates at an arbitrary 64.
+    while len(cloud.points)>=30:
         plane,inliers=cloud.segment_plane(distance_threshold=tolerance/2,ransac_n=3,num_iterations=128,probability=.999)
         if len(inliers)<30:
-            limit_reached=False;break
+            break
+        candidates+=1
         cloud=cloud.select_by_index(inliers,invert=True)
         n=np.asarray(plane[:3]);offset=float(plane[3])
         support=(~used)&(abs(normals@n)>=np.cos(np.deg2rad(degrees)))&(np.max(abs(t@n+offset),axis=1)<=tolerance)
@@ -91,7 +92,7 @@ def extract_planar_surfaces(triangles, config, *, diagnostics=None):
     results=merged_results
     results.sort(key=lambda row:(-round(row['areaNative2'],8),*np.round(row['center'],8)))
     if diagnostics is not None:
-        diagnostics.update(limitReached=limit_reached, sampleCount=count, maxPlaneCandidates=64, supportedTriangleAreaFraction=float(areas[used].sum()/areas.sum()))
+        diagnostics.update(limitReached=False, sampleCount=count, maxPlaneCandidates=count//30, candidateCount=candidates, supportedTriangleAreaFraction=float(areas[used].sum()/areas.sum()))
     return [{'surfaceId':str(i+1),**row} for i,row in enumerate(results)]
 
 

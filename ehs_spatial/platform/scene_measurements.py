@@ -205,7 +205,7 @@ def surface_distance(a,b, *, seconds=15):
     return float(np.sqrt(best)),pair
 
 
-def posed_model(doc, id, load_asset):
+def posed_model(doc, id, load_asset, *, triangle_limit=500_000):
     e=next((e for e in doc['entities'] if e['id']==id and not e.get('sourceContext') and e.get('visible',True)),None)
     if not e: raise PlatformError('measurement_object_missing',422)
     r=next((r for r in e.get('representations',[]) if r['id']==e.get('activeModelRepresentationId') and r['kind'] in ('primitive','generated_mesh')),None)
@@ -216,11 +216,11 @@ def posed_model(doc, id, load_asset):
     if r['kind']=='generated_mesh' and not asset: raise PlatformError('measurement_model_missing',422)
     mesh=primitive_mesh(r['primitive']) if r['kind']=='primitive' else mesh_from_asset(load_asset(r['assetId']),asset or {})
     triangles=transform_points(mesh.vertices,transform_matrix(pose))[mesh.faces]
-    if len(triangles)>500_000: raise PlatformError('measurement_complexity_limit',422)
+    if triangle_limit is not None and len(triangles)>triangle_limit: raise PlatformError('measurement_complexity_limit',422)
     return (triangles,pose['coordinateFrameId']), {'entityId':id,'representationId':r['id'],'assetId':r.get('assetId'),'assetSha256':(asset or {}).get('sha256'),'placementState':r.get('placementState'),'qualityStatus':(r.get('qualityEvidence') or {}).get('status')}
 
 
-def measure_scene(revision, kind, entity_a, entity_b, region, load_asset):
+def measure_scene(revision, kind, entity_a, entity_b, region, load_asset, *, triangle_limit=500_000):
     if kind not in ('angle','inclination','bend','distance','occupancy'):
         raise PlatformError('measurement_kind_invalid',422)
     doc=revision['document']; models=[]; refs=[]
@@ -228,7 +228,7 @@ def measure_scene(revision, kind, entity_a, entity_b, region, load_asset):
     if len(set(ids)) != len(ids) or any(not i for i in ids):
         raise PlatformError('measurement_choose_objects',422)
     for id in ids:
-        model,ref=posed_model(doc,id,load_asset);models.append(model);refs.append(ref)
+        model,ref=posed_model(doc,id,load_asset,triangle_limit=triangle_limit);models.append(model);refs.append(ref)
     frame_id=models[0][1]
     frame=next((f for f in doc['coordinateFrames'] if f['id']==frame_id),None)
     if frame is None: raise PlatformError('measurement_frame_mismatch',422)
@@ -350,8 +350,9 @@ def analyze_bends(revision, load_asset, *, persist=False, cache=None):
                 row.update(cached)
             else:
                 try:
-                    result = measure_scene(revision, 'bend', entity['id'], None, None, load_asset)
+                    result = measure_scene(revision, 'bend', entity['id'], None, None, load_asset, triangle_limit=None)
                     result.pop('revisionId', None)
+                    row.pop('reason', None)
                     row.update(status='measured', result=result)
                 except PlatformError as error:
                     status = ('unsupported' if error.code in ('measurement_no_stable_bend', 'measurement_no_surface')
@@ -426,7 +427,7 @@ def analyze_inclinations(revision, load_asset, *, persist=False, cache=None, con
             else:
                 row.pop('reason',None)
                 try:
-                    (triangles,frame_id),ref=posed_model(doc,row['entityId'],load_asset)
+                    (triangles,frame_id),ref=posed_model(doc,row['entityId'],load_asset,triangle_limit=None)
                     frame=next((f for f in doc['coordinateFrames'] if f['id']==frame_id),None)
                     if frame is None:raise PlatformError('measurement_frame_mismatch',422)
                     ground=frame.get('ground') or {}

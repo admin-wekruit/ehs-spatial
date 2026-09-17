@@ -29,6 +29,60 @@ def _verify_files(root: Path, files: dict) -> None:
             raise ValueError('Observed-scene source or artifact changed: ' + relative)
 
 
+def analyze_observed_inclinations(scene: dict, root: Path) -> dict:
+    """Process every source-mask surface before publishing; never on report GET."""
+    import numpy as np
+    from scripts.import_public_scene import packed_asset, unpack_mesh, legacy_transform
+    from .platform.spatial import transform_matrix, transform_points
+    from .platform.planar_surfaces import VERSION, DEFAULT_CONFIG, extract_planar_surfaces, surface_inclinations
+
+    meshes = {}
+    objects = {o['id']: o for o in scene.get('objects', [])}
+    plane = np.asarray(scene.get('floor_plane'), dtype=float)
+    ground = {'normal': plane[:3].tolist() if plane.shape == (4,) else [],
+              'source': scene.get('floor_reference'), 'angularErrorDeg': None}
+    analyses = {}
+    for region in scene.get('observed_regions', []) + scene.get('unavailable_regions', []):
+        faces = region.get('faces')
+        result = {'algorithmVersion': VERSION, 'config': dict(DEFAULT_CONFIG), 'surfaces': [],
+                  'source': region.get('provenance'), 'frameId': region.get('reference_frame'),
+                  'groundReference': ground, 'status': 'skipped', 'reason': 'measurement_no_observed_triangles'}
+        analyses[region['id']] = result
+        if not faces:
+            continue
+        try:
+            surface_inclinations([], ground)
+        except ValueError:
+            result['reason'] = 'measurement_ground_missing'
+            continue
+        context_id = region['context_id']
+        if context_id not in meshes:
+            obj = objects[context_id]
+            vertices, indices = unpack_mesh(root, obj['mesh'])
+            pose = legacy_transform(obj['transform'], region['reference_frame'])
+            meshes[context_id] = transform_points(vertices[:, :3], transform_matrix(pose)), indices
+        vertices, indices = meshes[context_id]
+        raw = packed_asset(root, faces['asset'])
+        if faces.get('encoding') != 'uint32-triangle-indices' or len(raw) != faces['count'] * 4:
+            raise ValueError('Invalid observed triangle membership')
+        selected = np.frombuffer(raw, dtype='<u4')
+        if not len(selected) or selected.max() >= len(indices) or len(np.unique(selected)) != len(selected):
+            raise ValueError('Invalid observed triangle membership')
+        diagnostics = {}
+        surfaces = surface_inclinations(extract_planar_surfaces(vertices[indices[selected]], DEFAULT_CONFIG,
+                                                               diagnostics=diagnostics), ground)
+        # Keep exact face support in the immutable derivative, not in every GET's
+        # candidate summary. The region asset binds indices to source geometry.
+        for surface in surfaces:
+            surface['triangleIndices'] = selected[surface['triangleIndices']].tolist()
+        result.update(status='measured' if surfaces else 'unsupported',
+                      reason=None if surfaces else 'measurement_no_stable_local_plane',
+                      surfaces=surfaces, diagnostics=diagnostics, supportAsset=faces['asset'])
+    write_json(root / 'inclination-analysis.json', {'algorithmVersion': VERSION, 'entities': analyses})
+    return {key: {**row, 'surfaces': [{k: v for k, v in surface.items() if k != 'triangleIndices'}
+                                    for surface in row['surfaces']]} for key, row in analyses.items()}
+
+
 def build_observed_scene(run: Path) -> dict:
     """CPU-only build; publish one complete immutable revision or leave the old one."""
     run = Path(run).resolve()
@@ -44,6 +98,8 @@ def build_observed_scene(run: Path) -> dict:
     measurements = Path(__file__).with_name('measurements.py')
     if measurements.is_file():
         code['measurements'] = digest(measurements)
+    code['planar_surfaces'] = digest(Path(__file__).parent / 'platform/planar_surfaces.py')
+    code['mesh_reader'] = digest(Path(__file__).parents[1] / 'scripts/import_public_scene.py')
     evidence_sha = evidence_revision(evidence)
     revision = evidence_revision({'evidence': evidence_sha, 'code': code})[:24]
     parent = run / 'observed'
@@ -81,6 +137,7 @@ def build_observed_scene(run: Path) -> dict:
             if ready:
                 subprocess.run([python, str(packer), str(output), str(output)],
                                check=True, capture_output=True, text=True)
+            inclinations = analyze_observed_inclinations(json.loads((output / 'scene.json').read_text()), output)
             candidates = {}
             for item in regions:
                 faces = item.get('faces')
@@ -94,6 +151,8 @@ def build_observed_scene(run: Path) -> dict:
             for item in unavailable:
                 candidates[item['id']] = {'status': 'unavailable', 'reason': item.get('reason') or 'No supported native geometry',
                     'frame_id': item.get('reference_frame'), 'support': None}
+            for candidate_id, item in candidates.items():
+                item['inclination_analysis'] = inclinations[candidate_id]
             state = {'version': 1, 'revision': revision, 'evidence_sha256': evidence_sha,
                 'source_sha256': source, 'exporter_sha256': code, 'status': 'ready' if ready else 'unavailable',
                 'reason': None if ready else scene.get('reason') or 'No valid connected native surface is available',

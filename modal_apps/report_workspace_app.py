@@ -8,6 +8,7 @@ import modal
 REPO = Path(__file__).resolve().parents[1]
 PUBLIC = Path(os.environ.get("PANOPTES_PUBLIC_BUNDLE", "/Users/adam/Desktop/panoptes-public/panoptes-workcell-pages"))
 RESEARCH = Path(os.environ.get("PANOPTES_RESEARCH_BUNDLE", "/Users/adam/Desktop/panoptes-public/panoptes-serving"))
+CONFIG = Path(os.environ.get("PANOPTES_WORKSPACE_CONFIG_DIR", str(REPO))).resolve()
 APP_NAME = "panoptes-report-workspace"
 app = modal.App(APP_NAME)
 reports = modal.Volume.from_name("panoptes-report-workspace-data", create_if_missing=True)
@@ -22,11 +23,11 @@ def deployment_secret():
         return modal.Secret.from_name("panoptes-report-workspace")
     # Only required credentials cross the boundary; never mount .env or the repo root.
     values = {}
-    for line in (REPO / ".env").read_text().splitlines():
+    for line in (CONFIG / ".env").read_text().splitlines():
         key, separator, value = line.partition("=")
         if separator and key in {"GEMINI_API_KEY", "FAL_KEY"}:
             values[key] = value.strip().strip("\"'")
-    access = REPO / ".workspace-access.json"
+    access = CONFIG / ".workspace-access.json"
     if access.stat().st_mode & 0o077:
         raise ValueError("Workspace access file must have mode 600")
     values["PANOPTES_WRITE_TOKEN"] = json.loads(access.read_text())["token"]
@@ -39,7 +40,7 @@ if modal.is_local():
         .apt_install("libgl1", "libgomp1")
         .pip_install_from_pyproject(str(REPO / "pyproject.toml"))
         .pip_install("opencv-python-headless==5.0.0.93", "trimesh==5.1.0")
-        .env({"PYTHONPATH": "/app", "PANOPTES_NO_RESUME": "1", "PANOPTES_PUBLIC_RUNS": "user-bor1-02,bor1-components-20260909",
+        .env({"PYTHONPATH": "/app", "OMP_NUM_THREADS": "1", "PANOPTES_NO_RESUME": "1", "PANOPTES_PUBLIC_RUNS": "user-bor1-02,bor1-components-20260909",
               "PANOPTES_PUBLISHED_ROOT": "/published", "PANOPTES_SITE_ORIGIN": "https://admin-wekruit.github.io", "SAM3_BACKEND": "fal",
               "GEOMETRY_BACKEND": "modal", "MOGE_BACKEND": "modal", "GRADIO_ANALYTICS_ENABLED": "False",
               "PANOPTES_RESEARCH_ROOT":"/research", "LUCIDA_DEPLOYED_APP":"lucida-private-assets",

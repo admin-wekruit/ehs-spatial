@@ -113,3 +113,19 @@ retry['document']['entities'][0]['inclinationAnalysis']={**a['items'][0],'status
 recovered=analyze_inclinations(retry,load,config=CONFIG)['items'][0]
 assert recovered['status']=='measured' and 'reason' not in recovered
 print('PASS: incomplete detector outcomes and retry error clearing')
+
+# Interactive requests retain their resource guard; offline processing must not
+# reject an otherwise valid model merely for having many (including empty) faces.
+from ehs_spatial.platform.scene_measurements import measure_scene
+from ehs_spatial.platform.contracts import PlatformError
+large_mesh=MeshData(np.array([[0,0,0],[2,0,0],[2,1,0],[0,1,0]],float),np.vstack([[[0,1,2],[0,2,3]],np.zeros((500000,3),dtype=int)]))
+try:measure_scene(original,'inclination','object',None,None,lambda _:large_mesh)
+except PlatformError as exc:assert exc.code=='measurement_complexity_limit'
+else:raise AssertionError('Interactive work must remain bounded')
+large=analyze_inclinations(original,lambda _:large_mesh,config=CONFIG)['items'][0]
+assert large['status']=='measured' and len(large['surfaces'])==1,large
+print('PASS: offline large models and interactive resource guard')
+from ehs_spatial.platform.scene_measurements import analyze_bends
+large_bend=analyze_bends(original,lambda _:large_mesh)['items'][0]
+assert large_bend['status']=='unsupported' and large_bend['reason']=='measurement_no_stable_bend',large_bend
+print('PASS: offline bend batch also processes full meshes')

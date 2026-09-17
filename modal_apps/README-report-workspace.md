@@ -124,3 +124,7 @@ Checks: `tests/check_site_client.cjs` exercises real separate HTTP origins;
 `tests/check_workspace_site.cjs` checks history/login/upload navigation and
 same-report selection with provider-free API fixtures. Run both with an installed
 Playwright module on `NODE_PATH` and test the deployed Pages route separately.
+
+Automatic local-surface inclinations run inside `build_observed_scene` after packing and before atomic publication. Each region keeps source-mask triangle membership and native ground provenance. Results live in the immutable `inclination-analysis.json`; API summaries omit large triangle lists, and the report offers a collapsed readout. Missing geometry/ground and no qualifying surface remain distinct. Algorithm and reader hashes invalidate old results. No provider/model call is added.
+
+When deployment credentials live in another checkout, set `PANOPTES_WORKSPACE_CONFIG_DIR` explicitly to its directory. Only the existing required values enter Modal; the directory is not mounted.
