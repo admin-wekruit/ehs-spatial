@@ -82,3 +82,9 @@ use the same corrected surface fit. Model-estimated angles are not field checks.
 Fresh local report automatically displayed the central result without Calculate;
 orange/blue patches and purple hinge follow the main face/top flange, and remain
 attached while dragging the Free 3D model.
+
+Public acceptance for source 2002467: Modal publication service redeployed with
+all v2 analysis records. Public GET returns central 145.58747505795864 degrees.
+Reloaded the user's public report and selected 04: central 145.6 degrees appears
+automatically with the correct main-face/top-flange overlay. Dragging rotates the
+model and attached annotation. No frontend bundle change was needed.
