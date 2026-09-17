@@ -264,11 +264,13 @@ export function ReportScene({
     return ()=>controller.abort();
   },[revision.id]);
   const inclinationRows=inclinationAnalysis?.revisionId===revision.id?inclinationAnalysis.items:[];
+  const incompleteInclinations=inclinationRows.filter(row=>row.status==="failed" || row.status==="partial").length;
   const allSurfaces=inclinationRows.flatMap(row=>row.surfaces.map(surface=>({entityId:row.entityId,surface,key:row.entityId+":"+surface.surfaceId})));
   const visibleSurfaces=allSurfaces.filter(row=>allPlanes || row.surface.classification==="non_vertical" || (row.surface.classification==="direction_unverified" && row.surface.deviationFromVerticalDeg>Math.max(row.surface.angularSpreadDeg,0.000001)));
   const activeSurface=allSurfaces.find(row=>row.key===surfaceKey && row.entityId===selected?.id)?.surface;
   useEffect(()=>{ if(activeSurface)setMeasurement(activeSurface.result); },[activeSurface]);
   const bendRows = bendAnalysis?.revisionId === revision.id ? bendAnalysis.items : [];
+  const incompleteBends = bendRows.filter(row => row.status === "failed").length;
   const detectedBends = bendRows.filter(row => row.status === "measured" && row.result);
   const savedBend = bendRows.find(row => row.entityId === selected?.id);
   const measurement = (showAngles || rawMeasurement?.unit !== "deg") && rawMeasurement?.revisionId === revision.id && rawMeasurement.references.some(ref => ref.entityId === selected?.id) ? rawMeasurement : null;
@@ -441,7 +443,7 @@ export function ReportScene({
         </div>
       </header>
       <div className="report-bend-analysis" aria-label={language === "zh" ? "已保存的折弯分析" : "Saved bend analysis"}>
-        <span>{language === "zh" ? bendError ? "折弯分析加载失败，请刷新重试" : !bendAnalysis ? "读取已保存的折弯分析…" : `已保存折弯分析 · ${detectedBends.length} 个已识别 · ${bendRows.filter(row => row.status === "failed").length} 个计算未完成` : bendError ? "Could not load bend analysis; refresh to retry" : !bendAnalysis ? "Loading saved bend analysis…" : `Saved bends · ${detectedBends.length} detected · ${bendRows.filter(row => row.status === "failed").length} calculations incomplete`}</span>
+        <span>{language === "zh" ? bendError ? "折弯分析加载失败，请刷新重试" : !bendAnalysis ? "读取已保存的折弯分析…" : `已计算 ${detectedBends.length} 处折弯角度${incompleteBends ? ` · ${incompleteBends} 个对象计算未完成` : ""}` : bendError ? "Could not load bend analysis; refresh to retry" : !bendAnalysis ? "Loading saved bend analysis…" : `${detectedBends.length} bend angles calculated${incompleteBends ? ` · ${incompleteBends} objects incomplete` : ""}`}</span>
         <label>{language === "zh" ? "已识别折弯" : "Detected bend"}<select value={detectedBends.some(row => row.entityId === selected?.id) ? selected!.id : ""} onChange={e => { if(e.target.value) { selectEntity(e.target.value); setLayer("model"); } }}>
           <option value="">{language === "zh" ? "选择有折弯结果的对象" : "Choose an object with a detected bend"}</option>
           {detectedBends.map(row => <option key={row.entityId} value={row.entityId}>{document.entities.find(entity => entity.id === row.entityId)?.label || row.entityId} · {row.result!.value.toFixed(1)}°</option>)}
@@ -449,13 +451,13 @@ export function ReportScene({
         <label className="report-scene-check"><input type="checkbox" checked={showAngles} onChange={e => setShowAngles(e.target.checked)} />{language === "zh" ? "显示角度标注" : "Show angle annotations"}</label>
       </div>
       <div className="report-bend-analysis" aria-label={language === "zh" ? "已保存的平面倾角" : "Saved plane inclinations"}>
-        <span>{inclinationError ? (language === "zh" ? "平面分析加载失败，请刷新重试" : "Plane analysis could not load") : !inclinationAnalysis ? (language === "zh" ? "读取已保存的平面倾角…" : "Loading saved planes…") : language === "zh" ? `${allSurfaces.length} 个局部面 · ${inclinationRows.filter(r=>r.status==="failed" || r.status==="partial").length} 个对象计算未完成` : `${allSurfaces.length} local surfaces · ${inclinationRows.filter(r=>r.status==="failed" || r.status==="partial").length} objects incomplete`}</span>
+        <span>{inclinationError ? (language === "zh" ? "平面分析加载失败，请刷新重试" : "Plane analysis could not load") : !inclinationAnalysis ? (language === "zh" ? "读取已保存的平面倾角…" : "Loading saved planes…") : language === "zh" ? `已计算 ${allSurfaces.length} 个平面倾角（${inclinationRows.filter(row=>row.surfaces.length>0).length} 个对象）${incompleteInclinations ? ` · ${incompleteInclinations} 个对象计算未完成` : ""}` : `${allSurfaces.length} plane inclinations calculated (${inclinationRows.filter(row=>row.surfaces.length>0).length} objects)${incompleteInclinations ? ` · ${incompleteInclinations} objects incomplete` : ""}`}</span>
         <label>{language === "zh" ? "倾斜平面（含待确认估计）" : "Inclined surface (includes unverified estimates)"}<select value={surfaceKey} onChange={e=>{const row=allSurfaces.find(r=>r.key===e.target.value);if(row){selectEntity(row.entityId);setSurfaceKey(row.key);setLayer("model");setPreviewMode("free");}else{setSurfaceKey("");setMeasurement(null);}}}>
           <option value="">{language === "zh" ? "选择局部面与地面倾角" : "Select a local surface"}</option>
           {visibleSurfaces.map(row=><option key={row.key} value={row.key}>{document.entities.find(e=>e.id===row.entityId)?.label || row.entityId} · {language === "zh" ? "面" : "surface"} {row.surface.surfaceId} · {row.surface.inclinationDeg.toFixed(1)}°{row.surface.classification==="direction_unverified" ? (language === "zh" ? "（估计）" : " (estimate)") : ""}</option>)}
         </select></label>
         <label className="report-scene-check"><input type="checkbox" checked={allPlanes} onChange={e=>{setAllPlanes(e.target.checked);setSurfaceKey("");setMeasurement(null);}} />{language === "zh" ? "全部已测平面" : "All measured planes"}</label>
-        <span>{language === "zh" ? "默认筛选非竖直估计；水平 0°，竖直 90°。" : "Filter: estimated nonvertical; horizontal 0°, vertical 90°."}</span>
+        <span>{language === "zh" ? "默认显示非竖直平面估计。与地面倾角：水平 0°，竖直 90°；偏离竖直 = 90° − 倾角。" : "Showing estimated nonvertical planes. Ground inclination: horizontal 0°, vertical 90°; deviation from vertical = 90° − inclination."}</span>
       </div>
       {newerReport && <div className="report-scene-history-notice" role="status"><span>{t("sceneHistoricalReport")}</span><a href={newerReport.href} title={newerReport.title}>{t("sceneLatestReport")} ↗</a></div>}
       {fullscreenError && <p className="report-scene-notice" role="status">{t("sceneFullscreenUnavailable")}</p>}
