@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { SpatialView } from "./App";
 import { PhotoView } from "./PhotoView";
 import { request } from "./api";
-import { SpatialMeasurements, type BendAnalysis, type SceneMeasurement, type MeasureRegion } from "./SpatialMeasurements";
+import { SpatialMeasurements, type BendAnalysis, type InclinationAnalysis, type SceneMeasurement, type MeasureRegion } from "./SpatialMeasurements";
 import { CadView } from "./CadView";
 import { useI18n } from "./i18n";
 import { cameraForImage, activeModel, compositeModelEvidence, modelPreviewEntities, modelPreviewGeometry, modelPreviewSignature, observationsFor, entityGeometryForLayer, jsonObject, planShapes, cadReferenceImage, scenePlanOptions, sourceDimensions, sourceScale, type GeometryOptions, type PlanOptions } from "./core";
@@ -255,6 +255,19 @@ export function ReportScene({
       .catch(() => { if (!controller.signal.aborted) setBendError(true); });
     return () => controller.abort();
   }, [revision.id]);
+  const [inclinationAnalysis,setInclinationAnalysis]=useState<InclinationAnalysis|null>(null), [inclinationError,setInclinationError]=useState(false), [surfaceKey,setSurfaceKey]=useState(""), [allPlanes,setAllPlanes]=useState(false);
+  useEffect(()=>{
+    const controller=new AbortController();setInclinationAnalysis(null);setInclinationError(false);setSurfaceKey("");
+    request<InclinationAnalysis>(`/api/revisions/${revision.id}/inclination-analysis-v1`,{signal:controller.signal})
+      .then(value=>{if(!controller.signal.aborted)setInclinationAnalysis(value);})
+      .catch(()=>{if(!controller.signal.aborted)setInclinationError(true);});
+    return ()=>controller.abort();
+  },[revision.id]);
+  const inclinationRows=inclinationAnalysis?.revisionId===revision.id?inclinationAnalysis.items:[];
+  const allSurfaces=inclinationRows.flatMap(row=>row.surfaces.map(surface=>({entityId:row.entityId,surface,key:row.entityId+":"+surface.surfaceId})));
+  const visibleSurfaces=allSurfaces.filter(row=>allPlanes || row.surface.classification==="non_vertical" || (row.surface.classification==="direction_unverified" && row.surface.deviationFromVerticalDeg>Math.max(row.surface.angularSpreadDeg,0.000001)));
+  const activeSurface=allSurfaces.find(row=>row.key===surfaceKey && row.entityId===selected?.id)?.surface;
+  useEffect(()=>{ if(activeSurface)setMeasurement(activeSurface.result); },[activeSurface]);
   const bendRows = bendAnalysis?.revisionId === revision.id ? bendAnalysis.items : [];
   const detectedBends = bendRows.filter(row => row.status === "measured" && row.result);
   const savedBend = bendRows.find(row => row.entityId === selected?.id);
@@ -393,6 +406,7 @@ export function ReportScene({
     } catch { setFullscreenError(true); }
   }
   function selectEntity(entityId: string, observationId?: string) {
+    setSurfaceKey("");
     onSelect(entityId, observationId);
     setMobileSection("views");
     const entity = document.entities.find((e) => e.id === entityId);
@@ -433,6 +447,15 @@ export function ReportScene({
           {detectedBends.map(row => <option key={row.entityId} value={row.entityId}>{document.entities.find(entity => entity.id === row.entityId)?.label || row.entityId} · {row.result!.value.toFixed(1)}°</option>)}
         </select></label>
         <label className="report-scene-check"><input type="checkbox" checked={showAngles} onChange={e => setShowAngles(e.target.checked)} />{language === "zh" ? "显示角度标注" : "Show angle annotations"}</label>
+      </div>
+      <div className="report-bend-analysis" aria-label={language === "zh" ? "已保存的平面倾角" : "Saved plane inclinations"}>
+        <span>{inclinationError ? (language === "zh" ? "平面分析加载失败，请刷新重试" : "Plane analysis could not load") : !inclinationAnalysis ? (language === "zh" ? "读取已保存的平面倾角…" : "Loading saved planes…") : language === "zh" ? `${allSurfaces.length} 个局部面 · ${inclinationRows.filter(r=>r.status==="failed" || r.status==="partial").length} 个对象计算未完成` : `${allSurfaces.length} local surfaces · ${inclinationRows.filter(r=>r.status==="failed" || r.status==="partial").length} objects incomplete`}</span>
+        <label>{language === "zh" ? "倾斜平面（含待确认估计）" : "Inclined surface (includes unverified estimates)"}<select value={surfaceKey} onChange={e=>{const row=allSurfaces.find(r=>r.key===e.target.value);if(row){selectEntity(row.entityId);setSurfaceKey(row.key);setLayer("model");setPreviewMode("free");}else{setSurfaceKey("");setMeasurement(null);}}}>
+          <option value="">{language === "zh" ? "选择局部面与地面倾角" : "Select a local surface"}</option>
+          {visibleSurfaces.map(row=><option key={row.key} value={row.key}>{document.entities.find(e=>e.id===row.entityId)?.label || row.entityId} · {language === "zh" ? "面" : "surface"} {row.surface.surfaceId} · {row.surface.inclinationDeg.toFixed(1)}°{row.surface.classification==="direction_unverified" ? (language === "zh" ? "（估计）" : " (estimate)") : ""}</option>)}
+        </select></label>
+        <label className="report-scene-check"><input type="checkbox" checked={allPlanes} onChange={e=>{setAllPlanes(e.target.checked);setSurfaceKey("");setMeasurement(null);}} />{language === "zh" ? "全部已测平面" : "All measured planes"}</label>
+        <span>{language === "zh" ? "默认筛选非竖直估计；水平 0°，竖直 90°。" : "Filter: estimated nonvertical; horizontal 0°, vertical 90°."}</span>
       </div>
       {newerReport && <div className="report-scene-history-notice" role="status"><span>{t("sceneHistoricalReport")}</span><a href={newerReport.href} title={newerReport.title}>{t("sceneLatestReport")} ↗</a></div>}
       {fullscreenError && <p className="report-scene-notice" role="status">{t("sceneFullscreenUnavailable")}</p>}
@@ -530,7 +553,7 @@ export function ReportScene({
         </div>
         <aside className="report-scene-inspector" id={`${panePrefix}-inspector`} aria-label={t("sceneInspector")}>
           <header><h3>{t("sceneInspector")}</h3>{selected && <span>{selected.id.slice(0, 8)}</span>}</header>
-          <div className="report-scene-inspector-content">{selected && <SpatialMeasurements key={revision.id + selected.id} revision={revision} selectedId={selected.id} savedBend={savedBend} points={measurePoints} pickingPoints={pickingPoints} onPickPoints={startPointPicking} region={measureRegion} drawing={drawingRegion} onResult={setMeasurement} onDraw={() => { setDrawingRegion(!drawingRegion); if (!drawingRegion) { setCadLayer("model"); setFocused("cad"); setMobileSection("views"); } }} />}{inspector ?? <p className="report-scene-inspector-empty">{t("sceneReadOnly")}</p>}</div>
+          <div className="report-scene-inspector-content">{selected && <SpatialMeasurements key={revision.id + selected.id} revision={revision} selectedId={selected.id} savedBend={savedBend} savedSurface={activeSurface} inclinationOutcome={inclinationRows.find(r=>r.entityId===selected.id)} onClearSurface={()=>setSurfaceKey("")} points={measurePoints} pickingPoints={pickingPoints} onPickPoints={startPointPicking} region={measureRegion} drawing={drawingRegion} onResult={setMeasurement} onDraw={() => { setDrawingRegion(!drawingRegion); if (!drawingRegion) { setCadLayer("model"); setFocused("cad"); setMobileSection("views"); } }} />}{inspector ?? <p className="report-scene-inspector-empty">{t("sceneReadOnly")}</p>}</div>
         </aside>
       </div>
     </section>

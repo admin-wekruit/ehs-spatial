@@ -1,7 +1,7 @@
 # 算法与分析流程总表
 
 这是 Panoptes Platform 当前照片 → 对象 → CAD / 模型 → 测量 → 报告的统一入口。
-维护日期：2026-09-16；代码核对基线：`f790127`。
+维护日期：2026-09-16；代码基线包含 `f790127`；本次实现版本为 `local-planar-inclinations-v1`，见下方验收记录。
 根 README 中四张照片、七种固定标签的说明属于早期 MVP，不代表当前 Platform 的完整流程。
 
 ## 使用与维护规则
@@ -48,8 +48,8 @@ flowchart LR
 | A07 | 模型—照片一致性、姿态优化 | 光线投射＋数值评分与优化 | `model_quality.py::assess_model`、`refine_model_pose` | 已实现；质量状态与位置确认分别保留 |
 | A08 | CAD 与照片/模型对应 | 投影几何＋来源关联 | `reconstruction.py::_refresh_plan_projections`、`source_cad.py`、`correspondence.py`、`web/src/CadView.tsx` | 已实现；来源 CAD 与模型投影是不同证据 |
 | A09 | 板件自身折弯 | 两个主要平面＋共享边检查 | `scene_measurements.py::fitted_bend` | v2 已发布，仍只检出一处主要折弯 |
-| A10 | 地面倾角、两面角、距离、区域占用、选点角 | 确定性几何计算 | `scene_measurements.py::measure_scene`、`web/src/SpatialMeasurements.tsx` | 已有交互计算；多局部面倾角自动批处理未实现 |
-| A11 | 分析持久化与报告读取 | 输入指纹、缓存、不可变来源 | `scene_measurements.py::analyze_bends`、`saved_bends`、`publication_site.py` | 折弯批处理/公共报告已验证；独立远程 worker 部署另列 |
+| A10 | 地面倾角、两面角、距离、区域占用、选点角 | 确定性几何计算 | `planar_surfaces.py`、`scene_measurements.py::measure_scene`、`web/src/SpatialMeasurements.tsx` | 交互测量＋多局部面倾角自动批处理已实现 |
+| A11 | 分析持久化与报告读取 | 输入指纹、缓存、不可变来源 | `scene_measurements.py::analyze_bends`、`analyze_inclinations`、`publication_site.py` | 折弯和倾角批处理已接入；公共报告与独立 worker 发布分别记录 |
 | A12 | EHS 规则判定 | 证据适用性＋配置规则＋数值计算 | `policy_engine.py`、`policy_service.py` | 已实现规则路径；当前示例版本尚无新安全评估 |
 
 上表 Python 文件均在 `ehs_spatial/platform/`，除明确标出的前端文件。
@@ -132,17 +132,31 @@ flowchart LR
 两面角：两个对象主要面的较小夹角。距离：三角面真实最近距离。区域占用：地面投影交集，不是三维碰撞。
 选点角：用户选定的三维线段/竖直参考，依赖实际命中点。输入与输出保留具体对象、资产、坐标系和单位。
 当前单网格超过 500,000 三角面拒绝计算；距离算法另有时间上限。倾角缺有效地面会拒绝，绝不换成世界 Z。
-当前倾角只在交互调用时计算；自动枚举多个局部面尚未实现。
+自动局部面版本：`local-planar-inclinations-v1`。从当前姿态的实际三角网格提取多个连续支持面；候选不依赖物体名称、固定 ID 或是否叫“护板”。
+固定种子 0，按三角面面积采样 16,000 点；Open3D RANSAC 每次 128 轮、距离门槛为配置的一半、至多 64 个候选；剩余支持点少于 30 时停止。
+设计阶段评估过 `detect_planar_patches`，解析平面测试没有检出面，最终采用可复现的迭代 RANSAC；没有另加备用算法。
+候选支持要求所有三角形顶点距平面不超过容差、法向偏离不超过 10°。用面积加权法向拟合，并以实际三角面投影并集计算面积、连通区域和孔洞，不用检测框或凸包补满空隙。
+薄板正反面合并要求法向差≤5°、平面间距≤3倍距离容差、投影重叠≥较小面的80%；分离共面片保持独立。该规则无法仅从网格判别极近的独立平行层与真正的板厚。
+
+默认工程参数：最小支持面积 `0.02` 原生单位²，顶点距离容差 `0.01` 原生单位，法向容差 `10°`。没有自动声称这些单位为米。
+参数对照检查覆盖面积门槛 0.01/0.02/0.05 与距离门槛 0.003/0.01：保留面积 0.12 的窄长双层板、拒绝面积 0.000001 的碎片，并保留 0.0001 标准差的点位扰动样本。
+这只固定了可复现的工程默认值，尚不是所有现场尺度的统计标定。噪声球面检查无候选；有真实平直分片的多边形圆柱会检出竖直片，不能从这份网格断言原物体是光滑曲面。
+
+每面保存倾角、偏离竖直、面积、支持索引（提取阶段）、轮廓、法向波动、平面残差及来源指纹。HTTP派生记录保留测量轮廓和引用，不携带大量支持索引。
+法向波动使用面积加权角度 RMS；若地面带 `angularErrorDeg`，两者相加作为工程筛选估计，**不是严格误差上界或标定置信区间**。
+当前历史地面没有角度误差信息，因此所有结果标为 `direction_unverified`。页面默认列表明确为“含待确认估计”，暂按偏离竖直大于局部波动展示估计；确认非竖直的结果另按双方误差计算。
+“全部已测平面”可查看默认过滤掉的面；筛选不改后台结果。未知地面方向误差不等于无地面法向；缺法向则无法算角度。
+64 候选耗尽时保存 `partial` 和已测面；500,000 三角形输入上限仍沿用现有共享网格入口，超出即 `failed`。不把采样未覆盖称为不存在。
 验证：`tests/check_scene_measurements.py`；前端 `SpatialMeasurements.tsx` 对应模式。
 
 ### A11 自动分析与报告
 
 输入绑定对象、representation、asset、pose、coordinate frame、算法版本；输出每对象保存的结果或明确失败状态。
-共享 worker 完成场景产物后执行 `analyze_bends`；公共发布准备也执行同一逻辑，为冻结 revision 写独立派生记录。
+共享 worker 完成场景产物后执行 `analyze_bends` 与 `analyze_inclinations`；公共发布准备执行同一逻辑，为冻结 revision 写独立派生记录。倾角持久化在 `entity.inclinationAnalysis`，不混入身份/观测 measurements。
 `bend-analysis-v1` 是 HTTP 结构版本，计算方法当前为 v2，两者含义不同。
 公共报告已重算 19 个冻结 revision。当前场景 26 条：3 个有折弯结果、19 个未检出稳定折弯、2 个复杂度限制、2 个非独立模型跳过。
 独立 Modal worker 的线上升级仍需已有审核镜像及 DB/storage secret；公共报告已发布不代表独立 worker 已部署。
-验证：`tests/check_scene_measurements.py`、`tests/check_publication_site.py`、`tests/check_report_loading.py`。
+验证：`tests/check_planar_surfaces.py`、`tests/check_scene_measurements.py`、`tests/check_publication_site.py`、`tests/check_report_loading.py`。
 
 ### A12 EHS
 
@@ -151,11 +165,19 @@ ZEN 处理规则适用性，Python 计算数值事实。政策阈值必须属于
 缺标定、缺有效几何或当前版本没执行评估时，不能展示历史结果为当前合规结论。
 验证：`tests/test_policy.py`、`tests/test_policy_compile.py`；当前示例报告仍是“此版本尚未评估”。
 
-## 本次已批准规划的工作
+## 本次实现与验收
 
 [自动局部平面倾角实施计划](../superpowers/plans/2026-09-16-planar-surface-inclinations.md)。
 目标：所有符合面积与平整度条件的局部面自动计算地面倾角；报告筛选非竖直面，可开关标注。
-状态：计划已记录，未实现；不将 A09 的折弯内角与 A10 的地面倾角合并为同一含义。
+实现已接入批处理、独立派生读取及报告选择。A09 折弯内角和 A10 地面倾角各自保留。
+
+- [逐 revision / 对象结果及真实模型来源](planar-inclination-validation.json)：19 个冻结 revision、801 条对象记录完成本轮处理；当前 26 对象得到 108 个局部面，15 个 measured、1 个 partial、6 个 unsupported、2 个 failed、2 个 skipped。
+- 当前中央板两个面约 59.9° / 87.3°；右侧折板约 52.5° / 81.7° / 57.2°；左侧约 52.5° / 82.3° / 57.0°。这些是现有模型与地面参考的估计。
+- 原始对象数、CAD 和模型身份不被本次筛选改变。中央板自身折弯仍为 145.6°，与上述倾角不同。
+- `GET /api/revisions/f5f4b1d4-bb55-4c13-ba02-b44e706340f2/inclination-analysis-v1` 已在公共 API 返回 200、26 对象、108 面；GET 不重读完整 revision 或重新计算网格。
+- 当前源代码共享 worker 的测试已确认结果随产物保存；独立生产 worker 缺少 `PANOPTES_WORKER_IMAGE` 审核 digest 和 `PANOPTES_WORKER_SECRET` 配置，尚未部署，不能宣称新图片生产链路上线。
+- 用户红色左右斜板截图已登记哈希；核查公开目录全部 7 张不同源照片后，没有该截图对应的已配准模型，因此未对这两块板宣称角度验证。解析网格 0°/30°/60°/90° 用于算法验证，不冒充照片重建验证。
+- 前端检查覆盖局部面切换、原图/CAD对应、标注开关和04自由旋转；刷新读取保存结果。公共页面最终验收和部署信息见下面发布记录。
 
 ## 方法参考
 
@@ -163,3 +185,11 @@ ZEN 处理规则适用性，Python 计算数值事实。政策阈值必须属于
 - [PCL 法向/曲率区域生长](https://pointclouds.org/documentation/tutorials/region_growing_segmentation.html)
 
 库同样使用阈值；改进目标是多局部面覆盖、参数有依据、失败可解释，不是取消几何约束。
+
+### 2026-09-16 发布记录
+
+- 前端 Pages：`f51cb55`，[部署成功记录](https://github.com/admin-wekruit/panoptes-workcell-report/actions/runs/35168932135)。
+- 公共 API：`panoptes-publications`，2026-09-16 已部署；HTTP 倾角派生端点已验证。
+- Linux 生产同版镜像实际运行 Open3D 解析平面检测，输出 1 面、59.99999999998744°；[运行记录](https://modal.com/apps/wekruit-livekit-agents/main/ap-eVJenjBrRpkq5cVqkcoDNp)。这项验证不是独立生产 worker 部署。
+- [公开报告](https://admin-wekruit.github.io/panoptes-workcell-report/app.html#/reports/d6c2d4d3-4769-4526-a0f7-73de34fa2f5b)：刷新后自动读取 108 面；中央板面1显示59.88°、面2显示87.3°；右折板面1在02模型场景显示52.54°。04拖动后轮廓和标签跟随，关闭标注后轮廓/数值隐藏，重新选择折弯仍显示145.6°。窄屏通过“所选对象模型”或“对象详情”查看，宽屏保留四视图。
+- 通过的检查：`OMP_NUM_THREADS=1 .venv/bin/python tests/check_planar_surfaces.py`、`tests/check_scene_measurements.py`、`tests/check_publication_site.py`、`tests/check_report_loading.py`；`npm --prefix web run check`、`npm --prefix web run build`。构建仅有既有大分包提示，线上检查无浏览器错误日志。

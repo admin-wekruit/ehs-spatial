@@ -12,28 +12,32 @@ export type SceneMeasurement = {
   value: number; unit: "deg" | "native" | "native2"; method: string;
   references: { entityId: string; representationId: string; assetId: string | null; assetSha256: string | null; placementState: string | null; qualityStatus: string | null }[];
   lines: { points: number[][]; color: string }[]; labelPoint: number[];
-  quality: { surfaceFits?: { areaFraction: number; rmsResidualNative: number }[]; deviationFromVerticalDeg?: number; groundReference?: { normal?: number[] | null }; regionFraction?: number };
+  quality: { areaNative2?: number; angularErrorDeg?: number | null; angularSpreadDeg?: number; rmsResidualNative?: number; classification?: string; surfaceId?: string; surfaceFits?: { areaFraction: number; rmsResidualNative: number }[]; deviationFromVerticalDeg?: number; groundReference?: { normal?: number[] | null }; regionFraction?: number };
 };
 export type BendAnalysis = { revisionId: string; algorithm: string; items: BendOutcome[] };
 export type BendOutcome = { entityId: string; inputSha256: string; status: "measured" | "unsupported" | "skipped" | "failed" | "not_processed"; reason?: string; result?: SceneMeasurement };
-export function SpatialMeasurements({ revision, selectedId, savedBend, region, drawing, onDraw, onResult, points, pickingPoints, onPickPoints }: {
-  savedBend?: BendOutcome;
+export type InclinationSurface = { surfaceId:string; inclinationDeg:number; deviationFromVerticalDeg:number; angularSpreadDeg:number; areaNative2:number; classification:string; result:SceneMeasurement };
+export type InclinationOutcome = { entityId:string; status:string; reason?:string; surfaces:InclinationSurface[] };
+export type InclinationAnalysis = { revisionId:string; algorithm:string; items:InclinationOutcome[] };
+export function SpatialMeasurements({ revision, selectedId, savedBend, savedSurface, inclinationOutcome, onClearSurface, region, drawing, onDraw, onResult, points, pickingPoints, onPickPoints }: {
+  savedBend?: BendOutcome; savedSurface?: InclinationSurface; inclinationOutcome?: InclinationOutcome; onClearSurface?: () => void;
   points: SurfacePick[]; pickingPoints: boolean; onPickPoints: (start:boolean, count?:2|3) => void;
   revision: Revision; selectedId: string; region: MeasureRegion | null; drawing: boolean;
   onDraw: () => void; onResult: (result: SceneMeasurement | null) => void;
 }) {
   const { language } = useI18n(), zh = language === "zh", text = (cn: string, en: string) => zh ? cn : en;
-  const [kind, setKind] = useState("bend"), [target, setTarget] = useState(""), [busy, setBusy] = useState(false),
+  const [manualKind, setKind] = useState("bend"), [target, setTarget] = useState(""), [busy, setBusy] = useState(false),
     [result, setResult] = useState<SceneMeasurement | null>(null), [error, setError] = useState("");
   const pending = useRef<AbortController | null>(null);
+  const kind = savedSurface ? "inclination" : manualKind;
   const pointCount = kind === "edge_vertical" ? 2 : 3;
   const selected = revision.document.entities.find(e => e.id === selectedId), model = selected && activeModel(selected);
   const objects = revision.document.entities.filter(e => e.id !== selectedId && e.visible !== false && !e.sourceContext && activeModel(e)?.coordinateFrameId === model?.coordinateFrameId && activeModel(e)?.sourceValidity !== "stale" && activeModel(e));
   useEffect(() => {
-    const saved = kind === "bend" && savedBend?.status === "measured" ? savedBend.result || null : null;
+    const saved = kind === "inclination" && savedSurface ? savedSurface.result : kind === "bend" && savedBend?.status === "measured" ? savedBend.result || null : null;
     pending.current?.abort(); setBusy(false); setResult(saved); setError(""); onResult(saved);
     return () => pending.current?.abort();
-  }, [revision.id, selectedId, kind, target, region, drawing, points, onResult, savedBend]);
+  }, [revision.id, selectedId, kind, target, region, drawing, points, onResult, savedBend, savedSurface]);
   async function calculate() {
     pending.current?.abort(); const controller = new AbortController(); pending.current = controller;
     setBusy(true); setError(""); setResult(null); onResult(null);
@@ -59,6 +63,8 @@ export function SpatialMeasurements({ revision, selectedId, savedBend, region, d
     finally { if (!controller.signal.aborted) setBusy(false); }
   }
   const errors: Record<string, string> = {
+    measurement_no_stable_local_plane: text("未识别到满足面积和平整度条件的局部面。", "No local patch meets the area and flatness criteria."),
+    measurement_model_missing: text("当前对象没有有效独立模型。", "No valid independent model for this object."),
     measurement_no_stable_bend: text("未识别到足够稳定、相接的两个板面，无法给出折弯内角。请核对模型的折弯形状。", "Two stable adjoining sheet faces could not be identified. Check the modeled fold geometry."),
     measurement_points_invalid: text("请按提示在同一场景模型中完成取点。", "Complete the requested points in the same scene frame."),
     measurement_points_coincident: text("端点与顶点重合，请重新选点。", "An endpoint coincides with the vertex. Pick the points again."),
@@ -67,13 +73,12 @@ export function SpatialMeasurements({ revision, selectedId, savedBend, region, d
     measurement_ground_missing: text("缺少有效地面参考，无法测量相对地面的倾角或投影占用。", "A valid ground reference is required for inclination and projected overlap."),
     measurement_region_invalid: text("区域无效，请在当前 CAD 中重新圈定。", "Invalid region. Draw it again in the current CAD view."),
     measurement_frame_mismatch: text("两个模型不在同一坐标系，不能直接测量。", "The models do not share a coordinate frame."),
-    measurement_model_missing: text("当前对象没有有效模型。", "This object has no valid current model."),
   };
   return <section className="spatial-measurements" aria-label={text("空间测量", "Spatial measurements")}>
     <h4>{text("空间测量", "Spatial measurements")} <small>{text("模型估计", "Model estimate")}</small></h4>
     <p>{text("可测同一块板的折弯内角、板面倾角、物体间距或 CAD 区域占用。", "Measure a panel’s intrinsic bend, inclination, object distances, or a CAD region.")}</p>
     {!model || model.sourceValidity === "stale" ? <p>{text("请先选择有当前模型的对象。", "Select an object with a current model first.")}</p> : <>
-      <label>{text("测量类型", "Measurement")}<select value={kind} onChange={e => { if (drawing) onDraw(); onPickPoints(false); setKind(e.target.value); }}>
+      <label>{text("测量类型", "Measurement")}<select value={kind} onChange={e => { if (drawing) onDraw(); onPickPoints(false); onClearSurface?.(); setKind(e.target.value); }}>
         <option value="bend">{text("板子自身折弯内角 · 两个板面", "Panel interior bend · two sheet faces")}</option>
         <option value="edge_vertical">{text("斜边与竖直线夹角 · 两点", "Edge angle to vertical · two points")}</option>
         <option value="edge_angle">{text("两边线夹角 · 三点 · 0–180°", "Edge angle · three points · 0–180°")}</option>
@@ -95,7 +100,9 @@ export function SpatialMeasurements({ revision, selectedId, savedBend, region, d
         {objects.map(e => <option key={e.id} value={e.id}>{e.label || e.id}</option>)}
       </select></label> : <><button type="button" onClick={onDraw}>{text(drawing ? "取消圈定" : region ? "重新圈定 CAD 区域" : "圈定 CAD 区域", drawing ? "Cancel drawing" : region ? "Redraw CAD region" : "Draw CAD region")}</button>
         <p>{text(region ? "已圈定临时区域。此区域不代表已确认的安全区。" : "在 CAD 中点击矩形的两个对角；也可用方向键移动光标，Enter 确认。", region ? "Temporary region set. It is not a verified safety zone." : "Click two opposite rectangle corners in CAD, or move the cursor with arrow keys and press Enter.")}</p></>}
-      <button type="button" className="measure-calculate" disabled={busy || drawing || pickingPoints || ((kind === "edge_angle" || kind === "edge_vertical") ? points.length!==pointCount : kind === "occupancy" ? !region : (kind === "angle" || kind === "distance") && !objects.some(e => e.id === target))} onClick={calculate}>{text(busy ? "正在计算…" : kind === "bend" && savedBend?.status === "measured" ? "重新计算并标注" : "计算并标注", busy ? "Calculating…" : kind === "bend" && savedBend?.status === "measured" ? "Recalculate & annotate" : "Calculate & annotate")}</button>
+      {kind === "inclination" && <p>{savedSurface ? text(`流程已保存 · 局部面 ${savedSurface.surfaceId} · 面积 ${savedSurface.areaNative2.toPrecision(3)} 原生单位²`, `Saved local surface ${savedSurface.surfaceId} · area ${savedSurface.areaNative2.toPrecision(3)} native²`) : inclinationOutcome?.status === "measured" ? text(`已识别 ${inclinationOutcome.surfaces.length} 个局部面，请从上方“倾斜平面”选择。`, `${inclinationOutcome.surfaces.length} local surfaces saved; select one above.`) : text(`自动分析：${inclinationOutcome?.reason ? errors[inclinationOutcome.reason] || inclinationOutcome.reason : "尚无局部面结果"}`, `Automatic analysis: ${inclinationOutcome?.reason || "No saved local surfaces"}`)}</p>}
+      {savedSurface && kind === "inclination" && <p>{savedSurface.result.quality.angularErrorDeg == null ? text("地面方向误差未记录；显示模型倾角估计，偏离竖直尚待确认。", "Ground direction error is unavailable; model inclination is an estimate, vertical classification is unverified.") : text(`工程角度误差估计 ${savedSurface.result.quality.angularErrorDeg.toFixed(1)}°，不代表现场标定精度。`, `Engineering angular error estimate ${savedSurface.result.quality.angularErrorDeg.toFixed(1)}°; not field calibration.`)}</p>}
+      <button type="button" className="measure-calculate" disabled={Boolean(kind === "inclination" && savedSurface) || busy || drawing || pickingPoints || ((kind === "edge_angle" || kind === "edge_vertical") ? points.length!==pointCount : kind === "occupancy" ? !region : (kind === "angle" || kind === "distance") && !objects.some(e => e.id === target))} onClick={calculate}>{text(kind === "inclination" && savedSurface ? "已保存的局部面测量" : busy ? "正在计算…" : kind === "bend" && savedBend?.status === "measured" ? "重新计算并标注" : "计算并标注", kind === "inclination" && savedSurface ? "Saved local surface measurement" : busy ? "Calculating…" : kind === "bend" && savedBend?.status === "measured" ? "Recalculate & annotate" : "Calculate & annotate")}</button>
       {error && <p role="alert">{errors[error] || text("测量失败，请重试。", "Measurement failed. Please retry.")} <small>{error}</small></p>}
       {result && <div className="measurement-result" role="status">
         <output>{Number(result.value.toPrecision(4))} {result.unit === "deg" ? "°" : text(result.unit === "native2" ? "原生单位²" : "原生单位", result.unit === "native2" ? "native units²" : "native units")}</output>

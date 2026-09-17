@@ -216,6 +216,8 @@ class WorkerRepository:
   assert status=='succeeded'
   assert all('bendAnalysis' in e for e in document['entities'])
   assert len(result['bendAnalysis']['outcomes'])==2
+  assert all('inclinationAnalysis' in e for e in document['entities'])
+  assert len(result['inclinationAnalysis']['outcomes'])==2
   return result
 worker_scene=deepcopy(revision['document'])
 with patch('ehs_spatial.platform.reconstruction.run_generation',return_value=(worker_scene,{'status':'succeeded'})):
@@ -234,6 +236,9 @@ with TemporaryDirectory() as directory:
  with TestClient(app) as client, patch('ehs_spatial.platform.scene_measurements.measure_scene',side_effect=AssertionError('GET computed geometry')):
   payload=client.get('/api/revisions/revision/bend-analysis-v1').json()
   assert len(payload['items'])==2 and all(row['status']!='not_processed' for row in payload['items'])
+  with patch('ehs_spatial.platform.scene_measurements.analyze_inclinations',side_effect=AssertionError('GET recomputed inclination')):
+   saved=client.get('/api/revisions/revision/inclination-analysis-v1').json()
+   assert len(saved['items'])==2 and all(row['status']!='not_processed' for row in saved['items'])
 app=FastAPI()
 register_measurement_routes(app,lambda _:(_ for _ in ()).throw(AssertionError('parsed full revision')),load,lambda _:analysis)
 with TestClient(app) as client: assert client.get('/api/revisions/revision/bend-analysis-v1').json()==analysis

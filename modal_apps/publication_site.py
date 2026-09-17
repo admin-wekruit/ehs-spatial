@@ -44,13 +44,14 @@ if modal.is_local() and model_enabled:
     feedback_secrets = [modal.Secret.from_dict(values)]
 image = (
     modal.Image.debian_slim(python_version="3.12")
-    .pip_install("fastapi==0.139.0", "starlette==1.3.1", "pydantic==2.13.4", "google-genai==2.11.0", "numpy==2.5.1", "shapely==2.1.2")
-    .env({"PYTHONPATH": "/app", **feedback_config})
+    .apt_install("libgomp1", "libgl1")
+    .pip_install("open3d==0.19.0", "fastapi==0.139.0", "starlette==1.3.1", "pydantic==2.13.4", "google-genai==2.11.0", "numpy==2.5.1", "shapely==2.1.2")
+    .env({"PYTHONPATH": "/app", "OMP_NUM_THREADS":"1", **feedback_config})
     .add_local_file(ROOT / "ehs_spatial/__init__.py", "/app/ehs_spatial/__init__.py")
     .add_local_dir(catalog, "/publications")
     .add_local_dir(prepared, "/publication-http")
 )
-for module in ("__init__", "publication_site", "publication_view", "scene_measurements", "spatial", "blender_export", "feedback", "contracts", "agent_service", "repository", "identity"):
+for module in ("__init__", "publication_site", "publication_view", "scene_measurements", "planar_surfaces", "spatial", "blender_export", "feedback", "contracts", "agent_service", "repository", "identity"):
     image = image.add_local_file(ROOT / f"ehs_spatial/platform/{module}.py", f"/app/ehs_spatial/platform/{module}.py")
 
 

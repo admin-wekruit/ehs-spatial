@@ -205,6 +205,21 @@ def surface_distance(a,b, *, seconds=15):
     return float(np.sqrt(best)),pair
 
 
+def posed_model(doc, id, load_asset):
+    e=next((e for e in doc['entities'] if e['id']==id and not e.get('sourceContext') and e.get('visible',True)),None)
+    if not e: raise PlatformError('measurement_object_missing',422)
+    r=next((r for r in e.get('representations',[]) if r['id']==e.get('activeModelRepresentationId') and r['kind'] in ('primitive','generated_mesh')),None)
+    if not r or r.get('sourceValidity')=='stale': raise PlatformError('measurement_model_missing',422)
+    pose=e.get('currentModelTransform') or r['transform']
+    if pose['coordinateFrameId']!=r['coordinateFrameId']: raise PlatformError('measurement_frame_mismatch',422)
+    asset=next((a for a in doc['assets'] if a['id']==r.get('assetId')),None)
+    if r['kind']=='generated_mesh' and not asset: raise PlatformError('measurement_model_missing',422)
+    mesh=primitive_mesh(r['primitive']) if r['kind']=='primitive' else mesh_from_asset(load_asset(r['assetId']),asset or {})
+    triangles=transform_points(mesh.vertices,transform_matrix(pose))[mesh.faces]
+    if len(triangles)>500_000: raise PlatformError('measurement_complexity_limit',422)
+    return (triangles,pose['coordinateFrameId']), {'entityId':id,'representationId':r['id'],'assetId':r.get('assetId'),'assetSha256':(asset or {}).get('sha256'),'placementState':r.get('placementState'),'qualityStatus':(r.get('qualityEvidence') or {}).get('status')}
+
+
 def measure_scene(revision, kind, entity_a, entity_b, region, load_asset):
     if kind not in ('angle','inclination','bend','distance','occupancy'):
         raise PlatformError('measurement_kind_invalid',422)
@@ -213,19 +228,7 @@ def measure_scene(revision, kind, entity_a, entity_b, region, load_asset):
     if len(set(ids)) != len(ids) or any(not i for i in ids):
         raise PlatformError('measurement_choose_objects',422)
     for id in ids:
-        e=next((e for e in doc['entities'] if e['id']==id and not e.get('sourceContext') and e.get('visible',True)),None)
-        if not e: raise PlatformError('measurement_object_missing',422)
-        r=next((r for r in e.get('representations',[]) if r['id']==e.get('activeModelRepresentationId') and r['kind'] in ('primitive','generated_mesh')),None)
-        if not r or r.get('sourceValidity')=='stale': raise PlatformError('measurement_model_missing',422)
-        pose=e.get('currentModelTransform') or r['transform']
-        if pose['coordinateFrameId']!=r['coordinateFrameId']: raise PlatformError('measurement_frame_mismatch',422)
-        asset=next((a for a in doc['assets'] if a['id']==r.get('assetId')),None)
-        if r['kind']=='generated_mesh' and not asset: raise PlatformError('measurement_model_missing',422)
-        mesh=primitive_mesh(r['primitive']) if r['kind']=='primitive' else mesh_from_asset(load_asset(r['assetId']),asset or {})
-        triangles=transform_points(mesh.vertices,transform_matrix(pose))[mesh.faces]
-        if len(triangles)>500_000: raise PlatformError('measurement_complexity_limit',422)
-        models.append((triangles,pose['coordinateFrameId']))
-        refs.append({'entityId':id,'representationId':r['id'],'assetId':r.get('assetId'),'assetSha256':(asset or {}).get('sha256'),'placementState':r.get('placementState'),'qualityStatus':(r.get('qualityEvidence') or {}).get('status')})
+        model,ref=posed_model(doc,id,load_asset);models.append(model);refs.append(ref)
     frame_id=models[0][1]
     frame=next((f for f in doc['coordinateFrames'] if f['id']==frame_id),None)
     if frame is None: raise PlatformError('measurement_frame_mismatch',422)
@@ -368,7 +371,7 @@ def analyze_bends(revision, load_asset, *, persist=False, cache=None):
     return analysis
 
 
-def register_measurement_routes(app, get_revision, load_asset, get_analysis=None):
+def register_measurement_routes(app, get_revision, load_asset, get_analysis=None, get_inclinations=None):
     from fastapi import Query
     @app.get('/api/revisions/{revision_id}/' + BEND_ANALYSIS_ROUTE)
     def bend_analysis(revision_id: str):
@@ -378,9 +381,90 @@ def register_measurement_routes(app, get_revision, load_asset, get_analysis=None
         if revision is None: raise PlatformError('revision_not_found', 404)
         return saved_bends(revision)
 
+    @app.get('/api/revisions/{revision_id}/inclination-analysis-v1')
+    def inclination_analysis(revision_id: str):
+        saved=get_inclinations(revision_id) if get_inclinations else None
+        if saved is not None:return saved
+        revision=get_revision(revision_id)
+        if revision is None:raise PlatformError('revision_not_found',404)
+        return saved_inclinations(revision)
+
     @app.get('/api/revisions/{revision_id}/measurements')
     def measurement(revision_id: str, kind: str, entityA: str, entityB: str | None = None,
                     region: str | None = Query(default=None, max_length=12000)):
         revision=get_revision(revision_id)
         if revision is None: raise PlatformError('revision_not_found',404)
         return measure_scene(revision,kind,entityA,entityB,region,load_asset)
+
+
+INCLINATION_ANALYSIS_ROUTE = 'inclination-analysis-v1'
+
+
+def saved_inclinations(revision, config=None):
+    from .planar_surfaces import VERSION, DEFAULT_CONFIG
+    config = {**DEFAULT_CONFIG, **(config or {})}
+    rows=[]
+    for entity in revision['document']['entities']:
+        if entity.get('sourceContext') or entity.get('visible') is False:continue
+        fingerprint=digest({'algorithm':VERSION,'geometry':bend_input(revision['document'],entity),'config':config})
+        saved=entity.get('inclinationAnalysis') or {}
+        row=dict(saved) if saved.get('inputSha256')==fingerprint else {'status':'not_processed','surfaces':[]}
+        row.update(entityId=entity['id'],inputSha256=fingerprint)
+        row['surfaces']=[{**s,'result':{**s['result'],'revisionId':revision['id']}} for s in row.get('surfaces',[])]
+        rows.append(row)
+    return {'revisionId':revision['id'],'algorithm':VERSION,'configuration':config,'items':rows}
+
+
+def analyze_inclinations(revision, load_asset, *, persist=False, cache=None, config=None):
+    from .planar_surfaces import extract_planar_surfaces, surface_inclinations, VERSION
+    analysis=saved_inclinations(revision,config);doc=revision['document']
+    entities={e['id']:e for e in doc['entities']};cache={} if cache is None else cache
+    for row in analysis['items']:
+        if row['status'] in ('not_processed','failed'):
+            cached=cache.get(row['inputSha256'])
+            if cached and cached['status']!='failed':row.update(cached)
+            else:
+                row.pop('reason',None)
+                try:
+                    (triangles,frame_id),ref=posed_model(doc,row['entityId'],load_asset)
+                    frame=next((f for f in doc['coordinateFrames'] if f['id']==frame_id),None)
+                    if frame is None:raise PlatformError('measurement_frame_mismatch',422)
+                    ground=frame.get('ground') or {}
+                    surface_inclinations([],ground)  # Validate datum before detecting surfaces.
+                    diagnostics={}
+                    patches=extract_planar_surfaces(triangles,analysis['configuration'],diagnostics=diagnostics)
+                    surfaces=surface_inclinations(patches,ground); saved=[]
+                    for s in surfaces:
+                        n=np.asarray(s['normal']);g=np.asarray(ground['normal'],float);g/=np.linalg.norm(g)
+                        c=np.asarray(s['center']);cosine=float(np.clip(abs(n@g),0,1));g=g if n@g>=0 else -g
+                        # Cross-section rays along the measured and horizontal planes.
+                        axis=np.cross(n,g);length=np.linalg.norm(axis)
+                        radius=np.sqrt(s['areaNative2'])*.25
+                        lines=[{'points':b,'color':'#e36b23'} for b in s['boundary']]
+                        if length>1e-8:
+                            axis/=length;u=np.cross(axis,n);v=np.cross(axis,g)
+                            tangent=v-u*cosine;tangent/=max(np.linalg.norm(tangent),1e-30)
+                            arc=np.array([c+radius*(u*np.cos(a)+tangent*np.sin(a)) for a in np.linspace(0,np.deg2rad(s['inclinationDeg']),25)])
+                            lines += [{'points':[c.tolist(),arc[0].tolist()],'color':'#e36b23'}, {'points':[c.tolist(),arc[-1].tolist()],'color':'#168bba'}, {'points':arc.tolist(),'color':'#409639'}]
+                            label=arc[len(arc)//2].tolist()
+                        else:label=c.tolist()
+                        result={'revisionId':revision['id'],'kind':'inclination','coordinateFrameId':frame_id,'source':'model_inference','unit':'deg','method':VERSION,
+                            'value':s['inclinationDeg'],'references':[ref],'lines':lines,'labelPoint':label,
+                            'quality':{'deviationFromVerticalDeg':s['deviationFromVerticalDeg'],'groundReference':ground,'areaNative2':s['areaNative2'],
+                                       'angularErrorDeg':s['angularErrorDeg'],'angularSpreadDeg':s['angularSpreadDeg'],'rmsResidualNative':s['rmsResidualNative'],
+                                       'classification':s['classification'],'surfaceId':s['surfaceId']}}
+                        # Full support indices are used during fitting; report needs boundaries/summary only.
+                        saved.append({k:v for k,v in s.items() if k not in ('triangleIndices','boundary','normal','center')}|{'result':result})
+                    row.update(status='partial' if diagnostics.get('limitReached') else 'measured' if saved else 'unsupported',surfaces=saved,diagnostics=diagnostics)
+                    if diagnostics.get('limitReached'):row['reason']='measurement_complexity_limit'
+                    elif not saved:row['reason']='measurement_no_stable_local_plane'
+                except PlatformError as exc:
+                    row.update(status='skipped' if exc.code=='measurement_model_missing' else 'failed',reason=exc.code,surfaces=[])
+                except (ValueError,TypeError,KeyError,OSError,RuntimeError) as exc:
+                    reason='measurement_ground_missing' if str(exc)=='measurement_ground_missing' else 'measurement_invalid_geometry'
+                    row.update(status='skipped' if reason=='measurement_ground_missing' else 'failed',reason=reason,surfaces=[])
+        stored={**row,'surfaces':[{**s,'result':{k:v for k,v in s['result'].items() if k!='revisionId'}} for s in row['surfaces']]}
+        cache[row['inputSha256']]=stored
+        row['surfaces']=[{**s,'result':{**s['result'],'revisionId':revision['id']}} for s in row['surfaces']]
+        if persist:entities[row['entityId']]['inclinationAnalysis']=stored
+    return analysis
