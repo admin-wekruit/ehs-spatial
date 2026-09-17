@@ -132,6 +132,14 @@ for degrees in (60,90,135,150):
   hinge=np.asarray(bend['hinge'])
   assert np.linalg.norm(hinge[1]-hinge[0])>1.9
   assert len(bend['surfaces'])==2
+# Finite material thickness must not be mistaken for a curved narrow flange.
+# Both skins contribute evidence, but not between-skin variance to flatness.
+sheet=folded_sheet(135, narrow=.12)
+normal=np.cross(sheet[:,1]-sheet[:,0],sheet[:,2]-sheet[:,0])
+normal/=np.linalg.norm(normal,axis=1)[:,None]
+solid=np.concatenate([sheet+normal[:,None]*.01,(sheet-normal[:,None]*.01)[:,::-1]])
+for triangles in (solid,solid@rot.T+[4,-3,2],solid[:,::-1]):
+ assert abs(measurements.fitted_bend(triangles)['value']-135)<1e-5
 # A single plane and separated planes cannot claim an intrinsic shared fold.
 for triangles in (square,np.concatenate([square,square@rot.T+[0,0,5]])):
  try: measurements.fitted_bend(triangles)

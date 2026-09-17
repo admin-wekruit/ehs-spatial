@@ -43,6 +43,30 @@ def fitted_plane(triangles, *, narrow=False):
     sums = faces.sum(1); center = (weights[:, None]*sums/3).sum(0)
     moment = (np.einsum('n,nki,nkj->ij', weights, faces, faces)+np.einsum('n,ni,nj->ij', weights, sums, sums))/12
     values, axes = np.linalg.eigh(moment-np.outer(center, center))
+    if narrow:
+        # A solid sheet has two parallel skins. Fit their common orientation
+        # within each skin so material thickness is not counted as curvature.
+        offsets = (faces.mean(1)-center)@axes[:, 0]
+        means = np.array([offsets.min(), offsets.max()])
+        for _ in range(16):
+            layers = np.abs(offsets[:, None]-means).argmin(1)
+            masses = np.array([weights[layers == j].sum() for j in (0, 1)])
+            if masses.min() < .15: break
+            means = np.array([np.average(offsets[layers == j], weights=weights[layers == j]) for j in (0, 1)])
+        scatter = float(np.sum(weights*(offsets-means[layers])**2))
+        if masses.min() >= .15 and abs(means[1]-means[0]) > 6*np.sqrt(scatter):
+            covariances = []; skin_centers = []; skin_normals = []
+            for j in (0, 1):
+                skin = faces[layers == j]; w = weights[layers == j]/masses[j]
+                s = skin.sum(1); c = (w[:, None]*s/3).sum(0)
+                covariance = (np.einsum('n,nki,nkj->ij', w, skin, skin)+np.einsum('n,ni,nj->ij', w, s, s))/12-np.outer(c, c)
+                covariances.append(covariance); skin_centers.append(c)
+                skin_normals.append(np.linalg.eigh(covariance)[1][:, 0])
+            # Distinct, parallel, thin skins only; splitting a curved surface
+            # or unrelated faces into two clusters must not flatten them.
+            if abs(skin_normals[0]@skin_normals[1]) > np.cos(np.deg2rad(5)) and abs(means[1]-means[0]) < span*.01:
+                values, axes = np.linalg.eigh(sum(m*c for m, c in zip(masses, covariances)))
+                center = np.mean(skin_centers, axis=0)
     if values[1] <= 1e-15 or values[1]/max(values[2], 1e-15) < (.002 if narrow else .01) or max(values[0], 0)/values[1] > (.08 if narrow else .02):
         raise PlatformError('measurement_no_stable_plane', 422)
     normal = axes[:, 0]; points = faces.reshape(-1, 3)
@@ -209,7 +233,7 @@ def measure_scene(revision, kind, entity_a, entity_b, region, load_asset):
     result={'revisionId':revision['id'],'kind':kind,'coordinateFrameId':frame_id,'source':'model_inference','references':refs,'lines':[],'quality':{},'unit':'native','value':None}
     if kind=='bend':
         bend=fitted_bend(models[0][0])
-        result.update(value=bend['value'],unit='deg',method='same-mesh-two-surface-interior-bend-v1',labelPoint=bend['labelPoint'].tolist())
+        result.update(value=bend['value'],unit='deg',method=BEND_ALGORITHM,labelPoint=bend['labelPoint'].tolist())
         result['quality']={'surfaceFits':[{'areaFraction':p['areaFraction'],'rmsResidualNative':p['residual']} for p in bend['surfaces']]}
         result['lines']=[{'points':p['outline'].tolist(),'color':color} for p,color in zip(bend['surfaces'],['#e36b23','#168bba'])]
         result['lines'] += [{'points':bend[key].tolist(),'color':color} for key,color in [('hinge','#b56ce2'),('rays','#edbe38'),('arc','#86e342')]]
@@ -281,7 +305,7 @@ def measure_scene(revision, kind, entity_a, entity_b, region, load_asset):
     return result
 
 
-BEND_ALGORITHM = "same-mesh-two-surface-interior-bend-v1"
+BEND_ALGORITHM = "same-mesh-two-surface-interior-bend-v2"
 BEND_ANALYSIS_ROUTE = "bend-analysis-v1"
 
 
