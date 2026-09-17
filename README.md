@@ -1,5 +1,7 @@
 # EHS Spatial MVP
 
+当前 Platform 算法与运行状态统一见 [算法与分析流程总表](docs/algorithms/README.md)。下文保留早期四图 MVP 的说明。
+
 A local, single-process inspection workbench that turns exactly four workcell
 images into approximate 3D fence-clearance evidence, a deterministic demo
 assessment, and fact-grounded follow-up answers. The fixed `0.6 m` criterion is
