@@ -174,7 +174,8 @@ def review(run_id, analysis):
     return {'summary': summary, 'files': files}
 
 
-def collect_preview(run_id, output, result):
+def collect_preview(run_id, output, result, artifact_volume=None):
+    artifact_volume = volume if artifact_volume is None else artifact_volume
     total = sum(f['bytes'] for f in result['files'])
     if total > 32 * 1024**2 or shutil.disk_usage(output).free < 2 * 1024**3 + total:
         raise OSError('Compact preview exceeds 32 MiB or would leave less than 2 GiB free')
@@ -183,7 +184,7 @@ def collect_preview(run_id, output, result):
         if Path(name).name != name: raise ValueError('Invalid preview path')
         path = output / name
         with path.open('xb') as stream:
-            for block in volume.read_file(f'{run_id}/preview/{name}'):
+            for block in artifact_volume.read_file(f'{run_id}/preview/{name}'):
                 if stream.tell() + len(block) > record['bytes']: raise ValueError('Preview exceeded declared size')
                 stream.write(block)
         assert path.stat().st_size == record['bytes'] and digest(path) == record['sha256']

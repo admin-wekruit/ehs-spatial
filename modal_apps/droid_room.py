@@ -67,22 +67,30 @@ def patch_lowmem(source):
     return source
 
 
-def prepare_image(image, calibration):
+def prepare_image(image, calibration, resolution_scale=1):
     """Official TUM raster operations, full-precision source calibration."""
     import cv2
     import numpy as np
+    if type(resolution_scale) is not int or resolution_scale not in (1, 2):
+        raise ValueError('Resolution scale must be 1 or 2')
+    if image.shape != (480, 640, 3):
+        raise ValueError('Calibration requires a 640x480 source raster')
+    s = resolution_scale
     fx, fy, cx, cy = calibration["source_K_fx_fy_cx_cy"]
     K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1.]])
     image = cv2.undistort(image, K, np.asarray(calibration["source_distortion"]))
-    image = cv2.resize(image, (352, 256))[8:-8, 16:-16]
-    intrinsics = np.array([fx*352/640, fy*256/480, cx*352/640-16, cy*256/480-8], np.float32)
+    image = cv2.resize(image, (352*s, 256*s))[8*s:-8*s, 16*s:-16*s]
+    intrinsics = np.array([fx*352/640, fy*256/480, cx*352/640-16, cy*256/480-8], np.float32) * s
     return image, intrinsics
 
 
 @app.function(image=image, gpu="A100-40GB", cpu=(4, 4), memory=(16384, 16384),
               timeout=840, startup_timeout=45, retries=0, max_containers=1,
               min_containers=0, scaledown_window=2, volumes={"/artifact": volume})
-def infer(run_id, deadline, expected_archive_sha, expected_manifest_sha, expected_build_sha):
+def infer(run_id, deadline, expected_archive_sha, expected_manifest_sha, expected_build_sha, resolution_scale=1):
+    if type(resolution_scale) is not int or resolution_scale not in (1, 2):
+        raise ValueError('Resolution scale must be 1 or 2')
+    s = resolution_scale
     # Platform preemption can restart inputs despite retries=0. Never re-execute inference.
     if not attempts.put(run_id, {"claimed_at": time.time()}, skip_if_exists=True):
         raise RuntimeError("GPU attempt already claimed; inspect artifacts, never resubmit")
@@ -158,11 +166,11 @@ def infer(run_id, deadline, expected_archive_sha, expected_manifest_sha, expecte
             path = input_dir / record["relative_path"]
             assert sha(path) == record["sha256"]
             bgr = cv2.imread(str(path)); assert bgr.shape == (480, 640, 3)
-            canonical, intrinsics = prepare_image(bgr, manifest)
+            canonical, intrinsics = prepare_image(bgr, manifest, resolution_scale=s)
             image_hashes.append(hashlib.sha256(canonical.tobytes()).hexdigest())
             images.append(torch.from_numpy(canonical.copy()).permute(2, 0, 1)[None])
         # Official test_tum defaults; capacity covers all inputs plus filler batch16.
-        args = argparse.Namespace(weights=str(ROOT / "droid.pth"), buffer=1400, image_size=[240, 320],
+        args = argparse.Namespace(weights=str(ROOT / "droid.pth"), buffer=1400, image_size=[240*s, 320*s],
             disable_vis=True, beta=.3, filter_thresh=1.5, warmup=12, keyframe_thresh=2.0,
             frontend_thresh=12.0, frontend_window=25, frontend_radius=2, frontend_nms=1,
             backend_thresh=20.0, backend_radius=2, backend_nms=3, motion_damping=.5,
@@ -209,7 +217,7 @@ def infer(run_id, deadline, expected_archive_sha, expected_manifest_sha, expecte
                 max_recompute_error = max(max_recompute_error, error)
         assert max_recompute_error == 0.0
         mask_logits = torch.cat([mask.squeeze(0) for ix, mask in mask_chunks]).cpu().numpy()
-        assert mask_logits.shape == (n, 576, 30, 40) and np.isfinite(mask_logits).all()
+        assert mask_logits.shape == (n, 576, 30*s, 40*s) and np.isfinite(mask_logits).all()
         def array_sha(tensor):
             return hashlib.sha256(tensor.detach().cpu().contiguous().numpy().tobytes()).hexdigest()
         save(out / "final-upsampling-validation.json", {
@@ -251,19 +259,19 @@ def infer(run_id, deadline, expected_archive_sha, expected_manifest_sha, expecte
             "interpretation": "Official filler motion-optimizes all supplied images, including original keyframe images; differences are preserved, never overwritten",
             "full_pose": "camera-to-world, inverse of official filler output",
             "keyframe_pose": "camera-to-world, inverse of final native video.poses"})
-        assert (out / "prediction.npz").stat().st_size < 1024**3
+        assert (out / "prediction.npz").stat().st_size < s*s*1024**3
         save(out / "preprocessing.json", {"source_K": manifest["source_K_fx_fy_cx_cy"],
              "source_distortion": manifest["source_distortion"], "undistort_new_K": "same as source K",
-             "resize_wh": [352, 256], "crop_xyxy": [16, 8, 336, 248], "model_wh": [320, 240],
+             "resolution_scale": s, "resize_wh": [352*s, 256*s], "crop_xyxy": [16*s, 8*s, 336*s, 248*s], "model_wh": [320*s, 240*s],
              "model_intrinsics_fx_fy_cx_cy": intrinsics.tolist(),
              "intrinsics_convention": "Official TUM scale/crop convention, not half-pixel-adjusted resize K",
              "color": "OpenCV BGR; native MotionFilter converts BGR to normalized RGB",
              "depth_scope": "Final keyframes only, native monocular scale; finite positive is numeric validity, not confidence",
              "contract_version": CONTRACT_VERSION,
              "upsampled_depth_state": "Original learned convex upsampling of final post-BA video.disps with last matching learned masks; exact GPU recompute verified",
-             "official_offline_viewer_raster": {"wh": [160, 120], "rgb_and_disparity": "[..., ::2, ::2] stride, no resizing or pixel offset", "K": "model K/2 = 4*stored video.intrinsics"},
-             "final_lowres_depth_state": "Final video.disps after backend BA; same optimization state as keyframe_c2w; raster 40x30, K=model_K/8",
-             "keyframe_model_bgr": "Exact undistorted resized cropped source raster, 320x240, matching full-resolution depth pixel domain",
+             "official_offline_viewer_raster": {"wh": [160*s, 120*s], "rgb_and_disparity": "[..., ::2, ::2] stride, no resizing or pixel offset", "K": "model K/2 = 4*stored video.intrinsics"},
+             "final_lowres_depth_state": f"Final video.disps after backend BA; same optimization state as keyframe_c2w; raster {40*s}x{30*s}, K=model_K/8",
+             "keyframe_model_bgr": f"Exact undistorted resized cropped source raster, {320*s}x{240*s}, matching full-resolution depth pixel domain",
              "full_trajectory_scope": "All frames optimized by official PoseTrajectoryFiller; not per-frame tracking success"})
         result = {"status": "inference_complete", "run_id": run_id, "contract_version": CONTRACT_VERSION, "frames_processed": 1362, "full_pose_count": len(poses),
              "keyframe_count": n, "elapsed_seconds": time.time()-started,

@@ -16,6 +16,10 @@ with TemporaryDirectory() as temporary:
     with patch.object(compare, 'volume', volume), patch.object(compare.shutil, 'disk_usage', return_value=SimpleNamespace(free=3*1024**3)):
         compare.collect_preview('saved-run', root, {'files': [record]})
         assert (root/'preview.glb').read_bytes() == payload
+        explicit = {**record, 'name': 'other-volume.glb'}
+        with patch.object(compare, 'volume', None):
+            compare.collect_preview('runs/saved-run', root, {'files': [explicit]}, artifact_volume=volume)
+        assert (root/explicit['name']).read_bytes() == payload
         for bad in [{**record, 'name': '../escape'}, {**record, 'name': 'oversize', 'bytes': len(payload)-1},
                     {**record, 'name': 'bad-hash', 'sha256': '0'*64}]:
             try: compare.collect_preview('saved-run', root, {'files': [bad]})
