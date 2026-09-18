@@ -8,6 +8,7 @@ preprocessing without loading or running the model.
 """
 
 import argparse
+from functools import lru_cache
 import hashlib
 import json
 import os
@@ -28,9 +29,27 @@ VOXEL = 0.04
 TRUNCATION = 0.16
 
 
-def digest(path):
+def _file_version(stat):
+    return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
+
+
+@lru_cache(maxsize=4096)
+def _file_digest(path, version):
+    # ponytail: process-local metadata cache for stable local files, not file bytes.
+    # A new process or changed inode/size/timestamps must read and hash again.
     with Path(path).open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
+        if _file_version(os.fstat(stream.fileno())) != version:
+            raise OSError("File changed before hashing")
+        value = hashlib.file_digest(stream, "sha256").hexdigest()
+        if (_file_version(os.fstat(stream.fileno())) != version
+                or _file_version(Path(path).stat()) != version):
+            raise OSError("File changed while hashing")
+    return value
+
+
+def digest(path):
+    path = Path(path).resolve(strict=True)
+    return _file_digest(str(path), _file_version(path.stat()))
 
 
 def validate_frame(color, depth, confidence, native_mask, K, c2w):
