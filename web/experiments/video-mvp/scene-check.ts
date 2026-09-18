@@ -87,3 +87,10 @@ assert.equal(bodySample({...timeline,bodyInterpolation:[]},timeline.frames[1],'a
 assert.equal(bodySample({...timeline,bodyInterpolation:[{sourceFrame:1,entityId:'a',status:'rejected_alignment'}]},timeline.frames[1],'a'),null);
 console.log('PASS: unreviewed or rejected in-between body geometry never renders');
 assert.equal(bodySample({...timeline,bodyInterpolation:[{...timeline.bodyInterpolation[0],keyframes:[0,3]}]},timeline.frames[1],'a'),null);
+const coloredBody={sourceFrame:0,timeSec:0,entityId:'a',representation:'inferred_anatomical_mesh',status:'accepted_model_estimate',meshUrl:'body.glb',mesh_sha256:'c'.repeat(64),topology_sha256:'d'.repeat(64),vertices:3,sourceColor:{sourceFrame:0,entityId:'a',mesh_sha256:'c'.repeat(64),geometry_changed:false,colored_vertices:2,vertices:3}};
+const coloredScene={...scene,bodyKeyframes:[coloredBody],bodyInterpolation:[]};
+assert.equal(validateScene(coloredScene,sample,base),coloredScene);
+for(const change of [{sourceFrame:1},{entityId:'b'},{mesh_sha256:'f'.repeat(64)},{geometry_changed:true},{colored_vertices:4}]){
+  assert.throws(()=>validateScene({...coloredScene,bodyKeyframes:[{...coloredBody,sourceColor:{...coloredBody.sourceColor,...change}}]},sample,base),/人体颜色/);
+}
+console.log('PASS: body appearance cannot change source frame, identity, geometry or mesh hash');

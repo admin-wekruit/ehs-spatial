@@ -138,7 +138,12 @@ async function loadScene(sample,generation) {
     const replay = await module.mountReplay($('scene-stage'),scene,sceneUrl,{
       color,select:selectEntity,signal:state.controller.signal,
       error:message=>{if(generation===state.generation)showError('scene-error',message);},
-      frame:(frame,geometry)=>{if(generation===state.generation)$('scene-status').textContent=frame ? `源帧 ${frame.sourceFrame} · ${geometry?.mode==='body'?'人体网格估计':'彩色观测表面'} ${geometry?.rendered||0} / ${frame.objects.length}${geometry?.mode==='body'?' · 仅显示通过对齐检查的时段；中间帧为模型插值':''}` : '此时刻无空间观测；仅保留已加载的静态场景。';},
+      frame:(frame,geometry)=>{
+        if(generation!==state.generation)return;
+        const appearance=geometry?.mode==='body'&&scene.provenance?.body_source_color?' · 颜色来自同帧原图；灰色为未观测外观':'';
+        const timing=geometry?.mode==='body'?` · 仅显示通过对齐检查的时段${scene.bodyInterpolation?.some(r=>r.status==='accepted_model_estimate')?'；中间帧为模型插值':'；逐抽帧模型'}`:'';
+        $('scene-status').textContent=frame ? `源帧 ${frame.sourceFrame} · ${geometry?.mode==='body'?'人体网格估计':'彩色观测表面'} ${geometry?.rendered||0} / ${frame.objects.length}${timing}${appearance}` : '此时刻无空间观测；仅保留已加载的静态场景。';
+      },
     });
     if (generation !== state.generation) {replay.dispose(); return;}
     state.replay = replay;

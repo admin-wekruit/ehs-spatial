@@ -12,6 +12,8 @@ Implementation plan:
 
 ## 运行
 
+当前LingBot人体可增加同帧外观：`scripts/color_video_bodies.py --scene 已有scene.json --analysis 同源analysis.json --run LingBot原生结果目录 --output 新目录`。它保留几何/拓扑及所有旧对象，仅给当前源图可见的顶点取色，遮挡面保留中性色。前端以原有单实体网格缓冲显示，不新增纹理下载或模型调用；`sourceColor`绑定源帧、对象及导出网格SHA。
+
 2026-09-18视觉升级：walking增加稠密彩色点云、逐帧RGB-D人物表面、照片纹理背景及预训练SAM 3D Body关键帧。人体模式是有来源和对齐检查的模型估计；只在连续观测、同短期ID/拓扑且间隔≤0.38秒时插值，不能跨缺口保持旧身体。32份网格缓存、静态纹理按需加载和单实体GPU缓冲更新限制回放内存。“放大”模式提供自己的时间条；旋转、当前源相机、点云/纹理及人体表示独立切换。
 
 生产入口依次为`scripts/build_video_surfaces.py`、`scripts/build_video_body_models.py`、`scripts/filter_video_static_surfaces.py`；每个入口提供`--help`，消费同一视频/相机/分析哈希。人体调用以`--max-calls`和`--max-usd`限制，恢复只读取同request ID或未提交项；已返回结果不重复付费。过滤器`--self-check`验证支持、自由空间、遮挡及动态mask逻辑。实际输入、参数、产物和边界见[实验记录](../../../docs/phase2/VIDEO-MVP.md)。

@@ -60,6 +60,7 @@ export function validateScene(data:any,sample:any,base:string){
     const frame=data.frames.find((f:any)=>f.sourceFrame===body.sourceFrame);
     require(frame&&frame.timeSec===body.timeSec&&frame.objects.some((o:any)=>o.entityId===body.entityId),'人体关键帧没有对应的视频对象');
     require(body.representation==='inferred_anatomical_mesh'&&body.status==='accepted_model_estimate'&&/^[a-f0-9]{64}$/.test(body.mesh_sha256)&&/^[a-f0-9]{64}$/.test(body.topology_sha256),'人体网格来源无效');assetUrl(body.meshUrl,base);
+    if(body.sourceColor){const c=body.sourceColor;require(c.sourceFrame===body.sourceFrame&&c.entityId===body.entityId&&c.mesh_sha256===body.mesh_sha256&&c.geometry_changed===false&&Number.isInteger(c.colored_vertices)&&c.colored_vertices>=0&&c.colored_vertices<=body.vertices&&c.vertices===body.vertices,'人体颜色与源帧或网格不符');}
   }
   return data;
 }
