@@ -99,7 +99,9 @@ def run(args):
     count=0
     for f in s['frames']:
         index=f['sourceFrame']
-        if index % (9 if predicted else 5) or index not in af or not af[index]['objects']:continue
+        check_depth=index % (9 if predicted else 5)==0
+        check_texture=index % 30==0
+        if not (check_depth or check_texture) or index not in af:continue
         source=inputs[index]
         if predicted:
             path=args.lingbot_run/source['file']
@@ -118,9 +120,10 @@ def run(args):
             if predicted:mask=resize_mask(mask,(a['height'],a['width']))
             excluded|=mask.astype(np.uint8)
         excluded=cv2.dilate(excluded,np.ones((5,5),np.uint8))>0
-        pos,neg=depth_evidence(points,depth,excluded,k,np.array(f['c2w']),**evidence_options)
-        positive[pos]+=1;negative[neg]+=1;count+=1
-        if index%30==0:
+        if check_depth:
+            pos,neg=depth_evidence(points,depth,excluded,k,np.array(f['c2w']),**evidence_options)
+            positive[pos]+=1;negative[neg]+=1;count+=1
+        if check_texture:
             c=np.array(f['c2w']);flat=texture_samples.reshape(-1,3)
             supported,_=depth_evidence(flat,depth,excluded,k,c,**evidence_options)
             valid=np.zeros(len(flat),bool);valid[supported]=True;valid=valid.reshape(-1,7).all(1)

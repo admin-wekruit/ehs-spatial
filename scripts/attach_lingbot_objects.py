@@ -135,7 +135,7 @@ def build(args):
     transform,_,_=source_transform(shape)
     native={r['sourceFrame']:r for r in execution['frames']}
     cache={};cache_sources=[]
-    for folder in sorted(args.body_run.glob('frame-*')):
+    for folder in sorted(args.body_run.glob('frame-*')) if args.body_run else []:
         if not (folder/'provider-output.json').exists() or not (folder/'provider-mesh.ply').exists():continue
         s=read(folder/'input-manifest.json');idx=s['sourceFrame'];entity=s['entityId']
         if s['source_video_sha256']!=scene['source_video_sha256']:raise ValueError('Cached body belongs to a different video')
@@ -160,6 +160,8 @@ def build(args):
         observed=observations[index];reference=float(np.median(depth[valid]));frame['objects']=[]
         frame['intrinsic']=k.tolist();frame['rasterSize']=[depth.shape[1],depth.shape[0]]
         for obj in observed['objects']:
+            if obj['poseStatus'] not in ['estimated_2d','insufficient_mask_support','not_applicable_nonhuman']:
+                raise ValueError('Unknown observation pose status')
             entity=obj['entityId'];source_mask=args.analysis.parent/obj['maskUrl']
             mask=resize_mask(cv2.imread(str(source_mask),-1)[:,:,3]>0,shape)
             support=mask&valid&(confidence>=1.5)
@@ -177,15 +179,16 @@ def build(args):
             v,faces,colors,pixels,_=observed_surface(rgb[::step,::step],depth[::step,::step],support[::step,::step],small,c2w,
                 max_edge_m=reference*.025,depth_range=(0,np.inf))
             if len(faces):
-                name=f'human-{index:05d}-{entity.rsplit("-",1)[-1]}.glb'
+                name=f'object-{index:05d}-{entity.rsplit("-",1)[-1]}.glb'
                 export_surface(args.output/name,v,faces,colors)
                 item['surface']={'meshUrl':name,'sourceFrame':index,'representation':'visible_monocular_surface',
                     'sha256':digest(args.output/name),'triangles':len(faces)}
                 local=(v-c2w[:3,3])@c2w[:3,:3];uv=local@k.T
                 error=float(np.max(abs(uv[:,:2]/uv[:,2:]-pixels*step)))
-                if error>.001:raise ValueError('Human source pixels no longer align')
-                surface_audit.append({'sourceFrame':index,'entityId':entity,'source_mask_sha256':digest(source_mask),
+                if error>.001:raise ValueError('Object source pixels no longer align')
+                surface_audit.append({'sourceFrame':index,'entityId':entity,'pose_status':obj['poseStatus'],'source_mask_sha256':digest(source_mask),
                     'prediction_sha256':native[index]['sha256'],'max_reprojection_error_px':error,**item['surface']})
+            if obj['poseStatus'] == 'not_applicable_nonhuman':continue
             prediction=body_at(index,entity,cache,observations)
             if prediction is None:
                 body_audit.append({'sourceFrame':index,'entityId':entity,'status':'no_supported_cached_body'});continue
@@ -200,9 +203,9 @@ def build(args):
                     'topology_sha256':hashlib.sha256(np.asarray(fitted.faces,dtype=np.uint32).tobytes()).hexdigest(),'vertices':len(fitted.vertices)})
         if index%90==0:print(json.dumps({'sourceFrame':index,'surfaces':len(surface_audit),'bodies':len(result['bodyKeyframes'])}),flush=True)
     # Reuse source evidence and language analysis; rebuild only XYZ in the new map.
-    original=read(args.reuse_scene)
-    if original['source_video_sha256']!=scene['source_video_sha256']:raise ValueError('Object evidence from another video')
-    for obj in original.get('staticObjects',[]):
+    original=read(args.reuse_scene) if args.reuse_scene else None
+    if original and original['source_video_sha256']!=scene['source_video_sha256']:raise ValueError('Object evidence from another video')
+    for obj in original.get('staticObjects',[]) if original else []:
         source=obj['source'];idx=source['sourceFrame']
         if idx not in native:raise ValueError('Object source frame was not reconstructed; use a denser input plan')
         frame=next(f for f in result['frames'] if f['sourceFrame']==idx)
@@ -227,15 +230,20 @@ def build(args):
             'semantic_review_reused':bool(obj.get('semanticReview')),'metric_scale_validated':False,'hidden_surface_completed':False}
         item['provenanceUrl']=obj['entityId']+'.json';save(args.output/item['provenanceUrl'],report)
         result['staticObjects'].append(item);object_audit.append(report)
-    result['humanSurfaces']={'representation':'visible_monocular_surface','samplingPixels':3,'count':len(surface_audit),
-        'coordinateFrame':scene['coordinate_frame'],'hidden_body_completed':False}
-    result['method']+=' + reused SAM3/RTMPose evidence + cached SAM3D Body refit + object photo analysis'
+    human_surfaces=sum(s['pose_status']!='not_applicable_nonhuman' for s in surface_audit)
+    if human_surfaces:
+        result['humanSurfaces']={'representation':'visible_monocular_surface','samplingPixels':3,'count':human_surfaces,
+            'coordinateFrame':scene['coordinate_frame'],'hidden_body_completed':False}
+    result['method']+=' + source-bound segmented object surfaces'
+    if args.body_run:result['method']+=' + cached SAM3D Body refit'
+    if args.reuse_scene:result['method']+=' + reused object photo analysis'
     result['limitations']=[s for s in result['limitations'] if '尚未接入' not in s]
-    result['limitations']+=[f"每 {plan['stride']} 帧重建一次并按源时间回放；人体形状为预训练模型估计，短间隔姿态可来自缓存插值，逐帧重新检查掩码和预测深度。",
-        '单目深度与人体的一致性检查不等于现场几何已验证；此版本未输出米制速度。',
-        f"{len(result['staticObjects'])} 个家具/设备分割复用照片语义，表面位置由 LingBot 重新计算；跨时间身份和不可见背面尚未完成。"]
-    result['provenance']['reused_evidence']={'body_cache':str(args.body_run.resolve()),'cached_predictions':len(cache_sources),
-        'original_object_scene_sha256':digest(args.reuse_scene),'new_provider_calls':0,'sensor_depth_used':False,
+    result['limitations']+=[f"每 {plan['stride']} 帧重建一次对象可见表面并按源时间回放；不补造遮挡面。",
+        '单目深度与掩码的一致性检查不等于现场几何已验证；此版本未输出米制速度。']
+    if args.reuse_scene:result['limitations'].append(f"{len(result['staticObjects'])} 个家具/设备分割复用照片语义，表面位置由 LingBot 重新计算；跨时间身份和不可见背面尚未完成。")
+    if args.body_run:result['limitations'].append('人体形状为预训练模型估计，短间隔姿态可来自缓存插值，逐帧重新检查掩码和预测深度。')
+    result['provenance']['reused_evidence']={'body_cache':str(args.body_run.resolve()) if args.body_run else None,'cached_predictions':len(cache_sources),
+        'original_object_scene_sha256':digest(args.reuse_scene) if args.reuse_scene else None,'new_provider_calls':0,'sensor_depth_used':False,
         'cache_source_records_sha256':hashlib.sha256(json.dumps(cache_sources,sort_keys=True).encode()).hexdigest()}
     summary={'elapsed_seconds':time.monotonic()-started,'surfaces':len(surface_audit),'body_observations':len(body_audit),
         'accepted_bodies':len(result['bodyKeyframes']),'objects':len(result['staticObjects']),'new_provider_calls':0}
@@ -246,5 +254,5 @@ def build(args):
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
-    for name in ['run','scene','analysis','body-run','reuse-scene','output']:p.add_argument('--'+name,type=Path,required=True)
+    for name in ['run','scene','analysis','body-run','reuse-scene','output']:p.add_argument('--'+name,type=Path,required=name not in ['body-run','reuse-scene'])
     build(p.parse_args())

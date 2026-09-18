@@ -8,6 +8,7 @@ import base64
 import json
 from pathlib import Path
 import sys
+import time
 
 import cv2
 import numpy as np
@@ -26,6 +27,7 @@ def run(args):
     cap = cv2.VideoCapture(str(args.video))
     video_sha = sha(args.video)
     done = []
+    quote = None
     try:
         for index in range(selected[-1] + 1):
             ok, bgr = cap.read()
@@ -44,11 +46,19 @@ def run(args):
                         'timestamp_seconds': cap.get(cv2.CAP_PROP_POS_MSEC) / 1000,
                         'width': width, 'height': height, 'prompt': args.prompt}
             (folder / 'input-manifest.json').write_text(json.dumps(manifest, indent=2))
-            execute({'mode': 'submit', 'endpoint': 'fal-ai/sam-3-1/image-rle',
+            payload = {'mode': 'submit', 'endpoint': 'fal-ai/sam-3-1/image-rle',
                      'billing_units': 1, 'max_fal_usd': .02,
                      'input': {'image_url': 'data:image/png;base64,' + base64.b64encode(image.read_bytes()).decode(),
                                'prompt': args.prompt, 'return_multiple_masks': True,
-                               'include_scores': True, 'include_boxes': True}}, folder, 'provider-events.jsonl')
+                               'include_scores': True, 'include_boxes': True}}
+            if quote and time.time() - quote['fetched_at'] < 500:
+                payload['batch_pricing_quote'] = quote
+            execute(payload, folder, 'provider-events.jsonl')
+            if 'batch_pricing_quote' not in payload:
+                for line in (folder / 'provider-events.jsonl').read_text().splitlines():
+                    event = json.loads(line)
+                    if event['phase'] == 'pricing':
+                        quote = {'pricing': event['data'], 'fetched_at': time.time()}
             data = json.loads((folder / 'provider-output.json').read_text())
             instances = []
             for ordinal, rle in enumerate(data['rle']):

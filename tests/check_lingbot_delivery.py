@@ -78,7 +78,13 @@ for obj in scene['staticObjects']:
     assert source['timeSec']==original['timeSec'] and source['endTimeSec']==original['endTimeSec'],'Held 3D interval must not widen the original mask interval'
     proof=json.loads((a.scene.parent/obj['provenanceUrl']).read_text())
     for path,key in [(obj['meshUrl'],'mesh_sha256'),(source['maskUrl'],'source_mask_sha256'),(source['imageUrl'],'source_image_sha256')]:assert digest(a.scene.parent/path)==proof[key]
-assert len(records)==len(bodies) and surfaces==scene['humanSurfaces']['count']
+assert len(records)==len(bodies) and surfaces==len(evidence['surfaces'])
+for frame in scene['frames']:
+    original={o['entityId']:o for o in observations[frame['sourceFrame']]['objects']}
+    for obj in frame['objects']:
+        if original[obj['entityId']]['poseStatus'] == 'not_applicable_nonhuman':
+            assert not obj['keypoints3d'] and not obj['bones']
+            assert (frame['sourceFrame'],obj['entityId']) not in bodies
 report={'scene_sha256':digest(a.scene),'exported_bodies_checked':len(records),'exported_surfaces_checked':surfaces,
         'object_source_intervals_checked':len(scene['staticObjects']),'refitted_during_check':False,'field_accuracy_validated':False,'bodies':records}
 a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(json.dumps(report,indent=2)+'\n')

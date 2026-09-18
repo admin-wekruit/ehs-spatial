@@ -178,7 +178,8 @@ export async function mountReplay(container:HTMLElement,scene:any,base:string,op
   const markerScale=scene.units==='meters'?.16:Math.max(cameraExtent,.01)*.04;
   // Navigation frames actual observations; the all-points view keeps every original distant point accessible.
   if(!observed.length)observed.push(...cameraPoints);
-  let current:any=undefined,selected:string|null=null,disposed=false,objectView=false,fromSource=!!scene.humanSurfaces,bodyModels=false,pointCloud=!!scene.pointCloudUrl||!scene.meshUrl;
+  const hasSurfaces=scene.frames.some((f:any)=>f.objects.some((o:any)=>o.surface));
+  let current:any=undefined,selected:string|null=null,disposed=false,objectView=false,fromSource=hasSurfaces,bodyModels=false,pointCloud=!!scene.pointCloudUrl||!scene.meshUrl;
   const surfaceCache=new Map<string,Promise<ReturnType<typeof readGLB>>>();
   const loadSurface=(surface:any)=>{
     if(!surfaceCache.has(surface.meshUrl)){
@@ -196,7 +197,7 @@ export async function mountReplay(container:HTMLElement,scene:any,base:string,op
   };
   const rendered=new Set<string>();
   const announce=()=>options.frame(current,{mode:bodyModels?'body':'surface',rendered:rendered.size,total:current?.objects.length||0});
-  const hideLinks=()=>{if(scene.humanSurfaces)for(const[id,e]of dynamic)if(!id.startsWith('camera:')&&!id.endsWith(':surface'))e.representations[0].material.baseColorFactor[3]=0;};
+  const hideLinks=()=>{if(hasSurfaces)for(const[id,e]of dynamic)if(!id.startsWith('camera:')&&!id.endsWith(':surface'))e.representations[0].material.baseColorFactor[3]=0;};
   const displaySurfaces=(frame:any)=>{
     if(!frame)return;
     const index=scene.frames.indexOf(frame),generation=bodyModels;
@@ -220,7 +221,7 @@ export async function mountReplay(container:HTMLElement,scene:any,base:string,op
   options.signal?.addEventListener('abort',dispose,{once:true});
   const sourceView=()=>{fromSource=true;for(const [id,e]of dynamic)if(id.startsWith('camera:'))e.representations[0].material.baseColorFactor[3]=0;void viewer.setScene(document);const frame=current||scene.frames[0];if(!frame)return;viewer.setCamera({...sourceCamera({cameraToWorld:frame.c2w},extent/2,min.map((v,k)=>(v+max[k])/2)),exact:false,mode:'free'});};
   const fit=(all=false)=>{fromSource=false;if(!Number.isFinite(extent))return;const c=scene.frames[0]?.c2w,up=c?unit(c.slice(0,3).map((r:any)=>-r[1])):[0,0,1],back=c?unit(c.slice(0,3).map((r:any)=>-r[2])):[0,-1,0];viewer.setCamera({...fitCamera(objectView&&objectBounds.length?objectBounds:!all&&observed.length?observed:boundsCorners({min,max}),unit(add(add(back,scale(cross(up,back),.35)),scale(up,.25))),up,Math.max(container.clientWidth,1)/Math.max(container.clientHeight,1)),mode:'free'});};
-  await viewer.setScene(document);scene.humanSurfaces?sourceView():fit();
+  await viewer.setScene(document);fromSource?sourceView():fit();
   return {
     setTime(time:number,selection:string|null=null){if(disposed)return;const frame=frameAt(scene.frames,time);if(frame===current&&selection===selected)return;current=frame;selected=selection;rendered.clear();applyFrame(frame,dynamic,scene.coordinate_frame,markerScale,selected);hideLinks();if(fromSource)for(const [id,e]of dynamic)if(id.startsWith('camera:'))e.representations[0].material.baseColorFactor[3]=0;viewer.setSelection({entityId:selected?(staticIds.has(selected)?selected:`${selected}:surface`):null});void viewer.setScene(document);displaySurfaces(frame);announce();},
     fit,sourceView,

@@ -74,7 +74,7 @@ def prepare(manifest_path, sample_id, output, stride):
             ok, bgr = cap.read()
             if not ok: break
             if index % stride == 0:
-                if len(records) >= 320: raise ValueError('Bounded experiment supports at most 320 input frames')
+                if len(records) >= 768: raise ValueError('Bounded experiment supports at most 768 input frames, below the 1024-frame positional limit')
                 path=frames/f'{index:06d}.png'; assert cv2.imwrite(str(path), bgr)
                 records.append({'sourceFrame':index, 'timeSec':cap.get(cv2.CAP_PROP_POS_MSEC)/1000,
                                 'path':path.name, 'sha256':digest(path)})

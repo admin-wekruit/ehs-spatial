@@ -1,7 +1,7 @@
 """Export native LingBot RGB geometry into the existing replay contract.
 
 Keeps its uncalibrated coordinate system separate from the RGB-D experiment.
-SAM masks exclude people from static fusion; this does not solve dynamic tracking.
+SAM masks exclude segmented objects from static fusion; this does not solve dynamic tracking.
 """
 import argparse
 import json
@@ -105,14 +105,14 @@ def build(args):
     if len(execution['frames'])!=len(plan['frames']):raise ValueError('Incomplete prediction sequence')
     scene={'schema':'phase2-replay-scene-v1','coordinate_frame':'lingbot_native_monocular',
         'units':'uncalibrated_monocular','source_video_sha256':plan['source_video_sha256'],
-        'method':'Official pretrained LingBot-Map streaming RGB + SAM person exclusion + Open3D TSDF',
+        'method':'Official pretrained LingBot-Map streaming RGB + SAM object exclusion + Open3D TSDF',
         'points':[],'frames':[],'complete_room_accepted':False,
         'provenance':{'execution_sha256':digest(run/'run.json'),'plan_sha256':digest(run/'plan.json'),
             'analysis_sha256':digest(args.analysis),'sensor_depth':False,'gt_pose_input':False,
             'coordinate_alignment_applied':False,'camera_sampling':f"source frames every {plan['stride']} frames; held until next estimate"},
         'limitations':['纯RGB预测，原生尺度未标定，不能按米读取或直接叠加另一地图的人体模型。',
             '相机在抽帧时刻估计；播放间隔显示最近一次相机估计。',
-            '静态融合排除已有人员mask；空mask帧不融合。漏检和其他移动物体仍可能留下残影。',
+            '静态融合排除已分割对象；已完成分析但检测为空的帧仍参与融合，缺少分析的帧不参与。漏检的移动物体仍可能留下残影。',
             '本样本用于独立几何对照，完整物体网格、人体形体及持久身份尚未接入。']}
     points=[];colors=[];diagnostics=[];volume=None;fused=0
     for i,(record,result) in enumerate(zip(plan['frames'],execution['frames'])):
@@ -137,7 +137,7 @@ def build(args):
             scene['provenance']['native_geometry']={'reference_depth_native':reference,'voxel_native':voxel,
                 'confidence_threshold':1.5,'point_sampling_pixels':3,'metric_scale_validated':False}
         af=observed.get(index)
-        if not af or not af['objects']:continue
+        if af is None:continue
         excluded=np.zeros((h,w),bool)
         for obj in af['objects']:
             path=(args.analysis.parent/obj['maskUrl']).resolve()
