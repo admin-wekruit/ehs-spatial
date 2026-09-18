@@ -85,7 +85,7 @@ flowchart LR
 缺失/无效输出保留失败，不自行补造 mask。遮挡、透明表面和背景混入会影响后续几何。
 验证入口：`tests/test_platform_reconstruction.py`、`tests/test_reconstruction_pipeline.py`。
 
-**SAM 能力保留与扩展（2026-09-17）：** 已有 `modal_apps/sam3_app.py`、`ehs_spatial/providers/sam3.py` 和 `serving/sam3_service.py` 的图片分割、RLE 编解码及已有调用/资产全部保留。SAM2 的本地运行入口、缓存和实验也保留。Phase 2 新增 SAM 3.1 原生视频会话，复用现有 mask 契约；不把“尚未接入视频”写成“没有 SAM 3”。逐帧来源与短期跟踪 ID 是新增输出；骨架、三维地图、跨视频实体身份不能由 SAM 视频 ID 推定。具体选型与实验链接见[主路线](../phase2/TECHNICAL-ROADMAP.md)和[实验记录](../phase2/README.md)。
+**SAM 能力保留与扩展（更新至2026-09-18）：** 已有 `modal_apps/sam3_app.py`、`ehs_spatial/providers/sam3.py` 和 `serving/sam3_service.py` 的图片分割、RLE 编解码及已有调用/资产全部保留，并实际复用在V02、V07和V08。当前完整视频使用SAM3周期发现与SAM2.1窗口传播；SAM3/3.1原生视频入口已实现，但权重访问403，未执行GPU推理。fal SAM3.1视频接口已实测，返回类别并集且没有原生实例ID，不能当作完整多对象跟踪通过。相关入口与原始结果继续保留，不把“尚未通过某个视频端点”写成“没有SAM3”。骨架、三维地图、跨视频实体身份由独立环节提供证据。具体选型与实验链接见[主路线](../phase2/TECHNICAL-ROADMAP.md)和[实验记录](../phase2/VIDEO-MVP.md)。
 
 ### A02 三维输入与配准
 

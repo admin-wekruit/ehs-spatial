@@ -84,6 +84,10 @@ export function presentedTime(frames, timeSec) {
   return matches.length===1 ? matches[0].timeSec : timeSec;
 }
 
+export function playbackButton(video) {
+  return {disabled:video.readyState<1||!!video.error,label:video.ended?'重播':video.paused?'播放':'暂停'};
+}
+
 export function motionText(object) {
   if(!object)return '本帧无三维对象观测，运动无估计。';
   const estimate=object.motionEstimate;

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {assetUrl, validateManifest, validateAnalysis, frameAt, presentedTime, motionText, visibleJoint, trackObservations, formatTime} from './timeline.mjs';
+import {assetUrl, validateManifest, validateAnalysis, frameAt, presentedTime, playbackButton, motionText, visibleJoint, trackObservations, formatTime} from './timeline.mjs';
 
 // Synthetic assertions only: these records are never loaded by the preview.
 const base = 'http://127.0.0.1:8799/video-mvp/manifest.json';
@@ -56,4 +56,8 @@ assert.match(motionText({world_motion:'insufficient_evidence'}),/证据不足/);
 const estimate={anchor:'hips',elapsedSeconds:.5,displacementM:.021,sourceFrames:[3,22]};
 assert.match(motionText({world_motion:'below_resolution',motionEstimate:estimate}),/低于分辨率，不能判定静止/);
 assert.match(motionText({world_motion:'observed_displacement',motionEstimate:estimate}),/双髋中点.*0.50 秒.*0.021 米.*源帧 3—22.*非真值/);
+assert.deepEqual(playbackButton({readyState:0,paused:true,ended:false,error:null}),{disabled:true,label:'播放'});
+assert.deepEqual(playbackButton({readyState:4,paused:false,ended:false,error:null}),{disabled:false,label:'暂停'});
+assert.deepEqual(playbackButton({readyState:4,paused:true,ended:true,error:null}),{disabled:false,label:'重播'});
+assert.equal(playbackButton({readyState:4,paused:true,error:{code:3}}).disabled,true);
 console.log('PASS: source-time boundaries, gaps, pixel coordinates, absent data, joints, IDs and invalid input');

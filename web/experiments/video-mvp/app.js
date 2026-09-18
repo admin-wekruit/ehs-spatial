@@ -1,8 +1,9 @@
-import {assetUrl, validateManifest, validateAnalysis, frameAt, presentedTime, motionText, visibleJoint, trackObservations, formatTime} from './timeline.mjs';
+import {assetUrl, validateManifest, validateAnalysis, frameAt, presentedTime, playbackButton, motionText, visibleJoint, trackObservations, formatTime} from './timeline.mjs';
 
 const $ = (id) => document.getElementById(id);
 const video = $('video');
 const svg = $('overlay');
+let fullscreenUnavailable=false;
 const state = {manifest:null, manifestUrl:'', sample:null, analysis:null, analysisUrl:'', frame:undefined, selected:null, generation:0, controller:null, observationLimit:80, dimensionalError:false, analysisError:null, replay:null,scene:null,sceneUrl:'',mediaTime:0};
 const palette = ['#65e2be','#fac268','#8dcaff','#e9a8ec','#f39c89','#a8d779'];
 function color(id) { let n = 0; for (const c of id) n = (n * 31 + c.charCodeAt(0)) | 0; return palette[Math.abs(n) % palette.length]; }
@@ -270,6 +271,25 @@ function updateTime(time, force = false) {
 function seek(time) { if (video.readyState >= 1) { video.currentTime = Math.max(0,Math.min(video.duration,time)); $('clock').textContent = formatTime(time); } }
 // Seek inside the observed exposure, avoiding decoder rounding onto the previous frame at its boundary.
 function seekFrame(frame) {video.pause();seek((frame.timeSec+frame.endTimeSec)/2);}
+function syncPlaybackControls() {
+  const button=playbackButton(video);
+  $('play-toggle').disabled=button.disabled;$('play-toggle').textContent=button.label;
+  $('video-fullscreen').disabled=button.disabled||fullscreenUnavailable||!document.fullscreenEnabled||typeof video.requestFullscreen!=='function';
+}
+$('play-toggle').onclick=async()=>{
+  const generation=state.generation;
+  if(!video.paused){video.pause();return;}
+  try {showError('video-error',null);await video.play();}
+  catch(error){if(generation===state.generation&&error.name!=='AbortError')showError('video-error',`播放失败：${error.message}`);}
+  syncPlaybackControls();
+};
+$('video-fullscreen').onclick=async()=>{
+  try {await video.requestFullscreen();}
+  catch(error){fullscreenUnavailable=true;syncPlaybackControls();showError('video-error','当前浏览器未允许视频全屏；页面内播放仍可使用。');}
+};
+// Native controls are safe only in video-only fullscreen, where the SVG is absent.
+document.addEventListener('fullscreenchange',()=>{video.controls=document.fullscreenElement===video;});
+for(const event of ['loadedmetadata','play','pause','ended','emptied','error'])video.addEventListener(event,syncPlaybackControls);
 $('scrubber').addEventListener('input',(event)=>seek(Number(event.target.value)));
 $('clear-selection').onclick = () => {state.selected = null; drawFrame(state.frame); drawObservations(); syncReplay();};
 $('scene-fit').onclick = () => state.replay?.fit();
