@@ -122,6 +122,8 @@ node /Users/adam/.codex/worktrees/panoptes-phase2-video/web/experiments/video-mv
 
 ## 单帧对象表面与照片核验
 
+可选`staticObjects[].generatedModel`记录`meshUrl`、`sha256`、`provenanceUrl`、同一`sourceFrame`和`status: source_consistent_model_estimate`。仅通过离线源图/预测深度检查的模型可接入；默认仍显示观测表面。点击“查看生成模型”才下载、校验并替换同一对象的GPU网格，切回恢复原表面，选择ID和源帧不变。详情显示当前表示及对应来源；页面不会运行生成模型。首个真实样本为LingBot frame120椅子，其他五份观测没有被宣称为完整生成模型。
+
 `scene.staticObjects` 可提供独立观测：`entityId`（obs-前缀）、原 SAM `label`、`displayName`、`meshUrl`、`provenanceUrl`、`representation: single_frame_observed_surface`、`identityScope: independent_observation`、`source: {sourceFrame,timeSec,endTimeSec,width,height,bbox,maskUrl,imageUrl}`。可选 `semanticReview: {status,description,category}`，状态为 clear / partial / incorrect_prompt。maskUrl 为源画幅透明叠加图。来源半开区间必须与相机记录完全一致。
 
 这是单帧空间记忆；其他时刻位置与状态未知。地图保留模型，但源掩码仅在来源帧区间显示。点击真实网格或名称会暂停并跳到源帧区间中点，避免浏览器将边界 seek 解码为前一帧。“仅看对象表面”通过原生图层筛选去掉可能遮挡它的 TSDF；模型源坐标未改变。CPU 三角化 GLB 使用原生 `generated_mesh` 的可选模型通路；其产品语义仍是可见表面，不是补全形体。原生 `observed_surface` 通路限定源照片，不能直接用于地图选择。

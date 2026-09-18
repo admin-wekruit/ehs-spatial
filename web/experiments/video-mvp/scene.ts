@@ -54,6 +54,7 @@ export function validateScene(data:any,sample:any,base:string){
     require(source.width===sample.video.width&&source.height===sample.video.height,'对象掩码与原视频画幅不一致');
     require(Array.isArray(source.bbox)&&source.bbox.length===4&&source.bbox.every(Number.isFinite)&&source.bbox[2]>source.bbox[0]&&source.bbox[3]>source.bbox[1],'对象掩码来源框无效');
     if(object.semanticReview)require(['clear','partial','incorrect_prompt'].includes(object.semanticReview.status)&&typeof object.semanticReview.description==='string','对象模型核验格式无效');
+    if(object.generatedModel){const m=object.generatedModel;assetUrl(m.meshUrl,base);assetUrl(m.provenanceUrl,base);require(m.sourceFrame===source.sourceFrame&&m.status==='source_consistent_model_estimate'&&/^[a-f0-9]{64}$/.test(m.sha256),'生成模型缺少来源一致性检查');}
   }
   for(const body of data.bodyKeyframes||[]){
     const frame=data.frames.find((f:any)=>f.sourceFrame===body.sourceFrame);
@@ -108,7 +109,7 @@ export function replayDocument(scene:any,urls:Record<string,string>,color:(id:st
   const entities:any[]=[],assets=Object.keys(urls).map(id=>({id}));
   for(const id of ['points','mesh'])if(urls[id])entities.push({id,sourceContext:true,representations:[{id,assetId:id,kind:id==='points'?'point_cloud':'observed_surface',coordinateFrameId:frameId,transform:identity,placementState:'confirmed'}]});
   // Native observed_surface is source-photo-only; CPU triangulated models use its selectable mesh path.
-  for(const object of scene.staticObjects||[])entities.push({id:object.entityId,activeModelRepresentationId:object.entityId,currentModelTransform:identity,representations:[{id:object.entityId,assetId:object.entityId,kind:'generated_mesh',coordinateFrameId:frameId,transform:identity,placementState:'confirmed'}]});
+  for(const object of scene.staticObjects||[])entities.push({id:object.entityId,activeModelRepresentationId:object.entityId,currentModelTransform:identity,representations:[{id:object.entityId,assetId:object.entityId,kind:'generated_mesh',coordinateFrameId:frameId,transform:identity,placementState:'confirmed',...(object.generatedModel?{streamed:true}: {})}]});
   const dynamic=new Map<string,any>(),owner=new Map<string,string>();
   const addPrimitive=(id:string,tint:string,entityId?:string,kind='cylinder')=>{
     const rgb=tint.match(/[a-f\d]{2}/gi)!.map(v=>parseInt(v,16)/255);
@@ -146,12 +147,15 @@ export function replayLayers(scene:any,pointCloud=!scene.meshUrl,objectView=fals
 
 export async function mountReplay(container:HTMLElement,scene:any,base:string,options:any){
   const urls:Record<string,string>={},owned:string[]=[],observed:XYZ[]=[],objectBounds:XYZ[]=[];
+  const objectMeshes=new Map<string,Mesh>();
   try {
   const staticIds=new Set<string>((scene.staticObjects||[]).map((o:any)=>o.entityId));
   for(const object of scene.staticObjects||[]){
     const response=await fetch(assetUrl(object.meshUrl,base),{signal:options.signal});if(!response.ok)throw Error(`对象表面读取失败（HTTP ${response.status}）`);
     const bytes=await response.arrayBuffer();
-    for(const mesh of readGLB(bytes))objectBounds.push(...boundsCorners(mesh.bounds).map(p=>point(mesh.matrix,p)));
+    const meshes=readGLB(bytes);
+    for(const mesh of meshes)objectBounds.push(...boundsCorners(mesh.bounds).map(p=>point(mesh.matrix,p)));
+    if(object.generatedModel){require(meshes.length===1&&!meshes[0].texture,'对象切换需要单个彩色网格');objectMeshes.set(object.entityId,meshes[0]);}
     urls[object.entityId]=URL.createObjectURL(new Blob([bytes],{type:'model/gltf-binary'}));owned.push(urls[object.entityId]);
   }
   if(scene.meshUrl&&scene.pointCloudUrl)urls.mesh=assetUrl(scene.meshUrl,base);
@@ -178,10 +182,10 @@ export async function mountReplay(container:HTMLElement,scene:any,base:string,op
   const loadSurface=(surface:any)=>{
     if(!surfaceCache.has(surface.meshUrl)){
       const promise=fetch(assetUrl(surface.meshUrl,base),{signal:options.signal}).then(async response=>{
-        if(!response.ok)throw Error(`人物表面读取失败（HTTP ${response.status}）`);
+        if(!response.ok)throw Error(`模型读取失败（HTTP ${response.status}）`);
         const bytes=await response.arrayBuffer(),hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(v=>v.toString(16).padStart(2,'0')).join('');
-        if(hash!==(surface.sha256||surface.mesh_sha256))throw Error('人物表面校验失败');
-        const meshes=readGLB(bytes);if(meshes.length!==1||meshes[0].texture)throw Error('人物表面应为单个彩色网格');return meshes;
+        if(hash!==(surface.sha256||surface.mesh_sha256))throw Error('模型校验失败');
+        const meshes=readGLB(bytes);if(meshes.length!==1||meshes[0].texture)throw Error('模型应为单个彩色网格');return meshes;
       });
       surfaceCache.set(surface.meshUrl,promise);promise.catch(()=>{});
       // ponytail: retain only a short playback window, never every frame's mesh.
@@ -222,6 +226,13 @@ export async function mountReplay(container:HTMLElement,scene:any,base:string,op
     setBodyModels(value:boolean){bodyModels=value;rendered.clear();applyFrame(current,dynamic,scene.coordinate_frame,markerScale,selected);hideLinks();if(fromSource)for(const[id,e]of dynamic)if(id.startsWith('camera:'))e.representations[0].material.baseColorFactor[3]=0;void viewer.setScene(document);displaySurfaces(current);announce();},
     setPointCloud(value:boolean){pointCloud=value;viewer.setLayers(replayLayers(scene,pointCloud,objectView));},
     setObjectView(value:boolean){objectView=value;viewer.setLayers(replayLayers(scene,pointCloud,objectView));fit();},
+    async setObjectModel(id:string,value:boolean){
+      const object=scene.staticObjects?.find((o:any)=>o.entityId===id);
+      require(object?.generatedModel&&objectMeshes.has(id),'此对象没有通过检查的生成模型');
+      const mesh=value?(await loadSurface(object.generatedModel))[0]:objectMeshes.get(id)!;
+      if(disposed)return;
+      viewer.setStreamMesh(id,mesh);
+    },
     dispose,
   };
   } catch(error) {owned.forEach(url=>URL.revokeObjectURL(url));throw error;}

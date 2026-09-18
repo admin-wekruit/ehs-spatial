@@ -16,6 +16,12 @@ assert.throws(()=>validateScene({...scene,frames:[scene.frames[0],scene.frames[0
 const sourceObject={entityId:'obs-one',label:'chair',displayName:'chair 1',meshUrl:'chair.glb',provenanceUrl:'source.json',representation:'single_frame_observed_surface',identityScope:'independent_observation',source:{sourceFrame:0,timeSec:0,endTimeSec:.1,width:640,height:480,maskUrl:'mask.png',imageUrl:'source.png',bbox:[1,1,10,10]}};
 const withObject={...scene,staticObjects:[sourceObject]},sizedSample={video:{...sample.video,width:640,height:480}};
 assert.equal(validateScene(withObject,sizedSample,base),withObject);
+const completedObject={...sourceObject,generatedModel:{sourceFrame:0,meshUrl:'generated.glb',sha256:'f'.repeat(64),provenanceUrl:'validation.json',status:'source_consistent_model_estimate'}};
+const completedScene={...scene,staticObjects:[completedObject]};
+assert.equal(validateScene(completedScene,sizedSample,base),completedScene);
+assert.throws(()=>validateScene({...scene,staticObjects:[{...completedObject,generatedModel:{...completedObject.generatedModel,sourceFrame:2}}]},sizedSample,base),/来源一致性/);
+assert.throws(()=>validateScene({...scene,staticObjects:[{...completedObject,generatedModel:{...completedObject.generatedModel,status:'failed'}}]},sizedSample,base),/来源一致性/);
+assert.equal(replayDocument(completedScene,{'obs-one':'chair.glb'},()=> '#65e2be').document.entities.find(e=>e.id==='obs-one').representations[0].streamed,true);
 assert.throws(()=>validateScene({...withObject,staticObjects:[{...sourceObject,source:{...sourceObject.source,timeSec:.01}}]},sizedSample,base),/来源/);
 const heldSample={...withObject,frames:[{...scene.frames[0],endTimeSec:.3}]};
 assert.equal(validateScene(heldSample,sizedSample,base),heldSample); // Mask keeps its original .1s interval in a held 3D sample.

@@ -4,7 +4,7 @@ const $ = (id) => document.getElementById(id);
 const video = $('video');
 const svg = $('overlay');
 let fullscreenUnavailable=false;
-const state = {manifest:null, manifestUrl:'', sample:null, analysis:null, analysisUrl:'', frame:undefined, selected:null, generation:0, controller:null, observationLimit:80, dimensionalError:false, analysisError:null, replay:null,scene:null,sceneUrl:'',mediaTime:0};
+const state = {manifest:null, manifestUrl:'', sample:null, analysis:null, analysisUrl:'', frame:undefined, selected:null, generation:0, controller:null, observationLimit:80, dimensionalError:false, analysisError:null, replay:null,scene:null,sceneUrl:'',mediaTime:0,generatedModels:new Set()};
 const palette = ['#65e2be','#fac268','#8dcaff','#e9a8ec','#f39c89','#a8d779'];
 function color(id) { let n = 0; for (const c of id) n = (n * 31 + c.charCodeAt(0)) | 0; return palette[Math.abs(n) % palette.length]; }
 function displayId(object) { return object.displayName || (object.nativeTrackId === undefined ? object.entityId : `轨迹 ${object.nativeTrackId}`); }
@@ -16,7 +16,7 @@ function syncReplay(time=video.currentTime) {state.replay?.setTime(state.dimensi
 function reviewStatus(value){return {clear:'类别清楚',partial:'局部可见',incorrect_prompt:'类别不符'}[value]||'未核验';}
 function staticObservation(id) {
   const model=state.scene?.staticObjects?.find(o=>o.entityId===id);
-  return model ? {model,frame:model.source,object:{entityId:model.entityId,label:model.label+' · 可见表面',displayName:model.displayName,bbox:model.source.bbox,maskUrl:assetUrl(model.source.maskUrl,state.sceneUrl)}} : null;
+  return model ? {model,frame:model.source,object:{entityId:model.entityId,label:model.label+(state.generatedModels.has(id)?' · 生成模型估计':' · 可见表面'),displayName:model.displayName,bbox:model.source.bbox,maskUrl:assetUrl(model.source.maskUrl,state.sceneUrl)}} : null;
 }
 
 function drawMotion() {
@@ -53,6 +53,7 @@ async function loadSample(sample) {
   state.controller?.abort();
   state.controller = new AbortController();
   state.replay?.dispose(); state.replay = null;
+  state.generatedModels.clear();
   $('scene-stage').replaceChildren();
   $('scene-panel').hidden = !sample.scene;
   $('scene-details').replaceChildren();
@@ -144,7 +145,18 @@ async function loadScene(sample,generation) {
     if(scene.staticObjects?.length){
       const isolate=node('button','','仅看对象表面');isolate.setAttribute('aria-pressed','false');isolate.onclick=()=>{const enabled=isolate.getAttribute('aria-pressed')!=='true';isolate.setAttribute('aria-pressed',String(enabled));isolate.textContent=enabled?'返回完整场景':'仅看对象表面';if(enabled)isolate.dataset.pointCloud=$('scene-points').getAttribute('aria-pressed');$('scene-points').setAttribute('aria-pressed',enabled?'false':isolate.dataset.pointCloud);$('scene-all').disabled=enabled||!(scene.pointCloudCount||scene.points.length);$('scene-points').disabled=enabled||!(scene.pointCloudCount||scene.points.length);replay.setObjectView(enabled);};
       $('scene-objects').append(node('h3','',`对象观测表面 · ${scene.staticObjects.length}`),isolate,node('p','muted','点击模型或名称回到来源帧与掩码。保留原始预测类别；照片核验是模型解释，不是真值。未验证其他时刻的位置。'));
-      for(const object of scene.staticObjects){const button=node('button','',`${object.displayName} · 帧 ${object.source.sourceFrame}${object.semanticReview?' · '+reviewStatus(object.semanticReview.status):''}`);button.title=object.semanticReview?.description||'';button.dataset.entityId=object.entityId;button.setAttribute('aria-pressed','false');button.onclick=()=>selectEntity(object.entityId);$('scene-objects').append(button);}
+      for(const object of scene.staticObjects){
+        const button=node('button','',`${object.displayName} · 帧 ${object.source.sourceFrame}${object.semanticReview?' · '+reviewStatus(object.semanticReview.status):''}`);button.title=object.semanticReview?.description||'';button.dataset.entityId=object.entityId;button.setAttribute('aria-pressed','false');button.onclick=()=>selectEntity(object.entityId);$('scene-objects').append(button);
+        if(object.generatedModel){
+          const model=node('button','',`查看生成模型 · ${object.label}`);model.setAttribute('aria-pressed','false');
+          model.onclick=async()=>{const enabled=model.getAttribute('aria-pressed')!=='true';model.disabled=true;
+            try{await replay.setObjectModel(object.entityId,enabled);if(generation!==state.generation)return;enabled?state.generatedModels.add(object.entityId):state.generatedModels.delete(object.entityId);model.setAttribute('aria-pressed',String(enabled));model.textContent=enabled?`返回观测表面 · ${object.label}`:`查看生成模型 · ${object.label}`;if(state.selected!==object.entityId)selectEntity(object.entityId);else{drawFrame(state.frame);drawObservations();}}
+            catch(error){if(generation===state.generation&&error.name!=='AbortError')showError('scene-error',error.message);}
+            finally{model.disabled=false;}
+          };
+          $('scene-objects').append(model,node('p','muted','生成模型通过源图轮廓和预测深度检查；遮挡面为推测，未验证其他时刻的位置。'));
+        }
+      }
     }
     $('scene-body').hidden=!scene.bodyKeyframes?.length;$('scene-fit').disabled = false;$('scene-source').disabled = false;
     $('scene-all').disabled = !(scene.pointCloudCount||scene.points.length);
@@ -227,7 +239,8 @@ function drawObservations() {
     $('selected-label').append(node('span','source-description',`空间记忆：仅源帧 ${source.frame.sourceFrame}（${formatTime(source.frame.timeSec)}）的可见表面；其他时刻的位置与状态未知。`));
     const review=source.model.semanticReview;
     if(review)$('selected-label').append(node('span','source-description',`照片模型核验：${reviewStatus(review.status)} · ${review.description}（模型解释，非真值）`));
-    for(const [text,url]of [['查看原始帧',source.model.source.imageUrl],['查看模型来源',source.model.provenanceUrl]]){const link=node('a','source-link',text);link.href=assetUrl(url,state.sceneUrl);link.target='_blank';link.rel='noopener noreferrer';$('selected-label').append(link);}
+    if(state.generatedModels.has(state.selected))$('selected-label').append(node('span','source-description','当前显示生成模型估计；遮挡面为推测。可切换回原始可见表面。'));
+    for(const [text,url]of [['查看原始帧',source.model.source.imageUrl],['查看模型来源',state.generatedModels.has(state.selected)?source.model.generatedModel.provenanceUrl:source.model.provenanceUrl]]){const link=node('a','source-link',text);link.href=assetUrl(url,state.sceneUrl);link.target='_blank';link.rel='noopener noreferrer';$('selected-label').append(link);}
   }
   for(const candidate of state.analysis?.identityCandidates || []) {
     if(![candidate.fromEntityId,candidate.toEntityId].includes(state.selected))continue;
@@ -288,7 +301,7 @@ $('video-fullscreen').onclick=async()=>{
   catch(error){fullscreenUnavailable=true;syncPlaybackControls();showError('video-error','当前浏览器未允许视频全屏；页面内播放仍可使用。');}
 };
 // Native controls are safe only in video-only fullscreen, where the SVG is absent.
-document.addEventListener('fullscreenchange',()=>{video.controls=document.fullscreenElement===video;});
+document.addEventListener('fullscreenchange',()=>{video.controls=document.fullscreenElement===video;$('scene-expand').textContent=document.fullscreenElement===$('scene-panel')?'退出放大':'放大';});
 for(const event of ['loadedmetadata','play','pause','ended','seeked','emptied','error'])video.addEventListener(event,syncPlaybackControls);
 $('scrubber').addEventListener('input',(event)=>seek(Number(event.target.value)));
 $('clear-selection').onclick = () => {state.selected = null; drawFrame(state.frame); drawObservations(); syncReplay();};
