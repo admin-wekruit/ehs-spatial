@@ -78,6 +78,8 @@ flowchart LR
 | V10 | 标定RGB → 官方预训练DROID-SLAM特征/相关体与几何优化 → 原生相机/深度 → 支持过滤/TSDF | `modal_apps/droid_room.py`、`scripts/build_droid_replay.py`；002修正BA后学习上采样，1362帧/177关键帧，117.15秒、峰值3.90GB；全片Sim3 ATE 0.040824m | GT只用于评估、尺度未标定、完整相机含motion-only补全；3,398,400原点保留，20,124面仍有423个分量，未通过完整房间质量。独立对照没有Atlas重载 |
 | V11 | 现有DROID关键帧/K/相机 → MapAnything相机条件输入 → 原生预测及合同检查 | `scripts/reconstruct_room_with_camera.py`；8视图实际探针及独立输入检查，`runs/droid-mapanything-probe-001/` | 模型重新预测相机，K与输入明显偏离；拒绝作为固定相机稠密深度融合。没有把诊断网格发布为已配准场景 |
 
+V02的非人物实际对照：`scripts/run_seeded_video.py`复用已有SAM3 `car` 缓存，逐像素来源核对后追踪MEVA原视频440帧的5车；761.45秒/峰值RSS6.535GB，2200次非空观测、0个mask交叠。固定镜头下慢速倒车的SUV保留短期ID；没有新目标发现、重入或车辆三维模型证据。V04仅对精确`person`标签执行，车辆不输出人体骨架。保留失败发现尝试和原缓存回执缺失状态，详见MVP记录。
+
 这些条目分别记录感知算法、坐标估计与工程连接，不另造算法注册服务；参数以对应代码和每次 `run.json` 为准。原始失败、无 mask、身份冲突、未合并地图与未校准状态都必须保留。
 
 ### A01 图片理解与分割
