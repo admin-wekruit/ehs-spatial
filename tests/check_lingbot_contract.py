@@ -4,6 +4,17 @@ from pathlib import Path
 import numpy as np
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from modal_apps import lingbot_room as contract
+from unittest.mock import patch
+from types import SimpleNamespace
+with patch.object(contract.shutil, 'disk_usage', return_value=SimpleNamespace(free=10*1024**3)):
+ contract.require_disk_space(Path.cwd())
+ try:contract.require_disk_space(Path.cwd(),1)
+ except OSError:pass
+ else:raise AssertionError('A job must retain disk reserve after its expected output')
+with patch.object(contract.shutil, 'disk_usage', return_value=SimpleNamespace(free=700*1024**2)):
+ try:contract.require_disk_space(Path.cwd())
+ except OSError:pass
+ else:raise AssertionError('Low disk space must reject new local artifacts')
 k=np.array([[100.,0,2],[0,100.,1],[0,0,1]])
 c=np.eye(4);c[:3,3]=[1,2,3]
 y,x=np.indices((3,5));z=np.full((3,5),2.)
@@ -42,7 +53,6 @@ with TemporaryDirectory() as temp:
  *_,actual_camera,valid=read_prediction(path)
  assert np.allclose(actual_camera,expected_camera),'Official saved W2C must be inverted exactly once'
 from build_video_body_models import camera_body
-from types import SimpleNamespace
 from PIL import Image
 for shape in [(480,640),(900,600)]:
  transform,rh,y0=source_transform(shape)

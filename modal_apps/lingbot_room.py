@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import shutil
 import sys
 import tarfile
 import time
@@ -40,6 +41,14 @@ def save(path, value):
     Path(path).write_text(json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False)+'\n')
 
 
+def require_disk_space(path, write_bytes=0):
+    path = Path(path).resolve()
+    while not path.exists(): path = path.parent
+    free = shutil.disk_usage(path).free
+    if free < 10 * 1024**3 + write_bytes:
+        raise OSError(f'Only {free / 1024**3:.2f} GiB disk space available; keep 10 GiB free plus planned output. Stopped before the next write or GPU submission; existing files retained.')
+
+
 def validate_indices(indices, count):
     if not indices or any(type(i) is not int or not 0 <= i < count for i in indices) or any(a >= b for a,b in zip(indices, indices[1:])):
         raise ValueError('Source frames must be distinct, chronological and inside video')
@@ -66,6 +75,7 @@ def prepare(manifest_path, sample_id, output, stride):
     video = (manifest_path.parent/sample['video']['url']).resolve()
     if digest(video) != sample['video']['sha256']: raise ValueError('Source video changed')
     if type(stride) is not int or stride < 1: raise ValueError('Positive integer stride required')
+    require_disk_space(output)
     output.mkdir(parents=True, exist_ok=False)
     frames = output/'rgb'; frames.mkdir()
     cap = cv2.VideoCapture(str(video)); records=[]; index=0
@@ -75,6 +85,7 @@ def prepare(manifest_path, sample_id, output, stride):
             if not ok: break
             if index % stride == 0:
                 if len(records) >= 768: raise ValueError('Bounded experiment supports at most 768 input frames, below the 1024-frame positional limit')
+                require_disk_space(output, bgr.nbytes + 131072)
                 path=frames/f'{index:06d}.png'; assert cv2.imwrite(str(path), bgr)
                 records.append({'sourceFrame':index, 'timeSec':cap.get(cv2.CAP_PROP_POS_MSEC)/1000,
                                 'path':path.name, 'sha256':digest(path)})
@@ -83,6 +94,7 @@ def prepare(manifest_path, sample_id, output, stride):
     validate_indices([r['sourceFrame'] for r in records],index)
     if len(records)<8 or any(a['timeSec']>=b['timeSec'] for a,b in zip(records,records[1:])):
         raise ValueError('Need at least 8 source frames with increasing media timestamps')
+    require_disk_space(output, sum((frames / r['path']).stat().st_size + 4096 for r in records))
     with tarfile.open(output/'rgb.tar','w') as archive:
         for record in records: archive.add(frames/record['path'],arcname=record['path'])
     plan={'source_video':str(video), 'source_video_sha256':digest(video), 'source_frame_count':index,
@@ -167,10 +179,13 @@ def infer(run_id, deadline, plan_sha):
 
 
 def collect(output, run_id):
+    plan=json.loads((output/'plan.json').read_text())
+    require_disk_space(output, len(plan['frames']) * 518 * 518 * 12)
     remote=f'{run_id}/result'
     for entry in volume.iterdir(remote,recursive=False):
         name=Path(entry.path).name
         if name=='native-prediction.pt':continue
+        require_disk_space(output, 518 * 518 * 12)
         with (output/name).open('wb') as stream:
             for block in volume.read_file(remote+'/'+name):stream.write(block)
     report=json.loads((output/'run.json').read_text())
@@ -183,6 +198,7 @@ def collect(output, run_id):
 def execute(output, run_id):
     if not run_id or not all(c.isalnum() or c in '-_' for c in run_id):raise ValueError('Invalid run ID')
     plan=json.loads((output/'plan.json').read_text())
+    require_disk_space(output, len(plan['frames']) * 518 * 518 * 12)
     assert digest(output/'rgb.tar')==plan['rgb_archive_sha256']
     assert digest(plan['source_video'])==plan['source_video_sha256']
     if (output/'submission.json').exists():raise ValueError('Submission exists; use collect')
