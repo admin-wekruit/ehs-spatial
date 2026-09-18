@@ -6,7 +6,7 @@
 
 **Architecture:** 一套地图后端管理相机与全局坐标；每个实体保留跨帧观测、可复用几何和随时间变化的状态。现有照片分析与报告消费同一批实体和观测，不另建对象系统；原视频、地图、人体、CAD 和事件共享时间及几何版本。
 
-**Tech Stack:** 首轮验证 ORB-SLAM3/Atlas；复用 MapAnything、SAM2、Open3D 和当前 platform。连续身份首选验证 BoT-SORT-ReID/FastReID；人体首测 RTMPose，三维人体参照 WHAM/GVHMR/PromptHMR/DuoMo 的坐标与时间架构，不同时接入所有候选。
+**Tech Stack:** 首轮验证 ORB-SLAM3/Atlas；复用现有 SAM 3 图片服务、MapAnything、Open3D 和当前 platform；新增 SAM 3.1 原生视频检测/分割/短期跟踪。人体首测 RTMPose；跨段持久身份再验证 FastReID 等外观证据，不叠加重复的短期 tracker。三维人体参照 WHAM/GVHMR/PromptHMR/DuoMo 的坐标与时间架构，不同时接入所有候选。
 
 日期：2026-09-17。**状态：研究与源码审计完成，下面动态链均待实现/验收。** 本文件是 Phase 2 当前主路线；[静态建模实施明细](../algorithms/2026-09-17-video-full-scene-plan.md)、[动态表示](DYNAMIC-SCENE.md)、[人体研究](HUMAN-MOTION-RESEARCH.md)、[实际实验](README.md)是其明细与证据。统一入口仍是[算法总表](../algorithms/README.md)。
 
@@ -35,7 +35,7 @@
 | [MASt3R-SLAM](https://github.com/rmurai0610/MASt3R-SLAM) | RGB；预训练对应特征与稠密几何 | 相机跟踪、回环、同进程失跟重定位与稠密点图 | 是较新的无标定候选；当前公开入口未核查到保存后重载继续定位，CUDA/非商业许可也与首轮本机路径不同 |
 | [ConceptGraphs](https://github.com/concept-graphs/concept-graphs) | RGB、深度、相机位姿；分割区域、CLIP 区域向量、所属 3D 点 | 空间 overlap/IoU 与特征相似度关联，融合对象点云/特征，再组织语义关系 | 借鉴静态对象记忆；[论文](https://concept-graphs.github.io/assets/pdf/2023-ConceptGraphs.pdf)把时间动态列为后续方向，不能直接累计移动人/车的世界点云 |
 | [Khronos](https://github.com/MIT-SPARK/Khronos) | RGB-D、语义、里程计与时间；对象/背景分离 | 动态片段重建、场景变化与带时间的场景图 | 借鉴生命周期/历史查询；当前 ROS2 版未稳定。[论文限制](https://arxiv.org/html/2402.13817v2#S7)包括移动后片段关联和完整6DoF配准；保存4D结果不等于RGB相机重定位或持久人车身份 |
-| [SAM2](https://github.com/facebookresearch/sam2)＋[BoT-SORT](https://github.com/NirAharon/BoT-SORT) | SAM2 图像/mask 特征与 object pointer；tracker 的框、外观 embedding、时间 | mask 传播；运动预测、匹配及二维相机运动补偿 | 短期分割/身份组件；SAM 视频记忆不是持久身份数据库，BoT-SORT 的二维补偿不是三维 SLAM |
+| [SAM 3 / SAM 3.1](https://github.com/facebookresearch/sam3) | 文本/视觉提示、共享图像特征、分割记忆；3.1 将多对象跟踪分桶联合计算 | 逐帧发现匹配概念的新实例、分割与会话内跟踪 ID | 已包含短期 tracker；不默认再叠 BoT-SORT。视频 ID 不是跨切镜头/跨次拍摄的持久身份，也不提供骨架或三维地图 |
 | [FastReID](https://github.com/JDAI-CV/fast-reid/blob/master/MODEL_ZOO.md) | 人/车裁剪图；对应任务的预训练外观向量 | 历史样本检索、相似度比较 | 可为离场后重关联提供证据；同制服、同款车或外观变化仍可能歧义，不能单独作为身份真值 |
 | [RTMPose](https://github.com/open-mmlab/mmpose/tree/main/projects/rtmpose)→人体运动系统 | 人员 crop→关节点；时间窗、相机运动、人体先验 | 2D 骨架，再由人体方法恢复 3D 姿态/身体及根运动 | 需要地图位姿与尺度对齐。[PromptHMR](https://github.com/yufu-wang/PromptHMR)组织多人视频链；[DuoMo](https://github.com/facebookresearch/DuoMo)明确要求移动相机另行提供轨迹 |
 | [MapAnything](https://github.com/facebookresearch/map-anything)＋[Open3D](https://www.open3d.org/docs/release/tutorial/pipelines/rgbd_integration.html) | 图像、可选 K/位姿/深度→稠密点图、深度与置信度 | 预训练几何推理，再用已对齐深度融合表面 | 可见表面不等于完整对象；还需分割归属、对象局部融合、部件建模及多图验证 |
@@ -51,8 +51,8 @@
 | 解码、时间轴 | 现有视频解码与媒体时间 | CLI 已实跑视频抽帧；目前几何批次仅 2–32 帧 | 连续帧/关键帧分工、切镜头边界、持久帧来源、播放器同步 | 否 |
 | 相机、回环、地图记忆 | ORB-SLAM3/Atlas | 没有通过连续地图和跨次重载验收 | 运行/标定适配；有效位姿、丢失与地图合并；动态特征筛选 | 否；有几何优化 |
 | 稠密几何 | MapAnything＋Open3D | RGB 8/32 帧实跑；32 帧 ATE 0.641 m，质量未通过 | 地图尺度/射线/位姿一致；静态融合与对象局部融合分开 | 否；不做逐场景神经训练 |
-| 发现、分割、部件理解 | 现有 VLM provider、SAM2 | 照片路径及缓存存在；SAM2 在房间单帧提示分割实跑 | 新覆盖关键帧发现、视频 mask 传播、漏检/遮挡复核 | 否；调用预训练模型 |
-| 短期跟踪与重新出现 | BoT-SORT-ReID＋预训练 FastReID；复用已有 mask 接口 | 旧 ByteTrack 实验代码不能算当前可用人物跟踪 | 验证检测输入；历史外观样本、轨迹与持久实体分离；跨段再关联 | 否；人/车用对应 ReID 权重 |
+| 发现、分割、部件理解 | 现有 VLM、SAM 3 图片 provider；新增 SAM 3.1 视频 predictor | 图片服务及 RLE/来源契约已有，SAM2 本地实验与缓存也保留；不能因视频未接入否认已有 SAM 3 | 原生视频会话与逐帧 mask/ID；新实例发现、漏检/遮挡复核 | 否；调用预训练模型 |
+| 短期跟踪与重新出现 | SAM 3.1 原生 tracker；跨段再用预训练外观证据 | 现有图片 SAM 3 调用不会产生视频轨迹；旧 ByteTrack 也不能算当前可用链 | 会话 ID 命名空间、历史外观样本、短轨迹与持久实体分离；跨段再关联 | 否；人/车若需要 ReID，使用对应预训练权重 |
 | 地图实体记忆与运动 | ConceptGraphs 静态关联思路、Khronos 时间表示、现有身份契约 | 已有静态照片重投影关联；没有动态实体状态 | 相机补偿后的三维运动证据、静止区间、可见性、地图 revision 更新 | 否；这是关联/估计算法加状态工程，不只是存数据库 |
 | 骨骼、人体网格 | RTMPose；后续选一个预训练 3D 人体方案 | **没有人体骨骼、世界人体轨迹或动画验收** | 关节点→持续身份→同一地图；骨架/身体动画读取、遮挡状态 | 首轮否 |
 | 刚体/结构/部件模型 | 现有生成、粗模型、Open3D、trimesh、Blender 导出 | 照片模型路径存在；房间只有未分割表面 | 以实体局部坐标合并新视角，补齐粗部件、尺寸/姿态约束及验证 | 首轮否；通用完整建模尚未完成 |
@@ -102,11 +102,11 @@ flowchart TD
 1. t=0 检测到人/车，建立一条观测和短期轨迹，提取 mask/crop、外观特征、相机、可信的三维支持，指向持久 `entity_id`。
 2. 连续可见时使用中间帧维持关联；t=0 和 t=4 是用户查看位置，不是只处理这两帧。对象姿态变化与相机姿态变化分别保存。
 3. 遮挡/离场使轨迹停止有效观测，但不删除实体及历史外观。t=4 再出现时，检索历史样本，结合外观、时间、几何和竞争候选验证，再接回实体。
-4. 静态对象可以用地图位置作强证据；移动的人/车不能要求仍出现在 t=0 的位置。BoT-SORT 自己的 IoU 门限和轨迹保留时间不足以实现这一步，需额外的持久实体关联。
+4. 静态对象可以用地图位置作强证据；移动的人/车不能要求仍出现在 t=0 的位置。SAM 3.1 会话内 ID 也不足以保证离场后或另一段视频的关联，需额外的持久实体关联。
 5. 无重叠切镜头先建立新片段、重新定位相机。身份和地图位置分别判断；无法匹配的片段不沿用上一相机位姿。相同外观且缺乏区分证据时保留候选，不能强行合并。
 6. 回放 t=0/t=4 显示同一实体当时的状态。遮挡区间没有观测就保留空档，不能用插值当作真实走过的路径；模型形状可复用，位置与姿态不能照搬最后一次。
 
-关联实现依据：[BoT-SORT 的 IoU/ReID 门限与轨迹清理](https://github.com/NirAharon/BoT-SORT/blob/main/tracker/bot_sort.py)、[SAM2 视频状态](https://github.com/facebookresearch/sam2/blob/main/sam2/sam2_video_predictor.py)、[ConceptGraphs 静态关联](https://github.com/concept-graphs/concept-graphs/blob/main/conceptgraph/slam/mapping.py)。持久外观样本引用现有 asset 存储，不新建独立向量数据库；首个房间对象数量可直接计算相似度，扩大规模前先测查询成本。
+关联实现依据：[SAM 3.1 视频状态与输出](https://github.com/facebookresearch/sam3/blob/660a5e9e1b8b4c02c0ad97229b88a09a6e4ff5b7/sam3/model/sam3_multiplex_tracking.py)、[ConceptGraphs 静态关联](https://github.com/concept-graphs/concept-graphs/blob/main/conceptgraph/slam/mapping.py)。持久外观样本引用现有 asset 存储，不新建独立向量数据库；首个房间对象数量可直接计算相似度，扩大规模前先测查询成本。
 
 “移动”依据相机补偿后的对象位置/旋转持续变化及其估计误差；原地挥手还要看关节变化。图像里移动、类别叫车、或刚好某帧静止都不是充分判据。只有单目 RGB 时，遮挡期动态轨迹和绝对尺度可能没有唯一解，身份可关联不等于每一秒的位置都已知。
 
@@ -160,7 +160,7 @@ Atlas 的特殊验收：源码虽然有 SaveAtlas/LoadAtlas，但加载后会创
 
 总时间按实际阶段分别计量：解码＋相机/跟踪＋所选关键帧深度/语义＋人体＋融合/模型＋分析/导出；可并行部分用实测调度计算墙钟时间，不直接把模块 FPS 当端到端速度。活动窗口控制推理内存，旧地图/实体按区域读取；持续保存原视频、关键帧与压缩时序，不让浏览器加载全部中间张量。
 
-当前 M2 可复用已经实跑的 MapAnything/SAM2 和 CPU 几何环境；RTMPose CPU/ONNX 是待验证入口。DROID、多数完整世界人体链等官方环境使用 CUDA，不能假定全部能在 M2 跑。该路线没有下载受限权重、训练模型或启动新的付费计算。
+当前 M2 可复用已经实跑的 MapAnything/SAM2 和 CPU 几何环境；现有云端 SAM 3 图片服务也保留。SAM 3.1 原生视频使用 CUDA；RTMPose 单独验证 CPU/ONNX。DROID、多数完整世界人体链等官方环境也使用 CUDA，不能假定全部能在 M2 跑。实际安装、调用、成本与产物在实验记录中登记，不能由本路线推定已经运行。
 
 公开代码不等于所有权重和身体资产都可用于产品：ORB-SLAM3 GPLv3、人体候选的非商业/自定义条款及 SMPL/MHR 资产在具体接入前作为选型条件核查，详见人体研究。这里只选择技术验证路径，不许诺已有生产依赖组合。
 

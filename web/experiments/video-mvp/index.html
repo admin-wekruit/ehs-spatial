@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>视频与空间 · Panoptes</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="page-header"><a class="brand" href="./">PANOPTES <span>空间理解实验</span></a><span class="stage-tag">公开视频 · 观察与验证</span></header>
+  <main>
+    <div class="intro"><div><p class="eyebrow">PHASE 02 / VIDEO</p><h1 id="page-title">视频与空间</h1><p>沿着原视频时间，查看对象、人的动作与观测来源。</p></div><p class="scope-note">只显示已运行的分析。二维轨迹与骨架不代表已完成三维重建。</p></div>
+    <p id="page-error" class="notice error" role="alert" hidden></p>
+    <div class="workspace">
+      <aside class="samples-panel panel"><div class="panel-heading"><h2>视频样本</h2><span id="sample-count">0</span></div><nav id="samples" aria-label="选择视频样本"></nav></aside>
+      <section class="video-panel panel" aria-labelledby="sample-title">
+        <div class="panel-heading"><div><span class="section-number">01</span><h2 id="sample-title">选择一个视频样本</h2></div><span id="duration" class="muted"></span></div>
+        <div id="sample-meta" class="sample-meta"><p id="description"></p><div id="source"></div><ul id="verification"></ul></div>
+        <div id="media-stage" class="media-stage" hidden>
+          <video id="video" controls preload="metadata" playsinline aria-label="原始视频"></video>
+          <svg id="overlay" aria-label="当前视频帧的对象与二维骨架"></svg>
+        </div>
+        <p id="video-error" class="notice error" role="alert" hidden></p>
+        <div id="media-empty" class="empty-state"><span class="empty-icon">▷</span><h3>等待视频样本</h3><p>连接实际样本 manifest 后，原视频会在这里播放。</p></div>
+        <div class="time-controls"><label for="scrubber">原视频时间</label><input id="scrubber" type="range" min="0" max="0" step="0.001" value="0" disabled><output id="clock" for="scrubber">00:00.000</output></div>
+        <div class="overlay-controls"><label><input id="show-masks" type="checkbox" checked>对象与 ID</label><label><input id="show-skeleton" type="checkbox" checked>二维骨架</label><span id="frame-time" class="muted"></span></div>
+        <div id="analysis-status" class="notice" role="status">尚未载入样本</div>
+        <div id="geometry" class="geometry" hidden><div><h3>场景几何</h3><p>打开现有房间预览查看点云与网格；此视图尚未与视频时间同步。</p></div><a id="geometry-link" class="button" target="_blank" rel="noopener">打开几何预览 ↗</a></div>
+      </section>
+      <aside class="observations-panel panel"><div class="panel-heading"><div><span class="section-number">02</span><h2>当前观测</h2></div><span id="object-count">—</span></div><div id="objects" class="object-list"><p class="empty-copy">选择视频后查看实际分析产物。</p></div><div class="trajectory-heading"><div><h3>轨迹观测</h3><p id="selected-label">点击画面或对象，查看它出现的时刻。</p></div><button id="clear-selection" hidden>清除选择</button></div><div id="observations" class="observation-list"></div><div id="analysis-details" class="analysis-details"></div></aside>
+    </div>
+  </main>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

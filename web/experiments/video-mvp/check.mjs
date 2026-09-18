@@ -1,0 +1,37 @@
+import assert from 'node:assert/strict';
+import {assetUrl, validateManifest, validateAnalysis, frameAt, visibleJoint, trackObservations, formatTime} from './timeline.mjs';
+
+// Synthetic assertions only: these records are never loaded by the preview.
+const base = 'http://127.0.0.1:8799/video-mvp/manifest.json';
+const sample = {id:'test',title:'test',video:{url:'test.mp4',width:640,height:480,durationSec:10},source:{label:'test',url:'https://example.org'},canVerify:[]};
+const object = {entityId:'person-1',label:'人',bbox:[64,48,128,96],keypoints:[[64,48,.9],null,[128,96,.2]],bones:[[0,1],[0,2]]};
+const frames = [{timeSec:0,endTimeSec:.1,objects:[object]},{timeSec:.1,endTimeSec:.2,objects:[]},{timeSec:1,endTimeSec:1.1,objects:[object]}];
+const data = {version:1,coordinateSpace:'source_pixels',width:640,height:480,frames};
+assert.equal(validateManifest({version:1,samples:[sample]},base).samples.length,1);
+assert.equal(validateManifest({version:1,samples:[]},base).samples.length,0);
+assert.equal(validateAnalysis(data,sample,base),data);
+assert.equal(frameAt(frames,-.1),null);
+assert.equal(frameAt(frames,0),frames[0]);
+assert.equal(frameAt(frames,.099),frames[0]);
+assert.equal(frameAt(frames,.1),frames[1]);
+assert.equal(frameAt(frames,.2),null);
+assert.equal(frameAt(frames,.7),null);
+assert.equal(frameAt(frames,1),frames[2]);
+assert.equal(frameAt(frames,1.1),null);
+assert.equal(frameAt([],2),null);
+assert.equal(frameAt(frames,NaN),null);
+assert.equal(visibleJoint(object.keypoints[0],640,480),true);
+assert.equal(visibleJoint(object.keypoints[1],640,480),false);
+assert.equal(visibleJoint(object.keypoints[2],640,480),false);
+assert.equal(visibleJoint([-1,20,.9],640,480),false);
+assert.equal(trackObservations(frames,'person-1').length,2);
+assert.equal(trackObservations(frames,'missing').length,0);
+assert.equal(formatTime(59.9997),'01:00.000');
+assert.equal(assetUrl('../movie.mp4',base),'http://127.0.0.1:8799/movie.mp4');
+assert.throws(()=>assetUrl('javascript:alert(1)',base));
+assert.throws(()=>validateAnalysis({...data,width:320},sample,base),/画幅/);
+assert.throws(()=>validateAnalysis({...data,frames:[frames[2],frames[0]]},sample,base),/重叠/);
+assert.throws(()=>validateAnalysis({...data,frames:[{...frames[0],objects:[object,object]}]},sample,base),/唯一/);
+assert.throws(()=>validateAnalysis({...data,frames:[{...frames[0],objects:[{...object,bbox:[0,0,NaN,9]}]}]},sample,base),/对象框/);
+assert.throws(()=>validateAnalysis({...data,frames:[{...frames[0],objects:[{...object,bones:[[0,8]]}]}]},sample,base),/骨连接/);
+console.log('PASS: source-time boundaries, gaps, pixel coordinates, absent data, joints, IDs and invalid input');
