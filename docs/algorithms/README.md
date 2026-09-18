@@ -1,7 +1,7 @@
 # 算法与分析流程总表
 
 这是 Panoptes Platform 当前照片 → 对象 → CAD / 模型 → 测量 → 报告的统一入口。
-维护日期：2026-09-17；照片代码基线包含 `f790127`，局部面实现版本为 `local-planar-inclinations-v2`，见下方验收记录。视频新增路线与照片已实现状态分别记录。
+维护日期：2026-09-18；照片代码基线包含 `f790127`，局部面实现版本为 `local-planar-inclinations-v2`，见下方验收记录。视频新增路线与照片已实现状态分别记录。
 根 README 中四张照片、七种固定标签的说明属于早期 MVP，不代表当前 Platform 的完整流程。
 
 研究扩展：[工厂视频重建、A→B→A 空间记忆与可编辑场景](../research/2026-09-17-factory-video-spatial-memory.md)（2026-09-17）。已核查开源实现、现有链路和 Nalana 本例产物；视频长序列与持久地图尚未接入或实跑验收，不改变下方已实现条目的状态。
@@ -10,7 +10,7 @@
 
 [静态空间建模实施明细](2026-09-17-video-full-scene-plan.md)保留原有几何和上传细节，执行顺序以主路线为准。执行与结果见 [Phase 2 实验记录](../phase2/README.md)，未通过的阶段不计入已实现条目。
 
-动态扩展：[运动定义、地图记忆与时序模型](../phase2/DYNAMIC-SCENE.md)；[人体骨骼、模型与世界运动研究](../phase2/HUMAN-MOTION-RESEARCH.md)。目前是审计和实施方案：旧二维框跟踪不代表已有骨骼或动态地图能力。
+动态扩展：[运动定义、地图记忆与时序模型](../phase2/DYNAMIC-SCENE.md)；[人体骨骼、模型与世界运动研究](../phase2/HUMAN-MOTION-RESEARCH.md)。实际视频、骨架、持久地图实验见 [MVP 执行记录](../phase2/VIDEO-MVP.md)，不能从方案或旧二维框跟踪推断验收。
 
 ## 使用与维护规则
 
@@ -61,6 +61,19 @@ flowchart LR
 | A12 | EHS 规则判定 | 证据适用性＋配置规则＋数值计算 | `policy_engine.py`、`policy_service.py` | 已实现规则路径；当前示例版本尚无新安全评估 |
 
 上表 Python 文件均在 `ehs_spatial/platform/`，除明确标出的前端文件。
+
+### Phase 2 新增算法与工程链（本地实验，未替代照片服务）
+
+| ID | 输入 → 方法 → 输出 | 代码与实际证据 | 当前质量边界 |
+|---|---|---|---|
+| V01 | 公开视频/逐帧来源 → 实际解码 PTS、SHA 和像素域校验 → 时间区间 | `scripts/build_video_pose_preview.py::source_spans`；严格逐帧的 walking/room 新源视频 | 旧 room 预览曾重采样，已保留原件并另产一帧一图版本；当前入口验证 CFR，不猜 VFR 末帧时长 |
+| V02 | SAM3 首帧实例 → SAM2.1 原生 video memory → 会话 ID / RLE / 空掩码 | `scripts/run_seeded_video.py`；175 帧实跑、0/4秒独立抽查 | 859 帧实验已暴露重新入画时两 ID 合到同一人的失败；短期 ID 不等于持久身份。SAM3.1 fal 的实际提示探针失败分别留档 |
+| V03 | 标定 RGB 或明确的 RGB-D → ORB-SLAM3 → 最终 Atlas / 相机 / 稀疏点 | `scripts/phase2_camera_build.py`、`phase2_camera_run.py`、`phase2_camera_export.py`；真实 A/B 跨进程重载与旧地图点复用 | 单目仍有未合并地图，尺度未标定；RGB-D 无动态特征剔除基线 ATE 0.861m，不能以 state=OK 代替几何精度 |
+| V04 | 人员 mask + RGB → 预训练 RTMPose COCO17 → 帧内二维骨架 | `scripts/build_video_pose_preview.py`；175 帧、320 个非空人员观测；原始分数、RGB 输入和模型 SHA 留档 | 0.3 是显示阈值，不是正确概率；出画 ID 单列 absent，不作为当前位置或假骨架 |
+| V05 | 同一最终地图位姿 + 传感器深度 + mask/2D骨架 → TSDF / 可见表面关节 | `scripts/build_replay_scene.py`；复用 `reconstruct_room_rgb.py::integrate`；168 帧静态表面融合 | 此对照需要传感器深度；遮挡关节不补齐。剔除融合像素不修复上游相机误差；输出不等于人体形状拟合或逐物体建模 |
+| V06 | 相同媒体时间的来源/观测/相机/模型 → 懒加载回放 | `web/experiments/video-mvp/`；复用原生 WebGL viewer 与 GLB reader | 空档不沿用旧位置，静态大资产不逐帧重载；完整 CAD/EHS 时序服务仍未接通 |
+
+这些条目分别记录感知算法、坐标估计与工程连接，不另造算法注册服务；参数以对应代码和每次 `run.json` 为准。原始失败、无 mask、身份冲突、未合并地图与未校准状态都必须保留。
 
 ### A01 图片理解与分割
 

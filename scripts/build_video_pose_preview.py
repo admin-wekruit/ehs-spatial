@@ -44,7 +44,7 @@ def intervals(raw: dict) -> list[tuple[float, float]]:
 
 
 def object_input(obj: dict, width: int, height: int) -> tuple[np.ndarray, list[float] | None]:
-    mask = decode_coco_rle(obj['rle']).astype(bool)
+    mask = decode_coco_rle(obj['rle'], height=height, width=width).astype(bool)
     if mask.shape != (height, width):
         raise ValueError('Mask is outside the source pixel domain')
     box = np.asarray(obj['box_xywh_normalized'], dtype=float)
@@ -81,9 +81,18 @@ def source_spans(raw: dict, manifest: dict) -> list[tuple[float, float]]:
     cap = cv2.VideoCapture(str(source))
     actual = []
     try:
+        fps, count = cap.get(cv2.CAP_PROP_FPS), cap.get(cv2.CAP_PROP_FRAME_COUNT)
         for i in range(start + len(spans) + 1):
             ok, image = cap.read()
             if not ok:
+                # ponytail: a full, byte-identical CFR source has no following
+                # frame; derive only that final end from verified frame spacing.
+                if (start == 0 and i == count == len(spans) and len(actual) >= 2
+                        and manifest['clipSha256'] == manifest['sourceSha256']
+                        and np.isfinite(fps) and fps > 0
+                        and np.allclose(np.diff(actual), 1 / fps, atol=.0001, rtol=0)):
+                    actual.append(actual[-1] + 1 / fps)
+                    break
                 raise ValueError('The parent video must include the frame after this analysis clip')
             if image.shape[:2] != (raw['input']['height'], raw['input']['width']):
                 raise ValueError('Parent video and analysis pixel domains differ')
@@ -125,8 +134,8 @@ def build(raw_path: Path, clip_path: Path, model_path: Path, output: Path,
         raise ValueError('A native session or provider request ID is required')
     namespace = 'sam-' + session
     result = {'version': 1, 'coordinateSpace': 'source_pixels', 'width': width,
-              'height': height, 'method': 'SAM native video IDs + RTMPose COCO17 (CPU ONNX)',
-              'identityScope': 'video_session_only', 'frames': [],
+              'height': height, 'method': raw['method']['name'] + ' + RTMPose COCO17 (CPU ONNX)',
+              'identityScope': raw['identity_scope'], 'frames': [],
               'limitations': ['仅分析保存的连续短片，其余时间没有观测。',
                               'ID 是本次视频会话中的短期轨迹，未验证跨遮挡或跨视频持久身份。',
                               '骨架为二维图像估计；尚无三维人体、世界运动或动态对象模型。',
@@ -141,7 +150,7 @@ def build(raw_path: Path, clip_path: Path, model_path: Path, output: Path,
             ids = [o['track_id'] for o in frame['objects']]
             if len(ids) != len(set(ids)) or any(type(i) is not int or i < 0 for i in ids):
                 raise ValueError('Native track IDs must be unique nonnegative integers')
-            objects = []
+            objects, absent = [], []
             # ponytail: top-down pose uses SAM boxes directly; no duplicate tracker.
             eligible = [i for i, (_, box) in enumerate(inputs) if box is not None]
             pose_output = {}
@@ -156,6 +165,9 @@ def build(raw_path: Path, clip_path: Path, model_path: Path, output: Path,
                 for j, (obj, (mask, box)) in enumerate(zip(frame['objects'], inputs, strict=True)):
                     if obj['label'] != 'person':
                         raise ValueError('Human pose cannot be applied to non-person observations')
+                    if not mask.any():
+                        absent.append(f"{namespace}-{obj['track_id']}")
+                        continue
                     name = f"masks/{frame['frame_index']:05d}-{obj['track_id']}.png"
                     rgba = np.zeros((height, width, 4), dtype=np.uint8)
                     rgba[mask] = (190, 226, 101, 255)  # OpenCV BGRA; transparent off-mask.
@@ -170,16 +182,21 @@ def build(raw_path: Path, clip_path: Path, model_path: Path, output: Path,
                               for (x, y), c in zip(pts, confidence, strict=True)]
                     exported = {'entityId': f"{namespace}-{obj['track_id']}",
                                     'nativeTrackId': obj['track_id'], 'label': '人 · 短期轨迹',
-                                    'confidence': obj['score'], 'maskUrl': name,
+                                    'maskUrl': name,
                                     'keypoints': joints, 'bones': BONES if joints else [],
                                     'poseStatus': 'estimated_2d' if joints else 'insufficient_mask_support',
                                     'rawKeypointScores': [float(c) if np.isfinite(c) else None for c in confidence]}
                     if box is not None:
                         exported['bbox'] = box
+                    if obj.get('score') is not None:
+                        if not np.isfinite(obj['score']) or not 0 <= obj['score'] <= 1:
+                            raise ValueError('Object score must be null or a finite value in [0,1]')
+                        exported['confidence'] = obj['score']
                     objects.append(exported)
             result['frames'].append({'timeSec': start,
                                      'endTimeSec': end,
-                                     'sourceFrame': frame['source_frame_index'], 'objects': objects})
+                                     'sourceFrame': frame['source_frame_index'], 'objects': objects,
+                                     'absentEntityIds': absent})
             observations += len(objects)
         if cap.read()[0]:
             raise ValueError('Clip contains frames without a native SAM output')
@@ -248,6 +265,20 @@ def self_check() -> None:
                 pass
             else:
                 raise AssertionError('Incorrect parent time / source identity was accepted')
+        full = {'input': {'sha256': sha(source), 'frame_count': 4, 'width': 16, 'height': 16,
+                          'frame_timestamps_seconds': [0, .1, .2, .3], 'duration_seconds': .4},
+                'frames': [{'frame_index': i, 'source_frame_index': i,
+                            'timestamp_seconds': .1 * i} for i in range(4)]}
+        parent = {'sourceVideo': str(source), 'sourceSha256': sha(source), 'clipSha256': sha(source),
+                  'frameCount': 4, 'sourceStartFrame': 0,
+                  'sourceFrameMediaTimesSeconds': [0, .1, .2, .3, .4]}
+        assert source_spans(full, parent)[-1] == (.3, .4)
+        try:
+            source_spans(full, parent | {'sourceFrameMediaTimesSeconds': [0, .1, .2, .3, .5]})
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('Full-video final interval extension was accepted')
     print('video pose input contract passed: RLE pixels, normalized xywh, time and missing frames')
 
 

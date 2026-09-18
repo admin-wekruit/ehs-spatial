@@ -1,0 +1,79 @@
+"""Run existing SAM3 image discovery on explicitly selected source video frames.
+
+Each call has its own immutable input/results directory and recorded cost. This
+produces independent observations, never an identity assignment or a new tracker.
+"""
+import argparse
+import base64
+import json
+from pathlib import Path
+import sys
+
+import cv2
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from ehs_spatial.providers.sam3 import decode_coco_rle
+from modal_apps.sam3_video_fal import execute
+from build_video_pose_preview import sha
+
+
+def run(args):
+    args.output.mkdir(parents=True, exist_ok=False)
+    selected = sorted(set(args.frames))
+    if not selected or selected[0] < 0 or len(selected) != len(args.frames) or len(selected) > 12:
+        raise ValueError('Choose up to twelve distinct nonnegative frame indices')
+    cap = cv2.VideoCapture(str(args.video))
+    video_sha = sha(args.video)
+    done = []
+    try:
+        for index in range(selected[-1] + 1):
+            ok, bgr = cap.read()
+            if not ok:
+                raise ValueError('Selected frame is absent from the input video')
+            if index not in selected:
+                continue
+            folder = args.output / f'frame-{index:05d}'
+            folder.mkdir()
+            image = folder / f'frame-{index}.png'
+            if not cv2.imwrite(str(image), bgr):
+                raise IOError('Could not save the exact decoded source frame')
+            height, width = bgr.shape[:2]
+            manifest = {'source_clip': str(args.video.resolve()), 'source_clip_sha256': video_sha,
+                        'source_frame_index': index, 'frame_sha256': sha(image),
+                        'timestamp_seconds': cap.get(cv2.CAP_PROP_POS_MSEC) / 1000,
+                        'width': width, 'height': height, 'prompt': args.prompt}
+            (folder / 'input-manifest.json').write_text(json.dumps(manifest, indent=2))
+            execute({'mode': 'submit', 'endpoint': 'fal-ai/sam-3-1/image-rle',
+                     'billing_units': 1, 'max_fal_usd': .02,
+                     'input': {'image_url': 'data:image/png;base64,' + base64.b64encode(image.read_bytes()).decode(),
+                               'prompt': args.prompt, 'return_multiple_masks': True,
+                               'include_scores': True, 'include_boxes': True}}, folder, 'provider-events.jsonl')
+            data = json.loads((folder / 'provider-output.json').read_text())
+            instances = []
+            for ordinal, rle in enumerate(data['rle']):
+                mask = decode_coco_rle(rle, height=height, width=width).astype(bool)
+                if mask.shape != (height, width) or not mask.any():
+                    raise ValueError('Expected a nonempty source-domain instance mask')
+                y, x = np.where(mask)
+                path = folder / f'instance-{ordinal}-mask.png'
+                if not cv2.imwrite(str(path), mask.astype(np.uint8) * 255):
+                    raise IOError('Could not save the instance mask')
+                instances.append({'instance_index': ordinal, 'label': args.prompt,
+                                  'mask_area_pixels': int(mask.sum()), 'mask_sha256': sha(path),
+                                  'mask_bounds_xyxy_exclusive': [int(x.min()), int(y.min()), int(x.max() + 1), int(y.max() + 1)]})
+            (folder / 'instances.json').write_text(json.dumps(instances, indent=2))
+            done.append({'frame': index, 'instances': len(instances), 'directory': str(folder)})
+            (args.output / 'manifest.json').write_text(json.dumps(done, indent=2))
+            print(json.dumps(done[-1]), flush=True)
+    finally:
+        cap.release()
+
+
+if __name__ == '__main__':
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--video', type=Path, required=True)
+    p.add_argument('--frames', type=int, nargs='+', required=True)
+    p.add_argument('--output', type=Path, required=True)
+    p.add_argument('--prompt', default='person')
+    run(p.parse_args())
