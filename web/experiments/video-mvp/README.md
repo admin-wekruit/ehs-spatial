@@ -16,6 +16,10 @@ Implementation plan:
 
 生产入口依次为`scripts/build_video_surfaces.py`、`scripts/build_video_body_models.py`、`scripts/filter_video_static_surfaces.py`；每个入口提供`--help`，消费同一视频/相机/分析哈希。人体调用以`--max-calls`和`--max-usd`限制，恢复只读取同request ID或未提交项；已返回结果不重复付费。过滤器`--self-check`验证支持、自由空间、遮挡及动态mask逻辑。实际输入、参数、产物和边界见[实验记录](../../../docs/phase2/VIDEO-MVP.md)。
 
+人体批次可用`--stride 5 --reuse-run 旧结果目录 --prepare-only`先核对源图片/mask和预算；正式执行移除`--prepare-only`并加`--resume`，只有字节来源一致的返回才复用。先运行静态过滤，再对其结果使用`filter_video_static_surfaces.py --mesh-from-points`，从已检查的点云构面并重新做深度与纹理检查。
+
+相机回归检查：将`web/tests/viewer-camera-check.ts`以Vite的ES库模式、`target:esnext`打包到临时静态目录，用HTML的`script type="module"`加载，在真实浏览器中应显示`PASS`。检查会依次设置显式相机和滚轮缩放，切换点云/模型再切回，断言前后画布像素完全相同；图层加载不得覆盖用户视角。
+
 不新增依赖；空间模块需用已安装的 Vite 构建一次，其余文件为静态文件。可通过 `?manifest=实际manifest地址` 指定数据；相对地址基于页面 URL。
 
 在仓库根目录构建到真实产物目录（不改已有 manifest）：

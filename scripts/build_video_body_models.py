@@ -5,13 +5,27 @@ short-gap vertex interpolation; estimates that fail mask/depth checks are kept
 in the audit but never enter replay. No training or ground-truth camera input.
 """
 from __future__ import annotations
-import argparse, base64, concurrent.futures, json, os, sys, time, urllib.request
+import argparse, base64, concurrent.futures, hashlib, json, os, shutil, sys, time, urllib.request
 from pathlib import Path
 import cv2
 import numpy as np
 from reconstruct_room_rgb import digest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from modal_apps.sam3_video_fal import execute
+
+
+def save_inputs(folder, image, mask, source):
+    """Validate resumed inputs before overwriting any immutable source evidence."""
+    encoded = {}
+    for name, pixels in [('image', image), ('mask', mask.astype('uint8') * 255)]:
+        ok, data = cv2.imencode('.png', pixels)
+        if not ok: raise ValueError('Could not encode body input')
+        encoded[name] = data.tobytes()
+    manifest = {**source, **{name + '_sha256': hashlib.sha256(data).hexdigest() for name, data in encoded.items()}}
+    path = folder / 'input-manifest.json'
+    if path.exists() and json.loads(path.read_text()) != manifest: raise ValueError('Resumed body input differs')
+    for name, data in encoded.items(): (folder / (name + '.png')).write_bytes(data)
+    path.write_text(json.dumps(manifest, indent=2))
 
 
 def check_interpolations(scene, base, analysis_path, inputs):
@@ -125,18 +139,16 @@ def run(args):
     candidates = []
     for frame in source['frames']:
         index = frame['sourceFrame']
-        if index % 10: continue
+        if index % args.stride: continue
         for obj in af.get(index, {}).get('objects', []):
             if any(o['entityId'] == obj['entityId'] and o.get('surface') for o in frame['objects']):
                 candidates.append((frame, obj))
-    if len(candidates) > args.max_calls or args.max_calls * .02 > args.max_usd:
-        raise ValueError('Keyframe plan exceeds the explicitly bounded budget')
     if args.resume:
         plan=json.loads((args.output / 'plan.json').read_text())
         if plan['source_scene_sha256']!=digest(args.scene) or plan['calls']!=len(candidates):raise ValueError('Resume source changed')
     else: args.output.mkdir(parents=True, exist_ok=False)
     (args.output / 'plan.json').write_text(json.dumps({'source_scene_sha256': digest(args.scene), 'calls': len(candidates),
-        'published_estimate_usd': len(candidates) * .02, 'maximum_usd': args.max_usd, 'stride_frames': 10,
+        'maximum_usd': args.max_usd, 'stride_frames': args.stride,
         'endpoint': 'fal-ai/sam-3/3d-body', 'training': False}, indent=2))
     cap = cv2.VideoCapture(str(args.video)); jobs = []
     try:
@@ -145,12 +157,22 @@ def run(args):
             folder = args.output / f'frame-{index:05d}-track-{track}'; folder.mkdir(exist_ok=args.resume)
             cap.set(cv2.CAP_PROP_POS_FRAMES, index); ok, image = cap.read(); assert ok
             rgba = cv2.imread(str(args.analysis.parent / obj['maskUrl']), -1); mask = rgba[:, :, 3] > 0
-            cv2.imwrite(str(folder / 'image.png'), image); cv2.imwrite(str(folder / 'mask.png'), mask.astype('uint8') * 255)
-            (folder / 'input-manifest.json').write_text(json.dumps({'sourceFrame': index, 'entityId': obj['entityId'],
-                'source_video_sha256': source['source_video_sha256'], 'image_sha256': digest(folder / 'image.png'),
-                'mask_sha256': digest(folder / 'mask.png')}, indent=2))
+            save_inputs(folder, image, mask, {'sourceFrame': index, 'entityId': obj['entityId'],
+                'source_video_sha256': source['source_video_sha256']})
+            if args.reuse_run and not (folder/'provider-output.json').exists():
+                cached=args.reuse_run/folder.name
+                if (cached/'provider-output.json').exists():
+                    if json.loads((cached/'input-manifest.json').read_text()) != json.loads((folder/'input-manifest.json').read_text()): raise ValueError('Cached body input differs')
+                    for name in ['provider-output.json','provider-mesh.ply']:
+                        if (cached/name).exists(): shutil.copyfile(cached/name,folder/name)
+                    (folder/'reused-from.json').write_text(json.dumps({'source':str(cached.resolve()),'provider_output_sha256':digest(cached/'provider-output.json'),'new_provider_submission':False},indent=2))
             jobs.append((folder, frame, obj))
     finally: cap.release()
+    new_jobs=sum(not (folder/'reused-from.json').exists() for folder,_,_ in jobs)
+    if new_jobs > args.max_calls or args.max_calls * .02 > args.max_usd: raise ValueError('New keyframes exceed the explicitly bounded budget')
+    plan=json.loads((args.output/'plan.json').read_text());plan.update({'new_provider_calls':new_jobs,'reused_provider_results':len(jobs)-new_jobs,'published_estimate_usd':new_jobs*.02})
+    (args.output/'plan.json').write_text(json.dumps(plan,indent=2))
+    if args.prepare_only: print(json.dumps(plan),flush=True);return
     quotes=[]
     for events in args.output.glob('*/provider-events*.jsonl'):
         for event in map(json.loads,events.read_text().splitlines()):
@@ -177,8 +199,19 @@ def run(args):
         except Exception as e:
             report = {'status': 'failed', 'error_type': type(e).__name__, 'message':str(e)[:160], 'sourceFrame': frame['sourceFrame'], 'entityId': obj['entityId'], 'folder': folder.name}
             (folder / 'failure.json').write_text(json.dumps(report)); return report
+    # Obtain one current account price before the batch; repeated pricing GETs
+    # previously hit rate limits even though the inference budget was valid.
+    first=next((job for job in jobs if not (job[0]/'provider-output.json').exists()),None)
+    reports=[]
+    if first:
+        reports.append(process(first))
+        if not (first[0]/'provider-output.json').exists(): raise RuntimeError('First request incomplete; recover its saved request ID before continuing')
+        for path in sorted(first[0].glob('provider-events*.jsonl')):
+            for event in map(json.loads,path.read_text().splitlines()):
+                if event['phase']=='pricing': quote={'pricing':event['data'],'fetched_at':path.stat().st_mtime}
     # Three independently bounded requests; no resubmit on timeout or ambiguous completion.
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool: reports = list(pool.map(process, jobs))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool: reports += list(pool.map(process, [job for job in jobs if job is not first]))
+    reports.sort(key=lambda r:(r['sourceFrame'],r['entityId']))
     result = json.loads(args.scene.read_text())
     def relocate(url): return os.path.relpath((args.scene.parent / url).resolve(), args.output.resolve())
     for key in ['meshUrl', 'pointCloudUrl']:
@@ -204,5 +237,8 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__)
     for name in ['scene', 'native-scene', 'analysis', 'video', 'output']: p.add_argument('--' + name, type=Path, required=True)
     p.add_argument('--resume',action='store_true')
+    p.add_argument('--prepare-only',action='store_true')
+    p.add_argument('--reuse-run',type=Path,help='Reuse only byte-identical source image/mask provider results')
+    p.add_argument('--stride',type=int,default=10,choices=range(1,31))
     p.add_argument('--max-calls', type=int, required=True); p.add_argument('--max-usd', type=float, required=True)
     run(p.parse_args())

@@ -10,6 +10,26 @@ import numpy as np
 from reconstruct_room_rgb import digest
 
 
+def point_mesh(cloud, cameras, spacing):
+    """Connect measured points locally; do not extrapolate a closed room."""
+    import open3d as o3d
+    import trimesh
+    from scipy.spatial import cKDTree
+    points = np.asarray(cloud.vertices)
+    if len(points) < 30 or not np.isfinite(points).all() or not np.isfinite(cameras).all() or not 0 < spacing < 1:
+        raise ValueError('Invalid point-mesh source')
+    pc = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(points))
+    pc.colors = o3d.utility.Vector3dVector(np.asarray(cloud.colors)[:, :3] / 255)
+    pc.estimate_normals(o3d.geometry.KDTreeSearchParamHybrid(radius=spacing*4, max_nn=30))
+    _, nearest = cKDTree(cameras).query(points)
+    normals = np.asarray(pc.normals)
+    normals[(normals * (cameras[nearest] - points)).sum(1) < 0] *= -1
+    mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(pc, o3d.utility.DoubleVector([spacing*r for r in (1.5, 2, 3)]))
+    mesh.remove_degenerate_triangles(); mesh.remove_duplicated_triangles(); mesh.remove_unreferenced_vertices()
+    return trimesh.Trimesh(vertices=np.asarray(mesh.vertices), faces=np.asarray(mesh.triangles),
+        vertex_colors=np.rint(np.asarray(mesh.vertex_colors)*255).astype('uint8'), process=False)
+
+
 def depth_evidence(points, depth, excluded, k, c2w, tolerance=.04):
     local = (points - c2w[:3, 3]) @ c2w[:3, :3]
     projected = local @ k.T
@@ -30,7 +50,16 @@ def self_check():
     assert positive.tolist() == [0] and negative.tolist() == [1] # behind observed depth is occluded
     blocked[2, 2] = True
     assert all(len(a) == 0 for a in depth_evidence(points, depth, blocked, k, np.eye(4)))
+    import trimesh
+    x, y = np.meshgrid(np.arange(12)*.015, np.arange(12)*.015)
+    patches = np.column_stack((x.ravel(), y.ravel(), np.ones(x.size)))
+    patches = np.concatenate((patches, patches+[1,0,0]))
+    surface = point_mesh(trimesh.points.PointCloud(patches, colors=np.tile([150,150,150,255], (len(patches),1))), np.array([[0,0,0]]), .015)
+    assert len(surface.faces) > 200 and np.allclose(surface.vertices[:,2],1)
+    assert np.max(np.linalg.norm(np.diff(surface.vertices[surface.faces],axis=1),axis=2)) < .1
+    assert all(np.any(np.all(np.isclose(patches,v),axis=1)) for v in surface.vertices)
     print('PASS: static agreement, free-space contradictions, occlusion and dynamic-mask exclusion')
+    print('PASS: point-based reconstruction retains source XYZ and never bridges separated surfaces')
 
 
 def run(args):
@@ -39,8 +68,13 @@ def run(args):
     a = json.loads(args.analysis.read_text()); af = {f['sourceFrame']: f for f in a['frames']}
     if s['provenance']['native_scene_sha256'] != digest(args.native_scene) or s['provenance']['analysis_sha256'] != digest(args.analysis):raise ValueError('Source hash differs')
     inputs = {f['source_index']: f for f in json.loads((Path(n['source_run'])/'input.manifest.json').read_text())}
-    mesh = trimesh.load(args.scene.parent / s['meshUrl'], force='mesh', process=False)
     cloud = trimesh.load(args.scene.parent / s['pointCloudUrl'], force='scene', process=False).to_geometry()
+    if args.mesh_from_points:
+        evidence=s['provenance'].get('static_consistency',{})
+        if evidence.get('cloud_sha256') != digest(args.scene.parent/s['pointCloudUrl']): raise ValueError('Point mesh requires the checked static cloud')
+        spacing=s['provenance']['dense_cloud']['voxel_m']
+        mesh=point_mesh(cloud,np.array([np.array(f['c2w'])[:3,3] for f in s['frames']]),spacing)
+    else: mesh = trimesh.load(args.scene.parent / s['meshUrl'], force='mesh', process=False)
     triangles=mesh.vertices[mesh.faces]
     texture_samples=np.concatenate((triangles, (triangles+np.roll(triangles,1,axis=1))/2,triangles.mean(1)[:,None]),axis=1)
     texture_frame=np.full(len(mesh.faces),-1,np.int32);texture_score=np.zeros(len(mesh.faces));texture_sources={}
@@ -103,12 +137,16 @@ def run(args):
             'input_points':len(cloud_keep),'retained_points':len(cloud.vertices),'elapsedSeconds':time.monotonic()-started,
             'texture_mapped_triangles':int((texture_frame>=0).sum()),'texture_source_frames':sorted(int(x) for x in np.unique(texture_frame) if x>=0),
             'mesh_sha256':digest(args.output/'static-scene.glb'),'cloud_sha256':digest(args.output/'dense-static.glb')}
+    if args.mesh_from_points:
+        report['reconstruction']={'method':'Open3D ball pivoting on validated observed points','radii_m':[spacing*r for r in (1.5,2,3)],'normal_radius_m':spacing*4,'normal_neighbors':30,'coordinate_change':False,'hidden_surfaces_completed':False}
+        result['method'] += ' + measured-point surface reconstruction and source-photo texture'
     result['provenance']['static_consistency']=report
-    result['limitations'].append('静态网格与点云只保留至少3个未遮挡深度帧支持的区域；未观测区域仍不补造。')
+    result['limitations']=list(dict.fromkeys([*result['limitations'],'静态网格与点云只保留至少3个未遮挡深度帧支持的区域；未观测区域仍不补造。']))
     (args.output/'scene.json').write_text(json.dumps(result,ensure_ascii=False,allow_nan=False));(args.output/'metrics.json').write_text(json.dumps(report,indent=2));print(json.dumps(report))
 
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--self-check',action='store_true')
+    p.add_argument('--mesh-from-points',action='store_true',help='Reconstruct the previously checked dense cloud before depth and texture verification')
     for name in ['scene','native-scene','analysis','output']:p.add_argument('--'+name,type=Path)
     args=p.parse_args();self_check() if args.self_check else run(args)

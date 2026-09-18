@@ -135,7 +135,7 @@ export function applyFrame(frame:any,dynamic:Map<string,any>,frameId:string,mark
   for(let i=0;i<4;i++){show(`camera:${i}`,lineTransform(origin,corners[i],markerScale*.02,frameId));show(`camera:${i+4}`,lineTransform(corners[i],corners[(i+1)%4],markerScale*.02,frameId));}
   for(const object of frame.objects){
     // ponytail: closed 8-sided links visualize observed joints only; radius is illustrative, not body shape or measured girth.
-    for(const [a,b]of object.bones){const pa=object.keypoints3d[a],pb=object.keypoints3d[b];if(pa&&pb){const length=Math.hypot(...pb.map((v,k)=>v-pa[k]));show(`${object.entityId}:bone:${a}:${b}`,lineTransform(pa,pb,Math.min(markerScale*.22,length*.12),frameId),object.entityId);}}
+    for(const [a,b]of object.bones){const pa=object.keypoints3d[a],pb=object.keypoints3d[b];if(pa&&pb){const length=Math.hypot(...pb.map((v:number,k:number)=>v-pa[k]));show(`${object.entityId}:bone:${a}:${b}`,lineTransform(pa,pb,Math.min(markerScale*.22,length*.12),frameId),object.entityId);}}
     if(object.centroid)show(`${object.entityId}:centroid`,{coordinateFrameId:frameId,position:object.centroid,quaternion:[0,0,0,1],scale:Array(3).fill(markerScale*.18)},object.entityId);
   }
 }

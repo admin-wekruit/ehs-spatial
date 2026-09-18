@@ -289,7 +289,7 @@ $('video-fullscreen').onclick=async()=>{
 };
 // Native controls are safe only in video-only fullscreen, where the SVG is absent.
 document.addEventListener('fullscreenchange',()=>{video.controls=document.fullscreenElement===video;});
-for(const event of ['loadedmetadata','play','pause','ended','emptied','error'])video.addEventListener(event,syncPlaybackControls);
+for(const event of ['loadedmetadata','play','pause','ended','seeked','emptied','error'])video.addEventListener(event,syncPlaybackControls);
 $('scrubber').addEventListener('input',(event)=>seek(Number(event.target.value)));
 $('clear-selection').onclick = () => {state.selected = null; drawFrame(state.frame); drawObservations(); syncReplay();};
 $('scene-play').onclick=()=>$('play-toggle').click();
