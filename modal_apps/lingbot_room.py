@@ -55,6 +55,26 @@ def validate_indices(indices, count):
     return indices
 
 
+def streaming_interval(frame_count):
+    if type(frame_count) is not int or not 8 <= frame_count <= 768:
+        raise ValueError('Bounded streaming requires 8–768 frames')
+    # Official demo at REV: retain at most ~320 streaming keyframes.
+    return (frame_count + 319) // 320
+
+
+def infer_sequence(model, images, configuration, output_device):
+    mode = configuration.get('mode', 'streaming')
+    options = dict(num_scale_frames=configuration['anchor_frames'],
+                   keyframe_interval=configuration['keyframe_interval'], output_device=output_device)
+    if mode == 'streaming': return model.inference_streaming(images, **options)
+    if mode != 'windowed': raise ValueError('Unknown official inference mode')
+    size, overlap = configuration['window_size'], configuration['overlap_size']
+    if type(size) is not int or type(overlap) is not int or not 8 <= overlap < size <= 64:
+        raise ValueError('Bounded windows require 8 <= overlap < window <= 64')
+    return model.inference_windowed(images, window_size=size, overlap_size=overlap,
+                                    overlap_keyframes=None, **options)
+
+
 def validate_prediction(depth, confidence, points, k, c2w):
     import numpy as np
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
@@ -102,8 +122,8 @@ def prepare(manifest_path, sample_id, output, stride):
           'weights_sha256':WEIGHTS_SHA,'rgb_archive_sha256':digest(output/'rgb.tar'),
           'sensor_depth_uploaded':False,'groundtruth_uploaded':False,'new_training':False,
           'max_gpu_seconds':900,'max_gpu_attempts':1,'reserved_usd':2,
-          'configuration':{'image_size':518,'patch_size':14,'window':64,'anchor_frames':8,
-                           'camera_iterations':4,'backend':'sdpa','keyframe_interval':1}}
+          'configuration':{'mode':'streaming','image_size':518,'patch_size':14,'window':64,'anchor_frames':8,
+                           'camera_iterations':4,'backend':'sdpa','keyframe_interval':streaming_interval(len(records))}}
     save(output/'plan.json',plan); print(json.dumps({k:v for k,v in plan.items() if k!='frames'}),flush=True)
 
 
@@ -122,6 +142,11 @@ def infer(run_id, deadline, plan_sha):
     try:
         assert digest(root/'plan.json')==plan_sha
         plan=json.loads((root/'plan.json').read_text());assert plan['code_revision']==REV and plan['weights_sha256']==WEIGHTS_SHA
+        interval=plan['configuration']['keyframe_interval']
+        mode=plan['configuration'].get('mode','streaming')
+        if mode not in ('streaming','windowed'): raise ValueError('Unknown inference mode')
+        if type(interval) is not int or not 1 <= interval <= streaming_interval(len(plan['frames'])):
+            raise ValueError('Invalid declared streaming keyframe interval')
         assert not plan['sensor_depth_uploaded'] and not plan['groundtruth_uploaded']
         assert digest(root/'rgb.tar')==plan['rgb_archive_sha256']
         import numpy as np
@@ -140,19 +165,19 @@ def infer(run_id, deadline, plan_sha):
         from demo import load_model, postprocess, prepare_for_visualization
         from lingbot_map.utils.load_fn import load_and_preprocess_images
         from types import SimpleNamespace
-        args=SimpleNamespace(mode='streaming',image_size=518,patch_size=14,enable_3d_rope=True,
+        args=SimpleNamespace(mode=mode,image_size=518,patch_size=14,enable_3d_rope=True,
             max_frame_num=1024,kv_cache_sliding_window=64,num_scale_frames=8,use_sdpa=True,
             camera_num_iterations=4,model_path=weight)
         model=load_model(args,'cuda');model.aggregator=model.aggregator.to(dtype=torch.bfloat16);model.eval()
         images=load_and_preprocess_images([str(rgb/r['path']) for r in plan['frames']],mode='crop',image_size=518,patch_size=14)
         images=images.to('cuda');torch.cuda.reset_peak_memory_stats();begin=time.time()
         with torch.inference_mode(),torch.autocast('cuda',dtype=torch.bfloat16):
-            prediction=model.inference_streaming(images,num_scale_frames=8,keyframe_interval=1,output_device=torch.device('cpu'))
+            prediction=infer_sequence(model,images,plan['configuration'],torch.device('cpu'))
         torch.cuda.synchronize();infer_seconds=time.time()-begin;memory=torch.cuda.max_memory_allocated()
         # Preserve native outputs before any adapter work; an exporter failure
         # must not require another paid forward pass.
         raw=out/'native-prediction.pt'
-        torch.save({k:prediction[k] for k in ('depth','depth_conf','pose_enc','images')},raw)
+        torch.save({k:prediction[k] for k in ('depth','depth_conf','pose_enc','images','chunk_scales','chunk_transforms','alignment_mode') if k in prediction},raw)
         save(out/'native-prediction.json',{'keys':list(prediction),'sha256':digest(raw),
             'inference_seconds':infer_seconds,'peak_gpu_bytes':memory})
         volume.commit()
