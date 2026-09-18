@@ -75,6 +75,7 @@ flowchart LR
 | V07 | SAM3独立人员裁剪 → 官方预训练OSNet-AIN → 历史外观竞争 + 双次确认 → 重现候选 | `scripts/person_reid.py`、`link_person_tracklets.py`；43检测、3.23秒；新版2条候选3→1、6→0，源图一致 | 不改native ID、不当永久身份；弱遮挡样本保留unknown；阈值尚未经陌生人负样本集标定 |
 | V08 | 对象mask + 同域深度/相机 → 相邻像素三角化 → 独立对象GLB + 已有照片VLM核验 | `scripts/build_video_object_models.py`、`review_video_object_semantics.py`；6份可选择可见表面，VLM识别一处桌子/柜体误分类 | 6份观测不是6个已去重实体；只建可见表面。VLM复用绑定源图与mask overlay哈希，后续是否移动未知 |
 | V09 | 同一米制地图中的连续躯干参考点 → 两个稳健窗口 → 位移/平均速度 | `scripts/video_motion.py`；复用V05结果，保留源帧与固定分辨率策略 | 仅表面躯干位移估计，不是步态、人体重心或EHS判定；缺观测/换参考点重置，低于分辨率不等于静止 |
+| V10 | 标定RGB → 官方预训练DROID-SLAM特征/相关体与几何优化 → 原生相机/深度 | `modal_apps/droid_room.py`；1362帧/177关键帧，A100推理197.41秒、峰值显存3.59GB；独立全片Sim3 ATE 0.04083m | GT只用于事后评估，原生尺度未标定；完整相机含motion-only补全，不计为逐帧跟踪成功；终态低分辨率深度与优化前上采样快照分开，网格另验。此独立对照未实现Atlas重载 |
 
 这些条目分别记录感知算法、坐标估计与工程连接，不另造算法注册服务；参数以对应代码和每次 `run.json` 为准。原始失败、无 mask、身份冲突、未合并地图与未校准状态都必须保留。
 
