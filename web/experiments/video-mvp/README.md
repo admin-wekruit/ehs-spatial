@@ -106,7 +106,7 @@ node /Users/adam/.codex/worktrees/panoptes-phase2-video/web/experiments/video-mv
 
 空间合同固定为 `phase2-replay-scene-v1`，包含 `coordinate_frame`、`units`（`meters` 或 `uncalibrated_monocular`）、`source_video_sha256`、`method`、`limitations`、可选 `meshUrl`、原坐标点 `points: [[id,x,y,z],...]`，以及 `frames: [{sourceFrame,timeSec,endTimeSec,c2w,objects}]`。`c2w` 是嵌套 4×4 row-major 矩阵；每个对象提供 `entityId`、`keypoints3d`（XYZ 或 null）、`bones` 和可选 `centroid`。视频 SHA 与场景来源需相同。
 
-空间帧使用同样的半开时间区间。空档隐藏相机与全部人体；只有 centroid 时只显示中心标记，不补关节。静态场景保留；固定动态图元通过 alpha 0 同时退出绘制和拾取，避免重载网格。“观察区”仅调整浏览相机到真实 mesh/关节范围，或无表面时的真实相机轨迹；“全部点云”适配全部原点。两者都不改变、筛除或重新标定数据。
+空间帧使用同样的半开时间区间。空档隐藏相机与全部人体；只有 centroid 时只显示中心标记，不补关节。静态场景保留；固定动态图元通过 alpha 0 同时退出绘制和拾取，避免重载网格。“观察区”仅调整浏览相机到真实 mesh/关节范围；无表面和关节时适配声明的点云与相机范围。“全部点云”适配声明的全部显示点。两者都不改变、筛除或重新标定数据。导出端负责声明显示点的筛选规则，原始未筛选点另行归档。
 
 ## 检查记录
 

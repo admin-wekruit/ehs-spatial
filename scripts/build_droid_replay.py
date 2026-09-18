@@ -292,12 +292,17 @@ def build(args):
                 'PLY export changed native XYZ or RGB')
         # ponytail: deterministic display sampling only; full point order/colors
         # remain in PLY and raw arrays. Larger browser sets need streamed assets.
-        display_stride = max(1, int(np.ceil(len(points) / 300000)))
-        display_ids = np.arange(0, len(points), display_stride)
+        supported_ids = np.flatnonzero(np.concatenate([supported[i][valid[i]] for i in range(len(indices))]))
+        require(len(supported_ids) > 0, 'No cross-view supported points to display')
+        display_stride = max(1, int(np.ceil(len(supported_ids) / 300000)))
+        display_ids = supported_ids[::display_stride]
+        display_asset = args.output / 'supported-keyframe-points.glb'
+        trimesh.Scene(trimesh.points.PointCloud(points[display_ids], colors=point_colors[display_ids])).export(display_asset)
         scene = {'schema': 'phase2-replay-scene-v1', 'coordinate_frame': 'droid_final_native_world',
                  'units': 'uncalibrated_monocular', 'source_video_sha256': digest(args.video),
                  'method': f'DROID full motion-only filler camera replay; {args.depth_domain} native keyframe TSDF with viewer-rule depth support',
                  'points': [[int(i), *points[i].tolist()] for i in display_ids],
+                 'pointCloudUrl': display_asset.name, 'pointCloudCount': len(display_ids),
                  'meshUrl': 'predicted-scene.glb', 'complete_room_accepted': False,
                  'quality_status': 'not_validated',
                  'frames': [{'sourceFrame': i, 'timeSec': span[0], 'endTimeSec': span[1],
@@ -326,13 +331,15 @@ def build(args):
                                 'pointcloud': {'path': 'native-keyframe-points.ply',
                                                'sha256': digest(args.output / 'native-keyframe-points.ply'),
                                                'raw_points': len(points), 'displayed_points': len(display_ids),
+                                               'display_filter': 'same cross-view depth support as surface fusion',
+                                               'display_sha256': digest(display_asset),
                                                'display_stride': display_stride,
                                                'row_order': 'keyframe order, then row-major numeric-valid pixels; display ID is full PLY row'},
                                 'mesh_sha256': digest(args.output / 'predicted-scene.glb')},
                  'limitations': ['单目原生尺度未标定；尺寸和距离不是米。',
                                  '全帧相机是官方 motion-only 补全输出，不表示每帧跟踪成功。',
                                  f'表面仅用终态关键帧 {depth.shape[2]}×{depth.shape[1]} 深度；未混入补全位姿或旧上采样深度。',
-                                 '原始点云保留全部数值有效深度；表面使用官方可视化规则的 CPU 支持检查，不是 CUDA 位级复现。',
+                                 '原始点云保留全部数值有效深度；浏览器点云和表面均使用官方可视化规则的 CPU 支持检查，不是 CUDA 位级复现。',
                                  '模型支持筛选不代表独立几何精度或完整房间已验收。',
                                  '没有人体或物体掩码；场景中的运动物体未被剔除。']}
         write_json(args.output / 'geometry-frames.json', geometry)

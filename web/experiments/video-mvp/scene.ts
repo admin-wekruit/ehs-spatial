@@ -176,8 +176,8 @@ export async function mountReplay(container:HTMLElement,scene:any,base:string,op
   const extent=Math.max(Math.hypot(...max.map((v,k)=>v-min[k])),.01);
   const cameraExtent=cameraPoints.length?Math.hypot(...[0,1,2].map(k=>Math.max(...cameraPoints.map(p=>p[k]))-Math.min(...cameraPoints.map(p=>p[k])))):extent;
   const markerScale=scene.units==='meters'?.16:Math.max(cameraExtent,.01)*.04;
-  // Navigation frames actual observations; the all-points view keeps every original distant point accessible.
-  if(!observed.length)observed.push(...cameraPoints);
+  // A room without object overlays must frame the geometry, not just the camera path.
+  if(!observed.length)observed.push(...boundsCorners({min,max}));
   const hasSurfaces=scene.frames.some((f:any)=>f.objects.some((o:any)=>o.surface));
   let current:any=undefined,selected:string|null=null,disposed=false,objectView=false,fromSource=hasSurfaces,bodyModels=false,pointCloud=!!scene.pointCloudUrl||!scene.meshUrl;
   const surfaceCache=new Map<string,Promise<ReturnType<typeof readGLB>>>();
