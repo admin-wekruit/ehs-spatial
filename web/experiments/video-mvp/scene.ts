@@ -1,5 +1,5 @@
 import {mountSceneViewer,readGLB,type Mesh} from '../../src/viewer/native-viewer.ts';
-import {add,scale,unit,cross,fitCamera,boundsCorners,point} from '../../src/viewer/native-math.ts';
+import {add,scale,unit,cross,fitCamera,boundsCorners,point,sourceCamera} from '../../src/viewer/native-math.ts';
 import {assetUrl,frameAt} from './timeline.mjs';
 
 type XYZ = number[];
@@ -33,7 +33,7 @@ export function validateScene(data:any,sample:any,base:string){
       require(Array.isArray(object.keypoints3d)&&object.keypoints3d.every((p:any)=>p===null||xyz(p)),'3D 关节需为 XYZ 或 null');
       require(Array.isArray(object.bones)&&object.bones.every((edge:any)=>Array.isArray(edge)&&edge.length===2&&edge.every((i:any)=>Number.isInteger(i)&&i>=0&&i<object.keypoints3d.length)),'3D 骨连接索引无效');
       require(object.centroid==null||xyz(object.centroid),'3D 中心点需为 XYZ 或 null');
-      if(object.surface){const s=object.surface;assetUrl(s.meshUrl,base);require(s.sourceFrame===frame.sourceFrame&&s.representation==='visible_rgbd_surface'&&/^[a-f0-9]{64}$/.test(s.sha256),'人物表面与当前源帧不符');}
+      if(object.surface){const s=object.surface;assetUrl(s.meshUrl,base);require(s.sourceFrame===frame.sourceFrame&&s.representation===(data.units==='meters'?'visible_rgbd_surface':'visible_monocular_surface')&&/^[a-f0-9]{64}$/.test(s.sha256),'人物表面与当前源帧或深度来源不符');}
       if(object.world_motion!==undefined)require(['insufficient_evidence','below_resolution','observed_displacement'].includes(object.world_motion),'空间运动状态无效');
       if(object.motionEstimate){const m=object.motionEstimate;require(['below_resolution','observed_displacement'].includes(object.world_motion)&&m.status==='model_estimate_not_ground_truth'&&['hips','shoulders'].includes(m.anchor)&&Number.isFinite(m.elapsedSeconds)&&m.elapsedSeconds>0&&Number.isFinite(m.displacementM)&&m.displacementM>=0&&Array.isArray(m.sourceFrames)&&m.sourceFrames.length===2&&m.sourceFrames.every(Number.isInteger)&&m.sourceFrames[0]>=0&&m.sourceFrames[1]>m.sourceFrames[0]&&m.sourceFrames[1]<=frame.sourceFrame,'空间运动估计缺少有效来源');}
 
@@ -50,7 +50,7 @@ export function validateScene(data:any,sample:any,base:string){
     require(typeof object.label==='string'&&typeof object.displayName==='string','对象模型缺少名称');
     for(const url of [object.meshUrl,object.provenanceUrl,object.source?.maskUrl,object.source?.imageUrl])assetUrl(url,base);
     const source=object.source,frame=data.frames.find((f:any)=>f.sourceFrame===source.sourceFrame);
-    require(frame&&source.timeSec===frame.timeSec&&source.endTimeSec===frame.endTimeSec,'对象来源与空间帧时间不一致');
+    require(frame&&source.timeSec===frame.timeSec&&source.endTimeSec>source.timeSec&&source.endTimeSec<=frame.endTimeSec,'对象来源与空间帧时间不一致');
     require(source.width===sample.video.width&&source.height===sample.video.height,'对象掩码与原视频画幅不一致');
     require(Array.isArray(source.bbox)&&source.bbox.length===4&&source.bbox.every(Number.isFinite)&&source.bbox[2]>source.bbox[0]&&source.bbox[3]>source.bbox[1],'对象掩码来源框无效');
     if(object.semanticReview)require(['clear','partial','incorrect_prompt'].includes(object.semanticReview.status)&&typeof object.semanticReview.description==='string','对象模型核验格式无效');
@@ -213,7 +213,7 @@ export async function mountReplay(container:HTMLElement,scene:any,base:string,op
   const viewer=mountSceneViewer(container,{showSourcePhoto:false,resolveAsset:async id=>urls[id],layers:{showCandidates:true,editable:false,showBounds:false,lighting:false,opacity:1,pointSize:1.6,...replayLayers(scene,pointCloud)},onEvent:event=>{if(event.type==='selectionIntent')options.select(owner.get(event.entityId)||(staticIds.has(event.entityId)?event.entityId:null));if(event.type==='loadError')options.error(`空间资产加载失败：${event.code}`);if(event.type==='contextLost')options.error('三维图形上下文已丢失，请重新选择此样本。');}});
   const dispose=()=>{disposed=true;viewer.dispose();owned.forEach(url=>URL.revokeObjectURL(url));options.signal?.removeEventListener('abort',dispose);};
   options.signal?.addEventListener('abort',dispose,{once:true});
-  const sourceView=()=>{fromSource=true;for(const [id,e]of dynamic)if(id.startsWith('camera:'))e.representations[0].material.baseColorFactor[3]=0;void viewer.setScene(document);const frame=current||scene.frames[0];if(!frame)return;const c=frame.c2w,eye=c.slice(0,3).map((r:any)=>r[3]),forward=c.slice(0,3).map((r:any)=>r[2]),up=c.slice(0,3).map((r:any)=>-r[1]);viewer.setCamera({eye,target:add(eye,scale(forward,2)),up,mode:'free'});};
+  const sourceView=()=>{fromSource=true;for(const [id,e]of dynamic)if(id.startsWith('camera:'))e.representations[0].material.baseColorFactor[3]=0;void viewer.setScene(document);const frame=current||scene.frames[0];if(!frame)return;viewer.setCamera({...sourceCamera({cameraToWorld:frame.c2w},extent/2,min.map((v,k)=>(v+max[k])/2)),exact:false,mode:'free'});};
   const fit=(all=false)=>{fromSource=false;if(!Number.isFinite(extent))return;const c=scene.frames[0]?.c2w,up=c?unit(c.slice(0,3).map((r:any)=>-r[1])):[0,0,1],back=c?unit(c.slice(0,3).map((r:any)=>-r[2])):[0,-1,0];viewer.setCamera({...fitCamera(objectView&&objectBounds.length?objectBounds:!all&&observed.length?observed:boundsCorners({min,max}),unit(add(add(back,scale(cross(up,back),.35)),scale(up,.25))),up,Math.max(container.clientWidth,1)/Math.max(container.clientHeight,1)),mode:'free'});};
   await viewer.setScene(document);scene.humanSurfaces?sourceView():fit();
   return {

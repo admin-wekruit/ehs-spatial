@@ -24,9 +24,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from ehs_spatial.providers.sam3 import decode_coco_rle
 
 
-def observed_surface(color, depth, mask, k, c2w, max_edge_m=.05):
-    """Triangulate adjacent measured pixels only, leaving holes and silhouettes open."""
-    valid = mask & np.isfinite(depth) & (depth >= .2) & (depth <= 5)
+def observed_surface(color, depth, mask, k, c2w, max_edge_m=.05, *, depth_range=(.2,5)):
+    """Triangulate adjacent pixels only; bounds are in the input depth's units."""
+    if not 0 <= depth_range[0] < depth_range[1] or not np.isfinite(max_edge_m) or max_edge_m <= 0:
+        raise ValueError('Invalid surface depth/edge bounds')
+    valid = mask & np.isfinite(depth) & (depth > 0) & (depth >= depth_range[0]) & (depth <= depth_range[1])
     y, x = np.where(valid)
     pixels = np.column_stack((x, y))
     vertices = world_points(pixels, depth[valid], k, c2w)
@@ -38,7 +40,7 @@ def observed_surface(color, depth, mask, k, c2w, max_edge_m=.05):
     faces = faces[(faces >= 0).all(axis=1)]
     if len(faces):
         tri = vertices[faces]
-        # A fixed metric continuity bound prevents surfaces spanning depth jumps.
+        # A bound in the caller's depth units prevents spanning depth jumps.
         edges = np.linalg.norm(tri - np.roll(tri, 1, axis=1), axis=2)
         area2 = np.linalg.norm(np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]), axis=1)
         faces = faces[(edges.max(axis=1) <= max_edge_m) & (area2 > 1e-12)]

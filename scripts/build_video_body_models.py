@@ -70,6 +70,23 @@ def check_interpolations(scene, base, analysis_path, inputs):
     return records
 
 
+def camera_body(mesh, person, k, pixel_transform=None):
+    """Place cached MHR geometry in a supplied pinhole camera, before depth scaling."""
+    joints, pixels = np.array(person['keypoints_3d'], float), np.array(person['keypoints_2d'], float)
+    if joints.shape != (70, 3) or pixels.shape != (70, 2) or not np.isfinite(joints).all() or not np.isfinite(pixels).all():
+        raise ValueError('Invalid anatomical keypoints')
+    if pixel_transform is not None:
+        pixels=np.ascontiguousarray((np.column_stack((pixels,np.ones(len(pixels))))@np.asarray(pixel_transform).T)[:,:2])
+    ok, rotation, translation = cv2.solvePnP(joints, pixels, k, None, flags=cv2.SOLVEPNP_SQPNP)
+    if not ok: raise ValueError('Camera calibration solve failed')
+    uv, _ = cv2.projectPoints(joints, rotation, translation, k, None)
+    error = np.linalg.norm(uv[:, 0] - pixels, axis=1)
+    # Fal PLY is OpenGL camera space including pred_cam_t; MHR keypoints are root-relative OpenCV.
+    vertices = mesh.vertices * [1, -1, -1] - np.array(person['pred_cam_t'])
+    vertices = vertices @ cv2.Rodrigues(rotation)[0].T + translation.ravel()
+    return vertices, error
+
+
 def align(folder, frame, source, k, factor):
     import trimesh
     import open3d as o3d
@@ -80,16 +97,7 @@ def align(folder, frame, source, k, factor):
     if not mesh_path.exists():
         item = output['meshes'][0]; urllib.request.urlretrieve(item['url'] if isinstance(item, dict) else item, mesh_path)
     mesh = trimesh.load(mesh_path, force='mesh', process=False)
-    joints, pixels = np.array(person['keypoints_3d'], float), np.array(person['keypoints_2d'], float)
-    if joints.shape != (70, 3) or pixels.shape != (70, 2) or not np.isfinite(joints).all() or not np.isfinite(pixels).all():
-        raise ValueError('Invalid anatomical keypoints')
-    ok, rotation, translation = cv2.solvePnP(joints, pixels, k, None, flags=cv2.SOLVEPNP_SQPNP)
-    if not ok: raise ValueError('Camera calibration solve failed')
-    uv, _ = cv2.projectPoints(joints, rotation, translation, k, None)
-    error = np.linalg.norm(uv[:, 0] - pixels, axis=1)
-    # Fal PLY is OpenGL camera space including pred_cam_t; MHR keypoints are root-relative OpenCV.
-    vertices = mesh.vertices * [1, -1, -1] - np.array(person['pred_cam_t'])
-    vertices = vertices @ cv2.Rodrigues(rotation)[0].T + translation.ravel()
+    vertices, error = camera_body(mesh,person,k)
     mask = cv2.imread(str(folder / 'mask.png'), 0) > 0
     depth_path = Path(source['depth_source_path'])
     if digest(depth_path) != source['depth_sha256']: raise ValueError('Depth source changed')

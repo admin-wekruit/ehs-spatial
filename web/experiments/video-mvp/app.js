@@ -294,7 +294,7 @@ $('scrubber').addEventListener('input',(event)=>seek(Number(event.target.value))
 $('clear-selection').onclick = () => {state.selected = null; drawFrame(state.frame); drawObservations(); syncReplay();};
 $('scene-play').onclick=()=>$('play-toggle').click();
 $('scene-scrubber').addEventListener('input',event=>seek(Number(event.target.value)));
-$('scene-body').onclick=()=>{const enabled=$('scene-body').getAttribute('aria-pressed')!=='true';$('scene-body').setAttribute('aria-pressed',String(enabled));$('scene-body').textContent=enabled?'返回彩色实测表面':'人体网格估计';state.replay?.setBodyModels(enabled);};
+$('scene-body').onclick=()=>{const enabled=$('scene-body').getAttribute('aria-pressed')!=='true';$('scene-body').setAttribute('aria-pressed',String(enabled));$('scene-body').textContent=enabled?'返回彩色观测表面':'人体网格估计';state.replay?.setBodyModels(enabled);};
 $('scene-source').onclick=()=>state.replay?.sourceView();
 $('scene-expand').onclick=()=>{const panel=$('scene-panel');if(document.fullscreenElement)document.exitFullscreen();else panel.requestFullscreen().catch(error=>showError('scene-error',error.message));};
 $('scene-fit').onclick = () => state.replay?.fit();

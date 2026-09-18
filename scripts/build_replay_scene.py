@@ -47,7 +47,7 @@ def world_points(uv, z, k, c2w):
     return local @ c2w[:3, :3].T + c2w[:3, 3]
 
 
-def surface_joints(joints, depth, mask, k, c2w):
+def surface_joints(joints, depth, mask, k, c2w, max_depth_spread=.12):
     """Require mask-supported, locally consistent sensor depth at each joint."""
     result = []
     height, width = depth.shape
@@ -62,7 +62,7 @@ def surface_joints(joints, depth, mask, k, c2w):
         ys, xs = slice(max(0, y - 2), min(height, y + 3)), slice(max(0, x - 2), min(width, x + 3))
         patch = depth[ys, xs]
         support = patch[(patch > 0) & np.isfinite(patch) & mask[ys, xs]]
-        if len(support) < 3 or np.percentile(support, 90) - np.percentile(support, 10) > .12:
+        if len(support) < 3 or np.percentile(support, 90) - np.percentile(support, 10) > max_depth_spread:
             result.append(None)
             continue
         result.append(world_points([joint[:2]], [np.median(support)], k, c2w)[0].tolist())

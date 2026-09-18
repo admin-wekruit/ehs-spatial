@@ -17,6 +17,9 @@ const sourceObject={entityId:'obs-one',label:'chair',displayName:'chair 1',meshU
 const withObject={...scene,staticObjects:[sourceObject]},sizedSample={video:{...sample.video,width:640,height:480}};
 assert.equal(validateScene(withObject,sizedSample,base),withObject);
 assert.throws(()=>validateScene({...withObject,staticObjects:[{...sourceObject,source:{...sourceObject.source,timeSec:.01}}]},sizedSample,base),/来源/);
+const heldSample={...withObject,frames:[{...scene.frames[0],endTimeSec:.3}]};
+assert.equal(validateScene(heldSample,sizedSample,base),heldSample); // Mask keeps its original .1s interval in a held 3D sample.
+assert.throws(()=>validateScene({...withObject,staticObjects:[{...sourceObject,source:{...sourceObject.source,endTimeSec:.2}}]},sizedSample,base),/来源/);
 const objectDocument=replayDocument(withObject,{'obs-one':'chair.glb'},()=> '#65e2be').document;
 const objectEntity=objectDocument.entities.find(e=>e.id==='obs-one');
 assert.equal(objectEntity.sourceContext,undefined);assert.equal(objectEntity.representations[0].kind,'generated_mesh');
@@ -57,6 +60,10 @@ assert.equal(staticSignature(),before);
 console.log('PASS: scene provenance, time intervals, exact point XYZ, bone transforms, missing joints, clear gaps and stable GPU asset signature');
 
 const surfaced=structuredClone(scene);surfaced.frames[0].objects[0].surface={sourceFrame:0,meshUrl:'human.glb',sha256:'c'.repeat(64),representation:'visible_rgbd_surface'};
+const monocularSurface=structuredClone(surfaced);monocularSurface.units='uncalibrated_monocular';
+assert.throws(()=>validateScene(monocularSurface,sample,base),/深度来源/);
+monocularSurface.frames[0].objects[0].surface.representation='visible_monocular_surface';
+assert.equal(validateScene(monocularSurface,sample,base),monocularSurface);
 assert.equal(validateScene(surfaced,sample,base),surfaced);
 surfaced.frames[0].objects[0].surface.sourceFrame=1;
 assert.throws(()=>validateScene(surfaced,sample,base),/当前源帧/);
