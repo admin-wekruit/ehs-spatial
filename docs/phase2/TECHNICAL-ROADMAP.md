@@ -31,7 +31,7 @@
 | 技术路线 | 输入与提取的特征 | 核心算法及输出 | 对我们有用、但未覆盖的部分 |
 |---|---|---|---|
 | [ORB-SLAM3](https://github.com/UZ-SLAMLab/ORB_SLAM3) | 连续图像、K；ORB 角点与二进制描述子、地点词袋 | 特征对应、几何位姿、局部/全局优化、地点识别、回环和 Atlas | 提供相机/关键帧/稀疏地图，不提供对象语义、身体姿态或完整表面；单目没有自动可验证的米制尺度 |
-| [DROID-SLAM](https://github.com/princeton-vl/DROID-SLAM) | 图像与 K；预训练密集特征、相关体 | 循环更新对应关系与稠密 BA，得到相机和深度 | 已作为独立RGB对照运行1362帧，未与ORB拼接成同一地图。全片Sim3轨迹误差0.04083m，最终低分辨率深度网格仍零散；保存重建文件不等于跨进程旧图重定位。详见[实际记录](VIDEO-MVP.md) |
+| [DROID-SLAM](https://github.com/princeton-vl/DROID-SLAM) | 图像与 K；预训练密集特征、相关体 | 循环更新对应关系与稠密 BA，得到相机和深度 | 已作为独立RGB对照运行1362帧，未与ORB拼接成同一地图。全片Sim3轨迹误差0.04083m，最终高分辨率深度网格仍零散；保存重建文件不等于跨进程旧图重定位。详见[实际记录](VIDEO-MVP.md) |
 | [MASt3R-SLAM](https://github.com/rmurai0610/MASt3R-SLAM) | RGB；预训练对应特征与稠密几何 | 相机跟踪、回环、同进程失跟重定位与稠密点图 | 是较新的无标定候选；当前公开入口未核查到保存后重载继续定位，CUDA/非商业许可也与首轮本机路径不同 |
 | [ConceptGraphs](https://github.com/concept-graphs/concept-graphs) | RGB、深度、相机位姿；分割区域、CLIP 区域向量、所属 3D 点 | 空间 overlap/IoU 与特征相似度关联，融合对象点云/特征，再组织语义关系 | 借鉴静态对象记忆；[论文](https://concept-graphs.github.io/assets/pdf/2023-ConceptGraphs.pdf)把时间动态列为后续方向，不能直接累计移动人/车的世界点云 |
 | [Khronos](https://github.com/MIT-SPARK/Khronos) | RGB-D、语义、里程计与时间；对象/背景分离 | 动态片段重建、场景变化与带时间的场景图 | 借鉴生命周期/历史查询；当前 ROS2 版未稳定。[论文限制](https://arxiv.org/html/2402.13817v2#S7)包括移动后片段关联和完整6DoF配准；保存4D结果不等于RGB相机重定位或持久人车身份 |
