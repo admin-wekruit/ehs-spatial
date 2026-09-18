@@ -55,28 +55,71 @@ def body_at(index,entity,cache,observations):
     return mesh,person,[a,b]
 
 
+def refine_body_alignment(vertices,joints,pixels,k,z,depth,overlap):
+    """Refine one similarity pose while retaining the source image constraints."""
+    from scipy.optimize import least_squares
+    y,x=np.where(overlap)
+    # ponytail: one projective correspondence step and at most 1024 fit rays;
+    # this cannot repair wrong articulation. Validate the full raster afterward.
+    sample=np.linspace(0,len(x)-1,min(4096,len(x)),dtype=int)[::4];x,y=x[sample],y[sample]
+    rays=np.column_stack((x+.5,y+.5,np.ones(len(x))))@np.linalg.inv(k).T
+    points=rays*z[y,x,None];target=rays*depth[y,x,None]
+    center=points.mean(axis=0);reference=np.median(target[:,2]);image=np.column_stack((x+.5,y+.5))
+    def apply(points,params):
+        return (points-center)@cv2.Rodrigues(params[:3])[0].T*np.exp(params[6])+center+params[3:6]*reference
+    def project(points):
+        q=points@k.T;return q[:,:2]/np.maximum(q[:,2:],1e-8)
+    def residual(params):
+        updated=apply(points,params);keypoints=apply(joints,params)
+        return np.r_[((updated[:,2]-target[:,2])/(target[:,2]*.04))/np.sqrt(len(points)),
+            ((project(updated)-image)/5).ravel()/np.sqrt(len(points)),
+            ((project(keypoints)-pixels)/5).ravel()/np.sqrt(len(joints))]
+    fit=least_squares(residual,np.zeros(7),max_nfev=30,loss='soft_l1',
+        bounds=([-.3]*3+[-.1]*3+[-.3],[.3]*3+[.1]*3+[.3]))
+    matrix=np.eye(4);matrix[:3,:3]=cv2.Rodrigues(fit.x[:3])[0]*np.exp(fit.x[6])
+    matrix[:3,3]=center-center@matrix[:3,:3].T+fit.x[3:6]*reference
+    return apply(vertices,fit.x),apply(joints,fit.x),{
+        'method':'projective similarity with source keypoint and surface-pixel constraints',
+        'camera_similarity':matrix.tolist(),'fit_rays':len(points),'evaluations':fit.nfev,
+        'converged':bool(fit.success),'initial_cost':float(np.sum(residual(np.zeros(7))**2)),
+        'final_cost':float(np.sum(residual(fit.x)**2)),
+        'body_articulation_changed':False,'validation_rays':'all supported source-mask pixels'}
+
+
 def fit_body(mesh,person,k,transform,depth,mask,confidence,c2w):
     import open3d as o3d
-    vertices,error=camera_body(mesh,person,k,transform)
-    cast=o3d.t.geometry.RaycastingScene()
-    cast.add_triangles(o3d.t.geometry.TriangleMesh(o3d.core.Tensor(vertices.astype('float32')),
-        o3d.core.Tensor(mesh.faces.astype('uint32'))))
+    vertices,joints,error=camera_body(mesh,person,k,transform)
     h,w=mask.shape
-    z=cast.cast_rays(cast.create_rays_pinhole(k,np.eye(4),w,h))['t_hit'].numpy()
+    def render(vertices):
+        cast=o3d.t.geometry.RaycastingScene()
+        cast.add_triangles(o3d.t.geometry.TriangleMesh(o3d.core.Tensor(vertices.astype('float32')),
+            o3d.core.Tensor(mesh.faces.astype('uint32'))))
+        return cast.cast_rays(cast.create_rays_pinhole(k,np.eye(4),w,h))['t_hit'].numpy()
+    z=render(vertices)
     visible=np.isfinite(z)&(z>0)
     overlap=visible&mask&(confidence>=1.5)&np.isfinite(depth)&(depth>0)
     report={'depth_support_pixels':int(overlap.sum()),'silhouette_iou':float((visible&mask).sum()/max(1,(visible|mask).sum())),
         'pnp_error_px_p95':float(np.percentile(error,95)),'metric_scale_validated':False,
         'validation':'consistency with estimated monocular depth and source mask, not field accuracy'}
     if overlap.sum()<300:return None,{**report,'status':'insufficient_predicted_depth'}
-    scale=float(np.median(depth[overlap]/z[overlap]));relative=abs(z[overlap]*scale-depth[overlap])/depth[overlap]
+    scale=float(np.median(depth[overlap]/z[overlap]))
+    pixels=(np.column_stack((person['keypoints_2d'],np.ones(70)))@transform.T)[:,:2]
+    vertices,joints,refinement=refine_body_alignment(vertices*scale,joints*scale,pixels,k,z*scale,depth,overlap)
+    z=render(vertices);visible=np.isfinite(z)&(z>0)
+    overlap=visible&mask&(confidence>=1.5)&np.isfinite(depth)&(depth>0)
+    q=joints@k.T;error=np.linalg.norm(q[:,:2]/np.maximum(q[:,2:],1e-8)-pixels,axis=1)
+    report.update(depth_support_pixels=int(overlap.sum()),silhouette_iou=float((visible&mask).sum()/max(1,(visible|mask).sum())),
+        pnp_error_px_p95=float(np.percentile(error,95)),alignment_refinement=refinement,
+        camera_keypoints=joints.tolist(),source_keypoints_pixels=pixels.tolist())
+    if overlap.sum()<300:return None,{**report,'status':'insufficient_predicted_depth'}
+    relative=abs(z[overlap]-depth[overlap])/depth[overlap]
     report.update(scale_native_per_body_unit=scale,relative_depth_median=float(np.median(relative)),
         relative_depth_p95=float(np.percentile(relative,95)),
         quality_gate={'min_iou':.65,'max_relative_depth_median':.04,'max_relative_depth_p95':.10,'max_pnp_p95_px':5})
     accepted=report['silhouette_iou']>=.65 and report['pnp_error_px_p95']<=5 and np.median(relative)<=.04 and np.percentile(relative,95)<=.10
     report['status']='accepted_model_estimate' if accepted else 'rejected_alignment'
     if not accepted:return None,report
-    mesh.vertices=vertices*scale@c2w[:3,:3].T+c2w[:3,3]
+    mesh.vertices=vertices@c2w[:3,:3].T+c2w[:3,3]
     mesh.visual.vertex_colors=[178,207,222,255]
     return mesh,report
 

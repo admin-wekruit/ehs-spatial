@@ -84,7 +84,8 @@ def camera_body(mesh, person, k, pixel_transform=None):
     # Fal PLY is OpenGL camera space including pred_cam_t; MHR keypoints are root-relative OpenCV.
     vertices = mesh.vertices * [1, -1, -1] - np.array(person['pred_cam_t'])
     vertices = vertices @ cv2.Rodrigues(rotation)[0].T + translation.ravel()
-    return vertices, error
+    camera_joints = joints @ cv2.Rodrigues(rotation)[0].T + translation.ravel()
+    return vertices, camera_joints, error
 
 
 def align(folder, frame, source, k, factor):
@@ -97,7 +98,7 @@ def align(folder, frame, source, k, factor):
     if not mesh_path.exists():
         item = output['meshes'][0]; urllib.request.urlretrieve(item['url'] if isinstance(item, dict) else item, mesh_path)
     mesh = trimesh.load(mesh_path, force='mesh', process=False)
-    vertices, error = camera_body(mesh,person,k)
+    vertices, _, error = camera_body(mesh,person,k)
     mask = cv2.imread(str(folder / 'mask.png'), 0) > 0
     depth_path = Path(source['depth_source_path'])
     if digest(depth_path) != source['depth_sha256']: raise ValueError('Depth source changed')

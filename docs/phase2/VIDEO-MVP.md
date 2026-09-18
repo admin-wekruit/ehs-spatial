@@ -4,9 +4,17 @@
 
 ## 当前交付（2026-09-18，以下实验历史按时间保留）
 
+### 人体配准006：保留原图约束，减少模型缺口
+
+walking默认更新至`runs/lingbot-walking-replay-006/scene.json`。对005全部412次人物观测排查：126次仅深度P95超限，抽查腿部/躯干内部仍有误差，腐蚀mask边缘未解决。对368次有足够深度的观测，直接三维相似配准仅8次通过，并使178次原有效观测失效，因而未采用；失败实验保存在`runs/lingbot-body-alignment-diagnostic-001/registration.json`。
+
+复用SciPy最小二乘，在初始PnP和尺度估计后联合约束预测深度、表面像素与70个源关键点。只优化整体旋转、平移和统一尺度，不改变人体关节形状；最多1024条射线拟合，全部有效像素重新射线检查。保持原IoU≥0.65、关键点P95≤5px、相对深度中位≤4%/P95≤10%、支持≥300px门槛。实际导出 **205/412** 次人体估计，比005增加19次、未丢失原186次；389份彩色表面与6份对象来源保留。162次对齐拒绝、45次深度不足仍保留原因。全片CPU构建31.86秒，新增模型调用0、计算费用0；地图与缓存未重新推理。
+
+`tests/check_body_refinement.py`用已知倾斜表面检查深度改善、源像素约束、不同原生尺度及无形变的相似变换。`tests/check_lingbot_delivery.py`独立读取205份已导出网格，并从原provider缓存重新取源关键点核对最终投影；205份网格、389份表面及6份源时间全部通过。此前仅检查初始PnP的关键点误差，现在检查最终配准后的误差。当前仍非全时段人体覆盖、持久身份或完整房间验收。
+
 ### LingBot RGB 接入：点云、场景网格、人物和已有照片分析
 
-当前 walking 默认入口为 `runs/lingbot-walking-replay-005/scene.json`，旧 RGB-D 003 原件保留作对照。这次几何输入是 28.927 秒视频的 287 张 RGB 图片，每3帧取一张；未上传传感器深度、GT轨迹或旧地图，没有新训练。官方 LingBot-Map 源码固定 `849e690bb086103637e44b1e91878d9d43a8bf0c`，权重固定 `204754b72bb24f561f8d7e7e1e4e4cd9e809adf9`，执行与导出入口为 `modal_apps/lingbot_room.py`、`scripts/build_lingbot_replay.py`。
+首个 LingBot walking 交付为 `runs/lingbot-walking-replay-005/scene.json`，005及旧 RGB-D 003 原件保留作对照。这次几何输入是 28.927 秒视频的 287 张 RGB 图片，每3帧取一张；未上传传感器深度、GT轨迹或旧地图，没有新训练。官方 LingBot-Map 源码固定 `849e690bb086103637e44b1e91878d9d43a8bf0c`，权重固定 `204754b72bb24f561f8d7e7e1e4e4cd9e809adf9`，执行与导出入口为 `modal_apps/lingbot_room.py`、`scripts/build_lingbot_replay.py`。
 
 真实 A100-80GB/SDPA 推理为 **62.59秒**，含模型加载和导出为175.37秒，峰值分配显存15.99GB。不是官方演示FPS或上传到报告总耗时。首次尝试在导出时错误访问关闭的point head，原失败保留；后续在适配前保存原始张量，收集失败不再触发付费推理。
 

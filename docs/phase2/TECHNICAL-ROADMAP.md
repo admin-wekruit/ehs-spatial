@@ -30,7 +30,7 @@
 
 ### 2026-09-18：把候选变成同输入实跑
 
-用户要求优先使用 LingBot-Map 的几何重建并连接已有下游。已通过 `modal_apps/lingbot_room.py` 实跑 walking 视频287个RGB帧，固定官方代码 `849e690bb086103637e44b1e91878d9d43a8bf0c` 与公开权重SHA；未输入传感器深度或GT，没有新训练。修正W2C适配、通过跨帧RGB几何检查后，`runs/lingbot-walking-replay-005/`已接入原walking页面，旧RGB-D结果作为独立对照保留。人物/对象识别、人体形状、时间状态和已有分析由下游复用提供，不把LingBot的几何轨迹记忆当作人物身份记忆。001导出失败、002原生GPU结果、003仅CPU相机字段更正全部归档，实际记录见[MVP记录](VIDEO-MVP.md)。
+用户要求优先使用 LingBot-Map 的几何重建并连接已有下游。已通过 `modal_apps/lingbot_room.py` 实跑 walking 视频287个RGB帧，固定官方代码 `849e690bb086103637e44b1e91878d9d43a8bf0c` 与公开权重SHA；未输入传感器深度或GT，没有新训练。修正W2C适配、通过跨帧RGB几何检查后，`runs/lingbot-walking-replay-006/`已接入原walking页面，旧RGB-D结果作为独立对照保留。人物/对象识别、人体形状、时间状态和已有分析由下游复用提供，不把LingBot的几何轨迹记忆当作人物身份记忆。001导出失败、002原生GPU结果、003仅CPU相机字段更正全部归档，实际记录见[MVP记录](VIDEO-MVP.md)。
 
 | 候选 | 在同一处理链里的位置 | 与已有代码的结合点 | 需要实际验证的部分 |
 |---|---|---|---|
@@ -197,4 +197,4 @@ Atlas 的特殊验收：源码虽然有 SaveAtlas/LoadAtlas，但加载后会创
 
 ### 2026-09-18实际接入更新
 
-LingBot-Map不再只是候选：287帧纯RGB已实跑，深度/K/W2C转入现有场景契约，并复用SAM3、RTMPose、人体形状缓存、对象mask与照片VLM。通过RGB跨帧检查后，静态网格及动态模型共用其未标定坐标，当前产物`runs/lingbot-walking-replay-005/scene.json`；旧RGB-D003独立保留。具体质量数字、相机约定修正、32次补算和预算100美元的授权见[MVP记录](VIDEO-MVP.md)。本次证明几何与现有能力的工程连接；M1跨次持久地图、M2持续身份和M4完整逐对象建模仍各有未通过项，不能以新点云取代这些验收。
+LingBot-Map不再只是候选：287帧纯RGB已实跑，深度/K/W2C转入现有场景契约，并复用SAM3、RTMPose、人体形状缓存、对象mask与照片VLM。通过RGB跨帧检查后，静态网格及动态模型共用其未标定坐标，当前产物`runs/lingbot-walking-replay-006/scene.json`；旧RGB-D003独立保留。具体质量数字、相机约定修正、32次补算和预算100美元的授权见[MVP记录](VIDEO-MVP.md)。本次证明几何与现有能力的工程连接；M1跨次持久地图、M2持续身份和M4完整逐对象建模仍各有未通过项，不能以新点云取代这些验收。

@@ -12,7 +12,7 @@ import open3d as o3d
 import trimesh
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from build_lingbot_replay import read_prediction,resize_mask
+from build_lingbot_replay import read_prediction,resize_mask,source_transform
 from reconstruct_room_rgb import digest
 
 p=argparse.ArgumentParser(description=__doc__)
@@ -26,6 +26,9 @@ assert scene['source_video_sha256']==analysis['provenance']['sourceVideoSha256']
 review=scene['provenance']['static_consistency']
 for url,key in [('meshUrl','mesh_sha256'),('pointCloudUrl','cloud_sha256')]:assert digest(a.scene.parent/scene[url])==review[key]
 bodies={(b['sourceFrame'],b['entityId']):b for b in scene['bodyKeyframes']};records=[];surfaces=0
+evidence=json.loads((a.scene.parent/'evidence.json').read_text())
+cache={(c['sourceFrame'],c['entityId']):c for c in evidence['cache']}
+pixel_transform,_,_=source_transform((analysis['height'],analysis['width']))
 for frame,native in zip(scene['frames'],execution['frames'],strict=True):
     index=frame['sourceFrame'];assert index==native['sourceFrame']
     path=a.run/native['file'];assert digest(path)==native['sha256']
@@ -44,6 +47,20 @@ for frame,native in zip(scene['frames'],execution['frames'],strict=True):
             assert mask[pixels[:,1],pixels[:,0]].all();surfaces+=1
         b=bodies.get((index,obj['entityId']))
         if not b:continue
+        sources=b['source_prediction_frames'];source_pixels=[]
+        for source_index in sources:
+            cached=cache[(source_index,obj['entityId'])];cached_path=Path(cached['path'])/'provider-output.json'
+            assert digest(cached_path)==cached['provider_output_sha256']
+            source_pixels.append(np.array(json.loads(cached_path.read_text())['metadata']['people'][0]['keypoints_2d']))
+        pixels=source_pixels[0]
+        if len(sources)==2:
+            t=(observations[index]['timeSec']-observations[sources[0]]['timeSec'])/(observations[sources[1]]['timeSec']-observations[sources[0]]['timeSec'])
+            pixels=pixels*(1-t)+source_pixels[1]*t
+        pixels=(np.column_stack((pixels,np.ones(70)))@pixel_transform.T)[:,:2]
+        assert np.allclose(pixels,b['source_keypoints_pixels'])
+        q=np.asarray(b['camera_keypoints'])@k.T;assert (q[:,2]>0).all()
+        keypoint_p95=float(np.percentile(np.linalg.norm(q[:,:2]/q[:,2:]-pixels,axis=1),95))
+        assert keypoint_p95<=5 and abs(keypoint_p95-b['pnp_error_px_p95'])<1e-7
         path=a.scene.parent/b['meshUrl'];assert digest(path)==b['mesh_sha256']
         mesh=trimesh.load(path,force='mesh',process=False)
         local=(mesh.vertices-camera[:3,3])@camera[:3,:3]
@@ -54,7 +71,8 @@ for frame,native in zip(scene['frames'],execution['frames'],strict=True):
         iou=float((visible&mask).sum()/max(1,(visible|mask).sum()))
         residual=abs(z[overlap]-depth[overlap])/depth[overlap]
         assert overlap.sum()>=300 and iou>=.65 and np.median(residual)<=.04001 and np.percentile(residual,95)<=.10001
-        records.append({'sourceFrame':index,'entityId':obj['entityId'],'iou':iou,'relative_depth_p95':float(np.percentile(residual,95))})
+        records.append({'sourceFrame':index,'entityId':obj['entityId'],'iou':iou,'relative_depth_p95':float(np.percentile(residual,95)),
+            'source_keypoint_p95_px':keypoint_p95})
 for obj in scene['staticObjects']:
     source=obj['source'];original=observations[source['sourceFrame']]
     assert source['timeSec']==original['timeSec'] and source['endTimeSec']==original['endTimeSec'],'Held 3D interval must not widen the original mask interval'

@@ -55,6 +55,6 @@ camera=joints+[0,0,3];uv=camera@k.T;pixels=uv[:,:2]/uv[:,2:]
 person={'keypoints_3d':joints.tolist(),'keypoints_2d':pixels.tolist(),'pred_cam_t':[0,0,3]}
 mesh=SimpleNamespace(vertices=camera*[1,-1,-1])
 transform,_,_=source_transform((480,640));resized_k=transform@k
-vertices,error=camera_body(mesh,person,resized_k,transform)
-assert np.max(error)<1e-6 and np.allclose(vertices,camera,atol=1e-6),'Cached body must use resized camera pixel coordinates'
+vertices,camera_joints,error=camera_body(mesh,person,resized_k,transform)
+assert np.max(error)<1e-6 and np.allclose(vertices,camera,atol=1e-6) and np.allclose(camera_joints,camera,atol=1e-6),'Cached body must use resized camera pixel coordinates'
 print('PASS: LingBot camera/depth/XYZ and chronological source contract')
