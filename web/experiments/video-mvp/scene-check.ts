@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {validateScene,lineTransform,pointsGLB,replayDocument,applyFrame,replayLayers} from './scene.ts';
+import {validateScene,lineTransform,pointsGLB,replayDocument,applyFrame,replayLayers,bodySample,interpolateBody} from './scene.ts';
 import {readGLB,sceneRepresentationTasks} from '../../src/viewer/native-viewer.ts';
 import {point,transformMatrix} from '../../src/viewer/native-math.ts';
 
@@ -55,3 +55,22 @@ applyFrame(null,dynamic,'test',.1,null);
 assert.ok([...dynamic.values()].every(e=>e.representations[0].material.baseColorFactor[3]===0));
 assert.equal(staticSignature(),before);
 console.log('PASS: scene provenance, time intervals, exact point XYZ, bone transforms, missing joints, clear gaps and stable GPU asset signature');
+
+const surfaced=structuredClone(scene);surfaced.frames[0].objects[0].surface={sourceFrame:0,meshUrl:'human.glb',sha256:'c'.repeat(64),representation:'visible_rgbd_surface'};
+assert.equal(validateScene(surfaced,sample,base),surfaced);
+surfaced.frames[0].objects[0].surface.sourceFrame=1;
+assert.throws(()=>validateScene(surfaced,sample,base),/当前源帧/);
+const timeline={bodyInterpolation:[{sourceFrame:1,entityId:'a',status:'accepted_model_estimate',keyframes:[0,2]}],frames:[0,1,2].map(i=>({sourceFrame:i,timeSec:i*.1,objects:[{entityId:'a'}]})),bodyKeyframes:[0,2].map(i=>({sourceFrame:i,timeSec:i*.1,entityId:'a',topology_sha256:'d'.repeat(64),vertices:1}))};
+assert.equal(bodySample(timeline,timeline.frames[1],'a').t,.5);
+assert.equal(bodySample({...timeline,frames:[timeline.frames[0],timeline.frames[2]]},timeline.frames[1],'a'),null);
+const gap=structuredClone(timeline);gap.frames[1].objects=[];assert.equal(bodySample(gap,timeline.frames[1],'a'),null);
+const wrongTopology=structuredClone(timeline);wrongTopology.bodyKeyframes[1].topology_sha256='e'.repeat(64);assert.equal(bodySample(wrongTopology,timeline.frames[1],'a'),null);
+const nextMesh={...mesh,vertices:mesh.vertices.slice()};nextMesh.vertices[0]+=2;
+assert.equal(interpolateBody(mesh,nextMesh,.5).vertices[0],mesh.vertices[0]+1);
+assert.throws(()=>interpolateBody(mesh,{...nextMesh,indices:new Uint32Array([2])},.5),/拓扑/);
+console.log('PASS: human source-frame binding, missing-observation rejection and same-topology short-gap interpolation');
+
+assert.equal(bodySample({...timeline,bodyInterpolation:[]},timeline.frames[1],'a'),null);
+assert.equal(bodySample({...timeline,bodyInterpolation:[{sourceFrame:1,entityId:'a',status:'rejected_alignment'}]},timeline.frames[1],'a'),null);
+console.log('PASS: unreviewed or rejected in-between body geometry never renders');
+assert.equal(bodySample({...timeline,bodyInterpolation:[{...timeline.bodyInterpolation[0],keyframes:[0,3]}]},timeline.frames[1],'a'),null);

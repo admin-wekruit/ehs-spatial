@@ -1,4 +1,4 @@
-import {mountSceneViewer,readGLB} from '../../src/viewer/native-viewer.ts';
+import {mountSceneViewer,readGLB,type Mesh} from '../../src/viewer/native-viewer.ts';
 import {add,scale,unit,cross,fitCamera,boundsCorners,point} from '../../src/viewer/native-math.ts';
 import {assetUrl,frameAt} from './timeline.mjs';
 
@@ -17,6 +17,7 @@ export function validateScene(data:any,sample:any,base:string){
   const ids=new Set();
   for(const p of data.points){require(Array.isArray(p)&&p.length===4&&['string','number'].includes(typeof p[0])&&xyz(p.slice(1))&&!ids.has(p[0]),'空间点必须有唯一 ID 与有限 XYZ');ids.add(p[0]);}
   if(data.meshUrl)assetUrl(data.meshUrl,base);
+  if(data.pointCloudUrl){assetUrl(data.pointCloudUrl,base);require(Number.isInteger(data.pointCloudCount)&&data.pointCloudCount>0&&data.pointCloudCount<=300000,'密集点云数量无效');}
   require(Array.isArray(data.frames),'空间结果缺少 frames');
   let previousEnd=0;
   for(const frame of data.frames){
@@ -32,10 +33,15 @@ export function validateScene(data:any,sample:any,base:string){
       require(Array.isArray(object.keypoints3d)&&object.keypoints3d.every((p:any)=>p===null||xyz(p)),'3D 关节需为 XYZ 或 null');
       require(Array.isArray(object.bones)&&object.bones.every((edge:any)=>Array.isArray(edge)&&edge.length===2&&edge.every((i:any)=>Number.isInteger(i)&&i>=0&&i<object.keypoints3d.length)),'3D 骨连接索引无效');
       require(object.centroid==null||xyz(object.centroid),'3D 中心点需为 XYZ 或 null');
+      if(object.surface){const s=object.surface;assetUrl(s.meshUrl,base);require(s.sourceFrame===frame.sourceFrame&&s.representation==='visible_rgbd_surface'&&/^[a-f0-9]{64}$/.test(s.sha256),'人物表面与当前源帧不符');}
       if(object.world_motion!==undefined)require(['insufficient_evidence','below_resolution','observed_displacement'].includes(object.world_motion),'空间运动状态无效');
       if(object.motionEstimate){const m=object.motionEstimate;require(['below_resolution','observed_displacement'].includes(object.world_motion)&&m.status==='model_estimate_not_ground_truth'&&['hips','shoulders'].includes(m.anchor)&&Number.isFinite(m.elapsedSeconds)&&m.elapsedSeconds>0&&Number.isFinite(m.displacementM)&&m.displacementM>=0&&Array.isArray(m.sourceFrames)&&m.sourceFrames.length===2&&m.sourceFrames.every(Number.isInteger)&&m.sourceFrames[0]>=0&&m.sourceFrames[1]>m.sourceFrames[0]&&m.sourceFrames[1]<=frame.sourceFrame,'空间运动估计缺少有效来源');}
 
     }
+  }
+  if(data.bodyKeyframes?.length){
+    require(Array.isArray(data.bodyInterpolation),'人体插值缺少逐帧检查');
+    for(const r of data.bodyInterpolation)require(data.frames.some((f:any)=>f.sourceFrame===r.sourceFrame&&f.objects.some((o:any)=>o.entityId===r.entityId))&&['accepted_model_estimate','rejected_alignment'].includes(r.status),'人体插值检查与源帧不符');
   }
   const objects=new Set();
   for(const object of data.staticObjects||[]){
@@ -49,7 +55,35 @@ export function validateScene(data:any,sample:any,base:string){
     require(Array.isArray(source.bbox)&&source.bbox.length===4&&source.bbox.every(Number.isFinite)&&source.bbox[2]>source.bbox[0]&&source.bbox[3]>source.bbox[1],'对象掩码来源框无效');
     if(object.semanticReview)require(['clear','partial','incorrect_prompt'].includes(object.semanticReview.status)&&typeof object.semanticReview.description==='string','对象模型核验格式无效');
   }
+  for(const body of data.bodyKeyframes||[]){
+    const frame=data.frames.find((f:any)=>f.sourceFrame===body.sourceFrame);
+    require(frame&&frame.timeSec===body.timeSec&&frame.objects.some((o:any)=>o.entityId===body.entityId),'人体关键帧没有对应的视频对象');
+    require(body.representation==='inferred_anatomical_mesh'&&body.status==='accepted_model_estimate'&&/^[a-f0-9]{64}$/.test(body.mesh_sha256)&&/^[a-f0-9]{64}$/.test(body.topology_sha256),'人体网格来源无效');assetUrl(body.meshUrl,base);
+  }
   return data;
+}
+
+export function bodySample(scene:any,frame:any,id:string){
+  if(!frame?.objects.some((o:any)=>o.entityId===id))return null;
+  const keys=(scene.bodyKeyframes||[]).filter((b:any)=>b.entityId===id).sort((a:any,b:any)=>a.timeSec-b.timeSec);
+  const exact=keys.find((b:any)=>b.sourceFrame===frame.sourceFrame);if(exact)return {a:exact,b:exact,t:0};
+  const review=scene.bodyInterpolation?.find((r:any)=>r.entityId===id&&r.sourceFrame===frame.sourceFrame&&r.status==='accepted_model_estimate');if(!review)return null;
+  const a=keys.filter((b:any)=>b.timeSec<frame.timeSec).at(-1),b=keys.find((b:any)=>b.timeSec>frame.timeSec);
+  if(!a||!b||review.keyframes?.[0]!==a.sourceFrame||review.keyframes?.[1]!==b.sourceFrame||b.timeSec-a.timeSec>.38||a.topology_sha256!==b.topology_sha256||a.vertices!==b.vertices)return null;
+  const between=scene.frames.filter((f:any)=>f.sourceFrame>=a.sourceFrame&&f.sourceFrame<=b.sourceFrame);
+  if(between.length!==b.sourceFrame-a.sourceFrame+1||between.some((f:any)=>!f.objects.some((o:any)=>o.entityId===id)))return null;
+  return {a,b,t:(frame.timeSec-a.timeSec)/(b.timeSec-a.timeSec)};
+}
+
+export function interpolateBody(a:Mesh,b:Mesh,t:number):Mesh{
+  require(Number.isFinite(t)&&t>=0&&t<=1&&a.vertices.length===b.vertices.length&&a.indices.length===b.indices.length&&a.indices.every((v,k)=>v===b.indices[k]),'人体插值网格拓扑不同');
+  if(t===0)return a;
+  const vertices=a.vertices.slice(),bounds={min:[Infinity,Infinity,Infinity],max:[-Infinity,-Infinity,-Infinity]};
+  for(let i=0;i<vertices.length;i+=12)for(let k=0;k<6;k++){
+    const value=a.vertices[i+k]*(1-t)+b.vertices[i+k]*t;vertices[i+k]=value;
+    if(k<3){bounds.min[k]=Math.min(bounds.min[k],value);bounds.max[k]=Math.max(bounds.max[k],value);}
+  }
+  return {...a,vertices,bounds};
 }
 
 export function lineTransform(a:XYZ,b:XYZ,radius:number,coordinateFrameId:string){
@@ -86,6 +120,7 @@ export function replayDocument(scene:any,urls:Record<string,string>,color:(id:st
   for(const frame of scene.frames)for(const object of frame.objects){
     for(const [a,b]of object.bones){const id=`${object.entityId}:bone:${a}:${b}`;if(!dynamic.has(id))addPrimitive(id,color(object.entityId),object.entityId);}
     const id=`${object.entityId}:centroid`;if(!dynamic.has(id))addPrimitive(id,color(object.entityId),object.entityId,'box');
+    const surfaceId=`${object.entityId}:surface`;if((object.surface||(scene.bodyKeyframes||[]).some((b:any)=>b.entityId===object.entityId))&&!dynamic.has(surfaceId)){addPrimitive(surfaceId,'#ffffff',object.entityId,'box');dynamic.get(surfaceId).representations[0].streamed=true;dynamic.get(surfaceId).representations[0].material.alphaMode='MASK';dynamic.get(surfaceId).representations[0].material.alphaCutoff=.5;}
   }
   return {document:{schemaVersion:2,target:'scene',captureId:scene.source_video_sha256,coordinateFrames:[{id:frameId,convention:'opencv',scale:{status:scene.units==='meters'?'calibrated':'uncalibrated'}}],cameras:[],observations:[],annotations:[],assets,entities},dynamic,owner};
 }
@@ -106,7 +141,7 @@ export function applyFrame(frame:any,dynamic:Map<string,any>,frameId:string,mark
 }
 
 export function replayLayers(scene:any,pointCloud=!scene.meshUrl,objectView=false){
-  return {point_cloud:pointCloud&&!objectView,entityIds:objectView?(scene.staticObjects||[]).map((object:any)=>object.entityId):undefined};
+  return {point_cloud:pointCloud&&!objectView,observed_surface:!pointCloud,entityIds:objectView?(scene.staticObjects||[]).map((object:any)=>object.entityId):undefined};
 }
 
 export async function mountReplay(container:HTMLElement,scene:any,base:string,options:any){
@@ -119,14 +154,16 @@ export async function mountReplay(container:HTMLElement,scene:any,base:string,op
     for(const mesh of readGLB(bytes))objectBounds.push(...boundsCorners(mesh.bounds).map(p=>point(mesh.matrix,p)));
     urls[object.entityId]=URL.createObjectURL(new Blob([bytes],{type:'model/gltf-binary'}));owned.push(urls[object.entityId]);
   }
-  if(scene.meshUrl){
+  if(scene.meshUrl&&scene.pointCloudUrl)urls.mesh=assetUrl(scene.meshUrl,base);
+  else if(scene.meshUrl){
     const response=await fetch(assetUrl(scene.meshUrl,base),{signal:options.signal});if(!response.ok)throw Error(`空间网格读取失败（HTTP ${response.status}）`);
     const bytes=await response.arrayBuffer();
     for(const mesh of readGLB(bytes))observed.push(...boundsCorners(mesh.bounds).map(p=>point(mesh.matrix,p)));
     // Retain one fetched GLB for the native viewer; video frames change transforms only.
     urls.mesh=URL.createObjectURL(new Blob([bytes],{type:'model/gltf-binary'}));owned.push(urls.mesh);
   }
-  if(scene.points.length){const bytes=pointsGLB(scene.points);urls.points=URL.createObjectURL(new Blob([bytes],{type:'model/gltf-binary'}));owned.push(urls.points);}
+  if(scene.pointCloudUrl)urls.points=assetUrl(scene.pointCloudUrl,base);
+  else if(scene.points.length){const bytes=pointsGLB(scene.points);urls.points=URL.createObjectURL(new Blob([bytes],{type:'model/gltf-binary'}));owned.push(urls.points);}
   const {document,dynamic,owner}=replayDocument(scene,urls,options.color);
   const min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity],cameraPoints:XYZ[]=[];
   const include=(p:XYZ)=>{for(let k=0;k<3;k++){min[k]=Math.min(min[k],p[k]);max[k]=Math.max(max[k],p[k]);}};
@@ -136,15 +173,53 @@ export async function mountReplay(container:HTMLElement,scene:any,base:string,op
   const markerScale=scene.units==='meters'?.16:Math.max(cameraExtent,.01)*.04;
   // Navigation frames actual observations; the all-points view keeps every original distant point accessible.
   if(!observed.length)observed.push(...cameraPoints);
-  let current:any=undefined,selected:string|null=null,disposed=false,objectView=false,pointCloud=!scene.meshUrl;
-  const viewer=mountSceneViewer(container,{showSourcePhoto:false,resolveAsset:async id=>urls[id],layers:{showCandidates:true,editable:false,showBounds:false,lighting:true,opacity:1,...replayLayers(scene,pointCloud)},onEvent:event=>{if(event.type==='selectionIntent')options.select(owner.get(event.entityId)||(staticIds.has(event.entityId)?event.entityId:null));if(event.type==='loadError')options.error(`空间资产加载失败：${event.code}`);if(event.type==='contextLost')options.error('三维图形上下文已丢失，请重新选择此样本。');}});
+  let current:any=undefined,selected:string|null=null,disposed=false,objectView=false,fromSource=!!scene.humanSurfaces,bodyModels=false,pointCloud=!!scene.pointCloudUrl||!scene.meshUrl;
+  const surfaceCache=new Map<string,Promise<ReturnType<typeof readGLB>>>();
+  const loadSurface=(surface:any)=>{
+    if(!surfaceCache.has(surface.meshUrl)){
+      const promise=fetch(assetUrl(surface.meshUrl,base),{signal:options.signal}).then(async response=>{
+        if(!response.ok)throw Error(`人物表面读取失败（HTTP ${response.status}）`);
+        const bytes=await response.arrayBuffer(),hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(v=>v.toString(16).padStart(2,'0')).join('');
+        if(hash!==(surface.sha256||surface.mesh_sha256))throw Error('人物表面校验失败');
+        const meshes=readGLB(bytes);if(meshes.length!==1||meshes[0].texture)throw Error('人物表面应为单个彩色网格');return meshes;
+      });
+      surfaceCache.set(surface.meshUrl,promise);promise.catch(()=>{});
+      // ponytail: retain only a short playback window, never every frame's mesh.
+      while(surfaceCache.size>32)surfaceCache.delete(surfaceCache.keys().next().value!);
+    }
+    return surfaceCache.get(surface.meshUrl)!;
+  };
+  const rendered=new Set<string>();
+  const announce=()=>options.frame(current,{mode:bodyModels?'body':'surface',rendered:rendered.size,total:current?.objects.length||0});
+  const hideLinks=()=>{if(scene.humanSurfaces)for(const[id,e]of dynamic)if(!id.startsWith('camera:')&&!id.endsWith(':surface'))e.representations[0].material.baseColorFactor[3]=0;};
+  const displaySurfaces=(frame:any)=>{
+    if(!frame)return;
+    const index=scene.frames.indexOf(frame),generation=bodyModels;
+    if(!bodyModels)for(const future of scene.frames.slice(index,index+8))for(const o of future.objects)if(o.surface)void loadSurface(o.surface);
+    for(const object of frame.objects){
+      const body=bodyModels?bodySample(scene,frame,object.entityId):null;
+      const task=body?Promise.all([loadSurface(body.a),loadSurface(body.b)]).then(([a,b])=>interpolateBody(a[0],b[0],body.t)):
+        !bodyModels&&object.surface?loadSurface(object.surface).then(m=>m[0]):null;
+      if(!task)continue;
+      void task.then(mesh=>{
+        if(disposed||current!==frame||generation!==bodyModels)return;
+        const id=`${object.entityId}:surface`,entity=dynamic.get(id);viewer.setStreamMesh(id,mesh);
+        entity.representations[0].material.lighting=bodyModels;entity.representations[0].material.baseColorFactor=[...Array(3).fill(selected&&selected!==object.entityId ? .65 : 1),1];
+        for(const [key,e]of dynamic)if(key.startsWith(object.entityId+':')&&key!==id)e.representations[0].material.baseColorFactor[3]=0;
+        rendered.add(object.entityId);void viewer.setScene(document);announce();
+      }).catch(error=>{if(!disposed&&current===frame&&error.name!=='AbortError')options.error(error.message);});
+    }
+  };
+  const viewer=mountSceneViewer(container,{showSourcePhoto:false,resolveAsset:async id=>urls[id],layers:{showCandidates:true,editable:false,showBounds:false,lighting:false,opacity:1,pointSize:1.6,...replayLayers(scene,pointCloud)},onEvent:event=>{if(event.type==='selectionIntent')options.select(owner.get(event.entityId)||(staticIds.has(event.entityId)?event.entityId:null));if(event.type==='loadError')options.error(`空间资产加载失败：${event.code}`);if(event.type==='contextLost')options.error('三维图形上下文已丢失，请重新选择此样本。');}});
   const dispose=()=>{disposed=true;viewer.dispose();owned.forEach(url=>URL.revokeObjectURL(url));options.signal?.removeEventListener('abort',dispose);};
   options.signal?.addEventListener('abort',dispose,{once:true});
-  const fit=(all=false)=>{if(!Number.isFinite(extent))return;const c=scene.frames[0]?.c2w,up=c?unit(c.slice(0,3).map((r:any)=>-r[1])):[0,0,1],back=c?unit(c.slice(0,3).map((r:any)=>-r[2])):[0,-1,0];viewer.setCamera({...fitCamera(objectView&&objectBounds.length?objectBounds:!all&&observed.length?observed:boundsCorners({min,max}),unit(add(add(back,scale(cross(up,back),.35)),scale(up,.25))),up,Math.max(container.clientWidth,1)/Math.max(container.clientHeight,1)),mode:'free'});};
-  await viewer.setScene(document);fit();
+  const sourceView=()=>{fromSource=true;for(const [id,e]of dynamic)if(id.startsWith('camera:'))e.representations[0].material.baseColorFactor[3]=0;void viewer.setScene(document);const frame=current||scene.frames[0];if(!frame)return;const c=frame.c2w,eye=c.slice(0,3).map((r:any)=>r[3]),forward=c.slice(0,3).map((r:any)=>r[2]),up=c.slice(0,3).map((r:any)=>-r[1]);viewer.setCamera({eye,target:add(eye,scale(forward,2)),up,mode:'free'});};
+  const fit=(all=false)=>{fromSource=false;if(!Number.isFinite(extent))return;const c=scene.frames[0]?.c2w,up=c?unit(c.slice(0,3).map((r:any)=>-r[1])):[0,0,1],back=c?unit(c.slice(0,3).map((r:any)=>-r[2])):[0,-1,0];viewer.setCamera({...fitCamera(objectView&&objectBounds.length?objectBounds:!all&&observed.length?observed:boundsCorners({min,max}),unit(add(add(back,scale(cross(up,back),.35)),scale(up,.25))),up,Math.max(container.clientWidth,1)/Math.max(container.clientHeight,1)),mode:'free'});};
+  await viewer.setScene(document);scene.humanSurfaces?sourceView():fit();
   return {
-    setTime(time:number,selection:string|null=null){if(disposed)return;const frame=frameAt(scene.frames,time);if(frame===current&&selection===selected)return;current=frame;selected=selection;applyFrame(frame,dynamic,scene.coordinate_frame,markerScale,selected);viewer.setSelection({entityId:selected&&staticIds.has(selected)?selected:null});void viewer.setScene(document);options.frame(frame);},
-    fit,
+    setTime(time:number,selection:string|null=null){if(disposed)return;const frame=frameAt(scene.frames,time);if(frame===current&&selection===selected)return;current=frame;selected=selection;rendered.clear();applyFrame(frame,dynamic,scene.coordinate_frame,markerScale,selected);hideLinks();if(fromSource)for(const [id,e]of dynamic)if(id.startsWith('camera:'))e.representations[0].material.baseColorFactor[3]=0;viewer.setSelection({entityId:selected?(staticIds.has(selected)?selected:`${selected}:surface`):null});void viewer.setScene(document);displaySurfaces(frame);announce();},
+    fit,sourceView,
+    setBodyModels(value:boolean){bodyModels=value;rendered.clear();applyFrame(current,dynamic,scene.coordinate_frame,markerScale,selected);hideLinks();if(fromSource)for(const[id,e]of dynamic)if(id.startsWith('camera:'))e.representations[0].material.baseColorFactor[3]=0;void viewer.setScene(document);displaySurfaces(current);announce();},
     setPointCloud(value:boolean){pointCloud=value;viewer.setLayers(replayLayers(scene,pointCloud,objectView));},
     setObjectView(value:boolean){objectView=value;viewer.setLayers(replayLayers(scene,pointCloud,objectView));fit();},
     dispose,

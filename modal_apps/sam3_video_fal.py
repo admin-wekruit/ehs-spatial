@@ -48,7 +48,13 @@ if payload["mode"] == "recover":
     submitted = payload["submission"]
     emit("resuming", {"request_id": submitted["request_id"]})
 else:
-    pricing = request("https://api.fal.ai/v1/models/pricing?endpoint_id=" + endpoint)
+    quote = payload.get("batch_pricing_quote")
+    if quote is not None:
+        if not 0 <= time.time() - quote["fetched_at"] <= 600:
+            raise RuntimeError("Batch pricing quote is older than ten minutes")
+        pricing = quote["pricing"]
+    else:
+        pricing = request("https://api.fal.ai/v1/models/pricing?endpoint_id=" + endpoint)
     price = next(p for p in pricing["prices"] if p["endpoint_id"] == endpoint)
     emit("pricing", pricing)
     units, cap = payload.get("billing_units", 1), payload.get("max_fal_usd", 0.02)
