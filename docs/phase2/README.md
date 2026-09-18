@@ -4,7 +4,9 @@
 
 - 照片阶段：[归档及验收缺口](../platform/PHASE1-ARCHIVE-20260917.md)，归档提交 `1a3529a`（本分支 `b659ea5`）。
 - 完整目标：[视频到可编辑空间](../algorithms/2026-09-17-video-full-scene-plan.md)。当前执行公开室内样本，之后换入用户家庭视频。
+- 当前主路线：[视频时间回放、地图记忆、动态对象、骨架与模型分析](TECHNICAL-ROADMAP.md)。算法、特征、训练需求、已有状态、工程缺口与里程碑统一在此维护；下方历史实跑不等于整条链已完成。
 - 实验分支：`codex/phase2-video`；原照片源码及公开报告保持其归档版本。
+- 当前优先级：[运动定义、房间地图记忆、所有动态对象的模型与时间状态](DYNAMIC-SCENE.md)。人体能力纠正及候选算法见[人体运动研究](HUMAN-MOTION-RESEARCH.md)；不把历史二维框跟踪代码计为已有骨架能力。
 
 ## 首个公开样本
 
@@ -72,9 +74,27 @@ RGB 稀疏实验用于验证现有模型能否生成房间可见表面，不用�
 
 只检查视频解码时加 `--prepare-only`；不调用模型。视频顺序解码，保存实际选取帧号与时间戳、原视频及解码图像哈希。此入口当前是最多 32 帧联合几何实验，没有连续跟踪/地图重载能力。每次使用新的输出目录；失败与先前运行不覆盖。
 
-原始样本回放在外部产物目录的 `source-replay.mp4`，由公开 RGB PNG 和时间戳重新编码，**不是原始相机容器**；来源记录在 `source-replay.json`。浏览器预览复用已有 `lucida_viewer.html` 及索引三角网格格式，原始点/相机/PLY/GLB 均保留；`tools/build_*_preview.py` 保存预览转换。运行 `python -m http.server 8799 --bind 127.0.0.1 --directory /Users/adam/Desktop/panoptes-public/research-notes/phase2` 后可查看：
+原始样本回放在外部产物目录的 `source-replay.mp4`，由公开 RGB PNG 和时间戳重新编码，**不是原始相机容器**；来源记录在 `source-replay.json`。首轮浏览器预览复用 `lucida_viewer.html` 及索引三角网格格式，原始点/相机/PLY/GLB 均保留；`tools/build_*_preview.py` 保存当时的转换。RGB 32 帧的当前预览已换成下方原生点云/网格对照。运行 `python -m http.server 8799 --bind 127.0.0.1 --directory /Users/adam/Desktop/panoptes-public/research-notes/phase2` 后可查看：
 
 - RGB 32 帧：`http://127.0.0.1:8799/runs/rgb-mapanything-032/preview/index.html`
 - RGB-D 对照：`http://127.0.0.1:8799/rgbd-control-02/preview/index.html`
 
 检查：原视频相关测试与 RGB-D 契约检查共 34 项通过；RGB 实验自检覆盖深度/K/坐标域、刚体相机、TSDF 取逆、真实 MP4 帧号/时间/RGB、空视频拒绝；两组网格导出回读与哈希检查通过。**代码检查通过和实验执行完成，不改变上述几何验收失败/未通过的状态。**
+
+## 原生点云对照补齐
+
+`rgb-mapanything-032/native-cloud/` 新增全量 PLY：**2,667,600** 个已保存的有效原生点；浏览器使用 **266,811** 个确定性采样点和 32 份逐帧子集。XYZ 直接取自 `prediction.npz/pts3d`，没有通过 K+depth 重算位置，没有 ICP、去噪、补面或动态过滤。每个点保留帧号与像素索引，导出后逐项回读核验 XYZ/RGB/来源，清单保存哈希与未标定状态。
+
+同一个 `preview/index.html` 现在复用 `web/src/viewer/native-viewer.ts` 的 POINTS/三角面读取，提供全部帧点云、逐帧点云、表面网格、来源照片和估计机位。右侧纯几何视图不叠照片，以免原图填住缺失几何；网页不会把整张未分割表面计作一个已建模物体。照片与网格仍有原始误差，**这次仅补齐可检查输出，没有修复重建精度或建立对象模型**。
+
+复现导出：
+
+```bash
+/Users/adam/Desktop/panoptes-public/panoptes-serving/.venv/bin/python scripts/export_room_pointcloud.py \
+  --run /absolute/path/run --output /absolute/path/run/native-cloud
+node --experimental-strip-types web/experiments/room-preview/check.ts /absolute/path/run/native-cloud/manifest.json
+```
+
+使用 web 已有 Vite 的 `build({configFile:false,root:"web/experiments/room-preview",base:"./",build:{outDir:"/absolute/path/run/preview",emptyOutDir:false}})` 构建静态预览。与旧预览格式无关，不需要新增渲染依赖。该入口要求旁边存在实际 `metrics.json`、`frames/`、`room.glb` 和上面的原生点云导出；保留之前的运行，不覆盖推理证据。
+
+本轮检查：导出自检（含篡改 XYZ 拒绝）、真实 32 帧 GLB POINTS/网格回读与范围选择、原始 K/C2W 保留及候选状态检查通过；已有 viewer 调度和 interaction 检查通过；预览 TypeScript 检查和 Vite 构建通过。浏览器验证了全量采样云、单帧云、纯几何估计机位、网格切换和拖动旋转。
