@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {assetUrl, validateManifest, validateAnalysis, frameAt, visibleJoint, trackObservations, formatTime} from './timeline.mjs';
+import {assetUrl, validateManifest, validateAnalysis, frameAt, presentedTime, motionText, visibleJoint, trackObservations, formatTime} from './timeline.mjs';
 
 // Synthetic assertions only: these records are never loaded by the preview.
 const base = 'http://127.0.0.1:8799/video-mvp/manifest.json';
@@ -10,6 +10,8 @@ const data = {version:1,coordinateSpace:'source_pixels',width:640,height:480,fra
 assert.equal(validateManifest({version:1,samples:[sample]},base).samples.length,1);
 assert.equal(validateManifest({version:1,samples:[]},base).samples.length,0);
 assert.equal(validateAnalysis(data,sample,base),data);
+assert.equal(validateAnalysis({...data,frames:[{...frames[0],objects:[{...object,confidence:null}]}]},sample,base).frames[0].objects[0].confidence,null);
+assert.throws(()=>validateAnalysis({...data,frames:[{...frames[0],objects:[{...object,confidence:NaN}]}]},sample,base),/置信/);
 assert.equal(frameAt(frames,-.1),null);
 assert.equal(frameAt(frames,0),frames[0]);
 assert.equal(frameAt(frames,.099),frames[0]);
@@ -34,4 +36,24 @@ assert.throws(()=>validateAnalysis({...data,frames:[frames[2],frames[0]]},sample
 assert.throws(()=>validateAnalysis({...data,frames:[{...frames[0],objects:[object,object]}]},sample,base),/唯一/);
 assert.throws(()=>validateAnalysis({...data,frames:[{...frames[0],objects:[{...object,bbox:[0,0,NaN,9]}]}]},sample,base),/对象框/);
 assert.throws(()=>validateAnalysis({...data,frames:[{...frames[0],objects:[{...object,bones:[[0,8]]}]}]},sample,base),/骨连接/);
+const candidateFrames=[{...frames[0],sourceFrame:0},{...frames[2],sourceFrame:30,objects:[{...object,entityId:'person-2'}]}];
+const candidate={fromEntityId:'person-2',toEntityId:'person-1',fromTrackId:2,toTrackId:1,status:'unconfirmed_reentry_candidate',cosine:.91,referenceFrames:[0],evidenceFrames:[30]};
+assert.equal(validateAnalysis({...data,frames:candidateFrames,identityCandidates:[candidate]},sample,base).identityCandidates[0],candidate);
+assert.throws(()=>validateAnalysis({...data,frames:candidateFrames,identityCandidates:[{...candidate,evidenceFrames:[0]}]},sample,base),/来源帧/);
+assert.throws(()=>validateAnalysis({...data,frames:candidateFrames,identityCandidates:[{...candidate,status:'confirmed'}]},sample,base),/未确认/);
+const exposure=[{timeSec:0,endTimeSec:.0336757},{timeSec:23.236235056406805,endTimeSec:23.269910759387106}];
+assert.equal(presentedTime(exposure,0),0);
+assert.equal(presentedTime(exposure,23.236),exposure[1].timeSec);
+assert.equal(frameAt(exposure,presentedTime(exposure,23.236)),exposure[1]);
+assert.equal(presentedTime(exposure,23.27),23.27);
+assert.equal(frameAt(exposure,presentedTime(exposure,23.27)),null);
+assert.equal(presentedTime(exposure,10),10);
+assert.equal(presentedTime([{timeSec:1},{timeSec:1.0004}],1.0002),1.0002);
+assert.equal(presentedTime([{timeSec:.9997},{timeSec:.9999}],1),1);
+assert.equal(frameAt(exposure,23.236),null); // Manual time uses the exact half-open contract.
+assert.match(motionText(null),/无估计/);
+assert.match(motionText({world_motion:'insufficient_evidence'}),/证据不足/);
+const estimate={anchor:'hips',elapsedSeconds:.5,displacementM:.021,sourceFrames:[3,22]};
+assert.match(motionText({world_motion:'below_resolution',motionEstimate:estimate}),/低于分辨率，不能判定静止/);
+assert.match(motionText({world_motion:'observed_displacement',motionEstimate:estimate}),/双髋中点.*0.50 秒.*0.021 米.*源帧 3—22.*非真值/);
 console.log('PASS: source-time boundaries, gaps, pixel coordinates, absent data, joints, IDs and invalid input');

@@ -1,5 +1,7 @@
 # Phase 2：公开视频到室内空间
 
+当前[视频 MVP 记录](VIDEO-MVP.md)集中保存 SAM3 图片能力复用、859帧动态视频、RGB-D网格/对象模型、骨架及真实验收结果。可直接打开[视频与空间回放](http://127.0.0.1:8799/video-mvp/index.html?sample=walking)；启动使用其[Range服务器](../../web/experiments/video-mvp/README.md)，下方旧版 `http.server` 命令仅作历史记录。
+
 2026-09-17 开始执行。这里的 Phase 2 指照片阶段之后的视频空间阶段，不等于实施计划中的内部“阶段 2：上传”。不进行基础模型训练或逐场景训练。
 
 - 照片阶段：[归档及验收缺口](../platform/PHASE1-ARCHIVE-20260917.md)，归档提交 `1a3529a`（本分支 `b659ea5`）。

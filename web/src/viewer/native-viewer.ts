@@ -92,7 +92,11 @@ export function readGLB(buffer:ArrayBuffer):Mesh[] {
       if(!['OPAQUE','MASK','BLEND'].includes(alphaMode)||!Number.isFinite(alphaCutoff)||alphaCutoff<0||!Array.isArray(factor)||factor.length!==4||factor.some((n:number)=>!Number.isFinite(n)||n<0||n>1)||color&&![3,4].includes(color.width))throw Error('invalid_glb_material');
       for(let i=0;i<pos.count;i++){for(let k=0;k<3;k++){data[i*12+k]=pos.data[i*3+k];data[i*12+3+k]=normal?.data[i*3+k]??0;data[i*12+6+k]=color?.data[i*color.width+k]??1;}data[i*12+9]=uv?.data[i*2]||0;data[i*12+10]=uv?.data[i*2+1]||0;data[i*12+11]=color?.width===4?color.data[i*4+3]:1;}
       for(const i of indices)for(let k=0;k<3;k++){bounds.min[k]=Math.min(bounds.min[k],pos.data[i*3+k]);bounds.max[k]=Math.max(bounds.max[k],pos.data[i*3+k]);}
-      if(!normal&&(p.mode??4)===4)for(let i=0;i<indices.length;i+=3){const ids=[indices[i],indices[i+1],indices[i+2]],ps=ids.map(n=>pos.data.slice(n*3,n*3+3)),n=cross(add(ps[1],scale(ps[0],-1)),add(ps[2],scale(ps[0],-1)));for(const id of ids)for(let k=0;k<3;k++)data[id*12+3+k]+=n[k];}
+      if(!normal&&(p.mode??4)===4){
+        for(let i=0;i<indices.length;i+=3){const ids=[indices[i],indices[i+1],indices[i+2]],ps=ids.map(n=>pos.data.slice(n*3,n*3+3)),n=cross(add(ps[1],scale(ps[0],-1)),add(ps[2],scale(ps[0],-1)));for(const id of ids)for(let k=0;k<3;k++)data[id*12+3+k]+=n[k];}
+        // Area-weighted directions must be unit length, independent of mesh scale.
+        for(let i=0;i<pos.count;i++){const offset=i*12+3,length=Math.hypot(data[offset],data[offset+1],data[offset+2]);if(length>0)for(let k=0;k<3;k++)data[offset+k]/=length;}
+      }
       let texture:Blob|undefined;const textureIndex=pbr?.baseColorTexture?.index;
       if(textureIndex!==undefined){if(!uv||pbr.baseColorTexture.texCoord||pbr.baseColorTexture.extensions)throw Error('unsupported_texture_coordinates');const img=doc.images?.[doc.textures?.[textureIndex]?.source];if(!img||img.uri||!['image/png','image/jpeg'].includes(img.mimeType))throw Error('unsupported_glb_texture');const v=view(img.bufferView);texture=new Blob([buffer.slice(binOffset+(v.byteOffset||0),binOffset+(v.byteOffset||0)+v.byteLength)],{type:img.mimeType});}
       result.push({vertices:data,indices,mode:p.mode??4,matrix,texture,material:{baseColorFactor:factor,alphaMode,alphaCutoff},bounds});

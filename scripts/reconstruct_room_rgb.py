@@ -63,7 +63,7 @@ def integrate(volume, color, depth, K, c2w):
     rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
         o3d.geometry.Image(np.ascontiguousarray(color)),
         o3d.geometry.Image(np.ascontiguousarray(depth, dtype=np.float32)),
-        depth_scale=1.0, depth_trunc=float(depth.max()) + TRUNCATION,
+        depth_scale=1.0, depth_trunc=float(depth.max()) + volume.sdf_trunc,
         convert_rgb_to_intensity=False)
     volume.integrate(rgbd, intrinsic, np.linalg.inv(c2w))
 
@@ -84,11 +84,13 @@ def pointmap_residuals(points, depth, K, c2w, valid):
     }
 
 
-def new_volume():
+def new_volume(voxel_length=VOXEL):
     import open3d as o3d
 
+    if not np.isfinite(voxel_length) or voxel_length <= 0:
+        raise ValueError("TSDF voxel length must be finite and positive")
     return o3d.pipelines.integration.ScalableTSDFVolume(
-        voxel_length=VOXEL, sdf_trunc=TRUNCATION,
+        voxel_length=voxel_length, sdf_trunc=4 * voxel_length,
         color_type=o3d.pipelines.integration.TSDFVolumeColorType.RGB8)
 
 

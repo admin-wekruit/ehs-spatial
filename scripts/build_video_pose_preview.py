@@ -111,12 +111,16 @@ def source_spans(raw: dict, manifest: dict) -> list[tuple[float, float]]:
 
 
 def build(raw_path: Path, clip_path: Path, model_path: Path, output: Path,
-          source_manifest: Path) -> dict:
+          source_manifest: Path, reentry_candidates: Path | None = None) -> dict:
     from rtmlib import RTMPose
     from importlib.metadata import version
 
     started = time.monotonic()
     raw = json.loads(raw_path.read_text())
+    reentry = json.loads(reentry_candidates.read_text()) if reentry_candidates else None
+    if reentry is not None and (reentry['raw_sha256'] != sha(raw_path)
+            or reentry['session_id'] != raw['session_id'] or reentry['native_ids_modified'] is not False):
+        raise ValueError('Re-entry candidates must reference this exact unmodified segmentation run')
     if raw['input']['sha256'] != sha(clip_path):
         raise ValueError('Clip hash differs from the actual SAM input')
     manifest = json.loads(source_manifest.read_text())
@@ -136,9 +140,9 @@ def build(raw_path: Path, clip_path: Path, model_path: Path, output: Path,
     result = {'version': 1, 'coordinateSpace': 'source_pixels', 'width': width,
               'height': height, 'method': raw['method']['name'] + ' + RTMPose COCO17 (CPU ONNX)',
               'identityScope': raw['identity_scope'], 'frames': [],
-              'limitations': ['仅分析保存的连续短片，其余时间没有观测。',
+              'limitations': ['观测仅覆盖所记录的帧区间，不为缺失区间补位置。',
                               'ID 是本次视频会话中的短期轨迹，未验证跨遮挡或跨视频持久身份。',
-                              '骨架为二维图像估计；尚无三维人体、世界运动或动态对象模型。',
+                              '此文件保存二维骨架；三维位置需由空间回放中的有效相机和深度另行支持。',
                               '关节分数是模型响应，0.3 仅为显示阈值，不是校准后的正确概率。']}
     observations = 0
     try:
@@ -210,6 +214,23 @@ def build(raw_path: Path, clip_path: Path, model_path: Path, output: Path,
                             'samSessionId': session,
                             'sourceVideoSha256': manifest['sourceSha256'],
                             'sourceStartFrame': manifest['sourceStartFrame']}
+    if reentry is not None:
+        known = {o['nativeTrackId'] for frame in result['frames'] for o in frame['objects']}
+        result['identityCandidates'] = []
+        for edge in reentry['edges']:
+            old, new = edge['to_earlier_tracklet_id'], edge['from_tracklet_id']
+            indices = [e['frame_index'] for e in edge['evidence'] + edge['target_discovery_evidence']]
+            if (type(old) is not int or type(new) is not int or old not in known or new not in known or old == new
+                    or any(type(i) is not int or not 0 <= i < len(raw['frames']) for i in indices)
+                    or edge['human_confirmed'] is not False or edge['type'] != 'session_reentry_candidate'):
+                raise ValueError('Identity candidate is not an unconfirmed pair of observed tracks')
+            result['identityCandidates'].append({'fromEntityId': f'{namespace}-{new}',
+                'toEntityId': f'{namespace}-{old}', 'fromTrackId': new, 'toTrackId': old,
+                'status': 'unconfirmed_reentry_candidate', 'cosine': edge['cosine'],
+                'evidenceFrames': [raw['frames'][e['frame_index']]['source_frame_index'] for e in edge['evidence']],
+                'referenceFrames': [raw['frames'][e['frame_index']]['source_frame_index'] for e in edge['target_discovery_evidence']]})
+        result['provenance']['identityCandidateSha256'] = sha(reentry_candidates)
+        result['limitations'].append('重新出现的外观关联仅是候选；未人工确认，不合并原始轨迹编号。')
     (output / 'analysis.json').write_text(json.dumps(result, ensure_ascii=False))
     metrics = {'status': 'execution_complete', 'quality': 'not_independently_validated',
                'frames': len(spans), 'personObservations': observations,
@@ -289,11 +310,12 @@ if __name__ == '__main__':
     p.add_argument('--pose-model', type=Path)
     p.add_argument('--output', type=Path)
     p.add_argument('--source-manifest', type=Path)
+    p.add_argument('--reentry-candidates', type=Path)
     p.add_argument('--self-check', action='store_true')
     a = p.parse_args()
     if a.self_check:
         self_check()
     elif all([a.raw, a.clip, a.pose_model, a.output, a.source_manifest]):
-        print(json.dumps(build(a.raw, a.clip, a.pose_model, a.output, a.source_manifest)))
+        print(json.dumps(build(a.raw, a.clip, a.pose_model, a.output, a.source_manifest, a.reentry_candidates)))
     else:
         p.error('--raw, --clip, --pose-model, --source-manifest and --output are required')

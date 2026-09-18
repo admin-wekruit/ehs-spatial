@@ -1,22 +1,37 @@
-import {assetUrl, validateManifest, validateAnalysis, frameAt, visibleJoint, trackObservations, formatTime} from './timeline.mjs';
+import {assetUrl, validateManifest, validateAnalysis, frameAt, presentedTime, motionText, visibleJoint, trackObservations, formatTime} from './timeline.mjs';
 
 const $ = (id) => document.getElementById(id);
 const video = $('video');
 const svg = $('overlay');
-const state = {manifest:null, manifestUrl:'', sample:null, analysis:null, analysisUrl:'', frame:undefined, selected:null, generation:0, controller:null, observationLimit:80, dimensionalError:false, analysisError:null};
+const state = {manifest:null, manifestUrl:'', sample:null, analysis:null, analysisUrl:'', frame:undefined, selected:null, generation:0, controller:null, observationLimit:80, dimensionalError:false, analysisError:null, replay:null,scene:null,sceneUrl:'',mediaTime:0};
 const palette = ['#65e2be','#fac268','#8dcaff','#e9a8ec','#f39c89','#a8d779'];
 function color(id) { let n = 0; for (const c of id) n = (n * 31 + c.charCodeAt(0)) | 0; return palette[Math.abs(n) % palette.length]; }
-function displayId(object) { return object.nativeTrackId === undefined ? object.entityId : `轨迹 ${object.nativeTrackId}`; }
+function displayId(object) { return object.displayName || (object.nativeTrackId === undefined ? object.entityId : `轨迹 ${object.nativeTrackId}`); }
 function node(tag, className, content) { const n = document.createElement(tag); if (className) n.className = className; if (content !== undefined) n.textContent = content; return n; }
 function shape(tag, attrs, content) { const n = document.createElementNS('http://www.w3.org/2000/svg',tag); for (const [key,value] of Object.entries(attrs)) n.setAttribute(key,String(value)); if (content !== undefined) n.textContent = content; return n; }
 function showError(id, message) { $(id).textContent = message || ''; $(id).hidden = !message; }
 async function readJson(url, signal) { const response = await fetch(url,{signal}); if (!response.ok) throw new Error(`资源加载失败（HTTP ${response.status}）`); return response.json(); }
+function syncReplay(time=video.currentTime) {state.replay?.setTime(state.dimensionalError ? NaN : time,state.selected);}
+function reviewStatus(value){return {clear:'类别清楚',partial:'局部可见',incorrect_prompt:'类别不符'}[value]||'未核验';}
+function staticObservation(id) {
+  const model=state.scene?.staticObjects?.find(o=>o.entityId===id);
+  return model ? {model,frame:model.source,object:{entityId:model.entityId,label:model.label+' · 可见表面',displayName:model.displayName,bbox:model.source.bbox,maskUrl:assetUrl(model.source.maskUrl,state.sceneUrl)}} : null;
+}
+
+function drawMotion() {
+  const detail=$('selected-motion');if(!detail)return;
+  const frame=state.dimensionalError ? null : frameAt(state.scene?.frames || [],state.mediaTime);
+  detail.textContent=motionText(frame?.objects.find(object=>object.entityId===state.selected));
+}
 
 function selectEntity(id) {
+  const source=staticObservation(id);
+  if(source&&state.selected!==id)seekFrame(source.frame);
   state.selected = state.selected === id ? null : id;
   state.observationLimit = 80;
   drawFrame(state.frame);
   drawObservations();
+  syncReplay();
 }
 
 function drawSamples() {
@@ -25,7 +40,7 @@ function drawSamples() {
   for (const sample of state.manifest.samples) {
     const button = node('button','sample-option');
     button.setAttribute('aria-current',String(state.sample?.id === sample.id));
-    button.append(node('strong','',sample.title),node('span','',`${formatTime(sample.video.durationSec).slice(0,5)} · ${sample.video.width} × ${sample.video.height}`),node('span','',sample.analysis ? '含分析产物' : '尚未运行分析'));
+    button.append(node('strong','',sample.title),node('span','',`${formatTime(sample.video.durationSec).slice(0,5)} · ${sample.video.width} × ${sample.video.height}`),node('span','',sample.analysis ? '含分析产物' : sample.scene ? '含空间地图' : '尚未运行分析'));
     button.onclick = () => loadSample(sample);
     $('samples').append(button);
   }
@@ -36,8 +51,18 @@ async function loadSample(sample) {
   const generation = ++state.generation;
   state.controller?.abort();
   state.controller = new AbortController();
+  state.replay?.dispose(); state.replay = null;
+  $('scene-stage').replaceChildren();
+  $('scene-panel').hidden = !sample.scene;
+  $('scene-details').replaceChildren();
+  $('scene-objects').replaceChildren();
+  $('scene-fit').disabled = true;
+  $('scene-all').disabled = true;
+  $('scene-points').disabled = true;
+  $('scene-points').setAttribute('aria-pressed','false');
+  showError('scene-error',null);
   video.pause();
-  Object.assign(state,{sample,analysis:null,frame:undefined,selected:null,dimensionalError:false,analysisError:null,observationLimit:80});
+  Object.assign(state,{sample,analysis:null,frame:undefined,selected:null,dimensionalError:false,analysisError:null,observationLimit:80,scene:null,sceneUrl:'',mediaTime:0});
   drawSamples();
   svg.replaceChildren();
   svg.setAttribute('viewBox',`0 0 ${sample.video.width} ${sample.video.height}`);
@@ -69,7 +94,8 @@ async function loadSample(sample) {
   const pageUrl = new URL(location.href); pageUrl.searchParams.set('sample',sample.id); history.replaceState(null,'',pageUrl);
   drawFrame(null);
   drawObservations();
-  if (!sample.analysis) { updateStatus('尚未运行分析。可以播放原视频；对象轨迹、骨架与动态模型尚无输出。'); return; }
+  if (sample.scene) void loadScene(sample,generation);
+  if (!sample.analysis) { updateStatus(sample.scene ? '此视频提供空间地图；对象轨迹、骨架与动态模型尚无输出。' : '尚未运行分析。可以播放原视频；对象轨迹、骨架与动态模型尚无输出。'); return; }
   updateStatus('正在加载此样本的分析结果，原视频可以先播放。');
   try {
     const analysisUrl = assetUrl(sample.analysis.url,state.manifestUrl);
@@ -96,13 +122,51 @@ async function loadSample(sample) {
   }
 }
 
+async function loadScene(sample,generation) {
+  $('scene-status').textContent = '正在读取此视频的空间结果…';
+  try {
+    const sceneUrl = assetUrl(sample.scene.url,state.manifestUrl);
+    const [data,module] = await Promise.all([readJson(sceneUrl,state.controller.signal),import('./scene.js')]);
+    if (generation !== state.generation) return;
+    const scene = module.validateScene(data,sample,sceneUrl);
+    state.scene=scene;state.sceneUrl=sceneUrl;
+    $('scene-units').textContent = scene.units === 'meters' ? '米 · ' + scene.coordinate_frame : '单目单位未标定 · ' + scene.coordinate_frame;
+    $('scene-details').append(node('p','',scene.method));
+    for (const limitation of scene.limitations) $('scene-details').append(node('p','',String(limitation)));
+    const replay = await module.mountReplay($('scene-stage'),scene,sceneUrl,{
+      color,select:selectEntity,signal:state.controller.signal,
+      error:message=>{if(generation===state.generation)showError('scene-error',message);},
+      frame:frame=>{if(generation===state.generation)$('scene-status').textContent=frame ? `源帧 ${frame.sourceFrame} · ${frame.objects.length} 个空间对象 · 相机位置随视频同步` : '此时刻无空间观测；仅保留已加载的静态场景。';},
+    });
+    if (generation !== state.generation) {replay.dispose(); return;}
+    state.replay = replay;
+    if(scene.staticObjects?.length){
+      const isolate=node('button','','仅看对象表面');isolate.setAttribute('aria-pressed','false');isolate.onclick=()=>{const enabled=isolate.getAttribute('aria-pressed')!=='true';isolate.setAttribute('aria-pressed',String(enabled));isolate.textContent=enabled?'返回完整场景':'仅看对象表面';if(enabled)isolate.dataset.pointCloud=$('scene-points').getAttribute('aria-pressed');$('scene-points').setAttribute('aria-pressed',enabled?'false':isolate.dataset.pointCloud);$('scene-all').disabled=enabled||!scene.points.length;$('scene-points').disabled=enabled||!scene.points.length;replay.setObjectView(enabled);};
+      $('scene-objects').append(node('h3','',`对象观测表面 · ${scene.staticObjects.length}`),isolate,node('p','muted','点击模型或名称回到来源帧与掩码。保留原始预测类别；照片核验是模型解释，不是真值。未验证其他时刻的位置。'));
+      for(const object of scene.staticObjects){const button=node('button','',`${object.displayName} · 帧 ${object.source.sourceFrame}${object.semanticReview?' · '+reviewStatus(object.semanticReview.status):''}`);button.title=object.semanticReview?.description||'';button.dataset.entityId=object.entityId;button.setAttribute('aria-pressed','false');button.onclick=()=>selectEntity(object.entityId);$('scene-objects').append(button);}
+    }
+    $('scene-fit').disabled = false;
+    $('scene-all').disabled = !scene.points.length;
+    $('scene-points').disabled = !scene.points.length;
+    $('scene-points').setAttribute('aria-pressed',String(!scene.meshUrl&&!!scene.points.length));
+    syncReplay();
+    drawFrame(state.frame);
+  } catch (error) {
+    if (generation !== state.generation || error.name === 'AbortError') return;
+    $('scene-status').textContent = `空间结果未显示：${error.message}`;
+  }
+}
+
 function updateStatus(message, error = false) { $('analysis-status').textContent = message; $('analysis-status').classList.toggle('error',error); }
 
 function drawFrame(frame) {
+  drawMotion();
   svg.replaceChildren();
   $('objects').replaceChildren();
-  const objects = state.dimensionalError ? [] : (frame?.objects || []);
-  $('object-count').textContent = frame && !state.dimensionalError ? objects.length : '—';
+  const source=staticObservation(state.selected),inSource=source&&state.mediaTime>=source.frame.timeSec&&state.mediaTime<source.frame.endTimeSec;
+  const objects = state.dimensionalError ? [] : [...(frame?.objects || []),...(inSource?[source.object]:[])];
+  $('object-count').textContent = (frame||inSource) && !state.dimensionalError ? objects.length : '—';
+  for(const button of $('scene-objects').querySelectorAll('[data-entity-id]'))button.setAttribute('aria-pressed',String(button.dataset.entityId===state.selected));
   if (!objects.length) {
     const label = state.dimensionalError ? '画幅不一致，已停止叠加。' : !state.sample ? '选择视频后查看实际分析产物。' : !state.analysis ? '此视频尚无可用分析产物。' : frame ? '此区间已分析，未检测到对象。' : '此时刻没有观测，不沿用前一帧的位置。';
     $('objects').append(node('p','empty-copy',label));
@@ -139,7 +203,7 @@ function drawFrame(frame) {
       const anchor = object.bbox?.slice(0,2) || object.polygons?.[0]?.[0] || object.keypoints?.find((p)=>visibleJoint(p,width,height));
       if (anchor) {
         const fontSize = Math.max(11,width/62);
-        const annotation = shape('text',{x:Math.min(width-10,Math.max(4,anchor[0])),y:Math.max(fontSize+4,anchor[1]-5),fill:tint,'font-size':fontSize},object.nativeTrackId === undefined ? `${object.label} · ${object.entityId}` : displayId(object));
+        const annotation = shape('text',{x:Math.min(width-10,Math.max(4,anchor[0])),y:Math.max(fontSize+4,anchor[1]-5),fill:tint,'font-size':fontSize},object.displayName || (object.nativeTrackId === undefined ? `${object.label} · ${object.entityId}` : displayId(object)));
         annotation.append(shape('title',{},object.entityId));
         group.append(clickable(annotation));
       }
@@ -152,16 +216,35 @@ function drawFrame(frame) {
 function drawObservations() {
   $('observations').replaceChildren();
   $('clear-selection').hidden = !state.selected;
-  if (!state.selected || !state.analysis) { $('selected-label').textContent = '点击画面或对象，查看它出现的时刻。'; return; }
-  const observations = trackObservations(state.analysis.frames,state.selected);
+  const source=staticObservation(state.selected);
+  if (!state.selected || (!state.analysis&&!source)) { $('selected-label').textContent = '点击画面或对象，查看它出现的时刻。'; return; }
+  const observations = source ? [source] : trackObservations(state.analysis.frames,state.selected);
   const label = observations[0]?.object.label || state.selected;
   $('selected-label').textContent = `${label} · ${state.selected} · ${observations.length} 条来源观测`;
+  if(!source){const detail=node('span','source-description');detail.id='selected-motion';$('selected-label').append(detail);drawMotion();}
+  if(source){
+    $('selected-label').append(node('span','source-description',`空间记忆：仅源帧 ${source.frame.sourceFrame}（${formatTime(source.frame.timeSec)}）的可见表面；其他时刻的位置与状态未知。`));
+    const review=source.model.semanticReview;
+    if(review)$('selected-label').append(node('span','source-description',`照片模型核验：${reviewStatus(review.status)} · ${review.description}（模型解释，非真值）`));
+    for(const [text,url]of [['查看原始帧',source.model.source.imageUrl],['查看模型来源',source.model.provenanceUrl]]){const link=node('a','source-link',text);link.href=assetUrl(url,state.sceneUrl);link.target='_blank';link.rel='noopener noreferrer';$('selected-label').append(link);}
+  }
+  for(const candidate of state.analysis?.identityCandidates || []) {
+    if(![candidate.fromEntityId,candidate.toEntityId].includes(state.selected))continue;
+    const group=node('div','reentry-candidate');
+    group.append(node('p','',`可能再次出现：轨迹 ${candidate.fromTrackId} ↔ 轨迹 ${candidate.toTrackId}（未确认）`));
+    for(const [label,key] of [['先前来源','referenceFrames'],['再次出现来源','evidenceFrames']]) {
+      const row=node('div','');row.append(node('span','',label+'：'));
+      for(const index of candidate[key]){const frame=state.analysis.frames.find(f=>f.sourceFrame===index),button=node('button','',`帧 ${index}`);button.onclick=()=>seekFrame(frame);row.append(button);}
+      group.append(row);
+    }
+    group.append(node('small','','仅为外观特征候选，身份没有合并。'));$('observations').append(group);
+  }
   for (const {frame,object} of observations.slice(0,state.observationLimit)) {
     const row = node('button','observation-row'); row.dataset.time = frame.timeSec;
     row.setAttribute('aria-current',String(state.frame?.timeSec === frame.timeSec));
     const time = node('time','',formatTime(frame.timeSec));
-    const info = [frame.sourceFrame === undefined ? null : `帧 ${frame.sourceFrame}`, object.confidence === undefined ? null : `${Math.round(object.confidence*100)}%`].filter(Boolean);
-    row.append(time,node('span','',info.join(' · '))); row.onclick = () => seek(frame.timeSec); $('observations').append(row);
+    const info = [frame.sourceFrame === undefined ? null : `帧 ${frame.sourceFrame}`, object.confidence == null ? null : `${Math.round(object.confidence*100)}%`].filter(Boolean);
+    row.append(time,node('span','',info.join(' · '))); row.onclick = () => seekFrame(frame); $('observations').append(row);
   }
   if (observations.length > state.observationLimit) {
     const more = node('button','more-observations',`展开后续观测（还有 ${observations.length-state.observationLimit} 条）`);
@@ -170,21 +253,29 @@ function drawObservations() {
 }
 
 function updateTime(time, force = false) {
+  state.mediaTime=time;
   $('clock').textContent = formatTime(time);
   $('scrubber').value = time;
-  if (!state.analysis || state.dimensionalError) return;
+  syncReplay(time);
+  if (!state.analysis || state.dimensionalError) {drawFrame(null);return;}
   const frame = frameAt(state.analysis.frames,time);
   if (frame !== state.frame || force) {
     state.frame = frame;
     drawFrame(frame);
     $('frame-time').textContent = frame ? `观测 ${formatTime(frame.timeSec)} — ${formatTime(frame.endTimeSec)}` : '此时刻无观测';
-    updateStatus(frame ? `当前区间有 ${frame.objects.length} 个对象观测。点击对象可查看来源时刻；未显示三维人体或交互判定。` : '此时刻没有观测。没有补画位置、遮挡轨迹或骨架。');
+    updateStatus(frame ? `当前区间有 ${frame.objects.length} 条时序对象观测。点击对象可查看来源时刻。` : '此时刻没有观测。没有补画位置、遮挡轨迹或骨架。');
   }
 }
 
 function seek(time) { if (video.readyState >= 1) { video.currentTime = Math.max(0,Math.min(video.duration,time)); $('clock').textContent = formatTime(time); } }
+// Seek inside the observed exposure, avoiding decoder rounding onto the previous frame at its boundary.
+function seekFrame(frame) {video.pause();seek((frame.timeSec+frame.endTimeSec)/2);}
 $('scrubber').addEventListener('input',(event)=>seek(Number(event.target.value)));
-$('clear-selection').onclick = () => {state.selected = null; drawFrame(state.frame); drawObservations();};
+$('clear-selection').onclick = () => {state.selected = null; drawFrame(state.frame); drawObservations(); syncReplay();};
+$('scene-fit').onclick = () => state.replay?.fit();
+$('scene-points').onclick = () => {const enabled=$('scene-points').getAttribute('aria-pressed')!=='true';$('scene-points').setAttribute('aria-pressed',String(enabled));state.replay?.setPointCloud(enabled);};
+$('scene-all').onclick = () => {$('scene-points').setAttribute('aria-pressed','true');state.replay?.setPointCloud(true);state.replay?.fit(true);};
+window.addEventListener('pagehide',()=>state.replay?.dispose(),{once:true});
 for (const id of ['show-masks','show-skeleton']) $(id).onchange = () => drawFrame(state.frame);
 video.addEventListener('loadedmetadata',()=>{
   if (!state.sample) return;
@@ -192,6 +283,7 @@ video.addEventListener('loadedmetadata',()=>{
   $('scrubber').disabled = !Number.isFinite(video.duration);
   $('duration').textContent = `${formatTime(video.duration).slice(0,5)} · ${video.videoWidth} × ${video.videoHeight}`;
   state.dimensionalError = video.videoWidth !== state.sample.video.width || video.videoHeight !== state.sample.video.height;
+  syncReplay();
   if (state.dimensionalError) {svg.replaceChildren(); updateStatus(`视频实际尺寸为 ${video.videoWidth} × ${video.videoHeight}，与分析输入不一致，已停止叠加。原视频可继续播放。`,true); drawFrame(null);}
 });
 video.addEventListener('error',()=>showError('video-error','原视频暂时无法加载，请检查该样本的视频地址与本地服务。分析结果不会替代原视频。'));
@@ -199,7 +291,7 @@ video.addEventListener('seeked',()=>updateTime(video.currentTime,true));
 video.addEventListener('timeupdate',()=>{if (video.paused || !video.requestVideoFrameCallback) updateTime(video.currentTime);});
 video.addEventListener('ended',()=>updateTime(video.currentTime,true));
 if (video.requestVideoFrameCallback) {
-  const presented = (_now,metadata) => {updateTime(metadata.mediaTime); video.requestVideoFrameCallback(presented);};
+  const presented = (_now,metadata) => {updateTime(presentedTime(state.analysis?.frames || state.scene?.frames || [],metadata.mediaTime)); video.requestVideoFrameCallback(presented);};
   video.requestVideoFrameCallback(presented);
 }
 

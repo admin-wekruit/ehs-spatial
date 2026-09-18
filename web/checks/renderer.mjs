@@ -27,7 +27,8 @@ new Uint32Array(indexedPacked,144,3).set(used);
 const boundedPacked=readPacked(indexedPacked,{byteLayout:{stride:9,vertexCount:4,indexByteOffset:144,indexCount:3,indexType:'uint32'}})[0];
 assert.deepEqual(boundedPacked.bounds,{min:[0,0,1],max:[1,1,1]},'Packed mesh bounds use only vertices referenced by rendered indices');
 assert.equal(boundedPacked.vertices.length,48,'Computing rendered bounds does not discard original vertex data');
-function indexedGLB(mode,indexed=true){
+function indexedGLB(mode,indexed=true,positionsOverride=positions){
+ const positions=positionsOverride;
  const binary=new Uint8Array(positions.byteLength+used.byteLength);binary.set(new Uint8Array(positions.buffer));binary.set(new Uint8Array(used.buffer),positions.byteLength);
  const spec={asset:{version:'2.0'},scene:0,scenes:[{nodes:[0]}],nodes:[{mesh:0}],meshes:[{primitives:[{attributes:{POSITION:0},mode,...(indexed?{indices:1}:{})}]}],buffers:[{byteLength:binary.length}],bufferViews:[{buffer:0,byteOffset:0,byteLength:positions.byteLength},{buffer:0,byteOffset:positions.byteLength,byteLength:used.byteLength}],accessors:[{bufferView:0,componentType:5126,count:4,type:'VEC3'},{bufferView:1,componentType:5125,count:3,type:'SCALAR'}]};
  const raw=new TextEncoder().encode(JSON.stringify(spec)),jsonSize=Math.ceil(raw.length/4)*4,output=new ArrayBuffer(28+jsonSize+binary.length),view=new DataView(output),bytes=new Uint8Array(output);
@@ -35,6 +36,14 @@ function indexedGLB(mode,indexed=true){
 }
 for(const mode of [0,4])assert.deepEqual(readGLB(indexedGLB(mode))[0].bounds,boundedPacked.bounds,'GLB triangle/point index subsets use their actual drawn vertices');
 assert.deepEqual(readGLB(indexedGLB(0,false))[0].bounds,{min:[0,0,1],max:[1000,2000,3000]},'A non-indexed point cloud retains all actually drawn points');
+for(const scale of [.001,1,1000]){
+  const mesh=readGLB(indexedGLB(4,true,positions.map(x=>x*scale)))[0];
+  for(let i=0;i<3;i++)assert.deepEqual([...mesh.vertices.slice(i*12+3,i*12+6)],[0,0,1],'Computed GLB normals are unit directions at every mesh scale');
+  assert.deepEqual([...mesh.vertices.slice(39,42)],[0,0,0],'Unreferenced vertices retain finite zero normals');
+}
+const degenerate=readGLB(indexedGLB(4,true,new Float32Array(12)))[0];
+assert.ok(degenerate.vertices.every(Number.isFinite),'Degenerate faces never create NaN normals');
+for(let i=0;i<4;i++)assert.deepEqual([...degenerate.vertices.slice(i*12+3,i*12+6)],[0,0,0]);
 for(const aspect of [.4,1,2.5])for(const ortho of [false,true]){
   const corners=boundsCorners({min:[-3,-1,0],max:[4,2,6]}),c=fitCamera(corners,[1,-2,1],[0,0,1],aspect,ortho),matrix=cameraMatrix(c,aspect,10);
   for(const p of corners){const xy=projected(matrix,p,1000*aspect,1000);assert.ok(xy&&xy[0]>0&&xy[0]<1000*aspect&&xy[1]>0&&xy[1]<1000,'camera fit clips scene');}

@@ -4,7 +4,7 @@
 维护日期：2026-09-18；照片代码基线包含 `f790127`，局部面实现版本为 `local-planar-inclinations-v2`，见下方验收记录。视频新增路线与照片已实现状态分别记录。
 根 README 中四张照片、七种固定标签的说明属于早期 MVP，不代表当前 Platform 的完整流程。
 
-研究扩展：[工厂视频重建、A→B→A 空间记忆与可编辑场景](../research/2026-09-17-factory-video-spatial-memory.md)（2026-09-17）。已核查开源实现、现有链路和 Nalana 本例产物；视频长序列与持久地图尚未接入或实跑验收，不改变下方已实现条目的状态。
+研究扩展：[工厂视频重建、A→B→A 空间记忆与可编辑场景](../research/2026-09-17-factory-video-spatial-memory.md)（2026-09-17）。该文保留研究当时状态；后续859帧动态视频、RGB-D模型与有限跨进程地图复用的实际结果，以本页V01–V09和[MVP记录](../phase2/VIDEO-MVP.md)为准。
 
 **当前 Phase 2 主路线：[视频、空间记忆、动态实体与分析模型](../phase2/TECHNICAL-ROADMAP.md)。** 统一记录他人架构、特征、算法/工程/训练分工、已有证据及 M0–M5 验收；包含第一视角时间回放、t=0/t=4 同一人车关联、骨架、模型和照片分析复用。第一版不训练新模型。
 
@@ -67,11 +67,14 @@ flowchart LR
 | ID | 输入 → 方法 → 输出 | 代码与实际证据 | 当前质量边界 |
 |---|---|---|---|
 | V01 | 公开视频/逐帧来源 → 实际解码 PTS、SHA 和像素域校验 → 时间区间 | `scripts/build_video_pose_preview.py::source_spans`；严格逐帧的 walking/room 新源视频 | 旧 room 预览曾重采样，已保留原件并另产一帧一图版本；当前入口验证 CFR，不猜 VFR 末帧时长 |
-| V02 | SAM3 首帧实例 → SAM2.1 原生 video memory → 会话 ID / RLE / 空掩码 | `scripts/run_seeded_video.py`；175 帧实跑、0/4秒独立抽查 | 859 帧实验已暴露重新入画时两 ID 合到同一人的失败；短期 ID 不等于持久身份。SAM3.1 fal 的实际提示探针失败分别留档 |
-| V03 | 标定 RGB 或明确的 RGB-D → ORB-SLAM3 → 最终 Atlas / 相机 / 稀疏点 | `scripts/phase2_camera_build.py`、`phase2_camera_run.py`、`phase2_camera_export.py`；真实 A/B 跨进程重载与旧地图点复用 | 单目仍有未合并地图，尺度未标定；RGB-D 无动态特征剔除基线 ATE 0.861m，不能以 state=OK 代替几何精度 |
-| V04 | 人员 mask + RGB → 预训练 RTMPose COCO17 → 帧内二维骨架 | `scripts/build_video_pose_preview.py`；175 帧、320 个非空人员观测；原始分数、RGB 输入和模型 SHA 留档 | 0.3 是显示阈值，不是正确概率；出画 ID 单列 absent，不作为当前位置或假骨架 |
-| V05 | 同一最终地图位姿 + 传感器深度 + mask/2D骨架 → TSDF / 可见表面关节 | `scripts/build_replay_scene.py`；复用 `reconstruct_room_rgb.py::integrate`；168 帧静态表面融合 | 此对照需要传感器深度；遮挡关节不补齐。剔除融合像素不修复上游相机误差；输出不等于人体形状拟合或逐物体建模 |
+| V02 | SAM3 周期独立发现 → SAM2.1 原生 video memory → 同帧唯一 IoU 关联 / 短轨迹 / RLE | `scripts/run_discovered_video.py`；859帧、29窗、9个短期ID；严重双人mask重合帧54→0；455.5秒、峰值RSS1.33GB | 9条轨迹不是9个人；81帧无mask，仍保留缺口。Mac状态offload导致单人空mask已用同输入CPU对照定位并修复；失败001保留 |
+| V03 | 标定 RGB 或明确的 RGB-D + 动态mask → ORB-SLAM3 → 最终 Atlas / 相机 / 稀疏点 | `scripts/phase2_camera_build.py`、`phase2_camera_run.py`、`phase2_camera_export.py`；新版mask下827个RGB-D位姿，固定尺度ATE 0.01531m；A/B跨进程旧地图点复用有独立证据 | 未遮罩对照ATE 0.861m；测量是相机轨迹误差，不是物体/人体精度。单目房间质量另评，不能以state=OK代替几何精度 |
+| V04 | 人员 mask + RGB → 预训练 RTMPose COCO17 → 帧内二维骨架 | `scripts/build_video_pose_preview.py`；新版859帧、1225个非空人员观测，31.87秒；原始分数、RGB输入和模型SHA留档 | 0.3是显示阈值，不是正确概率；出画ID单列absent，不作为当前位置或假骨架 |
+| V05 | 同一最终地图位姿 + 传感器深度 + mask/2D骨架 → TSDF / 可见表面关节 | `scripts/build_replay_scene.py`；复用 `reconstruct_room_rgb.py::integrate`；748帧静态表面融合，22.69秒 | 需要传感器深度；没有动态mask的帧不融合，以免把漏检人焊进背景。遮挡关节不补齐；输出不等于完整人体形状 |
 | V06 | 相同媒体时间的来源/观测/相机/模型 → 懒加载回放 | `web/experiments/video-mvp/`；复用原生 WebGL viewer 与 GLB reader | 空档不沿用旧位置，静态大资产不逐帧重载；完整 CAD/EHS 时序服务仍未接通 |
+| V07 | SAM3独立人员裁剪 → 官方预训练OSNet-AIN → 历史外观竞争 + 双次确认 → 重现候选 | `scripts/person_reid.py`、`link_person_tracklets.py`；43检测、3.23秒；新版2条候选3→1、6→0，源图一致 | 不改native ID、不当永久身份；弱遮挡样本保留unknown；阈值尚未经陌生人负样本集标定 |
+| V08 | 对象mask + 同域深度/相机 → 相邻像素三角化 → 独立对象GLB + 已有照片VLM核验 | `scripts/build_video_object_models.py`、`review_video_object_semantics.py`；6份可选择可见表面，VLM识别一处桌子/柜体误分类 | 6份观测不是6个已去重实体；只建可见表面。VLM复用绑定源图与mask overlay哈希，后续是否移动未知 |
+| V09 | 同一米制地图中的连续躯干参考点 → 两个稳健窗口 → 位移/平均速度 | `scripts/video_motion.py`；复用V05结果，保留源帧与固定分辨率策略 | 仅表面躯干位移估计，不是步态、人体重心或EHS判定；缺观测/换参考点重置，低于分辨率不等于静止 |
 
 这些条目分别记录感知算法、坐标估计与工程连接，不另造算法注册服务；参数以对应代码和每次 `run.json` 为准。原始失败、无 mask、身份冲突、未合并地图与未校准状态都必须保留。
 

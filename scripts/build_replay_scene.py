@@ -13,8 +13,9 @@ import time
 import cv2
 import numpy as np
 
-from reconstruct_room_rgb import digest, integrate, new_volume, validate_frame
+from reconstruct_room_rgb import VOXEL, digest, integrate, new_volume, validate_frame
 from reconstruct_tum_room import read_rows
+from video_motion import annotate_motion
 
 
 def media_spans(video):
@@ -157,13 +158,15 @@ def build(args):
                 raise ValueError('This fusion requires registered undistorted RGB-D and positive depth factor')
         finally:
             settings.release()
-        volume = new_volume()
+        volume = new_volume(args.voxel_length)
         scene['method'] += ' + sensor RGB-D TSDF with observed person masks excluded'
         scene['provenance'].update({'analysis_sha256': digest(args.analysis), 'sensor_depth': True,
-                                    'k': k.tolist(), 'depth_factor': factor})
+                                    'k': k.tolist(), 'depth_factor': factor,
+                                    'tsdf': {'voxel_length_m': volume.voxel_length,
+                                             'sdf_trunc_m': volume.sdf_trunc}})
         scene['limitations'] += ['此三维对照使用传感器深度，不代表普通 RGB 视频已有相同精度。',
                                  '人体为可见表面骨架估计；遮挡关节不补全，不是人体形状拟合。',
-                                 '静态融合只用有人员分割的帧；尚未发现的后入画对象不在当前种子轨迹中。']
+                                 '人物分析为空的帧不参与静态融合：空结果可能是漏检，不能证明没有移动物体。']
     fused, depth_records = 0, []
     for frame in native['frames']:
         index = frame['source_index']
@@ -209,13 +212,16 @@ def build(args):
             # Exclude a two-pixel boundary band from static fusion only.
             excluded = cv2.dilate(excluded.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
             clean = np.where(excluded, 0, depth)
-            if clean.any():
+            if clean.any() and excluded.any():
                 integrate(volume, color, clean, k, c2w)
                 fused += 1
             depth_records.append({'sourceFrame': index, 'path': str(path), 'sha256': digest(path),
-                                  'excludedPixels': int(excluded.sum())})
+                                  'excludedPixels': int(excluded.sum()),
+                                  'fusionStatus': 'integrated' if clean.any() and excluded.any() else 'no_supported_dynamic_mask_or_depth'})
         scene['frames'].append(record)
     if volume is not None:
+        scene['motionPolicy'] = annotate_motion(scene['frames'], scene['units'])
+        scene['limitations'].append('运动数值仅为可见躯干参考点的位移；低于阈值不等于静止，未观测区间不推断。')
         mesh = volume.extract_triangle_mesh()
         if mesh.is_empty():
             raise ValueError('No observed static surface was reconstructed')
@@ -248,7 +254,17 @@ def self_check():
     assert np.allclose(result[0], [3, 4, 7]) and result[1:] == [None, None, None]
     depth[8:11, 8:11] = 3
     assert surface_joints([[10, 10, .9]], depth, mask, k, c2w) == [None]
-    print('replay scene check passed: camera/world transform, mask support, missing joints and depth boundaries')
+    for voxel in [.02, VOXEL]:
+        volume = new_volume(voxel)
+        assert volume.voxel_length == voxel and volume.sdf_trunc == 4 * voxel
+    for voxel in [0, -.02, float('nan'), float('inf')]:
+        try:
+            new_volume(voxel)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('Invalid voxel length accepted')
+    print('replay scene check passed: camera/world transform, mask support, missing joints, depth boundaries and TSDF resolution')
 
 
 if __name__ == '__main__':
@@ -258,6 +274,8 @@ if __name__ == '__main__':
     p.add_argument('--video-manifest', type=Path)
     p.add_argument('--analysis', type=Path)
     p.add_argument('--output', type=Path)
+    p.add_argument('--voxel-length', type=float, default=VOXEL,
+                   help='Metric TSDF voxel length; signed-distance truncation is four voxels')
     p.add_argument('--self-check', action='store_true')
     args = p.parse_args()
     if args.self_check:

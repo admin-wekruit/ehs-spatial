@@ -1,0 +1,137 @@
+# 视频 MVP 实验记录
+
+目标是把真实视频、对象观测、人体姿态、空间几何和已有分析接通，再用实际结果持续改进。播放器、文件存在、模型成功返回分别是不同阶段的证据，不能代替整条链验收。
+
+## 当前交付（2026-09-18，以下实验历史按时间保留）
+
+入口：[本地视频与空间回放](http://127.0.0.1:8799/video-mvp/index.html?sample=walking)。当前默认已从175帧短片换成完整859帧，不发布已知失败的长序列版本。
+
+| 环节 | 最终实际结果 | 可核查产物（相对实验目录） |
+|---|---|---|
+| SAM3周期发现 + SAM2记忆 | 29窗 / 859帧，9条短期轨迹；81帧mask为空；严重双mask碰撞54→0；455.50秒、峰值RSS1.33GB | `runs/sam3-periodic-sam2-walking-002/`及`-002-review/review.json` |
+| 人体姿态 | 1225次非空观测，COCO17；31.87秒；原始关节分数、mask、source frame保留 | 同运行下`pose-preview/analysis.json` |
+| 跨段人物候选 | 官方OSNet-AIN，43次独立检测评估、3.23秒；3→1、6→0两条双检测支持候选；弱遮挡样本unknown | 同运行下`reentry-candidates.json`及两张源图对照 |
+| 同版mask参与相机定位 | 827/827有效RGB-D位姿，1图/76关键帧/1908稀疏点；53.06秒；独立固定尺度SE3 ATE 0.015312m | `runs/orb-rgbd-walking-periodic-mask-001/`及`-001-review/` |
+| 静态场景、3D人体粗模 | 748帧静态融合、50244三角面；1177次有相机的人体观测、11741个有效可见表面关节；22.69秒 | `runs/rgbd-walking-full-replay-002/` |
+| 可点击对象 + 照片语义复用 | 6份独立观测表面、74664面；几何重建0.698秒；已有Gemini适配器核验发现桌子/柜体错误及局部遮挡 | `runs/rgbd-walking-full-object-surfaces-002/`、`runs/video-object-semantics-001/` |
+| 运动估计 | 263次有支持的躯干位移、130次低于分辨率、784次证据不足；缺口、换参考点均重置 | `scripts/video_motion.py`及场景`motionPolicy` |
+
+这些时间来自分阶段运行，不能直接称为上传到报告的端到端耗时；网络SAM3发现另有各请求时间。当前没有训练任何新模型。新一轮41条fal请求按查询到的单价保守估算0.41美元，包含收费不明的失败请求；另一次Gemini调用13021输入/427输出token，实际账单未核对，均在既有40美元授权及本轮2美元预留内。账本在`video-mvp/cost-ledger.json`。
+
+### 本轮发现并修正的真实问题
+
+- 长序列只在首帧发现，会在重入时把两个人跟成同一片区域。改为周期独立发现与同帧唯一匹配；歧义新建短轨迹，不伪造身份。
+- MPS上`offload_state_to_cpu=True`使单实例传播数值异常，同输入CPU正常。统一使用原生`False`后重跑完整002，恢复单人窗口；没有换CPU掩盖问题。失败001、原始RLE和CPU/MPS诊断保留。
+- ORB原版未使用动态mask；已在共享特征提取器、特征预算分配前排除并验证8层描述子支持。相同RGB-D基线ATE由0.86109m降到0.01531m；GT只用于事后评估，未进入地图。
+- 原viewer过滤了无照片imageId的观测表面，虽有GLB却未显示；改接已有mesh路径，并实际验证网格拾取→源帧→照片核验。
+- Chrome呈现回调将PTS量化到毫秒，曾让真实帧690落到前一时间区间。只在该回调入口恢复唯一且相差不超过0.5ms的已知源PTS，严格区间和空档语义保持不变。
+- 运动计算原先容忍短时间差，跨过了原生相机输出省略的缺帧。共享函数改为源帧必须连续并清除旧估计；最终393条位移区间逐项复核，均无相机/对象/参考点缺口。
+- GLB没有自带法线时，原viewer累加法线但未归一化，95.75%网格顶点误跳过光照。共享读取器修复后，不同尺度和退化面检查通过，几何未改变；点云作为原始图层可开关，不删原点。
+
+同输入的2厘米体素对照并未提升总体质量：三角面50244→259356，小碎片492→2942；12个源帧的静态深度射线误差中位数22.83→20.98毫米，但P95 484→550毫米，尾部更差。保留4厘米默认，不用细化或删除碎片伪装质量升级。原始深度抽样约40.2%缺失；这是输入一致性检查，不是独立真值精度。完整对照在`runs/rgbd-walking-full-replay-2cm-001/comparison.json`，显式4厘米控制GLB与交付原件逐字节一致。
+
+### 仍未达到的能力
+
+这次空间验证使用传感器深度。普通手机RGB视频的完整房间质量、任意新视频上传、车辆动态建模、完整人体表面、通用持久身份以及CAD/EHS时间状态服务仍未验收。静态对象当前是一个关键帧的可见表面记忆，不是六个跨视角去重的完整对象；未观测背面不补造，后续是否移动未知。相机ATE不是人物关节或对象尺寸的精度保证。
+
+单目保存/退出/加载B段已经有旧地图点复用证据；完整同序列重放虽把地图合为一张，但全局误差0.729m，不能认作成功。修正官方下一帧等待间隔后，同版本空Atlas对照仍分成4张地图；最大图仅623/1362帧，局部Sim3 ATE 0.04951m、尺度未标定。原图、内参、畸变与时间契约已核对；此单次对照没有解决全片质量问题，也不是所有SLAM算法的能力上限。
+
+### 重现顺序
+
+1. 原视频与逐帧来源清单 → `discover_video_keyframes.py`（已保存的SAM3返回可复用，无需重复付费）。
+2. 周期独立发现 → `run_discovered_video.py`；同run的原始记录 → `link_person_tracklets.py`。
+3. 原视频、mask、来源清单、已下载RTMPose权重及可选重现候选 → `build_video_pose_preview.py`。
+4. 同一组原始RGB/深度、标定和mask → `phase2_camera_run.py`；最终Atlas → `phase2_camera_export.py`。GT仅在运行完成后评估。
+5. 最终camera、同源video/manifest和pose analysis → `build_replay_scene.py`（内部进行TSDF及连续躯干位移计算）。
+6. 同源关键帧对象发现与同一个camera/scene → `build_video_object_models.py`。首次用`review_video_object_semantics.py`调用既有照片适配器；以后只有视觉证据哈希完全一致才复用。
+7. `video-mvp/manifest.json`选择不可变结果；按[前端入口](../../web/experiments/video-mvp/README.md)构建并启动Range服务器。回放不发模型请求。
+
+每个入口提供`--help`，相机入口提供`run --help`。数据和权重位于Git外实验目录；输出目录不可覆盖。模型版本、真实源PNG、native返回、运行源码和哈希保存在对应run。主要坐标、时序、身份、mask与mesh自检和3个provider合同测试通过；最终浏览器检查含两组候选导航、网格拾取、来源同步、缺口清除、旋转及窄屏。
+
+## 保留和复用
+
+| 已有内容 | 本次用途 | 保留位置 |
+|---|---|---|
+| SAM 3 图片分割服务、fal 调用 | 继续服务照片和关键帧；复用已有 fal 运行身份访问视频端点 | `modal_apps/sam3_app.py`、`ehs_spatial/providers/sam3.py`、`serving/sam3_service.py` |
+| mask 编解码与像素域契约 | 视频 RLE 校验与预览导出直接调用现有 helper | `encode_coco_rle` / `decode_coco_rle` |
+| SAM2 本地入口、权重与实验 | 保留来源、缓存和实际运行记录；本地入口存在不决定新版选型 | 既有 serving / vendor / outputs |
+| 照片的对象、CAD、模型、角度、报告 | 视频观测有可靠坐标和实体后继续接入；旧结果不改成视频验收 | [照片归档](../platform/PHASE1-ARCHIVE-20260917.md)、[算法总表](../algorithms/README.md) |
+| MapAnything 原生点云及网格 | 保留失败与改进对照，核查轨迹和几何是否真的改善 | [房间实验记录](README.md) |
+
+SAM 3 已支持视频检测、分割和跟踪；SAM 3.1 增加多对象联合跟踪计算。首个短片不再叠一个 BoT-SORT；切镜头或长时间离场后的持久身份仍另行验证。骨架和三维地图不是 SAM 分割输出。[官方说明](https://github.com/facebookresearch/sam3)、[3.1 发布](https://github.com/facebookresearch/sam3/blob/main/RELEASE_SAM3p1.md)。
+
+## 输入与真实预览
+
+数据在 Git 外的 `/Users/adam/Desktop/panoptes-public/research-notes/phase2/`，来源和哈希另存，不把大视频或模型权重加入 Git。
+
+- 静态对照：TUM `fr1/room`，RGB 重编码视频 45.44 秒；已有点云/网格有独立误差记录，尚未达到完整房间质量要求。
+- 动态输入：TUM `fr3/walking_xyz`，859 帧、640×480、重编码视频 28.927429 秒；两个人活动，摄像机平移。原始 RGB 时间跨度为 28.893915 秒，MP4 媒体时间与采集时间分别保存。
+- 两者都是公开 RGB 帧按顺序重编码，保留原始 PNG / 时间戳。传感器深度和 GT 不输入这组 RGB 分割/骨架推理；若做 RGB-D 对照，会另行声明。
+- 动态样本的原始文件、全部视频帧、真实浏览器播放/拖动已检查。来源、许可、FR3 标定和逐文件校验在 `data/tum-fr3-walking-xyz/manifest.json`。[官方数据](https://cvg.cit.tum.de/data/datasets/rgbd-dataset/download#freiburg3_walking_xyz)。
+
+预览：`http://127.0.0.1:8799/video-mvp/index.html`。本地服务复用 Starlette Range；Python `http.server` 在 Chrome 出现 `seekable=[0,0]`、拖动回零，已由真实 `206 Content-Range`、播放推进和 8/12 秒跳转验证修复。启动命令见[回放入口](../../web/experiments/video-mvp/README.md)。
+
+## 初始探针状态（历史，已被上方实跑状态更新）
+
+- 原生 CUDA runner 固定 SAM 源码和 3.1 权重 revision，限制 6 秒/180 帧、A100-40GB/900 秒、单容器、零重试。CPU 输出契约自检通过；配置的 HF 账号对 SAM3 和 3.1 原生权重均返回 `403 GatedRepo / not in authorized list`，未启动 GPU 空跑。这不否定已有 fal SAM3 能力。
+- 照片服务本来使用 fal，本轮继续复用其合法运行身份验证 `fal-ai/sam-3-1/video-rle`。价格从官方 API 查询为每 16 帧 0.01 美元；先提交一笔 16 帧请求检查实际结构，记录在 `runs/sam31-fal-video-rle-probe-16/`。网页 schema 不能代替真实返回验收。
+- 姿态环境单独保存：RTMLib 0.0.14、RTMPose-m COCO17、ONNX Runtime 1.23.2 CPU。官方权重及 `pipeline.json` 保留哈希；输入需 RGB、192×256。适配与来源检查已实现，实际视频骨架待对应 SAM 数据。
+- 新尝试从已有累计 40 美元预算中预留 2 美元。开始时本地 `model_calls` 账本已用/占用 20.36 美元，另保留 2 美元既有开销额度；预留不是结算账单。调用、失败与结果记在各 `runs/` 下。
+
+## fal SAM3.1 视频接口实测（16 帧，2026-09-18）
+
+同一段真实 walking 视频的测试已收口，原始输入、返回 JSON、请求 ID、SHA256、耗时与错误均保存在 `runs/sam31-fal-video-rle-probe-16/`。现有图片服务和历史产物保持原样。
+
+| 输入模式 | 实际结果 | 是否可直接用于实例跟踪 |
+|---|---|---|
+| `prompt=person` | 16 帧 RLE 是两个人的并集，无 `track_id` / `object_id`；ZIP 只有标注 PNG | 否，不能把类别并集或颜色当对象身份 |
+| 首帧图片 `person`，多 mask | 两个独立实例，分数均 0.97265625，面积 29434 / 53180 像素 | 可提供真实种子；图片实例编号不等于跨时间 ID |
+| 单实例框，`object_id=1, frame_index=0` | 仅第 5/6/7 帧非空；其余包括首帧都是空字符串 RLE + null 框 | 覆盖不足，未扩大到 175 帧 |
+| 独立实例 `mask_url` | HTTP422：服务校验仍要求文字、点或框至少一种 | 文档的 initial mask 字段不能单独调用 |
+| 独立 mask + mask 内部自动选取的前景点 | 16/16 非空；首帧另一人泄漏 0，和原实例 IoU 0.742；带入椅子、桌面等背景 | 单种子会话可区分人，但边界不合格；initial mask 未严格保留 |
+| 同帧点 + 框 | HTTP422：SAM3.1 不支持同一帧同时提供点与框 | 接口明确拒绝，未继续增加提示或调阈值 |
+
+实际 `boxes` 和 `metadata[].box` 是归一化 **中心 cxcywh**，不能当左上 xywh 或 xyxy。逐帧无目标的实测编码是 `rle=""` 与 `box=null`，新视频适配器应产生 `objects=[]`，不修改旧图片 codec。单种子会话的身份仅来自请求的种子和会话命名空间，不能标成 provider 返回的原生 ID 或跨片段永久 ID。[官方字段](https://fal.ai/models/fal-ai/sam-3-1/video-rle/api)。
+
+图片单价 0.01 美元/请求，视频单价 0.01 美元/16 帧，均由同账户官方 pricing API 实读确认。共六个不同模型请求：四个成功、两个返回 HTTP422；若保守将六个全部计费，公开单价估算为 0.06 美元，实际结算仍未核对。价格读取失败拦截、既有请求 GET 回读和容器启动前失败没有新提交模型请求。
+
+临时实验通过已有命名 Modal app 查找运行容器，凭证始终留在容器内。Modal 1.5.4 CLI 的 `wait()` 未等待后台 stdout EOF，曾截断返回；新驱动同时等待 stdout/stderr EOF 和进程结束，并用 stdin 分块传输。对既有请求只 GET 回读的 159002 字节结果通过 SHA 和完整 JSON 一致性检查，不依赖 sleep。SDK 内部进程构造被版本限定为 1.5.4；既有服务容器仍可能在启动 exec 前缩容，此时应重新定位运行容器，不能重发结果未知的模型请求。此实验驱动未修改或重新部署照片服务。
+
+## 输出契约与验证
+
+`scripts/build_video_pose_preview.py` 消费保存的 SAM 结果、确切输入短片和父视频清单。它沿用 SAM 会话 ID 与原始 track ID，以 SAM 框直接调用 RTMPose，不新增检测器或凭外观猜身份。原始 mask、关节分数、方法及 source/clip/model 哈希保留；退化掩码仍是观测，骨架明确为不可计算。
+
+父视频 SHA、源帧号、实际解码 PTS、短片 PTS 和末帧有效区间逐点核对。时间整体移一秒或延长末帧都必须拒绝。当前短片要求父视频还含下一帧，以核对最后观测的结束时间。没有观测的时刻不沿用旧 mask。
+
+界面只显示同一媒体时间内的实际 mask、短期 ID 与二维骨架；完整 ID 保留详情，画面显示短轨迹编号。关节分数 0.3 只是显示阈值；二维关节不是三维身体或已验证世界运动。不同办公室视频不共享一个假地图。
+
+```bash
+node web/experiments/video-mvp/check.mjs
+python scripts/build_video_pose_preview.py --self-check
+python -m pytest tests/test_sam3_video_contract.py
+```
+
+已检查：归一化 xywh、RLE 精确回读、空帧、源帧与媒体时间、RGB 输入、同 ID 骨架对应、会话命名空间、缺口清除。独立浏览器已检查两份真实视频；对象点击/骨架开关使用隔离测试输入，测试数据未混入交付清单。真实模型质量与空间记忆仍须由实际产物验收。
+
+## 同页空间回放与独立目检（2026-09-18）
+
+人物最小粗模直接复用已有八边封闭圆柱网格，每段32面；增加可见厚度和光照后，真实2.324秒双人共有29个有效关节段。端点与输入关节完全相同，粗细仅为显示尺寸。图例明确区分相机锥框、关节点粗模与区域中心；没有填补头壳、隐藏肢体或推断体型。4.007秒真实缺失下肢、另一人仅有中心点的情况保持缺失。这是可拖转的低面关节模型，不是完整人体表面拟合。
+
+`web/experiments/video-mvp/scene.ts` 复用已有原生 WebGL renderer 和 GLB reader，消费 `phase2-replay-scene-v1`。真实视频 SHA、源帧半开区间、坐标系和单位在加载时检查；静态网格/点只加载一次，相机及每条骨连接复用固定图元。空档和缺失关节不会沿用旧位置，alpha 0 也退出原生拾取。没有新渲染依赖、外观重识别或 UI 生成的身份。
+
+- walking：实际 4.007 秒 / 源帧119，网格和轨迹0的3D躯干/手臂可见并可点击选中同一轨迹；轨迹1该帧只有 centroid，不伪造缺失关节。旋转后跳6.05秒，人体消失，旧骨架像素不能选回旧轨迹；相机姿态和静态场景继续来自真实空间帧。
+- room：切换后独立加载未标定单目场景。34.970秒 / 源帧1049显示相机；19.969秒无相机观测，保留静态点云。“观察区”和“全部点云”只改变浏览相机，不删远点或修改地图。
+- 独立175帧 mask 审查：ID0非空175/175，ID1非空145/175；后30帧ID1为空。首帧与两个SAM3独立种子 IoU 分别0.99742、0.99724，交叉人泄漏0；4.007秒两实例分离，末帧只保留可见一人。检查文件为 `runs/sam2-seeded-walking-175-001/independent-mask-review.json` 和 `independent-frame0-4s-last-review.png`。这是有限帧边界检查，不是人工GT全片精度或长期ReID验证。
+
+检查命令与构建见[回放入口](../../web/experiments/video-mvp/README.md)。纯 CPU 契约检查和真实 Chrome 的选择、缩放、拖转、时间空档、样本切换及390px布局已通过。本阶段当时仅使用已审查的175帧人体段；当前默认已升级为上方859帧运行。全片持续身份和普通RGB完整建模仍未通过。
+
+
+## 关键帧对象模型与照片语义复用（2026-09-18）
+
+已用真实 walking 第120帧的 SAM3 chair/table/monitor 图片结果和同域 RGB-D 导出6份独立可见表面 GLB，共74664面、约1.54MB，保留源像素、mask、颜色、相机/深度/视频哈希和请求ID。当前产物在 `runs/rgbd-walking-object-surfaces-003/`；新相机运行需要通过 `scripts/build_video_object_models.py` 重建，不能直接混合旧地图坐标。深度边界不跨接，轮廓、孔洞和背面不补全，不跨视角去重。
+
+现有照片 Gemini 分析复用为语义核验：chair-0、monitor-0 类别清楚；table-0/1和monitor-1局部可见；table-2实际描述为深色矮柜。原 SAM 标签保留，核验明确是模型解释而非真值。核验复用绑定完整观测ID集及每项 source/overlay SHA；新相机可以重建几何后复用一致视觉证据，分别记录原核验与新几何场景哈希。
+
+浏览器已验证从右桌真实三角面点击，定位到源帧120、4.058秒、同对象掩码与语义描述。“仅看对象表面”使用原生图层隔离，方便检查被融合背景遮住的源表面。对象作为第120帧的空间记忆保留，其后是否移动未知；源图叠加仅在该帧半开时间区间出现。新重现候选区保留新旧两个轨迹ID与各自证据帧，始终标注未确认，不把特征相似度当概率。
+
+检查：`python scripts/build_video_object_models.py --self-check`、`node web/experiments/video-mvp/scene-check.ts`、`node web/experiments/video-mvp/check.mjs`。检查覆盖三角形源像素/XYZ/颜色、断深度拒绝、模型实际进入原生拾取通路、语义证据更改拒绝、候选来源帧属于正确轨迹。
