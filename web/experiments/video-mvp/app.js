@@ -132,7 +132,9 @@ async function loadScene(sample,generation) {
     if (generation !== state.generation) return;
     const scene = module.validateScene(data,sample,sceneUrl);
     state.scene=scene;state.sceneUrl=sceneUrl;
+    const canTogglePoints=!!scene.meshUrl&&!!(scene.pointCloudCount||scene.points.length);
     $('scene-units').textContent = scene.units === 'meters' ? '米 · ' + scene.coordinate_frame : '单目单位未标定 · ' + scene.coordinate_frame;
+    if(scene.provenance?.temporal_geometry_check?.passed===false)$('scene-units').textContent='诊断预览 · 未通过跨视角检查 · '+$('scene-units').textContent;
     $('scene-details').append(node('p','',scene.method));
     for (const limitation of scene.limitations) $('scene-details').append(node('p','',String(limitation)));
     const replay = await module.mountReplay($('scene-stage'),scene,sceneUrl,{
@@ -148,7 +150,7 @@ async function loadScene(sample,generation) {
     if (generation !== state.generation) {replay.dispose(); return;}
     state.replay = replay;
     if(scene.staticObjects?.length){
-      const isolate=node('button','','仅看对象表面');isolate.setAttribute('aria-pressed','false');isolate.onclick=()=>{const enabled=isolate.getAttribute('aria-pressed')!=='true';isolate.setAttribute('aria-pressed',String(enabled));isolate.textContent=enabled?'返回完整场景':'仅看对象表面';if(enabled)isolate.dataset.pointCloud=$('scene-points').getAttribute('aria-pressed');$('scene-points').setAttribute('aria-pressed',enabled?'false':isolate.dataset.pointCloud);$('scene-all').disabled=enabled||!(scene.pointCloudCount||scene.points.length);$('scene-points').disabled=enabled||!(scene.pointCloudCount||scene.points.length);replay.setObjectView(enabled);};
+      const isolate=node('button','','仅看对象表面');isolate.setAttribute('aria-pressed','false');isolate.onclick=()=>{const enabled=isolate.getAttribute('aria-pressed')!=='true';isolate.setAttribute('aria-pressed',String(enabled));isolate.textContent=enabled?'返回完整场景':'仅看对象表面';if(enabled)isolate.dataset.pointCloud=$('scene-points').getAttribute('aria-pressed');$('scene-points').setAttribute('aria-pressed',enabled?'false':isolate.dataset.pointCloud);$('scene-all').disabled=enabled||!(scene.pointCloudCount||scene.points.length);$('scene-points').disabled=enabled||!canTogglePoints;replay.setObjectView(enabled);};
       $('scene-objects').append(node('h3','',`对象观测表面 · ${scene.staticObjects.length}`),isolate,node('p','muted','点击模型或名称回到来源帧与掩码。保留原始预测类别；照片核验是模型解释，不是真值。未验证其他时刻的位置。'));
       for(const object of scene.staticObjects){
         const button=node('button','',`${object.displayName} · 帧 ${object.source.sourceFrame}${object.semanticReview?' · '+reviewStatus(object.semanticReview.status):''}`);button.title=object.semanticReview?.description||'';button.dataset.entityId=object.entityId;button.setAttribute('aria-pressed','false');button.onclick=()=>selectEntity(object.entityId);$('scene-objects').append(button);
@@ -165,7 +167,7 @@ async function loadScene(sample,generation) {
     }
     $('scene-body').hidden=!scene.bodyKeyframes?.length;$('scene-fit').disabled = false;$('scene-source').disabled = false;
     $('scene-all').disabled = !(scene.pointCloudCount||scene.points.length);
-    $('scene-points').disabled = !(scene.pointCloudCount||scene.points.length);
+    $('scene-points').disabled = !canTogglePoints;
     $('scene-points').setAttribute('aria-pressed',String(!!scene.pointCloudUrl||!scene.meshUrl&&!!scene.points.length));
     syncReplay();
     drawFrame(state.frame);
