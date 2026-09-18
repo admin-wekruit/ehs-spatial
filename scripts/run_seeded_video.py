@@ -101,6 +101,9 @@ def seed_masks(folder, lineage_path, parent_manifest, clip):
         raise ValueError('Seed PNG is not the declared decoded source frame')
     provider = json.loads((folder / 'provider-output.json').read_text())
     instances = json.loads((folder / 'instances.json').read_text())
+    label = observed['prompt']
+    if not isinstance(label, str) or not label.strip() or any(i.get('label') != label for i in instances):
+        raise ValueError('Seed labels must match the saved discovery prompt')
     seeds = []
     ids = [i['instance_index'] for i in instances]
     if not ids or any(type(i) is not int or i < 0 for i in ids) or len(set(ids)) != len(ids):
@@ -115,7 +118,7 @@ def seed_masks(folder, lineage_path, parent_manifest, clip):
         seeds.append({'track_id': index, 'frame_index': target, 'mask': mask,
                       'provenance': {'instance_index': index, 'mask_sha256': sha(mask_path),
                                      'source_frame_index': original, 'source_png_sha256': sha(seed_frame)}})
-    return seeds, {'source_manifest_sha256': sha(lineage_path),
+    return seeds, {'prompt': label, 'source_manifest_sha256': sha(lineage_path),
                    'discovery_manifest_sha256': sha(folder / 'input-manifest.json'),
                    'provider_output_sha256': sha(folder / 'provider-output.json'),
                    'seed_clip_sha256': sha(seed_clip), 'target_clip_sha256': clip['sha256'],
@@ -123,7 +126,9 @@ def seed_masks(folder, lineage_path, parent_manifest, clip):
                    'instances': [s['provenance'] for s in seeds]}
 
 
-def encode_output(index, native_ids, logits, clip, source_start, expected_ids):
+def encode_output(index, native_ids, logits, clip, source_start, expected_ids, label='person'):
+    if not isinstance(label, str) or not label.strip():
+        raise ValueError('A nonempty discovery label is required')
     ids = list(native_ids)
     values = np.asarray(logits)
     if ids != list(expected_ids) or len(ids) != len(set(ids)):
@@ -139,7 +144,7 @@ def encode_output(index, native_ids, logits, clip, source_start, expected_ids):
         rle = encode_coco_rle(mask)
         if not np.array_equal(decode_coco_rle(rle).astype(bool), mask):
             raise ValueError('RLE changed the native mask')
-        objects.append({'track_id': native_id, 'label': 'person', 'score': None,
+        objects.append({'track_id': native_id, 'label': label, 'score': None,
                         'rle': rle, 'box_xywh_normalized': box, 'mask_area_pixels': int(mask.sum())})
     return {'frame_index': index, 'source_frame_index': source_start + index,
             'timestamp_seconds': clip['frame_timestamps_seconds'][index], 'objects': objects}
@@ -189,7 +194,7 @@ def run(args):
         with (args.output / 'frames.jsonl').open('w') as ledger:
             for index, ids, logits in model.propagate_in_video(state):
                 frame = encode_output(index, ids, logits.float().cpu().numpy(), clip,
-                                      parent['sourceStartFrame'], expected_ids)
+                                      parent['sourceStartFrame'], expected_ids, evidence['prompt'])
                 if index != len(raw['frames']):
                     raise ValueError('Native predictor omitted or reordered a source frame')
                 raw['frames'].append(frame)
@@ -220,6 +225,8 @@ def self_check():
     assert [o['mask_area_pixels'] for o in frame['objects']] == [1, 0]
     assert all(o['score'] is None for o in frame['objects'])
     assert frame['source_frame_index'] == 7
+    vehicle = encode_output(0, [9, 2], logits, clip, 7, [9, 2], 'car')
+    assert all(o['label'] == 'car' for o in vehicle['objects'])
     second = encode_output(1, [9, 2], logits, clip, 7, [9, 2])
     assert intervals({'input': clip, 'frames': [frame, second]}) == [(0, .1), (.1, .2)]
     for ids, values in [([2, 9], logits), ([9, 2], logits[:, :, :, :2])]:

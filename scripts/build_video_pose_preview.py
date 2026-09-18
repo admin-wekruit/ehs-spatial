@@ -110,9 +110,8 @@ def source_spans(raw: dict, manifest: dict) -> list[tuple[float, float]]:
     return list(zip(times, times[1:]))
 
 
-def build(raw_path: Path, clip_path: Path, model_path: Path, output: Path,
+def build(raw_path: Path, clip_path: Path, model_path: Path | None, output: Path,
           source_manifest: Path, reentry_candidates: Path | None = None) -> dict:
-    from rtmlib import RTMPose
     from importlib.metadata import version
 
     started = time.monotonic()
@@ -126,10 +125,19 @@ def build(raw_path: Path, clip_path: Path, model_path: Path, output: Path,
     manifest = json.loads(source_manifest.read_text())
     spans = source_spans(raw, manifest)
     width, height = raw['input']['width'], raw['input']['height']
+    labels = [o.get('label') for f in raw['frames'] for o in f['objects']]
+    if any(not isinstance(label, str) or not label.strip() for label in labels):
+        raise ValueError('Every observation requires its native discovery label')
+    has_people = 'person' in labels
+    pose = None
+    if has_people:
+        if model_path is None:
+            raise ValueError('Person observations require --pose-model')
+        from rtmlib import RTMPose
+        pose = RTMPose(str(model_path), model_input_size=(192, 256),
+                       to_openpose=False, backend='onnxruntime', device='cpu')
     output.mkdir(parents=True, exist_ok=False)
     (output / 'masks').mkdir()
-    pose = RTMPose(str(model_path), model_input_size=(192, 256),
-                   to_openpose=False, backend='onnxruntime', device='cpu')
     cap = cv2.VideoCapture(str(clip_path))
     if not cap.isOpened():
         raise ValueError('Cannot decode the SAM input clip')
@@ -138,13 +146,17 @@ def build(raw_path: Path, clip_path: Path, model_path: Path, output: Path,
         raise ValueError('A native session or provider request ID is required')
     namespace = 'sam-' + session
     result = {'version': 1, 'coordinateSpace': 'source_pixels', 'width': width,
-              'height': height, 'method': raw['method']['name'] + ' + RTMPose COCO17 (CPU ONNX)',
+              'height': height, 'method': raw['method']['name'] + (' + RTMPose COCO17 (CPU ONNX)' if has_people else ''),
               'identityScope': raw['identity_scope'], 'frames': [],
               'limitations': ['观测仅覆盖所记录的帧区间，不为缺失区间补位置。',
-                              'ID 是本次视频会话中的短期轨迹，未验证跨遮挡或跨视频持久身份。',
+                              'ID 是本次视频会话中的短期轨迹，未验证跨遮挡或跨视频持久身份。']}
+    if has_people:
+        result['limitations'].extend([
                               '此文件保存二维骨架；三维位置需由空间回放中的有效相机和深度另行支持。',
-                              '关节分数是模型响应，0.3 仅为显示阈值，不是校准后的正确概率。']}
-    observations = 0
+                              '关节分数是模型响应，0.3 仅为显示阈值，不是校准后的正确概率。'])
+    else:
+        result['limitations'].append('非人物对象仅显示实际掩码和轨迹；不套用人体骨架，也不据二维位置推断三维运动。')
+    observations = person_observations = 0
     try:
         for frame, (start, end) in zip(raw['frames'], spans, strict=True):
             ok, bgr = cap.read()
@@ -156,7 +168,8 @@ def build(raw_path: Path, clip_path: Path, model_path: Path, output: Path,
                 raise ValueError('Native track IDs must be unique nonnegative integers')
             objects, absent = [], []
             # ponytail: top-down pose uses SAM boxes directly; no duplicate tracker.
-            eligible = [i for i, (_, box) in enumerate(inputs) if box is not None]
+            eligible = [i for i, (_, box) in enumerate(inputs)
+                        if box is not None and frame['objects'][i]['label'] == 'person']
             pose_output = {}
             if eligible:
                 # Official model pipeline.json sets to_rgb=true; RTMLib does not swap channels.
@@ -167,8 +180,6 @@ def build(raw_path: Path, clip_path: Path, model_path: Path, output: Path,
                 pose_output = {i: (points[j], scores[j]) for j, i in enumerate(eligible)}
             if inputs:
                 for j, (obj, (mask, box)) in enumerate(zip(frame['objects'], inputs, strict=True)):
-                    if obj['label'] != 'person':
-                        raise ValueError('Human pose cannot be applied to non-person observations')
                     if not mask.any():
                         absent.append(f"{namespace}-{obj['track_id']}")
                         continue
@@ -185,10 +196,13 @@ def build(raw_path: Path, clip_path: Path, model_path: Path, output: Path,
                               if np.isfinite([x, y, c]).all() else None
                               for (x, y), c in zip(pts, confidence, strict=True)]
                     exported = {'entityId': f"{namespace}-{obj['track_id']}",
-                                    'nativeTrackId': obj['track_id'], 'label': '人 · 短期轨迹',
+                                    'nativeTrackId': obj['track_id'],
+                                    'label': ('人' if obj['label'] == 'person' else obj['label']) + ' · 短期轨迹',
+                                    'sourceLabel': obj['label'],
                                     'maskUrl': name,
                                     'keypoints': joints, 'bones': BONES if joints else [],
-                                    'poseStatus': 'estimated_2d' if joints else 'insufficient_mask_support',
+                                    'poseStatus': ('not_applicable_nonhuman' if obj['label'] != 'person' else
+                                                   'estimated_2d' if joints else 'insufficient_mask_support'),
                                     'rawKeypointScores': [float(c) if np.isfinite(c) else None for c in confidence]}
                     if box is not None:
                         exported['bbox'] = box
@@ -197,6 +211,7 @@ def build(raw_path: Path, clip_path: Path, model_path: Path, output: Path,
                             raise ValueError('Object score must be null or a finite value in [0,1]')
                         exported['confidence'] = obj['score']
                     objects.append(exported)
+                    person_observations += obj['label'] == 'person'
             result['frames'].append({'timeSec': start,
                                      'endTimeSec': end,
                                      'sourceFrame': frame['source_frame_index'], 'objects': objects,
@@ -207,9 +222,10 @@ def build(raw_path: Path, clip_path: Path, model_path: Path, output: Path,
     finally:
         cap.release()
     result['provenance'] = {'rawSamSha256': sha(raw_path), 'clipSha256': sha(clip_path),
-                            'poseModelSha256': sha(model_path), 'samMethod': raw.get('method'),
-                            'poseInputColor': 'RGB', 'poseInputSize': [192, 256],
-                            'rtmlib': version('rtmlib'), 'onnxruntime': version('onnxruntime'),
+                            'poseModelSha256': sha(model_path) if has_people else None, 'samMethod': raw.get('method'),
+                            'poseInputColor': 'RGB' if has_people else None, 'poseInputSize': [192, 256] if has_people else None,
+                            'rtmlib': version('rtmlib') if has_people else None,
+                            'onnxruntime': version('onnxruntime') if has_people else None,
                             'sourceManifestSha256': sha(source_manifest),
                             'samSessionId': session,
                             'sourceVideoSha256': manifest['sourceSha256'],
@@ -233,7 +249,7 @@ def build(raw_path: Path, clip_path: Path, model_path: Path, output: Path,
         result['limitations'].append('重新出现的外观关联仅是候选；未人工确认，不合并原始轨迹编号。')
     (output / 'analysis.json').write_text(json.dumps(result, ensure_ascii=False))
     metrics = {'status': 'execution_complete', 'quality': 'not_independently_validated',
-               'frames': len(spans), 'personObservations': observations,
+               'frames': len(spans), 'objectObservations': observations, 'personObservations': person_observations,
                'elapsedSeconds': round(time.monotonic() - started, 3),
                'analysisSha256': sha(output / 'analysis.json')}
     (output / 'metrics.json').write_text(json.dumps(metrics, indent=2))
@@ -300,6 +316,21 @@ def self_check() -> None:
             pass
         else:
             raise AssertionError('Full-video final interval extension was accepted')
+        car_mask = encode_coco_rle(np.ones((16, 16), bool))
+        full.update(session_id='check-car', identity_scope='video_session_only', method={'name': 'Self-check'})
+        for frame in full['frames']:
+            frame['objects'] = [{'track_id': 7, 'label': 'car', 'rle': car_mask,
+                                 'box_xywh_normalized': [0, 0, 1, 1], 'score': None}]
+        raw_path, parent_path = Path(folder) / 'raw.json', Path(folder) / 'parent.json'
+        raw_path.write_text(json.dumps(full)); parent_path.write_text(json.dumps(parent))
+        output = Path(folder) / 'preview'
+        metrics = build(raw_path, source, None, output, parent_path)
+        exported = json.loads((output / 'analysis.json').read_text())
+        assert metrics['personObservations'] == 0 and metrics['objectObservations'] == 4
+        assert exported['provenance']['poseModelSha256'] is None
+        assert all(o['sourceLabel'] == 'car' and not o['keypoints'] and not o['bones']
+                   and o['poseStatus'] == 'not_applicable_nonhuman'
+                   for f in exported['frames'] for o in f['objects'])
     print('video pose input contract passed: RLE pixels, normalized xywh, time and missing frames')
 
 
@@ -315,7 +346,7 @@ if __name__ == '__main__':
     a = p.parse_args()
     if a.self_check:
         self_check()
-    elif all([a.raw, a.clip, a.pose_model, a.output, a.source_manifest]):
+    elif all([a.raw, a.clip, a.output, a.source_manifest]):
         print(json.dumps(build(a.raw, a.clip, a.pose_model, a.output, a.source_manifest, a.reentry_candidates)))
     else:
-        p.error('--raw, --clip, --pose-model, --source-manifest and --output are required')
+        p.error('--raw, --clip, --source-manifest and --output are required; person observations also require --pose-model')

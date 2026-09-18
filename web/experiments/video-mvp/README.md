@@ -2,7 +2,7 @@
 
 Goal: 原视频始终可播放；只显示同一媒体时间上的实际观测，不填补漏帧、遮挡或缺失分析。
 
-Architecture: 静态 HTML 与原生 video controls；SVG 在原视频像素域绘制 mask/ID/二维骨架。同页空间回放复用现有 `native-viewer.ts`、GLB reader 和坐标变换；静态点云/网格只加载一次，每帧更新相机与关节连线的变换。样本和场景按需加载，切换时释放旧 WebGL 与 Blob 资源。
+Architecture: 静态 HTML 与原生 video，播放及时间控件位于标注层之外；SVG 在原视频像素域绘制 mask/ID/二维骨架。同页空间回放复用现有 `native-viewer.ts`、GLB reader 和坐标变换；静态点云/网格只加载一次，每帧更新相机与关节连线的变换。样本和场景按需加载，切换时释放旧 WebGL 与 Blob 资源。
 
 Implementation plan:
 - [x] 固定 manifest 与分帧观测输入，分离原视频时间和浏览器时间。

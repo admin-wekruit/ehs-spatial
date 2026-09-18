@@ -63,7 +63,9 @@ def match_discovery(previous, masks, next_id):
     return assignments, next_id
 
 
-def discoveries(roots, clip, decoded, step):
+def discoveries(roots, clip, decoded, step, prompt='person'):
+    if not isinstance(prompt, str) or not prompt.strip():
+        raise ValueError('A nonempty discovery prompt is required')
     found = {}
     for root in roots:
         for path in sorted(root.glob('frame-*/input-manifest.json')):
@@ -71,7 +73,7 @@ def discoveries(roots, clip, decoded, step):
             index = manifest['source_frame_index']
             if type(index) is not int or not 0 <= index < clip['frame_count'] or index in found:
                 raise ValueError(f'Duplicate/out-of-range discovery frame: {index}')
-            if (manifest.get('prompt') != 'person' or manifest['source_clip_sha256'] != clip['sha256']
+            if (manifest.get('prompt') != prompt or manifest['source_clip_sha256'] != clip['sha256']
                     or (manifest['height'], manifest['width']) != (clip['height'], clip['width'])
                     or abs(manifest['timestamp_seconds']-clip['frame_timestamps_seconds'][index]) > .001):
                 raise ValueError('Discovery source, pixel domain, or timestamp differs')
@@ -93,7 +95,7 @@ def discoveries(roots, clip, decoded, step):
                 mask_path = path.parent / f'instance-{i}-mask.png'
                 image = cv2.imread(str(mask_path), cv2.IMREAD_UNCHANGED)
                 native = decode_coco_rle(provider['rle'][i], height=clip['height'], width=clip['width']).astype(bool)
-                if (instance.get('label') != 'person' or native.shape != (clip['height'], clip['width'])
+                if (instance.get('label') != prompt or native.shape != (clip['height'], clip['width'])
                         or image is None or image.ndim != 2 or image.shape != native.shape
                         or sha(mask_path) != instance['mask_sha256']
                         or not np.array_equal(image > 0, native) or not native.any()):
@@ -134,7 +136,7 @@ def run(args):
     args.output.mkdir(parents=True, exist_ok=False)
     frame_dir = args.output / 'frames'; frame_dir.mkdir()
     clip, decoded = decoded_clip(args.clip, frame_dir)
-    found = discoveries(args.discovery_roots, clip, decoded, args.step)
+    found = discoveries(args.discovery_roots, clip, decoded, args.step, args.prompt)
     parent = {'sourceVideo': str(args.clip.resolve()), 'sourceSha256': clip['sha256'],
               'sourceStartFrame': 0, 'frameCount': clip['frame_count'], 'clipSha256': clip['sha256'],
               'clipDurationSeconds': clip['duration_seconds'],
@@ -148,6 +150,7 @@ def run(args):
          'encoding': 'OpenCV decoded RGB -> JPEG quality100 subsampling0; no resizing or retiming'})
     revision = subprocess.check_output(['git', '-C', str(args.vendor), 'rev-parse', 'HEAD'], text=True).strip()
     method = {'name': 'Periodic SAM3 discovery + short-window SAM2.1 propagation',
+              'discovery_prompt': args.prompt,
               'script_sha256': sha(Path(__file__)), 'source_revision': revision,
               'weights_sha256': sha(args.weights), 'device': args.device, 'torch_version': torch.__version__,
               'mps_cpu_fallback_environment': os.getenv('PYTORCH_ENABLE_MPS_FALLBACK'),
@@ -203,7 +206,7 @@ def run(args):
                 processed += 1
                 index = start + local
                 values = logits.float().cpu().numpy() if ids else logits
-                frame = encode_output(index, native_ids, values, clip, 0, ids)
+                frame = encode_output(index, native_ids, values, clip, 0, ids, args.prompt)
                 native_ledger.write(json.dumps({'window_start': start, 'local_frame_index': local, **frame}, allow_nan=False)+'\n')
                 for obj in frame['objects']:
                     native_id = obj['track_id']
@@ -286,6 +289,7 @@ if __name__ == '__main__':
         parser.add_argument('--'+name, type=Path)
     parser.add_argument('--discovery-roots', type=Path, nargs='+')
     parser.add_argument('--step', type=int, default=30)
+    parser.add_argument('--prompt', default='person', help='One exact saved discovery prompt; no class relabeling')
     parser.add_argument('--device', choices=['mps', 'cpu'], default='mps')
     parser.add_argument('--self-check', action='store_true')
     args = parser.parse_args()

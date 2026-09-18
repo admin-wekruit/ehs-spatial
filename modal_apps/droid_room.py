@@ -1,7 +1,7 @@
 """One bounded, pretrained official DROID-SLAM RGB experiment (no remote GT).
 
-Run once: python modal_apps/droid_room.py execute --output ABS_NEW_RUN
-Recover without resubmitting: python modal_apps/droid_room.py collect --output ABS_RUN
+Run once: python modal_apps/droid_room.py execute --run-id NEW_ID --output ABS_NEW_RUN --reuse-build-from ABS_COMPLETED_RUN
+Recover without resubmitting: python modal_apps/droid_room.py collect --run-id ID --output ABS_RUN
 Check locally: python modal_apps/droid_room.py self-check
 """
 import argparse
@@ -9,7 +9,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import subprocess
 import sys
 import tarfile
 import time
@@ -19,13 +18,11 @@ import modal
 REV = "2dfd39f0dcad44012ca7bbb8aa70b55edbfa9c99"
 LIETORCH = "7f687644fcea81ab337831749445224503c1290d"
 SCATTER = "6cf77c420f837a427b0d57965e414d68c1bd89ec"
-WEIGHTS_URL = "https://drive.usercontent.google.com/download?id=1PpqVt1H4maBa_GbPJp4NwxRsd9jk-elh&export=download&confirm=t"
-WEIGHTS_BYTES = 16061701
 ART = Path("/Users/adam/Desktop/panoptes-public/research-notes/phase2")
 DATASET = ART / "data/rgbd_dataset_freiburg1_room"
 SOURCE_K = [517.306408, 516.469215, 318.643040, 255.313989]
 SOURCE_D = [0.262383, -0.953104, -0.005358, 0.002628, 1.163314]
-RUN_ID = "droid-fr1-room-001"
+CONTRACT_VERSION = "droid-final-upsampling-v2"
 ROOT = Path("/artifact")
 app = modal.App("panoptes-droid-room-once")
 image = modal.Image.from_registry("pytorch/pytorch:2.7.0-cuda12.6-cudnn9-devel").entrypoint([])
@@ -42,66 +39,32 @@ def save(path, value):
     Path(path).write_text(json.dumps(value, indent=2, allow_nan=False) + "\n")
 
 
-@app.function(image=image, cpu=(4, 4), memory=(16384, 16384), timeout=1750,
-              startup_timeout=45, retries=0, max_containers=1, scaledown_window=2,
-              volumes={"/artifact": volume})
-def build(deadline):
-    """CPU-only build; CUDA toolkit cross-compiles extensions without a GPU."""
-    import shutil
-    import urllib.request
-    started = time.time()
-    ROOT.mkdir(exist_ok=True)
-    logfile = ROOT / "build.log"
-    env = dict(os.environ, PYTHONPATH=str(ROOT / "site"), CUDA_HOME="/usr/local/cuda",
-               FORCE_CUDA="1", TORCH_CUDA_ARCH_LIST="8.0", MAX_JOBS="4",
-               OMP_NUM_THREADS="4", MPLBACKEND="Agg")
-
-    def command(argv, cwd=None):
-        remaining = min(1700, int(deadline-time.time())-10)
-        if remaining <= 0:
-            raise TimeoutError("CPU build deadline exhausted")
-        with logfile.open("a") as log:
-            log.write(json.dumps(argv) + "\n"); log.flush()
-            subprocess.run(argv, cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT,
-                           check=True, timeout=remaining)
-
-    try:
-        if not shutil.which("git"):
-            command(["apt-get", "update"])
-            command(["apt-get", "install", "-y", "git", "build-essential"])
-        code = ROOT / "DROID-SLAM"
-        if not code.exists():
-            command(["git", "clone", "--no-checkout", "https://github.com/princeton-vl/DROID-SLAM.git", str(code)])
-        command(["git", "checkout", REV], code)
-        command(["git", "submodule", "update", "--init", "--recursive"], code)
-        for folder, revision in [(code, REV), (code / "thirdparty/lietorch", LIETORCH),
-                                 (code / "thirdparty/pytorch_scatter", SCATTER)]:
-            assert subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=folder, text=True).strip() == revision
-        command([sys.executable, "-m", "pip", "install", "--target", str(ROOT / "site"),
-                 "setuptools==75.8.0", "wheel", "ninja", "numpy==1.26.4", "scipy==1.15.2",
-                 "opencv-python-headless==4.11.0.86", "matplotlib==3.10.1", "tqdm==4.67.1"])
-        for project in [code / "thirdparty/lietorch", code / "thirdparty/pytorch_scatter", code]:
-            command([sys.executable, "-m", "pip", "install", "--no-build-isolation", "--no-deps",
-                     "--target", str(ROOT / "site"), str(project)])
-        weight = ROOT / "droid.pth"
-        if not weight.exists():
-            with urllib.request.urlopen(WEIGHTS_URL, timeout=60) as response, weight.open("wb") as dest:
-                shutil.copyfileobj(response, dest)
-        assert weight.stat().st_size == WEIGHTS_BYTES
-        command([sys.executable, "-c", "import torch,lietorch,droid_backends,torch_scatter; "
-                 "assert torch.__version__.startswith('2.7.0'); "
-                 "assert torch.version.cuda.startswith('12.6'); "
-                 "w=torch.load('/artifact/droid.pth',map_location='cpu',weights_only=True); "
-                 "assert isinstance(w,dict) and len(w)>50; print(torch.__version__,torch.version.cuda,len(w))"])
-        result = {"status": "cpu_build_complete", "source_revision": REV,
-                  "lietorch_revision": LIETORCH, "scatter_revision": SCATTER,
-                  "weights_sha256": sha(weight), "elapsed_seconds": time.time()-started,
-                  "python": sys.version, "gpu_allocated": False}
-    except Exception as error:
-        result = {"status": "cpu_build_failed", "error": repr(error), "elapsed_seconds": time.time()-started}
-    save(ROOT / "build.json", result)
-    volume.commit()
-    return result
+def patch_lowmem(source):
+    """Fix the shared derived-output ordering; BA/tracking operations are unchanged."""
+    replacements = [
+        ("                s = 8\n", "                upsample_updates = []\n                s = 8\n"),
+        ("                            self.video.upsample(torch.unique(iis), upmask)",
+         "                            upsample_updates.append((torch.unique(iis), upmask))"),
+        ("                self.video.dirty[:t] = True\n", """                if self.upsample:
+                    if step == steps - 1:
+                        self.video.phase2_final_lowres_before = self.video.disps[:t].clone()
+                        self.video.phase2_final_poses_before = self.video.poses[:t].clone()
+                    with autocast(enabled=True):
+                        for source_ix, learned_mask in upsample_updates:
+                            self.video.upsample(source_ix, learned_mask)
+                    if step == steps - 1:
+                        self.video.phase2_final_upsample_masks = [
+                            (ix.clone(), mask.detach().clone()) for ix, mask in upsample_updates]
+                        self.video.phase2_final_backend_steps = steps
+                        assert torch.equal(self.video.phase2_final_lowres_before, self.video.disps[:t])
+                        assert torch.equal(self.video.phase2_final_poses_before, self.video.poses[:t])
+                self.video.dirty[:t] = True
+""")]
+    for before, after in replacements:
+        assert source.count(before) == 1, "Pinned update_lowmem source differs"
+        source = source.replace(before, after)
+    compile(source, "factor_graph.py", "exec")
+    return source
 
 
 def prepare_image(image, calibration):
@@ -119,9 +82,9 @@ def prepare_image(image, calibration):
 @app.function(image=image, gpu="A100-40GB", cpu=(4, 4), memory=(16384, 16384),
               timeout=840, startup_timeout=45, retries=0, max_containers=1,
               min_containers=0, scaledown_window=2, volumes={"/artifact": volume})
-def infer(deadline, expected_archive_sha, expected_manifest_sha):
+def infer(run_id, deadline, expected_archive_sha, expected_manifest_sha, expected_build_sha):
     # Platform preemption can restart inputs despite retries=0. Never re-execute inference.
-    if not attempts.put(RUN_ID, {"claimed_at": time.time()}, skip_if_exists=True):
+    if not attempts.put(run_id, {"claimed_at": time.time()}, skip_if_exists=True):
         raise RuntimeError("GPU attempt already claimed; inspect artifacts, never resubmit")
     started = time.time()
     if deadline-started < 30:
@@ -132,21 +95,49 @@ def infer(deadline, expected_archive_sha, expected_manifest_sha):
     signal.signal(signal.SIGALRM, expired)
     signal.alarm(min(810, max(1, int(deadline-started)-30)))
     volume.reload()
-    out = ROOT / "result"
-    out.mkdir(exist_ok=False)
+    namespace = ROOT / "runs" / run_id
+    namespace.mkdir(parents=True, exist_ok=False)
+    out = namespace / "result"
+    out.mkdir()
     save(out / "remote-run.json", {"status": "gpu_running", "started_unix": started})
     volume.commit()
     try:
-        sys.path[:0] = [str(ROOT / "site"), str(ROOT / "DROID-SLAM/droid_slam")]
+        import difflib
+        import shutil
+        code = ROOT / "DROID-SLAM"
+        assert sha(ROOT / "build.json") == expected_build_sha
+        # The base GPU image has no git; the successful build manifest binds all pins.
+        original = code / "droid_slam/factor_graph.py"
+        assert sha(original) == "22403512df0b778b4265549919df9d4650dc5acf438754399a9dea2211952aba"
+        before = original.read_text()
+        copied = namespace / "droid_slam"
+        shutil.copytree(code / "droid_slam", copied, ignore=shutil.ignore_patterns("__pycache__"))
+        after = patch_lowmem(before)
+        (copied / "factor_graph.py").write_text(after)
+        (out / "native-source.patch").write_text("".join(difflib.unified_diff(
+            before.splitlines(True), after.splitlines(True),
+            fromfile="a/droid_slam/factor_graph.py", tofile="b/droid_slam/factor_graph.py")))
+        save(out / "native-source.json", {"contract_version": CONTRACT_VERSION, "source_revision": REV,
+             "shared_function": "FactorGraph.update_lowmem", "unmodified_source_sha256": sha(original),
+             "modified_source_sha256": sha(copied / "factor_graph.py"),
+             "patch_sha256": sha(out / "native-source.patch"), "cached_build_sha256": expected_build_sha,
+             "changes": "Move original learned upsampling after same BA; retain last masks and invariance evidence",
+             "python_source_sha256": {str(p.relative_to(copied)): sha(p) for p in copied.rglob("*.py")}})
+        sys.path[:0] = [str(ROOT / "site"), str(copied)]
         os.environ["MPLBACKEND"] = "Agg"
         import cv2
         import numpy as np
         import torch
         import lietorch
         from droid import Droid
+        from droid_net import cvx_upsample
+        import factor_graph
+        assert Path(factor_graph.__file__).resolve() == (copied / "factor_graph.py").resolve()
         torch.multiprocessing.set_start_method("spawn", force=True)
         build_info = json.loads((ROOT / "build.json").read_text())
         assert build_info["status"] == "cpu_build_complete"
+        assert build_info["source_revision"] == REV and build_info["lietorch_revision"] == LIETORCH
+        assert build_info["scatter_revision"] == SCATTER
         assert sha(ROOT / "droid.pth") == build_info["weights_sha256"]
         assert sha(ROOT / "input-rgb.tar") == expected_archive_sha
         assert sha(ROOT / "input-manifest.json") == expected_manifest_sha
@@ -203,6 +194,37 @@ def infer(deadline, expected_archive_sha, expected_manifest_sha):
         key_c2w = lietorch.SE3(droid.video.poses[:n]).inv().matrix().cpu().numpy()
         key_indices = indices.astype(np.int64)
         agreement = np.abs(poses[key_indices] - key_c2w)
+        mask_chunks = droid.video.phase2_final_upsample_masks
+        mask_ix = torch.cat([ix for ix, mask in mask_chunks])
+        coverage = torch.equal(mask_ix, torch.arange(n, device=mask_ix.device))
+        low_unchanged = torch.equal(droid.video.phase2_final_lowres_before, droid.video.disps[:n])
+        poses_unchanged = torch.equal(droid.video.phase2_final_poses_before, droid.video.poses[:n])
+        assert coverage and low_unchanged and poses_unchanged
+        assert droid.video.phase2_final_backend_steps == 12
+        max_recompute_error = 0.0
+        with torch.autocast(device_type="cuda", enabled=True):
+            for ix, mask in mask_chunks:
+                recomputed = cvx_upsample(droid.video.disps[ix].unsqueeze(-1), mask).squeeze(-1)
+                error = (recomputed-droid.video.disps_up[ix]).abs().max().item()
+                max_recompute_error = max(max_recompute_error, error)
+        assert max_recompute_error == 0.0
+        mask_logits = torch.cat([mask.squeeze(0) for ix, mask in mask_chunks]).cpu().numpy()
+        assert mask_logits.shape == (n, 576, 30, 40) and np.isfinite(mask_logits).all()
+        def array_sha(tensor):
+            return hashlib.sha256(tensor.detach().cpu().contiguous().numpy().tobytes()).hexdigest()
+        save(out / "final-upsampling-validation.json", {
+            "contract_version": CONTRACT_VERSION, "final_lowres_unchanged": low_unchanged,
+            "final_native_poses_unchanged": poses_unchanged, "full_keyframe_mask_coverage": coverage,
+            "max_abs_recompute_error": max_recompute_error, "last_backend_steps": 12,
+            "mask_logits_dtype": str(mask_logits.dtype), "mask_logits_shape": list(mask_logits.shape),
+            "mask_logits_sha256": hashlib.sha256(mask_logits.tobytes()).hexdigest(),
+            "mask_source_indices_sha256": hashlib.sha256(key_indices.tobytes()).hexdigest(),
+            "final_lowres_before_upsample_sha256": array_sha(droid.video.phase2_final_lowres_before),
+            "final_lowres_after_terminate_sha256": array_sha(droid.video.disps[:n]),
+            "final_native_poses_before_upsample_sha256": array_sha(droid.video.phase2_final_poses_before),
+            "final_native_poses_after_terminate_sha256": array_sha(droid.video.poses[:n]),
+            "recompute": "Official cvx_upsample(final video.disps, last matching learned logits), CUDA autocast enabled",
+            "quality_scope": "State and numeric validity only; depth quality remains unvalidated"})
         low_disparity = droid.video.disps[:n].cpu().numpy()
         low_valid = np.isfinite(low_disparity) & (low_disparity > 0)
         low_depth = np.divide(1.0, low_disparity, out=np.zeros_like(low_disparity), where=low_valid)
@@ -214,8 +236,10 @@ def infer(deadline, expected_archive_sha, expected_manifest_sha):
         assert np.allclose(intrinsics_full, intrinsics, atol=1e-5)
         np.savez(out / "prediction.npz", poses_c2w=poses, poses_xyzw=trajectory,
                  keyframe_source_indices=key_indices, keyframe_c2w=key_c2w,
-                 keyframe_depth_native=depth, keyframe_inverse_depth_native=disparity,
-                 keyframe_depth_valid=valid, keyframe_intrinsics_fx_fy_cx_cy=intrinsics_full,
+                 keyframe_final_fullres_depth=depth, keyframe_final_fullres_inverse_depth=disparity,
+                 keyframe_final_fullres_valid=valid, keyframe_final_fullres_intrinsics=intrinsics_full,
+                 keyframe_final_upsample_mask_logits=mask_logits,
+                 keyframe_final_upsample_mask_source_indices=key_indices,
                  keyframe_final_lowres_inverse_depth=low_disparity,
                  keyframe_final_lowres_depth=low_depth, keyframe_final_lowres_valid=low_valid,
                  keyframe_final_lowres_intrinsics=intrinsics_full/8,
@@ -235,11 +259,13 @@ def infer(deadline, expected_archive_sha, expected_manifest_sha):
              "intrinsics_convention": "Official TUM scale/crop convention, not half-pixel-adjusted resize K",
              "color": "OpenCV BGR; native MotionFilter converts BGR to normalized RGB",
              "depth_scope": "Final keyframes only, native monocular scale; finite positive is numeric validity, not confidence",
-             "upsampled_depth_state": "Official disps_up snapshot before last low-memory backend BA; not guaranteed identical optimization state as final keyframe pose",
+             "contract_version": CONTRACT_VERSION,
+             "upsampled_depth_state": "Original learned convex upsampling of final post-BA video.disps with last matching learned masks; exact GPU recompute verified",
+             "official_offline_viewer_raster": {"wh": [160, 120], "rgb_and_disparity": "[..., ::2, ::2] stride, no resizing or pixel offset", "K": "model K/2 = 4*stored video.intrinsics"},
              "final_lowres_depth_state": "Final video.disps after backend BA; same optimization state as keyframe_c2w; raster 40x30, K=model_K/8",
              "keyframe_model_bgr": "Exact undistorted resized cropped source raster, 320x240, matching full-resolution depth pixel domain",
              "full_trajectory_scope": "All frames optimized by official PoseTrajectoryFiller; not per-frame tracking success"})
-        result = {"status": "inference_complete", "frames_processed": 1362, "full_pose_count": len(poses),
+        result = {"status": "inference_complete", "run_id": run_id, "contract_version": CONTRACT_VERSION, "frames_processed": 1362, "full_pose_count": len(poses),
              "keyframe_count": n, "elapsed_seconds": time.time()-started,
              "weights_sha256": build_info["weights_sha256"], "source_revision": REV,
              "torch_version": str(torch.__version__), "torch_cuda": torch.version.cuda,
@@ -287,79 +313,57 @@ def evaluate(output):
     return {k: v for k,v in result.items() if k != "associations"}
 
 
-def collect(output):
-    """Read existing persisted artifacts; this never invokes either remote function."""
-    for prefix in ["build.json", "build.log"]:
-        with (output / prefix).open("wb") as stream:
-            for block in volume.read_file(prefix): stream.write(block)
-    entries = list(volume.iterdir("result", recursive=False))
-    for entry in entries:
+def collect(output, run_id):
+    """Read persisted namespaced artifacts; never dispatches remote compute."""
+    for name in ["build.json", "build.log"]:
+        with (output / name).open("wb") as stream:
+            for block in volume.read_file(name): stream.write(block)
+    remote = "runs/"+run_id+"/result"
+    for entry in volume.iterdir(remote, recursive=False):
         name = Path(entry.path).name
         with (output / name).open("wb") as stream:
-            for block in volume.read_file("result/"+name): stream.write(block)
+            for block in volume.read_file(remote+"/"+name): stream.write(block)
     state = json.loads((output / "remote-run.json").read_text())
     if state["status"] == "inference_complete":
+        assert state["run_id"] == run_id and state["contract_version"] == CONTRACT_VERSION
         for name, checksum in state["artifacts_sha256"].items():
             assert sha(output / name) == checksum
         print(json.dumps(evaluate(output), indent=2))
     return state
 
 
-def execute(output):
+def execute(output, run_id, reuse_run):
+    """One GPU-only run using the already successful pinned build and RGB archive."""
+    assert run_id and all(c.isalnum() or c in "-_" for c in run_id)
+    previous = json.loads((reuse_run / "run.json").read_text())
+    assert previous["status"] == "inference_complete" and previous["source_revision"] == REV
+    assert sha(reuse_run / "input-rgb.tar") == previous["archive_sha256"]
+    assert sha(reuse_run / "input-manifest.json") == previous["input_manifest_sha256"]
+    manifest = json.loads((reuse_run / "input-manifest.json").read_text())
+    assert not manifest["groundtruth_included"] and not manifest["depth_included"]
+    assert manifest["rgb_index_sha256"] == sha(DATASET / "rgb.txt")
+    for record in manifest["frames"]:
+        assert sha(DATASET / record["relative_path"]) == record["sha256"]
     output.mkdir(parents=True, exist_ok=False)
-    save(output / "reservation.json", {"run_id": RUN_ID, "max_additional_usd": 3,
-        "prior_root_reservation_usd": 24.36, "total_reserved_usd": 27.36,
-        "cpu_build_max_seconds": 1800, "gpu_submission_max_seconds": 900,
-        "gpu_attempts": 1, "gpu_retries": 0, "rates_usd_hour": {"A100-40GB": 2.10, "cpu_core": .0473, "ram_GiB": .008}})
-    records = []
-    for line in (DATASET / "rgb.txt").read_text().splitlines():
-        if not line or line.startswith("#"): continue
-        stamp, relative = line.split()
-        path = DATASET / relative
-        assert relative.startswith("rgb/") and path.resolve().is_relative_to(DATASET)
-        records.append({"source_index": len(records), "timestamp_text": stamp,
-                        "relative_path": relative, "sha256": sha(path)})
-    assert len(records) == 1362
-    manifest = {"frame_count": len(records), "rgb_index_sha256": sha(DATASET / "rgb.txt"),
-        "source_K_fx_fy_cx_cy": SOURCE_K, "source_distortion": SOURCE_D, "frames": records,
-        "groundtruth_included": False, "depth_included": False}
-    save(output / "input-manifest.json", manifest)
-    with tarfile.open(output / "input-rgb.tar", "w") as archive:
-        for record in records:
-            archive.add(DATASET / record["relative_path"], arcname=record["relative_path"], recursive=False)
+    (output / "input-manifest.json").write_bytes((reuse_run / "input-manifest.json").read_bytes())
     (output / "runner-at-execution.py").write_bytes(Path(__file__).read_bytes())
-    state = {"status": "preparing", "run_id": RUN_ID, "source_revision": REV,
-             "script_sha256": sha(Path(__file__)), "archive_sha256": sha(output / "input-rgb.tar"),
-             "input_manifest_sha256": sha(output / "input-manifest.json")}
+    save(output / "reservation.json", {"run_id": run_id, "max_additional_usd": 1.5,
+        "inside_existing_droid_reservation_usd": 3, "total_root_reserved_usd": 27.36,
+        "cpu_build_max_seconds": 0, "gpu_submission_max_seconds": 900,
+        "gpu_attempts": 1, "gpu_retries": 0, "rates_usd_hour": {"A100-40GB": 2.10, "cpu_core": .0473, "ram_GiB": .008}})
+    state = {"status": "preparing", "run_id": run_id, "contract_version": CONTRACT_VERSION,
+        "source_revision": REV, "script_sha256": sha(Path(__file__)),
+        "archive_sha256": previous["archive_sha256"], "input_manifest_sha256": previous["input_manifest_sha256"],
+        "cached_build_sha256": sha(reuse_run / "build.json"), "reuse_successful_run": str(reuse_run),
+        "reuse_successful_run_sha256": sha(reuse_run / "run.json"),
+        "input_archive_path": str(reuse_run / "input-rgb.tar"), "cpu_build_invoked": False,
+        "remote_namespace": "runs/"+run_id, "groundtruth_uploaded": False, "sensor_depth_uploaded": False}
     save(output / "run.json", state)
     with app.run():
-        state["app_id"] = app.app_id
-        cpu_deadline = time.time()+1800
-        call = build.spawn(cpu_deadline)
-        state.update(status="cpu_build_running", cpu_call_id=call.object_id, cpu_deadline_unix=cpu_deadline)
-        save(output / "run.json", state); print(json.dumps(state), flush=True)
-        try:
-            built = call.get(timeout=max(1, cpu_deadline-time.time()))
-        except BaseException:
-            call.cancel(terminate_containers=True)
-            state["status"] = "cpu_result_unknown_or_timeout"; save(output / "run.json", state)
-            raise
-        save(output / "build-result.json", built)
-        if built["status"] != "cpu_build_complete":
-            state["status"] = "cpu_build_failed"; save(output / "run.json", state)
-            for name in ["build.json", "build.log"]:
-                with (output/name).open("wb") as stream:
-                    for block in volume.read_file(name): stream.write(block)
-            raise RuntimeError(built)
-        print(json.dumps(built), flush=True)
-        state["status"] = "uploading_verified_rgb"; save(output / "run.json", state)
-        with volume.batch_upload() as batch:
-            batch.put_file(output / "input-rgb.tar", "/input-rgb.tar")
-            batch.put_file(output / "input-manifest.json", "/input-manifest.json")
         deadline = time.time()+900
-        state.update(status="gpu_submitting", gpu_deadline_unix=deadline)
+        state.update(status="gpu_submitting", app_id=app.app_id, gpu_deadline_unix=deadline)
         save(output / "run.json", state)
-        call = infer.spawn(deadline, state["archive_sha256"], state["input_manifest_sha256"])
+        call = infer.spawn(run_id, deadline, state["archive_sha256"], state["input_manifest_sha256"], state["cached_build_sha256"])
         state.update(status="gpu_running", gpu_call_id=call.object_id)
         save(output / "run.json", state); print(json.dumps(state), flush=True)
         try:
@@ -370,7 +374,9 @@ def execute(output):
             raise
         print(json.dumps(result), flush=True)
         state["status"] = result["status"]; save(output / "run.json", state)
-        collect(output)
+        collected = collect(output, run_id)
+        state["remote_run_sha256"] = sha(output / "remote-run.json")
+        state["status"] = collected["status"]; save(output / "run.json", state)
     return state
 
 
@@ -386,14 +392,32 @@ def self_check():
     assert np.array_equal(result,official) and result.shape==(240,320,3)
     assert np.allclose(K,[284.5185244,275.450248,159.253672,128.1674608])
     assert 1400 >= 1362+16
-    print("DROID source raster/calibration/capacity self-check passed; no GPU invoked")
+    # Exact pinned source test catches wrong anchors and preserves every BA invocation.
+    import urllib.request
+    source = urllib.request.urlopen("https://raw.githubusercontent.com/princeton-vl/DROID-SLAM/"+REV+"/droid_slam/factor_graph.py").read().decode()
+    patched = patch_lowmem(source)
+    import ast
+    def calls(text):
+        return [ast.dump(n, include_attributes=False) for n in ast.walk(ast.parse(text))
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "ba"]
+    assert calls(source) == calls(patched)
+    lowmem = patched.split("    def update_lowmem", 1)[1].split("    def add_neighborhood_factors", 1)[0]
+    assert lowmem.index("self.video.ba(") < lowmem.index("self.video.upsample(")
+    assert "self.video.phase2_final_upsample_masks" in lowmem
+    print("DROID raster/calibration/capacity and pinned BA-before-upsampling self-check passed; no GPU invoked")
 
 
 if __name__ == "__main__":
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=["execute","collect","self-check"])
-    parser.add_argument("--output", type=Path, default=ART / "runs" / RUN_ID)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--run-id")
+    parser.add_argument("--reuse-build-from", type=Path)
     args=parser.parse_args()
     if args.mode=="self-check": self_check()
-    elif args.mode=="collect": print(json.dumps(collect(args.output),indent=2))
-    else: print(json.dumps(execute(args.output),indent=2))
+    else:
+        assert args.run_id and args.output, "Explicit --run-id and --output required"
+        if args.mode=="collect": print(json.dumps(collect(args.output, args.run_id),indent=2))
+        else:
+            assert args.reuse_build_from, "This entry reuses a successful build; --reuse-build-from required"
+            print(json.dumps(execute(args.output, args.run_id, args.reuse_build_from),indent=2))

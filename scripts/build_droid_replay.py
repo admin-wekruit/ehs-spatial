@@ -1,7 +1,7 @@
 """Export a completed DROID result without GT alignment or metric-scale claims.
 
 Camera replay uses the official full motion-only filler trajectory. TSDF uses
-only final native keyframe c2w/depth/K, never filler poses or disps_up snapshots.
+only final native keyframe c2w/depth/K, never filler poses or stale disps_up.
 """
 from __future__ import annotations
 
@@ -98,15 +98,33 @@ def keyframe_arrays(data, count, preprocessing):
             and np.allclose(depth[valid] * disparity[valid], 1, atol=2e-6, rtol=0),
             'Final depth, inverse depth and numeric validity disagree')
     low_k = data['keyframe_final_lowres_intrinsics']
-    full_k = data['keyframe_intrinsics_fx_fy_cx_cy']
     expected_k = np.asarray(preprocessing['model_intrinsics_fx_fy_cx_cy'])
-    require(low_k.shape == full_k.shape == (len(indices), 4) and np.isfinite(low_k).all()
-            and np.allclose(low_k * 8, full_k, atol=1e-5, rtol=0)
-            and np.allclose(full_k, expected_k, atol=1e-5, rtol=0), 'Final low-resolution K must be model K / 8')
+    require(low_k.shape == (len(indices), 4) and np.isfinite(low_k).all()
+            and np.allclose(low_k * 8, expected_k, atol=1e-5, rtol=0), 'Final low-resolution K must be model K / 8')
     bgr = data['keyframe_model_bgr']
     require(bgr.shape == (len(indices), height, width, 3) and bgr.dtype == np.uint8,
             'Missing exact model-domain keyframe colors')
     return indices, poses, depth, valid, low_k, bgr
+
+
+def fullres_arrays(data, low_depth, low_k, colors):
+    """The official offline viewer samples full-resolution results with stride 2."""
+    disparity = data['keyframe_final_fullres_inverse_depth']
+    depth = data['keyframe_final_fullres_depth']
+    valid = data['keyframe_final_fullres_valid']
+    full_k = data['keyframe_final_fullres_intrinsics']
+    require(depth.shape == disparity.shape == valid.shape == colors.shape[:3]
+            and depth.shape[0] == low_depth.shape[0] and valid.dtype == np.bool_,
+            'Final upsampled depth must share the exact model RGB raster')
+    numeric = np.isfinite(disparity) & (disparity > 0)
+    require(np.array_equal(valid, numeric) and np.isfinite(depth).all()
+            and np.all(depth[~valid] == 0) and np.all(depth[valid] > 0)
+            and np.allclose(depth[valid] * disparity[valid], 1, atol=2e-6, rtol=0),
+            'Final full-resolution depth and inverse depth disagree')
+    require(full_k.shape == low_k.shape and np.isfinite(full_k).all()
+            and np.allclose(full_k, low_k * 8, atol=1e-5, rtol=0),
+            'Final full-resolution intrinsics must equal model K')
+    return depth[:, ::2, ::2], valid[:, ::2, ::2], full_k / 2, disparity[:, ::2, ::2]
 
 
 def build(args):
@@ -126,9 +144,20 @@ def build(args):
             and remote['groundtruth_alignment_applied'] is False and remote['full_poses_are_filler_output'] is True
             and remote['source_revision'] == local['source_revision'],
             'Require a completed, unaligned, RGB-only native result')
+    final_fullres = args.depth_domain == 'final-fullres'
     required = ['prediction.npz', 'frames.jsonl', 'preprocessing.json', 'pose-contract.json', 'inference-config.json']
+    if final_fullres:
+        require(remote.get('contract_version') == 'droid-final-upsampling-v2',
+                'Full-resolution fusion requires verified post-BA learned upsampling')
+        required.append('final-upsampling-validation.json')
     for name in required:
         require(digest(run / name) == remote['artifacts_sha256'][name], 'Changed native artifact: ' + name)
+    if final_fullres:
+        upsampling_check = read_json(run / 'final-upsampling-validation.json')
+        require(all(upsampling_check.get(name) is True for name in
+                    ['final_lowres_unchanged', 'final_native_poses_unchanged', 'full_keyframe_mask_coverage'])
+                and upsampling_check.get('max_abs_recompute_error') == 0,
+                'Final learned upsampling validation did not pass')
     require(digest(run / 'input-manifest.json') == local['input_manifest_sha256']
             and digest(run / 'runner-at-execution.py') == local['script_sha256'], 'Changed run input or runner')
     inputs, pre = read_json(run / 'input-manifest.json'), read_json(run / 'preprocessing.json')
@@ -162,14 +191,20 @@ def build(args):
                 cx * resize_w / shape[1] - x0, cy * resize_h / shape[0] - y0]
     require(np.allclose(scaled_k, pre['model_intrinsics_fx_fy_cx_cy'], atol=2e-5, rtol=0),
             'Model K does not follow declared native scale/crop convention')
-    # All raw arrays stay in the immutable NPZ. Only final low-resolution arrays
-    # enter geometry; the similarly named upsampled arrays are never substituted.
+    # Every domain is explicit. The original pre-BA upsampled snapshot is rejected.
     with np.load(run / 'prediction.npz', allow_pickle=False) as data:
         indices, poses, depth, valid, low_k, colors = keyframe_arrays(data, count, pre)
+        disparity = data['keyframe_final_lowres_inverse_depth']
+        depth_array = 'keyframe_final_lowres_depth'
+        color_sampling = 'model BGR[3::8,3::8,::-1], official visualization convention'
+        if final_fullres:
+            depth, valid, low_k, disparity = fullres_arrays(data, depth, low_k, colors)
+            depth_array = 'keyframe_final_fullres_depth[:,::2,::2]'
+            color_sampling = 'model BGR[::2,::2,::-1], final full-resolution disparity[::2,::2], K=model K/2; official offline convention'
         require(len(indices) == remote['keyframe_count'], 'Native keyframe count disagrees')
         depth_statistics = {'quantiles_0_1_10_50_90_99_100_percent_native': np.quantile(depth[valid], [0, .01, .1, .5, .9, .99, 1]).tolist(),
                             'numeric_valid_pixels': int(valid.sum()),
-                            'median_lowres_pixel_footprint_native': float(np.median(depth[valid]) / np.mean(low_k[:, :2]))}
+                            'median_depth_pixel_footprint_native': float(np.median(depth[valid]) / np.mean(low_k[:, :2]))}
         full_poses = data['poses_c2w']
         difference = np.abs(full_poses[indices] - poses)
         contract = read_json(run / 'pose-contract.json')
@@ -196,8 +231,8 @@ def build(args):
             if index in key_lookup:
                 require(np.array_equal(canonical, colors[key_lookup[index]]), 'Saved keyframe colors differ from native input')
         volume = new_volume(args.voxel_length_native)
-        support_count, depth_prior, supported = depth_support(poses, data['keyframe_final_lowres_inverse_depth'], low_k)
-        counts32, _, supported32 = depth_support(poses, data['keyframe_final_lowres_inverse_depth'], low_k, np.float32)
+        support_count, depth_prior, supported = depth_support(poses, disparity, low_k)
+        counts32, _, supported32 = depth_support(poses, disparity, low_k, np.float32)
         support_contract = {
             'method': 'CPU mathematical reproduction of DROID visualization defaults on exported final keyframes',
             'source_revision': remote['source_revision'],
@@ -217,7 +252,7 @@ def build(args):
             fx, fy, cx, cy = low_k[key]
             k = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1.]])
             # Match official visualization.py sampling; no extra K pixel offset.
-            rgb = np.ascontiguousarray(colors[key, 3::8, 3::8, ::-1])
+            rgb = np.ascontiguousarray(colors[key, ::2, ::2, ::-1] if final_fullres else colors[key, 3::8, 3::8, ::-1])
             if valid[key].any():
                 validate_frame(rgb, depth[key], np.ones_like(depth[key]), valid[key], k, poses[key])
                 y, x = np.where(valid[key])
@@ -232,7 +267,7 @@ def build(args):
                              'numericValidPixels': int(valid[key].sum()),
                              'fusionSupportedPixels': int(supported[key].sum()),
                              'pointRowsStartStop': [point_count, end_point],
-                             'depthArray': 'keyframe_final_lowres_depth', 'rawArrayIndex': key})
+                             'depthArray': depth_array, 'rawArrayIndex': key})
             point_count = end_point
         mesh = volume.extract_triangle_mesh()
         require(not mesh.is_empty() and np.isfinite(np.asarray(mesh.vertices)).all(), 'No finite predicted surface extracted')
@@ -261,7 +296,7 @@ def build(args):
         display_ids = np.arange(0, len(points), display_stride)
         scene = {'schema': 'phase2-replay-scene-v1', 'coordinate_frame': 'droid_final_native_world',
                  'units': 'uncalibrated_monocular', 'source_video_sha256': digest(args.video),
-                 'method': 'DROID full motion-only filler camera replay; final native low-resolution keyframe TSDF with viewer-rule depth support',
+                 'method': f'DROID full motion-only filler camera replay; {args.depth_domain} native keyframe TSDF with viewer-rule depth support',
                  'points': [[int(i), *points[i].tolist()] for i in display_ids],
                  'meshUrl': 'predicted-scene.glb', 'complete_room_accepted': False,
                  'quality_status': 'not_validated',
@@ -285,7 +320,7 @@ def build(args):
                                 'raw_depth_validity': 'numeric_validity_only',
                                 'surface_support': support_contract,
                                 'surface_support_arrays_sha256': digest(args.output / 'depth-support.npz'),
-                                'color_sampling': 'model BGR[3::8,3::8,::-1], official visualization convention',
+                                'depth_domain': args.depth_domain, 'color_sampling': color_sampling,
                                 'tsdf': {'voxel_length_native': volume.voxel_length, 'sdf_trunc_native': volume.sdf_trunc,
                                          'voxel_selection_reason': args.voxel_reason},
                                 'pointcloud': {'path': 'native-keyframe-points.ply',
@@ -359,6 +394,23 @@ def self_check():
               'keyframe_intrinsics_fx_fy_cx_cy': np.array([[360, 360, 156, 116]]), 'keyframe_model_bgr': image[None]}
     pre = {'model_wh': [320, 240], 'model_intrinsics_fx_fy_cx_cy': [360, 360, 156, 116]}
     keyframe_arrays(sample, 1, pre)
+    full_depth = np.full((1, 240, 320), 2., np.float32)
+    sample.update(keyframe_final_fullres_depth=full_depth,
+                  keyframe_final_fullres_inverse_depth=np.full_like(full_depth, .5),
+                  keyframe_final_fullres_valid=np.ones_like(full_depth, bool),
+                  keyframe_final_fullres_intrinsics=sample['keyframe_intrinsics_fx_fy_cx_cy'])
+    half_depth, _, half_k, _ = fullres_arrays(sample, depth[None], sample['keyframe_final_lowres_intrinsics'], image[None])
+    assert half_depth.shape == (1, 120, 160) and np.array_equal(half_k, [[180, 180, 78, 58]])
+    # Stride sampling preserves precisely the original full-resolution camera ray.
+    full_pixel, half_pixel = np.array([80., 100.]), np.array([40., 50.])
+    assert np.allclose((full_pixel - [156, 116]) / [360, 360], (half_pixel - half_k[0, 2:]) / half_k[0, :2])
+    sample['keyframe_final_fullres_intrinsics'] = sample['keyframe_final_lowres_intrinsics']
+    try:
+        fullres_arrays(sample, depth[None], sample['keyframe_final_lowres_intrinsics'], image[None])
+    except ValueError:
+        pass
+    else:
+        raise AssertionError('Wrong full-resolution K accepted')
     sample['keyframe_final_lowres_depth'] = depth[None] * 2
     try:
         keyframe_arrays(sample, 1, pre)
@@ -376,6 +428,7 @@ if __name__ == '__main__':
     parser.add_argument('--video-manifest', type=Path)
     parser.add_argument('--output', type=Path)
     parser.add_argument('--voxel-length-native', type=float)
+    parser.add_argument('--depth-domain', choices=['final-lowres', 'final-fullres'], default='final-lowres')
     parser.add_argument('--voxel-reason', default='Explicit native-unit parameter; no ground-truth scale used')
     parser.add_argument('--self-check', action='store_true')
     args = parser.parse_args()
