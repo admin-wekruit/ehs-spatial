@@ -42,7 +42,7 @@ def rigid_poses(poses, count):
             and np.allclose(np.linalg.det(rotation), 1, atol=1e-4, rtol=0), 'Expected proper rigid c2w poses')
 
 
-def depth_support(poses, disparity, intrinsics, dtype=np.float64, tolerance_fraction=None):
+def depth_support(poses, disparity, intrinsics, dtype=np.float64, tolerance_fraction=None, neighbours=None):
     """CPU math of pinned DROID viewer filtering, over exported valid keyframes.
 
     This is not a CUDA/full-capacity-buffer replay. The unusual forward offsets
@@ -57,8 +57,8 @@ def depth_support(poses, disparity, intrinsics, dtype=np.float64, tolerance_frac
     with np.errstate(divide='ignore', invalid='ignore'):
         depths = 1 / disparity
         for i in range(count):
-            for offset in [-1, -2, -3, 3, 4, 5]:
-                j = i + offset
+            # neighbours=None is the pinned viewer rule; a list per keyframe lets revisits at other times vote
+            for j in ([i + offset for offset in [-1, -2, -3, 3, 4, 5]] if neighbours is None else neighbours[i]):
                 if not 0 <= j < count:
                     continue
                 relative = np.linalg.inv(poses[j]) @ poses[i]

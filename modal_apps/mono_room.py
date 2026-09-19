@@ -84,13 +84,16 @@ def infer_da3_remote(frames, w2c, K, model_name):
     return results
 
 
-def infer(droid_run, output, stride, da3_model=None):
+def infer(droid_run, output, stride, da3_model=None, midframes=False):
     import cv2
     manifest = json.loads((droid_run / "input-manifest.json").read_text())
     assert not manifest["groundtruth_included"] and not manifest["depth_included"]
     prediction = np.load(droid_run / "prediction.npz")
     keyframes = prediction["keyframe_source_indices"][::stride]
-    c2w = dict(zip(map(int, prediction["keyframe_source_indices"]), prediction["keyframe_c2w"].astype(np.float64)))
+    c2w = dict(enumerate(prediction["poses_c2w"].astype(np.float64)))  # official filler cameras for non-keyframes
+    c2w.update(zip(map(int, prediction["keyframe_source_indices"]), prediction["keyframe_c2w"].astype(np.float64)))
+    if midframes:  # one extra view halfway between keyframes: more baselines where the camera turns fast
+        keyframes = np.unique(np.concatenate([keyframes, (keyframes[:-1] + keyframes[1:]) // 2]))
     (output / "mono").mkdir(parents=True, exist_ok=True)
     frames, k = [], None
     for index in map(int, keyframes):
@@ -110,7 +113,7 @@ def infer(droid_run, output, stride, da3_model=None):
         state["app_id"] = app.app_id
         save(output / f"infer-{int(time.time())}.json", state)
         started = time.time()
-        size = 200 if da3_model else 30  # DA3: all keyframes share one posed forward pass (59 views peaked at 14 GB)
+        size = 400 if da3_model else 30  # DA3: all keyframes share one posed forward pass (59 views peaked at 14 GB)
         chunks = [frames[i:i + size] for i in range(0, len(frames), size)]
         if da3_model:
             K = [[k[0], 0, k[2]], [0, k[1], k[3]], [0, 0, 1]]
@@ -137,20 +140,19 @@ def anchor_scale(mono, droid, supported):
 def load(droid_run, support, output):
     data = np.load(droid_run / "prediction.npz")
     retained = np.load(support)["retained"]
-    rows = []
-    for key, index in enumerate(map(int, data["keyframe_source_indices"])):
-        path = output / "mono" / f"{index:05d}.npz"
-        if not path.exists():
-            continue
+    rows, keys = [], {int(index): key for key, index in enumerate(data["keyframe_source_indices"])}
+    for path in sorted((output / "mono").glob("*.npz")):
+        index = int(path.stem)
+        key = keys.get(index)  # None: a filler-camera frame without DROID depth, so no own anchors
         mono = np.load(path)
         depth = np.where(mono["mask"], mono["depth"], 0).astype(np.float32)
-        droid = data["keyframe_final_fullres_depth"][key][::2, ::2]
-        assert depth.shape == (480, 640) and droid.shape == retained[key].shape == (120, 160)
-        scale, residual, anchors = anchor_scale(depth[::4, ::4], droid, retained[key])
+        assert depth.shape == (480, 640)
+        droid = None if key is None else data["keyframe_final_fullres_depth"][key][::2, ::2]
+        scale, residual, anchors = (None, None, 0) if key is None else anchor_scale(depth[::4, ::4], droid, retained[key])
         rows.append({"key": key, "source_index": index, "scale": scale, "anchor_residual": residual,
-                     "anchors": anchors, "mono": depth, "droid": droid, "retained": retained[key],
-                     "c2w": data["keyframe_c2w"][key].astype(np.float64),
-                     "k": data["keyframe_final_fullres_intrinsics"][key].astype(np.float64)})
+                     "anchors": anchors, "mono": depth, "droid": droid, "retained": None if key is None else retained[key],
+                     "c2w": (data["poses_c2w"][index] if key is None else data["keyframe_c2w"][key]).astype(np.float64),
+                     "k": data["keyframe_final_fullres_intrinsics"][0].astype(np.float64)})
     assert rows, "run infer first"
     fitted = [r["scale"] for r in rows if r["scale"]]
     assert fitted, "no keyframe has enough DROID-supported anchors"
@@ -160,7 +162,27 @@ def load(droid_run, support, output):
     return rows
 
 
-def fuse(droid_run, support, output, voxel, relative, base_scene=None):
+def overlapping_views(cameras, depth, k, minimum=.1):
+    """Keyframes, at any time, that see at least `minimum` of a keyframe's coarse depth samples."""
+    height, width = depth.shape[1:]
+    v, u = np.indices((height, width))[:, 5::10, 5::10]
+    rays = np.stack([(u - k[2]) / k[0], (v - k[3]) / k[1], np.ones_like(u, float)], -1)
+    world = [(rays * d[5::10, 5::10, None]).reshape(-1, 3) @ c[:3, :3].T + c[:3, 3] for d, c in zip(depth, cameras)]
+    neighbours = []
+    for i, points in enumerate(world):
+        seen = []
+        for j, c in enumerate(cameras):
+            local = (points - c[:3, 3]) @ c[:3, :3]
+            with np.errstate(divide="ignore", invalid="ignore"):
+                x, y = local[:, 0] / local[:, 2] * k[0] + k[2], local[:, 1] / local[:, 2] * k[1] + k[3]
+            inside = (local[:, 2] > 0) & (x >= 0) & (x < width - 1) & (y >= 0) & (y < height - 1)
+            if j != i and inside.mean() >= minimum:
+                seen.append(j)
+        neighbours.append(seen)
+    return neighbours
+
+
+def fuse(droid_run, support, output, voxel, relative, base_scene=None, all_views=False, dynamic_masks=None):
     import cv2
     import open3d as o3d
     from build_droid_replay import depth_support
@@ -173,12 +195,18 @@ def fuse(droid_run, support, output, voxel, relative, base_scene=None):
     # Same viewer rule and thresholds as the DROID review, so the fractions are comparable.
     cameras, ks = np.stack([r["c2w"] for r in rows]), np.stack([r["k"] / 2 for r in rows])
     _, _, same_rule = depth_support(cameras, disparity, ks)
-    mono_supported = same_rule if relative is None else depth_support(cameras, disparity, ks, tolerance_fraction=relative)[2]
+    neighbours = overlapping_views(cameras, aligned, ks[0]) if all_views else None
+    mono_supported = same_rule if relative is None and not all_views else depth_support(
+        cameras, disparity, ks, tolerance_fraction=relative, neighbours=neighbours)[2]
     volume_ = new_volume(voxel)
-    points, colors = [], []
+    points, colors, masked_views = [], [], set()
     for r, keep in zip(rows, mono_supported):
         bgr, k = prepare_image(cv2.imread(str(DATASET / manifest["frames"][r["source_index"]]["relative_path"])), CALIBRATION, 2)
         keep = cv2.resize(keep.astype(np.uint8), (640, 480), interpolation=cv2.INTER_NEAREST).astype(bool)
+        for path in sorted(dynamic_masks.glob(f"{r['source_index']:05d}-*.png")) if dynamic_masks else []:
+            moving = prepare_image(cv2.imread(str(path), cv2.IMREAD_COLOR), CALIBRATION, 2)[0][..., 0] > 0  # source pixels -> depth raster
+            keep &= ~cv2.dilate(moving.astype(np.uint8), np.ones((9, 9), np.uint8)).astype(bool)
+            masked_views.add(r["source_index"])
         K = np.array([[k[0], 0, k[2]], [0, k[1], k[3]], [0, 0, 1.]])
         integrate(volume_, cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB), np.where(keep, r["scale"] * r["mono"], 0), K, r["c2w"])
         v, u = np.indices((480, 640))[:, ::4, ::4]  # display cloud: the 160x120 support raster, source colours
@@ -193,14 +221,17 @@ def fuse(droid_run, support, output, voxel, relative, base_scene=None):
     sizes = np.bincount(np.asarray(mesh.cluster_connected_triangles()[0]))
     residuals = [r["anchor_residual"] for r in rows if r["anchor_residual"] is not None]
     scales = np.array([r["scale"] for r in rows if r["scale_source"] == "own_anchors"])
-    metrics = {"keyframes": len(rows), "voxel_native": voxel, "frames_with_own_anchors": len(residuals),
+    metrics = {"views": len(rows), "keyframes": sum(r["key"] is not None for r in rows), "voxel_native": voxel, "frames_with_own_anchors": len(residuals),
                "anchor_residual_median": float(np.median(residuals)), "anchor_residual_p90": float(np.percentile(residuals, 90)),
                "anchor_residual_criterion": MAX_ANCHOR_RESIDUAL,
                "anchor_criterion_passed": bool(np.median(residuals) <= MAX_ANCHOR_RESIDUAL),
                "scale_native_per_mono_metre_median": float(np.median(scales)),
                "scale_relative_spread_mad": float(np.median(np.abs(scales / np.median(scales) - 1))),
-               "droid_support_fraction_same_frames": float(np.mean([r["retained"].mean() for r in rows])),
+               "droid_support_fraction_keyframes": float(np.mean([r["retained"].mean() for r in rows if r["key"] is not None])),
                "mono_support_fraction_same_rule": float(same_rule.mean()),
+               "fusion_support_views": "every keyframe seeing >=10% of this one" if all_views else "pinned six temporal neighbours",
+               "fusion_support_views_median": int(np.median([len(n) for n in neighbours])) if all_views else 6,
+               "dynamic_masks": str(dynamic_masks) if dynamic_masks else None, "views_with_dynamic_mask_removed": len(masked_views),
                "fusion_support_relative_tolerance": relative, "fusion_support_fraction": float(mono_supported.mean()),
                "mesh_triangles": len(mesh.triangles), "mesh_components": len(sizes), "largest_component_triangles": int(sizes.max()),
                "note": "Support/anchor numbers measure cross-view consistency, not accuracy; visual review still decides."}
@@ -210,6 +241,8 @@ def fuse(droid_run, support, output, voxel, relative, base_scene=None):
         import trimesh
         points, colors = np.concatenate(points), np.concatenate(colors)
         ids = np.flatnonzero(np.isfinite(points[:, 0]))
+        # one real source pixel per 2 cm-native cell: an even cloud instead of dense-near/sparse-far pixel striding
+        ids = ids[np.sort(np.unique(np.floor(points[ids] / .02).astype(np.int64), axis=0, return_index=True)[1])]
         ids = ids[::max(1, int(np.ceil(len(ids) / 300000)))]
         trimesh.Scene(trimesh.points.PointCloud(points[ids], colors=colors[ids])).export(output / "supported-keyframe-points.glb")
         trimesh.Trimesh(np.asarray(mesh.vertices), np.asarray(mesh.triangles), process=False,
@@ -245,8 +278,8 @@ def evaluate(droid_run, support, output):
         sensor = cv2.remap(sensor, map_x, map_y, cv2.INTER_NEAREST)
         sensor = cv2.resize(sensor, (704, 512), interpolation=cv2.INTER_NEAREST)[16:-16, 32:-32][::4, ::4]
         seen = sensor > 0
-        for name, depth, mask in [("mono", r["scale"] * r["mono"][::4, ::4], seen), ("droid_all", r["droid"], seen),
-                                  ("droid_supported", r["droid"], seen & r["retained"])]:
+        for name, depth, mask in [("mono", r["scale"] * r["mono"][::4, ::4], seen)] + ([] if r["key"] is None else [
+                ("droid_all", r["droid"], seen), ("droid_supported", r["droid"], seen & r["retained"])]):
             mask = mask & (depth > 0)
             pairs[name].append((depth[mask], sensor[mask], mask.sum() / seen.sum()))
     # One global native->metre factor per method (median over all pixels): no per-frame GT fitting.
@@ -272,7 +305,10 @@ def self_check():
     assert anchor_scale(mono, droid, np.zeros_like(supported)) == (None, None, 0)
     outlier = mono.copy(); outlier[:20] *= 4  # a robust fit ignores a wrong sixth of the anchors
     assert abs(anchor_scale(outlier, droid, supported)[0] - 1.7) < .05
-    print("mono room check passed: anchors only from supported pixels, anchorless frames refused, median robust to outliers")
+    front, back = np.eye(4), np.diag([-1., 1, -1, 1])  # same place, facing away
+    views = overlapping_views(np.stack([front, back] * 4 + [front]), np.full((9, 120, 160), 2.), [140., 140, 80, 60])
+    assert views[0] == [2, 4, 6, 8] and views[1] == [3, 5, 7], views[:2]
+    print("mono room check passed: revisits at any time vote and opposite views do not; anchors only from supported pixels, anchorless frames refused, median robust to outliers")
 
 
 if __name__ == "__main__":
@@ -282,16 +318,19 @@ if __name__ == "__main__":
     parser.add_argument("--support", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--stride", type=int, default=1)
+    parser.add_argument("--midframes", action="store_true", help="also infer the frame halfway between consecutive keyframes (filler cameras)")
     parser.add_argument("--da3-model", help="e.g. depth-anything/DA3-GIANT-1.1 (CC BY-NC) or depth-anything/DA3-BASE (Apache-2.0); default MoGe-3")
     parser.add_argument("--voxel-length-native", type=float, default=.03)  # same as the DROID review
     parser.add_argument("--support-relative", type=float, help="fusion keeps depth agreeing with >=2 neighbours within this fraction; default: pinned .005 native rule")
+    parser.add_argument("--support-all-views", action="store_true", help="let every overlapping keyframe vote, not only six temporal neighbours")
+    parser.add_argument("--dynamic-masks", type=Path, help="directory of SOURCEINDEX-*.png person/object masks in source pixels; removed before fusion")
     parser.add_argument("--base-scene", type=Path, help="existing replay scene.json of the same DROID run; fuse then also writes a viewer scene")
     a = parser.parse_args()
     if a.command == "self-check":
         self_check()
     elif a.command == "infer":
-        infer(a.droid_run, a.output, a.stride, a.da3_model)
+        infer(a.droid_run, a.output, a.stride, a.da3_model, a.midframes)
     elif a.command == "fuse":
-        fuse(a.droid_run, a.support, a.output, a.voxel_length_native, a.support_relative, a.base_scene)
+        fuse(a.droid_run, a.support, a.output, a.voxel_length_native, a.support_relative, a.base_scene, a.support_all_views, a.dynamic_masks)
     else:
         evaluate(a.droid_run, a.support, a.output)
