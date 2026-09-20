@@ -1,4 +1,10 @@
-"""One entity per physical object from per-keyframe masks, using the platform's own cross-view associator.
+"""One entity per physical object from per-keyframe masks.
+
+--method clique  : the platform's own cross-view associator, run to a fixed point (tried first; under-merges video).
+--method overlap : a persistent 3D accumulator after ConceptGraphs (slam/mapping.py, the README recipe): each entity keeps
+                   world points; a new mask joins the same-label entity that most of its points fall next to. The text
+                   label SAM3 was prompted with replaces their CLIP term; one entity takes at most one mask per frame.
+
 
 Masks (discover_video_keyframes output, one folder per prompt) are lifted with the posed depth of the same
 view and grouped by ehs_spatial.platform.spatial.associate_observations. That function demands a full clique
@@ -41,6 +47,47 @@ def fixed_point(observations, frames):
         groups = result["groups"]
 
 
+MATCH, MERGE, CONFIRMED = .5, .7, 3  # ConceptGraphs: overlap needed beside a CLIP term of .6-.9 under sim_threshold 1.2; merge_overlap_thresh; obj_min_detections
+NEAR = .03  # "next to" = the platform associator's relative_depth_tolerance, times the mask's own median range
+
+
+def near_fraction(points, cloud, radius):
+    from scipy.spatial import cKDTree
+    return float((cKDTree(cloud).query(points, distance_upper_bound=radius)[0] < np.inf).mean())
+
+
+def accumulate(observations, frames):
+    """observations: MaskObservation in frame order. Returns groups of observation ids."""
+    entities = []  # {"points", "ids", "frames", "radius"}
+    for image_id in sorted({o.image_id for o in observations}, key=int):
+        frame, taken = frames[image_id], set()
+        current = [o for o in observations if o.image_id == image_id]
+        clouds = {o.id: frame.points[o.mask] for o in current}
+        radius = {o.id: NEAR * float(np.median(np.linalg.norm(clouds[o.id] - frame.camera_to_world[:3, 3], axis=1))) for o in current}
+        scores = sorted(((near_fraction(clouds[o.id], e["points"], radius[o.id]), o.id, n) for o in current for n, e in enumerate(entities)
+                         if image_id not in e["frames"]), reverse=True)
+        for score, oid, n in scores:  # best pairs first; one mask per entity per frame and one entity per mask
+            if score < MATCH or oid in taken or image_id in entities[n]["frames"]:
+                continue
+            entities[n]["points"] = np.concatenate([entities[n]["points"], clouds[oid]])
+            entities[n]["ids"].append(oid); entities[n]["frames"].add(image_id); taken.add(oid)
+        entities += [{"points": clouds[o.id], "ids": [o.id], "frames": {image_id}, "radius": radius[o.id]} for o in current if o.id not in taken]
+    merged = True
+    while merged:  # the same object entered twice from views that did not overlap at first
+        merged = False
+        for a in range(len(entities)):
+            for b in range(a + 1, len(entities)):
+                drop, keep = sorted((a, b), key=lambda n: len(entities[n]["points"]))
+                small, large = entities[drop], entities[keep]
+                if near_fraction(small["points"], large["points"], small["radius"]) > MERGE:
+                    large["points"] = np.concatenate([large["points"], small["points"]]); large["ids"] += small["ids"]; large["frames"] |= small["frames"]
+                    del entities[drop]; merged = True  # by position: dicts holding arrays cannot be compared with ==
+                    break
+            if merged:
+                break
+    return sorted(sorted(e["ids"]) for e in entities)
+
+
 def build(args):
     import mono_room
     mono_room.use_clip(args.droid_run)
@@ -76,11 +123,17 @@ def build(args):
         by_label.setdefault(label, []).extend(MaskObservation(name, str(index), mask) for name, mask in kept)
     entities, report = [], {}
     for label, observations in sorted(by_label.items()):
-        result, rounds = fixed_point(observations, frames)
         lookup = {o.id: o for o in observations}
-        report[label] = {"observations": len(observations), "groups": len(result["groups"]), "rounds": rounds,
-                         "ambiguous_links": len(result["ambiguous"]), "config": result["config"]}
-        for group in result["groups"]:
+        if args.method == "clique":
+            result, rounds = fixed_point(observations, frames)
+            groups = result["groups"]
+            report[label] = {"observations": len(observations), "groups": len(groups), "rounds": rounds,
+                             "ambiguous_links": len(result["ambiguous"]), "config": result["config"]}
+        else:
+            groups = accumulate(sorted(observations, key=lambda o: int(o.image_id)), frames)
+            report[label] = {"observations": len(observations), "groups": len(groups), "confirmed": sum(len(g) >= CONFIRMED for g in groups),
+                             "config": {"match_overlap": MATCH, "merge_overlap": MERGE, "near_relative": NEAR, "confirmed_min_observations": CONFIRMED}}
+        for group in groups:
             points = np.concatenate([frames[lookup[o].image_id].points[lookup[o].mask] for o in group])
             entity = {"entityId": f"{label}-{len(entities):03d}", "label": label, "observations": group,
                       "sourceFrames": sorted({int(lookup[o].image_id) for o in group}), "supportPoints": len(points),
@@ -91,13 +144,16 @@ def build(args):
             for o in group[:12]:  # contact sheet: the evidence a person needs to spot a wrong merge
                 index, mask = int(lookup[o].image_id), cv2.resize(lookup[o].mask.astype(np.uint8), (640, 480), interpolation=cv2.INTER_NEAREST)
                 tile = images[index].copy()
-                tile[mask == 0] = tile[mask == 0] // 4
+                tile[mask == 0] = tile[mask == 0] // 2
+                cv2.drawContours(tile, cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0], -1, (0, 255, 255), 2)
                 cv2.putText(tile, f"{entity['entityId']} f{index}", (6, 20), cv2.FONT_HERSHEY_SIMPLEX, .55, (0, 255, 255), 2)
                 tiles.append(cv2.resize(tile, (320, 240)))
             tiles += [np.zeros_like(tiles[0])] * (-len(tiles) % 4)
             cv2.imwrite(str(args.output / f"{entity['entityId']}.jpg"), np.vstack([np.hstack(tiles[i:i + 4]) for i in range(0, len(tiles), 4)]))
     summary = {"schema": "phase2-video-object-map-v1", "depth_run": str(args.depth_run), "masks": str(args.masks), "views": len(frames),
-               "coordinate_frame": "droid_final_native_world", "associator": "ehs_spatial.platform.spatial.associate_observations, fixed point over confirmed_groups",
+               "coordinate_frame": "droid_final_native_world",
+               "associator": ("ehs_spatial.platform.spatial.associate_observations, fixed point over confirmed_groups" if args.method == "clique" else
+                              "3D point-overlap accumulator after ConceptGraphs; label gate; one mask per entity per frame; same-label merge"),
                "dropped_masks": dropped, "per_label": report, "entities": entities,
                "limitations": ["Labels are never merged: one object prompted as both desk and cabinet yields two entities.",
                                "An entity seen in fewer than 3 views stays a candidate; it is listed, not confirmed.",
@@ -128,7 +184,18 @@ def self_check():
     big, small = np.zeros((4, 4), bool), np.zeros((4, 4), bool)
     big[:3], small[:2] = True, True
     assert [name for name, _ in distinct([("small", small), ("big", big)])] == ["big"]
-    print(f"object map check passed: two boxes stay two entities across three views ({rounds} rounds); in-frame duplicate dropped")
+    ordered = sorted(observations, key=lambda o: int(o.image_id))
+    assert accumulate(ordered, frames) == result["groups"], "accumulator must agree on the clean case"
+    half = MaskObservation("left:9", "0", frames["0"].valid & observations[0].mask & (u < u[observations[0].mask].mean()))  # a partial view of the left box
+    frames["9"] = frames["0"]; half = MaskObservation("left:9", "9", half.mask)
+    groups = accumulate(ordered + [half], frames)
+    assert ["left:0", "left:1", "left:2", "left:9"] in groups and len(groups) == 2, groups
+    box = observations[0].mask
+    halves = [MaskObservation("left:a", "20", box & (u < u[box].mean())), MaskObservation("left:b", "21", box & (u >= u[box].mean())),
+              MaskObservation("left:c", "22", box)]  # two disjoint halves enter as two entities; the full view must leave one
+    frames.update({"20": frames["0"], "21": frames["0"], "22": frames["0"]})
+    assert accumulate(halves, frames) == [["left:a", "left:b", "left:c"]], accumulate(halves, frames)
+    print(f"object map check passed: halves merge once the whole is seen; accumulator joins a partial view to the right entity; two boxes stay two entities across three views ({rounds} rounds); in-frame duplicate dropped")
 
 
 if __name__ == "__main__":
@@ -138,6 +205,7 @@ if __name__ == "__main__":
     parser.add_argument("--depth-run", type=Path, help="mono_room output holding mono/*.npz")
     parser.add_argument("--support", type=Path)
     parser.add_argument("--masks", type=Path, help="folder of PROMPT-PART/frame-XXXXX/instance-N-mask.png")
+    parser.add_argument("--method", choices=["clique", "overlap"], default="overlap")
     parser.add_argument("--output", type=Path)
     a = parser.parse_args()
     self_check() if a.self_check else build(a)
