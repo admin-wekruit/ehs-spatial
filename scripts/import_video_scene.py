@@ -53,6 +53,22 @@ def extent_box(entity, plan):
                                                  "quaternion": Rotation.from_matrix(rotation).as_quat().tolist(), "scale": [1., 1., 1.]}
 
 
+def fused_part(textured, object_map, entity, minimum=50):
+    """The entity's cells cut out of the photo-textured fused mesh, as a scene of textured parts, or None if too little falls inside."""
+    import trimesh
+    from build_video_object_map import pack
+    data = np.load(object_map / entity["cells"]["file"])
+    cells, cell = pack(data["cells"]), float(data["cell"])
+    parts, triangles = trimesh.Scene(), 0
+    for name, geometry in textured.geometry.items():
+        inside = np.isin(pack(np.floor(np.asarray(geometry.vertices) / cell).astype(np.int64)), cells)
+        chosen = np.flatnonzero(inside[geometry.faces].all(1))
+        if len(chosen):
+            parts.add_geometry(geometry.submesh([chosen], append=True), geom_name=name)
+            triangles += len(chosen)
+    return parts if triangles >= minimum else None
+
+
 def png(image):
     return cv2.imencode(".png", image)[1].tobytes()
 
@@ -118,6 +134,7 @@ def build_document(args, put_asset, calibration, dataset):
                              "assetId": include((args.depth_run / "supported-keyframe-points.glb").read_bytes(), "model/gltf-binary", {"kind": "geometry", "format": "glb-points", "sourceRecordId": "supported-keyframe-points"}),
                              "bounds": {"min": shell.bounds[0].tolist(), "max": shell.bounds[1].tolist()}}]})
 
+    textured = trimesh.load(args.shell_glb, process=False) if args.shell_glb else None
     facts = json.loads((args.policy / "scene-document.json").read_text())["entities"] if args.policy else []
     facts = {e["id"]: e["measurements"] for e in facts}
     for entity in object_map["entities"]:
@@ -173,9 +190,17 @@ def build_document(args, put_asset, calibration, dataset):
             representations.append(model)
         if model_transform is None and len(refs) >= CONFIRMED and representations:
             # No checked model: the model view shows what was actually seen, textured, as the photo report does for fences and floors.
-            # One surface only (the largest), so the same object is not stacked from several views. White extent boxes are gone.
-            largest = max((r for r in representations if r["kind"] == "observed_surface"), key=lambda r: np.prod(np.subtract(r["bounds"]["max"], r["bounds"]["min"])))
-            largest["sourceKind"] = "observed_reference_surface"
+            fused = fused_part(textured, args.object_map, entity) if textured is not None and entity.get("cells") else None
+            if fused is not None:  # every view's share of the entity in one piece: the entity's cells cut out of the photo-textured fused mesh
+                payload = fused.export(file_type="glb")
+                representations.append({"id": ident("representation", "fused", entity["entityId"]), "kind": "observed_surface", "coordinateFrameId": FRAME, "transform": identity,
+                    "assetId": include(payload, "model/gltf-binary", {"kind": "geometry", "format": "glb", "sourceRecordId": f"{entity['entityId']}:fused-surface"}),
+                    "placementState": "confirmed", "primitive": None, "coverage": "visible_support_only_all_views", "sourceKind": "observed_reference_surface",
+                    "bounds": {"min": fused.bounds[0].tolist(), "max": fused.bounds[1].tolist()},
+                    "sourceRefs": [{"observationId": o, "revision": 1, "imageId": images[int(oid.split(":")[1])]} for oid, o in refs]})
+            else:  # one surface only (the largest), so the same object is not stacked from several views. White extent boxes are gone.
+                largest = max((r for r in representations if r["kind"] == "observed_surface"), key=lambda r: np.prod(np.subtract(r["bounds"]["max"], r["bounds"]["min"])))
+                largest["sourceKind"] = "observed_reference_surface"
         document["entities"].append({"id": ident("entity", entity["entityId"]), "label": entity["label"], "observationRefs": [o for _, o in refs],
             "associationState": "confirmed" if len(refs) >= CONFIRMED else "association_pending", "representations": representations, "currentModelTransform": model_transform,
             "measurements": measurements, "groupId": None, "visible": True, "sourceContext": False,

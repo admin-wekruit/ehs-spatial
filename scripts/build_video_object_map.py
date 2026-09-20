@@ -48,12 +48,32 @@ def fixed_point(observations, frames):
 
 
 MATCH, MERGE, CONFIRMED = .5, .7, 3  # ConceptGraphs: overlap needed beside a CLIP term of .6-.9 under sim_threshold 1.2; merge_overlap_thresh; obj_min_detections
+STUFF = ("floor", "wall", "ceiling")  # extents without instances: no two views need to overlap, so one entity per label (ConceptGraphs' background classes)
 NEAR = .03  # "next to" = the platform associator's relative_depth_tolerance, times the mask's own median range
 
 
 def near_fraction(points, cloud, radius):
     from scipy.spatial import cKDTree
     return float((cKDTree(cloud).query(points, distance_upper_bound=radius)[0] < np.inf).mean())
+
+
+def pack(cells):
+    """Integer cell triples as one comparable value each."""
+    return np.ascontiguousarray(cells, np.int64).view([("", np.int64)] * 3).ravel()
+
+
+def consensus(point_sets, cell):
+    """Per view, the points at least one other view of the same entity also puts there (same or adjacent cell).
+
+    A mask that spills past the object lands on a different piece of background in every view, so spill does not
+    survive the vote, while the object itself does. Returns the keep-masks and the agreed cells.
+    """
+    offsets = np.stack(np.meshgrid(*[[-1, 0, 1]] * 3, indexing="ij"), -1).reshape(-1, 3)
+    cells = [np.floor(points / cell).astype(np.int64) for points in point_sets]
+    reach = [np.unique((np.unique(c, axis=0)[:, None] + offsets).reshape(-1, 3), axis=0) for c in cells]  # what each view vouches for
+    voted, counts = np.unique(np.concatenate(reach), axis=0, return_counts=True)
+    agreed = voted[counts >= 2]
+    return [np.isin(pack(c), pack(agreed)) for c in cells], agreed
 
 
 def accumulate(observations, frames):
@@ -132,7 +152,10 @@ def build(args):
         plan = {"origin": origin, "up": up, "a": axis_a, "b": np.cross(up, axis_a)}
     for label, observations in sorted(by_label.items()):
         lookup = {o.id: o for o in observations}
-        if args.method == "clique":
+        if label in STUFF:
+            groups = [[o.id for o in sorted(observations, key=lambda o: int(o.image_id))]]
+            report[label] = {"observations": len(observations), "groups": 1, "rule": "one entity per background label"}
+        elif args.method == "clique":
             result, rounds = fixed_point(observations, frames)
             groups = result["groups"]
             report[label] = {"observations": len(observations), "groups": len(groups), "rounds": rounds,
@@ -142,9 +165,20 @@ def build(args):
             report[label] = {"observations": len(observations), "groups": len(groups), "confirmed": sum(len(g) >= CONFIRMED for g in groups),
                              "config": {"match_overlap": MATCH, "merge_overlap": MERGE, "near_relative": NEAR, "confirmed_min_observations": CONFIRMED}}
         for group in groups:
-            points = np.concatenate([frames[lookup[o].image_id].points[lookup[o].mask] for o in group])
+            sets = [frames[lookup[o].image_id].points[lookup[o].mask] for o in group]
+            points, agreed, cell, share = np.concatenate(sets), None, None, None
+            if len(group) >= CONFIRMED:  # a confirmed entity is measured on what its views agree on, not on every mask pixel
+                cameras = np.stack([frames[lookup[o].image_id].camera_to_world[:3, 3] for o in group])
+                # "next to" scales with viewing range: to the entity's middle, or for a background extent each mask's own depth
+                cell = NEAR * float(np.median([np.median(depths[int(lookup[o].image_id)][full_masks[o]]) for o in group]) if label in STUFF else
+                                    np.median(np.linalg.norm(cameras - np.median(points, 0), axis=1)))
+                keep, cells = consensus(sets, cell)
+                share = float(np.concatenate(keep).mean())
+                if share >= .3 and label not in STUFF:  # views of opposite sides share too little to vote, and background patches need not overlap: keep everything and say so
+                    points, agreed = points[np.concatenate(keep)], cells
             entity = {"entityId": f"{label}-{len(entities):03d}", "label": label, "observations": group,
                       "sourceFrames": sorted({int(lookup[o].image_id) for o in group}), "supportPoints": len(points),
+                      "multiViewAgreedShare": share, "measuredOn": "points at least two views agree on" if agreed is not None else "all mask points",
                       "centroidNative": np.median(points, 0).tolist(),
                       "boundsNative": [np.percentile(points, 2, 0).tolist(), np.percentile(points, 98, 0).tolist()]}
             if plan:
@@ -162,11 +196,20 @@ def build(args):
                 # association runs on the STEP grid; the surface a person looks at keeps every source pixel
                 vertices, faces, colors, _, _ = observed_surface(images[index][..., ::-1], depths[index], full_masks[o], intrinsics[index], frame.camera_to_world,
                                                                  max_edge_m=.04 * float(np.median(depths[index][full_masks[o]])), depth_range=(0, np.inf))
+                if len(faces) and agreed is not None:  # the shown surface is cut to the agreed part too
+                    inside = np.isin(pack(np.floor(vertices / cell).astype(np.int64)), pack(agreed))
+                    faces = faces[inside[faces].all(1)]
+                    used, inverse = np.unique(faces, return_inverse=True)
+                    vertices, colors, faces = vertices[used], colors[used], inverse.reshape(-1, 3)
                 if len(faces):
                     (args.output / "surfaces").mkdir(exist_ok=True)
                     name = f"surfaces/{entity['entityId']}--{o.replace(':', '-')}.npz"
                     np.savez_compressed(args.output / name, vertices=vertices, faces=faces, colors=colors)
                     entity["surfaces"].append({"file": name, "observation": o, "triangles": len(faces)})
+            if cell is not None:  # where the entity is, as cells: lets a consumer cut the entity out of the fused multi-view mesh
+                (args.output / "surfaces").mkdir(exist_ok=True)
+                np.savez_compressed(args.output / "surfaces" / f"{entity['entityId']}--cells.npz", cells=np.unique(np.floor(points / cell).astype(np.int64), axis=0), cell=cell)
+                entity["cells"] = {"file": f"surfaces/{entity['entityId']}--cells.npz", "cellNative": cell}
             entity["observationBoxes"] = {}
             for o in group:
                 ys, xs = np.where(lookup[o].mask)
@@ -225,6 +268,11 @@ def self_check():
     frames["9"] = frames["0"]; half = MaskObservation("left:9", "9", half.mask)
     groups = accumulate(ordered + [half], frames)
     assert ["left:0", "left:1", "left:2", "left:9"] in groups and len(groups) == 2, groups
+    rng = np.random.default_rng(0)
+    thing = rng.uniform(0, .3, (400, 3))  # three views of one object, each with its own piece of background in the mask
+    spill = [rng.uniform(0, .3, (150, 3)) + shift for shift in ([2, 0, 0], [0, 2, 0], [0, 0, 2])]
+    keep, agreed = consensus([np.vstack([thing, extra]) for extra in spill], .05)
+    assert all(k[:400].all() and not k[400:].any() for k in keep), "views must keep the shared object and drop their own spill"
     box = observations[0].mask
     halves = [MaskObservation("left:a", "20", box & (u < u[box].mean())), MaskObservation("left:b", "21", box & (u >= u[box].mean())),
               MaskObservation("left:c", "22", box)]  # two disjoint halves enter as two entities; the full view must leave one
