@@ -186,6 +186,10 @@ walking片段（fr3/walking_xyz，两人走动，管线内只用RGB）：DROID 8
 骨架：`mono_room.py dynamic` 复用 `build_replay_scene.surface_joints`，把缓存的RTMPose二维关节（源像素→`rectified_pixels` 去畸变/缩放/裁剪）抬到人物可见表面；walking 4207/6303个可信关节抬成三维（其余在掩码外、轮廓边缘或深度不一致，留空）。查看器原本**有意**在有人物表面时隐藏骨架线（`scene.ts::hideLinks`，骨架线贴在表面后会被挡住），旧LingBot样本也一样看不到三维骨架；现加“骨架”开关（`setSkeleton`，与人物表面二选一），并把标记尺寸改为按骨骼中位长度取比例（相机几乎不动时原来只有几毫米粗）。查看器已按README重建到 `ART/video-mvp`；检查 `scene-check.ts`、`check.mjs` 通过。
 主样本页 `ART/video-mvp/manifest.json` 已把 `walking-da3`、`room-da3` 放在最前（备份 `manifest-before-da3-promotion.json`），旧六个样本保留；`delivery.json` 的哈希索引尚未更新。
 
+**用户对产品形态的明确要求（2026-09-20）**：要的是一种**视频报告（视频工位）**，与照片报告并列：以点云/三维房间为主工作区，在里面具备照片报告已有的功能（选物体、看证据帧、测量、CAD平面图、EHS判定）；对象地图要按照片报告已有的CAD做法呈现；骨架“能结合就行，后面再说”；对象地图“大概没问题”。
+据此 `import_video_scene.py` 已改为：每个观测一个观测表面（`build_video_object_map.py` 导出 `surfaces/ENTITY--label-frame-instance.npz`，154个），每个表面用平台自己的 `reconstruction._plan_projection` 生成平面投影（地面法向来自拟合地面；精确三角并集，不取凸包不补洞）；房间作为sourceContext实体同时带 `observed_surface` 网格和 `point_cloud`（`supported-keyframe-points.glb`，阅读器原生支持GLB点集），放置状态confirmed（同相机下位置精确；“未验收”指完整性，写在标签和来源说明里）。
+当前视频报告：`http://127.0.0.1:8792/app.html#/reports/0ec6b467-c009-42af-8d81-b119aabc2a1a`（对象地图 `room-object-map-031`，344个资产）：空间表示下拉里“点云”已可用；CAD面板“照片观测投影”模式当前关键帧 9/45 条记录有投影、53个轮廓；证据联动正常。对象列表“当前模型：暂无三维资产”是事实（尚无生成/参数化对象模型，S10）。仍缺：安全评估栏（`room-policy-029` 的判定还不是平台evaluation）、观测范围/米制尺寸显示、对象模型、时间轴与移动的人、界面文案仍写“照片”。
+
 下一步（用户已确认的顺序）：G1尺度→G2对象级地图（ConceptGraphs式：关键帧SAM3分割→用带位姿深度抬进地图→三维重叠+外观合并为实体；复用 `platform/identity.py`、`spatial.py::associate_observations`）→G3对象建模（选帧、A07模型—源帧一致性、尺寸对点云范围）→G4接入现有报告→G5时间规则→G7地图持久化；G6真实工厂素材暂缓。地面偏差的候选修法：对已分割为地面的像素做跨视图单平面约束（现有 `planar_surfaces.py`），只用于语义上确认为平面的区域，不补造未见区域。
 
 仍未解决：相机从未看到的区域为空（不补造，用户已确认可接受）；外围漂浮碎片（6418分量，最大分量占88%）；源帧750之前没有人物掩码；DA3-GIANT许可。下一步：用户目检签收后再决定是否替换 `room-droid` 主样本；用DA3-BASE重跑352视图确认可商用路线；补750帧之前的人物掩码；再接回对象/骨架。不要重跑007/009/010/012。

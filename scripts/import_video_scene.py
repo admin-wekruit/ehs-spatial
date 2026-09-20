@@ -75,6 +75,7 @@ def build_document(args, put_asset, calibration, dataset):
             "sourceRefs": [{"assetId": source, "sourceCameraId": f"droid-keyframe-{index}"}]})
 
     import trimesh
+    from ehs_spatial.platform.reconstruction import _plan_projection
     shell = trimesh.load(args.depth_run / "predicted-scene.glb", force="mesh", process=False)
     rows = np.hstack([shell.vertices, shell.vertex_normals, np.asarray(shell.visual.vertex_colors)[:, :3] / 255.]).astype("<f4")
     indices = np.asarray(shell.faces, "<u4").ravel()
@@ -85,8 +86,13 @@ def build_document(args, put_asset, calibration, dataset):
     document["entities"].append({"id": ident("entity", "room"), "label": "observed room surface (not accepted)", "observationRefs": [],
         "associationState": "association_pending", "currentModelTransform": None, "measurements": {}, "groupId": None, "visible": True, "sourceContext": True,
         "lineage": [{"operation": "offline_import", "sourceAssetId": source, "sourceRecordId": "fused-room-surface"}],
+        # placed exactly by construction (same cameras); "not accepted" is a statement about completeness, carried by the label and the provenance note
         "representations": [{"id": ident("representation", "room"), "kind": "observed_surface", "assetId": shell_asset, "coordinateFrameId": FRAME,
-                             "transform": identity, "placementState": "unconfirmed", "sourceRefs": [{"assetId": source}],
+                             "transform": identity, "placementState": "confirmed", "primitive": None, "coverage": "observed_only_not_accepted", "sourceRefs": [{"assetId": source}],
+                             "bounds": {"min": shell.bounds[0].tolist(), "max": shell.bounds[1].tolist()}},
+                            {"id": ident("representation", "room-points"), "kind": "point_cloud", "coordinateFrameId": FRAME, "transform": identity, "placementState": "confirmed",
+                             "primitive": None, "coverage": "cross_view_supported_pixels_only", "sourceRefs": [{"assetId": source}],
+                             "assetId": include((args.depth_run / "supported-keyframe-points.glb").read_bytes(), "model/gltf-binary", {"kind": "geometry", "format": "glb-points", "sourceRecordId": "supported-keyframe-points"}),
                              "bounds": {"min": shell.bounds[0].tolist(), "max": shell.bounds[1].tolist()}}]})
 
     facts = json.loads((args.policy / "scene-document.json").read_text())["entities"] if args.policy else []
@@ -107,19 +113,22 @@ def build_document(args, put_asset, calibration, dataset):
             known = dict(refs)
             measurements[name] = {**fact, "sourceRefs": [known[o] for o in fact["sourceRefs"]]}
         representations = []
-        if entity.get("surface"):
-            seen = np.load(args.object_map / entity["surface"]["file"])
-            part = trimesh.Trimesh(seen["vertices"], seen["faces"], process=False)
-            packed = np.hstack([part.vertices, part.vertex_normals, seen["colors"] / 255.]).astype("<f4")
+        for seen in entity.get("surfaces", []):  # as reconstruction.py writes them: one observed surface per observation, measured in place
+            data = np.load(args.object_map / seen["file"])
+            part = trimesh.Trimesh(data["vertices"], data["faces"], process=False)
+            packed = np.hstack([part.vertices, part.vertex_normals, data["colors"] / 255.]).astype("<f4")
             triangles = np.asarray(part.faces, "<u4").ravel()
-            asset = include(packed.tobytes() + triangles.tobytes(), "application/octet-stream", {"kind": "geometry", "format": "panoptes-mesh-v1", "sourceRecordId": entity["entityId"],
+            payload = packed.tobytes() + triangles.tobytes()
+            asset = include(payload, "application/octet-stream", {"kind": "geometry", "format": "panoptes-mesh-v1", "sourceRecordId": seen["observation"],
                 "byteLayout": {"stride": 9, "byteOffset": 0, "vertexCount": len(packed), "indexByteOffset": packed.nbytes, "indexCount": len(triangles), "indexType": "uint32"}})
-            representations = [{"id": ident("representation", entity["entityId"]), "kind": "observed_surface", "assetId": asset, "coordinateFrameId": FRAME, "transform": identity,
-                                # as reconstruction.py writes observed surfaces: measured in place, so the placement is not a proposal
-                                "placementState": "confirmed", "primitive": None, "coverage": "visible_support_only",
-                                "bounds": {"min": part.bounds[0].tolist(), "max": part.bounds[1].tolist()},
-                                "sourceRefs": [{"observationId": dict(refs)[entity["surface"]["observation"]], "revision": 1,
-                                                "imageId": images[int(entity["surface"]["observation"].split(":")[1])]}]}]
+            surface = {"id": ident("representation", seen["observation"]), "kind": "observed_surface", "assetId": asset, "coordinateFrameId": FRAME, "transform": identity,
+                       "placementState": "confirmed", "primitive": None, "coverage": "visible_support_only",
+                       "bounds": {"min": part.bounds[0].tolist(), "max": part.bounds[1].tolist()},
+                       "sourceRefs": [{"observationId": dict(refs)[seen["observation"]], "revision": 1, "imageId": images[int(seen["observation"].split(":")[1])]}]}
+            projection = _plan_projection(document, surface, part, hashlib.sha256(payload).hexdigest())  # the photo report's own CAD outline: exact triangle union on the floor
+            if projection is not None:
+                surface["planProjection"] = projection
+            representations.append(surface)
         document["entities"].append({"id": ident("entity", entity["entityId"]), "label": entity["label"], "observationRefs": [o for _, o in refs],
             "associationState": "confirmed" if len(refs) >= CONFIRMED else "association_pending", "representations": representations, "currentModelTransform": None,
             "measurements": measurements, "groupId": None, "visible": True, "sourceContext": False,

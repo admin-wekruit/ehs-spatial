@@ -152,15 +152,17 @@ def build(args):
                 entity.update(footprintPlanNative=[list(xy) for xy in hull.exterior.coords[:-1]], heightNative=float(np.percentile(relative @ plan["up"], 98)),
                               baseNative=float(np.percentile(relative @ plan["up"], 2)),
                               rangeNative=float(np.median(np.linalg.norm(cameras - np.median(points, 0), axis=1))))
-            best = max(group, key=lambda o: lookup[o].mask.sum())  # the seen side from the view that shows most of it; nothing behind it is made up
-            frame, index = frames[lookup[best].image_id], int(lookup[best].image_id)
             from build_video_object_models import observed_surface
-            vertices, faces, colors, _, _ = observed_surface(images[index][::STEP, ::STEP, ::-1], depths[index], lookup[best].mask, frame.K, frame.camera_to_world,
-                                                             max_edge_m=.04 * float(np.median(depths[index][lookup[best].mask])), depth_range=(0, np.inf))
-            if len(faces):
-                (args.output / "surfaces").mkdir(exist_ok=True)
-                np.savez_compressed(args.output / "surfaces" / f"{entity['entityId']}.npz", vertices=vertices, faces=faces, colors=colors)
-                entity["surface"] = {"file": f"surfaces/{entity['entityId']}.npz", "observation": best, "triangles": len(faces), "representation": "visible side of one view"}
+            entity["surfaces"] = []  # one visible side per observation, as the photo pipeline keeps one observed surface per photo; nothing behind it is made up
+            for o in group:
+                frame, index = frames[lookup[o].image_id], int(lookup[o].image_id)
+                vertices, faces, colors, _, _ = observed_surface(images[index][::STEP, ::STEP, ::-1], depths[index], lookup[o].mask, frame.K, frame.camera_to_world,
+                                                                 max_edge_m=.04 * float(np.median(depths[index][lookup[o].mask])), depth_range=(0, np.inf))
+                if len(faces):
+                    (args.output / "surfaces").mkdir(exist_ok=True)
+                    name = f"surfaces/{entity['entityId']}--{o.replace(':', '-')}.npz"
+                    np.savez_compressed(args.output / name, vertices=vertices, faces=faces, colors=colors)
+                    entity["surfaces"].append({"file": name, "observation": o, "triangles": len(faces)})
             entity["observationBoxes"] = {}
             for o in group:
                 ys, xs = np.where(lookup[o].mask)
