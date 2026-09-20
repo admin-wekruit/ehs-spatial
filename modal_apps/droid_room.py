@@ -22,6 +22,10 @@ ART = Path("/Users/adam/Desktop/panoptes-public/research-notes/phase2")
 DATASET = ART / "data/rgbd_dataset_freiburg1_room"
 SOURCE_K = [517.306408, 516.469215, 318.643040, 255.313989]
 SOURCE_D = [0.262383, -0.953104, -0.005358, 0.002628, 1.163314]
+# Calibrated 640x480 TUM-format clips. fr1-room keeps its original volume-root archive; others live under clips/NAME.
+CLIPS = {"fr1-room": {"dataset": DATASET, "K": SOURCE_K, "D": SOURCE_D},
+         "fr3-walking-xyz": {"dataset": ART / "data/tum-fr3-walking-xyz/rgbd_dataset_freiburg3_walking_xyz",
+                             "K": [535.4, 539.2, 320.1, 247.6], "D": [0., 0., 0., 0., 0.]}}  # official tum3 calibration, already undistorted
 CONTRACT_VERSION = "droid-final-upsampling-v2"
 ROOT = Path("/artifact")
 app = modal.App("panoptes-droid-room-once")
@@ -87,7 +91,7 @@ def prepare_image(image, calibration, resolution_scale=1):
 @app.function(image=image, gpu="A100-40GB", cpu=(4, 4), memory=(16384, 16384),
               timeout=840, startup_timeout=45, retries=0, max_containers=1,
               min_containers=0, scaledown_window=2, volumes={"/artifact": volume})
-def infer(run_id, deadline, expected_archive_sha, expected_manifest_sha, expected_build_sha, resolution_scale=1):
+def infer(run_id, deadline, expected_archive_sha, expected_manifest_sha, expected_build_sha, resolution_scale=1, clip=None):
     if type(resolution_scale) is not int or resolution_scale not in (1, 2):
         raise ValueError('Resolution scale must be 1 or 2')
     s = resolution_scale
@@ -147,12 +151,14 @@ def infer(run_id, deadline, expected_archive_sha, expected_manifest_sha, expecte
         assert build_info["source_revision"] == REV and build_info["lietorch_revision"] == LIETORCH
         assert build_info["scatter_revision"] == SCATTER
         assert sha(ROOT / "droid.pth") == build_info["weights_sha256"]
-        assert sha(ROOT / "input-rgb.tar") == expected_archive_sha
-        assert sha(ROOT / "input-manifest.json") == expected_manifest_sha
-        manifest = json.loads((ROOT / "input-manifest.json").read_text())
-        assert manifest["frame_count"] == 1362 and len(manifest["frames"]) == 1362
+        inputs = ROOT if clip is None else ROOT / "clips" / clip
+        assert sha(inputs / "input-rgb.tar") == expected_archive_sha
+        assert sha(inputs / "input-manifest.json") == expected_manifest_sha
+        manifest = json.loads((inputs / "input-manifest.json").read_text())
+        frame_count = manifest["frame_count"]
+        assert frame_count == len(manifest["frames"]) and 0 < frame_count <= 2000
         input_dir = Path("/tmp/droid-room-rgb"); input_dir.mkdir()
-        with tarfile.open(ROOT / "input-rgb.tar") as archive:
+        with tarfile.open(inputs / "input-rgb.tar") as archive:
             expected = {f["relative_path"] for f in manifest["frames"]}
             members = archive.getmembers()
             assert len(members) == len(expected) and {m.name for m in members} == expected
@@ -169,8 +175,8 @@ def infer(run_id, deadline, expected_archive_sha, expected_manifest_sha, expecte
             canonical, intrinsics = prepare_image(bgr, manifest, resolution_scale=s)
             image_hashes.append(hashlib.sha256(canonical.tobytes()).hexdigest())
             images.append(torch.from_numpy(canonical.copy()).permute(2, 0, 1)[None])
-        # Official test_tum defaults; capacity covers all inputs plus filler batch16.
-        args = argparse.Namespace(weights=str(ROOT / "droid.pth"), buffer=1400, image_size=[240*s, 320*s],
+        # Official test_tum defaults; capacity covers all inputs plus filler batch16 (1400 for the 1362-frame room clip).
+        args = argparse.Namespace(weights=str(ROOT / "droid.pth"), buffer=frame_count+38, image_size=[240*s, 320*s],
             disable_vis=True, beta=.3, filter_thresh=1.5, warmup=12, keyframe_thresh=2.0,
             frontend_thresh=12.0, frontend_window=25, frontend_radius=2, frontend_nms=1,
             backend_thresh=20.0, backend_radius=2, backend_nms=3, motion_damping=.5,
@@ -194,7 +200,7 @@ def infer(run_id, deadline, expected_archive_sha, expected_manifest_sha, expecte
                     print(json.dumps({"frame": index, "keyframes": droid.video.counter.value, "elapsed": time.time()-started}), flush=True)
         stream = ((i, tensor, K) for i, tensor in enumerate(images))
         trajectory = droid.terminate(stream)
-        assert trajectory.shape == (1362, 7) and np.isfinite(trajectory).all()
+        assert trajectory.shape == (frame_count, 7) and np.isfinite(trajectory).all()
         poses = lietorch.SE3(torch.as_tensor(trajectory, device="cuda")).matrix().cpu().numpy()
         n = droid.video.counter.value
         indices = droid.video.tstamp[:n].cpu().numpy()
@@ -273,7 +279,7 @@ def infer(run_id, deadline, expected_archive_sha, expected_manifest_sha, expecte
              "final_lowres_depth_state": f"Final video.disps after backend BA; same optimization state as keyframe_c2w; raster {40*s}x{30*s}, K=model_K/8",
              "keyframe_model_bgr": f"Exact undistorted resized cropped source raster, {320*s}x{240*s}, matching full-resolution depth pixel domain",
              "full_trajectory_scope": "All frames optimized by official PoseTrajectoryFiller; not per-frame tracking success"})
-        result = {"status": "inference_complete", "run_id": run_id, "contract_version": CONTRACT_VERSION, "frames_processed": 1362, "full_pose_count": len(poses),
+        result = {"status": "inference_complete", "run_id": run_id, "contract_version": CONTRACT_VERSION, "frames_processed": frame_count, "clip": clip or "fr1-room", "full_pose_count": len(poses),
              "keyframe_count": n, "elapsed_seconds": time.time()-started,
              "weights_sha256": build_info["weights_sha256"], "source_revision": REV,
              "torch_version": str(torch.__version__), "torch_cuda": torch.version.cuda,
@@ -290,14 +296,14 @@ def infer(run_id, deadline, expected_archive_sha, expected_manifest_sha, expecte
     return result
 
 
-def evaluate(output):
+def evaluate(output, dataset=DATASET):
     """Local posthoc only; no geometry is rescaled or rewritten."""
     import numpy as np
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
     from reconstruct_tum_room import associate, metric_ate, read_rows
     data = np.load(output / "prediction.npz")
     manifest = json.loads((output / "input-manifest.json").read_text())
-    gt = read_rows(DATASET / "groundtruth.txt", 8)
+    gt = read_rows(dataset / "groundtruth.txt", 8)
     times = [float(f["timestamp_text"]) for f in manifest["frames"]]
     pairs = associate(times, [float(r[0]) for r in gt], .02)
     x = data["poses_c2w"][[i for i, j in pairs], :3, 3].astype(float)
@@ -308,7 +314,7 @@ def evaluate(output):
     scale = float(np.sum(values*correction)/np.sum(xc**2))
     sim3 = metric_ate(scale*x, y)
     sim3.update(alignment="Sim3 fitted scale and rigid transform, posthoc evaluation only", scale_fit=True, scale=scale)
-    result = {"evaluation_only": True, "groundtruth_sha256": sha(DATASET / "groundtruth.txt"),
+    result = {"evaluation_only": True, "groundtruth_sha256": sha(dataset / "groundtruth.txt"),
         "matched_poses": len(pairs), "input_frames": len(times), "pose_output_fraction": len(data["poses_c2w"])/len(times),
         "groundtruth_match_fraction": len(x)/len(times),
         "tracking_success_fraction": None, "full_poses_are_filler_output": True,
@@ -321,7 +327,7 @@ def evaluate(output):
     return {k: v for k,v in result.items() if k != "associations"}
 
 
-def collect(output, run_id):
+def collect(output, run_id, dataset=DATASET):
     """Read persisted namespaced artifacts; never dispatches remote compute."""
     for name in ["build.json", "build.log"]:
         with (output / name).open("wb") as stream:
@@ -336,42 +342,70 @@ def collect(output, run_id):
         assert state["run_id"] == run_id and state["contract_version"] == CONTRACT_VERSION
         for name, checksum in state["artifacts_sha256"].items():
             assert sha(output / name) == checksum
-        print(json.dumps(evaluate(output), indent=2))
+        print(json.dumps(evaluate(output, dataset), indent=2))
     return state
 
 
-def execute(output, run_id, reuse_run):
-    """One GPU-only run using the already successful pinned build and RGB archive."""
+def clip_archive(output, clip):
+    """RGB-only archive and hash manifest of another calibrated clip; same layout as the original room upload."""
+    dataset, records = CLIPS[clip]["dataset"], []
+    for line in (dataset / "rgb.txt").read_text().splitlines():
+        if not line or line.startswith("#"): continue
+        stamp, relative = line.split()
+        assert relative.startswith("rgb/") and (dataset / relative).resolve().is_relative_to(dataset.resolve())
+        records.append({"source_index": len(records), "timestamp_text": stamp, "relative_path": relative, "sha256": sha(dataset / relative)})
+    save(output / "input-manifest.json", {"frame_count": len(records), "rgb_index_sha256": sha(dataset / "rgb.txt"),
+        "source_K_fx_fy_cx_cy": CLIPS[clip]["K"], "source_distortion": CLIPS[clip]["D"], "frames": records,
+        "groundtruth_included": False, "depth_included": False})
+    with tarfile.open(output / "input-rgb.tar", "w") as archive:
+        for record in records:
+            archive.add(dataset / record["relative_path"], arcname=record["relative_path"], recursive=False)
+
+
+def execute(output, run_id, reuse_run, clip="fr1-room"):
+    """One GPU-only run using the already successful pinned build; the room clip also reuses its uploaded RGB archive."""
     assert run_id and all(c.isalnum() or c in "-_" for c in run_id)
     previous = json.loads((reuse_run / "run.json").read_text())
     assert previous["status"] == "inference_complete" and previous["source_revision"] == REV
-    assert sha(reuse_run / "input-rgb.tar") == previous["archive_sha256"]
-    assert sha(reuse_run / "input-manifest.json") == previous["input_manifest_sha256"]
-    manifest = json.loads((reuse_run / "input-manifest.json").read_text())
+    dataset = CLIPS[clip]["dataset"]
+    if clip == "fr1-room":
+        assert sha(reuse_run / "input-rgb.tar") == previous["archive_sha256"]
+        assert sha(reuse_run / "input-manifest.json") == previous["input_manifest_sha256"]
+        output.mkdir(parents=True, exist_ok=False)
+        (output / "input-manifest.json").write_bytes((reuse_run / "input-manifest.json").read_bytes())
+        archive_path = reuse_run / "input-rgb.tar"
+    else:
+        output.mkdir(parents=True, exist_ok=False)
+        clip_archive(output, clip)
+        archive_path = output / "input-rgb.tar"
+    manifest = json.loads((output / "input-manifest.json").read_text())
     assert not manifest["groundtruth_included"] and not manifest["depth_included"]
-    assert manifest["rgb_index_sha256"] == sha(DATASET / "rgb.txt")
+    assert manifest["rgb_index_sha256"] == sha(dataset / "rgb.txt")
     for record in manifest["frames"]:
-        assert sha(DATASET / record["relative_path"]) == record["sha256"]
-    output.mkdir(parents=True, exist_ok=False)
-    (output / "input-manifest.json").write_bytes((reuse_run / "input-manifest.json").read_bytes())
+        assert sha(dataset / record["relative_path"]) == record["sha256"]
     (output / "runner-at-execution.py").write_bytes(Path(__file__).read_bytes())
     save(output / "reservation.json", {"run_id": run_id, "max_additional_usd": 1.5,
         "inside_existing_droid_reservation_usd": 3, "total_root_reserved_usd": 27.36,
         "cpu_build_max_seconds": 0, "gpu_submission_max_seconds": 900,
         "gpu_attempts": 1, "gpu_retries": 0, "rates_usd_hour": {"A100-40GB": 2.10, "cpu_core": .0473, "ram_GiB": .008}})
-    state = {"status": "preparing", "run_id": run_id, "contract_version": CONTRACT_VERSION,
+    state = {"status": "preparing", "run_id": run_id, "clip": clip, "contract_version": CONTRACT_VERSION,
         "source_revision": REV, "script_sha256": sha(Path(__file__)),
-        "archive_sha256": previous["archive_sha256"], "input_manifest_sha256": previous["input_manifest_sha256"],
+        "archive_sha256": sha(archive_path), "input_manifest_sha256": sha(output / "input-manifest.json"),
         "cached_build_sha256": sha(reuse_run / "build.json"), "reuse_successful_run": str(reuse_run),
         "reuse_successful_run_sha256": sha(reuse_run / "run.json"),
-        "input_archive_path": str(reuse_run / "input-rgb.tar"), "cpu_build_invoked": False,
+        "input_archive_path": str(archive_path), "cpu_build_invoked": False,
         "remote_namespace": "runs/"+run_id, "groundtruth_uploaded": False, "sensor_depth_uploaded": False}
     save(output / "run.json", state)
     with app.run():
+        if clip != "fr1-room":  # upload is outside the GPU deadline
+            with volume.batch_upload(force=True) as batch:
+                batch.put_file(archive_path, f"/clips/{clip}/input-rgb.tar")
+                batch.put_file(output / "input-manifest.json", f"/clips/{clip}/input-manifest.json")
         deadline = time.time()+900
         state.update(status="gpu_submitting", app_id=app.app_id, gpu_deadline_unix=deadline)
         save(output / "run.json", state)
-        call = infer.spawn(run_id, deadline, state["archive_sha256"], state["input_manifest_sha256"], state["cached_build_sha256"])
+        call = infer.spawn(run_id, deadline, state["archive_sha256"], state["input_manifest_sha256"], state["cached_build_sha256"],
+                           clip=None if clip == "fr1-room" else clip)
         state.update(status="gpu_running", gpu_call_id=call.object_id)
         save(output / "run.json", state); print(json.dumps(state), flush=True)
         try:
@@ -382,7 +416,7 @@ def execute(output, run_id, reuse_run):
             raise
         print(json.dumps(result), flush=True)
         state["status"] = result["status"]; save(output / "run.json", state)
-        collected = collect(output, run_id)
+        collected = collect(output, run_id, dataset)
         state["remote_run_sha256"] = sha(output / "remote-run.json")
         state["status"] = collected["status"]; save(output / "run.json", state)
     return state
@@ -421,11 +455,12 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path)
     parser.add_argument("--run-id")
     parser.add_argument("--reuse-build-from", type=Path)
+    parser.add_argument("--clip", choices=sorted(CLIPS), default="fr1-room")
     args=parser.parse_args()
     if args.mode=="self-check": self_check()
     else:
         assert args.run_id and args.output, "Explicit --run-id and --output required"
-        if args.mode=="collect": print(json.dumps(collect(args.output, args.run_id),indent=2))
+        if args.mode=="collect": print(json.dumps(collect(args.output, args.run_id, CLIPS[args.clip]["dataset"]),indent=2))
         else:
             assert args.reuse_build_from, "This entry reuses a successful build; --reuse-build-from required"
-            print(json.dumps(execute(args.output, args.run_id, args.reuse_build_from),indent=2))
+            print(json.dumps(execute(args.output, args.run_id, args.reuse_build_from, args.clip),indent=2))

@@ -23,7 +23,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
-from droid_room import DATASET, SOURCE_D, SOURCE_K, prepare_image, save, sha  # noqa: E402
+from droid_room import CLIPS, DATASET, SOURCE_D, SOURCE_K, prepare_image, save, sha  # noqa: E402
 from moge3_app import image as moge_image, volume  # noqa: E402  same MoGe-3 image and cached weights
 
 image = moge_image.add_local_python_source("droid_room", "moge3_app")
@@ -31,6 +31,16 @@ image = moge_image.add_local_python_source("droid_room", "moge3_app")
 app = modal.App("panoptes-mono-room-once")
 MODEL = "Ruicheng/moge-3-vitl"
 CALIBRATION = {"source_K_fx_fy_cx_cy": SOURCE_K, "source_distortion": SOURCE_D}
+
+
+def use_clip(droid_run):
+    """Dataset and calibration follow the clip the DROID run recorded (runs before clips existed are the room clip)."""
+    global DATASET, SOURCE_K, SOURCE_D, CALIBRATION
+    clip = CLIPS[json.loads((droid_run / "run.json").read_text()).get("clip", "fr1-room")]
+    DATASET, SOURCE_K, SOURCE_D = clip["dataset"], clip["K"], clip["D"]
+    CALIBRATION = {"source_K_fx_fy_cx_cy": SOURCE_K, "source_distortion": SOURCE_D}
+    manifest = json.loads((droid_run / "input-manifest.json").read_text())
+    assert manifest["source_K_fx_fy_cx_cy"] == list(SOURCE_K) and manifest["source_distortion"] == list(SOURCE_D), "clip calibration differs from the run"
 MIN_ANCHORS = 500  # supported 160x120 pixels needed to fit one scale
 MAX_ANCHOR_RESIDUAL = .05  # failure criterion: median |s*mono/droid-1| per frame
 
@@ -84,7 +94,7 @@ def infer_da3_remote(frames, w2c, K, model_name):
     return results
 
 
-def infer(droid_run, output, stride, da3_model=None, midframes=False):
+def infer(droid_run, output, stride, da3_model=None, midframes=False, every=None):
     import cv2
     manifest = json.loads((droid_run / "input-manifest.json").read_text())
     assert not manifest["groundtruth_included"] and not manifest["depth_included"]
@@ -94,6 +104,8 @@ def infer(droid_run, output, stride, da3_model=None, midframes=False):
     c2w.update(zip(map(int, prediction["keyframe_source_indices"]), prediction["keyframe_c2w"].astype(np.float64)))
     if midframes:  # one extra view halfway between keyframes: more baselines where the camera turns fast
         keyframes = np.unique(np.concatenate([keyframes, (keyframes[:-1] + keyframes[1:]) // 2]))
+    if every:  # a steady time sampling for moving entities: a nearly static camera yields very few keyframes
+        keyframes = np.unique(np.concatenate([keyframes, np.arange(0, len(prediction["poses_c2w"]), every)]))
     (output / "mono").mkdir(parents=True, exist_ok=True)
     frames, k = [], None
     for index in map(int, keyframes):
@@ -139,6 +151,12 @@ def anchor_scale(mono, droid, supported):
 
 def load(droid_run, support, output):
     data = np.load(droid_run / "prediction.npz")
+    if support is None:  # the pinned viewer rule on the official stride-2 raster, exactly as build_droid_replay does
+        support = output / "droid-support.npz"
+        if not support.exists():
+            from build_droid_replay import depth_support
+            np.savez_compressed(support, retained=depth_support(data["keyframe_c2w"], data["keyframe_final_fullres_inverse_depth"][:, ::2, ::2],
+                                                                data["keyframe_final_fullres_intrinsics"] / 2)[2])
     retained = np.load(support)["retained"]
     rows, keys = [], {int(index): key for key, index in enumerate(data["keyframe_source_indices"])}
     for path in sorted((output / "mono").glob("*.npz")):
@@ -193,7 +211,7 @@ def unreliable(depth, conf, conf_floor, edge_jump):
 
 
 def fuse(droid_run, support, output, voxel, relative, base_scene=None, all_views=False, dynamic_masks=None,
-         conf_percentile=None, edge_jump=None, carve=False):
+         conf_percentile=None, edge_jump=None, carve=False, video=None):
     import cv2
     import open3d as o3d
     from build_droid_replay import depth_support
@@ -219,8 +237,8 @@ def fuse(droid_run, support, output, voxel, relative, base_scene=None, all_views
     for r, keep in zip(rows, mono_supported):
         bgr, k = prepare_image(cv2.imread(str(DATASET / manifest["frames"][r["source_index"]]["relative_path"])), CALIBRATION, 2)
         keep = cv2.resize(keep.astype(np.uint8), (640, 480), interpolation=cv2.INTER_NEAREST).astype(bool)
-        for path in sorted(dynamic_masks.glob(f"{r['source_index']:05d}-*.png")) if dynamic_masks else []:
-            moving = prepare_image(cv2.imread(str(path), cv2.IMREAD_COLOR), CALIBRATION, 2)[0][..., 0] > 0  # source pixels -> depth raster
+        moving = moving_mask(dynamic_masks, r["source_index"])  # source pixels -> depth raster
+        if moving.any():
             keep &= ~cv2.dilate(moving.astype(np.uint8), np.ones((9, 9), np.uint8)).astype(bool)
             masked_views.add(r["source_index"])
         K = np.array([[k[0], 0, k[2]], [0, k[1], k[3]], [0, 0, 1.]])
@@ -268,7 +286,7 @@ def fuse(droid_run, support, output, voxel, relative, base_scene=None, all_views
                "note": "Support/anchor numbers measure cross-view consistency, not accuracy; visual review still decides."}
     save(output / "fuse-metrics.json", metrics)
     print(json.dumps(metrics, indent=1))
-    if base_scene:  # same DROID cameras and world, so the replay frames carry over unchanged
+    if base_scene or video:
         import trimesh
         points, colors = np.concatenate(points), np.concatenate(colors)
         ids = np.flatnonzero(np.isfinite(points[:, 0]))
@@ -278,12 +296,22 @@ def fuse(droid_run, support, output, voxel, relative, base_scene=None, all_views
         trimesh.Scene(trimesh.points.PointCloud(points[ids], colors=colors[ids])).export(output / "supported-keyframe-points.glb")
         trimesh.Trimesh(np.asarray(mesh.vertices), np.asarray(mesh.triangles), process=False,
                         vertex_colors=(np.asarray(mesh.vertex_colors) * 255).astype(np.uint8)).export(output / "predicted-scene.glb")
-        scene = json.loads(base_scene.read_text())
-        assert scene["provenance"]["source_run"] == str(droid_run), "base scene must replay the same DROID cameras"
+        if base_scene:  # same DROID cameras and world, so the replay frames carry over unchanged
+            scene = json.loads(base_scene.read_text())
+            assert scene["provenance"]["source_run"] == str(droid_run), "base scene must replay the same DROID cameras"
+        else:  # the same frame records build_droid_replay writes: verified media times and the official filler cameras
+            from build_replay_scene import media_spans
+            from reconstruct_room_rgb import digest
+            spans, cameras_all = media_spans(video)[0], np.load(droid_run / "prediction.npz")["poses_c2w"]
+            assert len(spans) == len(cameras_all) == len(manifest["frames"]), "video, cameras and RGB manifest must list the same frames"
+            scene = {"schema": "phase2-replay-scene-v1", "coordinate_frame": "droid_final_native_world", "units": "uncalibrated_monocular",
+                     "source_video_sha256": digest(video), "meshUrl": "predicted-scene.glb", "pointCloudUrl": "supported-keyframe-points.glb",
+                     "frames": [{"sourceFrame": i, "timeSec": span[0], "endTimeSec": span[1], "c2w": cameras_all[i].tolist(),
+                                 "poseSource": "droid_motion_only_filler", "objects": []} for i, span in enumerate(spans)]}
         model = json.loads((output / "infer.json").read_text())["model"]
         scene.update(method=f"DROID cameras (unchanged) + {model} depth; per-keyframe scale from DROID-supported pixels; TSDF of cross-view supported depth",
                      points=[[int(i), *points[i].tolist()] for i in ids], pointCloudCount=len(ids), complete_room_accepted=False,
-                     quality_status="not_validated", provenance={"cameras_and_frames_from": str(base_scene), "depth_model": model,
+                     quality_status="not_validated", provenance={"cameras_and_frames_from": str(base_scene or droid_run), "depth_model": model,
                      "gt_pose_input": False, "sensor_depth_input": False, "fuse_metrics": metrics,
                      "point_id": "keyframe order, then row-major 160x120 raster of the 640x480 depth sampled [::4, ::4]"},
                      limitations=["单目原生尺度未标定；尺寸和距离不是米。", "相机沿用DROID；深度来自另一预训练模型，仅保留与≥2个邻近关键帧一致的像素。",
@@ -362,7 +390,64 @@ def metric(droid_run, support, output, floor_masks, camera_height, metric_depth_
     print(json.dumps(report, indent=1))
 
 
-def evaluate(droid_run, support, output):
+def moving_mask(masks, source_index):
+    """Union of the cached entity masks of one source frame, on the 640x480 depth raster."""
+    import cv2
+    found = sorted(masks.glob(f"{source_index:05d}-*.png")) if masks else []
+    return np.any([prepare_image(cv2.imread(str(path), cv2.IMREAD_COLOR), CALIBRATION, 2)[0][..., 0] > 0 for path in found], 0) if found else np.zeros((480, 640), bool)
+
+
+def dynamic(droid_run, support, output, analysis):
+    """Moving entities as time-stamped visible surfaces in the static map's frame.
+
+    One surface per mask per view, from that view's own depth; no mask means no object at that time
+    (nothing is carried forward), and nothing behind the visible side is invented.
+    """
+    import cv2
+    from build_video_object_models import observed_surface
+    from build_video_surfaces import export_surface
+    rows = {r["source_index"]: r for r in load(droid_run, support, output)}
+    manifest = json.loads((droid_run / "input-manifest.json").read_text())
+    scene = json.loads((output / "scene.json").read_text())  # written by fuse --base-scene
+    frames = {f["sourceFrame"]: f for f in scene["frames"]}
+    (output / "dynamic").mkdir(exist_ok=True)
+    surfaces = empty = 0
+    for observed in json.loads(analysis.read_text())["frames"]:
+        r, frame = rows.get(observed["sourceFrame"]), frames.get(observed["sourceFrame"])
+        if r is None or frame is None or not observed["objects"]:
+            continue
+        bgr, k = prepare_image(cv2.imread(str(DATASET / manifest["frames"][r["source_index"]]["relative_path"])), CALIBRATION, 2)
+        K = np.array([[k[0], 0, k[2]], [0, k[1], k[3]], [0, 0, 1.]])
+        depth = np.where(unreliable(r["mono"], None, None, .03), 0, r["scale"] * r["mono"])
+        frame["objects"] = []
+        for number, entity in enumerate(observed["objects"]):
+            if not entity.get("maskUrl"):
+                continue
+            mask = prepare_image(cv2.imread(str(analysis.parent / entity["maskUrl"]), cv2.IMREAD_COLOR), CALIBRATION, 2)[0][..., 0] > 0
+            if not (mask & (depth > 0)).any():
+                empty += 1
+                continue
+            reach = float(np.median(depth[mask & (depth > 0)]))
+            vertices, faces, colors, _, _ = observed_surface(bgr[..., ::-1], depth, mask, K, r["c2w"], max_edge_m=.04 * reach, depth_range=(0, np.inf))
+            if not len(faces):
+                empty += 1
+                continue
+            path = output / "dynamic" / f"entity-{r['source_index']:05d}-{number}.glb"
+            export_surface(path, vertices, faces, colors)
+            frame["objects"].append({"entityId": entity["entityId"], "keypoints3d": [], "bones": [], "representation": "estimated_monocular_surface",
+                                     "world_motion": "insufficient_evidence", "centroid": np.median(vertices, 0).tolist(),
+                                     "surface": {"meshUrl": f"dynamic/{path.name}", "sourceFrame": r["source_index"],
+                                                 "representation": "visible_monocular_surface", "sha256": sha(path), "triangles": len(faces)}})
+            surfaces += 1
+    scene["humanSurfaces"] = {"representation": "visible_monocular_surface", "count": surfaces, "masks_without_usable_depth": empty,
+                              "coordinateFrame": scene["coordinate_frame"], "hidden_body_completed": False,
+                              "depth": "the static map's own posed depth of the same view; identity is the cached short tracklet, not a person"}
+    scene["limitations"] = scene["limitations"] + ["移动对象只有被掩码标出的可见一侧表面，逐视图独立，无观测的时刻不显示；短轨迹ID不是持久身份。"]
+    (output / "scene.json").write_text(json.dumps(scene, allow_nan=False, separators=(",", ":")))
+    print(json.dumps(scene["humanSurfaces"], ensure_ascii=False))
+
+
+def evaluate(droid_run, support, output, dynamic_masks=None):
     """Independent check only: TUM sensor depth, nearest timestamp, same rectification raster."""
     import cv2
     rows = load(droid_run, support, output)
@@ -371,7 +456,7 @@ def evaluate(droid_run, support, output):
     times = np.array([float(t) for t, _ in listing])
     K = np.array([[SOURCE_K[0], 0, SOURCE_K[2]], [0, SOURCE_K[1], SOURCE_K[3]], [0, 0, 1.]])
     map_x, map_y = cv2.initUndistortRectifyMap(K, np.asarray(SOURCE_D), None, K, (640, 480), cv2.CV_32FC1)
-    pairs = {"mono": [], "droid_all": [], "droid_supported": []}
+    pairs = {"mono": [], "mono_on_moving_entities": [], "mono_static_only": [], "droid_all": [], "droid_supported": []}
     for r in rows:
         nearest = int(np.argmin(np.abs(times - float(manifest["frames"][r["source_index"]]["timestamp_text"]))))
         if abs(times[nearest] - float(manifest["frames"][r["source_index"]]["timestamp_text"])) > .02:
@@ -380,17 +465,25 @@ def evaluate(droid_run, support, output):
         sensor = cv2.remap(sensor, map_x, map_y, cv2.INTER_NEAREST)
         sensor = cv2.resize(sensor, (704, 512), interpolation=cv2.INTER_NEAREST)[16:-16, 32:-32][::4, ::4]
         seen = sensor > 0
-        for name, depth, mask in [("mono", r["scale"] * r["mono"][::4, ::4], seen)] + ([] if r["key"] is None else [
+        moving = moving_mask(dynamic_masks, r["source_index"])[::4, ::4]
+        for name, depth, mask in [("mono", r["scale"] * r["mono"][::4, ::4], seen), ("mono_on_moving_entities", r["scale"] * r["mono"][::4, ::4], seen & moving),
+                                  ("mono_static_only", r["scale"] * r["mono"][::4, ::4], seen & ~moving)] + ([] if r["key"] is None else [
                 ("droid_all", r["droid"], seen), ("droid_supported", r["droid"], seen & r["retained"])]):
             mask = mask & (depth > 0)
-            pairs[name].append((depth[mask], sensor[mask], mask.sum() / seen.sum()))
+            if mask.any():
+                pairs[name].append((depth[mask], sensor[mask], mask.sum() / seen.sum()))
     # One global native->metre factor per method (median over all pixels): no per-frame GT fitting.
     report = {"frames": len(pairs["mono"]), "sensor_depth_role": "evaluation only"}
+    scale_to_sensor = float(np.median(np.concatenate([t for _, t, _ in pairs["mono_static_only"]]) / np.concatenate([p for p, _, _ in pairs["mono_static_only"]])))
     for name, items in pairs.items():
+        if not items:
+            continue
         predicted, truth = np.concatenate([p for p, _, _ in items]), np.concatenate([t for _, t, _ in items])
-        relative = np.abs(predicted * np.median(truth / predicted) / truth - 1)
+        # moving entities are judged in the static scene's scale, so a per-entity depth offset cannot hide in its own fit
+        factor = scale_to_sensor if name == "mono_on_moving_entities" else np.median(truth / predicted)
+        relative = np.abs(predicted * factor / truth - 1)
         report[name] = {"coverage_of_sensor_pixels": float(np.mean([c for _, _, c in items])),
-                        "abs_rel_median": float(np.median(relative)), "abs_rel_mean": float(relative.mean()),
+                        "signed_rel_median": float(np.median(predicted * factor / truth - 1)), "abs_rel_median": float(np.median(relative)), "abs_rel_mean": float(relative.mean()),
                         "within_5pct": float((relative < .05).mean()), "within_10pct": float((relative < .10).mean())}
     save(output / "sensor-depth-evaluation.json", report)
     print(json.dumps(report, indent=1))
@@ -424,11 +517,12 @@ def self_check():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["infer", "fuse", "metric", "evaluate", "self-check"])
+    parser.add_argument("command", choices=["infer", "fuse", "metric", "dynamic", "evaluate", "self-check"])
     parser.add_argument("--droid-run", type=Path)
     parser.add_argument("--support", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--stride", type=int, default=1)
+    parser.add_argument("--every", type=int, help="also infer every Nth source frame (filler cameras)")
     parser.add_argument("--midframes", action="store_true", help="also infer the frame halfway between consecutive keyframes (filler cameras)")
     parser.add_argument("--da3-model", help="e.g. depth-anything/DA3-GIANT-1.1 (CC BY-NC) or depth-anything/DA3-BASE (Apache-2.0); default MoGe-3")
     parser.add_argument("--voxel-length-native", type=float, default=.03)  # same as the DROID review
@@ -437,19 +531,25 @@ if __name__ == "__main__":
     parser.add_argument("--conf-percentile", type=float, help="drop this lowest share of the depth model's own confidence (DA3 official default: 40)")
     parser.add_argument("--edge-jump", type=float, help="drop pixels whose depth jumps by more than this fraction to a 4-neighbour (flying pixels)")
     parser.add_argument("--carve", action="store_true", help="apply the existing static-surface support/free-space rule to the fused mesh")
+    parser.add_argument("--analysis", type=Path, help="cached analysis.json with per-frame entity masks; 'dynamic' lifts them into the fused scene")
     parser.add_argument("--floor-masks", type=Path, help="discover_video_keyframes output for the prompt 'floor'")
     parser.add_argument("--metric-depth-run", type=Path, help="fused run of a metric depth model (e.g. MoGe) to report its scale beside the height anchor")
     parser.add_argument("--camera-height", type=float, help="assumed carrying height in metres")
     parser.add_argument("--dynamic-masks", type=Path, help="directory of SOURCEINDEX-*.png person/object masks in source pixels; removed before fusion")
+    parser.add_argument("--video", type=Path, help="source video; without --base-scene, fuse writes the replay frames itself from its CFR times and the DROID cameras")
     parser.add_argument("--base-scene", type=Path, help="existing replay scene.json of the same DROID run; fuse then also writes a viewer scene")
     a = parser.parse_args()
     if a.command == "self-check":
         self_check()
-    elif a.command == "infer":
-        infer(a.droid_run, a.output, a.stride, a.da3_model, a.midframes)
+        sys.exit()
+    use_clip(a.droid_run)
+    if a.command == "infer":
+        infer(a.droid_run, a.output, a.stride, a.da3_model, a.midframes, a.every)
     elif a.command == "metric":
         metric(a.droid_run, a.support, a.output, a.floor_masks, a.camera_height, a.metric_depth_run)
     elif a.command == "fuse":
-        fuse(a.droid_run, a.support, a.output, a.voxel_length_native, a.support_relative, a.base_scene, a.support_all_views, a.dynamic_masks, a.conf_percentile, a.edge_jump, a.carve)
+        fuse(a.droid_run, a.support, a.output, a.voxel_length_native, a.support_relative, a.base_scene, a.support_all_views, a.dynamic_masks, a.conf_percentile, a.edge_jump, a.carve, a.video)
+    elif a.command == "dynamic":
+        dynamic(a.droid_run, a.support, a.output, a.analysis)
     else:
-        evaluate(a.droid_run, a.support, a.output)
+        evaluate(a.droid_run, a.support, a.output, a.dynamic_masks)
