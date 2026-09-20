@@ -439,6 +439,12 @@ def dynamic(droid_run, support, output, analysis):
                                      "surface": {"meshUrl": f"dynamic/{path.name}", "sourceFrame": r["source_index"],
                                                  "representation": "visible_monocular_surface", "sha256": sha(path), "triangles": len(faces)}})
             surfaces += 1
+    # Same convention as the accepted walking replay: scene frames are the sampled views, each lasting until the next one,
+    # so an entity is shown only for its own sampling interval and never carried across a view that lacks its mask.
+    sampled = [frames[i] for i in sorted(rows) if i in frames]
+    for current, following in zip(sampled, sampled[1:]):
+        current["endTimeSec"] = following["timeSec"]
+    scene["frames"] = sampled
     scene["humanSurfaces"] = {"representation": "visible_monocular_surface", "count": surfaces, "masks_without_usable_depth": empty,
                               "coordinateFrame": scene["coordinate_frame"], "hidden_body_completed": False,
                               "depth": "the static map's own posed depth of the same view; identity is the cached short tracklet, not a person"}
