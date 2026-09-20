@@ -103,7 +103,8 @@ def build_document(args, put_asset, calibration, dataset):
     indices = np.asarray(shell.faces, "<u4").ravel()
     layout = {"stride": 9, "byteOffset": 0, "vertexCount": len(rows), "indexByteOffset": rows.nbytes, "indexCount": len(indices), "indexType": "uint32"}
     shell_asset = include(rows.tobytes() + indices.tobytes(), "application/octet-stream", {"kind": "geometry", "format": "panoptes-mesh-v1", "byteLayout": layout,
-                          "sourceRecordId": "fused-room-surface"})
+                          "sourceRecordId": "fused-room-surface"}) if not args.shell_glb else include(  # same geometry, appearance from the source photos (texture_fused_mesh.py)
+        args.shell_glb.read_bytes(), "model/gltf-binary", {"kind": "geometry", "format": "glb", "sourceRecordId": "fused-room-surface-photo-textured"})
     identity = {"coordinateFrameId": FRAME, "position": [0., 0, 0], "quaternion": [0., 0, 0, 1], "scale": [1., 1, 1]}
     document["entities"].append({"id": ident("entity", "room"), "label": "observed room surface (not accepted)", "observationRefs": [],
         "associationState": "association_pending", "currentModelTransform": None, "measurements": {}, "groupId": None, "visible": True, "sourceContext": True,
@@ -237,6 +238,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("droid-run", "depth-run", "object-map", "masks", "policy", "models"):
         parser.add_argument("--" + name, type=Path, required=name not in ("policy", "models"))
+    parser.add_argument("--shell-glb", type=Path, help="photo-textured copy of the depth run's fused mesh to show as the room surface")
     parser.add_argument("--title", default="Video workcell (imported, not accepted)")
     parser.add_argument("--output-dir", type=Path, default=Path(".platform/imports"))
     parser.add_argument("--request-suffix", default="1", help="change to import the same inputs again as a new project")
