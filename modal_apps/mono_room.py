@@ -291,6 +291,65 @@ def fuse(droid_run, support, output, voxel, relative, base_scene=None, all_views
         (output / "scene.json").write_text(json.dumps(scene, allow_nan=False, separators=(",", ":")))
 
 
+def metric(droid_run, support, output, floor_masks, camera_height, metric_depth_run=None):
+    """Metres from one stated assumption: the camera is carried `camera_height` above the segmented floor."""
+    import cv2
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from ehs_spatial.geometry import _ransac_floor_plane
+    rows = {r["source_index"]: r for r in load(droid_run, support, output)}
+    points, views, patches = [], [], []
+    for folder in sorted(floor_masks.glob("frame-*")):
+        r = rows.get(int(folder.name.split("-")[1]))
+        masks = sorted(folder.glob("instance-*-mask.png"))
+        if r is None or not masks:
+            continue
+        floor = np.any([prepare_image(cv2.imread(str(m), cv2.IMREAD_COLOR), CALIBRATION, 2)[0][..., 0] > 0 for m in masks], 0)
+        z = np.where(floor & ~unreliable(r["mono"], None, None, .03), r["scale"] * r["mono"], 0)[::4, ::4]
+        v, u = np.indices((480, 640))[:, ::4, ::4]
+        k = r["k"] * 2
+        local = np.stack([(u - k[2]) / k[0] * z, (v - k[3]) / k[1] * z, z], -1)[z > 0]
+        world = local @ r["c2w"][:3, :3].T + r["c2w"][:3, 3]
+        if len(world) >= 200:  # minPointsPerView of estimate_native_ground
+            normal = np.linalg.svd(world - world.mean(0), full_matrices=False)[2][-1]
+            patches.append((r["source_index"], world, normal * np.sign((r["c2w"][:3, 3] - world.mean(0)) @ normal), float(np.median(z[z > 0]))))
+    reference = max(patches, key=lambda patch: len(patch[1]))[2]
+    rejected = [i for i, _, n, _ in patches if np.degrees(np.arccos(np.clip(n @ reference, -1, 1))) > 5]  # maxCrossViewAngleDegrees
+    patches = [patch for patch in patches if patch[0] not in rejected]
+    assert len(patches) >= 2, "fewer than two views agree on the floor direction"
+    points, views = np.concatenate([patch[1] for patch in patches]), [patch[0] for patch in patches]
+    cameras = np.load(droid_run / "prediction.npz")["poses_c2w"][:, :3, 3].astype(np.float64)
+    center = np.median(points, 0)
+    normal = np.linalg.svd(points - center, full_matrices=False)[2][-1]
+    normal *= np.sign(np.median((cameras - center) @ normal))  # same convention as estimate_native_ground: up is toward the cameras
+    extent = float(np.quantile(np.linalg.norm(points - center, axis=1), .95))
+    tolerance = .02 * float(np.median([patch[3] for patch in patches]))  # predicted depth: the same 2% used for cross-view support
+    inliers = _ransac_floor_plane(points, cameras, normal, tolerance)
+    one_plane = inliers is not None and len(inliers) >= .5 * len(points)
+    if not one_plane:  # report it, anchored on the nearest (most reliable) floor view, instead of hiding the disagreement
+        inliers = np.arange(len(min(patches, key=lambda patch: patch[3])[1])) + sum(
+            len(patch[1]) for patch in patches[:patches.index(min(patches, key=lambda patch: patch[3]))])
+    centre = points[inliers].mean(0)
+    up = np.linalg.svd(points[inliers] - centre, full_matrices=False)[2][-1]
+    up *= np.sign(up @ normal)
+    heights = (cameras - centre) @ up
+    model_scale = (1 / json.loads((metric_depth_run / "fuse-metrics.json").read_text())["scale_native_per_mono_metre_median"]
+                   if metric_depth_run else None)
+    report = {"floor_is_one_plane_within_tolerance": bool(one_plane),
+              "floor_view_heights_native": {str(i): float(np.median((world - centre) @ up)) for i, world, _, _ in patches},
+              "model_estimated_metres_per_native_unit": model_scale,
+              "model_estimate_source": str(metric_depth_run) if metric_depth_run else None,
+              "camera_height_implied_by_model_scale_m": None if model_scale is None else model_scale * float(np.median(heights)),
+              "floor_views_rejected_normal_over_5deg": rejected, "plane_tolerance_native": tolerance,
+              "assumption": f"camera carried {camera_height} m above the floor (stated by the operator, not measured)",
+              "floor_views": views, "floor_points": len(points), "plane_inlier_fraction": len(inliers) / len(points),
+              "plane_point_native": centre.tolist(), "up_native": up.tolist(),
+              "camera_height_native_median": float(np.median(heights)), "camera_height_native_p10_p90": np.percentile(heights, [10, 90]).tolist(),
+              "metres_per_native_unit": camera_height / float(np.median(heights)), "scale_status": "assumed_camera_height" if one_plane else "assumed_camera_height_floor_views_disagree",
+              "height_spread_note": "a handheld camera moves up and down; p10-p90 spread bounds the scale uncertainty of this anchor"}
+    save(output / "metric-scale.json", report)
+    print(json.dumps(report, indent=1))
+
+
 def evaluate(droid_run, support, output):
     """Independent check only: TUM sensor depth, nearest timestamp, same rectification raster."""
     import cv2
@@ -347,7 +406,7 @@ def self_check():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["infer", "fuse", "evaluate", "self-check"])
+    parser.add_argument("command", choices=["infer", "fuse", "metric", "evaluate", "self-check"])
     parser.add_argument("--droid-run", type=Path)
     parser.add_argument("--support", type=Path)
     parser.add_argument("--output", type=Path)
@@ -360,6 +419,9 @@ if __name__ == "__main__":
     parser.add_argument("--conf-percentile", type=float, help="drop this lowest share of the depth model's own confidence (DA3 official default: 40)")
     parser.add_argument("--edge-jump", type=float, help="drop pixels whose depth jumps by more than this fraction to a 4-neighbour (flying pixels)")
     parser.add_argument("--carve", action="store_true", help="apply the existing static-surface support/free-space rule to the fused mesh")
+    parser.add_argument("--floor-masks", type=Path, help="discover_video_keyframes output for the prompt 'floor'")
+    parser.add_argument("--metric-depth-run", type=Path, help="fused run of a metric depth model (e.g. MoGe) to report its scale beside the height anchor")
+    parser.add_argument("--camera-height", type=float, help="assumed carrying height in metres")
     parser.add_argument("--dynamic-masks", type=Path, help="directory of SOURCEINDEX-*.png person/object masks in source pixels; removed before fusion")
     parser.add_argument("--base-scene", type=Path, help="existing replay scene.json of the same DROID run; fuse then also writes a viewer scene")
     a = parser.parse_args()
@@ -367,6 +429,8 @@ if __name__ == "__main__":
         self_check()
     elif a.command == "infer":
         infer(a.droid_run, a.output, a.stride, a.da3_model, a.midframes)
+    elif a.command == "metric":
+        metric(a.droid_run, a.support, a.output, a.floor_masks, a.camera_height, a.metric_depth_run)
     elif a.command == "fuse":
         fuse(a.droid_run, a.support, a.output, a.voxel_length_native, a.support_relative, a.base_scene, a.support_all_views, a.dynamic_masks, a.conf_percentile, a.edge_jump, a.carve)
     else:
