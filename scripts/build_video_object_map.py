@@ -94,7 +94,7 @@ def build(args):
     rows = {r["source_index"]: r for r in mono_room.load(args.droid_run, args.support, args.depth_run)}
     manifest = json.loads((args.droid_run / "input-manifest.json").read_text())
     args.output.mkdir(parents=True, exist_ok=False)
-    frames, images, by_label, dropped = {}, {}, {}, {"no_depth_view": 0, "duplicate_in_frame": 0, "too_small": 0}
+    frames, images, depths, by_label, dropped = {}, {}, {}, {}, {"no_depth_view": 0, "duplicate_in_frame": 0, "too_small": 0}
     for folder in sorted(args.masks.glob("*/frame-*")):
         index, label = int(folder.name.split("-")[1]), folder.parent.name.rsplit("-", 1)[0]
         row = rows.get(index)
@@ -109,7 +109,7 @@ def build(args):
             frames[str(index)] = FrameGeometry(str(index), "droid_final_native_world", manifest["frames"][index]["sha256"],
                                                local @ row["c2w"][:3, :3].T + row["c2w"][:3, 3], depth > 0,
                                                np.array([[k[0] / STEP, 0, k[2] / STEP], [0, k[1] / STEP, k[3] / STEP], [0, 0, 1.]]), row["c2w"])
-            images[index] = bgr
+            images[index], depths[index] = bgr, depth
         found = []
         for path in sorted(folder.glob("instance-*-mask.png")):
             mask = mono_room.prepare_image(cv2.imread(str(path), cv2.IMREAD_COLOR), mono_room.CALIBRATION, 2)[0][..., 0] > 0
@@ -152,6 +152,15 @@ def build(args):
                 entity.update(footprintPlanNative=[list(xy) for xy in hull.exterior.coords[:-1]], heightNative=float(np.percentile(relative @ plan["up"], 98)),
                               baseNative=float(np.percentile(relative @ plan["up"], 2)),
                               rangeNative=float(np.median(np.linalg.norm(cameras - np.median(points, 0), axis=1))))
+            best = max(group, key=lambda o: lookup[o].mask.sum())  # the seen side from the view that shows most of it; nothing behind it is made up
+            frame, index = frames[lookup[best].image_id], int(lookup[best].image_id)
+            from build_video_object_models import observed_surface
+            vertices, faces, colors, _, _ = observed_surface(images[index][::STEP, ::STEP, ::-1], depths[index], lookup[best].mask, frame.K, frame.camera_to_world,
+                                                             max_edge_m=.04 * float(np.median(depths[index][lookup[best].mask])), depth_range=(0, np.inf))
+            if len(faces):
+                (args.output / "surfaces").mkdir(exist_ok=True)
+                np.savez_compressed(args.output / "surfaces" / f"{entity['entityId']}.npz", vertices=vertices, faces=faces, colors=colors)
+                entity["surface"] = {"file": f"surfaces/{entity['entityId']}.npz", "observation": best, "triangles": len(faces), "representation": "visible side of one view"}
             entity["observationBoxes"] = {}
             for o in group:
                 ys, xs = np.where(lookup[o].mask)
