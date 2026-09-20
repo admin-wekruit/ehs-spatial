@@ -291,11 +291,30 @@ def fuse(droid_run, support, output, voxel, relative, base_scene=None, all_views
         (output / "scene.json").write_text(json.dumps(scene, allow_nan=False, separators=(",", ":")))
 
 
+def consensus_plane(points, tolerance, iterations=2000):
+    """Largest-consensus plane of points already segmented as one surface (deterministic).
+
+    ponytail: not geometry._ransac_floor_plane - that one picks the LOWEST supported plane to skip
+    furniture in an unmasked cloud; on floor-masked points it locks onto the noise band under the floor.
+    """
+    index = np.random.default_rng(0).integers(0, len(points), (iterations, 3))
+    a, b, c = points[index[:, 0]], points[index[:, 1]], points[index[:, 2]]
+    normals = np.cross(b - a, c - a)
+    length = np.linalg.norm(normals, axis=1)
+    normals, a = normals[length > 1e-12] / length[length > 1e-12, None], a[length > 1e-12]
+    sample = points[::max(1, len(points) // 4000)]
+    best = int(np.argmax((np.abs(sample @ normals.T - np.einsum("ij,ij->i", normals, a)) < tolerance).sum(0)))
+    inliers = np.abs(points @ normals[best] - normals[best] @ a[best]) < tolerance
+    for _ in range(3):
+        centre = points[inliers].mean(0)
+        normal = np.linalg.svd(points[inliers] - centre, full_matrices=False)[2][-1]
+        inliers = np.abs((points - centre) @ normal) < tolerance
+    return centre, normal, inliers
+
+
 def metric(droid_run, support, output, floor_masks, camera_height, metric_depth_run=None):
     """Metres from one stated assumption: the camera is carried `camera_height` above the segmented floor."""
     import cv2
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-    from ehs_spatial.geometry import _ransac_floor_plane
     rows = {r["source_index"]: r for r in load(droid_run, support, output)}
     points, views, patches = [], [], []
     for folder in sorted(floor_masks.glob("frame-*")):
@@ -318,19 +337,10 @@ def metric(droid_run, support, output, floor_masks, camera_height, metric_depth_
     assert len(patches) >= 2, "fewer than two views agree on the floor direction"
     points, views = np.concatenate([patch[1] for patch in patches]), [patch[0] for patch in patches]
     cameras = np.load(droid_run / "prediction.npz")["poses_c2w"][:, :3, 3].astype(np.float64)
-    center = np.median(points, 0)
-    normal = np.linalg.svd(points - center, full_matrices=False)[2][-1]
-    normal *= np.sign(np.median((cameras - center) @ normal))  # same convention as estimate_native_ground: up is toward the cameras
-    extent = float(np.quantile(np.linalg.norm(points - center, axis=1), .95))
     tolerance = .02 * float(np.median([patch[3] for patch in patches]))  # predicted depth: the same 2% used for cross-view support
-    inliers = _ransac_floor_plane(points, cameras, normal, tolerance)
-    one_plane = inliers is not None and len(inliers) >= .5 * len(points)
-    if not one_plane:  # report it, anchored on the nearest (most reliable) floor view, instead of hiding the disagreement
-        inliers = np.arange(len(min(patches, key=lambda patch: patch[3])[1])) + sum(
-            len(patch[1]) for patch in patches[:patches.index(min(patches, key=lambda patch: patch[3]))])
-    centre = points[inliers].mean(0)
-    up = np.linalg.svd(points[inliers] - centre, full_matrices=False)[2][-1]
-    up *= np.sign(up @ normal)
+    centre, up, inliers = consensus_plane(points, tolerance)
+    up *= np.sign(np.median((cameras - centre) @ up))  # same convention as estimate_native_ground: up is toward the cameras
+    one_plane = inliers.mean() >= .75  # minInlierFraction of estimate_native_ground
     heights = (cameras - centre) @ up
     model_scale = (1 / json.loads((metric_depth_run / "fuse-metrics.json").read_text())["scale_native_per_mono_metre_median"]
                    if metric_depth_run else None)
@@ -338,10 +348,12 @@ def metric(droid_run, support, output, floor_masks, camera_height, metric_depth_
               "floor_view_heights_native": {str(i): float(np.median((world - centre) @ up)) for i, world, _, _ in patches},
               "model_estimated_metres_per_native_unit": model_scale,
               "model_estimate_source": str(metric_depth_run) if metric_depth_run else None,
+              "height_anchor_vs_model_estimate": None if model_scale is None else camera_height / float(np.median(heights)) / model_scale - 1,
+              "scale_sources_disagree_over_10pct": None if model_scale is None else bool(abs(camera_height / float(np.median(heights)) / model_scale - 1) > .1),
               "camera_height_implied_by_model_scale_m": None if model_scale is None else model_scale * float(np.median(heights)),
               "floor_views_rejected_normal_over_5deg": rejected, "plane_tolerance_native": tolerance,
               "assumption": f"camera carried {camera_height} m above the floor (stated by the operator, not measured)",
-              "floor_views": views, "floor_points": len(points), "plane_inlier_fraction": len(inliers) / len(points),
+              "floor_views": views, "floor_points": len(points), "plane_inlier_fraction": float(inliers.mean()),
               "plane_point_native": centre.tolist(), "up_native": up.tolist(),
               "camera_height_native_median": float(np.median(heights)), "camera_height_native_p10_p90": np.percentile(heights, [10, 90]).tolist(),
               "metres_per_native_unit": camera_height / float(np.median(heights)), "scale_status": "assumed_camera_height" if one_plane else "assumed_camera_height_floor_views_disagree",
@@ -395,13 +407,19 @@ def self_check():
     assert anchor_scale(mono, droid, np.zeros_like(supported)) == (None, None, 0)
     outlier = mono.copy(); outlier[:20] *= 4  # a robust fit ignores a wrong sixth of the anchors
     assert abs(anchor_scale(outlier, droid, supported)[0] - 1.7) < .05
+    rng = np.random.default_rng(1)
+    tilted = np.array([.1, -.2, 1.]) / np.linalg.norm([.1, -.2, 1.])
+    flat = rng.uniform(-2, 2, (3000, 3)); flat -= np.outer(flat @ tilted, tilted); flat += tilted * .7 + rng.normal(0, .003, (3000, 3))
+    clutter = rng.uniform(-2, 2, (900, 3))
+    centre, normal, inliers = consensus_plane(np.vstack([flat, clutter]), .02)
+    assert abs(abs(normal @ tilted) - 1) < 1e-4 and abs((centre @ tilted) - .7) < .005 and inliers[:3000].mean() > .99, "plane not recovered under 23% clutter"
     step = np.full((6, 8), 2.); step[:, 4:] = 3.; step[:, 4] = 2.5  # an in-between depth invented at a border
     bad = unreliable(step, np.where(np.arange(8) == 0, .1, 9.) * np.ones((6, 8)), 1., .1)
     assert bad[:, [0, 3, 4, 5]].all() and not bad[:, [1, 2, 6, 7]].any(), bad[0]
     front, back = np.eye(4), np.diag([-1., 1, -1, 1])  # same place, facing away
     views = overlapping_views(np.stack([front, back] * 4 + [front]), np.full((9, 120, 160), 2.), [140., 140, 80, 60])
     assert views[0] == [2, 4, 6, 8] and views[1] == [3, 5, 7], views[:2]
-    print("mono room check passed: low-confidence and border-jump pixels dropped; revisits at any time vote and opposite views do not; anchors only from supported pixels, anchorless frames refused, median robust to outliers")
+    print("mono room check passed: consensus floor plane under clutter; low-confidence and border-jump pixels dropped; revisits at any time vote and opposite views do not; anchors only from supported pixels, anchorless frames refused, median robust to outliers")
 
 
 if __name__ == "__main__":
