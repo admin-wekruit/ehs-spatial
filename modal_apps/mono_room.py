@@ -397,7 +397,23 @@ def moving_mask(masks, source_index):
     return np.any([prepare_image(cv2.imread(str(path), cv2.IMREAD_COLOR), CALIBRATION, 2)[0][..., 0] > 0 for path in found], 0) if found else np.zeros((480, 640), bool)
 
 
-def dynamic(droid_run, support, output, analysis):
+def entity_depth(row, entity_run, moving):
+    """Depth for moving pixels: the map's own posed depth, or a single-frame model tied to it on this view's static pixels.
+
+    Multi-view depth assumes a rigid scene; a single-frame model does not, but has its own scale per image. One robust
+    ratio over the static pixels of the same view puts it in the map's units without touching the map.
+    """
+    own = row["scale"] * row["mono"]
+    if entity_run is None:
+        return own
+    single = np.load(entity_run / "mono" / f"{row['source_index']:05d}.npz")
+    single = np.where(single["mask"], single["depth"], 0).astype(np.float32)
+    static = ~moving & (own > 0) & (single > 0)
+    assert static.sum() >= 5000, "too few static pixels to tie the single-frame depth to the map"
+    return single * float(np.median(own[static] / single[static]))
+
+
+def dynamic(droid_run, support, output, analysis, entity_run=None):
     """Moving entities as time-stamped visible surfaces in the static map's frame.
 
     One surface per mask per view, from that view's own depth; no mask means no object at that time
@@ -418,7 +434,8 @@ def dynamic(droid_run, support, output, analysis):
             continue
         bgr, k = prepare_image(cv2.imread(str(DATASET / manifest["frames"][r["source_index"]]["relative_path"])), CALIBRATION, 2)
         K = np.array([[k[0], 0, k[2]], [0, k[1], k[3]], [0, 0, 1.]])
-        depth = np.where(unreliable(r["mono"], None, None, .03), 0, r["scale"] * r["mono"])
+        depth = entity_depth(r, entity_run, moving_mask(analysis.parent / "masks", r["source_index"]))
+        depth = np.where(unreliable(depth, None, None, .03), 0, depth)
         frame["objects"] = []
         for number, entity in enumerate(observed["objects"]):
             if not entity.get("maskUrl"):
@@ -447,13 +464,15 @@ def dynamic(droid_run, support, output, analysis):
     scene["frames"] = sampled
     scene["humanSurfaces"] = {"representation": "visible_monocular_surface", "count": surfaces, "masks_without_usable_depth": empty,
                               "coordinateFrame": scene["coordinate_frame"], "hidden_body_completed": False,
-                              "depth": "the static map's own posed depth of the same view; identity is the cached short tracklet, not a person"}
+                              "depth": ("the static map's own posed depth of the same view" if entity_run is None else
+                                        f"single-frame depth of {entity_run.name}, scaled per view on its static pixels to the map's posed depth")
+                                       + "; identity is the cached short tracklet, not a person"}
     scene["limitations"] = scene["limitations"] + ["移动对象只有被掩码标出的可见一侧表面，逐视图独立，无观测的时刻不显示；短轨迹ID不是持久身份。"]
     (output / "scene.json").write_text(json.dumps(scene, allow_nan=False, separators=(",", ":")))
     print(json.dumps(scene["humanSurfaces"], ensure_ascii=False))
 
 
-def evaluate(droid_run, support, output, dynamic_masks=None):
+def evaluate(droid_run, support, output, dynamic_masks=None, entity_run=None):
     """Independent check only: TUM sensor depth, nearest timestamp, same rectification raster."""
     import cv2
     rows = load(droid_run, support, output)
@@ -471,7 +490,14 @@ def evaluate(droid_run, support, output, dynamic_masks=None):
         sensor = cv2.remap(sensor, map_x, map_y, cv2.INTER_NEAREST)
         sensor = cv2.resize(sensor, (704, 512), interpolation=cv2.INTER_NEAREST)[16:-16, 32:-32][::4, ::4]
         seen = sensor > 0
-        moving = moving_mask(dynamic_masks, r["source_index"])[::4, ::4]
+        moving_full = moving_mask(dynamic_masks, r["source_index"])
+        moving = moving_full[::4, ::4]
+        if entity_run is not None and moving.any():
+            pairs.setdefault("single_frame_on_moving_entities", [])
+            tied = entity_depth(r, entity_run, moving_full)[::4, ::4]
+            picked = seen & moving & (tied > 0)
+            if picked.any():
+                pairs["single_frame_on_moving_entities"].append((tied[picked], sensor[picked], picked.sum() / seen.sum()))
         for name, depth, mask in [("mono", r["scale"] * r["mono"][::4, ::4], seen), ("mono_on_moving_entities", r["scale"] * r["mono"][::4, ::4], seen & moving),
                                   ("mono_static_only", r["scale"] * r["mono"][::4, ::4], seen & ~moving)] + ([] if r["key"] is None else [
                 ("droid_all", r["droid"], seen), ("droid_supported", r["droid"], seen & r["retained"])]):
@@ -486,7 +512,7 @@ def evaluate(droid_run, support, output, dynamic_masks=None):
             continue
         predicted, truth = np.concatenate([p for p, _, _ in items]), np.concatenate([t for _, t, _ in items])
         # moving entities are judged in the static scene's scale, so a per-entity depth offset cannot hide in its own fit
-        factor = scale_to_sensor if name == "mono_on_moving_entities" else np.median(truth / predicted)
+        factor = scale_to_sensor if name.endswith("on_moving_entities") else np.median(truth / predicted)
         relative = np.abs(predicted * factor / truth - 1)
         report[name] = {"coverage_of_sensor_pixels": float(np.mean([c for _, _, c in items])),
                         "signed_rel_median": float(np.median(predicted * factor / truth - 1)), "abs_rel_median": float(np.median(relative)), "abs_rel_mean": float(relative.mean()),
@@ -506,6 +532,14 @@ def self_check():
     assert anchor_scale(mono, droid, np.zeros_like(supported)) == (None, None, 0)
     outlier = mono.copy(); outlier[:20] *= 4  # a robust fit ignores a wrong sixth of the anchors
     assert abs(anchor_scale(outlier, droid, supported)[0] - 1.7) < .05
+    import tempfile
+    with tempfile.TemporaryDirectory() as folder:  # the map's posed depth is wrong on the mover; only static pixels may set the scale
+        moving = np.zeros((480, 640), bool); moving[100:300, 200:400] = True
+        truth = np.where(moving, 1.5, 3.).astype(np.float32)
+        (Path(folder) / "mono").mkdir()
+        np.savez(Path(folder) / "mono" / "00007.npz", depth=truth / 1.7, mask=np.ones_like(moving))
+        tied = entity_depth({"scale": 1., "mono": np.where(moving, 9., 3.).astype(np.float32), "source_index": 7}, Path(folder), moving)
+        assert np.allclose(tied, truth, atol=1e-5), "single-frame depth must be scaled by static pixels only"
     rng = np.random.default_rng(1)
     tilted = np.array([.1, -.2, 1.]) / np.linalg.norm([.1, -.2, 1.])
     flat = rng.uniform(-2, 2, (3000, 3)); flat -= np.outer(flat @ tilted, tilted); flat += tilted * .7 + rng.normal(0, .003, (3000, 3))
@@ -518,7 +552,7 @@ def self_check():
     front, back = np.eye(4), np.diag([-1., 1, -1, 1])  # same place, facing away
     views = overlapping_views(np.stack([front, back] * 4 + [front]), np.full((9, 120, 160), 2.), [140., 140, 80, 60])
     assert views[0] == [2, 4, 6, 8] and views[1] == [3, 5, 7], views[:2]
-    print("mono room check passed: consensus floor plane under clutter; low-confidence and border-jump pixels dropped; revisits at any time vote and opposite views do not; anchors only from supported pixels, anchorless frames refused, median robust to outliers")
+    print("mono room check passed: moving-pixel depth tied on static pixels only; consensus floor plane under clutter; low-confidence and border-jump pixels dropped; revisits at any time vote and opposite views do not; anchors only from supported pixels, anchorless frames refused, median robust to outliers")
 
 
 if __name__ == "__main__":
@@ -537,6 +571,7 @@ if __name__ == "__main__":
     parser.add_argument("--conf-percentile", type=float, help="drop this lowest share of the depth model's own confidence (DA3 official default: 40)")
     parser.add_argument("--edge-jump", type=float, help="drop pixels whose depth jumps by more than this fraction to a 4-neighbour (flying pixels)")
     parser.add_argument("--carve", action="store_true", help="apply the existing static-surface support/free-space rule to the fused mesh")
+    parser.add_argument("--entity-depth-run", type=Path, help="run holding single-frame mono/*.npz to use for moving pixels instead of the posed depth")
     parser.add_argument("--analysis", type=Path, help="cached analysis.json with per-frame entity masks; 'dynamic' lifts them into the fused scene")
     parser.add_argument("--floor-masks", type=Path, help="discover_video_keyframes output for the prompt 'floor'")
     parser.add_argument("--metric-depth-run", type=Path, help="fused run of a metric depth model (e.g. MoGe) to report its scale beside the height anchor")
@@ -556,6 +591,6 @@ if __name__ == "__main__":
     elif a.command == "fuse":
         fuse(a.droid_run, a.support, a.output, a.voxel_length_native, a.support_relative, a.base_scene, a.support_all_views, a.dynamic_masks, a.conf_percentile, a.edge_jump, a.carve, a.video)
     elif a.command == "dynamic":
-        dynamic(a.droid_run, a.support, a.output, a.analysis)
+        dynamic(a.droid_run, a.support, a.output, a.analysis, a.entity_depth_run)
     else:
-        evaluate(a.droid_run, a.support, a.output, a.dynamic_masks)
+        evaluate(a.droid_run, a.support, a.output, a.dynamic_masks, a.entity_depth_run)
