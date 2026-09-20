@@ -170,18 +170,11 @@ def build_document(args, put_asset, calibration, dataset):
             if projection is not None:
                 model["planProjection"] = projection
             representations.append(model)
-        fitted = extent_box(entity, object_map["plan"]) if model_transform is None and len(refs) >= CONFIRMED and object_map.get("plan") else None
-        if fitted:  # same fields repository.py writes for a primitive: a proposal until a person confirms the alignment
-            primitive, model_transform = fitted
-            local = primitive_mesh(primitive)
-            model = {"id": ident("representation", "box", entity["entityId"]), "kind": "primitive", "assetId": None, "primitive": primitive, "transform": model_transform,
-                     "coordinateFrameId": FRAME, "bounds": {"min": local.vertices.min(0).tolist(), "max": local.vertices.max(0).tolist()},
-                     "placementState": "unconfirmed", "placementReason": "requires_alignment_confirmation", "sourceRefs": [{"observationId": o} for _, o in refs],
-                     "modelBasis": "floor-aligned box over the observed extent of a multi-view confirmed entity; unseen sides are not measured"}
-            projection = _plan_projection(document, model, local, None, model_transform)
-            if projection is not None:
-                model["planProjection"] = projection
-            representations.append(model)
+        if model_transform is None and len(refs) >= CONFIRMED and representations:
+            # No checked model: the model view shows what was actually seen, textured, as the photo report does for fences and floors.
+            # One surface only (the largest), so the same object is not stacked from several views. White extent boxes are gone.
+            largest = max((r for r in representations if r["kind"] == "observed_surface"), key=lambda r: np.prod(np.subtract(r["bounds"]["max"], r["bounds"]["min"])))
+            largest["sourceKind"] = "observed_reference_surface"
         document["entities"].append({"id": ident("entity", entity["entityId"]), "label": entity["label"], "observationRefs": [o for _, o in refs],
             "associationState": "confirmed" if len(refs) >= CONFIRMED else "association_pending", "representations": representations, "currentModelTransform": model_transform,
             "measurements": measurements, "groupId": None, "visible": True, "sourceContext": False,
