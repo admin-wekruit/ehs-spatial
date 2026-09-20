@@ -94,7 +94,7 @@ def build(args):
     rows = {r["source_index"]: r for r in mono_room.load(args.droid_run, args.support, args.depth_run)}
     manifest = json.loads((args.droid_run / "input-manifest.json").read_text())
     args.output.mkdir(parents=True, exist_ok=False)
-    frames, images, depths, by_label, dropped = {}, {}, {}, {}, {"no_depth_view": 0, "duplicate_in_frame": 0, "too_small": 0}
+    frames, images, depths, intrinsics, full_masks, by_label, dropped = {}, {}, {}, {}, {}, {}, {"no_depth_view": 0, "duplicate_in_frame": 0, "too_small": 0}
     for folder in sorted(args.masks.glob("*/frame-*")):
         index, label = int(folder.name.split("-")[1]), folder.parent.name.rsplit("-", 1)[0]
         row = rows.get(index)
@@ -103,21 +103,24 @@ def build(args):
             continue
         if index not in frames:
             bgr, k = mono_room.prepare_image(cv2.imread(str(mono_room.DATASET / manifest["frames"][index]["relative_path"])), mono_room.CALIBRATION, 2)
-            depth = np.where(mono_room.unreliable(row["mono"], None, None, .03), 0, row["scale"] * row["mono"])[::STEP, ::STEP]
+            full_depth = np.where(mono_room.unreliable(row["mono"], None, None, .03), 0, row["scale"] * row["mono"])
+            depth = full_depth[::STEP, ::STEP]
             v, u = np.indices((480, 640))[:, ::STEP, ::STEP]
             local = np.stack([(u - k[2]) / k[0] * depth, (v - k[3]) / k[1] * depth, depth], -1)
             frames[str(index)] = FrameGeometry(str(index), "droid_final_native_world", manifest["frames"][index]["sha256"],
                                                local @ row["c2w"][:3, :3].T + row["c2w"][:3, 3], depth > 0,
                                                np.array([[k[0] / STEP, 0, k[2] / STEP], [0, k[1] / STEP, k[3] / STEP], [0, 0, 1.]]), row["c2w"])
-            images[index], depths[index] = bgr, depth
+            images[index], depths[index], intrinsics[index] = bgr, full_depth, np.array([[k[0], 0, k[2]], [0, k[1], k[3]], [0, 0, 1.]])
         found = []
         for path in sorted(folder.glob("instance-*-mask.png")):
             mask = mono_room.prepare_image(cv2.imread(str(path), cv2.IMREAD_COLOR), mono_room.CALIBRATION, 2)[0][..., 0] > 0
+            name = f"{label}:{index}:{path.stem.split('-')[1]}"
+            full_masks[name] = mask & (depths[index] > 0)
             mask = mask[::STEP, ::STEP] & frames[str(index)].valid
             if mask.sum() < 32:  # AssociationConfig.min_support: such a mask can never be compared
                 dropped["too_small"] += 1
             else:
-                found.append((f"{label}:{index}:{path.stem.split('-')[1]}", mask))
+                found.append((name, mask))
         kept = distinct(found)
         dropped["duplicate_in_frame"] += len(found) - len(kept)
         by_label.setdefault(label, []).extend(MaskObservation(name, str(index), mask) for name, mask in kept)
@@ -156,8 +159,9 @@ def build(args):
             entity["surfaces"] = []  # one visible side per observation, as the photo pipeline keeps one observed surface per photo; nothing behind it is made up
             for o in group:
                 frame, index = frames[lookup[o].image_id], int(lookup[o].image_id)
-                vertices, faces, colors, _, _ = observed_surface(images[index][::STEP, ::STEP, ::-1], depths[index], lookup[o].mask, frame.K, frame.camera_to_world,
-                                                                 max_edge_m=.04 * float(np.median(depths[index][lookup[o].mask])), depth_range=(0, np.inf))
+                # association runs on the STEP grid; the surface a person looks at keeps every source pixel
+                vertices, faces, colors, _, _ = observed_surface(images[index][..., ::-1], depths[index], full_masks[o], intrinsics[index], frame.camera_to_world,
+                                                                 max_edge_m=.04 * float(np.median(depths[index][full_masks[o]])), depth_range=(0, np.inf))
                 if len(faces):
                     (args.output / "surfaces").mkdir(exist_ok=True)
                     name = f"surfaces/{entity['entityId']}--{o.replace(':', '-')}.npz"

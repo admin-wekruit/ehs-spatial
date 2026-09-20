@@ -152,7 +152,25 @@ def build_document(args, put_asset, calibration, dataset):
                 surface["planProjection"] = projection
             representations.append(surface)
         model_transform = None
-        fitted = extent_box(entity, object_map["plan"]) if len(refs) >= CONFIRMED and object_map.get("plan") else None
+        # models are bound to the observation they were generated from, so renumbered entities cannot pick up a neighbour's model
+        anchored = [v for v in (args.models.glob("*/validation.json") if args.models else []) if json.loads(v.read_text())["observation"] in dict(refs)]
+        generated = anchored[0].parent if len(anchored) == 1 else None
+        checked = json.loads(anchored[0].read_text()) if generated else None
+        if checked and checked["accepted_source_consistency"]:  # a generated shape that reprojects onto its own source view; unseen sides are the generator's estimate
+            shape = trimesh.load(generated / "model.glb", force="mesh", process=False)  # already posed in the scene frame
+            asset = include((generated / "model.glb").read_bytes(), "model/gltf-binary", {"kind": "geometry", "format": "glb", "sourceRecordId": entity["entityId"],
+                            "generator": "RecGen (non-commercial research licence)", "meshSha256": checked["mesh_sha256"]})
+            model_transform = identity
+            model = {"id": ident("representation", "generated", entity["entityId"]), "kind": "generated_mesh", "assetId": asset, "coordinateFrameId": FRAME, "transform": identity,
+                     "bounds": {"min": shape.bounds[0].tolist(), "max": shape.bounds[1].tolist()}, "placementState": "unconfirmed", "placementReason": "requires_alignment_confirmation",
+                     "sourceRefs": [{"observationId": dict(refs)[checked["observation"]], "revision": 1, "imageId": images[int(checked["observation"].split(":")[1])]}],
+                     "sourceConsistency": {k: checked[k] for k in ("silhouette_iou", "relative_depth_median", "relative_depth_p95", "supported_pixels")},
+                     "modelBasis": "generated from one keyframe crop with its posed depth; checked against that view only"}
+            projection = _plan_projection(document, model, shape, checked["mesh_sha256"], identity)
+            if projection is not None:
+                model["planProjection"] = projection
+            representations.append(model)
+        fitted = extent_box(entity, object_map["plan"]) if model_transform is None and len(refs) >= CONFIRMED and object_map.get("plan") else None
         if fitted:  # same fields repository.py writes for a primitive: a proposal until a person confirms the alignment
             primitive, model_transform = fitted
             local = primitive_mesh(primitive)
@@ -224,8 +242,8 @@ def run(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("droid-run", "depth-run", "object-map", "masks", "policy"):
-        parser.add_argument("--" + name, type=Path, required=name != "policy")
+    for name in ("droid-run", "depth-run", "object-map", "masks", "policy", "models"):
+        parser.add_argument("--" + name, type=Path, required=name not in ("policy", "models"))
     parser.add_argument("--title", default="Video workcell (imported, not accepted)")
     parser.add_argument("--output-dir", type=Path, default=Path(".platform/imports"))
     parser.add_argument("--request-suffix", default="1", help="change to import the same inputs again as a new project")
