@@ -19,7 +19,8 @@ import cv2
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(ROOT / "modal_apps")]
+sys.path[:0] = [str(ROOT / "modal_apps"), str(ROOT / "scripts")]
+from build_video_object_map import STUFF  # noqa: E402
 CONFIRMED, SAMPLES, MIN_VISIBLE, HIDDEN = 3, 800, 40, .05  # HIDDEN: a hit more than 5% nearer than the point occludes it
 
 
@@ -68,7 +69,8 @@ def build(args):
     scene = raycaster(room.vertices, room.faces)
     rng, entities = np.random.default_rng(0), []
     for entity in json.loads((args.object_map / "object-map.json").read_text())["entities"]:
-        if len(entity["observations"]) >= CONFIRMED and entity.get("surfaces"):
+        # a wall's or floor's convex outline would cover the frame and swallow every click meant for an object in front of it
+        if len(entity["observations"]) >= CONFIRMED and entity.get("surfaces") and entity["label"] not in STUFF:
             points = np.concatenate([np.load(args.object_map / s["file"])["vertices"] for s in entity["surfaces"]])
             entities.append({"entityId": f"obs-{entity['entityId']}", "label": entity["label"], "views": len(entity["observations"]),
                              "points": points[rng.choice(len(points), min(len(points), SAMPLES), replace=False)]})
