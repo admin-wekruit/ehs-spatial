@@ -147,10 +147,11 @@ def load(droid_run, support, output):
         mono = np.load(path)
         depth = np.where(mono["mask"], mono["depth"], 0).astype(np.float32)
         assert depth.shape == (480, 640)
+        conf = mono["conf"].astype(np.float32) if "conf" in mono.files else None
         droid = None if key is None else data["keyframe_final_fullres_depth"][key][::2, ::2]
         scale, residual, anchors = (None, None, 0) if key is None else anchor_scale(depth[::4, ::4], droid, retained[key])
         rows.append({"key": key, "source_index": index, "scale": scale, "anchor_residual": residual,
-                     "anchors": anchors, "mono": depth, "droid": droid, "retained": None if key is None else retained[key],
+                     "anchors": anchors, "mono": depth, "conf": conf, "droid": droid, "retained": None if key is None else retained[key],
                      "c2w": (data["poses_c2w"][index] if key is None else data["keyframe_c2w"][key]).astype(np.float64),
                      "k": data["keyframe_final_fullres_intrinsics"][0].astype(np.float64)})
     assert rows, "run infer first"
@@ -182,13 +183,28 @@ def overlapping_views(cameras, depth, k, minimum=.1):
     return neighbours
 
 
-def fuse(droid_run, support, output, voxel, relative, base_scene=None, all_views=False, dynamic_masks=None):
+def unreliable(depth, conf, conf_floor, edge_jump):
+    """Pixels the depth model itself doubts, and in-between depths at object borders (flying pixels)."""
+    pad = np.pad(depth, 1, mode="edge")
+    jump = np.max([np.abs(depth - pad[a:a + depth.shape[0], b:b + depth.shape[1]]) for a, b in [(0, 1), (2, 1), (1, 0), (1, 2)]], 0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        bad = jump / depth > edge_jump
+    return bad | (conf < conf_floor if conf is not None and conf_floor is not None else False)
+
+
+def fuse(droid_run, support, output, voxel, relative, base_scene=None, all_views=False, dynamic_masks=None,
+         conf_percentile=None, edge_jump=None, carve=False):
     import cv2
     import open3d as o3d
     from build_droid_replay import depth_support
     from reconstruct_room_rgb import integrate, new_volume
     rows = load(droid_run, support, output)
     manifest = json.loads((droid_run / "input-manifest.json").read_text())
+    conf_floor = (float(np.percentile(np.concatenate([r["conf"][::4, ::4].ravel() for r in rows]), conf_percentile))
+                  if conf_percentile and rows[0]["conf"] is not None else None)
+    if conf_floor is not None or edge_jump:
+        for r in rows:  # removed before voting, so doubtful depth can neither survive nor support a neighbour
+            r["mono"] = np.where(unreliable(r["mono"], r["conf"], conf_floor, edge_jump or np.inf), 0, r["mono"])
     aligned = np.stack([r["scale"] * r["mono"][::4, ::4] for r in rows])
     with np.errstate(divide="ignore"):
         disparity = np.where(aligned > 0, 1 / aligned, np.nan)
@@ -199,7 +215,7 @@ def fuse(droid_run, support, output, voxel, relative, base_scene=None, all_views
     mono_supported = same_rule if relative is None and not all_views else depth_support(
         cameras, disparity, ks, tolerance_fraction=relative, neighbours=neighbours)[2]
     volume_ = new_volume(voxel)
-    points, colors, masked_views = [], [], set()
+    points, colors, masked_views, exposures = [], [], set(), []
     for r, keep in zip(rows, mono_supported):
         bgr, k = prepare_image(cv2.imread(str(DATASET / manifest["frames"][r["source_index"]]["relative_path"])), CALIBRATION, 2)
         keep = cv2.resize(keep.astype(np.uint8), (640, 480), interpolation=cv2.INTER_NEAREST).astype(bool)
@@ -209,6 +225,7 @@ def fuse(droid_run, support, output, voxel, relative, base_scene=None, all_views
             masked_views.add(r["source_index"])
         K = np.array([[k[0], 0, k[2]], [0, k[1], k[3]], [0, 0, 1.]])
         integrate(volume_, cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB), np.where(keep, r["scale"] * r["mono"], 0), K, r["c2w"])
+        exposures.append((np.where(keep, r["scale"] * r["mono"], 0)[::2, ::2], K / [[2], [2], [1]], r["c2w"]))
         v, u = np.indices((480, 640))[:, ::4, ::4]  # display cloud: the 160x120 support raster, source colours
         z = r["scale"] * r["mono"][::4, ::4]
         local = np.stack([(u - k[2]) / k[0] * z, (v - k[3]) / k[1] * z, z], -1)
@@ -216,6 +233,18 @@ def fuse(droid_run, support, output, voxel, relative, base_scene=None, all_views
         colors.append(bgr[::4, ::4, ::-1].reshape(-1, 3))
     mesh = volume_.extract_triangle_mesh()
     assert not mesh.is_empty()
+    carved = None
+    if carve:  # the existing static-surface rule: enough views agree, and few views see straight through the vertex
+        from filter_video_static_surfaces import depth_evidence
+        vertices = np.asarray(mesh.vertices)
+        positive, negative = np.zeros(len(vertices), int), np.zeros(len(vertices), int)
+        for depth, k2, c2w in exposures:
+            pos, neg = depth_evidence(vertices, depth, depth <= 0, k2, c2w, tolerance=0, depth_range=(0, np.inf), relative_tolerance=.04)
+            positive[pos] += 1; negative[neg] += 1
+        drop = ~((positive >= 3) & (negative <= np.maximum(2, positive * .15)))
+        carved = {"rule": "filter_video_static_surfaces: positive>=3 and negative<=max(2, .15*positive), 4% relative",
+                  "vertices": len(vertices), "removed_vertices": int(drop.sum()), "removed_for_free_space_contradiction": int(((positive >= 3) & drop).sum())}
+        mesh.remove_vertices_by_mask(drop)
     o3d.io.write_triangle_mesh(str(output / "mono-anchored-mesh.ply"), mesh)
     o3d.io.write_point_cloud(str(output / "mono-anchored-points.ply"), volume_.extract_point_cloud())
     sizes = np.bincount(np.asarray(mesh.cluster_connected_triangles()[0]))
@@ -231,6 +260,8 @@ def fuse(droid_run, support, output, voxel, relative, base_scene=None, all_views
                "mono_support_fraction_same_rule": float(same_rule.mean()),
                "fusion_support_views": "every keyframe seeing >=10% of this one" if all_views else "pinned six temporal neighbours",
                "fusion_support_views_median": int(np.median([len(n) for n in neighbours])) if all_views else 6,
+               "model_confidence_percentile_removed": conf_percentile if conf_floor is not None else None, "model_confidence_floor": conf_floor,
+               "depth_edge_relative_jump_removed": edge_jump, "free_space_carving": carved,
                "dynamic_masks": str(dynamic_masks) if dynamic_masks else None, "views_with_dynamic_mask_removed": len(masked_views),
                "fusion_support_relative_tolerance": relative, "fusion_support_fraction": float(mono_supported.mean()),
                "mesh_triangles": len(mesh.triangles), "mesh_components": len(sizes), "largest_component_triangles": int(sizes.max()),
@@ -305,10 +336,13 @@ def self_check():
     assert anchor_scale(mono, droid, np.zeros_like(supported)) == (None, None, 0)
     outlier = mono.copy(); outlier[:20] *= 4  # a robust fit ignores a wrong sixth of the anchors
     assert abs(anchor_scale(outlier, droid, supported)[0] - 1.7) < .05
+    step = np.full((6, 8), 2.); step[:, 4:] = 3.; step[:, 4] = 2.5  # an in-between depth invented at a border
+    bad = unreliable(step, np.where(np.arange(8) == 0, .1, 9.) * np.ones((6, 8)), 1., .1)
+    assert bad[:, [0, 3, 4, 5]].all() and not bad[:, [1, 2, 6, 7]].any(), bad[0]
     front, back = np.eye(4), np.diag([-1., 1, -1, 1])  # same place, facing away
     views = overlapping_views(np.stack([front, back] * 4 + [front]), np.full((9, 120, 160), 2.), [140., 140, 80, 60])
     assert views[0] == [2, 4, 6, 8] and views[1] == [3, 5, 7], views[:2]
-    print("mono room check passed: revisits at any time vote and opposite views do not; anchors only from supported pixels, anchorless frames refused, median robust to outliers")
+    print("mono room check passed: low-confidence and border-jump pixels dropped; revisits at any time vote and opposite views do not; anchors only from supported pixels, anchorless frames refused, median robust to outliers")
 
 
 if __name__ == "__main__":
@@ -323,6 +357,9 @@ if __name__ == "__main__":
     parser.add_argument("--voxel-length-native", type=float, default=.03)  # same as the DROID review
     parser.add_argument("--support-relative", type=float, help="fusion keeps depth agreeing with >=2 neighbours within this fraction; default: pinned .005 native rule")
     parser.add_argument("--support-all-views", action="store_true", help="let every overlapping keyframe vote, not only six temporal neighbours")
+    parser.add_argument("--conf-percentile", type=float, help="drop this lowest share of the depth model's own confidence (DA3 official default: 40)")
+    parser.add_argument("--edge-jump", type=float, help="drop pixels whose depth jumps by more than this fraction to a 4-neighbour (flying pixels)")
+    parser.add_argument("--carve", action="store_true", help="apply the existing static-surface support/free-space rule to the fused mesh")
     parser.add_argument("--dynamic-masks", type=Path, help="directory of SOURCEINDEX-*.png person/object masks in source pixels; removed before fusion")
     parser.add_argument("--base-scene", type=Path, help="existing replay scene.json of the same DROID run; fuse then also writes a viewer scene")
     a = parser.parse_args()
@@ -331,6 +368,6 @@ if __name__ == "__main__":
     elif a.command == "infer":
         infer(a.droid_run, a.output, a.stride, a.da3_model, a.midframes)
     elif a.command == "fuse":
-        fuse(a.droid_run, a.support, a.output, a.voxel_length_native, a.support_relative, a.base_scene, a.support_all_views, a.dynamic_masks)
+        fuse(a.droid_run, a.support, a.output, a.voxel_length_native, a.support_relative, a.base_scene, a.support_all_views, a.dynamic_masks, a.conf_percentile, a.edge_jump, a.carve)
     else:
         evaluate(a.droid_run, a.support, a.output)
