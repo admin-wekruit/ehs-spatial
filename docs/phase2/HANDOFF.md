@@ -190,6 +190,11 @@ walking片段（fr3/walking_xyz，两人走动，管线内只用RGB）：DROID 8
 据此 `import_video_scene.py` 已改为：每个观测一个观测表面（`build_video_object_map.py` 导出 `surfaces/ENTITY--label-frame-instance.npz`，154个），每个表面用平台自己的 `reconstruction._plan_projection` 生成平面投影（地面法向来自拟合地面；精确三角并集，不取凸包不补洞）；房间作为sourceContext实体同时带 `observed_surface` 网格和 `point_cloud`（`supported-keyframe-points.glb`，阅读器原生支持GLB点集），放置状态confirmed（同相机下位置精确；“未验收”指完整性，写在标签和来源说明里）。
 当前视频报告：`http://127.0.0.1:8792/app.html#/reports/0ec6b467-c009-42af-8d81-b119aabc2a1a`（对象地图 `room-object-map-031`，344个资产）：空间表示下拉里“点云”已可用；CAD面板“照片观测投影”模式当前关键帧 9/45 条记录有投影、53个轮廓；证据联动正常。对象列表“当前模型：暂无三维资产”是事实（尚无生成/参数化对象模型，S10）。仍缺：安全评估栏（`room-policy-029` 的判定还不是平台evaluation）、观测范围/米制尺寸显示、对象模型、时间轴与移动的人、界面文案仍写“照片”。
 
+**视频报告的四视角要求与参数化模型（2026-09-20）**：用户明确视频报告要四个联动视角——视频帧（每一帧可点选内容，显示对应对象及其特征）、点云、Blender/模型复现（与点云同坐标、对称对应）、CAD；并且“需要模型”。
+已做：`import_video_scene.py::extent_box`——对每个≥3视图确认的实体，在拟合地面上取占地的最小外接矩形＋观测到的底/顶高度，生成贴地朝向的 box 原语（不延伸到地面、不补未见面），按 `repository.py` 写原语的同一组字段入库（`placementState=unconfirmed`、`placementReason=requires_alignment_confirmation`、`currentModelTransform`，迁移后自动成为active model），并用 `_plan_projection` 生成模型平面投影。自检：17个实体的占地与高度范围全部落在各自盒内（最大越界0）。报告 `http://127.0.0.1:8792/app.html#/reports/7acca2f0-c91f-487f-ae56-c97a36b4da3b`：CAD“当前模型投影”17/45条有投影；“暂无三维资产”45→28。
+Blender：本机没有Blender可执行文件，`blender_export.export_scene_revision` 会报 `blender_worker_unavailable`；用同一模块的 `prepare_export`+`write_glb` 导出了模型场景 `runs/video-report-models-032/scene.glb`（17对象、33源相机、校验passed；可在Blender里直接导入glTF）。`models-over-pointcloud.png` 显示盒子与点云俯视对齐。已知问题：`chair-006` 盒子偏大（1.44×0.74原生单位，疑似相邻椅子被并或掩码外溢）；桌面岛被分成两个相互重叠的桌子实体；盒子只是观测范围的替身，不是对象形状。
+尚未做：每一帧（而非33个关键帧）的点选——需要把实体掩码用SAM2.1在关键帧之间传播（人物已有同样流程），以及报告前端的视频视角；生成式对象模型（RecGen，非商用许可、按次付费）；`.blend` 文件（需要带Blender的worker）。
+
 下一步（用户已确认的顺序）：G1尺度→G2对象级地图（ConceptGraphs式：关键帧SAM3分割→用带位姿深度抬进地图→三维重叠+外观合并为实体；复用 `platform/identity.py`、`spatial.py::associate_observations`）→G3对象建模（选帧、A07模型—源帧一致性、尺寸对点云范围）→G4接入现有报告→G5时间规则→G7地图持久化；G6真实工厂素材暂缓。地面偏差的候选修法：对已分割为地面的像素做跨视图单平面约束（现有 `planar_surfaces.py`），只用于语义上确认为平面的区域，不补造未见区域。
 
 仍未解决：相机从未看到的区域为空（不补造，用户已确认可接受）；外围漂浮碎片（6418分量，最大分量占88%）；源帧750之前没有人物掩码；DA3-GIANT许可。下一步：用户目检签收后再决定是否替换 `room-droid` 主样本；用DA3-BASE重跑352视图确认可商用路线；补750帧之前的人物掩码；再接回对象/骨架。不要重跑007/009/010/012。

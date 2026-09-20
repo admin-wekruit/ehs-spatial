@@ -32,6 +32,27 @@ def rectify(image, calibration):
     return prepare_image(image, {"source_K_fx_fy_cx_cy": calibration["K"], "source_distortion": calibration["D"]}, 2)
 
 
+def extent_box(entity, plan):
+    """A floor-aligned box over what was seen of a confirmed entity: the minimum rectangle of its floor footprint and its observed bottom and top.
+
+    It is a parametric stand-in for the Blender/model view, not a measurement: nothing is extended to the floor or behind the seen side.
+    """
+    from scipy.spatial.transform import Rotation
+    from shapely.geometry import Polygon
+    rectangle = np.array(Polygon(entity["footprintPlanNative"]).minimum_rotated_rectangle.exterior.coords[:4])
+    along, across = rectangle[1] - rectangle[0], rectangle[3] - rectangle[0]
+    size = [float(np.linalg.norm(along)), float(np.linalg.norm(across)), max(entity["heightNative"] - entity["baseNative"], 1e-3)]
+    if min(size[:2]) <= 1e-6:
+        return None
+    origin, up, a, b = (np.array(plan[k]) for k in ("origin_native", "up", "axis_a", "axis_b"))
+    x = (along / size[0]) @ np.stack([a, b])
+    rotation = np.stack([x, np.cross(up, x), up], 1)  # columns: box x, y, z in the world
+    centre = rectangle.mean(0)
+    position = origin + a * centre[0] + b * centre[1] + up * (entity["heightNative"] + entity["baseNative"]) / 2
+    return {"type": "box", "dimensions": size}, {"coordinateFrameId": FRAME, "position": position.tolist(),
+                                                 "quaternion": Rotation.from_matrix(rotation).as_quat().tolist(), "scale": [1., 1., 1.]}
+
+
 def png(image):
     return cv2.imencode(".png", image)[1].tobytes()
 
@@ -76,6 +97,7 @@ def build_document(args, put_asset, calibration, dataset):
 
     import trimesh
     from ehs_spatial.platform.reconstruction import _plan_projection
+    from ehs_spatial.platform.spatial import primitive_mesh
     shell = trimesh.load(args.depth_run / "predicted-scene.glb", force="mesh", process=False)
     rows = np.hstack([shell.vertices, shell.vertex_normals, np.asarray(shell.visual.vertex_colors)[:, :3] / 255.]).astype("<f4")
     indices = np.asarray(shell.faces, "<u4").ravel()
@@ -129,8 +151,21 @@ def build_document(args, put_asset, calibration, dataset):
             if projection is not None:
                 surface["planProjection"] = projection
             representations.append(surface)
+        model_transform = None
+        fitted = extent_box(entity, object_map["plan"]) if len(refs) >= CONFIRMED and object_map.get("plan") else None
+        if fitted:  # same fields repository.py writes for a primitive: a proposal until a person confirms the alignment
+            primitive, model_transform = fitted
+            local = primitive_mesh(primitive)
+            model = {"id": ident("representation", "box", entity["entityId"]), "kind": "primitive", "assetId": None, "primitive": primitive, "transform": model_transform,
+                     "coordinateFrameId": FRAME, "bounds": {"min": local.vertices.min(0).tolist(), "max": local.vertices.max(0).tolist()},
+                     "placementState": "unconfirmed", "placementReason": "requires_alignment_confirmation", "sourceRefs": [{"observationId": o} for _, o in refs],
+                     "modelBasis": "floor-aligned box over the observed extent of a multi-view confirmed entity; unseen sides are not measured"}
+            projection = _plan_projection(document, model, local, None, model_transform)
+            if projection is not None:
+                model["planProjection"] = projection
+            representations.append(model)
         document["entities"].append({"id": ident("entity", entity["entityId"]), "label": entity["label"], "observationRefs": [o for _, o in refs],
-            "associationState": "confirmed" if len(refs) >= CONFIRMED else "association_pending", "representations": representations, "currentModelTransform": None,
+            "associationState": "confirmed" if len(refs) >= CONFIRMED else "association_pending", "representations": representations, "currentModelTransform": model_transform,
             "measurements": measurements, "groupId": None, "visible": True, "sourceContext": False,
             "lineage": [{"operation": "offline_import", "sourceAssetId": source, "sourceRecordId": entity["entityId"], "method": object_map["associator"]}]})
     limitations = ["Monocular video; metres come from a stated 1.6 m carry height that disagrees with the model scale estimate by about 20% on this clip.",
