@@ -121,7 +121,12 @@ def build(args):
         kept = distinct(found)
         dropped["duplicate_in_frame"] += len(found) - len(kept)
         by_label.setdefault(label, []).extend(MaskObservation(name, str(index), mask) for name, mask in kept)
-    entities, report = [], {}
+    entities, report, plan = [], {}, None
+    if args.floor:  # plan axes on the fitted floor: footprints and heights are measured against it, still in native units
+        floor = json.loads(args.floor.read_text())
+        up, origin = np.array(floor["up_native"]), np.array(floor["plane_point_native"])
+        axis_a = np.cross(up, [1., 0, 0]); axis_a /= np.linalg.norm(axis_a)
+        plan = {"origin": origin, "up": up, "a": axis_a, "b": np.cross(up, axis_a)}
     for label, observations in sorted(by_label.items()):
         lookup = {o.id: o for o in observations}
         if args.method == "clique":
@@ -139,6 +144,18 @@ def build(args):
                       "sourceFrames": sorted({int(lookup[o].image_id) for o in group}), "supportPoints": len(points),
                       "centroidNative": np.median(points, 0).tolist(),
                       "boundsNative": [np.percentile(points, 2, 0).tolist(), np.percentile(points, 98, 0).tolist()]}
+            if plan:
+                from shapely.geometry import MultiPoint
+                relative = points - plan["origin"]
+                hull = MultiPoint(np.stack([relative @ plan["a"], relative @ plan["b"]], 1)[::max(1, len(points) // 20000)]).convex_hull
+                cameras = np.stack([frames[lookup[o].image_id].camera_to_world[:3, 3] for o in group])
+                entity.update(footprintPlanNative=[list(xy) for xy in hull.exterior.coords[:-1]], heightNative=float(np.percentile(relative @ plan["up"], 98)),
+                              baseNative=float(np.percentile(relative @ plan["up"], 2)),
+                              rangeNative=float(np.median(np.linalg.norm(cameras - np.median(points, 0), axis=1))))
+            entity["observationBoxes"] = {}
+            for o in group:
+                ys, xs = np.where(lookup[o].mask)
+                entity["observationBoxes"][o] = [int(xs.min() * STEP), int(ys.min() * STEP), int(xs.max() * STEP + STEP), int(ys.max() * STEP + STEP)]
             entities.append(entity)
             tiles = []
             for o in group[:12]:  # contact sheet: the evidence a person needs to spot a wrong merge
@@ -155,6 +172,9 @@ def build(args):
                "associator": ("ehs_spatial.platform.spatial.associate_observations, fixed point over confirmed_groups" if args.method == "clique" else
                               "3D point-overlap accumulator after ConceptGraphs; label gate; one mask per entity per frame; same-label merge"),
                "dropped_masks": dropped, "per_label": report, "entities": entities,
+               "plan": None if plan is None else {"floor": str(args.floor), "origin_native": plan["origin"].tolist(), "up": plan["up"].tolist(),
+                                                  "axis_a": plan["a"].tolist(), "axis_b": plan["b"].tolist(),
+                                                  "hull": "convex hull of the entity's lifted mask points projected on the floor: visible sides only, never completed"},
                "limitations": ["Labels are never merged: one object prompted as both desk and cabinet yields two entities.",
                                "An entity seen in fewer than 3 views stays a candidate; it is listed, not confirmed.",
                                "Identity is geometric only; no appearance feature is used."]}
@@ -205,6 +225,7 @@ if __name__ == "__main__":
     parser.add_argument("--depth-run", type=Path, help="mono_room output holding mono/*.npz")
     parser.add_argument("--support", type=Path)
     parser.add_argument("--masks", type=Path, help="folder of PROMPT-PART/frame-XXXXX/instance-N-mask.png")
+    parser.add_argument("--floor", type=Path, help="metric-scale.json of mono_room metric: adds floor-plan footprints and heights (native units)")
     parser.add_argument("--method", choices=["clique", "overlap"], default="overlap")
     parser.add_argument("--output", type=Path)
     a = parser.parse_args()
