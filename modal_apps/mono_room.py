@@ -413,6 +413,15 @@ def entity_depth(row, entity_run, moving):
     return single * float(np.median(own[static] / single[static]))
 
 
+def rectified_pixels(points):
+    """Source-image pixels -> the 640x480 depth raster: the same undistort, 704x512 resize and crop as prepare_image at scale 2."""
+    import cv2
+    fx, fy, cx, cy = SOURCE_K
+    k = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1.]])
+    flat = cv2.undistortPoints(np.asarray(points, np.float64).reshape(-1, 1, 2), k, np.asarray(SOURCE_D, np.float64), P=k).reshape(-1, 2)
+    return flat * [704 / 640, 512 / 480] - [32, 16]
+
+
 def dynamic(droid_run, support, output, analysis, entity_run=None):
     """Moving entities as time-stamped visible surfaces in the static map's frame.
 
@@ -422,12 +431,13 @@ def dynamic(droid_run, support, output, analysis, entity_run=None):
     import cv2
     from build_video_object_models import observed_surface
     from build_video_surfaces import export_surface
+    from build_replay_scene import surface_joints
     rows = {r["source_index"]: r for r in load(droid_run, support, output)}
     manifest = json.loads((droid_run / "input-manifest.json").read_text())
     scene = json.loads((output / "scene.json").read_text())  # written by fuse --base-scene
     frames = {f["sourceFrame"]: f for f in scene["frames"]}
     (output / "dynamic").mkdir(exist_ok=True)
-    surfaces = empty = 0
+    surfaces = empty = joints_lifted = joints_seen = 0
     for observed in json.loads(analysis.read_text())["frames"]:
         r, frame = rows.get(observed["sourceFrame"]), frames.get(observed["sourceFrame"])
         if r is None or frame is None or not observed["objects"]:
@@ -449,9 +459,14 @@ def dynamic(droid_run, support, output, analysis, entity_run=None):
             if not len(faces):
                 empty += 1
                 continue
+            # 2D skeleton joints onto the visible surface: a joint outside the mask or on inconsistent depth stays empty
+            flat = entity.get("keypoints") or []
+            joints = np.column_stack([rectified_pixels([j[:2] for j in flat]), [j[2] for j in flat]]) if flat else np.zeros((0, 3))
+            keypoints3d = surface_joints(joints, depth, mask, K, r["c2w"], max_depth_spread=.075 * reach)  # .12 m at the 1.6 m the helper was tuned for
+            joints_seen += sum(j[2] >= .3 for j in flat); joints_lifted += sum(j is not None for j in keypoints3d)
             path = output / "dynamic" / f"entity-{r['source_index']:05d}-{number}.glb"
             export_surface(path, vertices, faces, colors)
-            frame["objects"].append({"entityId": entity["entityId"], "keypoints3d": [], "bones": [], "representation": "estimated_monocular_surface",
+            frame["objects"].append({"entityId": entity["entityId"], "keypoints3d": keypoints3d, "bones": entity.get("bones", []) if flat else [], "representation": "estimated_monocular_surface",
                                      "world_motion": "insufficient_evidence", "centroid": np.median(vertices, 0).tolist(),
                                      "surface": {"meshUrl": f"dynamic/{path.name}", "sourceFrame": r["source_index"],
                                                  "representation": "visible_monocular_surface", "sha256": sha(path), "triangles": len(faces)}})
@@ -462,7 +477,8 @@ def dynamic(droid_run, support, output, analysis, entity_run=None):
     for current, following in zip(sampled, sampled[1:]):
         current["endTimeSec"] = following["timeSec"]
     scene["frames"] = sampled
-    scene["humanSurfaces"] = {"representation": "visible_monocular_surface", "count": surfaces, "masks_without_usable_depth": empty,
+    scene["humanSurfaces"] = {"representation": "visible_monocular_surface", "count": surfaces, "masks_without_usable_depth": empty, "skeleton": {"source": "cached RTMPose COCO17 2D joints lifted onto the visible surface (build_replay_scene.surface_joints)",
+                              "confident_2d_joints": int(joints_seen), "lifted_3d_joints": int(joints_lifted), "note": "surface points, not joint centres inside the body"},
                               "coordinateFrame": scene["coordinate_frame"], "hidden_body_completed": False,
                               "depth": ("the static map's own posed depth of the same view" if entity_run is None else
                                         f"single-frame depth of {entity_run.name}, scaled per view on its static pixels to the map's posed depth")
@@ -540,6 +556,10 @@ def self_check():
         np.savez(Path(folder) / "mono" / "00007.npz", depth=truth / 1.7, mask=np.ones_like(moving))
         tied = entity_depth({"scale": 1., "mono": np.where(moving, 9., 3.).astype(np.float32), "source_index": 7}, Path(folder), moving)
         assert np.allclose(tied, truth, atol=1e-5), "single-frame depth must be scaled by static pixels only"
+    global SOURCE_K, SOURCE_D
+    saved, SOURCE_K, SOURCE_D = (SOURCE_K, SOURCE_D), [500., 500., 320., 240.], [0.] * 5  # without distortion the mapping is the plain resize and crop
+    assert np.allclose(rectified_pixels([[0, 0], [640, 480], [320, 240]]), [[-32, -16], [672, 496], [320, 240]])
+    SOURCE_K, SOURCE_D = saved
     rng = np.random.default_rng(1)
     tilted = np.array([.1, -.2, 1.]) / np.linalg.norm([.1, -.2, 1.])
     flat = rng.uniform(-2, 2, (3000, 3)); flat -= np.outer(flat @ tilted, tilted); flat += tilted * .7 + rng.normal(0, .003, (3000, 3))

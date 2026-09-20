@@ -175,11 +175,14 @@ export async function mountReplay(container:HTMLElement,scene:any,base:string,op
   scene.points.forEach((p:any)=>include(p.slice(1)));scene.frames.forEach((f:any)=>{const p=f.c2w.slice(0,3).map((r:any)=>r[3]);include(p);cameraPoints.push(p);f.objects.forEach((o:any)=>o.keypoints3d.filter(Boolean).forEach((p:XYZ)=>{include(p);observed.push(p);}));});
   const extent=Math.max(Math.hypot(...max.map((v,k)=>v-min[k])),.01);
   const cameraExtent=cameraPoints.length?Math.hypot(...[0,1,2].map(k=>Math.max(...cameraPoints.map(p=>p[k]))-Math.min(...cameraPoints.map(p=>p[k])))):extent;
-  const markerScale=scene.units==='meters'?.16:Math.max(cameraExtent,.01)*.04;
+  // ponytail: a nearly static camera made markers hair-thin and skeletons vanish into the body surface. Limbs give the
+  // same size metric scenes use (.16 for a ~.3 m median bone); display only, no coordinate is touched.
+  const boneLengths:number[]=scene.frames.flatMap((f:any)=>f.objects.flatMap((o:any)=>o.bones.map(([i,j]:number[])=>{const pa=o.keypoints3d[i],pb=o.keypoints3d[j];return pa&&pb?Math.hypot(...pb.map((v:number,k:number)=>v-pa[k])):0;}))).filter((v:number)=>v>0).sort((x:number,y:number)=>x-y);
+  const markerScale=scene.units==='meters'?.16:Math.max(Math.max(cameraExtent,.01)*.04,boneLengths.length?boneLengths[boneLengths.length>>1]*.53:0);
   // A room without object overlays must frame the geometry, not just the camera path.
   if(!observed.length)observed.push(...boundsCorners({min,max}));
   const hasSurfaces=scene.frames.some((f:any)=>f.objects.some((o:any)=>o.surface));
-  let current:any=undefined,selected:string|null=null,disposed=false,objectView=false,fromSource=hasSurfaces,bodyModels=false,pointCloud=!!scene.pointCloudUrl||!scene.meshUrl;
+  let current:any=undefined,selected:string|null=null,disposed=false,objectView=false,fromSource=hasSurfaces,bodyModels=false,skeleton=false,pointCloud=!!scene.pointCloudUrl||!scene.meshUrl;
   const surfaceCache=new Map<string,Promise<ReturnType<typeof readGLB>>>();
   const loadSurface=(surface:any)=>{
     if(!surfaceCache.has(surface.meshUrl)){
@@ -197,9 +200,9 @@ export async function mountReplay(container:HTMLElement,scene:any,base:string,op
   };
   const rendered=new Set<string>();
   const announce=()=>options.frame(current,{mode:bodyModels?'body':'surface',rendered:rendered.size,total:current?.objects.length||0});
-  const hideLinks=()=>{if(hasSurfaces)for(const[id,e]of dynamic)if(!id.startsWith('camera:')&&!id.endsWith(':surface'))e.representations[0].material.baseColorFactor[3]=0;};
+  const hideLinks=()=>{if(hasSurfaces&&!skeleton)for(const[id,e]of dynamic)if(!id.startsWith('camera:')&&!id.endsWith(':surface'))e.representations[0].material.baseColorFactor[3]=0;};
   const displaySurfaces=(frame:any)=>{
-    if(!frame)return;
+    if(!frame||skeleton)return;
     const index=scene.frames.indexOf(frame),generation=bodyModels;
     if(!bodyModels)for(const future of scene.frames.slice(index,index+8))for(const o of future.objects)if(o.surface)void loadSurface(o.surface);
     for(const object of frame.objects){
@@ -208,7 +211,7 @@ export async function mountReplay(container:HTMLElement,scene:any,base:string,op
         !bodyModels&&object.surface?loadSurface(object.surface).then(m=>m[0]):null;
       if(!task)continue;
       void task.then(mesh=>{
-        if(disposed||current!==frame||generation!==bodyModels)return;
+        if(disposed||current!==frame||generation!==bodyModels||skeleton)return;
         const id=`${object.entityId}:surface`,entity=dynamic.get(id);viewer.setStreamMesh(id,mesh);
         entity.representations[0].material.lighting=bodyModels;entity.representations[0].material.baseColorFactor=[...Array(3).fill(selected&&selected!==object.entityId ? .65 : 1),1];
         for(const [key,e]of dynamic)if(key.startsWith(object.entityId+':')&&key!==id)e.representations[0].material.baseColorFactor[3]=0;
@@ -226,6 +229,9 @@ export async function mountReplay(container:HTMLElement,scene:any,base:string,op
     setTime(time:number,selection:string|null=null){if(disposed)return;const frame=frameAt(scene.frames,time);if(frame===current&&selection===selected)return;current=frame;selected=selection;rendered.clear();applyFrame(frame,dynamic,scene.coordinate_frame,markerScale,selected);hideLinks();if(fromSource)for(const [id,e]of dynamic)if(id.startsWith('camera:'))e.representations[0].material.baseColorFactor[3]=0;viewer.setSelection({entityId:selected?(staticIds.has(selected)?selected:`${selected}:surface`):null});void viewer.setScene(document);displaySurfaces(frame);announce();},
     fit,sourceView,
     setBodyModels(value:boolean){bodyModels=value;rendered.clear();applyFrame(current,dynamic,scene.coordinate_frame,markerScale,selected);hideLinks();if(fromSource)for(const[id,e]of dynamic)if(id.startsWith('camera:'))e.representations[0].material.baseColorFactor[3]=0;void viewer.setScene(document);displaySurfaces(current);announce();},
+    setSkeleton(value:boolean){skeleton=value;rendered.clear();applyFrame(current,dynamic,scene.coordinate_frame,markerScale,selected);hideLinks();
+      for(const[id,e]of dynamic)if(skeleton&&id.endsWith(':surface')||fromSource&&id.startsWith('camera:'))e.representations[0].material.baseColorFactor[3]=0;
+      void viewer.setScene(document);displaySurfaces(current);announce();},
     setPointCloud(value:boolean){pointCloud=value;viewer.setLayers(replayLayers(scene,pointCloud,objectView));},
     setObjectView(value:boolean){objectView=value;viewer.setLayers(replayLayers(scene,pointCloud,objectView));fit();},
     async setObjectModel(id:string,value:boolean){

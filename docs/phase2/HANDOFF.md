@@ -182,6 +182,10 @@ walking片段（fr3/walking_xyz，两人走动，管线内只用RGB）：DROID 8
 本机基础设施：Postgres 16数据目录 `ART/.platform/pgdata`，只监听127.0.0.1:54329（启动需 `LC_ALL=en_US.UTF-8`，否则macOS上报 “postmaster became multithreaded”）；`PANOPTES_DATABASE_URL=postgresql://panoptes@127.0.0.1:54329/panoptes_video`，`PANOPTES_BLOB_ROOT=ART/.platform/blobs`；API+阅读器：`uvicorn ehs_spatial.platform.runtime:application --factory --host 127.0.0.1 --port 8792`，`PANOPTES_WEB_ROOT` 指向Phase 1工作树已有的 `web/dist`（只读使用）。导入结果清单（含项目capability，权限600）在 `ART/.platform/imports/`。
 当前报告：`http://127.0.0.1:8792/app.html#/reports/9f42a1c7-d4bb-4a18-8b92-84b61711d0fb`（对象地图 `room-object-map-030`，与027分组完全相同）：33张关键帧、154个掩码观测、46个实体/17个已确认、234个资产；选中实体会跳到其关键帧并显示“已绑定多张原图·多视角身份已关联”；“场景3D”显示当前关键帧实体的观测表面。未做：对象列表仍写“暂无三维资产”（另一条判定）、CAD平面投影为空（需 `planProjection`）、房间网格未显示、安全评估未接入（`room-policy-029` 的判定还没写成平台evaluation）、时间轴/移动对象不在报告里。
 
+**用户反馈与骨架（2026-09-20）**：用户看过后：房间“新的更好”（以 `da3-posed-room-014-edge-carve` 为基线）；移动的人“出现效果可以，但需要骨架”；LingBot旧样本里的“物体选择”留到对象进查看器那一步；本地Postgres可以先用（用户有Supabase连接 “Wekruit-pa”，本机查不到其配置，迁移前须确认是否生产库）。
+骨架：`mono_room.py dynamic` 复用 `build_replay_scene.surface_joints`，把缓存的RTMPose二维关节（源像素→`rectified_pixels` 去畸变/缩放/裁剪）抬到人物可见表面；walking 4207/6303个可信关节抬成三维（其余在掩码外、轮廓边缘或深度不一致，留空）。查看器原本**有意**在有人物表面时隐藏骨架线（`scene.ts::hideLinks`，骨架线贴在表面后会被挡住），旧LingBot样本也一样看不到三维骨架；现加“骨架”开关（`setSkeleton`，与人物表面二选一），并把标记尺寸改为按骨骼中位长度取比例（相机几乎不动时原来只有几毫米粗）。查看器已按README重建到 `ART/video-mvp`；检查 `scene-check.ts`、`check.mjs` 通过。
+主样本页 `ART/video-mvp/manifest.json` 已把 `walking-da3`、`room-da3` 放在最前（备份 `manifest-before-da3-promotion.json`），旧六个样本保留；`delivery.json` 的哈希索引尚未更新。
+
 下一步（用户已确认的顺序）：G1尺度→G2对象级地图（ConceptGraphs式：关键帧SAM3分割→用带位姿深度抬进地图→三维重叠+外观合并为实体；复用 `platform/identity.py`、`spatial.py::associate_observations`）→G3对象建模（选帧、A07模型—源帧一致性、尺寸对点云范围）→G4接入现有报告→G5时间规则→G7地图持久化；G6真实工厂素材暂缓。地面偏差的候选修法：对已分割为地面的像素做跨视图单平面约束（现有 `planar_surfaces.py`），只用于语义上确认为平面的区域，不补造未见区域。
 
 仍未解决：相机从未看到的区域为空（不补造，用户已确认可接受）；外围漂浮碎片（6418分量，最大分量占88%）；源帧750之前没有人物掩码；DA3-GIANT许可。下一步：用户目检签收后再决定是否替换 `room-droid` 主样本；用DA3-BASE重跑352视图确认可商用路线；补750帧之前的人物掩码；再接回对象/骨架。不要重跑007/009/010/012。

@@ -58,7 +58,7 @@ async function loadSample(sample) {
   $('scene-panel').hidden = !sample.scene;
   $('scene-details').replaceChildren();
   $('scene-objects').replaceChildren();
-  $('scene-body').hidden=true;$('scene-body').setAttribute('aria-pressed','false');$('scene-body').textContent='人体网格估计';$('scene-fit').disabled = true;$('scene-source').disabled = true;
+  $('scene-body').hidden=true;$('scene-skeleton').hidden=true;$('scene-body').setAttribute('aria-pressed','false');$('scene-body').textContent='人体网格估计';$('scene-fit').disabled = true;$('scene-source').disabled = true;
   $('scene-all').disabled = true;
   $('scene-points').disabled = true;
   $('scene-points').setAttribute('aria-pressed','false');
@@ -165,7 +165,7 @@ async function loadScene(sample,generation) {
         }
       }
     }
-    $('scene-body').hidden=!scene.bodyKeyframes?.length;$('scene-fit').disabled = false;$('scene-source').disabled = false;
+    $('scene-body').hidden=!scene.bodyKeyframes?.length;$('scene-skeleton').hidden=!scene.frames.some(f=>f.objects.some(o=>o.surface&&o.bones.length));$('scene-skeleton').setAttribute('aria-pressed','false');$('scene-skeleton').textContent='骨架';$('scene-fit').disabled = false;$('scene-source').disabled = false;
     $('scene-all').disabled = !(scene.pointCloudCount||scene.points.length);
     $('scene-points').disabled = !canTogglePoints;
     $('scene-points').setAttribute('aria-pressed',String(!!scene.pointCloudUrl||!scene.meshUrl&&!!scene.points.length));
@@ -314,6 +314,7 @@ $('scrubber').addEventListener('input',(event)=>seek(Number(event.target.value))
 $('clear-selection').onclick = () => {state.selected = null; drawFrame(state.frame); drawObservations(); syncReplay();};
 $('scene-play').onclick=()=>$('play-toggle').click();
 $('scene-scrubber').addEventListener('input',event=>seek(Number(event.target.value)));
+$('scene-skeleton').onclick=()=>{const enabled=$('scene-skeleton').getAttribute('aria-pressed')!=='true';$('scene-skeleton').setAttribute('aria-pressed',String(enabled));$('scene-skeleton').textContent=enabled?'返回人物表面':'骨架';state.replay?.setSkeleton(enabled);};
 $('scene-body').onclick=()=>{const enabled=$('scene-body').getAttribute('aria-pressed')!=='true';$('scene-body').setAttribute('aria-pressed',String(enabled));$('scene-body').textContent=enabled?'返回彩色观测表面':'人体网格估计';state.replay?.setBodyModels(enabled);};
 $('scene-source').onclick=()=>state.replay?.sourceView();
 $('scene-expand').onclick=()=>{const panel=$('scene-panel');if(document.fullscreenElement)document.exitFullscreen();else panel.requestFullscreen().catch(error=>showError('scene-error',error.message));};
