@@ -34,6 +34,7 @@ MODEL = "Ruicheng/moge-3-vitl"
 CALIBRATION = {"source_K_fx_fy_cx_cy": SOURCE_K, "source_distortion": SOURCE_D}
 
 
+EVALUATION_DEPTH = "evaluation_only/highres_depth"  # a posed clip's reference depth, millimetres, read by evaluate only
 RASTER, METRIC_CAMERAS, SOURCE_WH = "tum", False, (640, 480)  # "tum": official undistort/resize/crop; "resize": a calibrated pinhole image scaled to 640x480
 
 
@@ -53,12 +54,13 @@ def use_clip(droid_run):
 
     A run may define its own clip (run.json clip_definition): posed multi-view captures with metric cameras need no SLAM run.
     """
-    global DATASET, SOURCE_K, SOURCE_D, CALIBRATION, RASTER, METRIC_CAMERAS, SOURCE_WH
+    global DATASET, SOURCE_K, SOURCE_D, CALIBRATION, RASTER, METRIC_CAMERAS, SOURCE_WH, EVALUATION_DEPTH
     run = json.loads((droid_run / "run.json").read_text())
     clip = run.get("clip_definition") or CLIPS[run.get("clip", "fr1-room")]
     DATASET, SOURCE_K, SOURCE_D = Path(clip["dataset"]), clip["K"], clip["D"]
     RASTER, METRIC_CAMERAS, SOURCE_WH = clip.get("raster", "tum"), bool(clip.get("metric_cameras")), tuple(clip.get("source_wh", (640, 480)))
     CALIBRATION = {"source_K_fx_fy_cx_cy": SOURCE_K, "source_distortion": SOURCE_D}
+    EVALUATION_DEPTH = clip.get("evaluation_depth", EVALUATION_DEPTH)
     manifest = json.loads((droid_run / "input-manifest.json").read_text())
     assert manifest["source_K_fx_fy_cx_cy"] == list(SOURCE_K) and manifest["source_distortion"] == list(SOURCE_D), "clip calibration differs from the run"
 MIN_ANCHORS = 500  # supported 160x120 pixels needed to fit one scale
@@ -589,7 +591,10 @@ def evaluate(droid_run, support, output, dynamic_masks=None, entity_run=None):
     for r in rows:
         stamp = manifest["frames"][r["source_index"]]["timestamp_text"]
         if METRIC_CAMERAS:  # the capture's reference depth of the same frame, millimetres, on the source raster
-            sensor = cv2.imread(str(DATASET / "evaluation_only" / "highres_depth" / f"{stamp}.png"), cv2.IMREAD_UNCHANGED).astype(np.float32) / 1000
+            reference = DATASET / EVALUATION_DEPTH / f"{stamp}.png"
+            if not reference.exists():
+                continue  # a frame the device gave no confident depth for
+            sensor = cv2.imread(str(reference), cv2.IMREAD_UNCHANGED).astype(np.float32) / 1000
             sensor = cv2.resize(sensor, (640, 480), interpolation=cv2.INTER_NEAREST)[::4, ::4]
         else:
             nearest = int(np.argmin(np.abs(times - float(stamp))))
