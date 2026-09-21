@@ -15,7 +15,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-CONFIRMED = 3
+CONFIRMED, LIGHT = 3, 8000  # views for a confirmed entity; triangles above which a replay surface is thinned
 
 
 def sha(path):
@@ -54,7 +54,14 @@ def main():
         frame = frames[int(index)]
         identity = f"obs-{entity['entityId']}"
         data = np.load(args.object_map / chosen["file"])
-        trimesh.Trimesh(data["vertices"], data["faces"], vertex_colors=data["colors"], process=False).export(args.output / f"{identity}.glb")
+        surface = trimesh.Trimesh(data["vertices"], data["faces"], vertex_colors=data["colors"], process=False)
+        if len(surface.faces) > LIGHT:  # hundreds of objects load with the page: a pixel-dense patch is thinned to a grid of its own size / 80
+            import open3d as o3d
+            dense = o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector(surface.vertices), o3d.utility.Vector3iVector(surface.faces))
+            dense.vertex_colors = o3d.utility.Vector3dVector(np.asarray(data["colors"])[:, :3] / 255.)
+            light = dense.simplify_vertex_clustering(float(surface.extents.max()) / 80)
+            surface = trimesh.Trimesh(np.asarray(light.vertices), np.asarray(light.triangles), vertex_colors=(np.asarray(light.vertex_colors) * 255).astype(np.uint8), process=False)
+        surface.export(args.output / f"{identity}.glb")
         (args.output / f"{identity}.json").write_text(json.dumps({"objectMapEntity": entity["entityId"], "observations": entity["observations"],
             "sourceFrames": entity["sourceFrames"], "shownObservation": chosen["observation"], "source_mask_sha256": sha(mask_path),
             "source_image_sha256": sha(image_path), "method": "visible surface of one view of a multi-view object-map entity; unseen sides not made up"}, indent=1))

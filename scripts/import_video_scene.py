@@ -120,7 +120,7 @@ def build_document(args, put_asset, calibration, dataset):
             "videoTimestamp": record["timestamp_text"], "sourceSha256": record["sha256"],
             "pixelMapping": [{"source": "original_pixels", "target": "canonical_pixels", "coordinateConvention": "pixel_centers", "matrix": np.eye(3).tolist()}]})
         document["cameras"].append({"id": ident("camera", index), "imageId": images[index], "coordinateFrameId": FRAME, "width": 640, "height": 480,
-            "K": [[float(k[0]), 0., float(k[2])], [0., float(k[1]), float(k[3])], [0., 0., 1.]], "cameraToWorld": np.asarray(keyframes[index], float).tolist(),
+            "K": [[float(k[0]), 0., float(k[2])], [0., float(k[1]), float(k[3])], [0., 0., 1.]], "cameraToWorld": np.asarray(keyframes.get(index, prediction["poses_c2w"][index]), float).tolist(),  # a view between keyframes has DROID's filler camera, as in fusion
             "sourceRefs": [{"assetId": source, "sourceCameraId": f"droid-keyframe-{index}"}]})
 
     import trimesh

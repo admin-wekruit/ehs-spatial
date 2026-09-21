@@ -158,7 +158,7 @@ def build(args):
     rows = {r["source_index"]: r for r in mono_room.load(args.droid_run, args.support, args.depth_run)}
     manifest = json.loads((args.droid_run / "input-manifest.json").read_text())
     args.output.mkdir(parents=True, exist_ok=False)
-    frames, mask_paths, by_label, dropped = {}, {}, {}, {"no_depth_view": 0, "duplicate_in_frame": 0, "too_small": 0}
+    frames, mask_paths, by_label, dropped = {}, {}, {}, {"no_depth_view": 0, "duplicate_in_frame": 0, "too_small": 0, "on_moving_entity": 0}
     for row in rows.values():
         row["conf"] = None  # not used here; hundreds of views have to fit in memory
 
@@ -187,9 +187,12 @@ def build(args):
             frames[str(index)] = FrameGeometry(str(index), "droid_final_native_world", manifest["frames"][index]["sha256"],
                                                (local @ row["c2w"][:3, :3].T + row["c2w"][:3, 3]).astype(np.float32), depth > 0,
                                                K / [[STEP], [STEP], [1]], row["c2w"])
-        found = []
+        found, moving = [], mono_room.moving_mask(args.dynamic_masks, index)  # people walking through are not part of the static map
         for path in sorted(folder.glob("instance-*-mask.png")):
             mask = mono_room.prepare_image(cv2.imread(str(path), cv2.IMREAD_COLOR), mono_room.CALIBRATION, 2)[0][..., 0] > 0
+            if (mask & moving).sum() >= .5 * max(mask.sum(), 1):
+                dropped["on_moving_entity"] += 1
+                continue
             name = f"{label}:{index}:{path.stem.split('-')[1]}"
             mask_paths[name] = path
             mask = mask[::STEP, ::STEP] & frames[str(index)].valid
@@ -362,6 +365,7 @@ if __name__ == "__main__":
     parser.add_argument("--support", type=Path)
     parser.add_argument("--masks", type=Path, help="folder of PROMPT-PART/frame-XXXXX/instance-N-mask.png")
     parser.add_argument("--floor", type=Path, help="metric-scale.json of mono_room metric: adds floor-plan footprints and heights (native units)")
+    parser.add_argument("--dynamic-masks", type=Path, help="directory of SOURCEINDEX-*.png masks of moving entities; masks lying on them are left out of the static map")
     parser.add_argument("--method", choices=["clique", "overlap"], default="overlap")
     parser.add_argument("--output", type=Path)
     a = parser.parse_args()
