@@ -251,6 +251,18 @@ fr3/walking_xyz：`runs/sam2-walking-everything-079`（303视图，14342掩码�
 ③报告：新建库 `panoptes_reports_0921`（资产库仍是 `.platform/blobs-current`，内容寻址、不重复占盘），只有两份：高清房间 `http://127.0.0.1:8792/app.html#/reports/924da280-4356-42ce-91e3-3db55b1dec5d`（199实体；145个用融合切片、34个改用最佳单视图；tray 的参考面现为 45×55 cm 的单视图表面，带平面轮廓——**数据层核对，浏览器面板隐藏无法目检**）、房间 `http://127.0.0.1:8792/app.html#/reports/c57f46a0-7f2a-4062-be0a-ac78d0663c39`（315实体/291确认，这次带轻量展示模型；导入11.6分钟、峰值2.3 GB）。报告服务后台任务 bfr9lyjnv 指向新库。`panoptes_reports`（上一版，含被取代的高清报告 464270c9 与一次中止的导入）和 `panoptes_video` 都不再服务，dropdb 由用户执行。
 ④清理：移到废纸篓被权限策略拒绝后，改为**项目内挪位**（不删除、可逆）：`ART/_retired-2026-09-21/`（6.4 GB：runs 25个目录、`clip-nearest-pose`、fr1 tgz、旧库资产库）。移动后无断链，联动页清单 200。释放磁盘需用户自己 `rm -rf` 该目录并清空废纸篓里的 `panoptes-phase2-retired-2026-09-20`（5 GB）。磁盘现剩14 GiB。
 
+**自部署 SAM 3.1 打通，动静掩码闭环（2026-09-21 晚，用户自己在终端把令牌放进 Modal 密钥；我不经手密钥）**：
+①`sam3_video.py::access`：facebook/sam3 与 facebook/sam3.1 均 302/accessible。权重 `sam3.1_multiplex.pt` 已进 Modal 卷 `sam3-hf-cache`（首次下载约4分钟，之后模型加载<1分钟）。
+②固定提交 `660a5e9` 的上游缺陷：`Sam3BasePredictor.start_session` 总是把 `offload_state_to_cpu` 传给 `init_state`，而多路复用模型的 `init_state` 不接受（推理前就 TypeError）——`run_native` 此前因403从未真正跑过，所以没暴露。修在共用处：`sam3_video.start_session(predictor, path)`（照上游写法登记会话，去掉该参数），`run_native` 与新脚本都用它；`tests/test_sam3_video_contract.py` 3项通过。另一处接口事实：只有实例点击、没有文字提示的会话，`propagate_in_video` 必须显式给 `start_frame_index`，否则报 “No prompts are received on any frames”。
+③`modal_apps/sam3_motion_tracks.py`（有自检）：`motion_masks.py` 的“在动”区域作种子（连通块≥2%画面，距离变换取3个内部点击点，面积大的先）→ SAM 3.1 实例跟踪（points＋obj_id，即其 SAM2 式提示）双向传播；已被现有轨迹覆盖≥50%的种子跳过，所以一个人不会变成十个对象；同一次调用可另开会话跑文字提示作对照；每阶段各自报错、互不拖累。
+④结果（fr3/walking 源帧500–800，640×480，A100-40GB；对照＝原有人物掩码（fal 的 SAM3 周期检测＋SAM2.1 传播），只作度量）：
+- `runs/walking-sam31-motion-tracks-104`：失败（②的缺陷，推理前），保留。
+- `runs/walking-sam31-motion-tracks-105`：**文字 “person”**：300帧49秒，287帧有掩码，IoU中位0.975、召回98.0%、精度99.3%——自部署 3.1 一趟就复现了原来 fal-SAM3＋SAM2.1 两段式的人物掩码；运动种子阶段因③的 start_frame 问题报错。
+- `runs/walking-sam31-motion-tracks-106`：**不用任何文字，只用运动种子**：34个候选种子→3个对象（31个被识别为已在跟踪），295/300帧有掩码，**IoU中位0.975、召回98.2%、精度99.3%**（单帧对运动线索＋SAM2.1框：召回39%、IoU中位0.30）。对照图 `sheet.jpg`：坐着的人因为在片段里动过，被整段跟踪——“动过即动态”。
+- 费用：三次A100调用共约536秒≈0.3美元（预留1.5，上限82.61）。
+⑤没有验证的：这段视频里会动的只有人，所以“类无关”只在方法上成立（全程没用词），**叉车/推车/门这类非人物体还没测过**；种子来自 019 的DROID位姿，而该位姿本身是在有人走动的视频上估的；窗口是300帧，整段859帧与更长视频的显存/时间未测；3.1 与 2.1 在同一批框上的分割质量对比还没做。
+⑥接下来可替换的环节：人物/词表对象的 fal-SAM3 调用→自部署 3.1（许可条款待逐条核）；`--dynamic-masks` 的来源从“person 提示”换成运动轨迹，融合与对象地图直接受益。
+
 下一步（用户已确认的顺序）：G1尺度→G2对象级地图（ConceptGraphs式：关键帧SAM3分割→用带位姿深度抬进地图→三维重叠+外观合并为实体；复用 `platform/identity.py`、`spatial.py::associate_observations`）→G3对象建模（选帧、A07模型—源帧一致性、尺寸对点云范围）→G4接入现有报告→G5时间规则→G7地图持久化；G6真实工厂素材暂缓。地面偏差的候选修法：对已分割为地面的像素做跨视图单平面约束（现有 `planar_surfaces.py`），只用于语义上确认为平面的区域，不补造未见区域。
 
 仍未解决：相机从未看到的区域为空（不补造，用户已确认可接受）；外围漂浮碎片（6418分量，最大分量占88%）；源帧750之前没有人物掩码；DA3-GIANT许可。下一步：用户目检签收后再决定是否替换 `room-droid` 主样本；用DA3-BASE重跑352视图确认可商用路线；补750帧之前的人物掩码；再接回对象/骨架。不要重跑007/009/010/012。

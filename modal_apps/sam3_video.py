@@ -166,6 +166,20 @@ video_image = (
 cache = modal.Volume.from_name("sam3-hf-cache")
 
 
+def start_session(predictor, resource_path: str) -> str:
+    """Sam3BasePredictor.start_session without the argument the multiplex model refuses.
+
+    At SOURCE_COMMIT the base predictor always passes offload_state_to_cpu, and
+    Sam3MultiplexTrackingWithInteractivity.init_state does not take it (TypeError before any inference).
+    """
+    import uuid
+    state = predictor.model.init_state(resource_path=resource_path, offload_video_to_cpu=True)
+    session_id = str(uuid.uuid4())
+    predictor._all_inference_states[session_id] = {"state": state, "session_id": session_id,
+                                                   "start_time": time.time(), "last_use_time": time.time()}
+    return session_id
+
+
 @app.function(image=video_image, gpu="A100-40GB", timeout=GPU_TIMEOUT_SECONDS,
               retries=0, max_containers=1, min_containers=0, scaledown_window=2,
               volumes={"/cache": cache}, secrets=[modal.Secret.from_name("huggingface")])
@@ -197,10 +211,7 @@ def run_native(video_bytes: bytes, expected_clip: dict, source_start_frame: int 
         torch.cuda.synchronize()
         load_seconds = time.perf_counter() - load_started
         inference_started = time.perf_counter()
-        session_id = predictor.handle_request({
-            "type": "start_session", "resource_path": str(path),
-            "offload_video_to_cpu": True, "offload_state_to_cpu": True,
-        })["session_id"]
+        session_id = start_session(predictor, str(path))
         frames = []
         encode_seconds = 0.0
         try:
