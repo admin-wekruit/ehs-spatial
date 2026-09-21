@@ -61,14 +61,15 @@ def disjoint(masks, things, stuff):
     Dropped: what a prompted object mask already covers, the wall or floor itself, slivers, and a container left hollow by its parts.
     """
     taken, kept = np.zeros(masks[0].shape, bool) if len(masks) else None, []
+    sliver = MIN_AREA * (masks[0].size / (640 * 480) if len(masks) else 1)  # MIN_AREA is meant at 640x480: the same share of a larger frame
     for n in sorted(range(len(masks)), key=lambda n: masks[n].sum()):
         area = masks[n].sum()
-        if area < MIN_AREA or (masks[n] & things).sum() >= COVERED * area:
+        if area < sliver or (masks[n] & things).sum() >= COVERED * area:
             continue
         if area >= BACKGROUND_SHARE * masks[n].size and (masks[n] & stuff).sum() >= COVERED * area:
             continue
         left = masks[n] & ~taken
-        if left.sum() >= max(MIN_AREA, KEEP_SHARE * area):
+        if left.sum() >= max(sliver, KEEP_SHARE * area):
             kept.append((n, left))
             taken |= left
     return kept
@@ -100,7 +101,9 @@ def run(args):
         state["app_id"] = app.app_id
         (args.output / f"segment-{int(time.time())}.json").write_text(json.dumps(state, indent=1))
         started = time.time()
-        packed = [(i, cv2.imencode(".png", f)[1].tobytes()) for i, f in frames.items()]
+        # SAM works at 1024 px inside: a 1920 px frame is sent smaller and its masks are brought back to source pixels
+        small = lambda f: f if not args.work_width or f.shape[1] <= args.work_width else cv2.resize(f, (args.work_width, round(f.shape[0] * args.work_width / f.shape[1])), interpolation=cv2.INTER_AREA)
+        packed = [(i, cv2.imencode(".jpg" if args.work_width else ".png", small(f), [cv2.IMWRITE_JPEG_QUALITY, 92])[1].tobytes()) for i, f in frames.items()]
         chunks = [packed[n:n + 48] for n in range(0, len(packed), 48)]  # bounded request size; one warm container takes them in turn
         raw = {index: data for chunk in segment_remote.map(chunks, kwargs={"settings": SETTINGS}) for index, data in chunk}
         state.update(status="complete", wall_seconds=time.time() - started)
@@ -111,6 +114,9 @@ def run(args):
         found = np.load(io.BytesIO(data))
         shape = tuple(found["shape"])
         masks = np.unpackbits(found["masks"], axis=1)[:, :shape[0] * shape[1]].reshape(-1, *shape).astype(bool)
+        if shape != frames[index].shape[:2]:
+            masks = np.array([cv2.resize(m.astype(np.uint8), frames[index].shape[1::-1], interpolation=cv2.INTER_NEAREST).astype(bool) for m in masks])
+            shape = frames[index].shape[:2]
         kept = disjoint(list(masks), *known_masks(args.known, index, shape))
         folder = args.output / "object-a" / f"frame-{index:05d}"
         folder.mkdir(parents=True)
@@ -143,6 +149,7 @@ if __name__ == "__main__":
     parser.add_argument("--self-check", action="store_true")
     parser.add_argument("--video", type=Path)
     parser.add_argument("--frames", type=int, nargs="+")
+    parser.add_argument("--work-width", type=int, help="send frames wider than this at this width (JPEG); masks come back in source pixels")
     parser.add_argument("--known", type=Path, help="mask root of prompted runs; what they already cover is left to them")
     parser.add_argument("--output", type=Path)
     a = parser.parse_args()

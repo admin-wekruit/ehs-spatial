@@ -429,6 +429,57 @@ def consensus_plane(points, tolerance, iterations=2000):
     return centre, normal, inliers
 
 
+def lowest_level(points, up, bin_size=.05):
+    """Height of the lowest well-populated level along `up`: the floor, under whatever stands on it."""
+    heights = points @ up
+    low, middle = np.percentile(heights, [.5, 50])
+    counts, edges = np.histogram(heights, bins=max(4, int((middle - low) / bin_size)), range=(low, middle))
+    first = int(np.flatnonzero(counts >= .25 * counts.max())[0])  # a quarter of the fullest level below the middle: not a stray speck under the floor
+    return float(edges[first] + bin_size / 2)
+
+
+def floor_plane(points, guess, tolerance):
+    """One consensus plane through the lowest well-populated level. Twice: along a guess a few degrees off gravity a wide
+    floor smears over many levels and only its low edge is picked up; along the plane fitted to that edge it is one level."""
+    up = guess
+    for band in (.15, .10):
+        near = points[np.abs(points @ up - lowest_level(points, up)) < band]
+        centre, up, inliers = consensus_plane(near, tolerance)
+        up = up * np.sign(up @ guess)
+    return centre, up, inliers, near
+
+
+def device_floor(droid_run, support, output):
+    """Floor plane of a clip with metric device cameras, without any floor mask.
+
+    A phone is held roughly upright, so the mean image-down direction of the cameras is close to gravity. The floor is
+    the lowest well-populated level along it, refined as one consensus plane. Metres come from the device; nothing is assumed.
+    """
+    rows = load(droid_run, support, output)
+    down = np.mean([r["c2w"][:3, 1] for r in rows], 0)
+    guess = -down / np.linalg.norm(down)
+    v, u = np.indices((480, 640))[:, ::8, ::8]
+    points, reach = [], []
+    for r in rows:
+        k, z = r["k"] * 2, np.where(unreliable(r["mono"], None, None, .03), 0, r["scale"] * r["mono"])[::8, ::8]
+        local = np.stack([(u - k[2]) / k[0] * z, (v - k[3]) / k[1] * z, z], -1)[z > 0]
+        points.append(local @ r["c2w"][:3, :3].T + r["c2w"][:3, 3]); reach.append(np.median(z[z > 0]))
+    points = np.concatenate(points)
+    tolerance = .02 * float(np.median(reach))
+    centre, up, inliers, near = floor_plane(points, guess, tolerance)
+    cameras = np.stack([r["c2w"][:3, 3] for r in rows])
+    up *= np.sign(np.median((cameras - centre) @ up))
+    heights = (cameras - centre) @ up
+    report = {"floor_is_one_plane_within_tolerance": bool(inliers.mean() >= .75), "plane_inlier_fraction": float(inliers.mean()), "floor_points": int(len(near)),
+              "plane_point_native": centre.tolist(), "up_native": up.tolist(), "plane_tolerance_native": tolerance,
+              "up_vs_mean_camera_down_degrees": float(np.degrees(np.arccos(np.clip(up @ guess, -1, 1)))),
+              "camera_height_native_median": float(np.median(heights)), "camera_height_native_p10_p90": np.percentile(heights, [10, 90]).tolist(),
+              "metres_per_native_unit": 1., "scale_status": "device_metric", "assumption": "none: metric poses from the capture device; floor = lowest well-populated level along the mean camera down direction",
+              "model_estimated_metres_per_native_unit": None, "scale_sources_disagree_over_10pct": None}
+    save(output / "metric-scale.json", report)
+    print(json.dumps(report, indent=1))
+
+
 def metric(droid_run, support, output, floor_masks, camera_height, metric_depth_run=None):
     """Metres from one stated assumption: the camera is carried `camera_height` above the segmented floor."""
     import cv2
@@ -683,7 +734,14 @@ def self_check():
     flat, meets = kept(rows_[1])
     assert flat[400, 320] and not flat[100, 320] and not kept(rows_[3])[0].any() and report_["floor_cells_kept"] < report_["floor_cells_seen"], "floor kept only on the plane and only where views agree on the cell"
     assert abs(meets[400, 320] - 140. / 160) < 1e-6 and on_agreed(np.array([[0., 1., 140. / 160]]))[0] and not on_agreed(np.array([[0., .5, 1.]]))[0], "supported floor takes the ray-plane depth"
-    print("mono room check passed: grazing floor supported across its plane and fused flat; moving-pixel depth tied on static pixels only; consensus floor plane under clutter; low-confidence and border-jump pixels dropped; revisits at any time vote and opposite views do not; anchors only from supported pixels, anchorless frames refused, median robust to outliers")
+    rng = np.random.default_rng(2)
+    tilt = np.array([.05, 1., -.03]); tilt /= np.linalg.norm(tilt)  # gravity a few degrees off the guess, as a hand-held phone gives
+    ground = rng.uniform(-3, 3, (6000, 3)); ground -= np.outer(ground @ tilt, tilt); ground += tilt * -1.4 + rng.normal(0, .005, (6000, 3))
+    things = rng.uniform(-3, 3, (9000, 3)); things = things[(things @ tilt > -1.35) & (things @ tilt < 1.)]
+    specks = rng.uniform(-3, 3, (40, 3)); specks -= np.outer(specks @ tilt, tilt); specks += tilt * -2.
+    centre, up, inliers, _ = floor_plane(np.vstack([ground, things, specks]), np.array([0., 1., 0.]), .02)
+    assert np.degrees(np.arccos(np.clip(up @ tilt, -1, 1))) < .5 and abs(centre @ tilt + 1.4) < .02, (up, centre @ tilt)
+    print("mono room check passed: floor level found under clutter and above stray specks; grazing floor supported across its plane and fused flat; moving-pixel depth tied on static pixels only; consensus floor plane under clutter; low-confidence and border-jump pixels dropped; revisits at any time vote and opposite views do not; anchors only from supported pixels, anchorless frames refused, median robust to outliers")
 
 
 if __name__ == "__main__":
@@ -719,7 +777,7 @@ if __name__ == "__main__":
     if a.command == "infer":
         infer(a.droid_run, a.output, a.stride, a.da3_model, a.midframes, a.every)
     elif a.command == "metric":
-        metric(a.droid_run, a.support, a.output, a.floor_masks, a.camera_height, a.metric_depth_run)
+        device_floor(a.droid_run, a.support, a.output) if METRIC_CAMERAS and not a.floor_masks else metric(a.droid_run, a.support, a.output, a.floor_masks, a.camera_height, a.metric_depth_run)
     elif a.command == "fuse":
         fuse(a.droid_run, a.support, a.output, a.voxel_length_native, a.support_relative, a.base_scene, a.support_all_views, a.dynamic_masks, a.conf_percentile, a.edge_jump, a.carve, a.video, a.floor_plane)
     elif a.command == "dynamic":
