@@ -58,7 +58,8 @@ def main():
         (args.output / f"{identity}.json").write_text(json.dumps({"objectMapEntity": entity["entityId"], "observations": entity["observations"],
             "sourceFrames": entity["sourceFrames"], "shownObservation": chosen["observation"], "source_mask_sha256": sha(mask_path),
             "source_image_sha256": sha(image_path), "method": "visible surface of one view of a multi-view object-map entity; unseen sides not made up"}, indent=1))
-        record = {"entityId": identity, "label": label, "displayName": f"{label} · {len(entity['observations'])} 个视图确认", "meshUrl": f"{identity}.glb",
+        name = entity["label"]  # the prompt, or the VLM's name for a class-agnostic segment; the mask folder keeps the segmentation label
+        record = {"entityId": identity, "label": name, "displayName": f"{name} · {len(entity['observations'])} 个视图确认" + ("（VLM命名）" if entity.get("labelSource") else ""), "meshUrl": f"{identity}.glb",
                   "representation": "single_frame_observed_surface", "identityScope": "independent_observation", "provenanceUrl": f"{identity}.json",
                   "objectMapEntity": {"entityId": entity["entityId"], "observations": len(entity["observations"]), "sourceFrames": entity["sourceFrames"]},
                   "source": {"sourceFrame": int(index), "timeSec": frame["timeSec"], "endTimeSec": frame["endTimeSec"], "width": 640, "height": 480,

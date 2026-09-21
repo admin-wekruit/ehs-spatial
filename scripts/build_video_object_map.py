@@ -54,6 +54,8 @@ NEAR = .03  # "next to" = the platform associator's relative_depth_tolerance, ti
 
 def near_fraction(points, cloud, radius):
     from scipy.spatial import cKDTree
+    if (points.min(0) - radius > cloud.max(0)).any() or (points.max(0) + radius < cloud.min(0)).any():
+        return 0.  # boxes apart, nothing can be near: spares the tree for the many far pairs of a class-agnostic map
     return float((cKDTree(cloud).query(points, distance_upper_bound=radius)[0] < np.inf).mean())
 
 

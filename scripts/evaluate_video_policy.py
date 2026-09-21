@@ -66,7 +66,9 @@ def evaluate(scene):
 def build(args):
     object_map, scale = json.loads((args.object_map / "object-map.json").read_text()), json.loads(args.scale.read_text())
     subjects, objects = RULE["spec"]["subject_labels"][0], RULE["spec"]["object_labels"][0]
-    entities = [e for e in object_map["entities"] if len(e["observations"]) >= CONFIRMED and e["label"] in (subjects, objects)]
+    # a name a VLM gave to a class-agnostic segment is an interpretation nobody reviewed: it may describe a scene, not decide a rule
+    named_by_vlm = [e["entityId"] for e in object_map["entities"] if e.get("labelSource") and e["label"] in (subjects, objects)]
+    entities = [e for e in object_map["entities"] if len(e["observations"]) >= CONFIRMED and e["label"] in (subjects, objects) and not e.get("labelSource")]
     metres = scale["metres_per_native_unit"]
     doubt = abs(scale["height_anchor_vs_model_estimate"]) if scale.get("height_anchor_vs_model_estimate") is not None else 0.
     measured = facts(entities, metres, doubt, subjects, objects)
@@ -80,6 +82,7 @@ def build(args):
                        "applicability": "asserted for the demonstration; the aisle between a desk and a cabinet is not a designated exit access"},
               "scale": scene["coordinateFrames"][0]["scale"], "scale_relative_uncertainty_used": doubt,
               "entities": {k: {kk: vv for kk, vv in v.items() if kk != "footprint"} for k, v in measured.items()},
+              "excluded_vlm_named": named_by_vlm,
               "excluded_candidates": [e["entityId"] for e in object_map["entities"] if len(e["observations"]) < CONFIRMED and e["label"] in (subjects, objects)],
               "findings": findings,
               "reading": "Footprints are hulls of the seen sides, so every gap is an upper bound; FAIL and NEEDS_REVIEW are informative, PASS only says no obstruction was observed."}

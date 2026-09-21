@@ -2,6 +2,7 @@ import type { SurfacePick } from "./viewer/native-math";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { SpatialView } from "./App";
 import { PhotoView } from "./PhotoView";
+import { VideoView, videoReplay } from "./VideoView";
 import { request } from "./api";
 import { SpatialMeasurements, type BendAnalysis, type InclinationAnalysis, type SceneMeasurement, type MeasureRegion } from "./SpatialMeasurements";
 import { CadView } from "./CadView";
@@ -245,6 +246,7 @@ export function ReportScene({
   const document = revision.document,
     selected = document.entities.find((entity) => entity.id === selection.entityId);
   const camera = cameraForImage(document, imageId);
+  const hasVideo = !!videoReplay(document), [videoMode, setVideoMode] = useState(true), showVideo = hasVideo && videoMode && !draw;  // drawing a missed object needs the still keyframe
   const geometryOptions: GeometryOptions = { layer, frameId: camera?.coordinateFrameId || (!imageId ? document.coordinateFrames[0]?.id : "") || "", showCandidates: true, imageId, observations: document.observations };
   const [rawMeasurement, setMeasurement] = useState<SceneMeasurement | null>(null), [measureRegion, setMeasureRegion] = useState<MeasureRegion | null>(null), [drawingRegion, setDrawingRegion] = useState(false);
   const [bendAnalysis, setBendAnalysis] = useState<BendAnalysis | null>(null), [bendError, setBendError] = useState(false), [showAngles, setShowAngles] = useState(true);
@@ -523,7 +525,8 @@ export function ReportScene({
                     title={t(focused === pane ? "sceneQuad" : "sceneSingleView")} onClick={() => chooseView(focused === pane ? null : pane)}>{focused === pane ? "⊞" : "↗"}</button>
                 </header>
                 <div className="report-scene-pane-body">
-                  {pane === "photo" && <><PhotoView document={document} imageId={imageId} selectedId={selection.entityId} onSelect={selectEntity} draw={draw} onBox={onBox} showBounds={allBounds} />
+                  {pane === "photo" && showVideo && <VideoView document={document} selectedId={selection.entityId} onSelect={selectEntity} />}
+                  {pane === "photo" && !showVideo && <><PhotoView document={document} imageId={imageId} selectedId={selection.entityId} onSelect={selectEntity} draw={draw} onBox={onBox} showBounds={allBounds} />
                     {camera && allBounds && <PhotoAxes revision={revision} camera={camera} layer={layer} selectedId={selection.entityId} observationId={selection.observationId} allBounds={allBounds} />}</>}
                   {pane === "spatial" && <>{pickingPoints && <div className="cad-measure-guide" role="status">{language === "zh" ? `第 ${measurePoints.length+1}/${pointCount} 点：${(pointCount === 2 ? ["斜边上端点（角的顶点）","同一斜边的下端点"] : ["第一条边上的点","两条边相交的顶点","第二条边上的点"])[measurePoints.length]}。点击模型表面，拖动可旋转。` : `Point ${measurePoints.length+1}/${pointCount}: ${(pointCount === 2 ? ["upper edge endpoint (vertex)","lower endpoint of the same edge"] : ["first edge","shared vertex","second edge"])[measurePoints.length]}. Click the model surface; drag to rotate.`}{pointError && <strong>{language === "zh" ? " 未点到模型表面，请重选。" : " No model surface hit. Try again."}</strong>} <button onClick={()=>startPointPicking(false)}>{language === "zh" ? "取消取点" : "Cancel picking"}</button></div>}<SpatialView revision={revision} selection={selection} onSelect={selectEntity} onCommit={noEdit} mode="free" cameraId={camera?.id || null}
                     modelPreview={previewRequest} onModelPreview={(key, image) => { if (key === currentPreviewKey.current) setModelPreview({ key, image }); }}
@@ -547,7 +550,10 @@ export function ReportScene({
                     </> : <div className="report-scene-plan-empty" role="status"><strong>{t(selectedModelStale ? "identityModelStale" : selectedModelWrongFrame ? "sceneModelWrongFrame" : selected ? layer === "model" ? "sceneObjectModelMissing" : "sceneEvidenceMissing" : layer === "model" ? "sceneSelectModel" : "sceneSelectEvidence")}</strong><p>{t(selectedModelWrongFrame ? "sceneModelWrongFrameMeaning" : selected ? layer === "model" ? "sceneObjectModelMissingMeaning" : "sceneEvidenceMissingMeaning" : "sceneSelectModelMeaning")}</p></div>}
                   </div>}
                 </div>
-                {pane === "photo" && <footer className="report-scene-photo-switch">{images.map((image, i) => <button key={image.imageId} aria-pressed={imageId === image.imageId} onClick={() => onCamera(image.imageId, image.cameraId)}>{t("scenePhotoNumber")} {i + 1}</button>)}{draw && <span>{t("sceneDrawActive")}</span>}</footer>}
+                {pane === "photo" && hasVideo && <footer className="report-scene-photo-switch">
+                  <button aria-pressed={showVideo} onClick={() => setVideoMode(true)}>{language === "zh" ? "视频（逐帧可点选）" : "Video (pick in any frame)"}</button>
+                  <button aria-pressed={!showVideo} onClick={() => setVideoMode(false)}>{language === "zh" ? "关键帧证据" : "Keyframe evidence"}</button></footer>}
+                {pane === "photo" && !showVideo && <footer className="report-scene-photo-switch">{images.map((image, i) => <button key={image.imageId} aria-pressed={imageId === image.imageId} onClick={() => onCamera(image.imageId, image.cameraId)}>{t("scenePhotoNumber")} {i + 1}</button>)}{draw && <span>{t("sceneDrawActive")}</span>}</footer>}
               </section>
             ))}
           </div>

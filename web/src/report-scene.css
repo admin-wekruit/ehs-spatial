@@ -174,3 +174,15 @@
 .report-model-preview > footer { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 10px; padding: 7px 10px; font-size: 11px; }
 .report-model-preview > footer button { margin-left: auto; }
 .report-model-preview .report-scene-plan-empty { color: #52665a; }
+
+/* Source video as a report view: outlines are the scene's entities re-projected into each frame. */
+.report-video { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.report-video-stage { position: relative; flex: 1 1 auto; min-height: 0; background: #18211d; }
+.report-video-stage video, .report-video-stage svg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.report-video-stage svg polygon { fill: rgba(255, 214, 102, .06); stroke: rgba(255, 214, 102, .75); stroke-width: 1.2; vector-effect: non-scaling-stroke; pointer-events: none; }
+.report-video-stage svg polygon[data-pickable] { pointer-events: auto; cursor: pointer; }
+.report-video-stage svg polygon[data-pickable]:hover { fill: rgba(255, 214, 102, .22); }
+.report-video-stage svg polygon[data-selected] { fill: rgba(86, 214, 140, .25); stroke: #56d68c; stroke-width: 2; }
+.report-video-controls { display: flex; flex: 0 0 auto; gap: 8px; align-items: center; padding: 4px 8px; border-top: 1px solid var(--scene-border); font-size: 10px; }
+.report-video-controls input { flex: 1 1 auto; }
+.report-video-controls button { padding: 4px 8px; border: 1px solid #c7d2c2; border-radius: 2px; background: #fcfff8; font-size: 10px; }

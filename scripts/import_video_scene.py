@@ -24,6 +24,7 @@ sys.path[:0] = [str(ROOT), str(ROOT / "modal_apps")]
 from ehs_spatial.platform.contracts import digest, empty_document, validate_document  # noqa: E402
 
 FRAME, CONFIRMED = "droid_final_native_world", 3
+STUFF = ("floor", "wall", "ceiling")  # as build_video_object_map.STUFF: extents, not things
 
 
 def rectify(image, calibration):
@@ -146,7 +147,7 @@ def build_document(args, put_asset, calibration, dataset):
             mask_asset = include(png(mask), "image/png", {"kind": "source_mask", "resolution": "original", "sourceRecordId": oid})
             observation = ident("observation", oid)
             document["observations"].append({"id": observation, "revision": 1, "imageId": images[int(index)], "originalPixelBox": box, "maskAssetId": mask_asset,
-                "labelEvidence": [{"label": label, "source": "sam3_text_prompt"}], "geometrySupport": None, "sourceRefs": [{"assetId": source, "sourceRecordId": oid}]})
+                "labelEvidence": [{"label": entity["label"], "source": "vlm_name_of_class_agnostic_segment" if entity.get("labelSource") else "sam3_text_prompt"}], "geometrySupport": None, "sourceRefs": [{"assetId": source, "sourceRecordId": oid}]})
             refs.append((oid, observation))
         measurements = {}
         for name, fact in facts.get(entity["entityId"], {}).items():  # the policy run's own metric facts, re-pointed at this document's observations
@@ -165,7 +166,8 @@ def build_document(args, put_asset, calibration, dataset):
                        "placementState": "confirmed", "primitive": None, "coverage": "visible_support_only",
                        "bounds": {"min": part.bounds[0].tolist(), "max": part.bounds[1].tolist()},
                        "sourceRefs": [{"observationId": dict(refs)[seen["observation"]], "revision": 1, "imageId": images[int(seen["observation"].split(":")[1])]}]}
-            projection = _plan_projection(document, surface, part, hashlib.sha256(payload).hexdigest())  # the photo report's own CAD outline: exact triangle union on the floor
+            # the photo report's own CAD outline: exact triangle union on the floor. A wall or floor has no footprint worth the minutes it costs.
+            projection = None if entity["label"] in STUFF else _plan_projection(document, surface, part, hashlib.sha256(payload).hexdigest())
             if projection is not None:
                 surface["planProjection"] = projection
             representations.append(surface)
@@ -205,6 +207,17 @@ def build_document(args, put_asset, calibration, dataset):
             "associationState": "confirmed" if len(refs) >= CONFIRMED else "association_pending", "representations": representations, "currentModelTransform": model_transform,
             "measurements": measurements, "groupId": None, "visible": True, "sourceContext": False,
             "lineage": [{"operation": "offline_import", "sourceAssetId": source, "sourceRecordId": entity["entityId"], "method": object_map["associator"]}]})
+    if args.video and args.analysis:  # the source video as a report view: per-frame outlines carry this document's entity ids
+        by_map_id = {f"obs-{e['entityId']}": ident("entity", e["entityId"]) for e in object_map["entities"]}
+        analysis = json.loads(args.analysis.read_text())
+        frames = [{"timeSec": f["timeSec"], "endTimeSec": f["endTimeSec"], "sourceFrame": f["sourceFrame"], "objects": [
+            {"entityId": by_map_id.get(o["entityId"]), "label": o.get("label") or o.get("displayName") or "", "polygons": [[[round(x, 1), round(y, 1)] for x, y in polygon] for polygon in o["polygons"]]}
+            for o in f["objects"] if o.get("polygons")]} for f in analysis["frames"]]
+        slim = json.dumps({"width": analysis["width"], "height": analysis["height"], "frames": frames, "method": analysis.get("method")}, separators=(",", ":")).encode()
+        document["annotations"].append({"id": ident("annotation", "video-replay"), "kind": "video_replay", "sourceAssetId": source,
+            "videoAssetId": include(args.video.read_bytes(), "video/mp4", {"kind": "source_video", "sourceRecordId": "source-video"}),
+            "analysisAssetId": include(slim, "application/json", {"kind": "video_frame_outlines", "sourceRecordId": "per-frame-outlines"}),
+            "note": "outlines are the scene's 3D entities re-projected into each frame, not a per-frame segmentation"})
     limitations = ["Monocular video; metres come from a stated 1.6 m carry height that disagrees with the model scale estimate by about 20% on this clip.",
                    "Only what the camera saw is present; the room surface is source context and has not been accepted.",
                    "Entities are grouped by 3D point overlap of text-prompted masks; identities were not reviewed by a person."] + object_map["limitations"]
@@ -263,6 +276,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("droid-run", "depth-run", "object-map", "masks", "policy", "models"):
         parser.add_argument("--" + name, type=Path, required=name not in ("policy", "models"))
+    parser.add_argument("--video", type=Path, help="source video to show as a report view (needs --analysis)")
+    parser.add_argument("--analysis", type=Path, help="project_entities_to_frames analysis.json of the same object map")
     parser.add_argument("--shell-glb", type=Path, help="photo-textured copy of the depth run's fused mesh to show as the room surface")
     parser.add_argument("--title", default="Video workcell (imported, not accepted)")
     parser.add_argument("--output-dir", type=Path, default=Path(".platform/imports"))
