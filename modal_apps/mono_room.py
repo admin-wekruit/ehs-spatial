@@ -180,6 +180,10 @@ def load(droid_run, support, output):
                                                                 data["keyframe_final_fullres_intrinsics"] / 2)[2])
     retained = None if METRIC_CAMERAS else np.load(support)["retained"]  # device-posed captures have no SLAM depth to support
     rows, keys = [], {int(index): key for key, index in enumerate(data["keyframe_source_indices"])}
+    # An opened .npz decodes an array again on every access. Read per view inside the loop, each keyframe kept its own
+    # 54 MB copy of the DROID depth stack alive through its strided view: 177 copies, 9.6 GB.
+    droid_depth = None if METRIC_CAMERAS else data["keyframe_final_fullres_depth"]
+    poses, keyframe_poses, intrinsics = data["poses_c2w"], data["keyframe_c2w"], data["keyframe_final_fullres_intrinsics"]
     for path in sorted((output / "mono").glob("*.npz")):
         index = int(path.stem)
         key = None if METRIC_CAMERAS else keys.get(index)  # None: no DROID depth for this view, so no own anchors
@@ -187,12 +191,12 @@ def load(droid_run, support, output):
         depth = np.where(mono["mask"], mono["depth"], 0).astype(np.float32)
         assert depth.shape == (480, 640)
         conf = mono["conf"].astype(np.float32) if "conf" in mono.files else None
-        droid = None if key is None else data["keyframe_final_fullres_depth"][key][::2, ::2]
+        droid = None if key is None else droid_depth[key][::2, ::2]
         scale, residual, anchors = (None, None, 0) if key is None else anchor_scale(depth[::4, ::4], droid, retained[key])
         rows.append({"key": key, "source_index": index, "scale": scale, "anchor_residual": residual,
                      "anchors": anchors, "mono": depth, "conf": conf, "droid": droid, "retained": None if key is None else retained[key],
-                     "c2w": (data["poses_c2w"][index] if key is None else data["keyframe_c2w"][key]).astype(np.float64),
-                     "k": data["keyframe_final_fullres_intrinsics"][index if METRIC_CAMERAS else 0].astype(np.float64)})  # device captures refocus per frame
+                     "c2w": (poses[index] if key is None else keyframe_poses[key]).astype(np.float64),
+                     "k": intrinsics[index if METRIC_CAMERAS else 0].astype(np.float64)})  # device captures refocus per frame
     assert rows, "run infer first"
     if METRIC_CAMERAS:  # posed depth is already in the cameras' metres; there is no SLAM depth to anchor to
         for r in rows:
