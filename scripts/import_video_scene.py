@@ -25,6 +25,7 @@ from ehs_spatial.platform.contracts import digest, empty_document, validate_docu
 
 FRAME, CONFIRMED = "droid_final_native_world", 3
 STUFF = ("floor", "wall", "ceiling")  # as build_video_object_map.STUFF: extents, not things
+AGNOSTIC, EVIDENCE_PER_AGNOSTIC = "object", 8  # segment-everything label; how many of its views a report entity keeps as evidence
 
 
 def rectify(image, calibration):
@@ -100,7 +101,17 @@ def build_document(args, put_asset, calibration, dataset):
         "ground": {"plane": [*up.tolist(), float(-up @ origin)], "normal": up.tolist(), "offset": float(-up @ origin),
                    "sourceRefs": [{"assetId": source}], "source": "video_floor_consensus_plane"}}]
 
-    used = sorted({int(o.split(":")[1]) for e in object_map["entities"] for o in e["observations"]})
+    # A dense segment-everything map holds thousands of views. The report keeps every prompted view, the largest few class-agnostic
+    # views of an entity, and no class-agnostic fragment that fewer than three views confirm; the counts left out are recorded.
+    agnostic = lambda o: o.startswith(AGNOSTIC + ":")
+    skipped = [e["entityId"] for e in object_map["entities"] if len(e["observations"]) < CONFIRMED and all(map(agnostic, e["observations"]))]
+    object_map["entities"] = [e for e in object_map["entities"] if e["entityId"] not in skipped]
+    for e in object_map["entities"]:
+        area = lambda o: np.prod(np.subtract(e["observationBoxes"][o][2:], e["observationBoxes"][o][:2]))
+        kept = [o for o in e["observations"] if not agnostic(o)] + sorted(filter(agnostic, e["observations"]), key=area, reverse=True)[:EVIDENCE_PER_AGNOSTIC]
+        e["observationsNotImported"] = len(e["observations"]) - len(kept)
+        e["observationBoxes"] = {o: e["observationBoxes"][o] for o in kept}
+    used = sorted({int(o.split(":")[1]) for e in object_map["entities"] for o in e["observationBoxes"]})
     images = {}
     for index in used:
         record = manifest["frames"][index]
@@ -154,7 +165,7 @@ def build_document(args, put_asset, calibration, dataset):
             known = dict(refs)
             measurements[name] = {**fact, "sourceRefs": [known[o] for o in fact["sourceRefs"]]}
         representations = []
-        for seen in entity.get("surfaces", []):  # as reconstruction.py writes them: one observed surface per observation, measured in place
+        for seen in (x for x in entity.get("surfaces", []) if x["observation"] in dict(refs)):  # as reconstruction.py writes them: one observed surface per imported observation, measured in place
             data = np.load(args.object_map / seen["file"])
             part = trimesh.Trimesh(data["vertices"], data["faces"], process=False)
             packed = np.hstack([part.vertices, part.vertex_normals, data["colors"] / 255.]).astype("<f4")
@@ -218,11 +229,12 @@ def build_document(args, put_asset, calibration, dataset):
             "videoAssetId": include(args.video.read_bytes(), "video/mp4", {"kind": "source_video", "sourceRecordId": "source-video"}),
             "analysisAssetId": include(slim, "application/json", {"kind": "video_frame_outlines", "sourceRecordId": "per-frame-outlines"}),
             "note": "outlines are the scene's 3D entities re-projected into each frame, not a per-frame segmentation"})
+    left_out = {"unconfirmed_class_agnostic_fragments": len(skipped), "views_not_imported": sum(e["observationsNotImported"] for e in object_map["entities"])}
     limitations = ["Monocular video; metres come from a stated 1.6 m carry height that disagrees with the model scale estimate by about 20% on this clip.",
                    "Only what the camera saw is present; the room surface is source context and has not been accepted.",
                    "Entities are grouped by 3D point overlap of text-prompted masks; identities were not reviewed by a person."] + object_map["limitations"]
     document["annotations"].append({"id": ident("annotation", "provenance"), "kind": "import_provenance", "sourceAssetId": source, "limitations": limitations,
-        "missingArtifacts": [], "recomputeRequiresNewCapture": True, "pipeline": {"cameras": str(args.droid_run), "depth": str(args.depth_run), "objects": str(args.object_map)}})
+        "missingArtifacts": [], "recomputeRequiresNewCapture": True, "leftOutOfReport": left_out, "pipeline": {"cameras": str(args.droid_run), "depth": str(args.depth_run), "objects": str(args.object_map)}})
     return document, hashlib.sha256(source_bytes).hexdigest()
 
 

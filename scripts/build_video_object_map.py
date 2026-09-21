@@ -15,6 +15,7 @@ groups found so far are passed back as confirmed_groups. No thresholds are chang
   python scripts/build_video_object_map.py --self-check
 """
 import argparse
+import functools
 import json
 from pathlib import Path
 import sys
@@ -48,6 +49,8 @@ def fixed_point(observations, frames):
 
 
 MATCH, MERGE, CONFIRMED = .5, .7, 3  # ConceptGraphs: overlap needed beside a CLIP term of .6-.9 under sim_threshold 1.2; merge_overlap_thresh; obj_min_detections
+PART = .25  # a class-agnostic group is (part of) a prompted entity only if it covers at least this share of it
+AGNOSTIC, SURFACES_PER_AGNOSTIC = "object", 4  # label of segment-everything masks; how many of their views keep a full-resolution surface
 STUFF = ("floor", "wall", "ceiling")  # extents without instances: no two views need to overlap, so one entity per label (ConceptGraphs' background classes)
 NEAR = .03  # "next to" = the platform associator's relative_depth_tolerance, times the mask's own median range
 
@@ -78,6 +81,11 @@ def consensus(point_sets, cell):
     return [np.isin(pack(c), pack(agreed)) for c in cells], agreed
 
 
+def thin(points, cell):
+    """One point per cell once a cloud is large: 'is something near' is answered by a cell as well as by its thousand points."""
+    return points if len(points) < 20000 else points[np.unique(np.floor(points / cell).astype(np.int64), axis=0, return_index=True)[1]]
+
+
 def accumulate(observations, frames):
     """observations: MaskObservation in frame order. Returns groups of observation ids."""
     entities = []  # {"points", "ids", "frames", "radius"}
@@ -91,23 +99,53 @@ def accumulate(observations, frames):
         for score, oid, n in scores:  # best pairs first; one mask per entity per frame and one entity per mask
             if score < MATCH or oid in taken or image_id in entities[n]["frames"]:
                 continue
-            entities[n]["points"] = np.concatenate([entities[n]["points"], clouds[oid]])
+            entities[n]["points"] = thin(np.concatenate([entities[n]["points"], clouds[oid]]), entities[n]["radius"] / 2)
             entities[n]["ids"].append(oid); entities[n]["frames"].add(image_id); taken.add(oid)
         entities += [{"points": clouds[o.id], "ids": [o.id], "frames": {image_id}, "radius": radius[o.id]} for o in current if o.id not in taken]
     merged = True
-    while merged:  # the same object entered twice from views that did not overlap at first
-        merged = False
-        for a in range(len(entities)):
-            for b in range(a + 1, len(entities)):
+    while merged:  # the same object entered twice from views that did not overlap at first; passes until nothing merges
+        merged, a = False, 0
+        while a < len(entities):
+            b = a + 1
+            while b < len(entities):
                 drop, keep = sorted((a, b), key=lambda n: len(entities[n]["points"]))
                 small, large = entities[drop], entities[keep]
                 if near_fraction(small["points"], large["points"], small["radius"]) > MERGE:
-                    large["points"] = np.concatenate([large["points"], small["points"]]); large["ids"] += small["ids"]; large["frames"] |= small["frames"]
-                    del entities[drop]; merged = True  # by position: dicts holding arrays cannot be compared with ==
-                    break
-            if merged:
-                break
+                    large["points"] = thin(np.concatenate([large["points"], small["points"]]), large["radius"] / 2)
+                    large["ids"] += small["ids"]; large["frames"] |= small["frames"]
+                    entities[a] = large
+                    del entities[b]; merged = True  # by position: dicts holding arrays cannot be compared with ==
+                else:
+                    b += 1
+            a += 1
     return sorted(sorted(e["ids"]) for e in entities)
+
+
+def absorb(grouped, lookup, frames):
+    """Class-agnostic groups that are a prompted object join it; the rest stay entities of their own.
+
+    Segment-everything also finds the monitor the prompt found. Names are attributes of one object, not two objects:
+    a class-agnostic group whose points mostly lie on a prompted entity adds its views to that entity (one mask per frame).
+    """
+    def cloud(ids):
+        return np.concatenate([frames[lookup[o].image_id].points[lookup[o].mask] for o in ids])
+    named = [(label, ids, thin(cloud(ids), .01)) for label, ids in grouped if label != AGNOSTIC and label not in STUFF]
+    kept, joined = [g for g in grouped if g[0] != AGNOSTIC], 0
+    for label, ids in grouped:
+        if label != AGNOSTIC:
+            continue
+        points = cloud(ids)
+        first = lookup[ids[0]]
+        radius = NEAR * float(np.median(np.linalg.norm(frames[first.image_id].points[first.mask] - frames[first.image_id].camera_to_world[:3, 3], axis=1)))
+        score, target = max(((near_fraction(points, other, radius), n) for n, (_, _, other) in enumerate(named)), default=(0, None))
+        # a sheet of paper lies within reach of the desk too: the same object also covers a fair part of the entity, something resting on it does not
+        if score >= MATCH and near_fraction(named[target][2], points, radius) >= PART:
+            have = {lookup[o].image_id for o in named[target][1]}
+            named[target][1].extend(o for o in ids if lookup[o].image_id not in have)
+            joined += 1
+        else:
+            kept.append((label, ids))
+    return kept, joined
 
 
 def build(args):
@@ -116,28 +154,40 @@ def build(args):
     rows = {r["source_index"]: r for r in mono_room.load(args.droid_run, args.support, args.depth_run)}
     manifest = json.loads((args.droid_run / "input-manifest.json").read_text())
     args.output.mkdir(parents=True, exist_ok=False)
-    frames, images, depths, intrinsics, full_masks, by_label, dropped = {}, {}, {}, {}, {}, {}, {"no_depth_view": 0, "duplicate_in_frame": 0, "too_small": 0}
+    frames, mask_paths, by_label, dropped = {}, {}, {}, {"no_depth_view": 0, "duplicate_in_frame": 0, "too_small": 0}
+    for row in rows.values():
+        row["conf"] = None  # not used here; hundreds of views have to fit in memory
+
+    @functools.lru_cache(maxsize=6)
+    def view(index):
+        """Rectified image, reliable depth and K of one view, rebuilt on demand instead of held for every view."""
+        bgr, k = mono_room.prepare_image(cv2.imread(str(mono_room.DATASET / manifest["frames"][index]["relative_path"])), mono_room.CALIBRATION, 2)
+        depth = np.where(mono_room.unreliable(rows[index]["mono"], None, None, .03), 0, rows[index]["scale"] * rows[index]["mono"]).astype(np.float32)
+        return bgr, depth, np.array([[k[0], 0, k[2]], [0, k[1], k[3]], [0, 0, 1.]])
+
+    def full_mask(name):
+        raster = mono_room.prepare_image(cv2.imread(str(mask_paths[name]), cv2.IMREAD_COLOR), mono_room.CALIBRATION, 2)[0][..., 0] > 0
+        return raster & (view(int(name.split(":")[1]))[1] > 0)
+
     for folder in sorted(args.masks.glob("*/frame-*")):
         index, label = int(folder.name.split("-")[1]), folder.parent.name.rsplit("-", 1)[0]
         row = rows.get(index)
         if row is None:
             dropped["no_depth_view"] += len(list(folder.glob("instance-*-mask.png")))
             continue
-        if index not in frames:
-            bgr, k = mono_room.prepare_image(cv2.imread(str(mono_room.DATASET / manifest["frames"][index]["relative_path"])), mono_room.CALIBRATION, 2)
-            full_depth = np.where(mono_room.unreliable(row["mono"], None, None, .03), 0, row["scale"] * row["mono"])
-            depth = full_depth[::STEP, ::STEP]
+        if str(index) not in frames:
+            K = view(index)[2]
+            depth = view(index)[1][::STEP, ::STEP].astype(np.float64)
             v, u = np.indices((480, 640))[:, ::STEP, ::STEP]
-            local = np.stack([(u - k[2]) / k[0] * depth, (v - k[3]) / k[1] * depth, depth], -1)
+            local = np.stack([(u - K[0, 2]) / K[0, 0] * depth, (v - K[1, 2]) / K[1, 1] * depth, depth], -1)
             frames[str(index)] = FrameGeometry(str(index), "droid_final_native_world", manifest["frames"][index]["sha256"],
-                                               local @ row["c2w"][:3, :3].T + row["c2w"][:3, 3], depth > 0,
-                                               np.array([[k[0] / STEP, 0, k[2] / STEP], [0, k[1] / STEP, k[3] / STEP], [0, 0, 1.]]), row["c2w"])
-            images[index], depths[index], intrinsics[index] = bgr, full_depth, np.array([[k[0], 0, k[2]], [0, k[1], k[3]], [0, 0, 1.]])
+                                               (local @ row["c2w"][:3, :3].T + row["c2w"][:3, 3]).astype(np.float32), depth > 0,
+                                               K / [[STEP], [STEP], [1]], row["c2w"])
         found = []
         for path in sorted(folder.glob("instance-*-mask.png")):
             mask = mono_room.prepare_image(cv2.imread(str(path), cv2.IMREAD_COLOR), mono_room.CALIBRATION, 2)[0][..., 0] > 0
             name = f"{label}:{index}:{path.stem.split('-')[1]}"
-            full_masks[name] = mask & (depths[index] > 0)
+            mask_paths[name] = path
             mask = mask[::STEP, ::STEP] & frames[str(index)].valid
             if mask.sum() < 32:  # AssociationConfig.min_support: such a mask can never be compared
                 dropped["too_small"] += 1
@@ -152,8 +202,8 @@ def build(args):
         up, origin = np.array(floor["up_native"]), np.array(floor["plane_point_native"])
         axis_a = np.cross(up, [1., 0, 0]); axis_a /= np.linalg.norm(axis_a)
         plan = {"origin": origin, "up": up, "a": axis_a, "b": np.cross(up, axis_a)}
+    lookup, grouped = {o.id: o for observations in by_label.values() for o in observations}, []
     for label, observations in sorted(by_label.items()):
-        lookup = {o.id: o for o in observations}
         if label in STUFF:
             groups = [[o.id for o in sorted(observations, key=lambda o: int(o.image_id))]]
             report[label] = {"observations": len(observations), "groups": 1, "rule": "one entity per background label"}
@@ -166,67 +216,75 @@ def build(args):
             groups = accumulate(sorted(observations, key=lambda o: int(o.image_id)), frames)
             report[label] = {"observations": len(observations), "groups": len(groups), "confirmed": sum(len(g) >= CONFIRMED for g in groups),
                              "config": {"match_overlap": MATCH, "merge_overlap": MERGE, "near_relative": NEAR, "confirmed_min_observations": CONFIRMED}}
-        for group in groups:
-            sets = [frames[lookup[o].image_id].points[lookup[o].mask] for o in group]
-            points, agreed, cell, share = np.concatenate(sets), None, None, None
-            if len(group) >= CONFIRMED:  # a confirmed entity is measured on what its views agree on, not on every mask pixel
-                cameras = np.stack([frames[lookup[o].image_id].camera_to_world[:3, 3] for o in group])
-                # "next to" scales with viewing range: to the entity's middle, or for a background extent each mask's own depth
-                cell = NEAR * float(np.median([np.median(depths[int(lookup[o].image_id)][full_masks[o]]) for o in group]) if label in STUFF else
-                                    np.median(np.linalg.norm(cameras - np.median(points, 0), axis=1)))
-                keep, cells = consensus(sets, cell)
-                share = float(np.concatenate(keep).mean())
-                if share >= .3 and label not in STUFF:  # views of opposite sides share too little to vote, and background patches need not overlap: keep everything and say so
-                    points, agreed = points[np.concatenate(keep)], cells
-            entity = {"entityId": f"{label}-{len(entities):03d}", "label": label, "observations": group,
-                      "sourceFrames": sorted({int(lookup[o].image_id) for o in group}), "supportPoints": len(points),
-                      "multiViewAgreedShare": share, "measuredOn": "points at least two views agree on" if agreed is not None else "all mask points",
-                      "centroidNative": np.median(points, 0).tolist(),
-                      "boundsNative": [np.percentile(points, 2, 0).tolist(), np.percentile(points, 98, 0).tolist()]}
-            if plan:
-                from shapely.geometry import MultiPoint
-                relative = points - plan["origin"]
-                hull = MultiPoint(np.stack([relative @ plan["a"], relative @ plan["b"]], 1)[::max(1, len(points) // 20000)]).convex_hull
-                cameras = np.stack([frames[lookup[o].image_id].camera_to_world[:3, 3] for o in group])
-                entity.update(footprintPlanNative=[list(xy) for xy in hull.exterior.coords[:-1]], heightNative=float(np.percentile(relative @ plan["up"], 98)),
-                              baseNative=float(np.percentile(relative @ plan["up"], 2)),
-                              rangeNative=float(np.median(np.linalg.norm(cameras - np.median(points, 0), axis=1))))
-            from build_video_object_models import observed_surface
-            entity["surfaces"] = []  # one visible side per observation, as the photo pipeline keeps one observed surface per photo; nothing behind it is made up
-            for o in group:
-                frame, index = frames[lookup[o].image_id], int(lookup[o].image_id)
-                # association runs on the STEP grid; the surface a person looks at keeps every source pixel
-                vertices, faces, colors, _, _ = observed_surface(images[index][..., ::-1], depths[index], full_masks[o], intrinsics[index], frame.camera_to_world,
-                                                                 max_edge_m=.04 * float(np.median(depths[index][full_masks[o]])), depth_range=(0, np.inf))
-                if len(faces) and agreed is not None:  # the shown surface is cut to the agreed part too
-                    inside = np.isin(pack(np.floor(vertices / cell).astype(np.int64)), pack(agreed))
-                    faces = faces[inside[faces].all(1)]
-                    used, inverse = np.unique(faces, return_inverse=True)
-                    vertices, colors, faces = vertices[used], colors[used], inverse.reshape(-1, 3)
-                if len(faces):
-                    (args.output / "surfaces").mkdir(exist_ok=True)
-                    name = f"surfaces/{entity['entityId']}--{o.replace(':', '-')}.npz"
-                    np.savez_compressed(args.output / name, vertices=vertices, faces=faces, colors=colors)
-                    entity["surfaces"].append({"file": name, "observation": o, "triangles": len(faces)})
-            if cell is not None:  # where the entity is, as cells: lets a consumer cut the entity out of the fused multi-view mesh
+        grouped += [(label, group) for group in groups]
+    grouped, joined = absorb(grouped, lookup, frames)
+    report["class_agnostic_groups_joined_to_prompted_entities"] = joined
+    for label, group in grouped:
+        group.sort(key=lambda o: (int(lookup[o].image_id), o))
+        sets = [frames[lookup[o].image_id].points[lookup[o].mask].astype(np.float64)[::4 if label in STUFF else 1] for o in group]
+        points, agreed, cell, share = np.concatenate(sets), None, None, None
+        if len(group) >= CONFIRMED:  # a confirmed entity is measured on what its views agree on, not on every mask pixel
+            cameras = np.stack([frames[lookup[o].image_id].camera_to_world[:3, 3] for o in group])
+            # "next to" scales with viewing range: to the entity's middle, or for a background extent each mask's own depth
+            cell = NEAR * float(np.median([np.median(np.linalg.norm(p - c, axis=1)) for p, c in zip(sets, cameras)]) if label in STUFF else
+                                np.median(np.linalg.norm(cameras - np.median(points, 0), axis=1)))
+            keep, cells = consensus(sets, cell)
+            share = float(np.concatenate(keep).mean())
+            if share >= .3 and label not in STUFF:  # views of opposite sides share too little to vote, and background patches need not overlap: keep everything and say so
+                points, agreed = points[np.concatenate(keep)], cells
+        entity = {"entityId": f"{label}-{len(entities):03d}", "label": label, "observations": group,
+                  "sourceFrames": sorted({int(lookup[o].image_id) for o in group}), "supportPoints": len(points),
+                  "multiViewAgreedShare": share, "measuredOn": "points at least two views agree on" if agreed is not None else "all mask points",
+                  "centroidNative": np.median(points, 0).tolist(),
+                  "boundsNative": [np.percentile(points, 2, 0).tolist(), np.percentile(points, 98, 0).tolist()]}
+        if plan:
+            from shapely.geometry import MultiPoint
+            relative = points - plan["origin"]
+            hull = MultiPoint(np.stack([relative @ plan["a"], relative @ plan["b"]], 1)[::max(1, len(points) // 20000)]).convex_hull
+            cameras = np.stack([frames[lookup[o].image_id].camera_to_world[:3, 3] for o in group])
+            entity.update(footprintPlanNative=[list(xy) for xy in hull.exterior.coords[:-1]], heightNative=float(np.percentile(relative @ plan["up"], 98)),
+                          baseNative=float(np.percentile(relative @ plan["up"], 2)),
+                          rangeNative=float(np.median(np.linalg.norm(cameras - np.median(points, 0), axis=1))))
+        from build_video_object_models import observed_surface
+        entity["surfaces"] = []  # one visible side per observation, as the photo pipeline keeps one observed surface per photo; nothing behind it is made up
+        # every prompted view keeps its surface; of the many segment-everything views only the largest few (disk)
+        agnostic = sorted((o for o in group if o.startswith(AGNOSTIC + ":")), key=lambda o: -int(lookup[o].mask.sum()))[:SURFACES_PER_AGNOSTIC]
+        for o in [o for o in group if not o.startswith(AGNOSTIC + ":") or o in agnostic]:
+            frame, index = frames[lookup[o].image_id], int(lookup[o].image_id)
+            bgr, depth, K = view(index)
+            mask = full_mask(o)
+            # association runs on the STEP grid; the surface a person looks at keeps every source pixel
+            vertices, faces, colors, _, _ = observed_surface(bgr[..., ::-1], depth, mask, K, frame.camera_to_world,
+                                                             max_edge_m=.04 * float(np.median(depth[mask])), depth_range=(0, np.inf))
+            if len(faces) and agreed is not None:  # the shown surface is cut to the agreed part too
+                inside = np.isin(pack(np.floor(vertices / cell).astype(np.int64)), pack(agreed))
+                faces = faces[inside[faces].all(1)]
+                used, inverse = np.unique(faces, return_inverse=True)
+                vertices, colors, faces = vertices[used], colors[used], inverse.reshape(-1, 3)
+            if len(faces):
                 (args.output / "surfaces").mkdir(exist_ok=True)
-                np.savez_compressed(args.output / "surfaces" / f"{entity['entityId']}--cells.npz", cells=np.unique(np.floor(points / cell).astype(np.int64), axis=0), cell=cell)
-                entity["cells"] = {"file": f"surfaces/{entity['entityId']}--cells.npz", "cellNative": cell}
-            entity["observationBoxes"] = {}
-            for o in group:
-                ys, xs = np.where(lookup[o].mask)
-                entity["observationBoxes"][o] = [int(xs.min() * STEP), int(ys.min() * STEP), int(xs.max() * STEP + STEP), int(ys.max() * STEP + STEP)]
-            entities.append(entity)
-            tiles = []
-            for o in group[:12]:  # contact sheet: the evidence a person needs to spot a wrong merge
-                index, mask = int(lookup[o].image_id), cv2.resize(lookup[o].mask.astype(np.uint8), (640, 480), interpolation=cv2.INTER_NEAREST)
-                tile = images[index].copy()
-                tile[mask == 0] = tile[mask == 0] // 2
-                cv2.drawContours(tile, cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0], -1, (0, 255, 255), 2)
-                cv2.putText(tile, f"{entity['entityId']} f{index}", (6, 20), cv2.FONT_HERSHEY_SIMPLEX, .55, (0, 255, 255), 2)
-                tiles.append(cv2.resize(tile, (320, 240)))
-            tiles += [np.zeros_like(tiles[0])] * (-len(tiles) % 4)
-            cv2.imwrite(str(args.output / f"{entity['entityId']}.jpg"), np.vstack([np.hstack(tiles[i:i + 4]) for i in range(0, len(tiles), 4)]))
+                name = f"surfaces/{entity['entityId']}--{o.replace(':', '-')}.npz"
+                np.savez_compressed(args.output / name, vertices=vertices, faces=faces, colors=colors)
+                entity["surfaces"].append({"file": name, "observation": o, "triangles": len(faces)})
+        if cell is not None:  # where the entity is, as cells: lets a consumer cut the entity out of the fused multi-view mesh
+            (args.output / "surfaces").mkdir(exist_ok=True)
+            np.savez_compressed(args.output / "surfaces" / f"{entity['entityId']}--cells.npz", cells=np.unique(np.floor(points / cell).astype(np.int64), axis=0), cell=cell)
+            entity["cells"] = {"file": f"surfaces/{entity['entityId']}--cells.npz", "cellNative": cell}
+        entity["observationBoxes"] = {}
+        for o in group:
+            ys, xs = np.where(lookup[o].mask)
+            entity["observationBoxes"][o] = [int(xs.min() * STEP), int(ys.min() * STEP), int(xs.max() * STEP + STEP), int(ys.max() * STEP + STEP)]
+        entities.append(entity)
+        tiles = []
+        for o in group[:12]:  # contact sheet: the evidence a person needs to spot a wrong merge
+            index, mask = int(lookup[o].image_id), cv2.resize(lookup[o].mask.astype(np.uint8), (640, 480), interpolation=cv2.INTER_NEAREST)
+            tile = view(index)[0].copy()
+            tile[mask == 0] = tile[mask == 0] // 2
+            cv2.drawContours(tile, cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0], -1, (0, 255, 255), 2)
+            cv2.putText(tile, f"{entity['entityId']} f{index}", (6, 20), cv2.FONT_HERSHEY_SIMPLEX, .55, (0, 255, 255), 2)
+            tiles.append(cv2.resize(tile, (320, 240)))
+        tiles += [np.zeros_like(tiles[0])] * (-len(tiles) % 4)
+        cv2.imwrite(str(args.output / f"{entity['entityId']}.jpg"), np.vstack([np.hstack(tiles[i:i + 4]) for i in range(0, len(tiles), 4)]))
     summary = {"schema": "phase2-video-object-map-v1", "depth_run": str(args.depth_run), "masks": str(args.masks), "views": len(frames),
                "coordinate_frame": "droid_final_native_world",
                "associator": ("ehs_spatial.platform.spatial.associate_observations, fixed point over confirmed_groups" if args.method == "clique" else
@@ -275,6 +333,10 @@ def self_check():
     spill = [rng.uniform(0, .3, (150, 3)) + shift for shift in ([2, 0, 0], [0, 2, 0], [0, 0, 2])]
     keep, agreed = consensus([np.vstack([thing, extra]) for extra in spill], .05)
     assert all(k[:400].all() and not k[400:].any() for k in keep), "views must keep the shared object and drop their own spill"
+    grouped, joined = absorb([("left", [f"left:{i}" for i in range(3)]), (AGNOSTIC, ["right:0"])], {o.id: o for o in observations}, frames)
+    assert joined == 0 and len(grouped) == 2, "a class-agnostic group elsewhere stays its own entity"
+    grouped, joined = absorb([("left", ["left:0", "left:1"]), (AGNOSTIC, ["left:2"])], {o.id: o for o in observations}, frames)
+    assert joined == 1 and grouped == [("left", ["left:0", "left:1", "left:2"])], "a class-agnostic view of a prompted object joins it"
     box = observations[0].mask
     halves = [MaskObservation("left:a", "20", box & (u < u[box].mean())), MaskObservation("left:b", "21", box & (u >= u[box].mean())),
               MaskObservation("left:c", "22", box)]  # two disjoint halves enter as two entities; the full view must leave one
