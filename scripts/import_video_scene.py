@@ -25,6 +25,7 @@ from ehs_spatial.platform.contracts import digest, empty_document, validate_docu
 
 FRAME, CONFIRMED = "droid_final_native_world", 3
 STUFF = ("floor", "wall", "ceiling")  # as build_video_object_map.STUFF: extents, not things
+FUSED_SHARE = .5  # the fused cut of an entity is shown only if it holds at least this share of the area its best single view shows
 AGNOSTIC, EVIDENCE_PER_AGNOSTIC = "object", 8  # segment-everything label; how many of its views a report entity keeps as evidence
 
 
@@ -204,6 +205,7 @@ def build_document(args, put_asset, calibration, dataset):
     floor_owner = max(floors, key=lambda e: len(e["observations"]))["entityId"] if floors else None  # several floor pieces, one floor model
     facts = json.loads((args.policy / "scene-document.json").read_text())["entities"] if args.policy else []
     facts = {e["id"]: e["measurements"] for e in facts}
+    used_fused = used_view = 0
     for entity in object_map["entities"]:
         refs = []
         for oid, box in entity["observationBoxes"].items():
@@ -221,7 +223,7 @@ def build_document(args, put_asset, calibration, dataset):
             kept = [known[o] for o in fact["sourceRefs"] if o in known]  # views beyond the report's evidence cap are not in this document
             if kept:
                 measurements[name] = {**fact, "sourceRefs": kept}
-        representations = []
+        representations, views = [], {}  # views: each imported single-view surface by representation id, to weigh the fused cut against
         for seen in (x for x in entity.get("surfaces", []) if x["observation"] in dict(refs)):  # as reconstruction.py writes them: one observed surface per imported observation, measured in place
             data = np.load(args.object_map / seen["file"])
             part = trimesh.Trimesh(data["vertices"], data["faces"], process=False)
@@ -240,6 +242,7 @@ def build_document(args, put_asset, calibration, dataset):
             if projection is not None:
                 surface["planProjection"] = projection
             representations.append(surface)
+            views[surface["id"]] = (part, hashlib.sha256(payload).hexdigest())
         model_transform = None
         # models are bound to the observation they were generated from, so renumbered entities cannot pick up a neighbour's model
         anchored = [v for v in (args.models.glob("*/validation.json") if args.models else []) if json.loads(v.read_text())["observation"] in dict(refs)
@@ -277,9 +280,13 @@ def build_document(args, put_asset, calibration, dataset):
         if model_transform is None and len(refs) >= CONFIRMED and representations:
             # No checked model: the model view shows what was actually seen, textured, as the photo report does for fences and floors.
             fused = fused_part(textured, args.object_map, entity) if textured is not None and entity.get("cells") else None
-            if fused is not None:  # every view's share of the entity in one piece: the entity's cells cut out of the photo-textured fused mesh
+            whole = None if fused is None else trimesh.util.concatenate([trimesh.Trimesh(g.vertices, g.faces, process=False) for g in fused.geometry.values()])
+            seen_best = max(views, key=lambda r: views[r][0].area) if views else None
+            # The fused mesh can lack an object the views agree on (free-space carving removes a near object whose depth differs by a few cm
+            # between far and near views): a cut showing under half of what one photo shows is shards, so that photo's surface stands in.
+            if whole is not None and (seen_best is None or whole.area >= FUSED_SHARE * views[seen_best][0].area):
+                used_fused += 1
                 payload = fused.export(file_type="glb")
-                whole = trimesh.util.concatenate([trimesh.Trimesh(g.vertices, g.faces, process=False) for g in fused.geometry.values()])
                 representations.append({"id": ident("representation", "fused", entity["entityId"]), "kind": "observed_surface", "coordinateFrameId": FRAME, "transform": identity,
                     "assetId": include(payload, "model/gltf-binary", {"kind": "geometry", "format": "glb", "sourceRecordId": f"{entity['entityId']}:fused-surface"}),
                     "placementState": "confirmed", "primitive": None, "coverage": "visible_support_only_all_views", "sourceKind": "observed_reference_surface",
@@ -288,9 +295,14 @@ def build_document(args, put_asset, calibration, dataset):
                 outline = None if entity["label"] in STUFF else _plan_projection(document, representations[-1], whole, hashlib.sha256(payload).hexdigest())
                 if outline is not None:
                     representations[-1]["planProjection"] = outline
-            else:  # one surface only (the largest), so the same object is not stacked from several views. White extent boxes are gone.
-                largest = max((r for r in representations if r["kind"] == "observed_surface"), key=lambda r: np.prod(np.subtract(r["bounds"]["max"], r["bounds"]["min"])))
+            elif seen_best:  # one surface only (the largest), so the same object is not stacked from several views. White extent boxes are gone.
+                used_view += 1
+                largest = next(r for r in representations if r["id"] == seen_best)
                 largest["sourceKind"] = "observed_reference_surface"
+                if "planProjection" not in largest and entity["label"] not in STUFF:  # a segment-everything view got no outline above: its entity's one outline comes from here
+                    outline = _plan_projection(document, largest, *views[seen_best])
+                    if outline is not None:
+                        largest["planProjection"] = outline
         document["entities"].append({"id": ident("entity", entity["entityId"]), "label": entity["label"], "observationRefs": [o for _, o in refs],
             "associationState": "confirmed" if len(refs) >= CONFIRMED else "association_pending", "representations": representations, "currentModelTransform": model_transform,
             "measurements": measurements, "groupId": None, "visible": True, "sourceContext": False,
@@ -306,7 +318,7 @@ def build_document(args, put_asset, calibration, dataset):
             "videoAssetId": include(args.video.read_bytes(), "video/mp4", {"kind": "source_video", "sourceRecordId": "source-video"}),
             "analysisAssetId": include(slim, "application/json", {"kind": "video_frame_outlines", "sourceRecordId": "per-frame-outlines"}),
             "note": "outlines are the scene's 3D entities re-projected into each frame, not a per-frame segmentation"})
-    left_out = {"unconfirmed_class_agnostic_fragments": len(skipped), "views_not_imported": sum(e["observationsNotImported"] for e in object_map["entities"])}
+    left_out = {"entities_shown_by_fused_cut": used_fused, "entities_shown_by_best_single_view": used_view, "unconfirmed_class_agnostic_fragments": len(skipped), "views_not_imported": sum(e["observationsNotImported"] for e in object_map["entities"])}
     limitations = [("Metres come from the capture device's poses; depth comes from a pretrained model conditioned on them." if device else
                     "Monocular video; metres come from a stated 1.6 m carry height that disagrees with the model scale estimate by about 20% on this clip."),
                    "Only what the camera saw is present; the room surface is source context and has not been accepted.",
