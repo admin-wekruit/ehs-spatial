@@ -20,7 +20,7 @@ import cv2
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(ROOT), str(ROOT / "modal_apps")]
+sys.path[:0] = [str(ROOT), str(ROOT / "modal_apps"), str(ROOT / "scripts")]
 from ehs_spatial.platform.contracts import digest, empty_document, validate_document  # noqa: E402
 
 FRAME, CONFIRMED = "droid_final_native_world", 3
@@ -28,10 +28,10 @@ STUFF = ("floor", "wall", "ceiling")  # as build_video_object_map.STUFF: extents
 AGNOSTIC, EVIDENCE_PER_AGNOSTIC = "object", 8  # segment-everything label; how many of its views a report entity keeps as evidence
 
 
-def rectify(image, calibration):
-    """The exact raster every depth, mask and camera of this pipeline lives on: the shared DROID preprocessing at scale 2."""
-    from droid_room import prepare_image
-    return prepare_image(image, {"source_K_fx_fy_cx_cy": calibration["K"], "source_distortion": calibration["D"]}, 2)
+def rectify(image, calibration=None):
+    """The exact 640x480 raster every depth, mask and camera of this pipeline lives on, for whichever clip the run names."""
+    import mono_room
+    return mono_room.prepare_image(image, mono_room.CALIBRATION, 2)
 
 
 def extent_box(entity, plan):
@@ -128,6 +128,8 @@ def build_document(args, put_asset, calibration, dataset):
     object_map = json.loads((args.object_map / "object-map.json").read_text())
     scale = json.loads((args.depth_run / "metric-scale.json").read_text())
     manifest = json.loads((args.droid_run / "input-manifest.json").read_text())
+    import mono_room
+    device = mono_room.METRIC_CAMERAS  # set by use_clip in run(): metric poses from the capture device, no assumed scale
     prediction = np.load(args.droid_run / "prediction.npz")
     keyframes = {int(i): c for i, c in zip(prediction["keyframe_source_indices"], prediction["keyframe_c2w"])}
     document = empty_document()
@@ -143,7 +145,8 @@ def build_document(args, put_asset, calibration, dataset):
     up, origin = np.array(scale["up_native"]), np.array(scale["plane_point_native"])
     document["coordinateFrames"] = [{"id": FRAME, "convention": "opencv",
         "scale": {"status": "operator_anchored", "nativeToMeters": scale["metres_per_native_unit"], "sourceRefs": [{"assetId": source}],
-                  "anchor": {"kind": "stated_carry_height", "metres": 1.6, "measured": False,
+                  "anchor": {"kind": "device_metric_poses", "measured": True, "note": "metres come from the capture device's own poses; nothing was assumed"} if device else
+                            {"kind": "stated_carry_height", "metres": 1.6, "measured": False,
                              "modelEstimateMetresPerNative": scale.get("model_estimated_metres_per_native_unit"),
                              "sourcesDisagreeOver10pct": scale.get("scale_sources_disagree_over_10pct")}},
         "ground": {"plane": [*up.tolist(), float(-up @ origin)], "normal": up.tolist(), "offset": float(-up @ origin),
@@ -164,6 +167,8 @@ def build_document(args, put_asset, calibration, dataset):
     for index in used:
         record = manifest["frames"][index]
         rectified, k = rectify(cv2.imread(str(dataset / record["relative_path"])), calibration)
+        if device:  # the device refocuses per frame; the raster only knows the clip's median K
+            k = prediction["keyframe_final_fullres_intrinsics"][index].astype(float) * 2
         images[index] = include(png(rectified), "image/png", {"kind": "source_image", "width": 640, "height": 480, "sourceFrame": index,
             "videoTimestamp": record["timestamp_text"], "sourceSha256": record["sha256"],
             "pixelMapping": [{"source": "original_pixels", "target": "canonical_pixels", "coordinateConvention": "pixel_centers", "matrix": np.eye(3).tolist()}]})
@@ -295,7 +300,8 @@ def build_document(args, put_asset, calibration, dataset):
             "analysisAssetId": include(slim, "application/json", {"kind": "video_frame_outlines", "sourceRecordId": "per-frame-outlines"}),
             "note": "outlines are the scene's 3D entities re-projected into each frame, not a per-frame segmentation"})
     left_out = {"unconfirmed_class_agnostic_fragments": len(skipped), "views_not_imported": sum(e["observationsNotImported"] for e in object_map["entities"])}
-    limitations = ["Monocular video; metres come from a stated 1.6 m carry height that disagrees with the model scale estimate by about 20% on this clip.",
+    limitations = [("Metres come from the capture device's poses; depth comes from a pretrained model conditioned on them." if device else
+                    "Monocular video; metres come from a stated 1.6 m carry height that disagrees with the model scale estimate by about 20% on this clip."),
                    "Only what the camera saw is present; the room surface is source context and has not been accepted.",
                    "Entities are grouped by 3D point overlap of text-prompted masks; identities were not reviewed by a person."] + object_map["limitations"]
     document["annotations"].append({"id": ident("annotation", "provenance"), "kind": "import_provenance", "sourceAssetId": source, "limitations": limitations,
@@ -304,10 +310,11 @@ def build_document(args, put_asset, calibration, dataset):
 
 
 def run(args):
-    from droid_room import CLIPS
+    import mono_room
     from ehs_spatial.platform.config import PlatformConfig
     from ehs_spatial.platform.runtime import services
-    clip = CLIPS[json.loads((args.droid_run / "run.json").read_text()).get("clip", "fr1-room")]
+    mono_room.use_clip(args.droid_run)
+    clip = {"K": mono_room.SOURCE_K, "D": mono_room.SOURCE_D, "dataset": mono_room.DATASET}
     repository, blobs = services(PlatformConfig.from_env())
     repository.migrate()
     repository.blobs = blobs

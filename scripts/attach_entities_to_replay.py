@@ -70,7 +70,7 @@ def main():
         record = {"entityId": identity, "label": name, "displayName": f"{name} · {len(entity['observations'])} 个视图确认" + ("（VLM命名）" if entity.get("labelSource") else ""), "meshUrl": f"{identity}.glb",
                   "representation": "single_frame_observed_surface", "identityScope": "independent_observation", "provenanceUrl": f"{identity}.json",
                   "objectMapEntity": {"entityId": entity["entityId"], "observations": len(entity["observations"]), "sourceFrames": entity["sourceFrames"]},
-                  "source": {"sourceFrame": int(index), "timeSec": frame["timeSec"], "endTimeSec": frame["endTimeSec"], "width": 640, "height": 480,
+                  "source": {"sourceFrame": int(index), "timeSec": frame["timeSec"], "endTimeSec": frame["endTimeSec"], "width": int(pixels.shape[1]), "height": int(pixels.shape[0]),
                              "maskUrl": relative(mask_path), "imageUrl": relative(image_path), "bbox": [int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1]}}
         if args.inferred_floor and entity["label"] == "floor":  # the model view shows the whole floor: the verified plane over the room's footprint, stated as inferred
             basis = json.loads((args.inferred_floor / "inferred-floor.json").read_text())

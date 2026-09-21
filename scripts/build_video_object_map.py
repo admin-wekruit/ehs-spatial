@@ -167,6 +167,8 @@ def build(args):
         """Rectified image, reliable depth and K of one view, rebuilt on demand instead of held for every view."""
         bgr, k = mono_room.prepare_image(cv2.imread(str(mono_room.DATASET / manifest["frames"][index]["relative_path"])), mono_room.CALIBRATION, 2)
         depth = np.where(mono_room.unreliable(rows[index]["mono"], None, None, .03), 0, rows[index]["scale"] * rows[index]["mono"]).astype(np.float32)
+        if mono_room.METRIC_CAMERAS:  # a device refocuses per frame; prepare_image only knows the clip's median K
+            k = rows[index]["k"] * 2
         return bgr, depth, np.array([[k[0], 0, k[2]], [0, k[1], k[3]], [0, 0, 1.]])
 
     def full_mask(name):

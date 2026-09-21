@@ -33,13 +33,15 @@ def evidence(args, entity, rows, manifest):
     mask_path = next(args.masks.glob(f"{label}-*/frame-{int(index):05d}/instance-{instance}-mask.png"))
     bgr, k = mono_room.prepare_image(cv2.imread(str(mono_room.DATASET / record["relative_path"])), mono_room.CALIBRATION, 2)
     mask = mono_room.prepare_image(cv2.imread(str(mask_path), cv2.IMREAD_COLOR), mono_room.CALIBRATION, 2)[0][..., 0] > 0
+    if mono_room.METRIC_CAMERAS:  # the device refocuses per frame; the raster only knows the clip's median K
+        k = row["k"] * 2
     depth = np.where(mono_room.unreliable(row["mono"], None, None, .03), 0, row["scale"] * row["mono"]).astype(np.float32)
     K = np.array([[k[0], 0, k[2]], [0, k[1], k[3]], [0, 0, 1.]])
     crop = source_grid_crop(np.ascontiguousarray(bgr[..., ::-1]), mask, depth, K, np.eye(3))  # image, mask and depth share one raster
     payload = {"entityId": entity["entityId"], "anchorObservationId": observation, "seed": 42, "views": [{
         "observationId": observation, "observationRevision": 1, "imageId": f"{record['sha256']}:{index}", "imageSha256": record["sha256"],
         "maskSha256": digest(mask_path), "geometrySolutionSha256": digest(args.depth_run / "mono" / f"{int(index):05d}.npz"),
-        "coordinateFrameId": "droid_final_native_world", "cameraToWorld": row["c2w"], **crop}]}
+        "coordinateFrameId": "arkit_device_world" if mono_room.METRIC_CAMERAS else "droid_final_native_world", "cameraToWorld": row["c2w"], **crop}]}
     return payload, observation, (depth, np.full(depth.shape, 2., np.float32), depth > 0, mask, K, row["c2w"])
 
 

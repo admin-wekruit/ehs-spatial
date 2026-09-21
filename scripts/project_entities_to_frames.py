@@ -24,7 +24,7 @@ from build_video_object_map import STUFF  # noqa: E402
 CONFIRMED, SAMPLES, MIN_VISIBLE, HIDDEN = 3, 800, 40, .05  # HIDDEN: a hit more than 5% nearer than the point occludes it
 
 
-def visible_outline(points, c2w, k, distortion, scene, size=(640, 480)):
+def visible_outline(points, c2w, k, distortion, scene, size=(640, 480)):  # size: the source frame's
     """Source-pixel convex outline of the points seen from this camera, or None."""
     import open3d as o3d
     local = (points - c2w[:3, 3]) @ c2w[:3, :3]
@@ -62,8 +62,16 @@ def build(args):
     import mono_room
     mono_room.use_clip(args.droid_run)
     fx, fy, cx, cy = mono_room.SOURCE_K
-    k, distortion = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1.]]), np.asarray(mono_room.SOURCE_D, float)
-    cameras = np.load(args.droid_run / "prediction.npz")["poses_c2w"].astype(np.float64)
+    k, distortion, size = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1.]]), np.asarray(mono_room.SOURCE_D, float), tuple(mono_room.SOURCE_WH)
+    prediction = np.load(args.droid_run / "prediction.npz")
+    cameras = prediction["poses_c2w"].astype(np.float64)
+
+    def source_k(index):  # a device refocuses per frame: its own K, from the 320-wide model raster up to source pixels
+        if not mono_room.METRIC_CAMERAS:
+            return k
+        f = prediction["keyframe_final_fullres_intrinsics"][index].astype(float) * 2 * (size[0] / 640)
+        return np.array([[f[0], 0, f[2]], [0, f[1], f[3]], [0, 0, 1.]])
+
     replay = json.loads(args.scene.read_text())
     room = trimesh.load(args.mesh, force="mesh", process=False)
     scene = raycaster(room.vertices, room.faces)
@@ -86,7 +94,7 @@ def build(args):
     for frame in replay["frames"]:
         index, objects = frame["sourceFrame"], []
         for entity in entities:
-            found = visible_outline(entity["points"], cameras[index], k, distortion, scene)
+            found = visible_outline(entity["points"], cameras[index], source_k(index), distortion, scene, size)
             if found:
                 hull, share = found
                 objects.append({"entityId": entity["entityId"], "label": entity["label"], "displayName": f"{entity['label']} · {entity['views']} 个视图确认",
@@ -94,7 +102,7 @@ def build(args):
                                 "visibleShare": round(share, 3), "evidence": "projected_3d_entity"})
         outlines += len(objects)
         frames.append({"timeSec": frame["timeSec"], "endTimeSec": frame["endTimeSec"], "sourceFrame": index, "objects": objects + merged.get(index, []), "absentEntityIds": []})
-    analysis = {"version": 1, "coordinateSpace": "source_pixels", "width": 640, "height": 480, "identityScope": "video_session_only",
+    analysis = {"version": 1, "coordinateSpace": "source_pixels", "width": size[0], "height": size[1], "identityScope": "video_session_only",
                 "method": "Multi-view 3D object-map entities re-projected into every frame with the DROID cameras and lens distortion; occlusion against the fused room mesh. Not a per-frame segmentation.",
                 "frames": frames,
                 "limitations": ["对象轮廓是三维实体投影到该帧的凸包，不是逐帧分割；相机或深度有误差时轮廓同样偏移。", "被融合网格挡住超过5%距离的点视为不可见；网格有孔洞处可能多显示。",

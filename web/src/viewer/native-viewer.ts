@@ -13,7 +13,8 @@ export function representationPass(entity:any,representation:any,frameId:string|
   const reference=!!entity&&layers.modelOnly&&isCurrentReferenceSurface(entity,representation,layers.observations);
   const available=!!entity&&(!layers.entityId||entity.id===layers.entityId)&&(!layers.entityIds||layers.entityIds.includes(entity.id))&&
     (representation.sourceKind!=='observed_reference_surface'||reference)&&
-    (!layers.modelOnly||!entity.sourceContext&&(['generated_mesh','primitive'].includes(representation.kind)||reference))&&
+    // A video report shows its models inside the point cloud they were built from: with point_cloud switched on, the model view keeps the cloud.
+    (!layers.modelOnly||layers.point_cloud===true&&representation.kind==='point_cloud'||!entity.sourceContext&&(['generated_mesh','primitive'].includes(representation.kind)||reference))&&
     (!layers.representationIds||layers.representationIds.includes(representation.id))&&
     representationAvailable(entity,representation,frameId,!!layers.showCandidates)&&(reference||representationInPhoto(entity,representation,layers.imageId,layers.observations,entity.id===layers.observationEntityId?layers.observationId:undefined));
   const visible=available&&(reference||layers[representation.kind]!==false);
