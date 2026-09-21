@@ -236,8 +236,36 @@ def unreliable(depth, conf, conf_floor, edge_jump):
     return bad | (conf < conf_floor if conf is not None and conf_floor is not None else False)
 
 
+def floor_support(rows, plane, k_of, views=3, cell=.05):
+    """Per view, the pixels that lie on the verified floor plane in a floor cell at least `views` views see.
+
+    The cross-view rule compares depth along the ray. A floor seen at a grazing angle turns a small error across the
+    plane into a large one along the ray, so floor that many views agree on was thrown away. For a plane already shown
+    to be one plane (metric: consensus_plane), agreement is judged across it: distance to the plane, and how many views
+    put a point in the same floor cell. Nothing is moved onto the plane and no cell fewer views saw is filled.
+    """
+    up, origin, tolerance = np.array(plane["up_native"]), np.array(plane["plane_point_native"]), 1.5 * plane["plane_tolerance_native"]
+    a = np.cross(up, [1., 0, 0]); a /= np.linalg.norm(a)
+    b = np.cross(up, a)
+    v, u = np.indices((480, 640))
+
+    def cells_of(r):  # one non-negative integer per floor cell, -1 off the floor; recomputed per view rather than held for hundreds of views
+        k, z = k_of(r), r["scale"] * r["mono"]
+        world = np.stack([(u - k[2]) / k[0] * z, (v - k[3]) / k[1] * z, z], -1) @ r["c2w"][:3, :3].T + r["c2w"][:3, 3] - origin
+        key = np.floor(np.stack([world @ a, world @ b], -1) / cell).astype(np.int64) + 50000
+        return np.where((z > 0) & (np.abs(world @ up) < tolerance), key[..., 0] * 100003 + key[..., 1], -1)
+
+    votes = {}
+    for r in rows:
+        key = cells_of(r)
+        for c in np.unique(key[key >= 0]):
+            votes[int(c)] = votes.get(int(c), 0) + 1
+    agreed = np.array([c for c, n in votes.items() if n >= views], np.int64)
+    return (lambda r: np.isin(cells_of(r), agreed)), {"floor_cells_seen": len(votes), "floor_cells_kept": len(agreed), "views_needed": views, "cell_native": cell, "plane_tolerance_native": tolerance}
+
+
 def fuse(droid_run, support, output, voxel, relative, base_scene=None, all_views=False, dynamic_masks=None,
-         conf_percentile=None, edge_jump=None, carve=False, video=None):
+         conf_percentile=None, edge_jump=None, carve=False, video=None, floor_plane=None):
     import cv2
     import open3d as o3d
     from build_droid_replay import depth_support
@@ -260,10 +288,14 @@ def fuse(droid_run, support, output, voxel, relative, base_scene=None, all_views
         cameras, disparity, ks, tolerance_fraction=relative, neighbours=neighbours)[2]
     volume_ = new_volume(voxel)
     points, colors, masked_views, exposures = [], [], set(), []
+    raster_k = prepare_image(np.zeros((480, 640, 3), np.uint8) if RASTER == "tum" else np.zeros((SOURCE_WH[1], SOURCE_WH[0], 3), np.uint8), CALIBRATION, 2)[1]
+    on_floor, floor_report = floor_support(rows, json.loads(floor_plane.read_text()), lambda r: r["k"] * 2 if METRIC_CAMERAS else raster_k) if floor_plane else (None, None)
     for r, keep in zip(rows, mono_supported):
         bgr, k = prepare_image(cv2.imread(str(DATASET / manifest["frames"][r["source_index"]]["relative_path"])), CALIBRATION, 2)
         k = r["k"] * 2 if METRIC_CAMERAS else k  # the device refocuses per frame; prepare_image only knows the clip median
         keep = cv2.resize(keep.astype(np.uint8), (640, 480), interpolation=cv2.INTER_NEAREST).astype(bool)
+        if on_floor is not None:
+            keep |= on_floor(r)
         moving = moving_mask(dynamic_masks, r["source_index"])  # source pixels -> depth raster
         if moving.any():
             keep &= ~cv2.dilate(moving.astype(np.uint8), np.ones((9, 9), np.uint8)).astype(bool)
@@ -287,6 +319,10 @@ def fuse(droid_run, support, output, voxel, relative, base_scene=None, all_views
             pos, neg = depth_evidence(vertices, depth, depth <= 0, k2, c2w, tolerance=0, depth_range=(0, np.inf), relative_tolerance=.04)
             positive[pos] += 1; negative[neg] += 1
         drop = ~((positive >= 3) & (negative <= np.maximum(2, positive * .15)))
+        if floor_plane:  # the same along-the-ray test would carve the grazing floor away again; free-space contradictions still count
+            plane = json.loads(floor_plane.read_text())
+            flat = np.abs((vertices - np.array(plane["plane_point_native"])) @ np.array(plane["up_native"])) < 1.5 * plane["plane_tolerance_native"]
+            drop &= ~(flat & (negative <= np.maximum(2, positive * .15)))
         carved = {"rule": "filter_video_static_surfaces: positive>=3 and negative<=max(2, .15*positive), 4% relative",
                   "vertices": len(vertices), "removed_vertices": int(drop.sum()), "removed_for_free_space_contradiction": int(((positive >= 3) & drop).sum())}
         mesh.remove_vertices_by_mask(drop)
@@ -307,7 +343,7 @@ def fuse(droid_run, support, output, voxel, relative, base_scene=None, all_views
                "fusion_support_views": "every keyframe seeing >=10% of this one" if all_views else "pinned six temporal neighbours",
                "fusion_support_views_median": int(np.median([len(n) for n in neighbours])) if all_views else 6,
                "model_confidence_percentile_removed": conf_percentile if conf_floor is not None else None, "model_confidence_floor": conf_floor,
-               "depth_edge_relative_jump_removed": edge_jump, "free_space_carving": carved,
+               "depth_edge_relative_jump_removed": edge_jump, "free_space_carving": carved, "floor_plane_support": floor_report,
                "dynamic_masks": str(dynamic_masks) if dynamic_masks else None, "views_with_dynamic_mask_removed": len(masked_views),
                "fusion_support_relative_tolerance": relative, "fusion_support_fraction": float(mono_supported.mean()),
                "mesh_triangles": len(mesh.triangles), "mesh_components": len(sizes), "largest_component_triangles": int(sizes.max()),
@@ -613,7 +649,14 @@ def self_check():
     front, back = np.eye(4), np.diag([-1., 1, -1, 1])  # same place, facing away
     views = overlapping_views(np.stack([front, back] * 4 + [front]), np.full((9, 120, 160), 2.), [140., 140, 80, 60])
     assert views[0] == [2, 4, 6, 8] and views[1] == [3, 5, 7], views[:2]
-    print("mono room check passed: moving-pixel depth tied on static pixels only; consensus floor plane under clutter; low-confidence and border-jump pixels dropped; revisits at any time vote and opposite views do not; anchors only from supported pixels, anchorless frames refused, median robust to outliers")
+    plane = {"up_native": [0., -1., 0.], "plane_point_native": [0., 1., 0.], "plane_tolerance_native": .02}  # floor 1 below the cameras (y points down)
+    def looking_down(x):
+        c = np.eye(4); c[0, 3] = x
+        return {"scale": 1., "c2w": c, "mono": np.where(np.indices((480, 640))[0] > 300, 140. / np.maximum(np.indices((480, 640))[0] - 240., 1e-6), 5.).astype(np.float32)}
+    rows_ = [looking_down(x) for x in (0., .05, .1, 30.)]  # three views of the same floor, one far away seeing its own
+    kept, report_ = floor_support(rows_, plane, lambda r: np.array([140., 140., 320., 240.]))
+    assert kept(rows_[0])[400, 320] and not kept(rows_[0])[100, 320] and not kept(rows_[3]).any() and report_["floor_cells_kept"] < report_["floor_cells_seen"], "floor kept only on the plane and only where three views see the cell"
+    print("mono room check passed: grazing floor supported across the plane by three views; moving-pixel depth tied on static pixels only; consensus floor plane under clutter; low-confidence and border-jump pixels dropped; revisits at any time vote and opposite views do not; anchors only from supported pixels, anchorless frames refused, median robust to outliers")
 
 
 if __name__ == "__main__":
@@ -639,6 +682,7 @@ if __name__ == "__main__":
     parser.add_argument("--camera-height", type=float, help="assumed carrying height in metres")
     parser.add_argument("--dynamic-masks", type=Path, help="directory of SOURCEINDEX-*.png person/object masks in source pixels; removed before fusion")
     parser.add_argument("--video", type=Path, help="source video; without --base-scene, fuse writes the replay frames itself from its CFR times and the DROID cameras")
+    parser.add_argument("--floor-plane", type=Path, help="metric-scale.json of a verified floor plane: floor pixels are supported across the plane (>=3 views per floor cell), not along the ray")
     parser.add_argument("--base-scene", type=Path, help="existing replay scene.json of the same DROID run; fuse then also writes a viewer scene")
     a = parser.parse_args()
     if a.command == "self-check":
@@ -650,7 +694,7 @@ if __name__ == "__main__":
     elif a.command == "metric":
         metric(a.droid_run, a.support, a.output, a.floor_masks, a.camera_height, a.metric_depth_run)
     elif a.command == "fuse":
-        fuse(a.droid_run, a.support, a.output, a.voxel_length_native, a.support_relative, a.base_scene, a.support_all_views, a.dynamic_masks, a.conf_percentile, a.edge_jump, a.carve, a.video)
+        fuse(a.droid_run, a.support, a.output, a.voxel_length_native, a.support_relative, a.base_scene, a.support_all_views, a.dynamic_masks, a.conf_percentile, a.edge_jump, a.carve, a.video, a.floor_plane)
     elif a.command == "dynamic":
         dynamic(a.droid_run, a.support, a.output, a.analysis, a.entity_depth_run)
     else:

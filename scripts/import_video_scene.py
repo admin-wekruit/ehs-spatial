@@ -163,7 +163,9 @@ def build_document(args, put_asset, calibration, dataset):
         measurements = {}
         for name, fact in facts.get(entity["entityId"], {}).items():  # the policy run's own metric facts, re-pointed at this document's observations
             known = dict(refs)
-            measurements[name] = {**fact, "sourceRefs": [known[o] for o in fact["sourceRefs"]]}
+            kept = [known[o] for o in fact["sourceRefs"] if o in known]  # views beyond the report's evidence cap are not in this document
+            if kept:
+                measurements[name] = {**fact, "sourceRefs": kept}
         representations = []
         for seen in (x for x in entity.get("surfaces", []) if x["observation"] in dict(refs)):  # as reconstruction.py writes them: one observed surface per imported observation, measured in place
             data = np.load(args.object_map / seen["file"])
