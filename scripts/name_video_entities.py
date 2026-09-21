@@ -21,7 +21,7 @@ from modal_apps.sam3_video_fal import execute
 from build_video_pose_preview import sha
 from review_video_object_semantics import REMOTE
 
-CONFIRMED, UNNAMED = 3, "unnamed surface"
+CONFIRMED, UNNAMED, STUFF = 3, "unnamed surface", ("floor", "wall", "ceiling")
 
 
 def evidence(entity, masks):
@@ -50,8 +50,8 @@ def run(args):
     schema = {"type": "object", "properties": {"observations": {"type": "array", "items": {"type": "object", "properties": {
         "id": {"type": "string"}, "category": {"type": "string"}, "status": {"type": "string", "enum": ["clear", "partial", "not_an_object", "uncertain"]}},
         "required": ["id", "category", "status"], "additionalProperties": False}}}, "required": ["observations"], "additionalProperties": False}
-    names = {}
-    for start in range(0, len(todo), args.per_request):
+    names = json.loads(args.names.read_text()) if args.names else {}  # answers already paid for: relabel without asking again
+    for start in range(0, len(todo) if not args.names else 0, args.per_request):
         batch, folder = todo[start:start + args.per_request], args.output / f"request-{start // args.per_request:02d}"
         folder.mkdir()
         blocks = [{"type": "text", "text":
@@ -81,6 +81,9 @@ def run(args):
             entity["labelStatus"] = named["status"] if named else None
             entity["label"] = (UNNAMED if named["status"] == "not_an_object" else " ".join(named["category"].lower().split())) if named else UNNAMED
             entity["partOf"] = named["category"] if named and named["status"] == "not_an_object" else None
+            background = next((word for word in STUFF if word in (entity["partOf"] or "").lower()), None)
+            if background:  # "a piece of the floor" is the floor: background labels are handled as extents downstream (no outline that swallows clicks, no footprint)
+                entity["label"] = background
     os.symlink(os.path.relpath((args.object_map / "surfaces").resolve(), args.output.resolve()), args.output / "surfaces")  # geometry stays where it was built
     for sheet in args.object_map.glob("*.jpg"):
         os.symlink(os.path.relpath(sheet.resolve(), args.output.resolve()), args.output / sheet.name)
@@ -96,4 +99,5 @@ if __name__ == "__main__":
     for name in ("object-map", "masks", "output"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--per-request", type=int, default=10)
+    parser.add_argument("--names", type=Path, help="names.json of an earlier run on the same map: apply it again without new requests")
     run(parser.parse_args())

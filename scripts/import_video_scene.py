@@ -200,6 +200,8 @@ def build_document(args, put_asset, calibration, dataset):
                              "bounds": {"min": shell.bounds[0].tolist(), "max": shell.bounds[1].tolist()}}]})
 
     textured = trimesh.load(args.shell_glb, process=False) if args.shell_glb else None
+    floors = [e for e in object_map["entities"] if e["label"] == "floor" and len(e["observationBoxes"]) >= CONFIRMED]
+    floor_owner = max(floors, key=lambda e: len(e["observations"]))["entityId"] if floors else None  # several floor pieces, one floor model
     facts = json.loads((args.policy / "scene-document.json").read_text())["entities"] if args.policy else []
     facts = {e["id"]: e["measurements"] for e in facts}
     for entity in object_map["entities"]:
@@ -240,24 +242,29 @@ def build_document(args, put_asset, calibration, dataset):
             representations.append(surface)
         model_transform = None
         # models are bound to the observation they were generated from, so renumbered entities cannot pick up a neighbour's model
-        anchored = [v for v in (args.models.glob("*/validation.json") if args.models else []) if json.loads(v.read_text())["observation"] in dict(refs)]
+        anchored = [v for v in (args.models.glob("*/validation.json") if args.models else []) if json.loads(v.read_text())["observation"] in dict(refs)
+                    or (v.parent / "anchor.json").exists() and json.loads(v.read_text())["entity"] == entity["entityId"]]  # a name-prompted model is bound by entity
         generated = anchored[0].parent if len(anchored) == 1 else None
         checked = json.loads(anchored[0].read_text()) if generated else None
         if checked and checked["accepted_source_consistency"]:  # a generated shape that reprojects onto its own source view; unseen sides are the generator's estimate
             shape = trimesh.load(generated / "model.glb", force="mesh", process=False)  # already posed in the scene frame
-            asset = include((generated / "model.glb").read_bytes(), "model/gltf-binary", {"kind": "geometry", "format": "glb", "sourceRecordId": entity["entityId"],
-                            "generator": "RecGen (non-commercial research licence)", "meshSha256": checked["mesh_sha256"]})
+            from attach_entities_to_replay import light_model
+            light, display = light_model(generated / "model.glb")  # the checked shape, light enough for a page; the validated file stays as it is
+            asset = include(light, "model/gltf-binary", {"kind": "geometry", "format": "glb", "sourceRecordId": entity["entityId"],
+                            "generator": "RecGen (non-commercial research licence)", "meshSha256": checked["mesh_sha256"], "display": display})
             model_transform = identity
             model = {"id": ident("representation", "generated", entity["entityId"]), "kind": "generated_mesh", "assetId": asset, "coordinateFrameId": FRAME, "transform": identity,
                      "bounds": {"min": shape.bounds[0].tolist(), "max": shape.bounds[1].tolist()}, "placementState": "unconfirmed", "placementReason": "requires_alignment_confirmation",
-                     "sourceRefs": [{"observationId": dict(refs)[checked["observation"]], "revision": 1, "imageId": images[int(checked["observation"].split(":")[1])]}],
+                     "sourceRefs": [{"observationId": dict(refs).get(checked["observation"], refs[0][1]), "revision": 1,
+                                     "imageId": images[int((checked["observation"] if checked["observation"] in dict(refs) else refs[0][0]).split(":")[1])]}],
                      "sourceConsistency": {k: checked[k] for k in ("silhouette_iou", "relative_depth_median", "relative_depth_p95", "supported_pixels")},
-                     "modelBasis": "generated from one keyframe crop with its posed depth; checked against that view only"}
+                     "modelBasis": ("generated from the frame that holds the whole object, with a whole-object mask from a segmentation prompted by the entity's name; checked against that view only"
+                                    if (generated / "anchor.json").exists() else "generated from one keyframe crop with its posed depth; checked against that view only")}
             projection = _plan_projection(document, model, shape, checked["mesh_sha256"], identity)
             if projection is not None:
                 model["planProjection"] = projection
             representations.append(model)
-        if args.inferred_floor and entity["label"] == "floor" and refs:  # the floor's model: its verified plane over the room's footprint, stated as inferred, not observed
+        if args.inferred_floor and entity["entityId"] == floor_owner and refs:  # the floor's model: its verified plane over the room's footprint, stated as inferred, not observed
             basis = json.loads((args.inferred_floor / "inferred-floor.json").read_text())
             slab = trimesh.load(args.inferred_floor / "inferred-floor.glb", force="mesh", process=False)
             asset = include((args.inferred_floor / "inferred-floor.glb").read_bytes(), "model/gltf-binary", {"kind": "geometry", "format": "glb", "sourceRecordId": "inferred-floor",

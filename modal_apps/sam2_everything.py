@@ -55,6 +55,43 @@ def segment_remote(frames, settings):
     return results
 
 
+@app.function(image=image, gpu="L4", volumes={"/cache": volume}, timeout=900, retries=0, max_containers=1)
+def box_masks_remote(items):
+    """items: [(key, image bytes, [x0, y0, x1, y1])] -> [(key, npz of the one mask SAM gives for that box, its score)]."""
+    import cv2
+    import torch
+    from sam2.sam2_image_predictor import SAM2ImagePredictor
+    predictor = SAM2ImagePredictor.from_pretrained(MODEL)
+    results = []
+    for key, data, box in items:
+        rgb = cv2.cvtColor(cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
+        with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
+            predictor.set_image(rgb)
+            masks, scores, _ = predictor.predict(box=np.asarray(box, np.float32), multimask_output=False)
+        buffer = io.BytesIO()
+        np.savez_compressed(buffer, mask=masks[0].astype(bool), score=float(scores[0]))
+        results.append((key, buffer.getvalue()))
+    return results
+
+
+def box_masks(requests, work_width=1280):
+    """requests: {key: (source BGR image, box in source pixels)} -> {key: (mask in source pixels, score)}. One GPU call for all of them."""
+    import cv2
+    items, shapes = [], {}
+    for key, (image, box) in requests.items():
+        scale = min(1., work_width / image.shape[1])
+        small = image if scale == 1 else cv2.resize(image, (work_width, round(image.shape[0] * scale)), interpolation=cv2.INTER_AREA)
+        items.append((key, cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 92])[1].tobytes(), [float(v) * scale for v in box]))
+        shapes[key] = image.shape[:2]
+    with app.run():
+        answers = box_masks_remote.remote(items)
+    out = {}
+    for key, data in answers:
+        found = np.load(io.BytesIO(data))
+        out[key] = (cv2.resize(found["mask"].astype(np.uint8), shapes[key][::-1], interpolation=cv2.INTER_NEAREST) > 0, float(found["score"]))
+    return out
+
+
 def disjoint(masks, things, stuff):
     """Masks that overlap nothing: smallest first, each keeps the pixels no smaller mask took.
 
