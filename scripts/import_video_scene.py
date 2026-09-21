@@ -55,20 +55,68 @@ def extent_box(entity, plan):
                                                  "quaternion": Rotation.from_matrix(rotation).as_quat().tolist(), "scale": [1., 1., 1.]}
 
 
+def atlas(patches, limit=2048):
+    """Pack image patches on shelves. Returns the atlas and each patch's (x, y) offset and scale in it."""
+    area = sum(p.shape[0] * p.shape[1] for p in patches)
+    shrink = min(1., limit / (1.25 * np.sqrt(area) + max(p.shape[1] for p in patches)))  # only a whole wall's worth of photos ever needs it
+    patches = [p if shrink == 1 else cv2.resize(p, (max(1, int(p.shape[1] * shrink)), max(1, int(p.shape[0] * shrink))), interpolation=cv2.INTER_AREA) for p in patches]
+    width = max(max(p.shape[1] for p in patches), int(1.25 * np.sqrt(sum(p.shape[0] * p.shape[1] for p in patches))))
+    places, x, y, shelf = [None] * len(patches), 0, 0, 0
+    for n in sorted(range(len(patches)), key=lambda n: -patches[n].shape[0]):
+        h, w = patches[n].shape[:2]
+        if x + w > width:
+            x, y, shelf = 0, y + shelf, 0
+        places[n], x, shelf = (x, y), x + w, max(shelf, h)
+    sheet = np.zeros((y + shelf, width, 3), np.uint8)
+    for (px, py), patch in zip(places, patches):
+        sheet[py:py + patch.shape[0], px:px + patch.shape[1]] = patch
+    return sheet, places, shrink
+
+
 def fused_part(textured, object_map, entity, minimum=50):
-    """The entity's cells cut out of the photo-textured fused mesh, as a scene of textured parts, or None if too little falls inside."""
+    """The entity's cells cut out of the photo-textured fused mesh, or None if too little falls inside.
+
+    One mesh with one small texture: only the pixels its triangles use are cut from each photo and packed together.
+    Carrying the whole photos (8 per entity at the median) made a report's model layer ask for ~2900 full textures.
+    """
     import trimesh
+    from PIL import Image
     from build_video_object_map import pack
     data = np.load(object_map / entity["cells"]["file"])
     cells, cell = pack(data["cells"]), float(data["cell"])
-    parts, triangles = trimesh.Scene(), 0
-    for name, geometry in textured.geometry.items():
+    pieces, patches, plain = [], [], []
+    for geometry in textured.geometry.values():
         inside = np.isin(pack(np.floor(np.asarray(geometry.vertices) / cell).astype(np.int64)), cells)
         chosen = np.flatnonzero(inside[geometry.faces].all(1))
-        if len(chosen):
-            parts.add_geometry(geometry.submesh([chosen], append=True), geom_name=name)
-            triangles += len(chosen)
-    return parts if triangles >= minimum else None
+        if not len(chosen):
+            continue
+        part = geometry.submesh([chosen], append=True)
+        if getattr(part.visual, "uv", None) is None:  # triangles no photo saw fully keep their fused colour
+            plain.append(part)
+            continue
+        photo = np.asarray(part.visual.material.baseColorTexture.convert("RGB"))
+        height, width = photo.shape[:2]
+        pixels = np.column_stack([part.visual.uv[:, 0] * width, (1 - part.visual.uv[:, 1]) * height])
+        x0, y0 = np.maximum(np.floor(pixels.min(0)).astype(int) - 2, 0)
+        x1, y1 = np.minimum(np.ceil(pixels.max(0)).astype(int) + 3, [width, height])
+        pieces.append((part, pixels - [x0, y0]))
+        patches.append(photo[y0:y1, x0:x1])
+    parts, triangles = trimesh.Scene(), sum(len(p.faces) for p, _ in pieces) + sum(len(p.faces) for p in plain)
+    if triangles < minimum:
+        return None
+    if pieces:
+        sheet, places, shrink = atlas(patches)
+        vertices, faces, uv, offset = [], [], [], 0
+        for (part, pixels), (px, py) in zip(pieces, places):
+            at = pixels * shrink + [px, py]
+            vertices.append(part.vertices); faces.append(part.faces + offset); offset += len(part.vertices)
+            uv.append(np.column_stack([at[:, 0] / sheet.shape[1], 1 - at[:, 1] / sheet.shape[0]]))
+        jpeg = Image.open(io.BytesIO(cv2.imencode(".jpg", sheet[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, 88])[1].tobytes()))
+        material = trimesh.visual.material.PBRMaterial(baseColorTexture=jpeg, metallicFactor=0., roughnessFactor=1.)
+        parts.add_geometry(trimesh.Trimesh(np.vstack(vertices), np.vstack(faces), visual=trimesh.visual.TextureVisuals(uv=np.vstack(uv), material=material), process=False), geom_name="photo-atlas")
+    if plain:
+        parts.add_geometry(trimesh.util.concatenate(plain), geom_name="fused-colour-only")
+    return parts
 
 
 def png(image):
