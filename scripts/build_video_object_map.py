@@ -94,29 +94,33 @@ def accumulate(observations, frames):
         current = [o for o in observations if o.image_id == image_id]
         clouds = {o.id: frame.points[o.mask] for o in current}
         radius = {o.id: NEAR * float(np.median(np.linalg.norm(clouds[o.id] - frame.camera_to_world[:3, 3], axis=1))) for o in current}
-        scores = sorted(((near_fraction(clouds[o.id], e["points"], radius[o.id]), o.id, n) for o in current for n, e in enumerate(entities)
-                         if image_id not in e["frames"]), reverse=True)
+        lows, highs = (np.array([e[key] for e in entities]).reshape(-1, 3) for key in ("low", "high"))  # boxes first: thousands of entities, a handful nearby
+        reach = {o.id: np.flatnonzero(((clouds[o.id].min(0) - radius[o.id] <= highs) & (clouds[o.id].max(0) + radius[o.id] >= lows)).all(1)) for o in current}
+        scores = sorted(((near_fraction(clouds[o.id], entities[n]["points"], radius[o.id]), o.id, int(n)) for o in current for n in reach[o.id]
+                         if image_id not in entities[n]["frames"]), reverse=True)
         for score, oid, n in scores:  # best pairs first; one mask per entity per frame and one entity per mask
             if score < MATCH or oid in taken or image_id in entities[n]["frames"]:
                 continue
             entities[n]["points"] = thin(np.concatenate([entities[n]["points"], clouds[oid]]), entities[n]["radius"] / 2)
+            entities[n].update(low=np.minimum(entities[n]["low"], clouds[oid].min(0)), high=np.maximum(entities[n]["high"], clouds[oid].max(0)))
             entities[n]["ids"].append(oid); entities[n]["frames"].add(image_id); taken.add(oid)
-        entities += [{"points": clouds[o.id], "ids": [o.id], "frames": {image_id}, "radius": radius[o.id]} for o in current if o.id not in taken]
+        entities += [{"points": clouds[o.id], "ids": [o.id], "frames": {image_id}, "radius": radius[o.id], "low": clouds[o.id].min(0), "high": clouds[o.id].max(0)}
+                     for o in current if o.id not in taken]
     merged = True
     while merged:  # the same object entered twice from views that did not overlap at first; passes until nothing merges
         merged, a = False, 0
         while a < len(entities):
-            b = a + 1
-            while b < len(entities):
+            lows, highs = (np.array([e[key] for e in entities]) for key in ("low", "high"))
+            reach = max(e["radius"] for e in entities)
+            for b in sorted((int(b) for b in np.flatnonzero(((entities[a]["low"] - reach <= highs) & (entities[a]["high"] + reach >= lows)).all(1)) if b > a), reverse=True):
                 drop, keep = sorted((a, b), key=lambda n: len(entities[n]["points"]))
                 small, large = entities[drop], entities[keep]
                 if near_fraction(small["points"], large["points"], small["radius"]) > MERGE:
                     large["points"] = thin(np.concatenate([large["points"], small["points"]]), large["radius"] / 2)
+                    large.update(low=np.minimum(large["low"], small["low"]), high=np.maximum(large["high"], small["high"]))
                     large["ids"] += small["ids"]; large["frames"] |= small["frames"]
                     entities[a] = large
-                    del entities[b]; merged = True  # by position: dicts holding arrays cannot be compared with ==
-                else:
-                    b += 1
+                    del entities[b]; merged = True  # by position, from the back so earlier positions stay valid
             a += 1
     return sorted(sorted(e["ids"]) for e in entities)
 
@@ -228,10 +232,11 @@ def build(args):
             # "next to" scales with viewing range: to the entity's middle, or for a background extent each mask's own depth
             cell = NEAR * float(np.median([np.median(np.linalg.norm(p - c, axis=1)) for p, c in zip(sets, cameras)]) if label in STUFF else
                                 np.median(np.linalg.norm(cameras - np.median(points, 0), axis=1)))
-            keep, cells = consensus(sets, cell)
-            share = float(np.concatenate(keep).mean())
-            if share >= .3 and label not in STUFF:  # views of opposite sides share too little to vote, and background patches need not overlap: keep everything and say so
-                points, agreed = points[np.concatenate(keep)], cells
+            if label not in STUFF:  # background patches need not overlap, so there is nothing to vote on
+                keep, cells = consensus(sets, cell)
+                share = float(np.concatenate(keep).mean())
+                if share >= .3:  # views of opposite sides share too little to vote: keep everything and say so
+                    points, agreed = points[np.concatenate(keep)], cells
         entity = {"entityId": f"{label}-{len(entities):03d}", "label": label, "observations": group,
                   "sourceFrames": sorted({int(lookup[o].image_id) for o in group}), "supportPoints": len(points),
                   "multiViewAgreedShare": share, "measuredOn": "points at least two views agree on" if agreed is not None else "all mask points",
@@ -245,6 +250,14 @@ def build(args):
             entity.update(footprintPlanNative=[list(xy) for xy in hull.exterior.coords[:-1]], heightNative=float(np.percentile(relative @ plan["up"], 98)),
                           baseNative=float(np.percentile(relative @ plan["up"], 2)),
                           rangeNative=float(np.median(np.linalg.norm(cameras - np.median(points, 0), axis=1))))
+        entity["observationBoxes"] = {}
+        for o in group:
+            ys, xs = np.where(lookup[o].mask)
+            entity["observationBoxes"][o] = [int(xs.min() * STEP), int(ys.min() * STEP), int(xs.max() * STEP + STEP), int(ys.max() * STEP + STEP)]
+        if label == AGNOSTIC and len(group) < CONFIRMED:  # thousands of one- or two-view fragments: listed, never shown, so no surface or sheet is built
+            entity["surfaces"] = []
+            entities.append(entity)
+            continue
         from build_video_object_models import observed_surface
         entity["surfaces"] = []  # one visible side per observation, as the photo pipeline keeps one observed surface per photo; nothing behind it is made up
         # every prompted view keeps its surface; of the many segment-everything views only the largest few (disk)
@@ -270,10 +283,6 @@ def build(args):
             (args.output / "surfaces").mkdir(exist_ok=True)
             np.savez_compressed(args.output / "surfaces" / f"{entity['entityId']}--cells.npz", cells=np.unique(np.floor(points / cell).astype(np.int64), axis=0), cell=cell)
             entity["cells"] = {"file": f"surfaces/{entity['entityId']}--cells.npz", "cellNative": cell}
-        entity["observationBoxes"] = {}
-        for o in group:
-            ys, xs = np.where(lookup[o].mask)
-            entity["observationBoxes"][o] = [int(xs.min() * STEP), int(ys.min() * STEP), int(xs.max() * STEP + STEP), int(ys.max() * STEP + STEP)]
         entities.append(entity)
         tiles = []
         for o in group[:12]:  # contact sheet: the evidence a person needs to spot a wrong merge
