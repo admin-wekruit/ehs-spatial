@@ -236,24 +236,37 @@ def unreliable(depth, conf, conf_floor, edge_jump):
     return bad | (conf < conf_floor if conf is not None and conf_floor is not None else False)
 
 
-def floor_support(rows, plane, k_of, views=3, cell=.05):
-    """Per view, the pixels that lie on the verified floor plane in a floor cell at least `views` views see.
+def floor_support(rows, plane, k_of, views=2, cell=.05):
+    """Per view, the depth of the pixels that lie on the verified floor plane in a floor cell at least `views` views see.
 
     The cross-view rule compares depth along the ray. A floor seen at a grazing angle turns a small error across the
     plane into a large one along the ray, so floor that many views agree on was thrown away. For a plane already shown
     to be one plane (metric: consensus_plane), agreement is judged across it: distance to the plane, and how many views
-    put a point in the same floor cell. Nothing is moved onto the plane and no cell fewer views saw is filled.
+    put a point in the same floor cell. Such a pixel gets the depth where its ray meets the plane (it was within the
+    plane's tolerance already), so the views fuse into one flat floor instead of a wobbling one. No cell fewer views saw
+    is filled, and nothing farther from the plane than its tolerance is touched.
     """
     up, origin, tolerance = np.array(plane["up_native"]), np.array(plane["plane_point_native"]), 1.5 * plane["plane_tolerance_native"]
     a = np.cross(up, [1., 0, 0]); a /= np.linalg.norm(a)
     b = np.cross(up, a)
     v, u = np.indices((480, 640))
 
-    def cells_of(r):  # one non-negative integer per floor cell, -1 off the floor; recomputed per view rather than held for hundreds of views
+    def key_of(relative):  # one non-negative integer per floor cell
+        key = np.floor(np.stack([relative @ a, relative @ b], -1) / cell).astype(np.int64) + 50000
+        return key[..., 0] * 100003 + key[..., 1]
+
+    def cells_of(r):  # -1 off the floor; recomputed per view rather than held for hundreds of views
         k, z = k_of(r), r["scale"] * r["mono"]
         world = np.stack([(u - k[2]) / k[0] * z, (v - k[3]) / k[1] * z, z], -1) @ r["c2w"][:3, :3].T + r["c2w"][:3, 3] - origin
-        key = np.floor(np.stack([world @ a, world @ b], -1) / cell).astype(np.int64) + 50000
-        return np.where((z > 0) & (np.abs(world @ up) < tolerance), key[..., 0] * 100003 + key[..., 1], -1)
+        return np.where((z > 0) & (np.abs(world @ up) < tolerance), key_of(world), -1)
+
+    def floor_depth(r):
+        """(mask, depth): supported floor pixels and the depth at which their ray meets the plane."""
+        k = k_of(r)
+        rays = np.stack([(u - k[2]) / k[0], (v - k[3]) / k[1], np.ones((480, 640))], -1) @ r["c2w"][:3, :3].T
+        with np.errstate(divide="ignore", invalid="ignore"):
+            meets = ((origin - r["c2w"][:3, 3]) @ up) / (rays @ up)
+        return np.isin(cells_of(r), agreed), meets
 
     votes = {}
     for r in rows:
@@ -261,7 +274,9 @@ def floor_support(rows, plane, k_of, views=3, cell=.05):
         for c in np.unique(key[key >= 0]):
             votes[int(c)] = votes.get(int(c), 0) + 1
     agreed = np.array([c for c, n in votes.items() if n >= views], np.int64)
-    return (lambda r: np.isin(cells_of(r), agreed)), {"floor_cells_seen": len(votes), "floor_cells_kept": len(agreed), "views_needed": views, "cell_native": cell, "plane_tolerance_native": tolerance}
+    on_agreed_floor = lambda points: (np.abs((points - origin) @ up) < tolerance) & np.isin(key_of(points - origin), agreed)
+    return floor_depth, on_agreed_floor, {"floor_cells_seen": len(votes), "floor_cells_kept": len(agreed), "views_needed": views, "cell_native": cell,
+                                          "plane_tolerance_native": tolerance, "depth_on_supported_floor": "ray-plane intersection"}
 
 
 def fuse(droid_run, support, output, voxel, relative, base_scene=None, all_views=False, dynamic_masks=None,
@@ -289,13 +304,15 @@ def fuse(droid_run, support, output, voxel, relative, base_scene=None, all_views
     volume_ = new_volume(voxel)
     points, colors, masked_views, exposures = [], [], set(), []
     raster_k = prepare_image(np.zeros((480, 640, 3), np.uint8) if RASTER == "tum" else np.zeros((SOURCE_WH[1], SOURCE_WH[0], 3), np.uint8), CALIBRATION, 2)[1]
-    on_floor, floor_report = floor_support(rows, json.loads(floor_plane.read_text()), lambda r: r["k"] * 2 if METRIC_CAMERAS else raster_k) if floor_plane else (None, None)
+    on_floor, agreed_floor, floor_report = floor_support(rows, json.loads(floor_plane.read_text()), lambda r: r["k"] * 2 if METRIC_CAMERAS else raster_k) if floor_plane else (None, None, None)
     for r, keep in zip(rows, mono_supported):
         bgr, k = prepare_image(cv2.imread(str(DATASET / manifest["frames"][r["source_index"]]["relative_path"])), CALIBRATION, 2)
         k = r["k"] * 2 if METRIC_CAMERAS else k  # the device refocuses per frame; prepare_image only knows the clip median
         keep = cv2.resize(keep.astype(np.uint8), (640, 480), interpolation=cv2.INTER_NEAREST).astype(bool)
         if on_floor is not None:
-            keep |= on_floor(r)
+            flat, meets = on_floor(r)
+            keep |= flat
+            r["mono"] = np.where(flat, meets / r["scale"], r["mono"]).astype(np.float32)
         moving = moving_mask(dynamic_masks, r["source_index"])  # source pixels -> depth raster
         if moving.any():
             keep &= ~cv2.dilate(moving.astype(np.uint8), np.ones((9, 9), np.uint8)).astype(bool)
@@ -319,10 +336,8 @@ def fuse(droid_run, support, output, voxel, relative, base_scene=None, all_views
             pos, neg = depth_evidence(vertices, depth, depth <= 0, k2, c2w, tolerance=0, depth_range=(0, np.inf), relative_tolerance=.04)
             positive[pos] += 1; negative[neg] += 1
         drop = ~((positive >= 3) & (negative <= np.maximum(2, positive * .15)))
-        if floor_plane:  # the same along-the-ray test would carve the grazing floor away again; free-space contradictions still count
-            plane = json.loads(floor_plane.read_text())
-            flat = np.abs((vertices - np.array(plane["plane_point_native"])) @ np.array(plane["up_native"])) < 1.5 * plane["plane_tolerance_native"]
-            drop &= ~(flat & (negative <= np.maximum(2, positive * .15)))
+        if floor_plane:  # both carve tests run along the ray, which is what fails on a grazing floor; its support is the vote across the plane
+            drop &= ~agreed_floor(vertices)
         carved = {"rule": "filter_video_static_surfaces: positive>=3 and negative<=max(2, .15*positive), 4% relative",
                   "vertices": len(vertices), "removed_vertices": int(drop.sum()), "removed_for_free_space_contradiction": int(((positive >= 3) & drop).sum())}
         mesh.remove_vertices_by_mask(drop)
@@ -654,9 +669,12 @@ def self_check():
         c = np.eye(4); c[0, 3] = x
         return {"scale": 1., "c2w": c, "mono": np.where(np.indices((480, 640))[0] > 300, 140. / np.maximum(np.indices((480, 640))[0] - 240., 1e-6), 5.).astype(np.float32)}
     rows_ = [looking_down(x) for x in (0., .05, .1, 30.)]  # three views of the same floor, one far away seeing its own
-    kept, report_ = floor_support(rows_, plane, lambda r: np.array([140., 140., 320., 240.]))
-    assert kept(rows_[0])[400, 320] and not kept(rows_[0])[100, 320] and not kept(rows_[3]).any() and report_["floor_cells_kept"] < report_["floor_cells_seen"], "floor kept only on the plane and only where three views see the cell"
-    print("mono room check passed: grazing floor supported across the plane by three views; moving-pixel depth tied on static pixels only; consensus floor plane under clutter; low-confidence and border-jump pixels dropped; revisits at any time vote and opposite views do not; anchors only from supported pixels, anchorless frames refused, median robust to outliers")
+    rows_[1]["mono"] = rows_[1]["mono"] * 1.01  # a view whose floor depth is 1% off: within the plane's tolerance, so it still votes and is put on the plane
+    kept, on_agreed, report_ = floor_support(rows_, plane, lambda r: np.array([140., 140., 320., 240.]))
+    flat, meets = kept(rows_[1])
+    assert flat[400, 320] and not flat[100, 320] and not kept(rows_[3])[0].any() and report_["floor_cells_kept"] < report_["floor_cells_seen"], "floor kept only on the plane and only where views agree on the cell"
+    assert abs(meets[400, 320] - 140. / 160) < 1e-6 and on_agreed(np.array([[0., 1., 140. / 160]]))[0] and not on_agreed(np.array([[0., .5, 1.]]))[0], "supported floor takes the ray-plane depth"
+    print("mono room check passed: grazing floor supported across its plane and fused flat; moving-pixel depth tied on static pixels only; consensus floor plane under clutter; low-confidence and border-jump pixels dropped; revisits at any time vote and opposite views do not; anchors only from supported pixels, anchorless frames refused, median robust to outliers")
 
 
 if __name__ == "__main__":
