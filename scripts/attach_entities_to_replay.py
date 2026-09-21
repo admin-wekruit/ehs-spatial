@@ -26,6 +26,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("scene", "object-map", "masks", "models", "output"):
         parser.add_argument("--" + name, type=Path, required=name != "models")
+    parser.add_argument("--inferred-floor", type=Path, help="infer_room_floor.py output: becomes the floor entity's model")
     args = parser.parse_args()
     import trimesh
     scene = json.loads(args.scene.read_text())
@@ -71,6 +72,12 @@ def main():
                   "objectMapEntity": {"entityId": entity["entityId"], "observations": len(entity["observations"]), "sourceFrames": entity["sourceFrames"]},
                   "source": {"sourceFrame": int(index), "timeSec": frame["timeSec"], "endTimeSec": frame["endTimeSec"], "width": 640, "height": 480,
                              "maskUrl": relative(mask_path), "imageUrl": relative(image_path), "bbox": [int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1]}}
+        if args.inferred_floor and entity["label"] == "floor":  # the model view shows the whole floor: the verified plane over the room's footprint, stated as inferred
+            basis = json.loads((args.inferred_floor / "inferred-floor.json").read_text())
+            record["generatedModel"] = {"meshUrl": relative(args.inferred_floor / "inferred-floor.glb"), "sha256": basis["mesh_sha256"], "provenanceUrl": relative(args.inferred_floor / "inferred-floor.json"),
+                                        "sourceFrame": int(index), "status": "source_consistent_model_estimate",
+                                        "note": f"推断模型，不是观测：已验证的地面平面铺满房间范围（{basis['area_m2']} m²），相机只看到其中 {basis['observed_share_of_this_floor']:.0%}；未观测部分上面有什么不知道。"}
+            record["displayName"] += f"；模型＝推断地面 {basis['area_m2']} m²（其中观测到 {basis['observed_share_of_this_floor']:.0%}）"
         if anchored:
             checked = json.loads((models[chosen["observation"]] / "validation.json").read_text())
             record["generatedModel"] = {"meshUrl": relative(models[chosen["observation"]] / "model.glb"), "sha256": checked["mesh_sha256"],

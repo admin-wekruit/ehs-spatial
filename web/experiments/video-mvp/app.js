@@ -161,7 +161,7 @@ async function loadScene(sample,generation) {
             catch(error){if(generation===state.generation&&error.name!=='AbortError')showError('scene-error',error.message);}
             finally{model.disabled=false;}
           };
-          $('scene-objects').append(model,node('p','muted','生成模型通过源图轮廓和预测深度检查；遮挡面为推测，未验证其他时刻的位置。'));
+          $('scene-objects').append(model,node('p','muted',object.generatedModel.note||'生成模型通过源图轮廓和预测深度检查；遮挡面为推测，未验证其他时刻的位置。'));
         }
       }
     }
@@ -246,7 +246,7 @@ function drawObservations() {
     $('selected-label').append(node('span','source-description',`空间记忆：仅源帧 ${source.frame.sourceFrame}（${formatTime(source.frame.timeSec)}）的可见表面；其他时刻的位置与状态未知。`));
     const review=source.model.semanticReview;
     if(review)$('selected-label').append(node('span','source-description',`照片模型核验：${reviewStatus(review.status)} · ${review.description}（模型解释，非真值）`));
-    if(state.generatedModels.has(state.selected))$('selected-label').append(node('span','source-description','当前显示生成模型估计；遮挡面为推测。可切换回原始可见表面。'));
+    if(state.generatedModels.has(state.selected))$('selected-label').append(node('span','source-description',source.model.generatedModel.note||'当前显示生成模型估计；遮挡面为推测。可切换回原始可见表面。'));
     for(const [text,url]of [['查看原始帧',source.model.source.imageUrl],['查看模型来源',state.generatedModels.has(state.selected)?source.model.generatedModel.provenanceUrl:source.model.provenanceUrl]]){const link=node('a','source-link',text);link.href=assetUrl(url,state.sceneUrl);link.target='_blank';link.rel='noopener noreferrer';$('selected-label').append(link);}
   }
   for(const candidate of state.analysis?.identityCandidates || []) {

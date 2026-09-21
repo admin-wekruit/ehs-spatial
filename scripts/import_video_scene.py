@@ -204,6 +204,16 @@ def build_document(args, put_asset, calibration, dataset):
             if projection is not None:
                 model["planProjection"] = projection
             representations.append(model)
+        if args.inferred_floor and entity["label"] == "floor" and refs:  # the floor's model: its verified plane over the room's footprint, stated as inferred, not observed
+            basis = json.loads((args.inferred_floor / "inferred-floor.json").read_text())
+            slab = trimesh.load(args.inferred_floor / "inferred-floor.glb", force="mesh", process=False)
+            asset = include((args.inferred_floor / "inferred-floor.glb").read_bytes(), "model/gltf-binary", {"kind": "geometry", "format": "glb", "sourceRecordId": "inferred-floor",
+                            "generator": "parametric plane extension, no model call", "meshSha256": basis["mesh_sha256"]})
+            model_transform = identity
+            representations.append({"id": ident("representation", "inferred-floor"), "kind": "generated_mesh", "assetId": asset, "coordinateFrameId": FRAME, "transform": identity,
+                "bounds": {"min": slab.bounds[0].tolist(), "max": slab.bounds[1].tolist()}, "placementState": "unconfirmed", "placementReason": "requires_alignment_confirmation",
+                "sourceRefs": [{"observationId": refs[0][1], "revision": 1, "imageId": images[int(refs[0][0].split(":")[1])]}],
+                "modelBasis": f"inferred, not observed: {basis['basis']}; {basis['observed_share_of_this_floor']:.0%} of its {basis['area_m2']} m2 was seen"})
         if model_transform is None and len(refs) >= CONFIRMED and representations:
             # No checked model: the model view shows what was actually seen, textured, as the photo report does for fences and floors.
             fused = fused_part(textured, args.object_map, entity) if textured is not None and entity.get("cells") else None
@@ -297,6 +307,7 @@ if __name__ == "__main__":
         parser.add_argument("--" + name, type=Path, required=name not in ("policy", "models"))
     parser.add_argument("--video", type=Path, help="source video to show as a report view (needs --analysis)")
     parser.add_argument("--analysis", type=Path, help="project_entities_to_frames analysis.json of the same object map")
+    parser.add_argument("--inferred-floor", type=Path, help="infer_room_floor.py output: becomes the floor entity's model in the model layer")
     parser.add_argument("--shell-glb", type=Path, help="photo-textured copy of the depth run's fused mesh to show as the room surface")
     parser.add_argument("--title", default="Video workcell (imported, not accepted)")
     parser.add_argument("--output-dir", type=Path, default=Path(".platform/imports"))
