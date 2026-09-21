@@ -180,7 +180,8 @@ def build_document(args, put_asset, calibration, dataset):
                        "bounds": {"min": part.bounds[0].tolist(), "max": part.bounds[1].tolist()},
                        "sourceRefs": [{"observationId": dict(refs)[seen["observation"]], "revision": 1, "imageId": images[int(seen["observation"].split(":")[1])]}]}
             # the photo report's own CAD outline: exact triangle union on the floor. A wall or floor has no footprint worth the minutes it costs.
-            projection = None if entity["label"] in STUFF else _plan_projection(document, surface, part, hashlib.sha256(payload).hexdigest())
+            # ...nor has each of the many segment-everything views: their entity's fused multi-view surface carries one outline instead (below)
+            projection = None if entity["label"] in STUFF or seen["observation"].startswith(AGNOSTIC + ":") else _plan_projection(document, surface, part, hashlib.sha256(payload).hexdigest())
             if projection is not None:
                 surface["planProjection"] = projection
             representations.append(surface)
@@ -208,11 +209,15 @@ def build_document(args, put_asset, calibration, dataset):
             fused = fused_part(textured, args.object_map, entity) if textured is not None and entity.get("cells") else None
             if fused is not None:  # every view's share of the entity in one piece: the entity's cells cut out of the photo-textured fused mesh
                 payload = fused.export(file_type="glb")
+                whole = trimesh.util.concatenate([trimesh.Trimesh(g.vertices, g.faces, process=False) for g in fused.geometry.values()])
                 representations.append({"id": ident("representation", "fused", entity["entityId"]), "kind": "observed_surface", "coordinateFrameId": FRAME, "transform": identity,
                     "assetId": include(payload, "model/gltf-binary", {"kind": "geometry", "format": "glb", "sourceRecordId": f"{entity['entityId']}:fused-surface"}),
                     "placementState": "confirmed", "primitive": None, "coverage": "visible_support_only_all_views", "sourceKind": "observed_reference_surface",
                     "bounds": {"min": fused.bounds[0].tolist(), "max": fused.bounds[1].tolist()},
                     "sourceRefs": [{"observationId": o, "revision": 1, "imageId": images[int(oid.split(":")[1])]} for oid, o in refs]})
+                outline = None if entity["label"] in STUFF else _plan_projection(document, representations[-1], whole, hashlib.sha256(payload).hexdigest())
+                if outline is not None:
+                    representations[-1]["planProjection"] = outline
             else:  # one surface only (the largest), so the same object is not stacked from several views. White extent boxes are gone.
                 largest = max((r for r in representations if r["kind"] == "observed_surface"), key=lambda r: np.prod(np.subtract(r["bounds"]["max"], r["bounds"]["min"])))
                 largest["sourceKind"] = "observed_reference_surface"

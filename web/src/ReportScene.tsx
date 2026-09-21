@@ -516,7 +516,7 @@ export function ReportScene({
           <div className="report-scene-grid">
             {paneOrder.map((pane, index) => (
               <section className="report-scene-pane" id={`${panePrefix}-${pane}`} data-pane={pane} key={pane} aria-label={t(viewNames[pane])}>
-                <header><h3><span>{String(index + 1).padStart(2, "0")}</span>{t(pane === "spatial" ? availability.spatialTitle : viewNames[pane])}</h3>
+                <header><h3><span>{String(index + 1).padStart(2, "0")}</span>{pane === "photo" && showVideo ? (language === "zh" ? "来源视频 · 每帧可点选对象" : "Source video · pick objects in any frame") : t(pane === "spatial" ? availability.spatialTitle : viewNames[pane])}</h3>
                   {pane === "cad" && <select className="report-scene-cad-layer" aria-label={t("sceneCadProjectionSource")} value={cadLayer} onChange={event => { setDrawingRegion(false); setCadLayer(event.target.value as "model" | "observed_surface"); }}>
                     <option value="observed_surface">{t("sceneCadObservedProjection")}</option><option value="model">{t("sceneCadModelProjection")}</option>
                   </select>}
