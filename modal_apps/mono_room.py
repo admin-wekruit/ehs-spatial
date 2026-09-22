@@ -450,11 +450,14 @@ def floor_plane(points, guess, tolerance):
     return centre, up, inliers, near
 
 
-def device_floor(droid_run, support, output):
+def device_floor(droid_run, support, output, uncalibrated=False):
     """Floor plane of a clip with metric device cameras, without any floor mask.
 
     A phone is held roughly upright, so the mean image-down direction of the cameras is close to gravity. The floor is
     the lowest well-populated level along it, refined as one consensus plane. Metres come from the device; nothing is assumed.
+    uncalibrated: a SLAM clip without device metres and without a floor mask. The plane is found the same way and no
+    metres are claimed. Posed depth follows the given cameras' units, so it holds no metric estimate either: on
+    fr3/walking the fitted scale (~1.01) was 62% off what the sensor depth implies (2.68, evaluation only).
     """
     rows = load(droid_run, support, output)
     down = np.mean([r["c2w"][:3, 1] for r in rows], 0)
@@ -477,6 +480,9 @@ def device_floor(droid_run, support, output):
               "camera_height_native_median": float(np.median(heights)), "camera_height_native_p10_p90": np.percentile(heights, [10, 90]).tolist(),
               "metres_per_native_unit": 1., "scale_status": "device_metric", "assumption": "none: metric poses from the capture device; floor = lowest well-populated level along the mean camera down direction",
               "model_estimated_metres_per_native_unit": None, "scale_sources_disagree_over_10pct": None}
+    if uncalibrated:
+        report.update(metres_per_native_unit=None, scale_status="uncalibrated",
+                      assumption="no metres: monocular SLAM cameras, no floor mask and no stated carry height; floor = lowest well-populated level along the mean camera down direction")
     save(output / "metric-scale.json", report)
     print(json.dumps(report, indent=1))
 
@@ -766,6 +772,7 @@ if __name__ == "__main__":
     parser.add_argument("--floor-masks", type=Path, help="discover_video_keyframes output for the prompt 'floor'")
     parser.add_argument("--metric-depth-run", type=Path, help="fused run of a metric depth model (e.g. MoGe) to report its scale beside the height anchor")
     parser.add_argument("--camera-height", type=float, help="assumed carrying height in metres")
+    parser.add_argument("--uncalibrated", action="store_true", help="metric on a SLAM clip without floor masks or carry height: mask-free floor plane only, no metres claimed")
     parser.add_argument("--dynamic-masks", type=Path, help="directory of SOURCEINDEX-*.png person/object masks in source pixels; removed before fusion")
     parser.add_argument("--video", type=Path, help="source video; without --base-scene, fuse writes the replay frames itself from its CFR times and the DROID cameras")
     parser.add_argument("--floor-plane", type=Path, help="metric-scale.json of a verified floor plane: floor pixels are supported across the plane (>=3 views per floor cell), not along the ray")
@@ -778,7 +785,7 @@ if __name__ == "__main__":
     if a.command == "infer":
         infer(a.droid_run, a.output, a.stride, a.da3_model, a.midframes, a.every)
     elif a.command == "metric":
-        device_floor(a.droid_run, a.support, a.output) if METRIC_CAMERAS and not a.floor_masks else metric(a.droid_run, a.support, a.output, a.floor_masks, a.camera_height, a.metric_depth_run)
+        device_floor(a.droid_run, a.support, a.output, uncalibrated=not METRIC_CAMERAS) if (METRIC_CAMERAS or a.uncalibrated) and not a.floor_masks else metric(a.droid_run, a.support, a.output, a.floor_masks, a.camera_height, a.metric_depth_run)
     elif a.command == "fuse":
         fuse(a.droid_run, a.support, a.output, a.voxel_length_native, a.support_relative, a.base_scene, a.support_all_views, a.dynamic_masks, a.conf_percentile, a.edge_jump, a.carve, a.video, a.floor_plane)
     elif a.command == "dynamic":

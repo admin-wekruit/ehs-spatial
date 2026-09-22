@@ -186,3 +186,10 @@
 .report-video-controls { display: flex; flex: 0 0 auto; gap: 8px; align-items: center; padding: 4px 8px; border-top: 1px solid var(--scene-border); font-size: 10px; }
 .report-video-controls input { flex: 1 1 auto; }
 .report-video-controls button { padding: 4px 8px; border: 1px solid #c7d2c2; border-radius: 2px; background: #fcfff8; font-size: 10px; }
+
+/* The clip split into static and dynamic layers: one wide rendered video under the four views. */
+.report-scene-comparison { flex: 0 0 auto; border-top: 1px solid var(--scene-border); background: #f6f8f2; }
+.report-scene-comparison header { padding: 8px 12px 4px; }
+.report-scene-comparison h3 { margin: 0; font-size: 12px; }
+.report-scene-comparison p { margin: 4px 0 0; color: #5c7261; font-size: 10px; line-height: 1.45; }
+.report-scene-comparison video { display: block; width: 100%; height: auto; background: #18211d; }

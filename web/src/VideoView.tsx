@@ -79,3 +79,29 @@ export function VideoView({ document, selectedId, onSelect }: {
     </footer>
   </div>;
 }
+
+type Comparison = { videoAssetId: string; note?: string };
+export function comparisonVideo(document: SceneDocument): Comparison | null {
+  const found = (document.annotations || []).find((a) => a.kind === "static_dynamic_comparison") as Partial<Comparison> | undefined;
+  return found && typeof found.videoAssetId === "string" ? found as Comparison : null;
+}
+
+/** The clip split into its static and dynamic layers, rendered from the clip's own camera, shown as it was rendered. */
+export function ComparisonVideo({ document }: { document: SceneDocument }) {
+  const { language } = useI18n(), comparison = comparisonVideo(document), [source, setSource] = useState<string>(), [error, setError] = useState(false);
+  useEffect(() => {
+    if (!comparison) return;
+    let live = true, blobUrl: string | undefined;
+    resolveAsset(comparison.videoAssetId).then((url) => fetch(url)).then((r) => r.blob())
+      .then((blob) => { if (!live) return; blobUrl = URL.createObjectURL(blob); setSource(blobUrl); }).catch(() => { if (live) setError(true); });
+    return () => { live = false; if (blobUrl) URL.revokeObjectURL(blobUrl); };
+  }, [comparison?.videoAssetId]);
+  if (!comparison) return null;
+  const zh = language === "zh";
+  return <section className="report-scene-comparison" aria-label={zh ? "动静分离对比" : "Static / dynamic comparison"}>
+    <header><h3>{zh ? "动静分离 · 原图 ｜ 静态+动态 ｜ 只看静态 ｜ 只看动态" : "Static / dynamic · photo | both | static only | dynamic only"}</h3>
+      {comparison.note && <p>{comparison.note}</p>}</header>
+    {error ? <p role="status">{zh ? "对比视频读取失败" : "The comparison video could not be read"}</p>
+      : <video src={source} controls muted playsInline preload="auto" aria-label={zh ? "动静分离对比视频" : "Static / dynamic comparison video"} />}
+  </section>;
+}

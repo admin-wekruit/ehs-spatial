@@ -131,6 +131,7 @@ def build_document(args, put_asset, calibration, dataset):
     manifest = json.loads((args.droid_run / "input-manifest.json").read_text())
     import mono_room
     device = mono_room.METRIC_CAMERAS  # set by use_clip in run(): metric poses from the capture device, no assumed scale
+    uncalibrated = scale.get("scale_status") == "uncalibrated"  # no device metres, no floor mask, no stated height: native units, no metres claimed
     prediction = np.load(args.droid_run / "prediction.npz")
     keyframes = {int(i): c for i, c in zip(prediction["keyframe_source_indices"], prediction["keyframe_c2w"])}
     document = empty_document()
@@ -145,7 +146,7 @@ def build_document(args, put_asset, calibration, dataset):
     source = include(source_bytes, "application/json", {"kind": "import_source", "sourceSha256": hashlib.sha256(source_bytes).hexdigest()})
     up, origin = np.array(scale["up_native"]), np.array(scale["plane_point_native"])
     document["coordinateFrames"] = [{"id": FRAME, "convention": "opencv",
-        "scale": {"status": "operator_anchored", "nativeToMeters": scale["metres_per_native_unit"], "sourceRefs": [{"assetId": source}],
+        "scale": {"status": "uncalibrated"} if uncalibrated else {"status": "operator_anchored", "nativeToMeters": scale["metres_per_native_unit"], "sourceRefs": [{"assetId": source}],
                   "anchor": {"kind": "device_metric_poses", "measured": True, "note": "metres come from the capture device's own poses; nothing was assumed"} if device else
                             {"kind": "stated_carry_height", "metres": 1.6, "measured": False,
                              "modelEstimateMetresPerNative": scale.get("model_estimated_metres_per_native_unit"),
@@ -319,7 +320,14 @@ def build_document(args, put_asset, calibration, dataset):
             "analysisAssetId": include(slim, "application/json", {"kind": "video_frame_outlines", "sourceRecordId": "per-frame-outlines"}),
             "note": "outlines are the scene's 3D entities re-projected into each frame, not a per-frame segmentation"})
     left_out = {"entities_shown_by_fused_cut": used_fused, "entities_shown_by_best_single_view": used_view, "unconfirmed_class_agnostic_fragments": len(skipped), "views_not_imported": sum(e["observationsNotImported"] for e in object_map["entities"])}
+    if args.comparison_video:  # the clip split into static and dynamic layers, rendered from the clip's own camera (render_static_dynamic_video.py)
+        rendered = json.loads(args.comparison_video.with_suffix(".json").read_text())
+        document["annotations"].append({"id": ident("annotation", "static-dynamic"), "kind": "static_dynamic_comparison", "sourceAssetId": source,
+            "videoAssetId": include(args.comparison_video.read_bytes(), "video/mp4", {"kind": "static_dynamic_comparison_video", "sourceRecordId": "static-dynamic"}),
+            "panels": rendered["panels"], "frames": rendered["frames"],
+            "note": "静态层＝融合前剔除运动像素的地图；动态层＝运动对象在每个采样视图的可见表面（运动线索种子＋SAM 3.1 跟踪，未用文字提示）。从原相机视角渲染，不可旋转。"})
     limitations = [("Metres come from the capture device's poses; depth comes from a pretrained model conditioned on them." if device else
+                    "Monocular video without a scale anchor: sizes and distances are in native units, not metres." if uncalibrated else
                     "Monocular video; metres come from a stated 1.6 m carry height that disagrees with the model scale estimate by about 20% on this clip."),
                    "Only what the camera saw is present; the room surface is source context and has not been accepted.",
                    "Entities are grouped by 3D point overlap of text-prompted masks; identities were not reviewed by a person."] + object_map["limitations"]
@@ -383,6 +391,7 @@ if __name__ == "__main__":
     parser.add_argument("--analysis", type=Path, help="project_entities_to_frames analysis.json of the same object map")
     parser.add_argument("--inferred-floor", type=Path, help="infer_room_floor.py output: becomes the floor entity's model in the model layer")
     parser.add_argument("--shell-glb", type=Path, help="photo-textured copy of the depth run's fused mesh to show as the room surface")
+    parser.add_argument("--comparison-video", type=Path, help="render_static_dynamic_video.py output (with its .json): the static/dynamic split as a report view")
     parser.add_argument("--title", default="Video workcell (imported, not accepted)")
     parser.add_argument("--output-dir", type=Path, default=Path(".platform/imports"))
     parser.add_argument("--request-suffix", default="1", help="change to import the same inputs again as a new project")
