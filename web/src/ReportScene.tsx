@@ -2,7 +2,7 @@ import type { SurfacePick } from "./viewer/native-math";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { SpatialView } from "./App";
 import { PhotoView } from "./PhotoView";
-import { ComparisonVideo, VideoView, videoReplay } from "./VideoView";
+import { ComparisonVideo, VideoMemory, VideoView, videoReplay } from "./VideoView";
 import { request } from "./api";
 import { SpatialMeasurements, type BendAnalysis, type InclinationAnalysis, type SceneMeasurement, type MeasureRegion } from "./SpatialMeasurements";
 import { CadView } from "./CadView";
@@ -565,6 +565,7 @@ export function ReportScene({
               </section>
             ))}
           </div>
+          <VideoMemory document={document} onSelect={selectEntity} />
           <ComparisonVideo document={document} />
           <p className="report-scene-selection-note"><span className="report-scene-reference-note">{t(cadLayer === "model" ? "sceneCadModelSource" : "sceneCadSource")} {cadLayer === "observed_surface" && <> · {selected ? <>{t("sceneCadReference")}: {referenceImageId ? `${t("scenePhotoNumber")} ${images.findIndex(image => image.imageId === referenceImageId) + 1}` : t("sceneCadReferenceMissing")} · {t("sceneViewedPhoto")}: {imageId ? images.findIndex(image => image.imageId === imageId) + 1 : "—"}</> : t("sceneCadFixedState")}</>}</span>{selected ? isReferenceSurface(document, selected) ? t("sceneReferenceSurface") : selectedOverlay ? t(selectedOverlay.axisSpace === "native" ? "sceneNativeAxis" : "sceneSourceAxis") : !entityGeometryForLayer(selected, geometryOptions) ? t("sceneNoGeometrySelection") : t("sceneNoPhotoAxes") : t("sceneReadOnly")}</p>
         </div>

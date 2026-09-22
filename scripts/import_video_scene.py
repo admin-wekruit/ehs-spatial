@@ -386,6 +386,18 @@ def build_document(args, put_asset, calibration, dataset):
             "videoAssetId": include(args.video.read_bytes(), "video/mp4", {"kind": "source_video", "sourceRecordId": "source-video"}),
             "analysisAssetId": include(slim, "application/json", {"kind": "video_frame_outlines", "sourceRecordId": "per-frame-outlines"}),
             "note": "outlines are the scene's 3D entities re-projected into each frame, not a per-frame segmentation"})
+    if args.video_events:  # the video memory: window captions and events in the model's own words, kept as evidence beside the geometry
+        memory = json.loads(args.video_events.read_text())
+        by_label = {e["label"]: e for e in document["entities"] if e.get("motion") == "dynamic"}
+        for window in memory["windows"]:
+            for event in window.get("events") or []:
+                actor = by_label.get(event.get("actor"))
+                event["entityId"] = actor["id"] if actor else None
+                if actor:  # what the agent's get_entity returns for a mover: its geometry facts and what the video model said it did
+                    actor.setdefault("videoEvents", []).append({k: event.get(k) for k in ("t0", "t1", "action", "near", "ppe", "safety_note")})
+        document["annotations"].append({"id": ident("annotation", "video-events"), "kind": "video_events", "sourceAssetId": source, "model": memory["model"], "method": memory["method"],
+            "windows": [{k: w.get(k) for k in ("t0", "t1", "caption", "events")} for w in memory["windows"]],
+            "note": "model descriptions of each window; evidence for review and search, never a rule verdict"})
     left_out = {"entities_shown_by_fused_cut": used_fused, "entities_shown_by_best_single_view": used_view, "unconfirmed_class_agnostic_fragments": len(skipped), "views_not_imported": sum(e["observationsNotImported"] for e in object_map["entities"])}
     if args.comparison_video:  # the clip split into static and dynamic layers, rendered from the clip's own camera (render_static_dynamic_video.py)
         rendered = json.loads(args.comparison_video.with_suffix(".json").read_text())
@@ -465,6 +477,7 @@ if __name__ == "__main__":
     parser.add_argument("--comparison-video", type=Path, help="render_static_dynamic_video.py output (with its .json): the static/dynamic split as a report view")
     parser.add_argument("--republish", type=Path, help="an earlier .platform/imports/video-import-*.json: publish this import as that report's next version instead of a new report")
     parser.add_argument("--dynamic-scene", type=Path, help="scene.json written by mono_room.py dynamic: moving objects as timed surfaces in the 3D views")
+    parser.add_argument("--video-events", type=Path, help="video_events.py events.json: window captions and events as the report's video memory")
     parser.add_argument("--skeleton-scene", type=Path, help="a replay scene.json whose moving objects carry keypoints3d/bones (same cameras): skeletons as a timed layer")
     parser.add_argument("--dynamic-analysis", type=Path, help="motion_tracks_to_analysis.py output of the same tracks: their masks become pickable outlines in the video")
     parser.add_argument("--title", default="Video workcell (imported, not accepted)")

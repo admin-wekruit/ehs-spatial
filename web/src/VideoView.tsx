@@ -53,6 +53,11 @@ export function VideoView({ document, selectedId, onSelect }: {
   }, [playing]);
   const frame = useMemo(() => analysis?.frames.length ? frameAt(analysis.frames, time) : undefined, [analysis, time]);
   useEffect(() => { announce(time); }, [frame]);  // once per sampled frame, not per animation frame
+  useEffect(() => {  // a time picked elsewhere in the report (an event in the video memory) moves the video there
+    const seek = (event: Event) => { const element = video.current, at = (event as CustomEvent<number>).detail; if (!element || !Number.isFinite(at)) return; element.pause(); element.currentTime = at; setTime(at); };
+    window.addEventListener("panoptes:seek", seek);
+    return () => window.removeEventListener("panoptes:seek", seek);
+  }, []);
   useEffect(() => {  // picked in 3D, CAD or the list: show the nearest moment the video sees it
     const element = video.current;
     if (!element || !analysis || !selectedId || frame?.objects.some((o) => o.entityId === selectedId)) return;
@@ -108,5 +113,30 @@ export function ComparisonVideo({ document }: { document: SceneDocument }) {
       {comparison.note && <p>{comparison.note}</p>}</header>
     {error ? <p role="status">{zh ? "对比视频读取失败" : "The comparison video could not be read"}</p>
       : <video src={source} controls muted playsInline preload="auto" aria-label={zh ? "动静分离对比视频" : "Static / dynamic comparison video"} />}
+  </section>;
+}
+
+type MemoryEvent = { t0?: number; t1?: number; actor?: string | null; action?: string; near?: string[]; ppe?: Record<string, string>; safety_note?: string | null; entityId?: string | null };
+type MemoryWindow = { t0: number; t1: number; caption?: string | null; events?: MemoryEvent[] };
+
+/** The video memory: what an open video model wrote for each window, with times that move the video and actors that select the mover. */
+export function VideoMemory({ document, onSelect }: { document: SceneDocument; onSelect: (id: string) => void }) {
+  const { language } = useI18n(), zh = language === "zh";
+  const memory = (document.annotations || []).find((a) => a.kind === "video_events") as { model?: string; windows?: MemoryWindow[]; note?: string } | undefined;
+  if (!memory?.windows?.length) return null;
+  const seek = (at?: number) => { if (Number.isFinite(at)) window.dispatchEvent(new CustomEvent("panoptes:seek", { detail: at })); };
+  const ppe = (value?: Record<string, string>) => value ? Object.entries(value).filter(([, v]) => v && v !== "unknown").map(([k, v]) => `${k === "helmet" ? (zh ? "安全帽" : "helmet") : (zh ? "反光衣" : "vest")}：${v === "yes" ? (zh ? "有" : "yes") : v === "no" ? (zh ? "无" : "no") : v}`).join(" · ") : "";
+  return <section className="report-memory" aria-label={zh ? "视频记忆" : "Video memory"}>
+    <header><h3>{zh ? "视频记忆 · 每段发生了什么" : "Video memory · what happens in each window"}</h3>
+      <p>{zh ? `由 ${memory.model} 按时间窗口写的描述，是证据不是结论；点时间跳到视频，点对象在三维里选中。` : `Written per window by ${memory.model}; evidence, not a verdict.`}</p></header>
+    <ol>{memory.windows.map((w) => <li key={w.t0}>
+      <button className="report-memory-time" onClick={() => seek(w.t0)}>{w.t0.toFixed(1)}–{w.t1.toFixed(1)} s</button>
+      <p>{w.caption}</p>
+      {!!w.events?.length && <ul>{w.events.map((e, n) => <li key={n}>
+        <button className="report-memory-time" onClick={() => seek(e.t0)}>{(e.t0 ?? w.t0).toFixed(1)} s</button>
+        {e.entityId ? <button className="report-memory-actor" onClick={() => onSelect(e.entityId!)}>{e.actor}</button> : <span className="report-memory-actor">{e.actor || (zh ? "未标记" : "unlabelled")}</span>}
+        <span>{e.action}</span>{ppe(e.ppe) && <small>{ppe(e.ppe)}</small>}{e.safety_note && <em>{e.safety_note}</em>}
+      </li>)}</ul>}
+    </li>)}</ol>
   </section>;
 }

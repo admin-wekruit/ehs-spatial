@@ -197,3 +197,16 @@
 .report-motion-summary h4 { margin: 0 0 4px; font-size: 12px; }
 .report-motion-summary p { margin: 0; font-size: 12px; line-height: 1.55; }
 .report-motion-summary small { display: block; margin-top: 4px; color: #5c7261; font-size: 10px; }
+
+/* Video memory: window captions and events from the video model, each time a seek, each actor a selection. */
+.report-memory { flex: 0 0 auto; border-top: 1px solid var(--scene-border); padding: 8px 12px 10px; background: #f6f8f2; max-height: 320px; overflow-y: auto; }
+.report-memory h3 { margin: 0; font-size: 12px; }
+.report-memory header p { margin: 2px 0 6px; color: #5c7261; font-size: 10px; }
+.report-memory ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.report-memory ol > li > p { margin: 2px 0; font-size: 12px; line-height: 1.5; }
+.report-memory ul { margin: 2px 0 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+.report-memory ul li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: 11px; }
+.report-memory small { color: #5c7261; }
+.report-memory em { color: #9a5b00; font-style: normal; }
+.report-memory-time, .report-memory-actor { border: 1px solid var(--scene-border); background: #fff; padding: 0 6px; font-size: 11px; line-height: 18px; cursor: pointer; }
+span.report-memory-actor { cursor: default; }
