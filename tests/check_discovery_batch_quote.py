@@ -31,7 +31,7 @@ with TemporaryDirectory() as directory:
         (output / 'provider-output.json').write_text('{"rle": []}')
 
     with patch.object(discovery, 'execute', provider):
-        discovery.run(SimpleNamespace(video=video, frames=[0, 1, 2], output=root / 'out', prompt='person'))
+        discovery.run(SimpleNamespace(video=video, frames=[0, 1, 2], output=root / 'out', prompt='person', provider='fal'))
     assert 'batch_pricing_quote' not in calls[0]
     assert calls[1]['batch_pricing_quote'] == calls[2]['batch_pricing_quote']
     assert calls[1]['batch_pricing_quote']['pricing'] == pricing

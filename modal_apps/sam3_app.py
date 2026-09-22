@@ -68,6 +68,8 @@ def _encode_coco_rle(mask) -> str:
     volumes={"/cache": volume},
     secrets=[modal.Secret.from_name("huggingface")],
     timeout=600,
+    retries=0,
+    max_containers=1,
 )
 class Sam3:
     @modal.enter()

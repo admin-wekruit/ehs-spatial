@@ -1,6 +1,6 @@
 """Run existing SAM3 image discovery on explicitly selected source video frames.
 
-Each call has its own immutable input/results directory and recorded cost. This
+Each call has its own immutable input/results directory and provider provenance. This
 produces independent observations, never an identity assignment or a new tracker.
 """
 import argparse
@@ -48,27 +48,30 @@ def run(args):
                 manifest = {'source_clip': str(args.video.resolve()), 'source_clip_sha256': video_sha,
                             'source_frame_index': index, 'frame_sha256': sha(image),
                             'timestamp_seconds': cap.get(cv2.CAP_PROP_POS_MSEC) / 1000,
-                            'width': width, 'height': height, 'prompt': args.prompt}
+                            'width': width, 'height': height, 'prompt': args.prompt,
+                            'provider': args.provider}
                 (folder / 'input-manifest.json').write_text(json.dumps(manifest, indent=2))
-                payload = {'mode': 'submit', 'endpoint': 'fal-ai/sam-3-1/image-rle',
-                         'billing_units': 1, 'max_fal_usd': .02,
-                         'input': {'image_url': 'data:image/png;base64,' + base64.b64encode(image.read_bytes()).decode(),
-                                   'prompt': args.prompt, 'return_multiple_masks': True,
-                                   'include_scores': True, 'include_boxes': True}}
-                if quote and time.time() - quote['fetched_at'] < 500:
-                    payload['batch_pricing_quote'] = quote
                 if service:
                     response = service.segment.remote(image.read_bytes(), [{'text': args.prompt}])[0]
                     (folder / 'provider-events.jsonl').write_text(json.dumps({'phase': 'self_hosted', 'data': {'app': sam3_app.app.name, 'model': sam3_app.MODEL_ID, 'gpu': 'L4'}}) + '\n')
                     (folder / 'provider-output.json').write_text(json.dumps({**response, 'provider': 'self-hosted ' + sam3_app.MODEL_ID}))
                 else:
+                    payload = {'mode': 'submit', 'endpoint': 'fal-ai/sam-3-1/image-rle',
+                             'billing_units': 1, 'max_fal_usd': .02,
+                             'input': {'image_url': 'data:image/png;base64,' + base64.b64encode(image.read_bytes()).decode(),
+                                       'prompt': args.prompt, 'return_multiple_masks': True,
+                                       'include_scores': True, 'include_boxes': True}}
+                    if quote and time.time() - quote['fetched_at'] < 500:
+                        payload['batch_pricing_quote'] = quote
                     execute(payload, folder, 'provider-events.jsonl')
-                if not service and 'batch_pricing_quote' not in payload:
-                    for line in (folder / 'provider-events.jsonl').read_text().splitlines():
-                        event = json.loads(line)
-                        if event['phase'] == 'pricing':
-                            quote = {'pricing': event['data'], 'fetched_at': time.time()}
+                    if 'batch_pricing_quote' not in payload:
+                        for line in (folder / 'provider-events.jsonl').read_text().splitlines():
+                            event = json.loads(line)
+                            if event['phase'] == 'pricing':
+                                quote = {'pricing': event['data'], 'fetched_at': time.time()}
                 data = json.loads((folder / 'provider-output.json').read_text())
+                if data.get('error'):
+                    raise RuntimeError(f"SAM3 discovery failed: {data['error']}")
                 instances = []
                 for ordinal, rle in enumerate(data['rle']):
                     mask = decode_coco_rle(rle, height=height, width=width).astype(bool)
@@ -95,5 +98,5 @@ if __name__ == '__main__':
     p.add_argument('--frames', type=int, nargs='+', required=True)
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--prompt', default='person')
-    p.add_argument('--provider', choices=['fal', 'self-hosted'], default='fal', help='self-hosted: modal_apps/sam3_app.py (facebook/sam3 on our own L4) instead of the fal endpoint')
+    p.add_argument('--provider', choices=['fal', 'self-hosted'], default='self-hosted', help='default: self-hosted facebook/sam3 on our Modal L4; fal is an explicit choice for reproducing older experiments, with no automatic fallback')
     run(p.parse_args())
