@@ -193,3 +193,7 @@
 .report-scene-comparison h3 { margin: 0; font-size: 12px; }
 .report-scene-comparison p { margin: 4px 0 0; color: #5c7261; font-size: 10px; line-height: 1.45; }
 .report-scene-comparison video { display: block; width: 100%; height: auto; background: #18211d; }
+.report-motion-summary { margin: 0 0 10px; padding: 8px 10px; border: 1px solid var(--scene-border); background: #f6f8f2; }
+.report-motion-summary h4 { margin: 0 0 4px; font-size: 12px; }
+.report-motion-summary p { margin: 0; font-size: 12px; line-height: 1.55; }
+.report-motion-summary small { display: block; margin-top: 4px; color: #5c7261; font-size: 10px; }

@@ -15,7 +15,9 @@ export function representationPass(entity:any,representation:any,frameId:string|
   // layers.loading asks which assets to hold, not what to draw: time and the switch never change the loaded set,
   // so playing the video or flipping the switch never reloads the scene.
   if(representation?.timeRange){
-    const on=!!entity&&(!layers.entityIds||layers.entityIds.includes(entity.id))&&(layers.loading||layers.part!=='static'&&Number.isFinite(layers.time)&&layers.time>=representation.timeRange[0]&&layers.time<representation.timeRange[1]);
+    // Bones and the surface they sit on are shown one at a time: a bone on the surface is hidden by it.
+    const skeleton=representation.sourceKind==='moving_object_skeleton';
+    const on=!!entity&&(!layers.entityIds||layers.entityIds.includes(entity.id))&&(layers.loading||layers.part!=='static'&&skeleton===!!layers.skeleton&&Number.isFinite(layers.time)&&layers.time>=representation.timeRange[0]&&layers.time<representation.timeRange[1]);
     return {available:on,visible:on,pick:on&&!layers.loading,selectable:on&&!layers.loading};
   }
   if(layers.part==='dynamic'&&!layers.loading)return {available:false,visible:false,pick:false,selectable:false};

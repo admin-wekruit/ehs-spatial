@@ -312,11 +312,13 @@ def build_document(args, put_asset, calibration, dataset):
     if args.dynamic_scene:
         from attach_entities_to_replay import light_model
         identity = {"coordinateFrameId": FRAME, "position": [0., 0., 0.], "quaternion": [0., 0., 0., 1.], "scale": [1., 1., 1.]}
+        named = {o["entityId"]: o.get("sourceLabel") for f in (json.loads(args.dynamic_analysis.read_text())["frames"] if args.dynamic_analysis else []) for o in f["objects"]}
         for frame in json.loads(args.dynamic_scene.read_text())["frames"]:
             for o in (x for x in frame["objects"] if x.get("surface")):
                 data, record = light_model(args.dynamic_scene.parent / o["surface"]["meshUrl"], triangles=3000)  # a person's visible side needs no more
                 shape = trimesh.load(io.BytesIO(data), file_type="glb", force="mesh", process=False)
-                entity = moving.setdefault(o["entityId"], {"id": ident("entity", "moving", o["entityId"]), "label": f"moving object {len(moving) + 1}", "motion": "dynamic",
+                kind = "person" if named.get(o["entityId"]) == "person" else "moving object"  # a text-prompted person track says so; a motion track only knows it moved
+                entity = moving.setdefault(o["entityId"], {"id": ident("entity", "moving", o["entityId"]), "label": f"{kind} {len(moving) + 1}", "motion": "dynamic",
                     "observationRefs": [], "associationState": "confirmed", "representations": [], "currentModelTransform": None, "measurements": {}, "groupId": None, "visible": True,
                     "sourceContext": False, "lineage": [{"operation": "offline_import", "sourceAssetId": source, "sourceRecordId": o["entityId"],
                                                          "method": "motion_masks.py seed -> sam3_motion_tracks.py (SAM 3.1 instance track, no text prompt) -> mono_room.py dynamic"}]})
@@ -324,6 +326,43 @@ def build_document(args, put_asset, calibration, dataset):
                     "assetId": include(data, "model/gltf-binary", {"kind": "geometry", "format": "glb", "sourceRecordId": f"{o['entityId']}:{frame['sourceFrame']}", "decimation": record}),
                     "transform": identity, "placementState": "confirmed", "primitive": None, "coverage": "visible_support_only", "sourceKind": "moving_object_surface",
                     "timeRange": [frame["timeSec"], frame["endTimeSec"]], "sourceFrame": frame["sourceFrame"], "bounds": {"min": shape.bounds[0].tolist(), "max": shape.bounds[1].tolist()}})
+        if args.skeleton_scene:  # cached 2D joints lifted onto the same surfaces (mono_room.py dynamic): bones as their own timed layer
+            owners = {f["sourceFrame"]: [o for o in f["objects"] if any(p is not None for p in o.get("keypoints3d") or [])] for f in json.loads(args.skeleton_scene.read_text())["frames"]}
+            lengths = [np.linalg.norm(np.subtract(o["keypoints3d"][i], o["keypoints3d"][j])) for f in owners.values() for o in f for i, j in o["bones"] if o["keypoints3d"][i] and o["keypoints3d"][j]]
+            radius = .06 * float(np.median(lengths)) if lengths else .01
+            for frame in json.loads(args.dynamic_scene.read_text())["frames"]:
+                for o in (x for x in frame["objects"] if x["entityId"] in moving):
+                    near = [c for c in owners.get(frame["sourceFrame"], []) if np.linalg.norm(np.subtract(c["centroid"], o["centroid"])) < .1]  # the same surface, lifted twice
+                    if not near:
+                        continue
+                    joints = near[0]["keypoints3d"]
+                    parts = [trimesh.creation.cylinder(radius, segment=[joints[i], joints[j]], sections=6) for i, j in near[0]["bones"] if joints[i] and joints[j]]
+                    parts += [trimesh.creation.icosphere(1, radius * 1.6).apply_translation(q) for q in joints if q]
+                    if not parts:
+                        continue
+                    bones = trimesh.util.concatenate(parts)
+                    bones.visual.vertex_colors = np.tile([255, 196, 64, 255], (len(bones.vertices), 1))
+                    data = bones.export(file_type="glb")
+                    moving[o["entityId"]]["representations"].append({"id": ident("representation", "skeleton", o["entityId"], frame["sourceFrame"]), "kind": "observed_surface",
+                        "coordinateFrameId": FRAME, "assetId": include(data, "model/gltf-binary", {"kind": "geometry", "format": "glb", "sourceRecordId": f"{o['entityId']}:{frame['sourceFrame']}:skeleton"}),
+                        "transform": identity, "placementState": "confirmed", "primitive": None, "coverage": "visible_support_only", "sourceKind": "moving_object_skeleton",
+                        "timeRange": [frame["timeSec"], frame["endTimeSec"]], "sourceFrame": frame["sourceFrame"], "bounds": {"min": bones.bounds[0].tolist(), "max": bones.bounds[1].tolist()}})
+            for entity in moving.values():  # joints come only from person tracks: a mover wearing a skeleton in most of its views is that person
+                reps = entity["representations"]
+                bones = sum(r["sourceKind"] == "moving_object_skeleton" for r in reps)
+                if bones >= .5 * (len(reps) - bones) and entity["label"].startswith("moving object"):
+                    entity["label"] = entity["label"].replace("moving object", "person")
+        from motion_facts import summarise
+        factor = 1. if uncalibrated else scale["metres_per_native_unit"]
+        statics = [(ident("entity", e["entityId"]), e["label"], np.array(e["centroidNative"]) * factor) for e in object_map["entities"] if e.get("centroidNative")]
+        tracks = {}
+        for frame in json.loads(args.dynamic_scene.read_text())["frames"]:
+            for o in frame["objects"]:
+                if o["entityId"] in moving and o.get("centroid"):
+                    tracks.setdefault(o["entityId"], []).append((frame["timeSec"], np.array(o["centroid"]) * factor))
+        for key, samples in tracks.items():  # what an agent reads to answer "how did this person move": path, speed, stops, objects passed
+            if len(samples) >= 2:
+                moving[key]["motionSummary"] = summarise(samples, up, origin * factor, statics, unit="原生单位" if uncalibrated else "米")
         document["entities"].extend(moving.values())
     if args.video and args.analysis:  # the source video as a report view: per-frame outlines carry this document's entity ids
         by_map_id = {f"obs-{e['entityId']}": ident("entity", e["entityId"]) for e in object_map["entities"]}
@@ -426,6 +465,7 @@ if __name__ == "__main__":
     parser.add_argument("--comparison-video", type=Path, help="render_static_dynamic_video.py output (with its .json): the static/dynamic split as a report view")
     parser.add_argument("--republish", type=Path, help="an earlier .platform/imports/video-import-*.json: publish this import as that report's next version instead of a new report")
     parser.add_argument("--dynamic-scene", type=Path, help="scene.json written by mono_room.py dynamic: moving objects as timed surfaces in the 3D views")
+    parser.add_argument("--skeleton-scene", type=Path, help="a replay scene.json whose moving objects carry keypoints3d/bones (same cameras): skeletons as a timed layer")
     parser.add_argument("--dynamic-analysis", type=Path, help="motion_tracks_to_analysis.py output of the same tracks: their masks become pickable outlines in the video")
     parser.add_argument("--title", default="Video workcell (imported, not accepted)")
     parser.add_argument("--output-dir", type=Path, default=Path(".platform/imports"))
