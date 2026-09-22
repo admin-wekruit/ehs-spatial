@@ -129,7 +129,7 @@ async function loadScene(sample,generation) {
   $('scene-status').textContent = '正在读取此视频的空间结果…';
   try {
     const sceneUrl = assetUrl(sample.scene.url,state.manifestUrl);
-    const [data,module] = await Promise.all([readJson(sceneUrl,state.controller.signal),import('./scene.js')]);
+    const [data,module] = await Promise.all([readJson(sceneUrl,state.controller.signal),import('./scene.js?v=2')]);
     if (generation !== state.generation) return;
     const scene = module.validateScene(data,sample,sceneUrl);
     state.scene=scene;state.sceneUrl=sceneUrl;
@@ -315,7 +315,7 @@ $('scrubber').addEventListener('input',(event)=>seek(Number(event.target.value))
 $('clear-selection').onclick = () => {state.selected = null; drawFrame(state.frame); drawObservations(); syncReplay();};
 $('scene-play').onclick=()=>$('play-toggle').click();
 $('scene-scrubber').addEventListener('input',event=>seek(Number(event.target.value)));
-$('scene-part').onclick=()=>{const next={all:'static',static:'dynamic',dynamic:'all'}[$('scene-part').dataset.part||'all'];$('scene-part').dataset.part=next;$('scene-part').textContent=PARTS[next];$('scene-part').setAttribute('aria-pressed',String(next!=='all'));state.replay?.setPart(next);};
+$('scene-part').onclick=()=>{if(state.replay&&!state.replay.setPart){showError('scene-error','三维模块是旧版本（浏览器缓存），请按 Cmd+Shift+R 刷新');return;}const next={all:'static',static:'dynamic',dynamic:'all'}[$('scene-part').dataset.part||'all'];$('scene-part').dataset.part=next;$('scene-part').textContent=PARTS[next];$('scene-part').setAttribute('aria-pressed',String(next!=='all'));state.replay?.setPart(next);};
 $('scene-skeleton').onclick=()=>{const enabled=$('scene-skeleton').getAttribute('aria-pressed')!=='true';$('scene-skeleton').setAttribute('aria-pressed',String(enabled));$('scene-skeleton').textContent=enabled?'返回人物表面':'骨架';state.replay?.setSkeleton(enabled);};
 $('scene-body').onclick=()=>{const enabled=$('scene-body').getAttribute('aria-pressed')!=='true';$('scene-body').setAttribute('aria-pressed',String(enabled));$('scene-body').textContent=enabled?'返回彩色观测表面':'人体网格估计';state.replay?.setBodyModels(enabled);};
 $('scene-source').onclick=()=>state.replay?.sourceView();
