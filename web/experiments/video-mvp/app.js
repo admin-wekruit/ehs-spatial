@@ -319,6 +319,9 @@ $('scene-part').onclick=()=>{const next={all:'static',static:'dynamic',dynamic:'
 $('scene-skeleton').onclick=()=>{const enabled=$('scene-skeleton').getAttribute('aria-pressed')!=='true';$('scene-skeleton').setAttribute('aria-pressed',String(enabled));$('scene-skeleton').textContent=enabled?'返回人物表面':'骨架';state.replay?.setSkeleton(enabled);};
 $('scene-body').onclick=()=>{const enabled=$('scene-body').getAttribute('aria-pressed')!=='true';$('scene-body').setAttribute('aria-pressed',String(enabled));$('scene-body').textContent=enabled?'返回彩色观测表面':'人体网格估计';state.replay?.setBodyModels(enabled);};
 $('scene-source').onclick=()=>state.replay?.sourceView();
+// ponytail: a replay mounted below the fold opens framed from outside instead of from the source camera (cause inside the native viewer not traced);
+// the first time the panel is actually on screen, go to the source camera once. Remove if the viewer keeps its initial camera offscreen.
+new IntersectionObserver((entries,observer)=>{if(entries[0].isIntersecting&&state.replay){state.replay.sourceView();observer.disconnect();}},{threshold:.5}).observe($('scene-panel'));
 $('scene-expand').onclick=()=>{const panel=$('scene-panel');if(document.fullscreenElement)document.exitFullscreen();else panel.requestFullscreen().catch(error=>showError('scene-error',error.message));};
 $('scene-fit').onclick = () => state.replay?.fit();
 $('scene-points').onclick = () => {const enabled=$('scene-points').getAttribute('aria-pressed')!=='true';$('scene-points').setAttribute('aria-pressed',String(enabled));state.replay?.setPointCloud(enabled);};
