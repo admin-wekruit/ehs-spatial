@@ -331,4 +331,4 @@ node web/experiments/video-mvp/scene-check.ts
 
 ## 新 session 可直接使用的指令
 
-> 接手 Panoptes Phase 2。先阅读 `/Users/adam/.codex/worktrees/panoptes-phase2-video/docs/phase2/HANDOFF.md` 和 `.planning/HANDOFF.json`，在 `codex/phase2-video` 继续。房间点云仍未达标；不要重复已记录的失败实验或只修展示。保留全部已有SAM/VLM/模型能力，在累计100美元授权内继续推进可靠的RGB场景几何，再接回动态对象、骨架和模型。先恢复现有预览核实实际状态，优先复用缓存与现有算法，不训练新模型，不占满本地磁盘。
+> 接手 Panoptes Phase 2：读 GitHub `admin-wekruit/ehs-spatial` 分支 `codex/phase2-video` 的 `docs/phase2/HANDOFF.md`（从最后几节“2026-09-21”往回读），在同一分支继续。本机：工作树 `/Users/adam/.codex/worktrees/panoptes-phase2-video`，产物 `research-notes/phase2/runs/`，报告 `http://127.0.0.1:8792`（库 `panoptes_reports_0921`）。现状：视频＋点云＋3D模型在同一报告页；动态掩码＝运动线索种子＋自部署 SAM 3.1 跟踪（不用文字提示）；SAM3/3.1 已可自部署，fal 可退出。下一步：①找有非人运动物体（叉车/推车/门）的视频验证动态掩码；②新场景的人物/词表分割改走自部署 SAM3；③融合前按距离校正 DA3 深度偏差（tray 类实体被刻除的根因）。规则：不训练、不重复已记录失败实验、每次付费实验新目录＋限时＋retries=0、累计预算≤100美元（当前上限82.81）、不经手任何密钥、不永久删除数据。
