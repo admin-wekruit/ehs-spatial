@@ -142,8 +142,8 @@ export function applyFrame(frame:any,dynamic:Map<string,any>,frameId:string,mark
   }
 }
 
-export function replayLayers(scene:any,pointCloud=!scene.meshUrl,objectView=false){
-  return {point_cloud:pointCloud&&!objectView,observed_surface:!pointCloud,entityIds:objectView?(scene.staticObjects||[]).map((object:any)=>object.entityId):undefined};
+export function replayLayers(scene:any,pointCloud=!scene.meshUrl,objectView=false,only?:string[]){
+  return {point_cloud:pointCloud&&!objectView,observed_surface:!pointCloud,entityIds:objectView?(scene.staticObjects||[]).map((object:any)=>object.entityId):only};
 }
 
 export async function mountReplay(container:HTMLElement,scene:any,base:string,options:any){
@@ -182,6 +182,10 @@ export async function mountReplay(container:HTMLElement,scene:any,base:string,op
   // A room without object overlays must frame the geometry, not just the camera path.
   if(!observed.length)observed.push(...boundsCorners({min,max}));
   const hasSurfaces=scene.frames.some((f:any)=>f.objects.some((o:any)=>o.surface));
+  // Static and dynamic are separate reconstructions of the same clip: the fused map (moving pixels left out) and each moving
+  // object's per-view surface. 'static' / 'dynamic' show one of them alone; camera markers stay with both.
+  let part:'all'|'static'|'dynamic'='all';
+  const partIds=()=>part==='all'?undefined:document.entities.map((e:any)=>e.id).filter((id:string)=>id.startsWith('camera:')||(part==='dynamic')===dynamic.has(id));
   let current:any=undefined,selected:string|null=null,disposed=false,objectView=false,fromSource=hasSurfaces,bodyModels=false,skeleton=false,pointCloud=!!scene.pointCloudUrl||!scene.meshUrl;
   const surfaceCache=new Map<string,Promise<ReturnType<typeof readGLB>>>();
   const loadSurface=(surface:any)=>{
@@ -232,8 +236,9 @@ export async function mountReplay(container:HTMLElement,scene:any,base:string,op
     setSkeleton(value:boolean){skeleton=value;rendered.clear();applyFrame(current,dynamic,scene.coordinate_frame,markerScale,selected);hideLinks();
       for(const[id,e]of dynamic)if(skeleton&&id.endsWith(':surface')||fromSource&&id.startsWith('camera:'))e.representations[0].material.baseColorFactor[3]=0;
       void viewer.setScene(document);displaySurfaces(current);announce();},
-    setPointCloud(value:boolean){pointCloud=value;viewer.setLayers(replayLayers(scene,pointCloud,objectView));},
-    setObjectView(value:boolean){objectView=value;viewer.setLayers(replayLayers(scene,pointCloud,objectView));fit();},
+    setPointCloud(value:boolean){pointCloud=value;viewer.setLayers(replayLayers(scene,pointCloud,objectView,partIds()));},
+    setObjectView(value:boolean){objectView=value;viewer.setLayers(replayLayers(scene,pointCloud,objectView,partIds()));fit();},
+    setPart(value:'all'|'static'|'dynamic'){part=value;viewer.setLayers(replayLayers(scene,pointCloud,objectView,partIds()));},
     async setObjectModel(id:string,value:boolean){
       const object=scene.staticObjects?.find((o:any)=>o.entityId===id);
       require(object?.generatedModel&&objectMeshes.has(id),'此对象没有通过检查的生成模型');

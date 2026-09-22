@@ -404,7 +404,8 @@ def fuse(droid_run, support, output, voxel, relative, base_scene=None, all_views
                      "point_id": "keyframe order, then row-major 160x120 raster of the 640x480 depth sampled [::4, ::4]"},
                      limitations=[("相机位姿与尺度来自采集设备（ARKit，米制）；不是从视频估计的。" if METRIC_CAMERAS else "单目原生尺度未标定；尺寸和距离不是米。"),
                                   ("深度来自预训练多视角模型，仅保留与≥2个其他视图一致的像素。" if METRIC_CAMERAS else "相机沿用DROID；深度来自另一预训练模型，仅保留与≥2个邻近关键帧一致的像素。"),
-                                  "跨视角一致不代表独立几何精度；完整房间尚未验收。", "没有人体或物体掩码；场景中的运动物体未被剔除。"])
+                                  "跨视角一致不代表独立几何精度；完整房间尚未验收。",
+                                  f"{len(masked_views)}个视图在融合前剔除了动态掩码像素（{Path(dynamic_masks).name}）；静态地图不含这些像素。" if dynamic_masks else "没有人体或物体掩码；场景中的运动物体未被剔除。"])
         (output / "scene.json").write_text(json.dumps(scene, allow_nan=False, separators=(",", ":")))
 
 

@@ -6,6 +6,7 @@ const svg = $('overlay');
 let fullscreenUnavailable=false;
 const state = {manifest:null, manifestUrl:'', sample:null, analysis:null, analysisUrl:'', frame:undefined, selected:null, generation:0, controller:null, observationLimit:80, dimensionalError:false, analysisError:null, replay:null,scene:null,sceneUrl:'',mediaTime:0,generatedModels:new Set()};
 const palette = ['#65e2be','#fac268','#8dcaff','#e9a8ec','#f39c89','#a8d779'];
+const PARTS = {all:'静态+动态', static:'只看静态', dynamic:'只看动态'};
 function color(id) { let n = 0; for (const c of id) n = (n * 31 + c.charCodeAt(0)) | 0; return palette[Math.abs(n) % palette.length]; }
 function displayId(object) { return object.displayName || (object.nativeTrackId === undefined ? object.entityId : `轨迹 ${object.nativeTrackId}`); }
 function node(tag, className, content) { const n = document.createElement(tag); if (className) n.className = className; if (content !== undefined) n.textContent = content; return n; }
@@ -165,7 +166,7 @@ async function loadScene(sample,generation) {
         }
       }
     }
-    $('scene-body').hidden=!scene.bodyKeyframes?.length;$('scene-skeleton').hidden=!scene.frames.some(f=>f.objects.some(o=>o.surface&&o.bones.length));$('scene-skeleton').setAttribute('aria-pressed','false');$('scene-skeleton').textContent='骨架';$('scene-fit').disabled = false;$('scene-source').disabled = false;
+    $('scene-part').hidden=!scene.frames.some(f=>f.objects.some(o=>o.surface));$('scene-part').dataset.part='all';$('scene-part').textContent=PARTS.all;$('scene-body').hidden=!scene.bodyKeyframes?.length;$('scene-skeleton').hidden=!scene.frames.some(f=>f.objects.some(o=>o.surface&&o.bones.length));$('scene-skeleton').setAttribute('aria-pressed','false');$('scene-skeleton').textContent='骨架';$('scene-fit').disabled = false;$('scene-source').disabled = false;
     $('scene-all').disabled = !(scene.pointCloudCount||scene.points.length);
     $('scene-points').disabled = !canTogglePoints;
     $('scene-points').setAttribute('aria-pressed',String(!!scene.pointCloudUrl||!scene.meshUrl&&!!scene.points.length));
@@ -314,6 +315,7 @@ $('scrubber').addEventListener('input',(event)=>seek(Number(event.target.value))
 $('clear-selection').onclick = () => {state.selected = null; drawFrame(state.frame); drawObservations(); syncReplay();};
 $('scene-play').onclick=()=>$('play-toggle').click();
 $('scene-scrubber').addEventListener('input',event=>seek(Number(event.target.value)));
+$('scene-part').onclick=()=>{const next={all:'static',static:'dynamic',dynamic:'all'}[$('scene-part').dataset.part||'all'];$('scene-part').dataset.part=next;$('scene-part').textContent=PARTS[next];$('scene-part').setAttribute('aria-pressed',String(next!=='all'));state.replay?.setPart(next);};
 $('scene-skeleton').onclick=()=>{const enabled=$('scene-skeleton').getAttribute('aria-pressed')!=='true';$('scene-skeleton').setAttribute('aria-pressed',String(enabled));$('scene-skeleton').textContent=enabled?'返回人物表面':'骨架';state.replay?.setSkeleton(enabled);};
 $('scene-body').onclick=()=>{const enabled=$('scene-body').getAttribute('aria-pressed')!=='true';$('scene-body').setAttribute('aria-pressed',String(enabled));$('scene-body').textContent=enabled?'返回彩色观测表面':'人体网格估计';state.replay?.setBodyModels(enabled);};
 $('scene-source').onclick=()=>state.replay?.sourceView();
