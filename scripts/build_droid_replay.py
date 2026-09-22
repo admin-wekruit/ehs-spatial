@@ -50,20 +50,20 @@ def depth_support(poses, disparity, intrinsics, dtype=np.float64, tolerance_frac
     """
     poses, disparity, intrinsics = (np.asarray(a, dtype=dtype) for a in (poses, disparity, intrinsics))
     count, height, width = disparity.shape
-    fx, fy, cx, cy = intrinsics[0]
     y, x = np.indices((height, width), dtype=dtype)
-    rays = np.stack([(x - cx) / fx, (y - cy) / fy, np.ones_like(x)], axis=-1)
     votes = np.zeros(disparity.shape, np.uint8)
     with np.errstate(divide='ignore', invalid='ignore'):
         depths = 1 / disparity
         for i in range(count):
+            fx, fy, cx, cy = intrinsics[i]
+            rays = np.stack([(x - cx) / fx, (y - cy) / fy, np.ones_like(x)], axis=-1)
             # neighbours=None is the pinned viewer rule; a list per keyframe lets revisits at other times vote
             for j in ([i + offset for offset in [-1, -2, -3, 3, 4, 5]] if neighbours is None else neighbours[i]):
                 if not 0 <= j < count:
                     continue
                 relative = np.linalg.inv(poses[j]) @ poses[i]
                 projected = rays @ relative[:3, :3].T + disparity[i, :, :, None] * relative[:3, 3]
-                uv = projected[:, :, :2] / projected[:, :, 2:] * [fx, fy] + [cx, cy]
+                uv = projected[:, :, :2] / projected[:, :, 2:] * intrinsics[j, :2] + intrinsics[j, 2:]
                 target_z = projected[:, :, 2] / disparity[i]
                 inside = (np.isfinite(uv).all(axis=-1) & (uv[:, :, 0] >= 0) & (uv[:, :, 0] < width - 1)
                           & (uv[:, :, 1] >= 0) & (uv[:, :, 1] < height - 1))
