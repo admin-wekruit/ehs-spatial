@@ -14,7 +14,7 @@ from pathlib import Path
 
 import numpy as np
 
-CUT, MOVE_LOW, MOVE_HIGH = .55, .6, 9.  # histogram correlation below this is a cut; image shift per second, in percent of width
+CUT, MOVE_LOW, MOVE_HIGH, GROW_LOW = .55, .6, 9., .06  # histogram correlation below this is a cut; image shift per second, in percent of width
 
 
 def samples(video, stride, width=320):
@@ -42,14 +42,28 @@ def samples(video, stride, width=320):
 
 
 def measure(rows, stride):
-    """Per gap: histogram correlation (cut if low) and camera shift in percent of width per second."""
+    """Per gap: histogram correlation (cut if low), camera shift, and how much the view expands.
+
+    Walking forward makes the image flow outward from the middle; standing and talking, or panning on the spot,
+    does not. The expansion is the flow's radial part in percent of width per second, so a talking-head shot with a
+    steady pan no longer looks like a walk through the space.
+    """
     import cv2
-    correlation, shift = [], []
+    correlation, shift, expansion = [], [], []
+    v, u = None, None
     for (_, a, ha, _), (_, b, hb, _) in zip(rows, rows[1:]):
         correlation.append(float(cv2.compareHist(ha.astype(np.float32), hb.astype(np.float32), cv2.HISTCMP_CORREL)))
         (dx, dy), _ = cv2.phaseCorrelate(np.float32(a), np.float32(b))
         shift.append(float(np.hypot(dx, dy)) / a.shape[1] * 100 / stride)
-    return np.array(correlation), np.array(shift)
+        flow = cv2.calcOpticalFlowFarneback(a, b, None, .5, 3, 21, 3, 5, 1.1, 0)
+        if v is None:
+            v, u = np.indices(a.shape, float)
+            u, v = u - a.shape[1] / 2, v - a.shape[0] / 2
+            radius = np.maximum(np.hypot(u, v), 1e-6)
+            u, v = u / radius, v / radius
+        radial = flow[..., 0] * u + flow[..., 1] * v  # positive where the image moves away from the centre
+        expansion.append(float(np.median(radial)) / a.shape[1] * 100 / stride)
+    return np.array(correlation), np.array(shift), np.array(expansion)
 
 
 def people(rows, every):
@@ -70,7 +84,7 @@ def people(rows, every):
     return found, True
 
 
-def windows(rows, correlation, shift, seen, stride, length):
+def windows(rows, correlation, shift, expansion, seen, stride, length):
     """Every window of `length` seconds with no cut, scored on steady motion, sharpness and people."""
     span = max(2, int(round(length / stride)))
     sharp = np.array([r[3] for r in rows])
@@ -82,12 +96,15 @@ def windows(rows, correlation, shift, seen, stride, length):
         move = float(np.median(shift[gaps]))
         if not MOVE_LOW <= move <= MOVE_HIGH:
             continue
+        grow = float(np.median(expansion[gaps]))
+        if grow < GROW_LOW:
+            continue
         inside = slice(start, start + span)
         crowd = float(np.mean(seen[inside] > 0))  # zero everywhere when this OpenCV build has no people detector
         out.append({"t0": round(rows[start][0], 1), "t1": round(rows[start + span - 1][0], 1), "shift_pct_per_s": round(move, 2),
                     "shift_spread": round(float(np.percentile(shift[gaps], 90) - np.percentile(shift[gaps], 10)), 2),
-                    "sharpness": round(float(np.median(sharp[inside])), 1), "people_share": round(crowd, 2),
-                    "score": round(crowd * 2 + min(float(np.median(sharp[inside])) / 200, 1) - abs(move - 3) / 10, 3)})
+                    "sharpness": round(float(np.median(sharp[inside])), 1), "people_share": round(crowd, 2), "expansion_pct_per_s": round(grow, 3),
+                    "score": round(crowd * 2 + min(float(np.median(sharp[inside])) / 200, 1) + min(grow / .4, 2) - abs(move - 3) / 10, 3)})
     return sorted(out, key=lambda w: -w["score"])
 
 
@@ -103,9 +120,9 @@ def pick(found, apart):
 def run(args):
     import cv2
     rows, fps = samples(args.video, args.stride)
-    correlation, shift = measure(rows, args.stride)
+    correlation, shift, expansion = measure(rows, args.stride)
     seen, detector = people(rows, max(1, int(round(args.people_every / args.stride))))
-    found = pick(windows(rows, correlation, shift, seen, args.stride, args.window), args.window)[:args.top]
+    found = pick(windows(rows, correlation, shift, expansion, seen, args.stride, args.window), args.window)[:args.top]
     args.output.mkdir(parents=True, exist_ok=True)
     cap = cv2.VideoCapture(str(args.video))
     name = args.video.stem[:40]
@@ -113,14 +130,16 @@ def run(args):
         cap.set(cv2.CAP_PROP_POS_FRAMES, int(round((w["t0"] + w["t1"]) / 2 * fps)))
         ok, bgr = cap.read()
         if ok:
-            cv2.putText(bgr, f"{w['t0']:.0f}-{w['t1']:.0f}s move {w['shift_pct_per_s']}%/s people {w['people_share']:.0%}", (16, 40), cv2.FONT_HERSHEY_SIMPLEX, 1., (0, 0, 0), 5)
-            cv2.putText(bgr, f"{w['t0']:.0f}-{w['t1']:.0f}s move {w['shift_pct_per_s']}%/s people {w['people_share']:.0%}", (16, 40), cv2.FONT_HERSHEY_SIMPLEX, 1., (255, 255, 255), 2)
+            note = f"{w['t0']:.0f}-{w['t1']:.0f}s move {w['shift_pct_per_s']}%/s forward {w['expansion_pct_per_s']}%/s"
+            cv2.putText(bgr, note, (16, 40), cv2.FONT_HERSHEY_SIMPLEX, 1., (0, 0, 0), 5)
+            cv2.putText(bgr, note, (16, 40), cv2.FONT_HERSHEY_SIMPLEX, 1., (255, 255, 255), 2)
             cv2.imwrite(str(args.output / f"{name}-{n:02d}-{int(w['t0'])}s.jpg"), cv2.resize(bgr, (960, round(960 * bgr.shape[0] / bgr.shape[1]))))
     cap.release()
     report = {"video": str(args.video), "duration_s": round(rows[-1][0], 1), "fps": fps, "stride_s": args.stride, "window_s": args.window,
               "samples": len(rows), "cuts": int((correlation < CUT).sum()), "median_shift_pct_per_s": round(float(np.median(shift)), 2),
+              "median_expansion_pct_per_s": round(float(np.median(expansion)), 3),
               "people_detector": detector,
-              "rule": f"no cut inside the window; median shift between {MOVE_LOW} and {MOVE_HIGH} percent of width per second; score = people share x2 + sharpness - distance from 3%/s",
+              "rule": f"no cut inside the window; median shift {MOVE_LOW}-{MOVE_HIGH} %/s; median expansion >= {GROW_LOW} %/s (walking into the scene, not panning on the spot); score = people share x2 + sharpness + expansion - distance from 3%/s",
               "windows": found}
     (args.output / f"{name}-segments.json").write_text(json.dumps(report, indent=1))
     print(json.dumps({k: report[k] for k in ("video", "duration_s", "cuts", "median_shift_pct_per_s")} | {"windows": found[:4]}, ensure_ascii=False))
@@ -132,15 +151,18 @@ def self_check():
     texture = rng.integers(0, 255, (400, 700), dtype=np.uint8)
     scene, elsewhere = rng.random(16).astype(np.float32), rng.random(16).astype(np.float32)  # two colour histograms with nothing in common
     walk = [(n * .5, np.roll(texture, n * 6, axis=1)[:, :320].copy(), scene, 300.) for n in range(20)]  # 6 px per .5 s = 3.75%/s at 320 px
-    correlation, shift = measure(walk, .5)
+    correlation, shift, expansion = measure(walk, .5)
     assert correlation.min() > .9 and 2 < np.median(shift) < 6, (correlation.min(), np.median(shift))
     still = [(n * .5, texture[:, :320].copy(), scene, 300.) for n in range(20)]
     assert np.median(measure(still, .5)[1]) < .1, "a tripod shows no shift"
-    assert windows(walk, correlation, shift, np.ones(len(walk)), .5, 4) and not windows(still, *measure(still, .5), np.ones(len(still)), .5, 4)
+    forward = np.full(len(walk) - 1, .3)  # a walk into the scene
+    assert windows(walk, correlation, shift, forward, np.ones(len(walk)), .5, 4), "a walk with expansion scores"
+    assert not windows(walk, correlation, shift, np.zeros(len(walk) - 1), np.ones(len(walk)), .5, 4), "the same pan with no expansion does not"
+    assert not windows(still, *measure(still, .5), np.ones(len(still)), .5, 4)
     other = rng.integers(0, 255, (400, 320), dtype=np.uint8)  # a different scene: its colour histogram is unlike the first
     cut = walk[:10] + [(r[0], other.copy(), elsewhere, 300.) for r in walk[10:]]
     assert all(w["t0"] >= 5. or w["t1"] <= 4.5 for w in windows(cut, *measure(cut, .5), np.ones(len(cut)), .5, 4)), "no window spans a cut"
-    print("segment scout check passed: a walk scores, a tripod does not, and no window crosses a cut")
+    print("segment scout check passed: a walk into the scene scores, a pan on the spot and a tripod do not, and no window crosses a cut")
 
 
 if __name__ == "__main__":
