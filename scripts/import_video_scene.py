@@ -308,12 +308,40 @@ def build_document(args, put_asset, calibration, dataset):
             "associationState": "confirmed" if len(refs) >= CONFIRMED else "association_pending", "representations": representations, "currentModelTransform": model_transform,
             "measurements": measurements, "groupId": None, "visible": True, "sourceContext": False,
             "lineage": [{"operation": "offline_import", "sourceAssetId": source, "sourceRecordId": entity["entityId"], "method": object_map["associator"]}]})
+    moving = {}  # motion track id -> report entity: the dynamic layer, one timed surface per sampled view
+    if args.dynamic_scene:
+        from attach_entities_to_replay import light_model
+        identity = {"coordinateFrameId": FRAME, "position": [0., 0., 0.], "quaternion": [0., 0., 0., 1.], "scale": [1., 1., 1.]}
+        for frame in json.loads(args.dynamic_scene.read_text())["frames"]:
+            for o in (x for x in frame["objects"] if x.get("surface")):
+                data, record = light_model(args.dynamic_scene.parent / o["surface"]["meshUrl"], triangles=3000)  # a person's visible side needs no more
+                shape = trimesh.load(io.BytesIO(data), file_type="glb", force="mesh", process=False)
+                entity = moving.setdefault(o["entityId"], {"id": ident("entity", "moving", o["entityId"]), "label": f"moving object {len(moving) + 1}", "motion": "dynamic",
+                    "observationRefs": [], "associationState": "confirmed", "representations": [], "currentModelTransform": None, "measurements": {}, "groupId": None, "visible": True,
+                    "sourceContext": False, "lineage": [{"operation": "offline_import", "sourceAssetId": source, "sourceRecordId": o["entityId"],
+                                                         "method": "motion_masks.py seed -> sam3_motion_tracks.py (SAM 3.1 instance track, no text prompt) -> mono_room.py dynamic"}]})
+                entity["representations"].append({"id": ident("representation", "moving", o["entityId"], frame["sourceFrame"]), "kind": "observed_surface", "coordinateFrameId": FRAME,
+                    "assetId": include(data, "model/gltf-binary", {"kind": "geometry", "format": "glb", "sourceRecordId": f"{o['entityId']}:{frame['sourceFrame']}", "decimation": record}),
+                    "transform": identity, "placementState": "confirmed", "primitive": None, "coverage": "visible_support_only", "sourceKind": "moving_object_surface",
+                    "timeRange": [frame["timeSec"], frame["endTimeSec"]], "sourceFrame": frame["sourceFrame"], "bounds": {"min": shape.bounds[0].tolist(), "max": shape.bounds[1].tolist()}})
+        document["entities"].extend(moving.values())
     if args.video and args.analysis:  # the source video as a report view: per-frame outlines carry this document's entity ids
         by_map_id = {f"obs-{e['entityId']}": ident("entity", e["entityId"]) for e in object_map["entities"]}
         analysis = json.loads(args.analysis.read_text())
+        outlines = {}  # moving objects' own masks, so a pick in the video selects the mover in 3D
+        for f in (json.loads(args.dynamic_analysis.read_text())["frames"] if args.dynamic_analysis else []):
+            for o in f["objects"]:
+                if o["entityId"] not in moving:
+                    continue
+                mask = cv2.imread(str(args.dynamic_analysis.parent / o["maskUrl"]), cv2.IMREAD_GRAYSCALE) > 0
+                contours = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
+                polygons = [cv2.approxPolyDP(c, 1.5, True)[:, 0].tolist() for c in contours if cv2.contourArea(c) > 150]
+                if polygons:
+                    outlines.setdefault(f["sourceFrame"], []).append({"entityId": moving[o["entityId"]]["id"], "label": moving[o["entityId"]]["label"], "polygons": polygons})
         frames = [{"timeSec": f["timeSec"], "endTimeSec": f["endTimeSec"], "sourceFrame": f["sourceFrame"], "objects": [
             {"entityId": by_map_id.get(o["entityId"]), "label": o.get("label") or o.get("displayName") or "", "polygons": [[[round(x, 1), round(y, 1)] for x, y in polygon] for polygon in o["polygons"]]}
-            for o in f["objects"] if o.get("polygons")]} for f in analysis["frames"]]
+            for o in f["objects"] if o.get("polygons") and not (outlines and by_map_id.get(o["entityId"]) is None)] + outlines.get(f["sourceFrame"], [])}  # with mover outlines, the old unlinked person outlines go
+            for f in analysis["frames"]]
         slim = json.dumps({"width": analysis["width"], "height": analysis["height"], "frames": frames, "method": analysis.get("method")}, separators=(",", ":")).encode()
         document["annotations"].append({"id": ident("annotation", "video-replay"), "kind": "video_replay", "sourceAssetId": source,
             "videoAssetId": include(args.video.read_bytes(), "video/mp4", {"kind": "source_video", "sourceRecordId": "source-video"}),
@@ -345,9 +373,13 @@ def run(args):
     repository, blobs = services(PlatformConfig.from_env())
     repository.migrate()
     repository.blobs = blobs
-    capability = "pcap_v1_" + secrets.token_urlsafe(32)
     request = lambda name: str(uuid5(NAMESPACE_URL, f"video-import:{name}:{args.object_map}:{args.depth_run}:{args.request_suffix}"))
-    created = repository.create_project(capability, {"requestId": request("create"), "title": args.title, "target": "scene"})
+    if args.republish:  # a new version of an existing report: the same workcell entry, earlier versions stay in its history
+        record = json.loads(args.republish.read_text())
+        capability, created = record["capability"], repository.get_project(record["projectId"])
+    else:
+        capability = "pcap_v1_" + secrets.token_urlsafe(32)
+        created = repository.create_project(capability, {"requestId": request("create"), "title": args.title, "target": "scene"})
     project = created["project"]["id"]
 
     def put_asset(data, media_type, metadata):
@@ -392,6 +424,9 @@ if __name__ == "__main__":
     parser.add_argument("--inferred-floor", type=Path, help="infer_room_floor.py output: becomes the floor entity's model in the model layer")
     parser.add_argument("--shell-glb", type=Path, help="photo-textured copy of the depth run's fused mesh to show as the room surface")
     parser.add_argument("--comparison-video", type=Path, help="render_static_dynamic_video.py output (with its .json): the static/dynamic split as a report view")
+    parser.add_argument("--republish", type=Path, help="an earlier .platform/imports/video-import-*.json: publish this import as that report's next version instead of a new report")
+    parser.add_argument("--dynamic-scene", type=Path, help="scene.json written by mono_room.py dynamic: moving objects as timed surfaces in the 3D views")
+    parser.add_argument("--dynamic-analysis", type=Path, help="motion_tracks_to_analysis.py output of the same tracks: their masks become pickable outlines in the video")
     parser.add_argument("--title", default="Video workcell (imported, not accepted)")
     parser.add_argument("--output-dir", type=Path, default=Path(".platform/imports"))
     parser.add_argument("--request-suffix", default="1", help="change to import the same inputs again as a new project")

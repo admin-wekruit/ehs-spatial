@@ -9,6 +9,10 @@ type Frame = { timeSec: number; endTimeSec: number; sourceFrame: number; objects
 type Analysis = { width: number; height: number; frames: Frame[] };
 type Replay = { videoAssetId: string; analysisAssetId: string };
 
+/** The report's one clock: the source video's time, read by the 3D views to show moving objects at that moment. */
+export const videoClock = { time: 0 };
+const announce = (time: number) => { videoClock.time = time; window.dispatchEvent(new CustomEvent("panoptes:video-time", { detail: time })); };
+
 export function videoReplay(document: SceneDocument): Replay | null {
   const found = (document.annotations || []).find((a) => a.kind === "video_replay") as Partial<Replay> | undefined;
   return found && typeof found.videoAssetId === "string" && typeof found.analysisAssetId === "string" ? found as Replay : null;
@@ -48,6 +52,7 @@ export function VideoView({ document, selectedId, onSelect }: {
     return () => cancelAnimationFrame(handle);
   }, [playing]);
   const frame = useMemo(() => analysis?.frames.length ? frameAt(analysis.frames, time) : undefined, [analysis, time]);
+  useEffect(() => { announce(time); }, [frame]);  // once per sampled frame, not per animation frame
   useEffect(() => {  // picked in 3D, CAD or the list: show the nearest moment the video sees it
     const element = video.current;
     if (!element || !analysis || !selectedId || frame?.objects.some((o) => o.entityId === selectedId)) return;

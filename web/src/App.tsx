@@ -80,6 +80,7 @@ import type {
   Vec3,
 } from "./types";
 import { mountSceneViewer } from "./viewer/native-viewer";
+import { videoClock } from "./VideoView";
 import { entityEvidenceStatus, isReferenceSurface } from "./scene-semantics";
 import "./styles.css";
 const PolicyPage = lazy(() => import("./PolicyPage"));
@@ -1164,6 +1165,12 @@ export function SpatialView({
     runtime.current?.setLayers(layers);
   }, [JSON.stringify(layers)]);
   useEffect(() => { capturedKey.current = null; refreshModelPreview(); }, [modelPreview?.requestKey, revision.id]);
+  useEffect(() => {  // moving objects follow the report video's time; outside a video report nothing listens for them
+    const follow = (event: Event) => runtime.current?.setLayers({ time: (event as CustomEvent<number>).detail });
+    runtime.current?.setLayers({ time: videoClock.time });
+    window.addEventListener("panoptes:video-time", follow);
+    return () => window.removeEventListener("panoptes:video-time", follow);
+  }, []);
   return (
     <div className="spatial-view">
       <div ref={host} className="native-viewer" />

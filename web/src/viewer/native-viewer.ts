@@ -10,6 +10,15 @@ export type ViewerOptions={resolveAsset:(id:string)=>Promise<string|{url:string}
 export type SceneViewer=ReturnType<typeof mountSceneViewer>;
 
 export function representationPass(entity:any,representation:any,frameId:string|null,layers:any) {
+  // A moving object's surface belongs to one moment: shown while the report's video time is inside it, in any layer,
+  // unless the static/dynamic switch says static only. Everything else is the static scene.
+  // layers.loading asks which assets to hold, not what to draw: time and the switch never change the loaded set,
+  // so playing the video or flipping the switch never reloads the scene.
+  if(representation?.timeRange){
+    const on=!!entity&&(!layers.entityIds||layers.entityIds.includes(entity.id))&&(layers.loading||layers.part!=='static'&&Number.isFinite(layers.time)&&layers.time>=representation.timeRange[0]&&layers.time<representation.timeRange[1]);
+    return {available:on,visible:on,pick:on&&!layers.loading,selectable:on&&!layers.loading};
+  }
+  if(layers.part==='dynamic'&&!layers.loading)return {available:false,visible:false,pick:false,selectable:false};
   const reference=!!entity&&layers.modelOnly&&isCurrentReferenceSurface(entity,representation,layers.observations);
   const available=!!entity&&(!layers.entityId||entity.id===layers.entityId)&&(!layers.entityIds||layers.entityIds.includes(entity.id))&&
     (representation.sourceKind!=='observed_reference_surface'||reference)&&
@@ -31,7 +40,7 @@ export function framePaint(paint:()=>void,request:(cb:()=>void)=>number,cancel:(
 }
 
 export function sceneRepresentationTasks(document:SceneDocument,frameId:string|null,layers:any){
-  const state={...layers,observations:document.observations};
+  const state={...layers,observations:document.observations,loading:true};
   return document.entities.flatMap(e=>(e.representations||[]).filter(r=>{
     const pass=representationPass(e,r,frameId,state);
     return (!['generated_mesh','primitive'].includes(r.kind)||r.id===e.activeModelRepresentationId)&&(pass.visible||pass.pick);

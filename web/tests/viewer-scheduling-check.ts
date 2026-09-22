@@ -31,3 +31,18 @@ assert.deepEqual(sceneRepresentationTasks(document,'f',{...model,entityIds:['obj
 assert.deepEqual(sceneRepresentationTasks(document,'f',{...evidence,entityIds:['object'],representationIds:['observed']}).map(({r})=>r.id),['observed']);
 assert.deepEqual(sceneRepresentationTasks(document,'f',{...model,entityIds:['object'],representationIds:['missing']}).map(({r})=>r.id),[]);
 console.log('PASS: isolated model, assembly and observed-surface loading scopes');
+
+// Moving objects: every timed surface stays loaded whatever the time or the static/dynamic switch (no reload while
+// the video plays); each is drawn only inside its own time range; 'dynamic' hides the static scene, 'static' the movers.
+import {representationPass} from '../src/viewer/native-viewer.ts';
+const timed=(id:string,t0:number,t1:number)=>({...rep(id,'observed_surface'),timeRange:[t0,t1]});
+const mover={id:'mover',motion:'dynamic',representations:[timed('at-0',0,.1),timed('at-1',.1,.2)]} as any;
+const motion={entities:[document.entities[0],mover],observations:document.observations} as unknown as SceneDocument;
+for(const extra of [{},{time:.15},{time:.15,part:'static'},{time:.15,part:'dynamic'}])
+  assert.deepEqual(sceneRepresentationTasks(motion,'f',{...model,...extra}).filter(({e})=>e.id==='mover').map(({r})=>r.id),['at-0','at-1'],'timed surfaces are loaded once, not per moment');
+const drawn=(extra:any)=>[...document.entities[0].representations!,...mover.representations].filter((r:any)=>representationPass(r.timeRange?mover:document.entities[0],r,'f',{...model,...extra}).visible).map((r:any)=>r.id);
+assert.deepEqual(drawn({time:.15}),['model','at-1'],'the static scene and the mover of this moment');
+assert.deepEqual(drawn({time:.15,part:'static'}),['model'],'static only');
+assert.deepEqual(drawn({time:.15,part:'dynamic'}),['at-1'],'dynamic only');
+assert.deepEqual(drawn({}),['model'],'no video time: no mover');
+console.log('moving-object time and static/dynamic checks passed');
