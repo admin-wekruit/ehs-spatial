@@ -107,8 +107,8 @@ class Sam3:
         scores = results.get("scores")
         if masks is None or len(masks) == 0:
             return [], []
-        masks = masks.cpu().numpy()
-        scores = [float(s) for s in scores.cpu().numpy()]
+        masks = masks.float().cpu().numpy()  # numpy has no bfloat16
+        scores = [float(s) for s in scores.float().cpu().numpy()]
         order = sorted(range(len(scores)), key=lambda i: -scores[i])[:12]
         return (
             [_encode_coco_rle(masks[i] > 0.5) for i in order],

@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 import sam3_video  # noqa: E402  the pinned SAM 3.1 source commit, weights revision, image and weight cache
 
 MIN_SEED, COVERED, MAX_OBJECTS, POINTS = .02, .5, 8, 3  # seed area as a share of the frame; a seed this much inside a track is known; tracker slots; clicks per seed
+MOVING_SHARE = .25  # a track is dynamic if, at the median sampled frame, at least this share of its pixels carries unexplained motion (a false seed returns the floor under it: 0)
 app = modal.App("panoptes-sam3-motion-tracks-once")
 image = sam3_video.video_image.add_local_python_source("sam3_video")
 
@@ -107,6 +108,21 @@ def track_remote(jpegs, seeds, text):
     return buffer.getvalue()
 
 
+def moving_share(masks, first, motion):
+    """Median over the motion run's sampled frames of the share of the track's pixels above that frame's motion floor; None without samples."""
+    shares = []
+    for frame, mask in masks.items():
+        path = motion / f"{first + frame:05d}-residual.npz"
+        if not path.exists() or mask.sum() < 500:
+            continue
+        data = np.load(path)
+        inside = data["residual"].astype(float)[mask]
+        inside = inside[np.isfinite(inside)]
+        if inside.size:
+            shares.append(float((inside > float(data["floor"])).mean()))
+    return float(np.median(shares)) if shares else None
+
+
 def seeds_of(moving, first, last):
     """Seed regions of the motion run inside [first, last): connected parts of each frame's moving mask, largest first, with clicks well inside them."""
     import cv2
@@ -142,30 +158,41 @@ def run(args):
     seeds = seeds_of(moving, first, last)
     assert seeds, "the motion run found nothing large enough to seed a track in these frames"
     frames = [M.prepare_image(cv2.imread(str(M.DATASET / manifest["frames"][i]["relative_path"])), M.CALIBRATION, 2)[0] for i in range(first, last)]
-    args.output.mkdir(parents=True, exist_ok=False)
+    args.output.mkdir(parents=True, exist_ok=True)  # an output holding tracks.npz is read again, not paid for again
     state = {"status": "gpu_running", "model": sam3_video.MODEL_ID, "revision": sam3_video.MODEL_REVISION, "source_commit": sam3_video.SOURCE_COMMIT, "frames": [first, last],
              "seed_candidates": len(seeds), "text": args.text, "gpu": "A100-40GB", "timeout_s": 900, "retries": 0, "motion_run": str(args.motion), "cameras": str(args.droid_run)}
     (args.output / f"tracks-{int(time.time())}.json").write_text(json.dumps(state, indent=1))
-    jpegs = [cv2.imencode(".jpg", f, [cv2.IMWRITE_JPEG_QUALITY, 95])[1].tobytes() for f in frames]
     started = time.time()
-    with app.run():
-        answer = track_remote.remote(jpegs, [(f, p, np.packbits(r).tobytes()) for f, p, r in seeds], args.text)
-    (args.output / "tracks.npz").write_bytes(answer)  # the provider's answer, before any local reading
+    if (args.output / "tracks.npz").exists():
+        answer = (args.output / "tracks.npz").read_bytes()
+    else:
+        jpegs = [cv2.imencode(".jpg", f, [cv2.IMWRITE_JPEG_QUALITY, 95])[1].tobytes() for f in frames]
+        with app.run():
+            answer = track_remote.remote(jpegs, [(f, p, np.packbits(r).tobytes()) for f, p, r in seeds], args.text)
+        (args.output / "tracks.npz").write_bytes(answer)  # the provider's answer, before any local reading
     found = np.load(io.BytesIO(answer))
     report = json.loads(str(found["report"]))
     state.update(status="complete", wall_seconds=time.time() - started, remote=report)
-    summary = {}
+    summary, objects = {}, {}
     for name, stage in report["stages"].items():
         if "shape" not in stage:
             continue
         h, w = stage["shape"]
-        union = {}
+        tracks = {}
         for key in found.files:
             if key.startswith(name + "/"):
-                _, frame, _ = key.split("/")
-                mask = np.unpackbits(found[key])[:h * w].reshape(h, w).astype(bool)
-                union[int(frame)] = union.get(int(frame), np.zeros((h, w), bool)) | mask
-        (args.output / name).mkdir()
+                _, frame, ident = key.split("/")
+                tracks.setdefault(int(ident), {})[int(frame)] = np.unpackbits(found[key])[:h * w].reshape(h, w).astype(bool)
+        objects[name] = [{"object": ident, "frames": len(masks), "moving_share_median": moving_share(masks, first, args.motion)} for ident, masks in sorted(tracks.items())]
+        for o in objects[name]:  # a tracker follows whatever it is clicked on; only a track that keeps moving is dynamic
+            o["kept"] = o["moving_share_median"] is None or o["moving_share_median"] >= MOVING_SHARE
+        union = {}
+        for o in objects[name]:
+            for frame, mask in (tracks[o["object"]].items() if o["kept"] else ()):
+                union[frame] = union.get(frame, np.zeros((h, w), bool)) | mask
+        (args.output / name).mkdir(exist_ok=True)
+        for old in (args.output / name).glob("*.png"):
+            old.unlink()
         for frame, mask in union.items():
             cv2.imwrite(str(args.output / name / f"{first + frame:05d}.png"), mask.astype(np.uint8) * 255)
         if args.reference:
@@ -174,9 +201,10 @@ def run(args):
             summary[name] = {"frames_measured": len(rows), "median_iou": float(np.median([(s & t).sum() / max((s | t).sum(), 1) for s, t in rows])),
                              "pixel_recall": sum((s & t).sum() for s, t in rows) / max(sum(t.sum() for _, t in rows), 1),
                              "pixel_precision": sum((s & t).sum() for s, t in rows) / max(sum(s.sum() for s, _ in rows), 1)}
-    state["against_reference"] = summary
+    state["against_reference"], state["objects"] = summary, objects
     (args.output / "tracks.json").write_text(json.dumps(state, indent=1))
-    print(json.dumps({"wall_s": round(state["wall_seconds"]), "stages": {k: {x: v[x] for x in v if x != "shape"} for k, v in report["stages"].items()}, "against_reference": summary}, indent=1))
+    print(json.dumps({"wall_s": round(state["wall_seconds"]), "stages": {k: {x: v[x] for x in v if x not in ("shape", "seeds_used")} for k, v in report["stages"].items()},
+                      "objects": objects, "against_reference": summary}, indent=1))
 
 
 def self_check():
@@ -188,7 +216,14 @@ def self_check():
     points = np.array(seeds[0][1]) * [640, 480]
     assert len(points) == POINTS and all(mask[int(y), int(x)] for x, y in points), "clicks lie inside the region"
     assert np.linalg.norm(points[0] - points[1]) > 12, "and apart from each other"
-    print("motion track check passed: seeds are large regions inside the clip, clicked well inside")
+    import tempfile
+    with tempfile.TemporaryDirectory() as folder:  # a track on the floor under a false seed carries no motion; a walking one does
+        residual = np.zeros((480, 640), np.float16); residual[100:400, 200:330] = 9.
+        np.savez_compressed(Path(folder) / "00510-residual.npz", residual=residual, floor=2.)
+        walker, floor = np.zeros((480, 640), bool), np.zeros((480, 640), bool)
+        walker[100:400, 200:330], floor[400:480, :] = True, True
+        assert moving_share({10: walker}, 500, Path(folder)) >= MOVING_SHARE > moving_share({10: floor}, 500, Path(folder)) and moving_share({11: walker}, 500, Path(folder)) is None
+    print("motion track check passed: seeds are large regions inside the clip, clicked well inside; a still track is not dynamic")
 
 
 if __name__ == "__main__":
