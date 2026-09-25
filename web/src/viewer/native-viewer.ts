@@ -159,13 +159,15 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
   // degrees, a linear scan of the report's cameras; tune per report if needed.
   let pathCameras:{doc:any;frameId:string|null;list:{eye:Vec;forward:Vec}[]}={doc:null,frameId:null,list:[]};
   function splatsActive(){return !!splat&&!splat.failed&&layers.splats===true&&!layers.studio&&splatSource?.coordinateFrameId===frameId;}
+  // A length in metres in native units, or a share of the scene radius when the report has no scale.
+  function nativeFor(metres:number,share:number){const perNative=Number(doc.coordinateFrames?.find((f:any)=>f.id===frameId)?.scale?.nativeToMeters);return perNative>0?metres/perNative:share*radius;}
   function walked(){
     if(pathCameras.doc!==doc||pathCameras.frameId!==frameId)pathCameras={doc,frameId,list:currentCameras(doc).filter((c:any)=>c.coordinateFrameId===frameId&&Array.isArray(c.cameraToWorld)).map((c:any)=>({eye:[0,1,2].map(k=>Number(c.cameraToWorld[k][3])),forward:[0,1,2].map(k=>Number(c.cameraToWorld[k][2]))}))};
     return pathCameras.list;
   }
   function nearPath(facing:boolean){
-    if(!camera)return false;const list=walked(),metres=Number(doc.coordinateFrames?.find((f:any)=>f.id===frameId)?.scale?.nativeToMeters);
-    return !list.length||nearCameras(list,camera.eye,facing?unit(add(camera.target,scale(camera.eye,-1))):null,metres>0?.4/metres:.03*radius);
+    if(!camera)return false;const list=walked();
+    return !list.length||nearCameras(list,camera.eye,facing?unit(add(camera.target,scale(camera.eye,-1))):null,nativeFor(.4,.03));
   }
   // From above, the ceiling would hide the room: cut away what was seen above it (ceilingCut), never a model, the selected
   // object, a preview or the studio view.
@@ -194,12 +196,13 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
     const background=layers.studio?[237/255,240/255,238/255]:[17/255,27/255,33/255];
     gl!.viewport(0,0,pw,ph);gl!.clearColor(pick||camera.exact?0:background[0],pick||camera.exact?0:background[1],pick||camera.exact?0:background[2],camera.exact&&!pick?0:1);gl!.depthMask(true);gl!.clear(gl!.COLOR_BUFFER_BIT|gl!.DEPTH_BUFFER_BIT);
     const {projection,view}=cameraMatrices(camera,cw/ch,radius),vp=matmul(projection,view);
-    // Photo-real splats go under everything (never over the source photo). Once some are on screen they stand in for the
-    // colour of the photo-coloured observed surfaces: the room's, and every object's but the selected one's (moving
-    // objects keep theirs). Those triangles still write depth, so what lies behind them stays hidden, and take picks.
-    const splatsOn=splatsActive()&&!(camera.exact&&options.showSourcePhoto!==false)&&nearPath(true);
-    if(splatsOn&&!pick&&!captureCanvas)splat!.draw(view,projection,pw,ph);
-    const splatsDrawn=splatsOn&&!pick&&!captureCanvas&&splat!.drawn>0,depthOnly=(g:GPU)=>splatsDrawn&&g.mesh.mode===4&&g.representation.kind==='observed_surface'&&!g.representation.timeRange&&(!!entity(g.entityId)?.sourceContext||!isSelected(g));
+    // Photo-real splats (never over the source photo) are laid over the photo-coloured observed surfaces: the room's, and
+    // every object's but the selected one's (moving objects keep theirs). Where the splats are thin those surfaces show
+    // through, so a view near the path has no holes; they write depth, so what lies behind them stays hidden, and take
+    // picks. Models, the selection and moving objects are drawn after the splats, on top.
+    const splatsOn=splatsActive()&&!(camera.exact&&options.showSourcePhoto!==false)&&nearPath(true)&&!pick&&!captureCanvas;
+    const under=(g:GPU)=>splatsOn&&g.mesh.mode===4&&g.representation.kind==='observed_surface'&&!g.representation.timeRange&&(!!entity(g.entityId)?.sourceContext||!isSelected(g));
+    let splatted=false;const splatsNow=()=>{if(splatsOn&&!splatted){splatted=true;splat!.draw(view,projection,pw,ph);gl!.useProgram(program);}};
     gl!.useProgram(program);gl!.uniformMatrix4fv(u.vp,false,vp);gl!.uniform1f(u.pointSize,layers.pointSize?layers.pointSize*dpr:2);gl!.uniform1f(u.pointScale,projection[5]*ph/2);const cut=captureCanvas||layers.studio?null:ceiling();gl!.uniform1f(u.pick,pick?1:0);gl!.uniform1f(u.opacity,camera.exact&&!pick?layers.opacity:1);gl!.uniform1f(u.lighting,layers.studio?2:layers.lighting?1:0);
     // A selected observed surface can share its exact depth with scene context.
     // Draw it last with equal-depth acceptance; nearer geometry still occludes it.
@@ -212,9 +215,9 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
     const blended=(g:GPU)=>materialFor(g).alphaMode==='BLEND';
     const depth=(g:GPU)=>dot(add(point(model(g),g.mesh.bounds.min.map((n,k)=>(n+g.mesh.bounds.max[k])/2)),scale(camera!.eye,-1)),unit(add(camera!.target,scale(camera!.eye,-1))));
     // ponytail: primitive-depth sorting covers separate sheets; intersecting translucent geometry needs per-triangle sorting or order-independent transparency.
-    const drawing=pick?gpu.slice().sort((a,b)=>pickRank(a)-pickRank(b)||(pickRank(a)===2?b.mesh.indices.length-a.mesh.indices.length:0)||a.entityId.localeCompare(b.entityId)||a.representation.id.localeCompare(b.representation.id)):gpu.filter(depthOnly).concat(gpu.filter(g=>!depthOnly(g)&&!blended(g)&&!isSelected(g)),gpu.filter(g=>!depthOnly(g)&&!blended(g)&&isSelected(g)),gpu.filter(g=>!depthOnly(g)&&blended(g)).sort((a,b)=>depth(b)-depth(a)||Number(isSelected(a))-Number(isSelected(b))||a.entityId.localeCompare(b.entityId)));
-    for(const g of drawing){const pass=representationPass(entity(g.entityId),g.representation,frameId,layers),selected=pass.selectable&&isSelected(g);if(!(pick?pass.pick:pass.visible))continue;const material=materialFor(g),blend=material.alphaMode==='BLEND',depthPass=depthOnly(g);gl!.colorMask(!depthPass,!depthPass,!depthPass,!depthPass);if(depthPass){gl!.enable(gl!.POLYGON_OFFSET_FILL);gl!.polygonOffset(1,1);}else gl!.disable(gl!.POLYGON_OFFSET_FILL);gl!.depthMask(pick||!blend);if(!pick&&(blend||camera.exact)){gl!.enable(gl!.BLEND);gl!.blendFuncSeparate(gl!.SRC_ALPHA,gl!.ONE_MINUS_SRC_ALPHA,gl!.ONE,gl!.ONE_MINUS_SRC_ALPHA);}else gl!.disable(gl!.BLEND);gl!.depthFunc(pick||selected?gl!.LEQUAL:gl!.LESS);const id=pass.selectable?doc.entities.findIndex((e:any)=>e.id===g.entityId)+1:0;gl!.bindBuffer(gl!.ARRAY_BUFFER,g.vertex);gl!.bindBuffer(gl!.ELEMENT_ARRAY_BUFFER,g.index);attrs.forEach((a,k)=>gl!.vertexAttribPointer(a,k===4?1:k===3?2:3,gl!.FLOAT,false,48,k===4?44:k*12));gl!.activeTexture(gl!.TEXTURE0);gl!.bindTexture(gl!.TEXTURE_2D,g.texture);gl!.uniformMatrix4fv(u.model,false,model(g));gl!.uniform1f(u.pointWorld,g.mesh.mode===0?pointWorld(g):0);gl!.uniform4fv(u.ceiling,cut&&(g.representation.kind==='observed_surface'||g.representation.kind==='point_cloud')&&!isSelected(g)?cut:[0,0,0,0]);gl!.uniform1f(u.lighting,layers.studio?2:layers.lighting||g.representation.material?.lighting?1:0);gl!.uniform1f(u.selected,selected?1:0);gl!.uniform3f(u.pickColor,(id&255)/255,((id>>8)&255)/255,((id>>16)&255)/255);gl!.uniform4fv(u.baseColorFactor,material.baseColorFactor||[1,1,1,1]);gl!.uniform1f(u.alphaMode,blend?2:material.alphaMode==='MASK'?1:0);gl!.uniform1f(u.alphaCutoff,material.alphaCutoff??.5);const mat=material.color;gl!.uniform3fv(u.tint,Array.isArray(mat)&&mat.length>=3?mat.slice(0,3):[1,1,1]);gl!.drawElements(g.mesh.mode===0?gl!.POINTS:gl!.TRIANGLES,g.mesh.indices.length,gl!.UNSIGNED_INT,0);}
-    gl!.depthMask(true);gl!.colorMask(true,true,true,true);gl!.disable(gl!.POLYGON_OFFSET_FILL);
+    const drawing=pick?gpu.slice().sort((a,b)=>pickRank(a)-pickRank(b)||(pickRank(a)===2?b.mesh.indices.length-a.mesh.indices.length:0)||a.entityId.localeCompare(b.entityId)||a.representation.id.localeCompare(b.representation.id)):gpu.filter(under).concat(gpu.filter(g=>!under(g)&&!blended(g)&&!isSelected(g)),gpu.filter(g=>!under(g)&&!blended(g)&&isSelected(g)),gpu.filter(g=>!under(g)&&blended(g)).sort((a,b)=>depth(b)-depth(a)||Number(isSelected(a))-Number(isSelected(b))||a.entityId.localeCompare(b.entityId)));
+    for(const g of drawing){const beneath=under(g);if(!beneath)splatsNow();const pass=representationPass(entity(g.entityId),g.representation,frameId,layers),selected=pass.selectable&&isSelected(g);if(!(pick?pass.pick:pass.visible))continue;const material=materialFor(g),blend=material.alphaMode==='BLEND';if(beneath){gl!.enable(gl!.POLYGON_OFFSET_FILL);gl!.polygonOffset(1,1);}else gl!.disable(gl!.POLYGON_OFFSET_FILL);gl!.depthMask(pick||!blend);if(!pick&&(blend||camera.exact)){gl!.enable(gl!.BLEND);gl!.blendFuncSeparate(gl!.SRC_ALPHA,gl!.ONE_MINUS_SRC_ALPHA,gl!.ONE,gl!.ONE_MINUS_SRC_ALPHA);}else gl!.disable(gl!.BLEND);gl!.depthFunc(pick||selected?gl!.LEQUAL:gl!.LESS);const id=pass.selectable?doc.entities.findIndex((e:any)=>e.id===g.entityId)+1:0;gl!.bindBuffer(gl!.ARRAY_BUFFER,g.vertex);gl!.bindBuffer(gl!.ELEMENT_ARRAY_BUFFER,g.index);attrs.forEach((a,k)=>gl!.vertexAttribPointer(a,k===4?1:k===3?2:3,gl!.FLOAT,false,48,k===4?44:k*12));gl!.activeTexture(gl!.TEXTURE0);gl!.bindTexture(gl!.TEXTURE_2D,g.texture);gl!.uniformMatrix4fv(u.model,false,model(g));gl!.uniform1f(u.pointWorld,g.mesh.mode===0?pointWorld(g):0);gl!.uniform4fv(u.ceiling,cut&&(g.representation.kind==='observed_surface'||g.representation.kind==='point_cloud')&&!isSelected(g)?cut:[0,0,0,0]);gl!.uniform1f(u.lighting,layers.studio?2:layers.lighting||g.representation.material?.lighting?1:0);gl!.uniform1f(u.selected,selected?1:0);gl!.uniform3f(u.pickColor,(id&255)/255,((id>>8)&255)/255,((id>>16)&255)/255);gl!.uniform4fv(u.baseColorFactor,material.baseColorFactor||[1,1,1,1]);gl!.uniform1f(u.alphaMode,blend?2:material.alphaMode==='MASK'?1:0);gl!.uniform1f(u.alphaCutoff,material.alphaCutoff??.5);const mat=material.color;gl!.uniform3fv(u.tint,Array.isArray(mat)&&mat.length>=3?mat.slice(0,3):[1,1,1]);gl!.drawElements(g.mesh.mode===0?gl!.POINTS:gl!.TRIANGLES,g.mesh.indices.length,gl!.UNSIGNED_INT,0);}
+    splatsNow();gl!.depthMask(true);gl!.disable(gl!.POLYGON_OFFSET_FILL);
     if(pick)return;const overlay=captureCanvas?.getContext('2d');if(overlay&&captureCanvas){captureCanvas.width=canvas.width;captureCanvas.height=canvas.height;overlay.drawImage(canvas,0,0);overlay.scale(canvas.width/w,canvas.height/h);}svg.setAttribute('viewBox',`0 0 ${w} ${h}`);svg.replaceChildren();const project=(p:Vec)=>{const q=projected(vp,p,cw,ch);return q?add(q,[(w-cw)/2,(h-ch)/2]):null;};
     const line=(a:Vec|null,b:Vec|null,color:string,width=1.5)=>{if(!a||!b)return null;const el=document.createElementNS(svg.namespaceURI,'line');for(const[k,v]of Object.entries({x1:a[0],y1:a[1],x2:b[0],y2:b[1],stroke:color,'stroke-width':width}))el.setAttribute(k,String(v));svg.append(el);if(overlay){overlay.beginPath();overlay.moveTo(a[0],a[1]);overlay.lineTo(b[0],b[1]);overlay.strokeStyle='#ffffff';overlay.lineWidth=width+2;overlay.stroke();overlay.strokeStyle=color;overlay.lineWidth=width;overlay.stroke();}return el;};
     const measurement=layers.measurement;
@@ -232,7 +235,8 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
     // Where the camera walked, start green, end red, and where it is at the report's video time.
     if(!captureCanvas&&!layers.studio&&layers.cameraPath!==false){
       if(pathCache.doc!==doc||pathCache.frameId!==frameId)pathCache={doc,frameId,path:cameraPath(doc,frameId)};
-      const path=pathCache.path,screen=path.map(p=>project(p.position as Vec));
+      // Path points next to the eye (standing on the path) would sweep across the whole view: left out.
+      const gap=nativeFor(.6,.05),path=pathCache.path,screen=path.map(p=>Math.hypot(...add(p.position as Vec,scale(camera!.eye,-1)))<gap?null:project(p.position as Vec));
       const marker=(p:Vec|null,fill:string,r:number)=>{if(!p)return;const c=document.createElementNS(svg.namespaceURI,'circle');for(const[k,v]of Object.entries({cx:p[0],cy:p[1],r,fill,stroke:'#fff','stroke-width':2}))c.setAttribute(k,String(v));svg.append(c);};
       if(path.length>1){
         for(let i=1;i<screen.length;i++)line(screen[i-1],screen[i],'#ffb020',2.5);

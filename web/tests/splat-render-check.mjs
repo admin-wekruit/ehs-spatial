@@ -103,21 +103,21 @@ try {
     const s=on.samples,label=`DPR ${dpr}`;
     assert.equal(on.width,640*dpr,`${label}: canvas has device pixels`);
     assert.equal(load.stats.drawn,6001);
-    const lit=rgba=>rgba[0]>17+40&&rgba[1]>27+40&&rgba[2]>33+40;
-    assert.ok(lit(s.major.rgba)&&lit(s.majorOther.rgba)&&[s.minor,s.minorOther].every(p=>p.rgba.join()==='17,27,33,255'),
+    const wall=off.samples.wall.rgba,lit=rgba=>rgba.slice(0,3).every((x,k)=>x>wall[k]+30),bare=rgba=>grey(rgba)&&Math.abs(rgba[0]-wall[0])<=8;
+    assert.ok(lit(s.major.rgba)&&lit(s.majorOther.rgba)&&[s.minor,s.minorOther].every(p=>bare(p.rgba)),
       `${label}: the tilted splat's ellipse lies along the predicted major axis (sigma ${axes.sigmaMajor.toFixed(1)} x ${axes.sigmaMinor.toFixed(1)} px) `+JSON.stringify([s.major,s.majorOther,s.minor,s.minorOther].map(p=>p.rgba)));
     assert.ok(dominant(s.red.rgba,0)&&dominant(s.green.rgba,1)&&dominant(s.blue.rgba,2),`${label}: blobs where the camera projects them `+JSON.stringify(s));
     assert.deepEqual(s.crate.rgba,off.samples.crate.rgba,`${label}: a mesh behind a splat blob still draws on top of it`);
     assert.ok(grey(s.crate.rgba),`${label}: the crate, not the red blob, at the crate `+s.crate.rgba);
-    assert.deepEqual(s.wall.rgba,[17,27,33,255],`${label}: the room surface is hidden under splats (background shows)`);
-    assert.deepEqual(s.hidden.rgba,[17,27,33,255],`${label}: a model behind the room surface stays hidden under splats (the room still writes depth) `+s.hidden.rgba);
+    assert.ok(bare(s.wall.rgba),`${label}: where no splat covers it the room surface shows under the splats (no hole) `+s.wall.rgba);
+    assert.ok(bare(s.hidden.rgba),`${label}: a model behind the room surface stays hidden under splats (the room still writes depth) `+s.hidden.rgba);
     assert.ok(s.poster.rgba[0]>180&&s.poster.rgba[1]>180&&s.poster.rgba[2]<80,`${label}: a model lying on the room surface still shows `+s.poster.rgba);
     assert.ok(grey(off.samples.hidden.rgba),`${label}: splats off, the wall hides it as before `+off.samples.hidden.rgba);
     assert.ok(grey(off.samples.wall.rgba)&&grey(off.samples.green.rgba),`${label}: splats off shows the room surface again`);
     assert.equal(off.hash,none.hash,`${label}: switched off, the scene is pixel-identical to a report without splats`);
     assert.deepEqual(clicksOn,{crate:'crate',wallInCrateBounds:'crate',green:null},`${label}: picking with splats shown `+JSON.stringify(clicksOn));
     assert.deepEqual(clicksOff,clicksOn,`${label}: picking is the same with the layer off`);
-    console.log(`PASS ${label}: blobs at projected points, mesh on top, room colour hidden but its depth and picks kept (model behind the wall hidden, poster on it shown), off = no-splat report, tilted splat oriented as predicted (loaded 6001 in ${Math.round(load.ms)} ms)`);
+    console.log(`PASS ${label}: blobs at projected points, mesh on top, room surface under the splats (no holes) with its depth and picks (model behind the wall hidden, poster on it shown), off = no-splat report, tilted splat oriented as predicted (loaded 6001 in ${Math.round(load.ms)} ms)`);
     // Follow -> drag -> follow: a drag must not rewrite the camera the viewer was given, and giving it again returns there.
     const held=await check(page,()=>check.holdCamera()),box=await page.locator('canvas').boundingBox();
     await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();
@@ -128,13 +128,14 @@ try {
     assert.notEqual(back.dragged,held,`${label}: the drag moved the view`);
     assert.equal(back.hash,held,`${label}: the same camera again returns to the same image (follow -> drag -> follow)`);
     console.log(`PASS ${label}: follow -> drag -> follow returns to the given camera (the caller's object is never rewritten)`);
-    if(dpr===1){  // a stalled download keeps the room surface until splats are drawn; a stale GL error elsewhere is not ours
+    if(dpr===1){  // a stalled download keeps the room surface, and so do drawn splats that miss it; a stale GL error elsewhere is not ours
       await check(page,()=>check.staleError());await check(page,([url,n])=>check.startSplats(url,n,'stall'),[origin+'/stall.splat',6001]);await page.waitForTimeout(600);
       const stalled=await check(page,p=>check.snapshot(p),{wall:points.wall}),stats=await check(page,()=>check.stats());
       assert.equal(stats.drawn,0,'the download is stalled: nothing drawn yet');
       assert.ok(grey(stalled.samples.wall.rgba),'the room surface stays until splats are drawn '+stalled.samples.wall.rgba);
       await check(page,url=>check.loadSplats(url,6001,'stall'),origin+'/stall.splat');
-      assert.deepEqual((await check(page,p=>check.snapshot(p),{wall:points.wall})).samples.wall.rgba,[17,27,33,255],'...and gives way once they are');
+      const loaded=(await check(page,p=>check.snapshot(p),{wall:points.wall})).samples.wall.rgba;
+      assert.ok(grey(loaded),'...and stays under them where no splat covers it '+loaded);
       console.log('PASS: a stalled download keeps the room surface until splats are drawn; a stale GL error from other code does not fail the load');
     }
     await check(page,f=>check.setCamera(f),exactFrame);
@@ -162,11 +163,11 @@ try {
       assert.ok(counts.failed,'the viewer reports the failed layer');assert.deepEqual(counts.after,counts.before,'a failed layer frees its GL objects '+JSON.stringify(counts));
       await leak.context().close();
       console.log('PASS: no splats over the source photo; a layer that cannot start frees its GL objects and reports splat_load_failed');
-      // Splats drawn: an unselected object's photo-coloured observed surface gives its colour to the splats but still takes
-      // the click; the selected one, moving objects' surfaces and models draw as before; splats off, all as before.
+      // Splats drawn: an unselected object's photo-coloured observed surface lies under the splats (showing where they are
+      // thin) and still takes the click; the selected one, moving objects' surfaces and models draw on top; splats off, as before.
       const objs=await open(browser,1,'scene=objects');await check(objs,()=>check.mount());await check(objs,url=>check.loadSplats(url,6001),origin+'/blobs.splat');
       const P={mug:[2.1,1.6,.4],walker:[-2.1,1.6,.4],crate:[-1,1.8,1]},seen=(await check(objs,p=>check.snapshot(p),P)).samples;
-      assert.deepEqual(seen.mug.rgba,[17,27,33,255],'splats drawn: an unselected object surface shows the splats, not its own colour '+seen.mug.rgba);
+      assert.ok(seen.mug.rgba[0]>180&&seen.mug.rgba[1]>80&&seen.mug.rgba[2]<60,'splats drawn: an unselected object surface shows under them where none covers it '+seen.mug.rgba);
       assert.ok(seen.walker.rgba[1]>150&&seen.walker.rgba[2]>150&&seen.walker.rgba[0]<60,'a moving object surface stays visible '+seen.walker.rgba);
       assert.ok(grey(seen.crate.rgba)&&seen.crate.rgba[0]>150,'models stay visible '+seen.crate.rgba);
       const before=(await check(objs,()=>check.lastSelection())).count;await objs.mouse.click(seen.mug.clientX,seen.mug.clientY);
@@ -178,7 +179,7 @@ try {
       const plain=(await check(objs,p=>check.snapshot(p),{mug:P.mug})).samples.mug.rgba;
       assert.ok(plain[0]>200&&plain[1]>80&&plain[1]<150&&plain[2]<60,'splats off: the surface is drawn as before '+plain);
       await objs.context().close();
-      console.log('PASS: splats drawn: unselected object surfaces give their colour to the splats (still pickable); selected, moving and model surfaces as before');
+      console.log('PASS: splats drawn: unselected object surfaces lie under the splats (still pickable); selected, moving and model surfaces on top');
     }
     // World-sized points (pointSizeNative): no gaps up close, round, 1-16 device px; without it today's fixed 2 px.
     const pts=await open(browser,dpr,'scene=points');
