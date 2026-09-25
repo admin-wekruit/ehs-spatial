@@ -2,6 +2,8 @@
 
 prepare writes a reviewable input plan. execute requires that plan and dispatches
 one GPU attempt; collect only retrieves saved results, never resubmits inference.
+prepare --video V --run-id R decodes the video on Modal (CPU) instead: the frames and
+the predictions stay on the volume, and execute neither uploads frames nor collects.
 """
 import argparse
 import hashlib
@@ -88,16 +90,9 @@ def validate_prediction(depth, confidence, points, k, c2w):
     return report
 
 
-def prepare(manifest_path, sample_id, output, stride):
+def decode_frames(video, frames, stride):
+    """PNG of every stride-th video frame into frames/; returns the plan records and the video's frame count."""
     import cv2
-    manifest = json.loads(manifest_path.read_text())
-    sample = next(s for s in manifest['samples'] if s['id'] == sample_id)
-    video = (manifest_path.parent/sample['video']['url']).resolve()
-    if digest(video) != sample['video']['sha256']: raise ValueError('Source video changed')
-    if type(stride) is not int or stride < 1: raise ValueError('Positive integer stride required')
-    require_disk_space(output)
-    output.mkdir(parents=True, exist_ok=False)
-    frames = output/'rgb'; frames.mkdir()
     cap = cv2.VideoCapture(str(video)); records=[]; index=0
     try:
         while True:
@@ -105,7 +100,7 @@ def prepare(manifest_path, sample_id, output, stride):
             if not ok: break
             if index % stride == 0:
                 if len(records) >= 768: raise ValueError('Bounded experiment supports at most 768 input frames, below the 1024-frame positional limit')
-                require_disk_space(output, bgr.nbytes + 131072)
+                require_disk_space(frames, bgr.nbytes + 131072)
                 path=frames/f'{index:06d}.png'; assert cv2.imwrite(str(path), bgr)
                 records.append({'sourceFrame':index, 'timeSec':cap.get(cv2.CAP_PROP_POS_MSEC)/1000,
                                 'path':path.name, 'sha256':digest(path)})
@@ -114,12 +109,51 @@ def prepare(manifest_path, sample_id, output, stride):
     validate_indices([r['sourceFrame'] for r in records],index)
     if len(records)<8 or any(a['timeSec']>=b['timeSec'] for a,b in zip(records,records[1:])):
         raise ValueError('Need at least 8 source frames with increasing media timestamps')
-    require_disk_space(output, sum((frames / r['path']).stat().st_size + 4096 for r in records))
-    with tarfile.open(output/'rgb.tar','w') as archive:
-        for record in records: archive.add(frames/record['path'],arcname=record['path'])
+    return records, index
+
+
+def valid_run_id(run_id):
+    if not run_id or not all(c.isalnum() or c in '-_' for c in run_id):raise ValueError('Invalid run ID')
+    return run_id
+
+
+@app.function(image=image, cpu=(4,4), memory=(8192,8192), timeout=900, retries=0, volumes={'/artifact':volume})
+def decode_remote(run_id, video_sha, stride):
+    """CPU only: the run's uploaded source.mp4 -> rgb.tar beside it, the same records prepare writes locally."""
+    volume.reload(); root=Path('/artifact')/valid_run_id(run_id)
+    if digest(root/'source.mp4')!=video_sha:raise ValueError('Uploaded video differs from the local source')
+    frames=Path('/tmp/rgb');frames.mkdir()
+    records,count=decode_frames(root/'source.mp4',frames,stride)
+    with tarfile.open(root/'rgb.tar','w') as archive:
+        for record in records:archive.add(frames/record['path'],arcname=record['path'])
+    volume.commit()
+    return records,count,digest(root/'rgb.tar')
+
+
+def prepare(manifest_path, sample_id, output, stride, video=None, run_id=None):
+    if video is None:
+        manifest = json.loads(manifest_path.read_text())
+        sample = next(s for s in manifest['samples'] if s['id'] == sample_id)
+        video = (manifest_path.parent/sample['video']['url']).resolve()
+        if digest(video) != sample['video']['sha256']: raise ValueError('Source video changed')
+    video = Path(video).resolve()
+    if type(stride) is not int or stride < 1: raise ValueError('Positive integer stride required')
+    require_disk_space(output)
+    output.mkdir(parents=True, exist_ok=False)
+    if run_id is None:
+        frames = output/'rgb'; frames.mkdir()
+        records, index = decode_frames(video, frames, stride)
+        require_disk_space(output, sum((frames / r['path']).stat().st_size + 4096 for r in records))
+        with tarfile.open(output/'rgb.tar','w') as archive:
+            for record in records: archive.add(frames/record['path'],arcname=record['path'])
+        archive_sha = digest(output/'rgb.tar')
+    else:  # frames of a long full-resolution video would be GBs locally; decode them next to the GPU instead
+        with volume.batch_upload() as batch: batch.put_file(video, f'{valid_run_id(run_id)}/source.mp4')
+        with app.run(): records, index, archive_sha = decode_remote.remote(run_id, digest(video), stride)
+        validate_indices([r['sourceFrame'] for r in records], index)
     plan={'source_video':str(video), 'source_video_sha256':digest(video), 'source_frame_count':index,
           'frames':records, 'stride':stride, 'code_revision':REV,'weights_revision':WEIGHTS_REV,
-          'weights_sha256':WEIGHTS_SHA,'rgb_archive_sha256':digest(output/'rgb.tar'),
+          'weights_sha256':WEIGHTS_SHA,'rgb_archive_sha256':archive_sha,'rgb_archive_on_volume':run_id,
           'sensor_depth_uploaded':False,'groundtruth_uploaded':False,'new_training':False,
           'max_gpu_seconds':900,'max_gpu_attempts':1,'reserved_usd':2,
           'configuration':{'mode':'streaming','image_size':518,'patch_size':14,'window':64,'anchor_frames':8,
@@ -127,7 +161,7 @@ def prepare(manifest_path, sample_id, output, stride):
     save(output/'plan.json',plan); print(json.dumps({k:v for k,v in plan.items() if k!='frames'}),flush=True)
 
 
-@app.function(image=image, gpu='A100-80GB', cpu=(4,4), memory=(32768,32768),
+@app.function(image=image, gpu=['A100-80GB', 'H100', 'A100-40GB'], cpu=(4,4), memory=(32768,32768),
               timeout=900, startup_timeout=60, retries=0, max_containers=1,
               min_containers=0, scaledown_window=2, volumes={'/artifact':volume})
 def infer(run_id, deadline, plan_sha):
@@ -192,6 +226,7 @@ def infer(run_id, deadline, plan_sha):
         result={'status':'inference_complete','run_id':run_id,'code_revision':REV,'weights_sha256':WEIGHTS_SHA,
                 'plan_sha256':plan_sha,'configuration':plan['configuration'],'frames':files,
                 'inference_seconds':infer_seconds,'peak_gpu_bytes':memory,'elapsed_seconds':time.time()-started,
+                'gpu':torch.cuda.get_device_name(),
                 'geometry_contract':'native camera z-depth + predicted K + official demo extrinsic W2C; invert once at map ingestion, no point head',
                 'native_prediction_sha256':digest(raw),
                 'source_sha256':{str(p.relative_to('/opt/lingbot')):digest(p) for p in Path('/opt/lingbot/lingbot_map').rglob('*.py')},
@@ -221,15 +256,17 @@ def collect(output, run_id):
 
 
 def execute(output, run_id):
-    if not run_id or not all(c.isalnum() or c in '-_' for c in run_id):raise ValueError('Invalid run ID')
+    valid_run_id(run_id)
     plan=json.loads((output/'plan.json').read_text())
+    remote=plan.get('rgb_archive_on_volume')  # frames already on the volume (infer re-checks their SHA)
+    if remote not in (None,run_id):raise ValueError('Plan frames were decoded for another run ID')
     require_disk_space(output, len(plan['frames']) * 518 * 518 * 12)
-    assert digest(output/'rgb.tar')==plan['rgb_archive_sha256']
+    if not remote:assert digest(output/'rgb.tar')==plan['rgb_archive_sha256']
     assert digest(plan['source_video'])==plan['source_video_sha256']
     if (output/'submission.json').exists():raise ValueError('Submission exists; use collect')
     (output/'runner-at-execution.py').write_bytes(Path(__file__).read_bytes())
     with volume.batch_upload() as batch:
-        for name in ['plan.json','rgb.tar']:batch.put_file(output/name,f'{run_id}/{name}')
+        for name in ['plan.json']+([] if remote else ['rgb.tar']):batch.put_file(output/name,f'{run_id}/{name}')
     with app.run():
         deadline=time.time()+940
         save(output/'submission.json',{'run_id':run_id,'status':'submitting','app_id':app.app_id,'deadline':deadline})
@@ -238,13 +275,17 @@ def execute(output, run_id):
         try:print(json.dumps(call.get(timeout=max(1,deadline-time.time()))),flush=True)
         except BaseException:
             call.cancel(terminate_containers=True);raise
-        print(json.dumps(collect(output,run_id)),flush=True)
+        if remote:print(f'Predictions stay on volume panoptes-lingbot-map:/{run_id}/result; collect them explicitly if they fit locally',flush=True)
+        else:print(json.dumps(collect(output,run_id)),flush=True)
 
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('mode',choices=['prepare','execute','collect'])
     p.add_argument('--output',type=Path,required=True);p.add_argument('--manifest',type=Path);p.add_argument('--sample');p.add_argument('--stride',type=int,default=3);p.add_argument('--run-id')
+    p.add_argument('--video',type=Path,help='prepare from this video instead of --manifest/--sample; needs --run-id (decoded on Modal)')
     a=p.parse_args()
-    if a.mode=='prepare':prepare(a.manifest,a.sample,a.output,a.stride)
+    if a.mode=='prepare':
+        if a.video and not a.run_id:p.error('--video decodes on the volume and needs --run-id')
+        prepare(a.manifest,a.sample,a.output,a.stride,a.video,a.run_id if a.video else None)
     elif a.mode=='execute':execute(a.output,a.run_id)
     else:print(json.dumps(collect(a.output,a.run_id)),flush=True)
