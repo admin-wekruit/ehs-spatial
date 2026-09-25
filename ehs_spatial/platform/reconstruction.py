@@ -779,6 +779,7 @@ def _plan_plane(document, frame_id):
 
 def _plan_projection(document, rep, mesh, asset_sha256, transform=None):
     from shapely import get_parts, line_merge, linestrings, polygons, union_all
+    from shapely.errors import GEOSException
     from .spatial import transform_matrix
 
     plane = _plan_plane(document, rep['coordinateFrameId'])
@@ -789,7 +790,10 @@ def _plan_projection(document, rep, mesh, asset_sha256, transform=None):
     triangles = projected[mesh.faces]
     ab, ac = triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0]
     has_area = ab[:, 0] * ac[:, 1] - ab[:, 1] * ac[:, 0] != 0
-    surface = union_all(polygons(triangles[has_area]))
+    try:
+        surface = union_all(polygons(triangles[has_area]))
+    except GEOSException:  # near-degenerate triangles (generated meshes) can defeat the exact union: snap to a 1e-6 grid
+        surface = union_all(polygons(triangles[has_area]), grid_size=1e-6)
     # No hull, simplification, area threshold, or completion of unsupported holes.
     rings = [{'exterior': np.asarray(p.exterior.coords).tolist(),
               'holes': [np.asarray(r.coords).tolist() for r in p.interiors]}

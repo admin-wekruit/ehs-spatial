@@ -299,14 +299,14 @@ def build_document(args, put_asset, calibration, dataset):
             from attach_entities_to_replay import light_model
             light, display = light_model(generated / "model.glb")  # the checked shape, light enough for a page; the validated file stays as it is
             asset = include(light, "model/gltf-binary", {"kind": "geometry", "format": "glb", "sourceRecordId": entity["entityId"],
-                            "generator": "RecGen (non-commercial research licence)", "meshSha256": checked["mesh_sha256"], "display": display})
+                            "generator": checked.get("generator") or "RecGen (non-commercial research licence)", "meshSha256": checked["mesh_sha256"], "display": display})
             model_transform = identity
             model = {"id": ident("representation", "generated", entity["entityId"]), "kind": "generated_mesh", "assetId": asset, "coordinateFrameId": FRAME, "transform": identity,
                      "bounds": {"min": shape.bounds[0].tolist(), "max": shape.bounds[1].tolist()}, "placementState": "unconfirmed", "placementReason": "requires_alignment_confirmation",
                      "sourceRefs": [{"observationId": dict(refs).get(checked["observation"], refs[0][1]), "revision": 1,
                                      "imageId": images[int((checked["observation"] if checked["observation"] in dict(refs) else refs[0][0]).split(":")[1])]}],
                      "sourceConsistency": {k: checked[k] for k in ("silhouette_iou", "relative_depth_median", "relative_depth_p95", "supported_pixels")},
-                     "modelBasis": (f"{checked['generator']}: generated from one full-resolution video crop with its posed depth, then fitted to the object's observed "
+                     "modelBasis": (f"{checked['generator']}: generated from one full-resolution video view with its posed depth, then fitted to the object's observed "
                                     f"points (residual {checked['fitResidualCm']:.1f} cm); {checked['observedShare']:.0%} of its surface was seen, the see-through rest is the generator's estimate"
                                     if "fitResidualCm" in checked else
                                     "generated from the frame that holds the whole object, with a whole-object mask from a segmentation prompted by the entity's name; checked against that view only"

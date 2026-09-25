@@ -43,6 +43,7 @@ import os
 from pathlib import Path
 import struct
 import sys
+import time
 
 import cv2
 import numpy as np
@@ -68,6 +69,10 @@ FIT_GATE = {"max_fit_median_native": VOXEL, "min_observed_coverage": .6, "scale_
             "judgedOn": "every other agreeing view (never the source view) is held out of the ICP and alone judges fit and coverage"}
 RECGEN = {"modalApp": "lucida-private-assets", "modalFunction": "generate_object", "modalVolume": "panoptes-lucida-weights"}
 GENERATOR = "RecGen (non-commercial research licence)"
+SAM3D = {"modalApp": "panoptes-sam3d-objects-research", "modalClass": "SAM3DObjects", "model": "facebook/sam-3d-objects",
+         "modelRevision": "2e73555018d2741ccd486e56c24fac41155a1dc6", "codeRevision": "f91db411c50efee93d8db7aeb323885650f6f722",
+         "generator": "SAM 3D Objects (SAM License: commercial use allowed, no ITAR/military/nuclear uses)"}
+SAM3D_USD_PER_SECOND, SAM3D_WORST_SECONDS = .000694 + 4 * .0000131 + 32 * .00000222, 900  # modal_apps/sam3d_research.py's container and timeout
 # Modal list prices of the transport's container (A100-80GB + 8 cores + 64 GiB), per second; its client deadline is 240 s.
 USD_PER_SECOND, WORST_CALL_SECONDS = .000694 + 8 * .0000131 + 64 * .00000222, 240
 EXCLUDED = ("floor", "wall", "ceiling", "unnamed surface", "light", "lamp", "fixture", "man", "woman", "person", "people", "worker", "human")
@@ -312,6 +317,15 @@ def build_input(entity, view, row, frame_rgb, clip, args, video_sha):
         "geometrySolutionSha256": digest(args.depth_run / "mono" / f"{view['frame']:05d}.npz"),
         "coordinateFrameId": "droid_final_native_world", "cameraToWorld": row["c2w"], **crop}]}
     RecGenRequest.from_payload(payload)
+    if args.generator == "sam3d":  # SAM 3D takes the whole frame: it crops around the mask itself, and the intrinsics it infers
+        mapping = np.asarray(clip.full_to_raster, float)  # from the pointmap assume a centred principal point, which a crop is not
+        v, u = np.indices(full.shape, dtype=np.float64)  # the affine map element-wise: a BLAS matmul here segfaulted once Modal was up
+        cx = np.floor(mapping[0, 0] * u + mapping[0, 1] * v + mapping[0, 2] + .5).astype(int)
+        cy = np.floor(mapping[1, 0] * u + mapping[1, 1] * v + mapping[1, 2] + .5).astype(int)
+        inside = (cx >= 0) & (cy >= 0) & (cx < depth.shape[1]) & (cy < depth.shape[0])
+        full_depth = np.zeros(full.shape, np.float32)
+        full_depth[inside] = depth[cy[inside], cx[inside]]
+        payload["views"][0].update(fullRgb=frame_rgb, fullMask=full, fullDepth=full_depth, fullK=np.linalg.inv(mapping) @ clip.k_raster)
     return payload
 
 
@@ -635,6 +649,63 @@ def obtain(payload, base, args):
     return None, {"error": f"no GPU container after {REDISPATCH + 1} dispatches"}
 
 
+def sam3d_pointmap(depth, k):
+    """This view's own depth on the crop grid as SAM 3D's pointmap: PyTorch3D camera (OpenCV x and y negated), NaN = no depth."""
+    v, u = np.indices(depth.shape, dtype=np.float64)
+    z = np.where(depth > 0, depth, np.nan)
+    return np.stack([-(u - k[0, 2]) / k[0, 0] * z, -(v - k[1, 2]) / k[1, 1] * z, z], -1).astype(np.float32)
+
+
+def sam3d_to_world(vertices, object_to_camera, c2w):
+    """Mesh vertices from SAM 3D's object frame to the scene: its pose puts them in the PyTorch3D camera of the pointmap."""
+    camera = (np.c_[vertices, np.ones(len(vertices))] @ np.asarray(object_to_camera).T)[:, :3] * [-1, -1, 1]  # -> OpenCV camera
+    return camera @ np.asarray(c2w)[:3, :3].T + np.asarray(c2w)[:3, 3]
+
+
+def sam3d_spent(journal):
+    """GPU seconds and USD of every SAM 3D call journaled under `journal` (container wall time x list price)."""
+    seconds = sum(json.loads(p.read_text()).get("seconds", 0) for p in journal.rglob("sam3d-*/record.json")) if journal.exists() else 0
+    return seconds, seconds * SAM3D_USD_PER_SECOND
+
+
+def sam3d_obtain(payload, folder, args):
+    """SAM 3D Objects for one input (self-hosted, modal_apps/sam3d_research.py): read back once received, else one call within
+    --max-usd. A dispatch without an output is never sent again. Returns (world-frame mesh or None, record or None)."""
+    view = payload["views"][0]
+    names = ("fullRgb", "fullMask", "fullDepth", "fullK") if "fullRgb" in view else ("rgb", "mask", "depth", "K")
+    rgb, mask, depth, k = (np.ascontiguousarray(np.asarray(view[n])) for n in names)
+    key = hashlib.sha256(b"".join([json.dumps({"seed": payload["seed"], **{k: SAM3D[k] for k in ("modelRevision", "codeRevision")}}).encode(),
+                                   rgb.tobytes(), mask.astype(bool).tobytes(), depth.astype(np.float32).tobytes()])).hexdigest()[:24]
+    root = folder / f"sam3d-{key}"
+    if not (root / "output.npz").exists():
+        if (root / "dispatch.json").exists():
+            return None, {"error": "unresolved SAM 3D dispatch that may have run: never sent again"}
+        if not args.invoke:
+            return None, None
+        usd = sam3d_spent(args.output / "journal-sam3d")[1]
+        if usd + SAM3D_WORST_SECONDS * SAM3D_USD_PER_SECOND > args.max_usd:
+            return None, {"error": f"not requested: {usd:.2f} USD spent on SAM 3D, one more worst-case call could pass the cap"}
+        import modal
+        root.mkdir(parents=True, exist_ok=True)
+        save(root / "dispatch.json", {"entity": payload["entityId"], "observation": payload["anchorObservationId"], "seed": payload["seed"], **SAM3D})
+        started = time.time()
+        try:
+            out = modal.Cls.from_name(SAM3D["modalApp"], SAM3D["modalClass"])().run.remote(rgb, mask.astype(bool), sam3d_pointmap(depth, k.astype(float)), payload["seed"])
+        except Exception as error:  # the call may have run: kept as dispatched, never re-sent
+            save(root / "record.json", {"error": type(error).__name__, "detail": str(error)[:300], "seconds": time.time() - started})
+            return None, {"error": type(error).__name__}
+        if "error" in out:  # the worker's traceback: journaled with the dispatch, this input is never sent again
+            save(root / "record.json", {"error": out["error"][-2000:], "seconds": time.time() - started, "gpu": out.get("gpu")})
+            return None, {"error": "sam3d_worker_error"}
+        np.savez_compressed(root / "output.npz", **{k: out[k] for k in ("vertices", "faces", "colors", "objectToCamera")})
+        save(root / "record.json", {"seconds": time.time() - started, "workerSeconds": out["seconds"], "gpu": out["gpu"], "pins": out["pins"]})
+    out, record = np.load(root / "output.npz"), json.loads((root / "record.json").read_text())
+    vertices = sam3d_to_world(out["vertices"], out["objectToCamera"], view["cameraToWorld"])
+    telemetry = {"workerElapsedSeconds": record["seconds"], "gpuElapsedSeconds": record.get("workerSeconds")}
+    return (vertices, np.asarray(out["faces"]), np.asarray(out["colors"])), {"pins": record.get("pins"), "telemetry": telemetry, "journal": str(root),
+                                                                             "runtimeEvidence": {"hardware": {"gpu": record.get("gpu")}}}
+
+
 def request(payload, folder, function_id):
     """One journaled RecGen call, or the read-back of a received one: the full mesh placed in the scene frame."""
     from ehs_spatial.platform.contracts import PlatformError
@@ -745,10 +816,10 @@ def assess(entity, view, crop, mesh, record, rows, clip, args):
                   "observedRule": f"within {2 * VOXEL} native of an observed point, facing one of the fit views' cameras and in its clear sight",
                   "skipFrames": sorted(args.skip),
                   "alpha": {"observed": OBSERVED_ALPHA, "inferred": INFERRED_ALPHA}, "triangles": len(faces), "seed": SEED, "sourceFrame": view["frame"],
-                  "generator": GENERATOR, "pins": record.get("pins"), "providerRequestId": record.get("providerRequestId"),
+                  "generator": SAM3D["generator"] if args.generator == "sam3d" else GENERATOR, "pins": record.get("pins"), "providerRequestId": record.get("providerRequestId"),
                   "gpuType": ((record.get("runtimeEvidence") or {}).get("hardware") or {}).get("gpu"),
                   "gpuSeconds": telemetry.get("gpuElapsedSeconds"), "wallSeconds": telemetry.get("workerElapsedSeconds"),
-                  "estimatedUsd": round((telemetry.get("workerElapsedSeconds") or 0) * USD_PER_SECOND, 4),
+                  "estimatedUsd": round((telemetry.get("workerElapsedSeconds") or 0) * (SAM3D_USD_PER_SECOND if args.generator == "sam3d" else USD_PER_SECOND), 4),
                   "coordinateFrame": "droid_final_native_world", "metresPerNativeUnit": metres,
                   "maskSource": ({"method": "SAM 2.1 box prompt on the uncropped 1280x720 frame (the observation's mask was cut by the 4:3 crop)", **view["resegmented"]}
                                  if view.get("resegmented") else "the observation's mask")}
@@ -942,6 +1013,9 @@ def run(args):
     journal, entries, placed = args.output / "journal", [], []  # placed: (entity, light vertices, light faces) of accepted models
     pool = ThreadPoolExecutor(max_workers=1)  # one GPU call at a time, running ahead while the previous object is checked
     ahead = {}
+    # the generator's call for one input: RecGen through its journaled transport, or self-hosted SAM 3D with its own journal
+    call = (lambda payload, frame: (obtain, payload, journal_folder(journal, payload, frame, args.function_id), args)) if args.generator == "recgen" else \
+           (lambda payload, frame: (sam3d_obtain, payload, args.output / "journal-sam3d" / payload["entityId"], args))
 
     def parent_of(c):
         """The accepted model an extended entity mostly lies on (it is a part of that object), or None."""
@@ -990,7 +1064,7 @@ def run(args):
             c = chosen[i]
             previous = written(c["entity"]["entityId"])
             parent = None if previous else parent_of(c)
-            ahead[i] = parent, None if parent or previous else pool.submit(obtain, c["payloads"][0], journal_folder(journal, c["payloads"][0], c["tries"][0]["frame"], args.function_id), args), previous
+            ahead[i] = parent, None if parent or previous else pool.submit(*call(c["payloads"][0], c["tries"][0]["frame"])), previous
 
     queue(0)
     for i, c in enumerate(chosen):
@@ -1037,7 +1111,7 @@ def run(args):
         for n, (view, payload) in enumerate(tries):
             if best and best["validation"]["accepted_source_consistency"]:
                 break
-            mesh, record = (first if n == 0 else pool.submit(obtain, payload, journal_folder(journal, payload, view["frame"], args.function_id), args)).result()
+            mesh, record = (first if n == 0 else pool.submit(*call(payload, view["frame"]))).result()
             attempt = {"attempt": n + 1, "view": view["frame"], "observation": view["observation"], "seed": payload["seed"],
                        "viewScore": view.get("score"), "providerRequestId": (record or {}).get("providerRequestId")}
             if mesh is None:  # not requested (no --invoke, or the cap), or no model: the next try may still be read back
@@ -1088,7 +1162,7 @@ def run(args):
                            **({} if state.get("status") == "received" else {"modal": modal_state(state_path)})})
     save(args.output / "manifest.json", {
         "schema": "phase2-video-object-models-v1", "coordinateFrame": "droid_final_native_world", "metresPerNativeUnit": args.metres_per_native,
-        "generator": GENERATOR, "pins": ({k: records[0].get(k) for k in ("model_id", "model_revision", "code_revision", "weights_manifest_sha256")} if records else None),
+        "generator": SAM3D["generator"] if args.generator == "sam3d" else GENERATOR, "pins": SAM3D if args.generator == "sam3d" else ({k: records[0].get(k) for k in ("model_id", "model_revision", "code_revision", "weights_manifest_sha256")} if records else None),
         "route": {**RECGEN, "modalFunctionId": args.function_id, "transport": "ehs_spatial.platform.recgen_transport.invoke", "views": 1},
         "inputs": {k: str(getattr(args, k)) for k in ("droid_run", "depth_run", "object_map", "masks", "dynamic_masks", "clip")},
         "selectionRule": {"labelStatus": "clear", "excludedLabels": EXCLUDED, "minViews": MIN_VIEWS, "ehsEquipment": RELEVANT,
@@ -1117,6 +1191,7 @@ def run(args):
         "objects": entries, "rejected": rejected,
         "spend": {"gpuSeconds": round(gpu, 1), "wallSeconds": round(wall, 1), "estimatedUsd": round(usd + sam_usd, 3), "capUsd": args.max_usd, "dispatches": dispatches,
                   "sam2": {"wallSeconds": round(sam_seconds, 1), "estimatedUsd": round(sam_usd, 4), "rate": "L4 + 1 core + 8 GiB list price x wall seconds"},
+                  "sam3d": dict(zip(("wallSeconds", "estimatedUsd"), (round(x, 3) for x in sam3d_spent(args.output / "journal-sam3d")))),
                   "rate": f"USD {USD_PER_SECOND:.7f}/s = Modal list price of A100-80GB + 8 cores + 64 GiB, times local wall seconds (an upper bound on billed time)"},
         "limitations": ["Unseen sides are the generator's estimate; the observed flag only says a video point lies near and a camera had sight of it.",
                         "Observed points come only from views that agree with the best view, so sides seen only from other, drifted views stay inferred.",
@@ -1204,6 +1279,14 @@ def self_check():
     points = lift(plane, k_raster, np.eye(4), patch)
     assert agreement(points, plane, patch, k_raster, np.eye(4)) == (1., 0.)
     assert abs(agreement(points * 1.1, plane, patch, k_raster, np.eye(4))[1] - .1) < 1e-6, "a view 10% deeper disagrees by 10%"
+    plane_depth = np.full((48, 64), 2.)
+    plane_depth[:4] = 0  # no depth: NaN in the pointmap
+    pointmap = sam3d_pointmap(plane_depth, k_raster)
+    assert np.isnan(pointmap[:4]).all() and (pointmap[4:, :, 2] == 2).all() and (pointmap[4:, 40, 0] > 0).all(), "PyTorch3D: a pixel left of the principal point has positive x"
+    c2w_test = np.eye(4)
+    c2w_test[:3, :3], c2w_test[:3, 3] = trimesh.transformations.rotation_matrix(.3, [0, 1, 0])[:3, :3], [1, 2, 3]
+    grid_points = lift(plane_depth, k_raster, c2w_test)  # OpenCV lift of the valid pixels, row-major
+    assert np.allclose(sam3d_to_world(pointmap[4:].reshape(-1, 3), np.eye(4), c2w_test), grid_points), "pointmap -> world agrees with lift()"
     assert frame_set(["14-225", "3"]) == frozenset(range(14, 226)) | {3} and frame_set([]) == frozenset()
     speck = np.zeros((50, 50), bool)
     speck[5:30, 5:30], speck[40:42, 40:42], speck[5:30, 33:40] = True, True, True
@@ -1250,6 +1333,8 @@ def main():
     parser.add_argument("--exclude", nargs="*", default=[], help="ENTITY=reason: dropped at review, reason recorded")
     parser.add_argument("--count", type=int, default=COUNT)
     parser.add_argument("--all", action="store_true", help="after --entities, every named physical object of the qualifying rule (no count limit)")
+    parser.add_argument("--generator", choices=("recgen", "sam3d"), default="recgen",
+                        help="recgen: the deployed RecGen (non-commercial); sam3d: self-hosted SAM 3D Objects (modal deploy modal_apps/sam3d_research.py first)")
     parser.add_argument("--reassess", action="store_true", help="judge every journaled model again under the current gate (CPU; no call without --invoke)")
     parser.add_argument("--invoke", action="store_true", help="request missing models; without it only inputs, selection sheet and existing models are processed")
     parser.add_argument("--function-id", default="fu-Hh2leT3x1kprDaWpWsZ09l", help="the deployed generate_object the transport must find")

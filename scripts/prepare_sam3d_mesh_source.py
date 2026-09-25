@@ -57,6 +57,11 @@ def prepare(source, *, fetch=False):
         raise RuntimeError("Patch was not applied to every expected source file")
     raw = (json.dumps(report, sort_keys=True, indent=2) + "\n").encode()
     (source / RECEIPT).write_bytes(raw)
+    # pip compiled bytecode from the unpatched files at install and Python kept loading it (a pinned image ran the old
+    # Gaussian lookup under the patched source): drop every cached compilation of the files just patched
+    for relative in SOURCE_HASHES:
+        for cached in (source / relative).parent.glob(f"__pycache__/{Path(relative).stem}.*.pyc"):
+            cached.unlink()
     return {"status": "source_prepared", "meshSourceBuildSha256": sha256(raw), "newModelCalls": 0, **report}
 
 
