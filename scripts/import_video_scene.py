@@ -86,6 +86,20 @@ def dense_points(folder, include):
             "note": info.get("note") or "dense display points: single-view geometry per point, not multi-view confirmed"}
 
 
+def inferred_floor_points(folder, include, ident, identity, source, shell):
+    """infer_room_floor.py --dense: floor points where none was seen, on the verified plane under and between things seen
+    standing on it; drawn with the room's points, dimmed, and stated as inferred, never observed."""
+    basis = json.loads((folder / "inferred-floor.json").read_text())
+    spacing = float(basis["dense"]["point_spacing_native"])
+    return {"id": ident("representation", "room-inferred-floor-points"), "kind": "point_cloud", "coordinateFrameId": FRAME, "transform": identity,
+            "placementState": "unconfirmed", "primitive": None, "sourceRefs": [{"assetId": source}],
+            "bounds": {"min": shell.bounds[0].tolist(), "max": shell.bounds[1].tolist()},
+            "coverage": "inferred_floor_points_not_observed", "pointSizeNative": spacing, "pointCount": basis["dense"]["points"],
+            "assetId": include((folder / "inferred-floor-points.glb").read_bytes(), "model/gltf-binary",
+                               {"kind": "geometry", "format": "glb-points", "sourceRecordId": "inferred-floor-points", "pointSizeNative": spacing}),
+            "note": f"inferred, not observed: {basis['dense']['region']}; {basis['dense']['colour_rule']}"}
+
+
 def fused_part(textured, object_map, entity, minimum=50):
     """The entity's cells cut out of the photo-textured fused mesh, or None if too little falls inside.
 
@@ -241,7 +255,9 @@ def build_document(args, put_asset, calibration, dataset):
                              "primitive": None, "sourceRefs": [{"assetId": source}], "bounds": {"min": shell.bounds[0].tolist(), "max": shell.bounds[1].tolist()},
                              **(dense_points(args.dense_points, include) if args.dense_points else
                                 {"coverage": "cross_view_supported_pixels_only", "assetId": include((args.depth_run / "supported-keyframe-points.glb").read_bytes(), "model/gltf-binary",
-                                                                                                      {"kind": "geometry", "format": "glb-points", "sourceRecordId": "supported-keyframe-points"})})}]})
+                                                                                                      {"kind": "geometry", "format": "glb-points", "sourceRecordId": "supported-keyframe-points"})})},
+                            *([inferred_floor_points(args.inferred_floor, include, ident, identity, source, shell)]
+                              if args.inferred_floor and (args.inferred_floor / "inferred-floor-points.glb").exists() else [])]})
 
     textured = trimesh.load(args.shell_glb, process=False) if args.shell_glb else None
     floors = [e for e in object_map["entities"] if e["label"] == "floor" and len(e["observationBoxes"]) >= CONFIRMED]
