@@ -26,6 +26,10 @@ SOURCE_D = [0.262383, -0.953104, -0.005358, 0.002628, 1.163314]
 CLIPS = {"fr1-room": {"dataset": DATASET, "K": SOURCE_K, "D": SOURCE_D},
          "fr3-walking-xyz": {"dataset": ART / "data/tum-fr3-walking-xyz/rgbd_dataset_freiburg3_walking_xyz",
                              "K": [535.4, 539.2, 320.1, 247.6], "D": [0., 0., 0., 0., 0.]}}  # official tum3 calibration, already undistorted
+# clips made from ordinary video by scripts/prepare_video_clip.py register themselves; their intrinsics are estimates, not calibrations
+for _spec in sorted((ART / "data/clips").glob("*/clip.json")):
+    _clip = json.loads(_spec.read_text())
+    CLIPS.setdefault(_clip["name"], {"dataset": Path(_clip["dataset"]), "K": _clip["K"], "D": _clip["D"]})
 CONTRACT_VERSION = "droid-final-upsampling-v2"
 ROOT = Path("/artifact")
 app = modal.App("panoptes-droid-room-once")
@@ -303,6 +307,8 @@ def evaluate(output, dataset=DATASET):
     from reconstruct_tum_room import associate, metric_ate, read_rows
     data = np.load(output / "prediction.npz")
     manifest = json.loads((output / "input-manifest.json").read_text())
+    if not (dataset / "groundtruth.txt").exists():  # an ordinary video: nothing to measure the cameras against
+        return {"evaluation_only": True, "status": "no_ground_truth", "frames": len(manifest["frames"])}
     gt = read_rows(dataset / "groundtruth.txt", 8)
     times = [float(f["timestamp_text"]) for f in manifest["frames"]]
     pairs = associate(times, [float(r[0]) for r in gt], .02)

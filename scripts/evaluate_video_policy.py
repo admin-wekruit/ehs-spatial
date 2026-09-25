@@ -23,6 +23,30 @@ CONFIRMED = 3
 RULE = {"kind": "geometry", "spec": {"predicate": "min_separation", "subject_labels": ["desk"], "object_labels": ["cabinet"], "threshold": .711, "unit": "m"}}
 
 
+def contract_scale(scale):
+    """The platform's scale record for one metric-scale.json, decided by the scale that was actually written.
+
+    The platform accepts three states and its rule engine only gives PASS/FAIL on operator_anchored. Only a measurement
+    may take that state: metric poses from the capture device. A carry height the operator stated but nobody measured is
+    an assumption and becomes model_estimated, so the engine asks for calibration instead of deciding (PLAN.md section 6:
+    an assumed value is never stored as a measurement). A clip with no metres at all stays uncalibrated.
+    """
+    status = scale.get("scale_status")
+    if status == "device_metric":
+        return {"status": "operator_anchored", "nativeToMeters": scale["metres_per_native_unit"],
+                "anchor": {"kind": "device_metric_poses", "measured": True, "note": "metres come from the capture device's own poses; nothing was assumed"}}
+    if status in ("assumed_camera_height", "assumed_camera_height_floor_views_disagree"):
+        stated = scale["metres_per_native_unit"] * scale["camera_height_native_median"]  # the height the run was told, recovered exactly
+        return {"status": "model_estimated", "nativeToMeters": scale["metres_per_native_unit"],
+                "anchor": {"kind": "stated_carry_height", "metres": round(stated, 4), "measured": False,
+                           "floorViewsAgree": status == "assumed_camera_height",
+                           "modelEstimateMetresPerNative": scale.get("model_estimated_metres_per_native_unit"),
+                           "sourcesDisagreeOver10pct": scale.get("scale_sources_disagree_over_10pct")}}
+    if status == "uncalibrated":
+        return {"status": "uncalibrated"}
+    raise ValueError(f"unknown scale_status {status!r}: refuse rather than guess what it means")
+
+
 def facts(entities, metres_per_native, scale_relative_uncertainty, subjects, objects):
     """Footprint and height in metres with one uncertainty per entity: depth noise at its range plus its share of the scale doubt on the nearest gap."""
     polygons = {e["entityId"]: Polygon(np.array(e["footprintPlanNative"]) * metres_per_native) for e in entities}
@@ -69,12 +93,13 @@ def build(args):
     # a name a VLM gave to a class-agnostic segment is an interpretation nobody reviewed: it may describe a scene, not decide a rule
     named_by_vlm = [e["entityId"] for e in object_map["entities"] if e.get("labelSource") and e["label"] in (subjects, objects)]
     entities = [e for e in object_map["entities"] if len(e["observations"]) >= CONFIRMED and e["label"] in (subjects, objects) and not e.get("labelSource")]
-    metres = scale["metres_per_native_unit"]
+    record = contract_scale(scale)
+    if record["status"] == "uncalibrated":
+        raise SystemExit("uncalibrated clip: there are no metres, so no metric fact can be written and no rule can be evaluated")
+    metres = record["nativeToMeters"]
     doubt = abs(scale["height_anchor_vs_model_estimate"]) if scale.get("height_anchor_vs_model_estimate") is not None else 0.
     measured = facts(entities, metres, doubt, subjects, objects)
-    scene = scene_document(entities, measured, {"status": "operator_anchored", "nativeToMeters": metres,
-        "anchor": {"kind": "stated_carry_height", "metres": 1.6, "measured": False, "model_estimate_metres_per_native": scale.get("model_estimated_metres_per_native_unit"),
-                   "sources_disagree_over_10pct": scale.get("scale_sources_disagree_over_10pct")}})
+    scene = scene_document(entities, measured, record)
     findings = evaluate(scene)
     args.output.mkdir(parents=True, exist_ok=False)
     (args.output / "scene-document.json").write_text(json.dumps(scene, indent=1))
@@ -114,9 +139,22 @@ def self_check():
         assert abs(measured["desk-0"]["nearestGapM"] - gap) < 1e-9 and abs(measured["desk-0"]["uncertaintyM"] - .01) < 1e-9
         finding = evaluate(scene_document(pair, measured, {"status": "operator_anchored", "nativeToMeters": 1.}))[0]
         assert finding["machineResult"] == expected and not finding["missingEvidence"], (gap, finding)
+    pair = [entity("desk-0", "desk", 0, 1), entity("cabinet-0", "cabinet", 1.5, 2.5)]
+    assumed = evaluate(scene_document(pair, facts(pair, 1., 0., "desk", "cabinet"), {"status": "model_estimated", "nativeToMeters": 1.}))[0]
+    assert assumed["machineResult"] not in ("PASS", "FAIL") and any("metric_calibration" in m for m in assumed["missingEvidence"]), \
+        ("an assumed scale must never decide a rule; the engine has to ask for calibration", assumed)
+    assert contract_scale({"scale_status": "device_metric", "metres_per_native_unit": 1.})["status"] == "operator_anchored"
+    stated = contract_scale({"scale_status": "assumed_camera_height", "metres_per_native_unit": 1.25, "camera_height_native_median": 1.28})
+    assert stated["status"] == "model_estimated" and abs(stated["anchor"]["metres"] - 1.6) < 1e-9 and stated["anchor"]["measured"] is False
+    assert contract_scale({"scale_status": "uncalibrated", "metres_per_native_unit": None}) == {"status": "uncalibrated"}
+    try:
+        contract_scale({"scale_status": "something_new"}); raise AssertionError("an unknown scale state must be refused")
+    except ValueError:
+        pass
     doubtful = facts([entity("desk-0", "desk", 0, 1), entity("cabinet-0", "cabinet", 2, 3)], 2., .2, "desk", "cabinet")
     assert abs(doubtful["desk-0"]["nearestGapM"] - 2.) < 1e-9 and doubtful["desk-0"]["uncertaintyM"] > .2, "scale doubt must widen the band with the gap"
-    print("video policy check passed: FAIL / PASS / NEEDS_REVIEW around 0.711 m through the real engine; scale doubt widens the band")
+    print("video policy check passed: FAIL / PASS / NEEDS_REVIEW around 0.711 m through the real engine; scale doubt widens the band; "
+          "an assumed scale decides nothing")
 
 
 if __name__ == "__main__":

@@ -166,14 +166,32 @@ video_image = (
 cache = modal.Volume.from_name("sam3-hf-cache")
 
 
-def start_session(predictor, resource_path: str) -> str:
+def start_session(predictor, resource_path: str, offload: dict | None = None) -> str:
     """Sam3BasePredictor.start_session without the argument the multiplex model refuses.
 
     At SOURCE_COMMIT the base predictor always passes offload_state_to_cpu, and
     Sam3MultiplexTrackingWithInteractivity.init_state does not take it (TypeError before any inference).
+    The tracker's own constructor carries offload_output_to_cpu_for_eval, whose comment in the source says it
+    exists "to avoid GPU OOM on very long videos" and which ships off; `offload` records what actually applied.
     """
-    import uuid
+    applied = offload if offload is not None else {}
+    tracker = getattr(predictor.model, "tracker", None)  # the switch belongs to VideoTrackingMultiplex, held as model.tracker
+    # ponytail: left off. At SOURCE_COMMIT turning it on also turns off memory selection (video_tracking_multiplex.py:2584),
+    # which changes the tracks; switch it on only for a window too long for the GPU, and compare against one that fits.
+    applied["offload_output_to_cpu_for_eval"] = ("available on model.tracker, left off" if hasattr(tracker, "offload_output_to_cpu_for_eval")
+                                                 else "attribute absent on model.tracker")
+    try:  # the main lever the upstream predictor uses; the multiplex model refused it at SOURCE_COMMIT
+        state = predictor.model.init_state(resource_path=resource_path, offload_video_to_cpu=True, offload_state_to_cpu=True)
+        applied["offload_state_to_cpu"] = True
+        return _register(predictor, state)
+    except TypeError as error:
+        applied["offload_state_to_cpu"] = f"refused: {error}"[:160]
     state = predictor.model.init_state(resource_path=resource_path, offload_video_to_cpu=True)
+    return _register(predictor, state)
+
+
+def _register(predictor, state) -> str:
+    import uuid
     session_id = str(uuid.uuid4())
     predictor._all_inference_states[session_id] = {"state": state, "session_id": session_id,
                                                    "start_time": time.time(), "last_use_time": time.time()}

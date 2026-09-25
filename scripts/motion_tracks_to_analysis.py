@@ -7,9 +7,10 @@ still while the camera pans shows no motion at all (fr1/room) and is still the t
 Fusion only needs the union of what moved (assemble_dynamic_masks.py); the dynamic layer needs each object on its own.
 Each retained track of each sam3_motion_tracks.py window becomes one entity; where windows overlap, each frame is taken
 from the window whose centre is nearer, so the same person is not drawn twice. Identity is the tracker session's
-(a person in two windows gets two ids); nothing here decides what moves.
+(a person in two windows gets two ids) unless --stitched gives stitch_track_windows.py's identities, which join a
+person across windows and fold a window's duplicate tracks; nothing here decides what moves.
 
-  python scripts/motion_tracks_to_analysis.py --droid-run RUN --tracks RUN_A RUN_B ... --output NEW_DIR
+  python scripts/motion_tracks_to_analysis.py --droid-run RUN --tracks RUN_A RUN_B ... [--stitched DIR] --output NEW_DIR
   python scripts/motion_tracks_to_analysis.py --self-check
 """
 import argparse
@@ -36,12 +37,22 @@ def redundant(mask, others, overlap=.5):
     return any((mask & o).sum() >= overlap * min(mask.sum(), o.sum()) for o in others)
 
 
+def identity_of(stitched):
+    """(window, "stage/id") -> stitched identity, following each window's folds; None without a stitch."""
+    if stitched is None:
+        return lambda n, track: None
+    report = json.loads((stitched / "stitched.json").read_text())
+    folds = [w.get("folded_into_text", {}) for w in report["windows"]]
+    return lambda n, track: report["identities"].get(f"w{n}:{folds[n].get(track, track)}")
+
+
 def run(args):
     import cv2
     import mono_room as M
     M.use_clip(args.droid_run)
     runs = [(t, json.loads((t / "tracks.json").read_text())) for t in args.tracks]
     windows = [tuple(state["frames"]) for _, state in runs]
+    identity = identity_of(args.stitched)
     (args.output / "masks").mkdir(parents=True, exist_ok=False)
     frames, kept_ids, pixels = {}, [], {}
     for n, (path, state) in enumerate(runs):
@@ -54,14 +65,16 @@ def run(args):
             if stage not in ("motion", "text") or "shape" not in stages.get(stage, {}):
                 continue
             _, local, ident = key.split("/")
-            frame, ident = first + int(local), int(ident)
+            frame, ident = first + int(local) * state.get("stride", 1), int(ident)  # npz keys are tracker indices; with a stride only every Nth source frame has a mask
             if (stage == "motion" and ("motion", ident) not in kept) or owner_of(windows, frame) != n:
                 continue
             h, w = stages[stage]["shape"]
             mask = np.unpackbits(found[key])[:h * w].reshape(h, w).astype(bool)
             if mask.sum() < 200:
                 continue
-            entity = f"{stage}-{path.name.rsplit('-', 1)[-1]}-{ident}"
+            entity = identity(n, f"{stage}/{ident}") or f"{stage}-{path.name.rsplit('-', 1)[-1]}-{ident}"
+            if any(o["entityId"] == entity for o in frames.get(frame, [])):
+                continue  # a folded duplicate of a track already drawn on this frame
             pixels.setdefault(frame, []).append((stage, mask))
             name = f"{frame:05d}-{entity}.png"
             cv2.imwrite(str(args.output / "masks" / name), to_source(mask, M.CALIBRATION, M.RASTER).astype(np.uint8) * 255)
@@ -88,6 +101,12 @@ def self_check():
     a, b, c = (np.zeros((10, 10), bool) for _ in range(3))
     a[2:8, 2:8], b[3:8, 3:8], c[0:2, 0:2] = True, True, True
     assert redundant(a, [b]) and not redundant(c, [b]), "a mover inside a named track is dropped; a separate one is kept"
+    import tempfile
+    with tempfile.TemporaryDirectory() as folder:
+        (Path(folder) / "stitched.json").write_text(json.dumps({"windows": [{"folded_into_text": {"text/5": "text/1"}}, {"folded_into_text": {}}],
+                                                               "identities": {"w0:text/1": "p", "w1:text/3": "p"}}))
+        identity = identity_of(Path(folder))
+        assert identity(0, "text/5") == identity(1, "text/3") == "p" and identity(1, "text/9") is None, "stitched ids follow folds and joins"
     print("motion track analysis check passed: each frame comes from one window, split between window centres; named tracks win")
 
 
@@ -96,6 +115,7 @@ if __name__ == "__main__":
     parser.add_argument("--self-check", action="store_true")
     parser.add_argument("--droid-run", type=Path)
     parser.add_argument("--tracks", type=Path, nargs="+")
+    parser.add_argument("--stitched", type=Path, help="stitch_track_windows.py output of the same --tracks, in the same order")
     parser.add_argument("--output", type=Path)
     a = parser.parse_args()
     self_check() if a.self_check else run(a)

@@ -22,6 +22,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "modal_apps"), str(ROOT / "scripts")]
 from ehs_spatial.platform.contracts import digest, empty_document, validate_document  # noqa: E402
+from evaluate_video_policy import contract_scale  # noqa: E402  one rule for what a scale record may claim
 
 FRAME, CONFIRMED = "droid_final_native_world", 3
 STUFF = ("floor", "wall", "ceiling")  # as build_video_object_map.STUFF: extents, not things
@@ -146,11 +147,7 @@ def build_document(args, put_asset, calibration, dataset):
     source = include(source_bytes, "application/json", {"kind": "import_source", "sourceSha256": hashlib.sha256(source_bytes).hexdigest()})
     up, origin = np.array(scale["up_native"]), np.array(scale["plane_point_native"])
     document["coordinateFrames"] = [{"id": FRAME, "convention": "opencv",
-        "scale": {"status": "uncalibrated"} if uncalibrated else {"status": "operator_anchored", "nativeToMeters": scale["metres_per_native_unit"], "sourceRefs": [{"assetId": source}],
-                  "anchor": {"kind": "device_metric_poses", "measured": True, "note": "metres come from the capture device's own poses; nothing was assumed"} if device else
-                            {"kind": "stated_carry_height", "metres": 1.6, "measured": False,
-                             "modelEstimateMetresPerNative": scale.get("model_estimated_metres_per_native_unit"),
-                             "sourcesDisagreeOver10pct": scale.get("scale_sources_disagree_over_10pct")}},
+        "scale": {**contract_scale(scale), **({} if scale.get("scale_status") == "uncalibrated" else {"sourceRefs": [{"assetId": source}]})},
         "ground": {"plane": [*up.tolist(), float(-up @ origin)], "normal": up.tolist(), "offset": float(-up @ origin),
                    "sourceRefs": [{"assetId": source}], "source": "video_floor_consensus_plane"}}]
 

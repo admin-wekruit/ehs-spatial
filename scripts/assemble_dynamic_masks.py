@@ -5,7 +5,11 @@ pixels itself (mono_room.moving_mask), so each union mask is put back on the sou
 resize and a border crop (16 px sides, 8 px top/bottom at scale 1); the cropped border is lost, which is the same
 border fusion never integrates. Nothing here decides what moves: it only changes the file layout.
 
-  python scripts/assemble_dynamic_masks.py --droid-run RUN --tracks RUN_A RUN_B ... --output NEW_DIR [--reference MASK_DIR]
+--tracks takes the motion stage only: what visibly moved. --analysis takes motion_tracks_to_analysis.py's per-object
+masks instead, which also hold tracks of the text prompt (a person standing and talking), so fusion removes exactly
+what the report's dynamic layer shows: moved, or a kind of thing that moves.
+
+  python scripts/assemble_dynamic_masks.py --droid-run RUN (--tracks RUN_A RUN_B ... | --analysis DIR/analysis.json) --output NEW_DIR [--reference MASK_DIR]
   python scripts/assemble_dynamic_masks.py --self-check
 """
 import argparse
@@ -35,15 +39,22 @@ def run(args):
     import mono_room as M
     M.use_clip(args.droid_run)
     union = {}
-    for tracks in args.tracks:
+    if args.analysis:  # masks there are already in source pixels
+        for frame in json.loads(args.analysis.read_text())["frames"]:
+            for o in frame["objects"]:
+                mask = cv2.imread(str(args.analysis.parent / o["maskUrl"]), 0) > 0
+                i = frame["sourceFrame"]
+                union[i] = union[i] | mask if i in union else mask
+    for tracks in args.tracks or []:
         first = json.loads((tracks / "tracks.json").read_text())["frames"][0]
         for path in sorted((tracks / "motion").glob("*.png")):
             index, mask = int(path.stem), cv2.imread(str(path), 0) > 0
             union[index] = union[index] | mask if index in union else mask
     (args.output / "masks").mkdir(parents=True, exist_ok=False)
     for index, mask in union.items():
-        cv2.imwrite(str(args.output / "masks" / f"{index:05d}-0.png"), to_source(mask, M.CALIBRATION, M.RASTER).astype(np.uint8) * 255)
-    report = {"tracks": [str(t) for t in args.tracks], "frames_with_mask": len(union), "mean_share_of_frame": float(np.mean([m.mean() for m in union.values()])),
+        source = mask if args.analysis else to_source(mask, M.CALIBRATION, M.RASTER)
+        cv2.imwrite(str(args.output / "masks" / f"{index:05d}-0.png"), source.astype(np.uint8) * 255)
+    report = {"tracks": [str(t) for t in args.tracks or []], "analysis": str(args.analysis) if args.analysis else None, "frames_with_mask": len(union), "mean_share_of_frame": float(np.mean([m.mean() for m in union.values()])),
               "layout": "SOURCEINDEX-0.png in source pixels, as mono_room --dynamic-masks and build_video_object_map --dynamic-masks read"}
     if args.reference:  # measured after the round trip through the source raster, exactly as fusion will see both
         pairs = [(M.moving_mask(args.output / "masks", i), M.moving_mask(args.reference, i)) for i in range(0, max(union) + 1)]
@@ -72,6 +83,7 @@ if __name__ == "__main__":
     parser.add_argument("--self-check", action="store_true")
     parser.add_argument("--droid-run", type=Path)
     parser.add_argument("--tracks", type=Path, nargs="+")
+    parser.add_argument("--analysis", type=Path, help="motion_tracks_to_analysis.py analysis.json: moved or movable-class objects, in source pixels")
     parser.add_argument("--reference", type=Path, help="existing person masks to measure against (never an input)")
     parser.add_argument("--output", type=Path)
     a = parser.parse_args()
