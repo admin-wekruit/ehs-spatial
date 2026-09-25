@@ -408,6 +408,7 @@ const messages: Record<string, [string, string]> = {
   ],
   branch: ["方案", "Branch"],
   loadingModel: ["正在载入空间资产…", "Loading spatial assets…"],
+  loadingMoving: ["场景可用 · 人物动态表面后台载入中…", "Scene ready · loading moving surfaces…"],
   reconstruction: ["重建", "Reconstruction"],
   sourceScale: ["尺度依据", "Scale evidence"],
 };

@@ -58,3 +58,5 @@
 .cad-hit-picker > div button b { color: #486570; font-family: ui-monospace, monospace; }
 .cad-hit-picker > div button[aria-pressed="true"] { color: #a65319; background: #f9eee0; }
 @media (max-width: 640px) { .cad-tools button { min-height: 32px; } .cad-tools { padding: 5px; } .cad-tools > span { max-width: 90px; } .cad-selection { min-height: 34px; } }
+
+.cad-legend .cad-key-path::before { content: ""; display: inline-block; width: 14px; height: 0; border-top: 2.5px solid #e8900c; margin-right: 5px; vertical-align: middle; }

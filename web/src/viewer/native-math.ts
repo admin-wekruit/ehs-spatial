@@ -62,6 +62,23 @@ export function threePointAngle(points: Vec[]) {
   return {value:angle*180/Math.PI,arc,labelPoint:arc[16]};
 }
 
+// Nearest hit distance along a ray without per-triangle allocation: fast enough for one click on a room mesh of
+// millions of triangles (vertex stride 12 floats, position first). Infinity when nothing is hit.
+// ponytail: linear scan per click; a BVH if room meshes grow past ~10M triangles.
+export function rayMeshDistance(vertices: Float32Array,indices: Uint32Array,origin: Vec,direction: Vec) {
+  const [ox,oy,oz]=origin,[dx,dy,dz]=direction;let nearest=Infinity;
+  for(let i=0;i<indices.length;i+=3){
+    const a=indices[i]*12,b=indices[i+1]*12,c=indices[i+2]*12,ax=vertices[a],ay=vertices[a+1],az=vertices[a+2];
+    const e1x=vertices[b]-ax,e1y=vertices[b+1]-ay,e1z=vertices[b+2]-az,e2x=vertices[c]-ax,e2y=vertices[c+1]-ay,e2z=vertices[c+2]-az;
+    const px=dy*e2z-dz*e2y,py=dz*e2x-dx*e2z,pz=dx*e2y-dy*e2x,det=e1x*px+e1y*py+e1z*pz;
+    if(det>-1e-12&&det<1e-12)continue;
+    const inv=1/det,tx=ox-ax,ty=oy-ay,tz=oz-az,u=(tx*px+ty*py+tz*pz)*inv;if(u<0||u>1)continue;
+    const qx=ty*e1z-tz*e1y,qy=tz*e1x-tx*e1z,qz=tx*e1y-ty*e1x,v=(dx*qx+dy*qy+dz*qz)*inv;if(v<0||u+v>1)continue;
+    const t=(e2x*qx+e2y*qy+e2z*qz)*inv;if(t>0&&t<nearest)nearest=t;
+  }
+  return nearest;
+}
+
 // ponytail: linear triangle traversal only on a measurement click, after GPU
 // object picking. Add a per-mesh BVH if individual selectable meshes grow larger.
 export function rayMeshPoint(vertices: Float32Array,indices: Uint32Array,origin: Vec,direction: Vec) {

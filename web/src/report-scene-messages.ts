@@ -81,6 +81,7 @@ export const reportSceneMessages: Record<string, [string, string]> = {
   scenePoints: ["点云", "Point cloud"],
   sceneAllBounds: ["所有对象范围", "All object bounds"],
   sceneShowBorders: ["物体边框", "Object outlines"],
+  sceneShowCameraPath: ["相机路线", "Camera path"],
   sceneClearSelection: ["清除选择", "Clear selection"],
   sceneFeedback: ["反馈", "Feedback"],
   sceneFeedbackTitle: ["对象反馈 · Agent", "Object feedback · Agent"],

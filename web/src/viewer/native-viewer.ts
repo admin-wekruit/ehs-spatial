@@ -1,6 +1,6 @@
-import {add,scale,dot,cross,unit,identity,matmul,point,rotate,transformMatrix,sourceCamera,cameraMatrix,boundsCorners,projected,fitCamera,rayMeshPoint,type SurfacePick,type Camera,type Vec,type Transform} from './native-math.ts';
+import {add,scale,dot,cross,unit,identity,matmul,point,rotate,transformMatrix,sourceCamera,cameraMatrix,boundsCorners,projected,fitCamera,rayMeshPoint,rayMeshDistance,type SurfacePick,type Camera,type Vec,type Transform} from './native-math.ts';
 import {isReferenceSurface} from '../scene-semantics.ts';
-import {activeModel,compositeModelEvidence,modelPreviewEntities,modelPreviewGeometry,isCurrentReferenceSurface,modelFamilyGeometry,modelFamilyTransforms,entityGeometryForLayer,representationAvailable,representationInPhoto,cameraForImage,currentCameras,type GeometryLayer} from '../core.ts';
+import {activeModel,compositeModelEvidence,modelPreviewEntities,modelPreviewGeometry,isCurrentReferenceSurface,modelFamilyGeometry,modelFamilyTransforms,entityGeometryForLayer,representationAvailable,representationInPhoto,cameraForImage,currentCameras,cameraPath,type GeometryLayer} from '../core.ts';
 import type {SceneDocument,RepresentationLoadState} from '../types';
 
 export type Mesh={vertices:Float32Array;indices:Uint32Array;mode:number;matrix:ArrayLike<number>;texture?:Blob;material?:{baseColorFactor:number[];alphaMode:'OPAQUE'|'MASK'|'BLEND';alphaCutoff:number};bounds:{min:Vec;max:Vec}};
@@ -134,8 +134,8 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');Object.assign(svg.style,{position:'absolute',inset:'0',width:'100%',height:'100%',pointerEvents:'none'});stage.append(photo,canvas,svg);container.append(stage);
   const gl=canvas.getContext('webgl2',{alpha:true,antialias:true,preserveDrawingBuffer:true});if(!gl){stage.remove();throw Error('webgl_unavailable');}
   let disposed=false,epoch=0,photoEpoch=0,doc:any={entities:[],cameras:[],coordinateFrames:[]},revisionId='',selection:any={},camera:Camera|null=null,radius=1,center:Vec=[0,0,0],frameId:string|null=null,gpu:GPU[]=[],abort=new AbortController(),preview=new Map<string,Transform>(),drag:any=null,axisDrag:any=null;
-  let sceneAssetsSignature='',loadedLayerKey='',viewMode='free';let pickCursor:Vec|null=null;let navigationVersion=0,autoFit=true;let photoAbort=new AbortController(),photoObjectURL:string|null=null;
-  let captureSize:{w:number;h:number;cw:number;ch:number}|null=null;const streamedMeshes=new Map<string,Mesh>();const loadedRepresentations=new Set<string>(),assetStates=new Map<string,RepresentationLoadState>();
+  let sceneAssetsSignature='',loadedLayerKey='',viewMode='free',backgroundOnly=false;let pickCursor:Vec|null=null;let navigationVersion=0,autoFit=true;let photoAbort=new AbortController(),photoObjectURL:string|null=null;
+  let captureSize:{w:number;h:number;cw:number;ch:number}|null=null;let pathCache:{doc:any;frameId:string|null;path:ReturnType<typeof cameraPath>}={doc:null,frameId:null,path:[]};const streamedMeshes=new Map<string,Mesh>();const loadedRepresentations=new Set<string>(),assetStates=new Map<string,RepresentationLoadState>();
   let layers:any={observed_surface:true,generated_mesh:true,primitive:true,point_cloud:true,allBounds:false,opacity:.65,lighting:true,showCandidates:false,...options.layers};const cleanups:(()=>void)[]=[];
   const emit=(type:string,payload:any={})=>{if(!disposed)options.onEvent?.({type,...payload});};
   const program=gl.createProgram()!;const shaders:WebGLShader[]=[];
@@ -196,6 +196,17 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
       if(i)line(project(layers.measurePoints[i-1].point),p,'#edbe38',2);
     }
     if(!captureCanvas&&layers.pickingPoints&&pickCursor){const x=(w-cw)/2+pickCursor[0]*cw,y=(h-ch)/2+pickCursor[1]*ch;line([x-8,y],[x+8,y],'#fff',2);line([x,y-8],[x,y+8],'#fff',2);}
+    // Where the camera walked, start green, end red, and where it is at the report's video time.
+    if(!captureCanvas&&!layers.studio&&layers.cameraPath!==false){
+      if(pathCache.doc!==doc||pathCache.frameId!==frameId)pathCache={doc,frameId,path:cameraPath(doc,frameId)};
+      const path=pathCache.path,screen=path.map(p=>project(p.position as Vec));
+      const marker=(p:Vec|null,fill:string,r:number)=>{if(!p)return;const c=document.createElementNS(svg.namespaceURI,'circle');for(const[k,v]of Object.entries({cx:p[0],cy:p[1],r,fill,stroke:'#fff','stroke-width':2}))c.setAttribute(k,String(v));svg.append(c);};
+      if(path.length>1){
+        for(let i=1;i<screen.length;i++)line(screen[i-1],screen[i],'#ffb020',2.5);
+        marker(screen[0],'#2fbf71',5);marker(screen[screen.length-1],'#e5484d',5);
+        if(Number.isFinite(layers.time)&&path[0].time!==null){let now=0;for(let i=1;i<path.length;i++)if(Math.abs(path[i].time!-layers.time)<Math.abs(path[now].time!-layers.time))now=i;marker(screen[now],'#ffb020',7);}
+      }
+    }
     if(layers.showBounds===false&&!layers.showAxes)return;
     const ids=layers.showBounds===false?[]:layers.allBounds?doc.entities.filter((e:any)=>!e.sourceContext).map((e:any)=>e.id):[selection.entityId];for(const id of ids){if(!id)continue;const ps=selectedGeometry(id).corners;if(!ps.length)continue;const box=ps.map(project);for(let i=0;i<8;i++)for(let k=0;k<3;k++)if(!(i&(1<<k)))line(box[i],box[i|(1<<k)],id===selection.entityId?'#7ae6cf':'#607e89');}
     const axisId=layers.axisEntityId||selection.entityId,e=entity(axisId),axes=selectedAxes(axisId);if(e&&axes){const {geometry,origin,length}=axes,t=geometry.transform;
@@ -277,7 +288,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
   }
   function loadProgress(){
     const states=[...assetStates.values()],ready=states.filter(state=>state.state==='ready');
-    emit('loadProgress',{phase:'assets',revisionId,loaded:ready.length,total:states.length,
+    emit('loadProgress',{phase:'assets',revisionId,loaded:ready.length,total:states.length,message:backgroundOnly?'loadingMoving':undefined,
       failed:states.filter(state=>state.state==='error').length,pending:states.filter(state=>state.state==='loading').length,
       vertices:ready.reduce((sum,state)=>sum+state.vertexCount,0),triangles:ready.reduce((sum,state)=>sum+state.triangleCount,0),states});
   }
@@ -289,10 +300,16 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
     if(!camera){if(currentCameras(doc)[0])setCamera(currentCameras(doc)[0].id);else setCamera('free');}else if(camera.exact&&currentCameras(doc).some((c:any)=>c.id===camera!.frame.id))setCamera(camera.frame.id);
     emit('loadProgress',{phase:'metadata',loaded:0,total:doc.entities.length});
     const fitVersion=navigationVersion,initialRadius=radius;
+    // Static scene first, framed and pickable as soon as it is in; a video's many small time-stamped surfaces follow.
+    // Waiting for all of them (433 for a 30 s clip, ~4 requests/s from the publication site) kept the view unframed for minutes.
+    tasks.sort((a,b)=>Number(!!a.r.timeRange)-Number(!!b.r.timeRange));
+    let staticLeft=tasks.filter(({r})=>!r.timeRange).length,fitted=false;backgroundOnly=false;
+    const fit=()=>{if(fitted||n!==epoch||disposed)return;fitted=true;dimensions();if(autoFit&&!camera?.exact&&navigationVersion===fitVersion&&initialRadius!==radius)setCamera(viewMode);draw();};
     for(const {e,r}of tasks)assetStates.set(e.id+'/'+r.id,{entityId:e.id,representationId:r.id,assetId:r.assetId||null,state:'loading',vertexCount:0,triangleCount:0,errorCode:null});
     loadProgress();
     // Two downloads at a time bounds decode memory on phones. Late data may draw,
     // but never writes the host's selection or camera.
+    const workers:Promise<void>[]=[];
     async function load(){while(tasks.length&&!disposed&&n===epoch){
       const {e,r}=tasks.shift()!,key=e.id+'/'+r.id,staged:GPU[]=[];
       try{
@@ -309,9 +326,12 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
         assetStates.set(key,{entityId:e.id,representationId:r.id,assetId:r.assetId||null,state:'ready',errorCode:null,vertexCount:meshes.reduce((sum,mesh)=>sum+mesh.vertices.length/12,0),triangleCount:meshes.reduce((sum,mesh)=>sum+(mesh.mode===4?mesh.indices.length/3:0),0)});
         dimensions();draw();
       }catch(error:any){gpu=gpu.filter(g=>!staged.includes(g));loadedRepresentations.delete(key);staged.forEach(releaseMesh);if(n===epoch&&!disposed&&error.name!=='AbortError'){assetStates.set(key,{entityId:e.id,representationId:r.id,assetId:r.assetId||null,state:'error',vertexCount:0,triangleCount:0,errorCode:error.message});emit('loadError',{code:error.message,entityId:e.id,representationId:r.id,assetId:r.assetId});}}
+      if(!r.timeRange&&--staticLeft===0&&n===epoch&&!disposed){fit();backgroundOnly=tasks.length>0;if(backgroundOnly)workers.push(load(),load(),load(),load());}
       if(n===epoch&&!disposed)loadProgress();
     }}
-    await Promise.all([load(),load()]);if(n===epoch&&!disposed){dimensions();if(autoFit&&!camera?.exact&&navigationVersion===fitVersion&&initialRadius!==radius)setCamera(viewMode);draw();emit('renderReady',{phase:'scene',revisionId,canvasReady:!gl!.isContextLost()});}
+    // Moving surfaces are tens of KB each: four more requests at a time once the static scene is in.
+    workers.push(load(),load());for(let i=0;i<workers.length;i++)await workers[i];
+    if(n===epoch&&!disposed){backgroundOnly=false;fit();dimensions();draw();loadProgress();emit('renderReady',{phase:'scene',revisionId,canvasReady:!gl!.isContextLost()});}
   }
   function listen(target:EventTarget,name:string,fn:any,opts?:any){target.addEventListener(name,fn,opts);cleanups.push(()=>target.removeEventListener(name,fn,opts));}
   listen(canvas,'pointerdown',(e:PointerEvent)=>{drag={x:e.clientX,y:e.clientY,b:e.button,moved:0};canvas.setPointerCapture(e.pointerId);});
@@ -320,7 +340,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
   function pickAt(x:number,y:number){
     if(!camera)return;const rect=canvas.getBoundingClientRect();if(x<0||y<0||x>=rect.width||y>=rect.height)return;
     draw(true);const px=new Uint8Array(4);gl!.readPixels(Math.floor(x*canvas.width/rect.width),canvas.height-1-Math.floor(y*canvas.height/rect.height),1,1,gl!.RGBA,gl!.UNSIGNED_BYTE,px);draw();
-    const i=px[0]+(px[1]<<8)+(px[2]<<16)-1,id=doc.entities[i]?.id;
+    const i=px[0]+(px[1]<<8)+(px[2]<<16)-1,id=doc.entities[i]?.id||(layers.pickingPoints?undefined:objectUnder(x,y,rect));
     if(layers.pickingPoints){
       const inverse=new DOMMatrix(Array.from(cameraMatrix(camera,rect.width/rect.height,radius))).inverse();
       const unproject=(z:number)=>{const p=inverse.transformPoint(new DOMPoint(2*x/rect.width-1,1-2*y/rect.height,z,1));return [p.x/p.w,p.y/p.w,p.z/p.w];};
@@ -333,6 +353,32 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
       emit('measurementPoint',{hit});return;
     }
     emit('selectionIntent',{entityId:id||null,cameraId:camera.exact?camera.frame.id:null,originalPixel:camera.exact?[x*camera.frame.width/rect.width-.5,y*camera.frame.height/rect.height-.5]:null});
+  }
+  // The room surface is context (pick ID 0) and an object's own surfaces are loaded only for the photo in view, so in a
+  // free view most objects drawn inside the room mesh were not clickable. A click on the room surface now selects the
+  // object whose surface is there: the room hit point, inside the smallest box of that object's fused (else observed)
+  // surfaces. Boxes, not shapes: an object's box can also hold a little of its neighbour; the smallest box wins.
+  function objectUnder(x:number,y:number,rect:DOMRect){
+    const inverse=new DOMMatrix(Array.from(cameraMatrix(camera!,rect.width/rect.height,radius))).inverse();
+    const unproject=(z:number):Vec=>{const p=inverse.transformPoint(new DOMPoint(2*x/rect.width-1,1-2*y/rect.height,z,1));return [p.x/p.w,p.y/p.w,p.z/p.w];};
+    const origin=unproject(-1),direction=unit(add(unproject(1),scale(origin,-1)));let nearest=Infinity,hit:Vec|null=null;
+    for(const g of gpu.filter(g=>entity(g.entityId)?.sourceContext&&visible(g)&&g.mesh.mode===4)){
+      const m=model(g),local=new DOMMatrix(Array.from(m)).inverse(),a=local.transformPoint(new DOMPoint(...origin)),b=local.transformPoint(new DOMPoint(...add(origin,direction)));
+      const start:Vec=[a.x,a.y,a.z],step:Vec=[b.x-a.x,b.y-a.y,b.z-a.z],t=rayMeshDistance(g.mesh.vertices,g.mesh.indices,start,step);
+      if(t<Infinity){const p=point(m,add(start,scale(step,t))),d=Math.hypot(...add(p,scale(origin,-1)));if(d<nearest){nearest=d;hit=p;}}
+    }
+    if(!hit)return undefined;
+    const margin=radius*.01;let best:string|undefined,volume=Infinity;
+    for(const e of doc.entities){
+      if(e.sourceContext||e.visible===false||layers.entityIds&&!layers.entityIds.includes(e.id))continue;
+      const reps=(e.representations||[]).filter((r:any)=>!r.timeRange&&r.bounds&&r.coordinateFrameId===frameId),fused=reps.filter((r:any)=>r.sourceKind==='observed_reference_surface');
+      for(const r of fused.length?fused:reps){
+        const m=transformMatrix(r.transform||{position:[0,0,0],quaternion:[0,0,0,1],scale:[1,1,1]}),cs=boundsCorners(r.bounds).map(p=>point(m,p));
+        const lo=[0,1,2].map(k=>Math.min(...cs.map(p=>p[k]))-margin),hi=[0,1,2].map(k=>Math.max(...cs.map(p=>p[k]))+margin);
+        if(hit.every((v,k)=>v>=lo[k]&&v<=hi[k])){const size=(hi[0]-lo[0])*(hi[1]-lo[1])*(hi[2]-lo[2]);if(size<volume){volume=size;best=e.id;}}
+      }
+    }
+    return best;
   }
   listen(stage,'pointerup',(e:PointerEvent)=>{if(axisDrag){const d=axisDrag;axisDrag=null;if(d.changed)emit('transformCommitIntent',{operations:[{type:'setTransform',entityId:d.id,...preview.get(d.id)}]});return;}const prev=drag;drag=null;if(!prev||prev.b!==0||prev.moved>=4)return;const rect=canvas.getBoundingClientRect();pickAt(e.clientX-rect.left,e.clientY-rect.top);});
   listen(canvas,'keydown',(e:KeyboardEvent)=>{if(!layers.pickingPoints||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Enter'].includes(e.key))return;e.preventDefault();const {cw,ch}=viewSize();pickCursor ||= [.5,.5];if(e.key==='Enter'){pickAt(pickCursor[0]*cw,pickCursor[1]*ch);return;}const step=e.shiftKey?10:1;pickCursor=[Math.max(0,Math.min(1-1/cw,pickCursor[0]+(e.key==='ArrowRight'?step:e.key==='ArrowLeft'?-step:0)/cw)),Math.max(0,Math.min(1-1/ch,pickCursor[1]+(e.key==='ArrowDown'?step:e.key==='ArrowUp'?-step:0)/ch))];draw();});

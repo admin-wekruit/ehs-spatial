@@ -1,6 +1,7 @@
 export const cadViewMessages: Record<string, [string, string]> = {
   title: ["当前场景 · CAD 平面图", "Current scene · CAD plan"],
   fit: ["全图", "Fit all"],
+  cameraPath: ["相机路线", "Camera path"],
   focus: ["定位所选", "Focus selected"],
   zoomIn: ["放大 CAD", "Zoom in CAD"],
   zoomOut: ["缩小 CAD", "Zoom out CAD"],

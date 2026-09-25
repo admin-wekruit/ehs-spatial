@@ -80,6 +80,20 @@ export function currentCameras(document: SceneDocument) {
     const camera = cameraForImage(document, imageId); return camera ? [camera] : [];
   });
 }
+/** Where the camera walked: camera centres of one coordinate frame in source-frame order, with video seconds when the
+ *  images record their source frame and timestamp (video reports). Photo reports return their few cameras untimed. */
+export function cameraPath(document: SceneDocument, frameId: string | null) {
+  if (!Array.isArray(document.cameras)) return [];
+  const meta = (imageId: string) => jsonObject((document.assets || []).find(asset => asset.id === imageId)?.metadata);
+  const cameras = currentCameras(document).filter(camera => camera.coordinateFrameId === frameId && Array.isArray(camera.cameraToWorld))
+    .map(camera => ({ camera, frame: Number(meta(camera.imageId)?.sourceFrame), stamp: Number(meta(camera.imageId)?.videoTimestamp) }));
+  const ordered = cameras.every(c => Number.isFinite(c.frame)) ? [...cameras].sort((a, b) => a.frame - b.frame) : cameras;
+  const first = ordered[0], last = ordered[ordered.length - 1];
+  // Video time is source frame / frame rate, the same clock the replay uses; the rate comes from the timestamps.
+  const rate = first && last && last.frame > first.frame && Number.isFinite(first.stamp) && Number.isFinite(last.stamp) && last.stamp > first.stamp ? (last.frame - first.frame) / (last.stamp - first.stamp) : NaN;
+  return ordered.map(({ camera, frame }) => ({ cameraId: camera.id, position: [0, 1, 2].map(k => Number((camera.cameraToWorld as unknown as number[][])[k][3])),
+    time: Number.isFinite(rate) ? frame / rate : null })).filter(p => p.position.every(Number.isFinite));
+}
 export function activeModel(entity: Entity) {
   return (entity.representations || []).find(rep => rep.id === entity.activeModelRepresentationId &&
     ["generated_mesh", "primitive"].includes(rep.kind)) || null;
