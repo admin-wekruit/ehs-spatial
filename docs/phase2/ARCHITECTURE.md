@@ -1,0 +1,226 @@
+# 视频巡检架构：目标、真实状态与缺口
+
+日期：2026-09-23。三份文档分工：[PLAN.md](PLAN.md) 讲里程碑和验收，[HANDOFF.md](HANDOFF.md) 是逐日现状日志，本文件讲**组件怎么切、组件之间交什么、代码里实际有什么、缺什么**。逐文件的对应关系在 [COMPONENTS.md](COMPONENTS.md)。
+
+来源：三份只读代码梳理（时间与轨迹；平台、规则与数据模型；几何、物体、导出与评估），每条都有文件行号；同日的外部调研（建筑规范自动审查 ACC、运动动作分析、EHS 视觉厂商、自动驾驶、机器人仿真）；以及一次**独立评审**（没有项目上下文、只读、逐条核对行号，找出 1 个阻塞、12 个主要、6 个次要问题）。评审结论已并入本版，出处标为“评审 #n”。本文件是设计与现状核对，不是完成报告。**文中凡写“缺”的地方，都经 grep 或读码确认过没有。**
+
+缺口编号用 **A1–A20**，避免和 PLAN 里的里程碑 G1–G7 撞号（评审 #11）。对照表在 §6 末尾。
+
+## 0. 一句话
+
+> 测量出数 → 谓词出结论 → 覆盖度决定这个结论敢不敢出 → 语言只负责解释。
+> 语言模型只在三个位置出现：把条文翻成谓词（人签字才生效）、在指定帧上核实属性（只出证据）、把已成立的结论写成句子。它不产生结论。
+
+## 1. 先认清现实：五条并存的路径
+
+| 路径 | 入口 | 用到的规则 | 状态 |
+|---|---|---|---|
+| **P0a 照片报告上传** | `/reports`：`report_workspace.py:56` → `pipeline.py` → `scene.py:85` | **只有写死的围栏净空 0.6 m**（`rules._assess_clearance`）。上传的 `CaptureRun` 不带策略（`report_workspace.py:240`），所以 `policy.py` 被跳过（`pipeline.py:235`） | 线上（Modal） |
+| **P0b 工作台** | 同一个线上应用挂载的 Gradio 工作台（`serve.py:401`） | 页面上有策略选择器（`app.py:1038-1049`），选中的规格进入 `CaptureRun.policies`（`app.py:419-431`），`evaluate_policies` 会跑（`pipeline.py:235-239`）。镜像里带着 `outputs/policies/compiled`（`report_workspace_app.py:51`）。`refine.py:287`、`agent_hub.py:144`、`scene_inventory.py:1777` 也会重算策略 | 线上（Modal） |
+| P1 固定相机视频 | 同一个工作台的 Video 页（`app.py:21` → `ehs_spatial/video.py`） | R1 区域 / R2 人车最小距离 / R3 速度，逐帧判定 | 线上，为固定相机写的（`PLAN.md:50`） |
+| P2 video-mvp | `run_discovered_video` → … → `web/experiments/video-mvp` | 无 | 2026-09-21 退役，代码与数据保留 |
+| **P3 视频 → 报告（当前主线）** | 手动命令，见 §3 | `evaluate_video_policy.py` 调平台引擎，一条通道净宽规则的演示 | 仅本机，无编排器 |
+| 平台（新） | `ehs_spatial/platform/*`，16 张 Postgres 表 | 带版本的策略引擎（ZEN 决策图 + `policy.py` 求值） | 仅本机（`docs/platform/OPERATIONS.md:12`）。OPERATIONS.md:25-58 描述了一个 Modal 发布站点（带 `/api/policies`），**是否在线未核实** |
+
+**含义：**
+- 旧的谓词库 `policy.py` **在线上跑**（P0b）。没上线的是**平台的 ZEN 引擎**，以及 `/reports` 上传路径上的策略。
+- **阻塞问题（评审 #1）：线上路径拿假设的尺度下结论。** `policy.py:303` 把 `camera_height` 和 `moge_anchor` 都当成已标定；`scene.py:134-137` 只对 `model_native` 降级，所以 0.6 m 规则在 MoGe 尺度或持机高度尺度上照样给 PASS/FAIL（`pipeline.py:54-93`）；`measurements.py:44` 把操作员填的持机高度标成 `operator_anchored`；工作台默认 `camera_height_m=1.5`（`contracts.py:90`）。
+- 所以“假设不是实测”（§5 原则 4）今天只在 P3 成立，线上正好相反。三处代码对“什么算已标定”各说各的。见 A0。
+
+## 2. 目标架构（分层）
+
+```
+采集 C1 ─→ 几何 C2 ─┬─→ 合并到一个坐标系 ─→ 记忆库 ─┬─→ C7 规则引擎（四态结论）
+                    │   （段间重叠求变换）          ├─→ C8 对话（检索分流）
+         感知 C3/C4/C9 ─┤                          ├─→ R  报告（不可变版本）
+         （动静、物体、骨架）                        ├─→ C10 仿真导出
+         视频描述 C6 ───┘                          └─←─ C5 区域（人画、人确认）
+```
+
+几何与感知互相喂：相机和深度给感知；感知的动态掩码回写给融合，融合前剔除动的像素。C6 不是第二份记忆，它读 C3 的掩码和 C4 的名字，把事件写回同一个库，主键仍是实体 ID 和视频时间。
+
+**记忆库的三个共用键：** 场景版本、实体/轨迹 ID、视频绝对秒（或源帧号）。缺一个就只是文本，不算记忆。**所有落盘的帧号都必须是源视频帧号，不能是某个模型内部的下标**（评审 #3 的教训）。
+
+**三层信任级别：**
+
+| 层 | 内容 | 谁写 | 能不能单独下结论 |
+|---|---|---|---|
+| 事实层 | 场景版本、实体、轨迹、关系、覆盖、区域 | 几何算法（可重算） | 能 |
+| 描述层 | 窗口描述、属性核实、名册核对 | 模型 | **不能**，只当证据 |
+| 结论层 | finding，绑策略版本 | 规则引擎 | 是结论本身，不可变 |
+
+**一条尺度闸门：** “这个尺度能不能拿来判规则”只能有一个函数回答，`rules.py`、`policy.py`、`policy_engine.py`、仿真导出都调它（A0）。今天 P3 已有 `evaluate_video_policy.contract_scale`，线上三处还没接。
+
+## 3. P3 的真实流程（2026-09-23 核对）
+
+没有编排器，每一步都是手动命令（`HANDOFF.md:181-276`）。
+
+| # | 步骤 | 产物 |
+|---|---|---|
+| 0 | `scout_clip_segments.py`（可选） | `segments.json`。**没有东西把选中的窗口切成片段** |
+| 1 | 输入片段。三种来源：`droid_room.CLIPS` 里写死的 TUM 数据集；`prepare_arkit_clip.py`（手机 ARKit）；**今天新增的 `prepare_video_clip.py`（任意 MP4）**，`droid_room` 会自动登记它写出的 `clip.json` | `rgb/*.png`、`rgb.txt`、`clip.json`（内参来源、裁切框、视频哈希） |
+| 2 | `droid_room.py execute` | 每帧相机（ARKit 跳过）。没有真值的片段，`evaluate` 返回 `no_ground_truth` |
+| 3 | `motion_masks` → `sam3_motion_tracks`（每窗口一次）→ `assemble_dynamic_masks` | 动态掩码 |
+| 4–6 | `mono_room.py infer / metric / fuse / dynamic` | 深度、`metric-scale.json`、网格、`scene.json`、随时间变化的移动表面 |
+| 7 | `discover_video_keyframes`（SAM3）+ `sam2_everything` | 掩码根目录。**合并掩码根目录靠手工软链接** |
+| 8 | `build_video_object_map` → `name_video_entities` | `object-map.json` |
+| 9 | `evaluate_video_policy` | `policy-findings.json` |
+| 10–13 | 贴图、推断地面、（可选）生成模型、实体投影到帧 | GLB、`analysis.json` |
+| 14 | `import_video_scene.py` | Postgres 发布，本机 8792 端口 |
+
+**栅格与内参约定：** 整条流水线默认 640×480、已知 K（`assemble_dynamic_masks.py:26-30`、`import_video_scene.py:34`、`HANDOFF.md:201`）。`prepare_video_clip.py` 遵守它：中心裁成 4:3 再缩放，K 由声明的视场角或 MoGe-3 在 5 帧上的中位数给出，`clip.json` 写明 `calibrated: False`。另一个会话的 `motion_masks.fixed_video_frames` 却是补边到 640×368（`tests/check_fixed_camera_motion.py:37`）。**两套栅格要统一成一套**（A1）。
+
+**尺度：** `metric-scale.json` 的字段是 `scale_status`，有四个值：`device_metric`、`assumed_camera_height`、`assumed_camera_height_floor_views_disagree`、`uncalibrated`。`contract_scale` 把它们映射成合同里的三态：设备位姿 → `operator_anchored`；两种假设高度 → `model_estimated`（锚点记为未测量的 `stated_carry_height`，数值取实际用的 `--camera-height`）；`uncalibrated` → `uncalibrated`，且 `evaluate_video_policy` 拒绝运行。
+
+后端去留：DROID 只取相机（稠密几何失败）；DA3 是在用的深度；LingBot、ORB-SLAM3 放弃；MapAnything 只用于照片；MoGe-3 作尺度交叉检查、移动像素深度，以及无标定视频的视场角估计。
+
+## 4. 已经做对、应当保留的部分
+
+| 能力 | 在哪 | 为什么重要 |
+|---|---|---|
+| **条文编译器** | `policy_compile.py`：模型把条文译成 `PolicySpec`，**只能用封闭词表，表达不了必须填 `unsupported_reason`** | 就是“编译期大声拒绝”。同日外部调研（RASE、Solibri）得出的结构与此一致 |
+| **编译器考试集** | `oshacorpus.py`：真实 OSHA 1910 条文，分 compile / refuse / skip | 测的是“会不会拒绝”，而不只是“会不会翻译” |
+| **四态结论 + 误差带** | `PASS / FAIL / NEEDS_REVIEW / INSUFFICIENT_EVIDENCE`（`platform/contracts.py:171-177`）；落在误差带内降为需复核（`policy.py:292-300`） | 判据宽度必须大于测量误差 |
+| **适用性一等公民** | `applicable / unknown / not_applicable`，来源不合法就是 unknown（`policy_engine.py:177-178`）；激活前三种状态都要有测试（`policy_repository.py:156`） | RASE 的 A |
+| **人工复核闭环** | `confirmed / rejected / needs_evidence`，证据请求 `open / fulfilled` | 结论是给人复核的证据 |
+| **不可变版本** | 场景版本由 `001_core.sql:99-106` 的触发器保证，策略版本由 `002_policy.sql:41-47` 保证 | 改规则不改写历史结论 |
+| **模型只能提议** | 平台 agent 的编辑只是 proposal，`applied: False`（`agent_service.py`） | 对话不能改事实 |
+| **身份只提议不指派** | `link_person_tracklets`（`human_confirmed: False`）、`person_reid`（`identity_assignment: None`） | 不做跨采集自动人员身份（`PLAN.md` §6） |
+
+## 5. 设计原则（附证据来源）
+
+1. **算子有限，策略无限。** 加一条策略是配置变更，加一个算子是工程任务。建筑规范自动审查的三个独立血统（Solibri 45–55 个模板、VCCL 约 25 个原子方法、BimSPARQL）都收敛在 60 个以内；运动分析（Onform 模型卡、PoseForge）也是“测量层 + 可配置规则层”。
+2. **结论只由谓词产生。** 直接让 VLM 判合规：Molmo-7B 召回 48%，Qwen2-VL 集成后精确率 67%；视频模型漏报率 49–85%（ARGUS）。唯一上 90% 的方案是用本体约束模型能说什么。
+3. **“没看到”不等于“不存在”。** 覆盖不足不得输出 PASS。**降成哪一态还没定**：PLAN §1.7 / S7 写的是覆盖 < 90% → 需复核，本文件早先写的是证据不足（评审 #12，列入 §8）。八家商用 EHS 视觉厂商、ACC 文献、运动分析产品都没有做到逐区域的覆盖弃权；这是空位。
+4. **尺度必须带来源和不确定度，假设不是实测。** `PLAN.md` §6 已写“不把假设值存成实测”。持机高度假设在 fr1/room 上偏 +19.9%（MoGe 偏 0.2%），在一段 ARKit 采集上偏 0.1%：**误差取决于拍摄的人，不能用一次验证当默认精度。** 今天只有 P3 遵守这一条，线上不遵守（A0）。
+5. **检索：能算的绝不检索。** “有没有”“每一次”是完整性问题，向量 top-k 结构上答不了（VSS 返 5 条，ReMEmbR 最多 3 轮就硬答）。向量只留给 schema 覆盖不到的探索式提问，并标“最接近的几条”。
+6. **身份分三层：** 窗口内交给跟踪器；跨窗口用重叠帧上的掩码集合匹配（SAM 3 内部用 IoU 0.5，DEVA、ViP-DeepLab 同理）；跨次巡检用背景对齐后的位置先验 + 自由空间证据（`PLAN.md` S12，Khronos 同理）。纯几何描述子在真实跨次重定位上召回只有 2.6–6.8%。
+7. **遮挡是三元关系**（观察点、遮挡物、目标），不能存成物体之间的边。
+8. **仿真导出是“两套几何”：** 画面层可以是高斯或贴图，碰撞永远是另一个网格。所有仿真器都要求米，所以导出前必须过同一道尺度闸门。
+
+## 6. 缺口清单（按阻塞程度）
+
+### 先修：线上产品本身
+
+| # | 缺口 | 证据 |
+|---|---|---|
+| **A0** | **线上路径拿假设尺度下结论；三处代码对“已标定”定义不一** | 见 §1 阻塞问题（评审 #1）。修法：一个共用的“尺度能否判规则”函数，`rules.py`、`policy.py`、`policy_engine.py` 都调它。**这改变线上行为，需要用户拍板**（§8） |
+
+### 挡住“拿 YouTube 片段跑 prototype”
+
+| # | 缺口 | 证据 |
+|---|---|---|
+| A1 | MP4 → 片段：**已有第一版**（`prepare_video_clip.py`，Lightning 片段已在跑）。剩下：两套栅格（裁 4:3 到 640×480 vs 补边到 640×368）要定一套；镜头畸变假设为零 | 评审 #10 |
+| A2 | 没有编排器；掩码根目录靠手工软链接 | 三份梳理均未找到 |
+| A3 | 来路不明视频的尺度：MoGe 已能给 `model_estimated` 尺度（`mono_room.py:516-526`）。按人身高估尺度在现行闸门下也只是 `model_estimated`，**解锁不了任何结论**，所以优先级最低 | 评审 #17 |
+
+### 挡住“视频上的规则判定”
+
+| # | 缺口 | 证据 |
+|---|---|---|
+| A4 | **没有覆盖 / 可见性输入** | 没有任何规则读覆盖字段；`observed_partial`（`measurements.py:56`）、`visible_support_only`（`reconstruction.py:929`）写了但没人读 |
+| A5 | **没有自由空间 / 净宽算子** | 自家考试集要求拒绝 1910.36(g)(2)，理由是“障碍物之间的自由空间，不是有标签的主客体距离”（`oshacorpus.py:117-121`）；P3 演示却正是把这条编成桌↔柜的 `min_separation`（`evaluate_video_policy.py:22-23`）。出口宽度、0.6 m 工作净空、电气工作空间都要一个读覆盖的占据/自由空间算子，A4 和 A7 单独都表达不了（评审 #9） |
+| A6 | **没有时间类谓词** | 平台用的 `Predicate` 枚举全是静态的（`ehs_spatial/contracts.py:29-40`）；`video.py` 的 R1 只有逐帧状态、没有停留时长，R2 不区分哪条轨迹，`NO_DATA` 排在 PASS 之下永远不出现在汇总里（`:54, 799-802`），“没有人 → 通过”不检查区域是否可见（`:746-747`） |
+| A7 | 没有用户定义的区域，没有 CAD 导入 | CAD 视图的画框是临时测量，标注“不是已验证的安全区域”（`SpatialMeasurements.tsx:101-102`） |
+| A8 | 没有物体关系（支撑、包含、遮挡、附着） | 后果：嵌套占地（显示器在桌上）在净距规则下一律 FAIL（`HANDOFF.md:173`） |
+| A9 | 引擎自身的已知缺陷 | `not_inside` 没有误差带；引擎从不读 `nativeToMeters`；平台自建场景的占地单位是原生单位且不确定度“未量化”，**永远满足不了几何谓词**（`reconstruction.py:927-929`），已钉在 `tests/check_platform_policy_geometry.py:140-172`；引擎传 `capture_frame_count=1`（`policy_engine.py:231`），等于关掉了 `policy.py` 的两视角证据闸门（`:39, :80`）；主语和宾语标签不能相同（PLAN 已列） |
+| A10 | **演示结论不等于平台结论** | `evaluate_video_policy.py:71` 先丢掉少于 3 个视角的候选再调引擎；导入的文档却保留它们为 `association_pending`、无测量；引擎对所有带标签的候选都要 `metric_footprint`，不看 `associationState`（`policy_engine.py:195-204`）。所以发布出去的场景上，每条桌子结论都是证据不足，与尺度无关（评审 #8） |
+| A11 | RASE 的“例外”没有结构 | “距离或护栏”这类析取条款只能拒绝（`oshacorpus.py:123-128`）。考试集有过期用例：`1910.36(g)(1)` 仍期望因缺 `min_height` 被拒，但该谓词已存在（`:112-116`） |
+
+### 挡住“身份与动静一致”
+
+| # | 缺口 | 证据 |
+|---|---|---|
+| A12 | P3 没有接入身份续接 | `motion_tracks_to_analysis.py:9-10`：“同一个人在两个窗口里是两个 ID”。`stitch_track_windows.py` 已按评审修好（§7），还没接进流水线 |
+| A13 | 三套互不兼容的窗口边界处理 | `run_discovered_video.match_discovery`、`stitch_track_windows`、`motion_tracks_to_analysis.owner_of`。评审建议：身份用 `stitch_track_windows`（多帧证据、否决更严）；`owner_of` 只用来选画哪个窗口的掩码；`match_discovery` 随 P2 退役 |
+| A14 | “动的东西”有三种定义 | `assemble_dynamic_masks` 只合并**动过的** motion 轨迹；`motion_tracks_to_analysis` 还收进了文字提示的轨迹；stitch 以前对文字轨迹也看 `kept`（已改成与 analysis 一致）。后果：站着不动的人在移动层里，却没从静态融合里剔除 |
+| A15 | 跟踪降帧率 `--stride` 让所有下游读错帧 | npz 键仍是跟踪器下标，只有 `run()` 乘了 stride（`sam3_motion_tracks.py:222`）；读者按 `first + int(frame)` 取帧；融合只拿到每 N 帧一张掩码，`mono_room.moving_mask` 对缺帧返回空掩码（`:543-544`），动的物体在其他帧被融进静态图；种子取整可越过窗口末尾。**Lightning 这次不用 stride**（评审 #3） |
+
+### 集成与重复
+
+| # | 缺口 |
+|---|---|
+| A16 | 平台 ZEN 引擎不在线上；`/reports` 上传不跑策略（见 §1） |
+| A17 | 没有检索：无 SQL 查询工具、无向量、无时间区间查询；没有轨迹、事件、区域表，实体都在场景文档的一个 JSONB 里 |
+| A18 | 重复实现：尺度词表 3 套（`SceneMap.scale_source`、`measurement_scale`、平台 `ScaleEvidence`）；agent 2 套；地面拟合 3 套；平面图渲染、速度计算、“在动吗”各多套（数量未经评审核实） |
+| A19 | 违反 on-prem 约束，云端 Gemini 用在：实体命名（`review_video_object_semantics.py:15-17`）、平台 agent（`runtime.py:37-51`）、**条文编译器**（`policy_compile.py:28`）、`discover_video_vocabulary.py:18`、P0 流水线（评审 #16） |
+| A20 | 仿真导出不合格：`blender_export.py` 有调用方（worker 导出任务 `panoptes_worker/__main__.py:38-60`、界面 `App.tsx:1000-1001` / `WorkcellReport.tsx:656`、agent 的 `start_job` `agent_service.py:245`）；只有 `operator_anchored` 时导出米制（`:402-404`），**今天的尺度改标后视频场景都导出原生单位**；无上方向对齐、无碰撞体、无 USD。另外视频路径没有评估：评估脚本都是照片时代的，对象地图没有人工清单对照 |
+
+**与 PLAN 里程碑编号的对照：** PLAN 的 G1 尺度 ≈ A0/A3；G2 对象地图 ≈ A10；G3 物体建模不在本表；G4 报告 ≈ A16；G5 时间规则 = A6；G6 工厂素材 ≈ A1；G7 持久化/重定位 ≈ 原则 6 第三层。HANDOFF.md:276 记录的用户确认顺序（G1 尺度 → G2 对象地图 → G3 物体建模 → G4 报告 → G5 时间规则 → G7 持久化）不变。
+
+## 7. 今天（2026-09-23）的代码改动（均未提交）
+
+有两个会话在同一个工作树里改代码，**提交时要按会话分开**（评审 #7）。另一个会话拥有：`modal_apps/motion_masks.py`、`tests/check_fixed_camera_motion.py`、`HANDOFF.md` 的改动，以及 `sam3_motion_tracks.py` 里“moving share 为 None 就丢弃轨迹”这一行为变化（旧的残差文件没有 `trusted_moving`，所以按今天的代码重跑 107/108 会一条轨迹都不留，131 的缝合验证无法复现）。
+
+| 文件 | 改动 | 验证 / 评审状态 |
+|---|---|---|
+| `scripts/prepare_video_clip.py`（新） | 任意 MP4 → 640×480 片段；K 来自声明的视场角或 MoGe-3；`clip.json` 标 `calibrated: False` 并列出局限；另写 `source-rgb.mp4`（与 TUM 片段同样的 CFR 播放文件，关键帧分割、`fuse --video`、报告视频面板都读它） | 自检：四种长宽比、视场角↔焦距、秒数对帧数。Lightning 3585–3611 s 已转出 779 帧，MoGe 视场角 49.8°（5 帧极差 9.5°），DA3 给出 45.7°，相差约 8% |
+| `modal_apps/droid_room.py` | 自动登记 `clip.json`；没有真值时 `evaluate` 返回 `no_ground_truth` 而不是崩 | 自检通过；Lightning DROID 132 跑完 |
+| `scripts/evaluate_video_policy.py`、`scripts/import_video_scene.py` | 共用 `contract_scale`：按 `metric-scale.json` 的 `scale_status` 定合同状态，不再按片段类型（评审 #5） | 自检：假设尺度不出 PASS/FAIL，四个状态映射正确，未知状态拒绝。三条真实记录：arkit-081 → `operator_anchored`，room-014 → `model_estimated`（1.6 m），walking-113 → `uncalibrated`。**这推翻了 PLAN §0.1 的用户决定，待拍板**（§8） |
+| `scripts/stitch_track_windows.py`（新） | 跨窗口身份：重叠帧平均掩码 IoU + 匈牙利匹配，多对多拒绝。按评审 #6 修了：同一窗口里 motion 和 text 两条轨迹是同一个人时先合并（否则互为竞争者，所有匹配被否决）；两边都空的帧不算证据；首帧和 stride 从 `tracks.json` 读；没有保留轨迹的窗口返回空结果；每个窗口用自己的掩码尺寸；文字轨迹不看 `kept` | 自检 6 组。walking 107/108（只有 motion）IoU 0.987 接上。**默认配置（带 `--text person`）还没在真实数据上验证**，Lightning 三窗口是第一次 |
+| `modal_apps/sam3_motion_tracks.py` | ①**修了一个一直存在的 bug**：所有 ≥2 个种子的运行（walking、room、robot、Lightning 共 12 次）里，1 号对象都只剩种子那一帧。1 号是面积最大的种子，也就是最显眼的那个移动者；它在跟踪时覆盖了后面同一人的种子，这些种子被当成“已跟踪”跳过，所以这个人从运动轨迹里整个消失。原因没有查清：先按 SAM 3 源码里的“轨迹确认”假设修（只在点击会话关掉确认），重跑窗口 0（run 139）结果一字不差，假设不成立、已撤回。现修法不依赖原因：点击会话先放一个一次性的对象（id 0，左上角一次点击）并传播一次，吸收“第一个对象被丢”的问题，它不进结果、也不参与“已跟踪”判断。影响范围：Lightning 上这个人同时被 person 文字轨迹完整覆盖（重合 1.0），缝合时并得回来；walking、room、robot 只跑了点击会话，那里是真丢。②`--stride` 的三处问题（A15）：种子下标夹紧到最后一帧；`getattr(args, "stride", 1)`（另一个会话的测试因此恢复通过）；给融合写掩码时把一帧掩码沿用到下一个被跟踪帧之前。读者（`motion_tracks_to_analysis`、`stitch_track_windows`）按 `tracks.json` 的 stride 换算源帧号 | 自检通过（新增种子夹紧断言）；`tests/check_fixed_camera_motion.py` 通过。一次性对象的修法已在 Lightning 窗口 0 上验证（`lightning-sam31-tracks-141`）：一次性对象只剩 1 帧，原 1 号对象（第 140 帧种子）跟满 300 帧、保留；同一人在第 210 帧的种子这次被正确识别为已跟踪，对象从 4 个降到 3 个。walking、room、robot 的旧运行没有重跑 |
+| `modal_apps/sam3_video.py` | 省显存开关 | 评审 #4 属实：开关在 `predictor.model.tracker` 上，探针已改查它。但读源码发现打开它会同时关掉记忆选择（`video_tracking_multiplex.py:2584`），会改变轨迹，所以**默认不开、只记录是否存在**；窗口太长放不下时再开，并和放得下的窗口对比。`trim_past_non_cond_mem_for_eval` 仍未试 |
+| `modal_apps/video_events.py` | `--temperature`、`--max-new-tokens`；不足半窗的尾窗并入前一窗 | 自检 6 条；T=0.6 后 2/3 窗口成功。**T>0 时没有记录随机种子，事件不可复现**，待补 |
+
+**Lightning eMotors 片段（3585–3611 s，779 帧）第一次端到端到融合：**
+- 跟踪三窗口（141/142/143，修复后）→ 缝合（145）：6 次接上、23 → 17 个身份，两位讲解人各自贯穿全片 → 移动层（148，用缝合身份）。
+- 尺度：12 帧地面掩码（138），假设持机 1.6 m → `model_estimated`。
+- **相机轨迹只在第 96–450 帧可信**：这段持机高度稳定在 1.56–1.63 m；第 460–630 帧高度在 1.8–2.7 m 之间乱跳（DROID 失败），650 帧后降到 1.3 m。全片融合（149）逐关键帧尺度离散 37%（room 1.4%），网格碎成 3504 块。
+- 只用第 96–450 帧（150）：尺度离散 2.6%，地面平面内点 99.8%，30 m 通道地面平整；但地面以上的结构只占 10%（不刻除 15%，放宽到 5% 容差 11%），货架大多没留下，8 m 以外只有地面。原因不在参数：讲解人占每帧约 35%（动态掩码剔除），相机向前走、两侧货架只在掠射角出现，远处深度跨视图不一致。
+- 推测的 DROID 失败原因（未验证）：人占画面太多，DROID 不剔除动的像素；视场角不确定（MoGe 49.8° vs DA3 45.7°）。
+
+**选素材（2026-09-24）：** `scout_clip_segments.py` 的“人数”一项在这台机器上从来没生效过（OpenCV 无 HOG，人数全算成 0），Lightning 那段就是这样被选中的。改为对每个候选窗口取 5 帧、用 SAM 3 “person” 量人占画面（`runs/people-coverage-154/156`，脚本暂在会话临时目录）：5 个工厂参观视频的 34 个步行窗口里 32 个人占 13–53%（讲解人带着镜头走）；两个卖场无解说步行视频 11 个窗口里 10 个低于 5%。用户确认：真实巡检素材不会有人一直走在镜头前。
+
+**Sam's Club 仓储通道（YouTube `-8eWdkVnOgc`，337–367 s，750 帧，人占 0%）第一次从普通 MP4 端到端到报告：**
+- 相机轨迹无跳变（最差 1% 帧间跳动 0.97 倍正常步长，Lightning 8.66）；逐关键帧尺度离散 0.8%（room 1.4%），跨视图支持 79%；地面以上结构占 51%，两侧货架和托盘层都在。
+- 已知问题：持机高度沿路径从 0.9 m 平滑升到 2.6 m（每走 1 m 升 4.6 cm），尺度离散很小，所以是 38 m 直线行走无回环的俯仰漂移，不是尺度漂移；地面拟合只有 60% 内点，标 `assumed_camera_height_floor_views_disagree` → 估计尺度。
+- 对象地图 383 个实体、264 个确认；起名 227 个（纸巾、托盘、购物车、价签、货架横梁……）、37 个判为非物体；逐帧轮廓 750 帧全覆盖、中位 67 个/帧；报告导入 285 秒，266 个实体。本机报告 `http://127.0.0.1:8792/app.html#/reports/bb677d67-d092-4025-a8f4-5547315fcf4b`。
+- 没做：动静分离与人物轨迹（人占 0%，这段先跳过）。
+
+**MVP：用户指定的三个 MP4 全部端到端到报告（2026-09-24，本机 8792）：**
+
+| 视频 | 片段 | 相机/尺度 | 物体 | 动态 | 视频记忆 | 报告 |
+|---|---|---|---|---|---|---|
+| Sam's Club 仓储通道 | 5:37–6:07，750 帧 | 无跳变；尺度离散 0.8%；俯仰漂移（高度 0.9→2.6 m） | 264 确认 / 227 命名 | 人占 0%，未做 | 2 窗 4 事件 | `7d0748de`（v2） |
+| Walmart 货架通道 | 3:10–3:40，750 帧 | 无跳变；尺度离散 1.7%；前 10 m 地面弯曲 | 346 确认 / 310 命名 | 人占 0%，未做 | 2 窗 4 事件 | `1a6a5157`（v2） |
+| ME340 机加工车间 | 2:45–3:15，899 帧 | 广角约 80°；尺度离散 0.7%，地面内点 96%，持机高度 1.50–1.67 m | 163 确认 / 140 命名 | 讲解人跨 3 窗一个身份（687 帧），433 个随时间变化的表面；融合前剔除（按“动过或会动的类别”） | 2 窗 4 事件（带人物标注） | `d4fea10b` |
+
+公开版（2026-09-24，用户授权部署与推送）：共享 `panoptes-publications` API 加入这 3 份（共 22 份，全部逐字节校验）重新部署；查看器按本分支重建后推到 `panoptes-workcell-report`（提交 24c7a74）。链接：`https://admin-wekruit.github.io/panoptes-workcell-report/app.html#/reports/<id>`，id 同上表。旧报告（如 09-13 的 02592388）照常打开。
+查看器（Pages 提交 f6dc5a0）：先载入静态场景并立即取景、可点选，视频的人物动态表面（ME340 有 433 个）随后后台载入。修之前 ME340 在线要约 4 分钟才取景，期间 96 次点击只选中 2 个物体；修之后 16 秒可用，45 秒时点中 10 个。Sam's Club / Walmart 在线实测 11 / 9 个，无回退。
+已知问题：ME340 的 "man"（#32）其实是一块地面，命名模型看整帧、把名字给了画面里最显眼的人（与人物掩码重叠 0–1%）；Sam's Club 的 "man" 是开头约 3 秒站着的真实工人，该片段没做人物动态层，所以进了静态地图。重新部署未配置反馈助手模型，访客反馈照常保存，助手回复关闭（原先是否开启无法从外部确认）。
+
+途中：磁盘写满（ENOSPC）一次，Walmart 分割丢了一半结果、ME340 跟踪中断，均已重跑；`assemble_dynamic_masks.py --analysis` 让融合按“动过或会动的类别”剔除（A14 的修法），ME340 站着讲话的人因此不进静态地图。
+
+**Qwen3-VL-Embedding-8B + Qwen3-VL-Reranker-8B 探针（2026-09-24，`runs/qwen3vl-retrieval-probe-210`，`modal_apps/qwen3vl_retrieval_probe.py`）：** 三段视频约 775 个实体，每个取最大观测视图的紧裁图。按官方做法“嵌入召回 → 重排”。
+- 找物（14 个文字查询，召回前 30 再重排）：以 Gemini 名字为粗参考，平均 P@10 0.16 → 0.19；购物车 0.4 → 0.8，CNC 控制面板 0.1 → 0.2；梯子、灭火器、出口标志召回里一个都没有（这些片段里可能本来就没有）。重排分数最高 0.44，从没过 0.5，阈值要在人工标注集上重新定。
+- 起名（150 个样本，嵌入取前 5 个候选名再重排）：与 Gemini 名字中心词一致 27 → 33；很多“不一致”其实是同义或更具体（collet organizer / tool holder rack）。还不能直接替代云端 Gemini（A19），需要受控 EHS 词表 + 人工抽检。
+- 融合（倒数排名融合 RRF，k=60，离线、不花钱）：平均 P@10 嵌入 0.164 / 重排 0.186 / **融合 0.207**，没有一个查询比嵌入差（纸巾 0.6 → 0.8，纸箱 0.4 → 0.5）。所以要用就用融合，不要用重排替代嵌入。图：`runs/qwen3vl-retrieval-probe-210/finding-fused-clear.jpg`。参考名字本身有错（CNC 控制屏被 Gemini 叫作 computer monitor、sign），分数是低估。
+- Jev（TypeSafe.AI）：只收文本、云端 API、按量计费，不能看图、不能本地部署。独立评测（bge-m3 + Jev，164 个查询，9831 对）：单独拿来重排，在独立标注下 NDCG@10 反而 −0.028；和嵌入排名融合 +0.064（它自己当裁判时的“优势”是裁判循环）。对我们：物体裁图用不上；可以用在视频记忆的文字检索，但违反 on-prem。
+- 教训：第一次误把命名用的整帧拼图当裁图（结果作废）；A100-80GB 排队时要允许换卡；多阶段必须分开落盘。
+
+GPU 账本：授权 150 美元（用户决定），已占用 114.23。
+
+## 8. 与 PLAN.md 的关系
+
+**已在 PLAN 里的（外部调研只是补了证据）：** 覆盖不足降级（S7）；逐帧区域可见性闸门（S9）；区域作为人工断言实体（S7）；跨次比较“已移除”需自由空间证据（S12）；不把假设值存成实测（§6）；on-prem 硬约束（§0.2）。
+
+**PLAN 里没有、今天新增的：** 统一尺度闸门（A0）；自由空间算子（A5）；演示与平台结论对齐（A10）；检索分流（A17）；时间类与可见性算子清单；物体关系（A8）；RASE 例外结构（A11）；仿真导出（A20）；跟踪降帧率与跨窗口缝合（A12–A15）。
+
+**用户决定（2026-09-23）：**
+1. 假设的持机高度标为 `model_estimated`（估计尺度），保留今天的改标；PLAN §0.1 以此为准。
+2. A0（线上路径接统一尺度闸门）之后再接，现在不改线上。
+3. 现在不训练或微调模型（PLAN §6 不变），以后可以训练。
+
+**仍待定：** 覆盖不足降成哪一态：需复核（PLAN S7）还是证据不足。
+
+## 9. 评审给出的顺序
+
+1. 先定 §8 的 1–2，统一尺度闸门。改动小，而且修的是线上产品。
+2. 覆盖（A4）+ 自由空间算子（A5），先在 ARKit 片段上测：设备片段已经是 `operator_anchored`，是 P3 里今天唯一可能出假 PASS 的地方。
+3. A1 收尾，定一套栅格/内参约定。与 2 无依赖，可以并行。
+4. 时间谓词（A6），配可见性闸门（PLAN S9 让它不依赖身份）。
+5. A3 最后，它不改变任何结论。
+
+YouTube 片段在 A4 之前可以跑，但只当感知和记忆的演示，**不出结论**。
+
+平台与线上怎么合并：收敛到平台，不移植 P0 的功能。先给 P0 接上共用尺度闸门；让 P0 上传走平台的 `import_scene` 任务，结论由 ZEN 引擎出；冻结工作台的策略选择器；`policy.py` 保留为唯一的谓词库，0.6 m 规则变成平台策略后删掉 `rules._assess_clearance`。
