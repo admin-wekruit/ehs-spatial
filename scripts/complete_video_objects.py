@@ -63,7 +63,9 @@ IDLE_STOP = 4                # consecutive calls that never got a container: no 
 RETRY_GAP = 30               # frames between any two views an object is generated from
 ATTEMPT_VIEWS, EXTRA_SEED = 4, 43  # views tried per object, best first; then the best view once more with another seed
 MIN_SOURCE_SIDE = 64         # source-frame pixels: the short side of a view's mask box (the generator's crop comes from that frame)
-FIT_GATE = {"max_fit_median_native": VOXEL, "min_observed_coverage": .6, "scale_range": [.8, 1.25], "min_entity_coverage": .25}
+FIT_GATE = {"max_fit_median_native": VOXEL, "min_observed_coverage": .6, "scale_range": [.8, 1.25], "min_entity_coverage": .25,
+            "min_agreeing_views": 3, "max_icp_rotation_deg": 15, "min_judged_points": 100,
+            "judgedOn": "every other agreeing view (never the source view) is held out of the ICP and alone judges fit and coverage"}
 RECGEN = {"modalApp": "lucida-private-assets", "modalFunction": "generate_object", "modalVolume": "panoptes-lucida-weights"}
 GENERATOR = "RecGen (non-commercial research licence)"
 # Modal list prices of the transport's container (A100-80GB + 8 cores + 64 GiB), per second; its client deadline is 240 s.
@@ -355,11 +357,13 @@ def observed_points(entity, view, rows, clip, args, inside=.6, relative=.05):
     names = sorted(kept, key=lambda o: int(o.rsplit(":", 2)[1]))
     names = sorted({names[i] for i in np.linspace(0, len(names) - 1, min(len(names), FIT_VIEWS)).round().astype(int)} | {view["observation"]})
     points = np.concatenate([kept[o] for o in names])
+    owner = np.concatenate([np.full(len(kept[o]), i) for i, o in enumerate(names)])  # which of `names` each point came from
     agreed = consensus([(c + .5) * cell for c in occupied], cell)[1] if len(occupied) > 1 else occupied[0]
     voted = np.isin(pack(np.floor(points / cell).astype(np.int64)), pack(agreed))
-    points = points[voted] if voted.sum() >= 100 else points  # too few votes to cut by: keep what the views saw
-    points = points[np.unique(np.floor(points / (VOXEL / 4)).astype(np.int64), axis=0, return_index=True)[1]]
-    return points, names, (agreed + .5) * cell, cell, {"viewsChecked": checked, "viewsAgreeing": len(kept), "fitViews": names,
+    if voted.sum() >= 100:  # too few votes to cut by: keep what the views saw
+        points, owner = points[voted], owner[voted]
+    first = np.unique(np.floor(points / (VOXEL / 4)).astype(np.int64), axis=0, return_index=True)[1]
+    return points[first], names, (agreed + .5) * cell, cell, owner[first], {"viewsChecked": checked, "viewsAgreeing": len(kept), "fitViews": names,
                            "agreementRule": f">= {inside:.0%} of a view's points inside the best view's mask, median |relative depth difference| <= {relative}"}
 
 
@@ -407,16 +411,24 @@ def fit(vertices, faces, observed, eye=None, iterations=100, keep=.8):
 
 
 def seen(vertices, faces, observed, cameras, k, size=(640, 480), radius=2 * VOXEL):
-    """Observed vertices: an observed point within `radius`, and a clear line of sight from a camera that saw the object."""
+    """Observed vertices: an observed point within `radius`, facing a camera that saw the object and in its clear sight.
+
+    Facing matters: the back of a thin part and the inner wall of a shell lie within `radius` of the front's points and in
+    sight lines that stop only OCCLUSION short, so without it they counted as seen.
+    """
     import open3d as o3d
+    import trimesh
     from scipy.spatial import cKDTree
     near = cKDTree(observed).query(vertices, distance_upper_bound=radius)[0] < np.inf
+    mesh = trimesh.Trimesh(vertices, faces, process=False)
+    normals = mesh.vertex_normals * (1. if mesh.volume >= 0 else -1.)  # outward, whichever way the generator wound its faces
     scene, clear = ray_scene(vertices, faces), np.zeros(len(vertices), bool)
     for c2w in cameras:
         local = (vertices - c2w[:3, 3]) @ c2w[:3, :3]
         with np.errstate(divide="ignore", invalid="ignore"):
             u, v = local[:, 0] / local[:, 2] * k[0, 0] + k[0, 2], local[:, 1] / local[:, 2] * k[1, 1] + k[1, 2]
-        todo = near & ~clear & (local[:, 2] > 0) & (u >= 0) & (u < size[0]) & (v >= 0) & (v < size[1])
+        facing = ((c2w[:3, 3] - vertices) * normals).sum(1) > 0
+        todo = near & ~clear & facing & (local[:, 2] > 0) & (u >= 0) & (u < size[0]) & (v >= 0) & (v < size[1])
         if todo.any():
             direction = vertices[todo] - c2w[:3, 3]
             distance = np.linalg.norm(direction, axis=1)
@@ -683,18 +695,21 @@ def assess(entity, view, crop, mesh, record, rows, clip, args):
     import trimesh
     from build_lingbot_object_model import evaluate
     vertices, faces, colors = mesh
-    observed, fit_views, centres, cell, views_report = observed_points(entity, view, rows, clip, args)
+    observed, fit_views, centres, cell, owner, views_report = observed_points(entity, view, rows, clip, args)
+    source = fit_views.index(view["observation"])
+    judged = np.isin(owner, [i for i in range(len(fit_views)) if i % 2 and i != source])  # held out of the ICP, the only judges of fit
     row = rows[view["frame"]]
     depth, moving = reliable(row, clip, args.dynamic_masks)
     mask = main_parts(clip.raster_mask(Path(view["mask"]))) & ~moving
     source_view = lambda v, f: evaluate(v, f, depth, np.full(depth.shape, 2., np.float32), depth > 0, mask, clip.k_raster, row["c2w"])
     light, light_faces, _ = decimate(vertices, faces, colors / 255, FIT_TRIANGLES)  # ICP on a light copy; its transform moves the full mesh
-    moved_by, _ = fit(light, light_faces, observed, eye=row["c2w"][:3, 3])
+    moved_by, _ = fit(light, light_faces, observed[~judged], eye=row["c2w"][:3, 3])
     refined = vertices @ moved_by[:3, :3].T + moved_by[:3, 3]
     unrefined, before = source_view(vertices, faces), vertices.mean(0)
     kept = source_view(refined, faces)["silhouette_iou"] >= unrefined["silhouette_iou"] - .05
     vertices, moved_by = (refined, moved_by) if kept else (vertices, np.eye(4))  # else the refinement cost the source view its silhouette
-    _, distance = closest(vertices, faces, observed)
+    distance = closest(vertices, faces, observed[judged])[1] if judged.any() else np.empty(0)
+    median = float(np.median(distance)) if len(distance) else None  # None: nothing held out to judge the fit by (a reason below)
     flags = seen(vertices, faces, observed, [rows[int(o.rsplit(":", 2)[1])]["c2w"] for o in fit_views], clip.k_raster)
     rgba = np.column_stack([colors, np.where(flags, OBSERVED_ALPHA, INFERRED_ALPHA)]).astype(np.uint8)
     plain = glb(vertices, faces, rgba, blend=False)
@@ -702,22 +717,33 @@ def assess(entity, view, crop, mesh, record, rows, clip, args):
     gate = source_view(np.asarray(exported.vertices), np.asarray(exported.faces))
     area = trimesh.Trimesh(vertices, faces, process=False).area_faces
     metres, telemetry = args.metres_per_native, record.get("telemetry") or {}
-    fitted = {"fitResidualNative": float(np.median(distance)), "fitResidualP90Native": float(np.percentile(distance, 90)),
-              "fitResidualCm": round(float(np.median(distance)) * metres * 100, 2), "fitResidualP90Cm": round(float(np.percentile(distance, 90)) * metres * 100, 2),
-              "observedCoverage": float((distance <= 2 * VOXEL).mean()), "observedPoints": len(observed), **views_report,
+    p90 = float(np.percentile(distance, 90)) if len(distance) else None
+    fitted = {"fitResidualNative": median, "fitResidualP90Native": p90,
+              "fitResidualCm": None if median is None else round(median * metres * 100, 2), "fitResidualP90Cm": None if p90 is None else round(p90 * metres * 100, 2),
+              "observedCoverage": float((distance <= 2 * VOXEL).mean()) if len(distance) else 0., "observedPoints": len(observed), "judgedPoints": int(judged.sum()), **views_report,
               "icpScale": float(np.cbrt(np.linalg.det(moved_by[:3, :3]))), "icpCentroidMoveNative": float(np.linalg.norm(vertices.mean(0) - before)),
               "icpTransform": moved_by.tolist(), "icpKept": bool(kept),
+              "icpRotationDeg": float(np.degrees(np.arccos(np.clip((np.trace(moved_by[:3, :3] / np.cbrt(np.linalg.det(moved_by[:3, :3]))) - 1) / 2, -1, 1)))),
               "unrefined": {k: unrefined[k] for k in ("silhouette_iou", "relative_depth_median", "relative_depth_p95")}}
     coverage = entity_coverage(centres, cell, vertices, faces)
+    low, high = FIT_GATE["scale_range"]
     reasons = [r for r, bad in (("source-view gate failed (silhouette/depth)", not gate["accepted_source_consistency"]),
-                                (f"fit median {fitted['fitResidualNative']:.4f} > {FIT_GATE['max_fit_median_native']} native", fitted["fitResidualNative"] > FIT_GATE["max_fit_median_native"]),
+                                (f"fit median {median or 0:.4f} > {FIT_GATE['max_fit_median_native']} native", median is not None and median > FIT_GATE["max_fit_median_native"]),
                                 (f"model explains only {fitted['observedCoverage']:.0%} of the observed points", fitted["observedCoverage"] < FIT_GATE["min_observed_coverage"]),
-                                (coverage_reason(coverage), coverage_reason(coverage) is not None)) if bad]
+                                (coverage_reason(coverage), coverage_reason(coverage) is not None),
+                                (f"only {views_report['viewsAgreeing']} views agree with the best view: the fit cannot check more than the view it was made from",
+                                 views_report["viewsAgreeing"] < FIT_GATE["min_agreeing_views"]),
+                                (f"only {int(judged.sum())} held-out points to judge the fit", judged.sum() < FIT_GATE["min_judged_points"]),
+                                (f"ICP scale {fitted['icpScale']:.2f} at its clamp: the generated size is off by more than the fit may correct",
+                                 not low * 1.01 < fitted["icpScale"] < high / 1.01),
+                                (f"ICP turned the model {fitted['icpRotationDeg']:.0f} degrees: the generated pose was far off",
+                                 fitted["icpRotationDeg"] > FIT_GATE["max_icp_rotation_deg"])) if bad]
     validation = {**gate, "entity": entity["entityId"], "observation": view["observation"], "accepted_source_consistency": not reasons,
                   "rejectionReasons": reasons, **fitted, "entityCoverage": coverage, "entityCoverageBasis": "agreed cells of the usable views", "viewMask": view["mask"],
                   "fitGate": FIT_GATE,
                   "observedShare": float(flags.mean()), "observedAreaShare": float(area[flags[faces].all(1)].sum() / area.sum()),
-                  "observedRule": f"within {2 * VOXEL} native of an observed point and in clear sight of one of the fit views' cameras",
+                  "observedRule": f"within {2 * VOXEL} native of an observed point, facing one of the fit views' cameras and in its clear sight",
+                  "skipFrames": sorted(args.skip),
                   "alpha": {"observed": OBSERVED_ALPHA, "inferred": INFERRED_ALPHA}, "triangles": len(faces), "seed": SEED, "sourceFrame": view["frame"],
                   "generator": GENERATOR, "pins": record.get("pins"), "providerRequestId": record.get("providerRequestId"),
                   "gpuType": ((record.get("runtimeEvidence") or {}).get("hardware") or {}).get("gpu"),
@@ -765,7 +791,7 @@ def prepare(args):
     document = json.loads((args.object_map / "object-map.json").read_text())
     entities = {e["entityId"]: e for e in document["entities"]}
     excluded = dict((item + "=").split("=")[:2] for item in args.exclude)
-    rule = {e["entityId"]: why for e, why in candidates(document["entities"])}
+    rule = {e["entityId"]: why for e, why in candidates(document["entities"], skip=args.skip)}
     explicit = [(item + "=").split("=")[:2] for item in args.entities]  # "id" or "id=review note", in priority order
     ranked = ([(entities[e], (rule.get(e, "outside the selection rule") + "; review: " + (note or "chosen")).strip()) for e, note in explicit]
               if explicit else [(entities[e], why) for e, why in rule.items()])
@@ -846,6 +872,9 @@ def resegment(chosen, clip, args):
             saved = json.loads(record(eid, view).read_text())
             source = record(eid, view).with_name(record(eid, view).stem + "-source-mask.png")
             answers[name] = (cv2.imread(str(source), cv2.IMREAD_GRAYSCALE) > 0 if source.exists() else np.zeros(clip.full_size[::-1], bool)), saved["samScore"]
+    if requests and not args.invoke:  # a SAM call costs GPU: only with --invoke; this run treats those views as not re-segmented
+        answers.update({name: (np.zeros(clip.full_size[::-1], bool), 0.) for name in requests})
+        requests = {}
     if requests:
         import time
         import sam2_everything
@@ -945,7 +974,10 @@ def run(args):
     superseded = [json.loads(p.read_text()) for p in sorted((args.output / "superseded").glob("*/superseded.json"))]  # earlier runs' too
 
     def written(eid):
-        """The validation of a model this output already holds (its hash still matching), or None."""
+        """The validation of a model this output already holds (its hash still matching), or None; with --reassess always None,
+        so each try is read back from the journal and judged again."""
+        if args.reassess:
+            return None
         folder = args.output / "models" / eid
         try:
             v = json.loads((folder / "validation.json").read_text())
@@ -976,7 +1008,7 @@ def run(args):
                 light = trimesh.load(args.output / "glb" / f"{eid}.glb", force="mesh", process=False)
                 view = {"frame": previous["sourceFrame"], "observation": previous["observation"],
                         "mask": previous.get("viewMask") or str(mask_path(args.masks, previous["observation"]))}
-                _, _, centres, cell, _ = observed_points(c["entity"], view, rows, clip, args)
+                _, _, centres, cell, _, _ = observed_points(c["entity"], view, rows, clip, args)
                 previous.update(entityCoverage=entity_coverage(centres, cell, np.asarray(light.vertices), np.asarray(light.faces)),
                                 entityCoverageBasis="agreed cells of the usable views", fitGate=FIT_GATE)
                 previous["rejectionReasons"] = [r for r in previous["rejectionReasons"] if not r.startswith("model covers only")]
@@ -1137,6 +1169,10 @@ def self_check():
     flags = seen(slab.vertices, slab.faces, np.column_stack([grid, np.full(len(grid), -.01)]), [camera], k_raster)
     z = slab.vertices[:, 2]
     assert flags[z < -.009].all() and not flags[z > .009].any(), "front face observed, back face inferred"
+    thin = trimesh.creation.box(extents=[.4, .3, .002]).subdivide().subdivide().subdivide()  # thinner than OCCLUSION: only facing tells
+    flags = seen(thin.vertices, thin.faces, np.column_stack([grid, np.full(len(grid), -.001)]), [camera], k_raster)
+    x, y, z = np.asarray(thin.vertices).T  # the rim's side-face vertices face sideways, away from the camera: neither side
+    assert flags[(z < -5e-4) & (np.abs(x) < .199) & (np.abs(y) < .149)].all() and not flags[z > 5e-4].any(), "a thin part's back is never seen"
     # fit: a known similarity is undone from the front, top and both side faces of a box (all seven degrees of freedom seen)
     box = trimesh.creation.box(extents=[.4, .3, .2])
     samples, index = trimesh.sample.sample_surface_even(box, 4000, seed=1)
@@ -1214,6 +1250,7 @@ def main():
     parser.add_argument("--exclude", nargs="*", default=[], help="ENTITY=reason: dropped at review, reason recorded")
     parser.add_argument("--count", type=int, default=COUNT)
     parser.add_argument("--all", action="store_true", help="after --entities, every named physical object of the qualifying rule (no count limit)")
+    parser.add_argument("--reassess", action="store_true", help="judge every journaled model again under the current gate (CPU; no call without --invoke)")
     parser.add_argument("--invoke", action="store_true", help="request missing models; without it only inputs, selection sheet and existing models are processed")
     parser.add_argument("--function-id", default="fu-Hh2leT3x1kprDaWpWsZ09l", help="the deployed generate_object the transport must find")
     parser.add_argument("--max-usd", type=float, default=30.)

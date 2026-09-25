@@ -292,6 +292,8 @@ def build_document(args, put_asset, calibration, dataset):
                     or (v.parent / "anchor.json").exists() and json.loads(v.read_text())["entity"] == entity["entityId"]]  # a name-prompted model is bound by entity
         generated = anchored[0].parent if len(anchored) == 1 else None
         checked = json.loads(anchored[0].read_text()) if generated else None
+        if checked and checked.get("mesh_sha256") not in (None, hashlib.sha256((generated / "model.glb").read_bytes()).hexdigest()):
+            raise SystemExit(f"{generated}: model.glb is not the mesh its validation.json judged")  # a half-written or replaced model is never imported
         if checked and checked["accepted_source_consistency"]:  # a generated shape that reprojects onto its own source view; unseen sides are the generator's estimate
             shape = trimesh.load(generated / "model.glb", force="mesh", process=False)  # already posed in the scene frame
             from attach_entities_to_replay import light_model
