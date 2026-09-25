@@ -997,6 +997,22 @@ small,
   z-index: 2;
   background: var(--paper, #fafbf7);
 }
+.spatial-follow {
+  position: absolute;
+  bottom: 12px;
+  left: 124px;
+  z-index: 2;
+  background: var(--paper, #fafbf7);
+}
+/* The 3D view's loading note sits above its buttons, not on them. */
+.spatial-view .stage-status {
+  top: 10px;
+  bottom: auto;
+}
+.spatial-follow[aria-pressed="true"] {
+  background: #2f5e4e;
+  color: #fff;
+}
 .drawn-box {
   stroke: #e17a33;
   stroke-width: 3;

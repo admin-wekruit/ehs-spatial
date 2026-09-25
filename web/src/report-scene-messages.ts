@@ -79,6 +79,8 @@ export const reportSceneMessages: Record<string, [string, string]> = {
   sceneObserved: ["照片重建证据", "Reconstructed photograph evidence"],
   sceneNoPoints: ["点云（未附点云）", "Point cloud (not attached)"],
   scenePoints: ["点云", "Point cloud"],
+  sceneSplats: ["照片级 3D（高斯泼溅）", "Photo-real 3D (Gaussian splats)"],
+  splat_load_failed: ["照片级 3D 未能完整加载", "Photo-real 3D did not load completely"],
   sceneAllBounds: ["所有对象范围", "All object bounds"],
   sceneShowBorders: ["物体边框", "Object outlines"],
   sceneShowCameraPath: ["相机路线", "Camera path"],

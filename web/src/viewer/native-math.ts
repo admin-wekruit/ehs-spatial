@@ -26,12 +26,32 @@ export function sourceCamera(frame:any,radius:number,center:Vec):Camera {
   const eye=C.slice(0,3).map((r:Vec)=>r[3]),forward=C.slice(0,3).map((r:Vec)=>r[2]);
   return {eye,target:add(eye,scale(forward,Math.max(radius*.25,dot(add(center,scale(eye,-1)),forward)))),up:C.slice(0,3).map((r:Vec)=>-r[1]),frame,exact:true};
 }
-export function cameraMatrix(camera:Camera,aspect:number,radius:number):Float32Array {
+export function cameraMatrix(camera:Camera,aspect:number,radius:number):Float32Array {const {projection,view}=cameraMatrices(camera,aspect,radius);return matmul(projection,view);}
+// Column-major projection and view (world to OpenGL camera space, -Z forward) apart, for renderers that need camera space.
+export function cameraMatrices(camera:Camera,aspect:number,radius:number):{projection:number[];view:number[]} {
   const {eye,target,up,frame,exact}=camera,near=Math.max(radius*.0001,1e-6),far=Math.max(radius*100,near*1000);let P:number[];
   if(exact){const K=frame.K,w=frame.width,h=frame.height;P=[2*K[0][0]/w,0,0,0,-2*K[0][1]/w,2*K[1][1]/h,0,0,1-2*(K[0][2]+.5)/w,2*(K[1][2]+.5)/h-1,-(far+near)/(far-near),-1,0,0,-2*far*near/(far-near),0];}
   else if(camera.orthographic){const height=camera.orthoHeight!,width=height*aspect;P=[2/width,0,0,0,0,2/height,0,0,0,0,-2/(far-near),0,0,0,-(far+near)/(far-near),1];}
   else{const f=1/Math.tan((camera.fov||Math.PI/3)/2);P=[f/aspect,0,0,0,0,f,0,0,0,0,-(far+near)/(far-near),-1,0,0,-2*far*near/(far-near),0];}
-  const z=unit(add(eye,scale(target,-1))),x=unit(cross(up,z)),y=cross(z,x),V=[x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,-dot(x,eye),-dot(y,eye),-dot(z,eye),1];return matmul(P,V);
+  const z=unit(add(eye,scale(target,-1))),x=unit(cross(up,z)),y=cross(z,x),V=[x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,-dot(x,eye),-dot(y,eye),-dot(z,eye),1];return {projection:P,view:V};
+}
+// A drag while standing where the video camera stood: the view turns about the eye (the picture follows the cursor: drag right
+// looks left, drag down looks up) and the eye stays on the walked path.
+export function lookAround(camera:Camera,dx:number,dy:number,speed=.004){
+  let f=add(camera.target,scale(camera.eye,-1));f=rotate(f,unit(camera.up),dx*speed);const r=unit(cross(f,camera.up));f=rotate(f,r,dy*speed);
+  camera.up=rotate(camera.up,r,dy*speed);camera.target=add(camera.eye,f);
+}
+// Whether an eye is within `limit` of one of the cameras and, given a view direction, of one that looked within 45 degrees of it.
+export function nearCameras(cameras:{eye:Vec;forward:Vec}[],eye:Vec,forward:Vec|null,limit:number){
+  return cameras.some(c=>Math.hypot(c.eye[0]-eye[0],c.eye[1]-eye[1],c.eye[2]-eye[2])<=limit&&(!forward||dot(c.forward,forward)>=Math.SQRT1_2));
+}
+// Seen from above the walked cameras, everything higher than 1.5 times their median height above the floor is cut (a
+// dollhouse view): the plane [n, d] with n.x + d > 0 above the cut, or zeros (no cut) from the cameras' height or below.
+export function ceilingCut(normal:Vec,offset:number,eyes:Vec[],eye:Vec):number[]{
+  const length=Math.hypot(...normal);if(!eyes.length||!(length>1e-8)||!normal.every(Number.isFinite)||!Number.isFinite(offset))return [0,0,0,0];
+  const heights=eyes.map(e=>(dot(normal,e)+offset)/length).sort((a,b)=>a-b),median=heights[heights.length>>1],sign=median<0?-1:1;
+  const n=scale(normal,sign/length),d=offset*sign/length,cut=1.5*Math.abs(median);
+  return dot(n,eye)+d>cut?[...n,d-cut]:[0,0,0,0];
 }
 export const boundsCorners=(b:{min:Vec;max:Vec}):Vec[]=>Array.from({length:8},(_,n)=>[0,1,2].map(k=>(n>>k)&1?b.max[k]:b.min[k]));
 export function projected(m:ArrayLike<number>,p:Vec,w:number,h:number):Vec|null {

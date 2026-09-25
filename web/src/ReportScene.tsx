@@ -6,6 +6,7 @@ import { ComparisonVideo, VideoMemory, VideoView, videoReplay } from "./VideoVie
 import { request } from "./api";
 import { SpatialMeasurements, type BendAnalysis, type InclinationAnalysis, type SceneMeasurement, type MeasureRegion } from "./SpatialMeasurements";
 import { CadView } from "./CadView";
+import { splatAnnotation } from "./viewer/splat-layer";
 import { useI18n } from "./i18n";
 import { cameraForImage, activeModel, compositeModelEvidence, modelPreviewEntities, modelPreviewGeometry, modelPreviewSignature, observationsFor, entityGeometryForLayer, jsonObject, planShapes, cadReferenceImage, scenePlanOptions, sourceDimensions, sourceScale, type GeometryOptions, type PlanOptions } from "./core";
 import { entityEvidenceStatus, identityCounts, isReferenceSurface } from "./scene-semantics";
@@ -247,6 +248,7 @@ export function ReportScene({
     selected = document.entities.find((entity) => entity.id === selection.entityId);
   const camera = cameraForImage(document, imageId);
   const [cloudWithModels, setCloudWithModels] = useState(true);
+  const hasSplats = !!splatAnnotation(document), [splats, setSplats] = useState(true);
   const hasMotion = document.entities.some(entity => (entity as any).motion === "dynamic"), [part, setPart] = useState<"all" | "static" | "dynamic">("all");
   const hasSkeleton = document.entities.some(entity => (entity.representations || []).some(rep => (rep as any).sourceKind === "moving_object_skeleton")), [skeleton, setSkeleton] = useState(false);
   const hasVideo = !!videoReplay(document), [videoMode, setVideoMode] = useState(true), showVideo = hasVideo && videoMode && !draw;  // drawing a missed object needs the still keyframe
@@ -442,6 +444,7 @@ export function ReportScene({
             <option value="observed_surface">{t("sceneObserved")}</option><option value="model">{t("sceneModel")}</option>
             <option value="point_cloud" disabled={!hasPointCloud}>{t(hasPointCloud ? "scenePoints" : "sceneNoPoints")}</option>
           </select></label>
+          {hasSplats && <label className="report-scene-check"><input type="checkbox" checked={splats} onChange={(e) => setSplats(e.target.checked)} />{t("sceneSplats")}</label>}
           {layer === "model" && hasPointCloud && <label className="report-scene-check"><input type="checkbox" checked={cloudWithModels} onChange={(e) => setCloudWithModels(e.target.checked)} />{language === "zh" ? "模型叠加点云" : "Models with point cloud"}</label>}
           {hasMotion && <label><span>{language === "zh" ? "动静" : "Motion"}</span><select aria-label={language === "zh" ? "静态与动态" : "Static and dynamic"} value={part} onChange={(e) => setPart(e.target.value as typeof part)}>
             <option value="all">{language === "zh" ? "静态+动态" : "Static + dynamic"}</option><option value="static">{language === "zh" ? "只看静态" : "Static only"}</option><option value="dynamic">{language === "zh" ? "只看动态" : "Dynamic only"}</option>
@@ -540,7 +543,7 @@ export function ReportScene({
                   {pane === "spatial" && <>{pickingPoints && <div className="cad-measure-guide" role="status">{language === "zh" ? `第 ${measurePoints.length+1}/${pointCount} 点：${(pointCount === 2 ? ["斜边上端点（角的顶点）","同一斜边的下端点"] : ["第一条边上的点","两条边相交的顶点","第二条边上的点"])[measurePoints.length]}。点击模型表面，拖动可旋转。` : `Point ${measurePoints.length+1}/${pointCount}: ${(pointCount === 2 ? ["upper edge endpoint (vertex)","lower endpoint of the same edge"] : ["first edge","shared vertex","second edge"])[measurePoints.length]}. Click the model surface; drag to rotate.`}{pointError && <strong>{language === "zh" ? " 未点到模型表面，请重选。" : " No model surface hit. Try again."}</strong>} <button onClick={()=>startPointPicking(false)}>{language === "zh" ? "取消取点" : "Cancel picking"}</button></div>}<SpatialView revision={revision} selection={selection} onSelect={selectEntity} onCommit={noEdit} mode="free" cameraId={camera?.id || null}
                     modelPreview={previewRequest} onModelPreview={(key, image) => { if (key === currentPreviewKey.current) setModelPreview({ key, image }); }}
                     onAssetStates={(revisionId, states) => setModelLoads({ revisionId, states })} onMeasurementPoint={pickMeasurementPoint}
-                    layers={{ pickingPoints, measurePoints, measureVertexIndex: pointCount === 2 ? 0 : 1, measurement: layer === "model" ? measurement : null, modelOnly: layer === "model", observed_surface: layer === "observed_surface", generated_mesh: layer === "model", primitive: layer === "model", point_cloud: layer === "point_cloud" || layer === "model" && cloudWithModels && hasPointCloud, allBounds, showBounds: allBounds, cameraPath: showPath, showCandidates: true, editable: false, opacity: 1, imageId, observationEntityId: selected?.id, observationId: selection.observationId, observations: document.observations, part, skeleton }} />
+                    layers={{ pickingPoints, measurePoints, measureVertexIndex: pointCount === 2 ? 0 : 1, measurement: layer === "model" ? measurement : null, modelOnly: layer === "model", observed_surface: layer === "observed_surface", generated_mesh: layer === "model", primitive: layer === "model", point_cloud: layer === "point_cloud" || layer === "model" && cloudWithModels && hasPointCloud, allBounds, showBounds: allBounds, cameraPath: showPath, showCandidates: true, editable: false, opacity: 1, imageId, observationEntityId: selected?.id, observationId: selection.observationId, observations: document.observations, part, skeleton, splats: hasSplats && splats }} />
                     {!hasRepresentation && <div className="report-scene-stage-note">{t("sceneNoRepresentation")}</div>}</>}
                   {pane === "cad" && availability.planEmpty && <div className="report-scene-plan-empty" role="status"><strong>{t("scenePlanUnavailable")}</strong><p>{t(availability.planEmpty)}</p><small>{t("sceneSelectionRetained")}</small></div>}
                   {pane === "cad" && !availability.planEmpty && <CadView key={revision.id + cadLayer} document={document} selectedId={selection.entityId} onSelect={selectPlanEntity} geometryOptions={planOptions} measurement={cadLayer === "model" ? measurement : null} region={cadLayer === "model" ? measureRegion : null} drawingRegion={drawingRegion} onRegion={region => { setMeasureRegion(region); setDrawingRegion(false); setMobileSection("inspector"); }} showPath={showPath} />}

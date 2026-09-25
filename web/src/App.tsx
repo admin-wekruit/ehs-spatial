@@ -5,6 +5,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -53,6 +54,8 @@ import {
   sourceDimensions,
   sourceScale,
   modelScale,
+  cameraPath,
+  cameraView,
 } from "./core";
 import { useI18n } from "./i18n";
 import { WorkcellReport } from "./WorkcellReport";
@@ -80,6 +83,7 @@ import type {
   Vec3,
 } from "./types";
 import { mountSceneViewer } from "./viewer/native-viewer";
+import { splatAnnotation } from "./viewer/splat-layer";
 import { videoClock } from "./VideoView";
 import { entityEvidenceStatus, isReferenceSurface } from "./scene-semantics";
 import "./styles.css";
@@ -1086,6 +1090,21 @@ export function SpatialView({
     [error, setError] = useState<unknown>();
   callbacks.current = { onSelect, onCommit, revision, selection, modelPreview, onModelPreview, onAssetStates, onMeasurementPoint };
   const viewCameraKey = mode === "photo" ? cameraId : currentCameras(revision.document).find(camera => camera.id === cameraId)?.coordinateFrameId;
+  const [follow, setFollow] = useState(false),
+    following = useRef(false);  // cleared at the user's first drag or zoom, before React re-renders: no video tick may pull the camera back
+  // The photo-real splats load when the report first shows them and stay loaded while the layer is switched off.
+  const splats = splatAnnotation(revision.document), showSplats = !!splats && layers.splats === true;
+  // Splats are sharpest where the camera stood: with splats shown, the main 3D view starts at the video's camera and follows
+  // the video; any drag or zoom hands the view back to the user, and the follow button takes it again.
+  const timedCameras = useMemo(() => {
+    const document = revision.document, frame = document.cameras[0]?.coordinateFrameId || null;
+    return cameraPath(document, frame).flatMap((p) => { const camera = document.cameras.find((c) => c.id === p.cameraId);
+      return camera && p.time !== null ? [{ time: p.time, view: cameraView(camera) }] : []; });
+  }, [revision.id]);
+  const followable = showSplats && mode === "free" && timedCameras.length > 0;
+  // While the view follows the video camera, the camera path would run through the eye and across the view: hidden until
+  // the user takes the view back (the 相机路线 switch decides otherwise).
+  const viewLayers = follow && followable ? { ...layers, cameraPath: false } : layers;
   function refreshModelPreview() {
     const current = callbacks.current, request = current.modelPreview;
     if (!request || !current.onModelPreview || capturedKey.current === request.requestKey) return;
@@ -1104,9 +1123,10 @@ export function SpatialView({
       viewer = mountSceneViewer(host.current, {
         resolveAsset,
         locale: language,
-        layers,
+        layers: viewLayers,
         onEvent: (event: any) => {
-          if (event.type === "measurementPoint") callbacks.current.onMeasurementPoint?.(event.hit);
+          if (event.type === "userNavigation") { following.current = false; setFollow(false); }
+          else if (event.type === "measurementPoint") callbacks.current.onMeasurementPoint?.(event.hit);
           else if (event.type === "selectionIntent") {
             const d = callbacks.current.revision.document,
               c = d.cameras.find((c) => c.id === event.cameraId);
@@ -1158,13 +1178,55 @@ export function SpatialView({
     runtime.current?.setSelection(selection);
   }, [selection.entityId, selection.observationId, selection.revisionId]);
   useEffect(() => {
-    runtime.current?.setLayers(layers);
+    runtime.current?.setLayers(viewLayers);
     runtime.current?.setCamera({ mode, cameraId });
   }, [mode, viewCameraKey, layers.modelOnly, layers.observed_surface, layers.point_cloud]);
   useEffect(() => {
-    runtime.current?.setLayers(layers);
-  }, [JSON.stringify(layers)]);
+    runtime.current?.setLayers(viewLayers);
+  }, [JSON.stringify(viewLayers)]);
   useEffect(() => { capturedKey.current = null; refreshModelPreview(); }, [modelPreview?.requestKey, revision.id]);
+  useEffect(() => {
+    if (!splats) { runtime.current?.setSplats(null); return; }
+    if (!showSplats) return;
+    let live = true;
+    resolveAsset(splats.assetId)
+      .then((url) => { if (live) runtime.current?.setSplats({ ...splats, key: splats.assetId, url }); })
+      .catch((error) => { if (live) setError(error); });
+    return () => { live = false; };
+  }, [splats?.assetId, splats?.count, splats?.coordinateFrameId, showSplats]);
+  // Sharper still: the splat trainer's refined cameras, when the report carries them ({fps, frames, c2w: row-major 4x4},
+  // same world frame; the report camera's K gives the field of view). Anything malformed falls back to the report cameras.
+  const [refined, setRefined] = useState<{ fps: number; frames: number[]; views: ReturnType<typeof cameraView>[] } | null>(null);
+  useEffect(() => {
+    setRefined(null);
+    const id = splats?.refinedCamerasAssetId, camera = revision.document.cameras[0];
+    if (!showSplats || !id || !camera) return;
+    let live = true;
+    resolveAsset(id).then((url) => fetch(url)).then((response) => response.json()).then((data) => {
+      const valid = Number.isFinite(data?.fps) && data.fps > 0 && Array.isArray(data.frames) && data.frames.length > 0 && Array.isArray(data.c2w) &&
+        data.c2w.length === data.frames.length && data.frames.every(Number.isInteger) && data.c2w.every((m: unknown) => Array.isArray(m) && m.length === 16 && m.every(Number.isFinite));
+      if (!live || !valid) return;
+      const order = data.frames.map((_: number, i: number) => i).sort((a: number, b: number) => data.frames[a] - data.frames[b]);
+      setRefined({ fps: data.fps, frames: order.map((i: number) => data.frames[i]),
+        views: order.map((i: number) => cameraView({ ...camera, cameraToWorld: [0, 1, 2, 3].map((r) => data.c2w[i].slice(4 * r, 4 * r + 4)) } as typeof camera)) });
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [splats?.refinedCamerasAssetId, showSplats, revision.id]);
+  const autoFollowed = useRef<string | null>(null);  // once per report load: switching the splat layer off and on never re-arms it
+  useEffect(() => { if (followable && autoFollowed.current !== revision.id) { autoFollowed.current = revision.id; setFollow(true); } }, [followable, revision.id]);
+  useEffect(() => {
+    if (!follow || !followable) return;
+    following.current = true;
+    const place = (time: number) => {
+      if (!following.current) return;
+      if (refined) { const frame = Math.round(time * refined.fps); runtime.current?.setCamera(refined.views[refined.frames.reduce((best, f, i) => Math.abs(f - frame) < Math.abs(refined.frames[best] - frame) ? i : best, 0)]); }
+      else runtime.current?.setCamera(timedCameras.reduce((a: typeof timedCameras[number], b: typeof timedCameras[number]) => Math.abs(b.time - time) < Math.abs(a.time - time) ? b : a).view);
+    };
+    place(videoClock.time);
+    const onTime = (event: Event) => place((event as CustomEvent<number>).detail);
+    window.addEventListener("panoptes:video-time", onTime);
+    return () => { following.current = false; window.removeEventListener("panoptes:video-time", onTime); };
+  }, [follow, followable, refined, timedCameras, viewCameraKey, layers.modelOnly, layers.observed_surface, layers.point_cloud]);  // after a layer refit, back to the video camera
   useEffect(() => {  // moving objects follow the report video's time; outside a video report nothing listens for them
     const follow = (event: Event) => runtime.current?.setLayers({ time: (event as CustomEvent<number>).detail });
     runtime.current?.setLayers({ time: videoClock.time });
@@ -1177,10 +1239,13 @@ export function SpatialView({
       {mode !== "photo" && (
         <button
           className="spatial-fit"
-          onClick={() => runtime.current?.setCamera({ mode, cameraId })}
+          onClick={() => { following.current = false; setFollow(false); runtime.current?.setCamera({ mode, cameraId }); }}
         >
           {t("fit")}
         </button>
+      )}
+      {followable && (
+        <button className="spatial-follow" aria-pressed={follow} onClick={() => setFollow(true)}>{t("followVideo")}</button>
       )}
       {status && (
         <p className="stage-status" role="status">

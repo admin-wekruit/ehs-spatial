@@ -395,6 +395,7 @@ const messages: Record<string, [string, string]> = {
   generateAll: ["生成场景资产", "Generate scene assets"],
   noPreview: ["暂无场景预览", "No scene preview yet"],
   fit: ["适应画布", "Fit view"],
+  followVideo: ["跟随视频视角", "Follow video view"],
   before: ["之前", "Before"],
   after: ["之后", "After"],
   date: ["日期", "Date"],

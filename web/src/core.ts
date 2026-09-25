@@ -94,6 +94,13 @@ export function cameraPath(document: SceneDocument, frameId: string | null) {
   return ordered.map(({ camera, frame }) => ({ cameraId: camera.id, position: [0, 1, 2].map(k => Number((camera.cameraToWorld as unknown as number[][])[k][3])),
     time: Number.isFinite(rate) ? frame / rate : null })).filter(p => p.position.every(Number.isFinite));
 }
+/** A free viewer camera standing where a report camera stood and looking where it looked (OpenCV: +z forward, -y up),
+ *  with its vertical field of view; the orbit centre is one native unit ahead. */
+export function cameraView(camera: SceneDocument["cameras"][number]) {
+  const m = camera.cameraToWorld as unknown as number[][], K = camera.K as unknown as number[][];
+  const eye = [0, 1, 2].map(k => Number(m[k][3])), forward = [0, 1, 2].map(k => Number(m[k][2])), up = [0, 1, 2].map(k => -Number(m[k][1]));
+  return { eye, target: eye.map((v, k) => v + forward[k]), up, fov: 2 * Math.atan(camera.height / 2 / K[1][1]) };
+}
 export function activeModel(entity: Entity) {
   return (entity.representations || []).find(rep => rep.id === entity.activeModelRepresentationId &&
     ["generated_mesh", "primitive"].includes(rep.kind)) || null;
