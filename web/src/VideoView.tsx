@@ -7,7 +7,9 @@ import type { SceneDocument } from "./types";
 type Outline = { entityId: string | null; label: string; polygons: number[][][] };
 type Frame = { timeSec: number; endTimeSec: number; sourceFrame: number; objects: Outline[] };
 type Analysis = { width: number; height: number; frames: Frame[] };
-type Replay = { videoAssetId: string; analysisAssetId: string };
+/** The same frames without the 4:3 crop the reconstruction used; rasterInVideo is where the outline raster sits in it (x, y, w, h). */
+type FullFrame = { videoAssetId: string; width: number; height: number; rasterInVideo: number[] };
+type Replay = { videoAssetId: string; analysisAssetId: string; fullFrame?: FullFrame };
 
 /** The report's one clock: the source video's time, read by the 3D views to show moving objects at that moment. */
 export const videoClock = { time: 0 };
@@ -15,7 +17,10 @@ const announce = (time: number) => { videoClock.time = time; window.dispatchEven
 
 export function videoReplay(document: SceneDocument): Replay | null {
   const found = (document.annotations || []).find((a) => a.kind === "video_replay") as Partial<Replay> | undefined;
-  return found && typeof found.videoAssetId === "string" && typeof found.analysisAssetId === "string" ? found as Replay : null;
+  if (!found || typeof found.videoAssetId !== "string" || typeof found.analysisAssetId !== "string") return null;
+  const full = found.fullFrame;
+  const usable = full && typeof full.videoAssetId === "string" && full.width > 0 && full.height > 0 && full.rasterInVideo?.length === 4 && full.rasterInVideo.every(Number.isFinite);
+  return { videoAssetId: found.videoAssetId, analysisAssetId: found.analysisAssetId, fullFrame: usable ? full : undefined };
 }
 
 function frameAt(frames: Frame[], time: number) {
@@ -28,21 +33,31 @@ function frameAt(frames: Frame[], time: number) {
 export function VideoView({ document, selectedId, onSelect }: {
   document: SceneDocument; selectedId: string | null; onSelect: (id: string) => void;
 }) {
-  const { language } = useI18n(), replay = videoReplay(document),
+  const { language } = useI18n(), replay = videoReplay(document), full = replay?.fullFrame, shownVideo = full?.videoAssetId ?? replay?.videoAssetId,
     [source, setSource] = useState<string>(), [analysis, setAnalysis] = useState<Analysis>(),
     [time, setTime] = useState(0), [playing, setPlaying] = useState(false), [error, setError] = useState(false),
-    video = useRef<HTMLVideoElement>(null);
+    video = useRef<HTMLVideoElement>(null), stage = useRef<HTMLDivElement>(null), [fill, setFill] = useState(false);
+  // A pane a little wider than the video is filled edge to edge, trimming at most a sixth of its height in all;
+  // the outlines are trimmed the same way. A much wider or a narrower pane shows the whole frame.
+  useEffect(() => {
+    const node = stage.current, element = video.current;
+    if (!node || !element) return;
+    const decide = () => { const ratio = (node.clientWidth / Math.max(node.clientHeight, 1)) / ((element.videoWidth || 16) / (element.videoHeight || 9)); setFill(ratio >= 1 && ratio <= 1.2); };
+    const observer = new ResizeObserver(decide);
+    observer.observe(node); element.addEventListener("loadedmetadata", decide); decide();
+    return () => { observer.disconnect(); element.removeEventListener("loadedmetadata", decide); };
+  }, [source]);
   useEffect(() => {
     if (!replay) return;
     let live = true, blobUrl: string | undefined;
     setError(false);
     // A blob keeps seeking exact whether or not the asset endpoint answers range requests.
-    Promise.all([resolveAsset(replay.videoAssetId).then((url) => fetch(url)).then((r) => r.blob()),
+    Promise.all([resolveAsset(shownVideo!).then((url) => fetch(url)).then((r) => r.blob()),
       resolveAsset(replay.analysisAssetId).then((url) => fetch(url)).then((r) => r.json())])
       .then(([blob, data]) => { if (!live) return; blobUrl = URL.createObjectURL(blob); setSource(blobUrl); setAnalysis(data); })
       .catch(() => { if (live) setError(true); });
     return () => { live = false; if (blobUrl) URL.revokeObjectURL(blobUrl); };
-  }, [replay?.videoAssetId, replay?.analysisAssetId]);
+  }, [shownVideo, replay?.analysisAssetId]);
   useEffect(() => {
     const element = video.current;
     if (!element || !playing) return;
@@ -70,14 +85,18 @@ export function VideoView({ document, selectedId, onSelect }: {
   if (error) return <div className="report-scene-plan-empty" role="status">{language === "zh" ? "视频或逐帧轮廓读取失败" : "The video or its per-frame outlines could not be read"}</div>;
   const duration = analysis?.frames.length ? analysis.frames[analysis.frames.length - 1].endTimeSec : 0;
   return <div className="report-video">
-    <div className="report-video-stage">
-      <video ref={video} src={source} muted playsInline preload="auto" onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
+    <div className="report-video-stage" ref={stage}>
+      <video ref={video} src={source} muted playsInline preload="auto" style={fill ? { objectFit: "cover" } : undefined} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
         onSeeked={(e) => setTime(e.currentTarget.currentTime)} aria-label={language === "zh" ? "来源视频" : "Source video"} />
-      {analysis && frame && <svg viewBox={`0 0 ${analysis.width} ${analysis.height}`} preserveAspectRatio="xMidYMid meet">
+      {analysis && frame && <svg viewBox={full ? `0 0 ${full.width} ${full.height}` : `0 0 ${analysis.width} ${analysis.height}`} preserveAspectRatio={fill ? "xMidYMid slice" : "xMidYMid meet"}>
+        {/* Uncropped video: the outlines stay on the reconstruction's raster, placed where the crop sits; the dashed frame marks it. */}
+        {full && <rect className="report-video-raster" x={full.rasterInVideo[0]} y={full.rasterInVideo[1]} width={full.rasterInVideo[2]} height={full.rasterInVideo[3]} />}
+        <g transform={full ? `translate(${full.rasterInVideo[0]} ${full.rasterInVideo[1]}) scale(${full.rasterInVideo[2] / analysis.width} ${full.rasterInVideo[3] / analysis.height})` : undefined}>
         {frame.objects.flatMap((object, n) => object.polygons.map((polygon, k) =>
           <polygon key={`${n}-${k}`} points={polygon.map((p) => p.join(",")).join(" ")} data-selected={object.entityId === selectedId || undefined}
             data-pickable={object.entityId ? true : undefined} onClick={() => object.entityId && onSelect(object.entityId)}>
             <title>{object.label}</title></polygon>))}
+        </g>
       </svg>}
     </div>
     <footer className="report-video-controls">

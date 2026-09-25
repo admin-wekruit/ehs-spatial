@@ -183,6 +183,7 @@
 .report-video-stage svg polygon[data-pickable] { pointer-events: auto; cursor: pointer; }
 .report-video-stage svg polygon[data-pickable]:hover { fill: rgba(255, 214, 102, .22); }
 .report-video-stage svg polygon[data-selected] { fill: rgba(86, 214, 140, .25); stroke: #56d68c; stroke-width: 2; }
+.report-video-stage svg .report-video-raster { fill: none; stroke: rgba(255, 255, 255, .45); stroke-width: 1; stroke-dasharray: 6 5; vector-effect: non-scaling-stroke; pointer-events: none; }
 .report-video-controls { display: flex; flex: 0 0 auto; gap: 8px; align-items: center; padding: 4px 8px; border-top: 1px solid var(--scene-border); font-size: 10px; }
 .report-video-controls input { flex: 1 1 auto; }
 .report-video-controls button { padding: 4px 8px; border: 1px solid #c7d2c2; border-radius: 2px; background: #fcfff8; font-size: 10px; }

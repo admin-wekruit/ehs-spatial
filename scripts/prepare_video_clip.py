@@ -15,6 +15,7 @@ they read the TUM clips' source-rgb.mp4); droid_room registers every clip.json i
 code change.
 
   python scripts/prepare_video_clip.py --video V --start 3572 --end 3611 --name lightning-3572 [--fov-deg 70]
+  python scripts/prepare_video_clip.py --full-video CLIP_DIR   # the same frames uncropped, for the report's video panel
   python scripts/prepare_video_clip.py --self-check
 """
 import argparse
@@ -112,6 +113,41 @@ def estimate_fov(out):
             "spread_deg": float(np.ptp(per_frame))}
 
 
+def full_video(clip_dir, max_width=1280):
+    """source-full.mp4 + source-full.json: the clip's frames from the source video without the 4:3 crop.
+
+    The report shows this instead of the cropped clip; source-full.json says where the cropped raster sits in it, so the
+    outlines drawn on the 640x480 raster land on the same pixels. MP4 frame i is clip frame i, as in source-rgb.mp4.
+    """
+    import cv2
+    clip = json.loads((clip_dir / "clip.json").read_text())
+    source = clip["source"]
+    video, meta = clip_dir / "source-full.mp4", clip_dir / "source-full.json"
+    assert not video.exists() and not meta.exists(), f"{video} exists; clips are never overwritten"
+    width, height = source["source_wh"]
+    scale = min(1., max_width / width)
+    size = (int(round(width * scale)) // 2 * 2, int(round(height * scale)) // 2 * 2)
+    cap = cv2.VideoCapture(source["video"])
+    cap.set(cv2.CAP_PROP_POS_FRAMES, source["first_frame"])
+    writer = cv2.VideoWriter(str(video), cv2.VideoWriter_fourcc(*"avc1"), source["fps"], size)
+    assert writer.isOpened(), "H.264 encoder unavailable"
+    written = 0
+    while written < source["frames"]:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        writer.write(cv2.resize(frame, size, interpolation=cv2.INTER_AREA) if scale < 1 else frame)
+        written += 1
+    cap.release(), writer.release()
+    assert written == source["frames"], f"read {written} of {source['frames']} clip frames"
+    x, y, w, h = source["crop_xywh"]
+    record = {"video": video.name, "width": size[0], "height": size[1], "fps": source["fps"], "frames": written,
+              "raster_wh": [W, H], "raster_in_video_xywh": [x * size[0] / width, y * size[1] / height, w * size[0] / width, h * size[1] / height],
+              "frame_mapping": "MP4 frame i is clip frame i (the same source frames as source-rgb.mp4, not cropped)"}
+    meta.write_text(json.dumps(record, indent=1))
+    return record
+
+
 def run(args):
     out = args.output or ART / "data/clips" / args.name
     assert not out.exists(), f"{out} exists; clips are never overwritten"
@@ -158,8 +194,14 @@ def self_check():
         image = cv2.imread(str(Path(folder) / "clip" / rows[0].split()[1]))
         assert image.shape == (H, W, 3)
         assert playback(Path(folder) / "clip", facts["fps"])["frames"] == 10          # one MP4 frame per clip frame
+        (Path(folder) / "clip/clip.json").write_text(json.dumps({"source": {"video": str(path), **facts}}))
+        full = full_video(Path(folder) / "clip")
+        cap = cv2.VideoCapture(str(Path(folder) / "clip/source-full.mp4")); ok, first = cap.read(); cap.release()
+        assert full["frames"] == 10 and first.shape == (720, 1280, 3) and full["raster_in_video_xywh"] == [160., 0., 960., 720.], full
+        assert first[:, 160 + 5 * 10 + 3].mean() > 200, "full frame 0 is source frame 5 (0.5 s), uncropped" 
     print("video clip check passed: 16:9, 4K, 4:3 and portrait crop to 4:3; focal length matches the stated field of view; "
-          "frames and timestamps cover exactly the requested seconds; the playback MP4 has one frame per clip frame")
+          "frames and timestamps cover exactly the requested seconds; the playback MP4 has one frame per clip frame; "
+          "the uncropped video holds the same frames and places the raster at the crop")
 
 
 if __name__ == "__main__":
@@ -171,5 +213,6 @@ if __name__ == "__main__":
     parser.add_argument("--name")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--fov-deg", type=float, help="stated horizontal field of view of the CROPPED 4:3 frame; omit to estimate with MoGe-3")
+    parser.add_argument("--full-video", type=Path, help="an existing clip directory: write its frames uncropped as source-full.mp4")
     a = parser.parse_args()
-    self_check() if a.self_check else run(a)
+    self_check() if a.self_check else print(json.dumps(full_video(a.full_video))) if a.full_video else run(a)

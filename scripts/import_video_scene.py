@@ -382,7 +382,11 @@ def build_document(args, put_asset, calibration, dataset):
         document["annotations"].append({"id": ident("annotation", "video-replay"), "kind": "video_replay", "sourceAssetId": source,
             "videoAssetId": include(args.video.read_bytes(), "video/mp4", {"kind": "source_video", "sourceRecordId": "source-video"}),
             "analysisAssetId": include(slim, "application/json", {"kind": "video_frame_outlines", "sourceRecordId": "per-frame-outlines"}),
-            "note": "outlines are the scene's 3D entities re-projected into each frame, not a per-frame segmentation"})
+            "note": "outlines are the scene's 3D entities re-projected into each frame, not a per-frame segmentation",
+            # the same frames without the 4:3 crop, shown in its place; outlines stay on the raster, placed at the crop
+            **({"fullFrame": (lambda full: {"videoAssetId": include((args.full_video.parent / full["video"]).read_bytes(), "video/mp4", {"kind": "source_video_uncropped", "sourceRecordId": "source-video-full"}),
+                                            "width": full["width"], "height": full["height"], "rasterInVideo": full["raster_in_video_xywh"]})(json.loads(args.full_video.read_text()))}
+               if args.full_video else {})})
     if args.video_events:  # the video memory: window captions and events in the model's own words, kept as evidence beside the geometry
         memory = json.loads(args.video_events.read_text())
         by_label = {e["label"]: e for e in document["entities"] if e.get("motion") == "dynamic"}
@@ -468,6 +472,7 @@ if __name__ == "__main__":
     for name in ("droid-run", "depth-run", "object-map", "masks", "policy", "models"):
         parser.add_argument("--" + name, type=Path, required=name not in ("policy", "models"))
     parser.add_argument("--video", type=Path, help="source video to show as a report view (needs --analysis)")
+    parser.add_argument("--full-video", type=Path, help="prepare_video_clip.py --full-video source-full.json: the uncropped frames, shown in place of --video")
     parser.add_argument("--analysis", type=Path, help="project_entities_to_frames analysis.json of the same object map")
     parser.add_argument("--inferred-floor", type=Path, help="infer_room_floor.py output: becomes the floor entity's model in the model layer")
     parser.add_argument("--shell-glb", type=Path, help="photo-textured copy of the depth run's fused mesh to show as the room surface")
