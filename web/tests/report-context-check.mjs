@@ -32,7 +32,10 @@ const edits=[
 const requests=[],navigations=[];
 let publicPublicationId='';
 const publication={id:'publication',projectId:'project',title:'Frozen report',createdAt:revision.createdAt,sceneRevisionId:revision.id,
-  snapshot:{revision,editBatches:[edits[0]],evaluations:[],reviews:[],jobs:[{id:'export',kind:'export_blender',status:'succeeded',baseRevisionId:revision.id,createdAt:revision.createdAt,result:{assets:[{id:'blend',name:'workcell.blend'}]}}]}};
+  snapshot:{revision,editBatches:null,evaluations:[],reviews:[],jobs:[{id:'export',kind:'export_blender',status:'succeeded',baseRevisionId:revision.id,createdAt:revision.createdAt,result:{assets:[{id:'blend',name:'workcell.blend'}]}}]}};
+// Public reports load one precompiled view: project detail plus edit summaries, no inline edit bodies (publication_view.py).
+const publicationView={publication,project:detail.project,branch,branches:[branch],
+  edits:[edits[0]].map(({id,createdAt,baseRevisionId,revisionId,operations})=>({id,createdAt,baseRevisionId,revisionId,operationTypes:operations.map(o=>o.type)}))};
 let hash='#/projects/project/report?revision=revision&object=a&observation=observation-a&image=image-a&box=1,2,30,40&review=1&agent=1';
 globalThis.location={get hash(){return hash;},set hash(value){navigations.push(value);hash=value;}};
 globalThis.window={history:{replaceState(_state,_title,url){assert.ok(url.startsWith('#/'));hash=url;}},scrollTo(){}};
@@ -56,7 +59,7 @@ new Function('require','module','exports',code)(name=>{
   if(name==='./ReportObjectFindings')return {ReportObjectFindings:empty};
   if(name==='./api')return {get PUBLICATION_ID(){return publicPublicationId;},owner:async()=> {assert.equal(publicPublicationId,'','public viewing must not depend on local management keys');return 'local-capability';},request:async(url,options)=>{
     assert.equal(options?.method,undefined,'selection must not send mutations/model calls');requests.push(url);
-    return url==='/api/publications/publication'?publication:url==='/api/projects/project'?detail:url==='/api/revisions/revision'?revision:{items:url.endsWith('/edits')?edits:publicPublicationId?[publication]:[]};
+    return url==='/api/publications/publication/view'?publicationView:url==='/api/projects/project'?detail:url==='/api/revisions/revision'?revision:{items:url.endsWith('/edits')?edits:publicPublicationId?[publication]:[]};
   }};
   return require(name);
 },module,module.exports);
@@ -134,7 +137,7 @@ find(n=>n.type===ReportScene).props.onClearSelection();await render();
 assert.equal(find(n=>n.type===ReportScene).props.selection.entityId,null);
 assert.equal(params().has('object')||params().has('observation'),false,'clear selection removes saved object context');
 assert.equal(find(n=>n.type===AgentPanel),null);
-assert.ok(find(n=>n.type==='a'&&n.props.href==='#/reports/publication'),'published history stays on the site');
+assert.ok(find(n=>n.type==='a'&&n.props.href==='#/reports/publication?snapshot=1'),'published history stays on the site, pinned to its snapshot');
 assert.ok(find(n=>n.props.publication===publication&&typeof n.props.onSummary==='function'),'saved EHS data remains rendered');
 find(n=>n.type===ReportScene).props.onSelect('a','observation-a');await render();
 const objectFindings=find(n=>n.props.entityId==='a'&&typeof n.props.onReview==='function');
@@ -144,7 +147,7 @@ const publicRequests=requests.slice();
 find(n=>n.type===ReportScene).props.onSelect('b','observation-b');await render();
 assert.equal(params().get('object'),'b');assert.equal(params().get('image'),'image-b');
 assert.deepEqual(requests,publicRequests,'public object selection does not fetch or mutate data');
-assert.deepEqual(requests,['/api/publications/publication','/api/projects/project','/api/publications']);
+assert.deepEqual(requests,['/api/publications/publication/view','/api/publications']);
 
 // Execute the actual route hook so direct write URLs cannot render an editing page.
 for(const slot of slots)slot?.cleanup?.();slots.length=0;effects.length=0;

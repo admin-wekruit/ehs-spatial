@@ -23,6 +23,10 @@ new Function('require','module','exports',code)(name=>{
   if(name==='./App')return {SpatialView};
   if(name==='./PhotoView')return {PhotoView:empty};
   if(name==='./CadView')return {CadView:empty};
+  if(name==='./VideoView')return {VideoView:empty,VideoMemory:empty,ComparisonVideo:empty,videoReplay:()=>null};
+  if(name==='./SpatialMeasurements')return {SpatialMeasurements:empty};
+  if(name==='./viewer/splat-layer')return {splatAnnotation:()=>null};
+  if(name==='./api')return {}; // only effects fetch, and effects never run here
   return require(name);
 },module,module.exports);
 const transform={coordinateFrameId:'frame',position:[0,0,0],quaternion:[0,0,0,1],scale:[1,1,1]};
@@ -47,7 +51,7 @@ function render(){cursor=0;return module.exports.ReportScene({revision:{id:'revi
 function coverage(tree){return find(tree,n=>Object.hasOwn(n.props,'data-model-coverage'));}
 let tree=render(), notice=coverage(tree);
 assert.deepEqual(['data-model-coverage','data-reference-surfaces','data-composite-previews','data-missing-models'].map(k=>notice.props[k]),[24,1,1,2]);
-assert.match(text(notice),/24 \/ 28 sceneModelCoverage/);
+assert.match(text(notice),/26 \/ 28 sceneGeometryCoverage · 24 sceneIndependentModelCount/);
 assert.match(text(notice),/24 sceneModelLoading/);assert.match(text(notice),/1 sceneModelCandidateCount/);
 find(tree,n=>n.type===SpatialView).props.onAssetStates('revision',models.slice(0,2).map((e,i)=>({entityId:e.id,representationId:e.activeModelRepresentationId,assetId:'asset-'+i,state:i?'error':'ready'})));
 notice=coverage(render());assert.equal(notice.props['data-model-loaded'],1);assert.equal(notice.props['data-model-coverage'],24);
