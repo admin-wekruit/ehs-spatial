@@ -116,7 +116,12 @@ def infer_da3_remote(frames, w2c, K, model_name):
     return results
 
 
-def infer(droid_run, output, stride, da3_model=None, midframes=False, every=None):
+def outside(spans):
+    """Frame filter for --exclude-frames START:END spans (another shot of an edited clip): True for frames to keep."""
+    return lambda frame: not any(a <= frame < b for a, b in spans)
+
+
+def infer(droid_run, output, stride, da3_model=None, midframes=False, every=None, exclude=()):
     import cv2
     manifest = json.loads((droid_run / "input-manifest.json").read_text())
     assert not manifest["groundtruth_included"] and not manifest["depth_included"]
@@ -128,6 +133,7 @@ def infer(droid_run, output, stride, da3_model=None, midframes=False, every=None
         keyframes = np.unique(np.concatenate([keyframes, (keyframes[:-1] + keyframes[1:]) // 2]))
     if every:  # a steady time sampling for moving entities: a nearly static camera yields very few keyframes
         keyframes = np.unique(np.concatenate([keyframes, np.arange(0, len(prediction["poses_c2w"]), every)]))
+    keyframes = [i for i in keyframes if outside(exclude)(int(i))]  # another shot's cameras are wrong: never a view
     (output / "mono").mkdir(parents=True, exist_ok=True)
     frames, k = [], None
     for index in map(int, keyframes):
@@ -487,7 +493,7 @@ def device_floor(droid_run, support, output, uncalibrated=False):
     print(json.dumps(report, indent=1))
 
 
-def metric(droid_run, support, output, floor_masks, camera_height, metric_depth_run=None):
+def metric(droid_run, support, output, floor_masks, camera_height, metric_depth_run=None, exclude=()):
     """Metres from one stated assumption: the camera is carried `camera_height` above the segmented floor."""
     import cv2
     rows = {r["source_index"]: r for r in load(droid_run, support, output)}
@@ -512,6 +518,7 @@ def metric(droid_run, support, output, floor_masks, camera_height, metric_depth_
     assert len(patches) >= 2, "fewer than two views agree on the floor direction"
     points, views = np.concatenate([patch[1] for patch in patches]), [patch[0] for patch in patches]
     cameras = np.load(droid_run / "prediction.npz")["poses_c2w"][:, :3, 3].astype(np.float64)
+    cameras = cameras[[i for i in range(len(cameras)) if outside(exclude)(i)]]  # carry height over this shot's cameras only
     tolerance = .02 * float(np.median([patch[3] for patch in patches]))  # predicted depth: the same 2% used for cross-view support
     centre, up, inliers = consensus_plane(points, tolerance)
     up *= np.sign(np.median((cameras - centre) @ up))  # same convention as estimate_native_ground: up is toward the cameras
@@ -748,6 +755,7 @@ def self_check():
     specks = rng.uniform(-3, 3, (40, 3)); specks -= np.outer(specks @ tilt, tilt); specks += tilt * -2.
     centre, up, inliers, _ = floor_plane(np.vstack([ground, things, specks]), np.array([0., 1., 0.]), .02)
     assert np.degrees(np.arccos(np.clip(up @ tilt, -1, 1))) < .5 and abs(centre @ tilt + 1.4) < .02, (up, centre @ tilt)
+    assert [f for f in range(6) if outside([(1, 3)])(f)] == [0, 3, 4, 5], "--exclude-frames START:END drops START..END-1"
     print("mono room check passed: floor level found under clutter and above stray specks; grazing floor supported across its plane and fused flat; moving-pixel depth tied on static pixels only; consensus floor plane under clutter; low-confidence and border-jump pixels dropped; revisits at any time vote and opposite views do not; anchors only from supported pixels, anchorless frames refused, median robust to outliers")
 
 
@@ -777,15 +785,18 @@ if __name__ == "__main__":
     parser.add_argument("--video", type=Path, help="source video; without --base-scene, fuse writes the replay frames itself from its CFR times and the DROID cameras")
     parser.add_argument("--floor-plane", type=Path, help="metric-scale.json of a verified floor plane: floor pixels are supported across the plane (>=3 views per floor cell), not along the ray")
     parser.add_argument("--base-scene", type=Path, help="existing replay scene.json of the same DROID run; fuse then also writes a viewer scene")
+    parser.add_argument("--exclude-frames", nargs="*", default=[], metavar="START:END",
+                        help="infer/metric: source frames START..END-1 (another shot of an edited clip) are never a view and never set the carry height")
     a = parser.parse_args()
     if a.command == "self-check":
         self_check()
         sys.exit()
     use_clip(a.droid_run)
+    spans = [tuple(int(v) for v in span.split(":")) for span in a.exclude_frames]
     if a.command == "infer":
-        infer(a.droid_run, a.output, a.stride, a.da3_model, a.midframes, a.every)
+        infer(a.droid_run, a.output, a.stride, a.da3_model, a.midframes, a.every, spans)
     elif a.command == "metric":
-        device_floor(a.droid_run, a.support, a.output, uncalibrated=not METRIC_CAMERAS) if (METRIC_CAMERAS or a.uncalibrated) and not a.floor_masks else metric(a.droid_run, a.support, a.output, a.floor_masks, a.camera_height, a.metric_depth_run)
+        device_floor(a.droid_run, a.support, a.output, uncalibrated=not METRIC_CAMERAS) if (METRIC_CAMERAS or a.uncalibrated) and not a.floor_masks else metric(a.droid_run, a.support, a.output, a.floor_masks, a.camera_height, a.metric_depth_run, spans)
     elif a.command == "fuse":
         fuse(a.droid_run, a.support, a.output, a.voxel_length_native, a.support_relative, a.base_scene, a.support_all_views, a.dynamic_masks, a.conf_percentile, a.edge_jump, a.carve, a.video, a.floor_plane)
     elif a.command == "dynamic":

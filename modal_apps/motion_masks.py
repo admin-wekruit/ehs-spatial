@@ -164,11 +164,13 @@ def run(args):
     if args.gap >= frame_count:
         raise ValueError('--gap must leave at least one source frame pair')
     args.output.mkdir(parents=True, exist_ok=False)
-    firsts = [i for i in range(0, frame_count - args.gap, args.every)]
+    cut = [tuple(int(v) for v in span.split(":")) for span in args.exclude_frames]  # another shot: no pair touches or spans it
+    firsts = [i for i in range(0, frame_count - args.gap, args.every) if not any(i < b and i + args.gap >= a for a, b in cut)]
     frames = {i: picture(i) for i in sorted(set(firsts) | {i + args.gap for i in firsts})}
     jpg = lambda image: cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 95])[1].tobytes()
     state = {"status": "gpu_running", "flow": "torchvision raft_large DEFAULT", "gap_frames": args.gap, "every": args.every, "pairs": len(firsts), "nearest_depth_native": nearest,
-             "gpu": "L4", "timeout_s": 600, "retries": 0, "cameras": str(args.droid_run) if args.droid_run else None, "reference": str(args.reference) if args.reference else None}
+             "gpu": "L4", "timeout_s": 600, "retries": 0, "cameras": str(args.droid_run) if args.droid_run else None, "reference": str(args.reference) if args.reference else None,
+             **({"excluded_frames": args.exclude_frames} if args.exclude_frames else {})}
     if source:
         state['source'] = source
     (args.output / f"motion-{int(time.time())}.json").write_text(json.dumps(state, indent=1))
@@ -259,5 +261,6 @@ if __name__ == "__main__":
     parser.add_argument("--every", type=int, default=10, help="start a pair at every Nth source frame")
     parser.add_argument("--gap", type=int, default=8, help="frames between the two images of a pair: slow things need a wider one")
     parser.add_argument("--reference", type=Path, help="SOURCEINDEX-*.png masks of things known to move, to measure against (never an input)")
+    parser.add_argument("--exclude-frames", nargs="*", default=[], metavar="START:END", help="source frames START..END-1 (another shot of an edited clip): no pair touches them")
     a = parser.parse_args()
     self_check() if a.self_check else run(a)

@@ -90,15 +90,16 @@ def validate_prediction(depth, confidence, points, k, c2w):
     return report
 
 
-def decode_frames(video, frames, stride):
-    """PNG of every stride-th video frame into frames/; returns the plan records and the video's frame count."""
+def decode_frames(video, frames, stride, span=None):
+    """PNG of every stride-th video frame into frames/; returns the plan records and the video's frame count.
+    span (START, END): only frames START..END-1, one continuous shot of an edited video."""
     import cv2
     cap = cv2.VideoCapture(str(video)); records=[]; index=0
     try:
         while True:
             ok, bgr = cap.read()
             if not ok: break
-            if index % stride == 0:
+            if index % stride == 0 and (span is None or span[0] <= index < span[1]):
                 if len(records) >= 768: raise ValueError('Bounded experiment supports at most 768 input frames, below the 1024-frame positional limit')
                 require_disk_space(frames, bgr.nbytes + 131072)
                 path=frames/f'{index:06d}.png'; assert cv2.imwrite(str(path), bgr)
@@ -118,19 +119,19 @@ def valid_run_id(run_id):
 
 
 @app.function(image=image, cpu=(4,4), memory=(8192,8192), timeout=900, retries=0, volumes={'/artifact':volume})
-def decode_remote(run_id, video_sha, stride):
+def decode_remote(run_id, video_sha, stride, span=None):
     """CPU only: the run's uploaded source.mp4 -> rgb.tar beside it, the same records prepare writes locally."""
     volume.reload(); root=Path('/artifact')/valid_run_id(run_id)
     if digest(root/'source.mp4')!=video_sha:raise ValueError('Uploaded video differs from the local source')
     frames=Path('/tmp/rgb');frames.mkdir()
-    records,count=decode_frames(root/'source.mp4',frames,stride)
+    records,count=decode_frames(root/'source.mp4',frames,stride,span)
     with tarfile.open(root/'rgb.tar','w') as archive:
         for record in records:archive.add(frames/record['path'],arcname=record['path'])
     volume.commit()
     return records,count,digest(root/'rgb.tar')
 
 
-def prepare(manifest_path, sample_id, output, stride, video=None, run_id=None):
+def prepare(manifest_path, sample_id, output, stride, video=None, run_id=None, span=None):
     if video is None:
         manifest = json.loads(manifest_path.read_text())
         sample = next(s for s in manifest['samples'] if s['id'] == sample_id)
@@ -142,17 +143,17 @@ def prepare(manifest_path, sample_id, output, stride, video=None, run_id=None):
     output.mkdir(parents=True, exist_ok=False)
     if run_id is None:
         frames = output/'rgb'; frames.mkdir()
-        records, index = decode_frames(video, frames, stride)
+        records, index = decode_frames(video, frames, stride, span)
         require_disk_space(output, sum((frames / r['path']).stat().st_size + 4096 for r in records))
         with tarfile.open(output/'rgb.tar','w') as archive:
             for record in records: archive.add(frames/record['path'],arcname=record['path'])
         archive_sha = digest(output/'rgb.tar')
     else:  # frames of a long full-resolution video would be GBs locally; decode them next to the GPU instead
         with volume.batch_upload() as batch: batch.put_file(video, f'{valid_run_id(run_id)}/source.mp4')
-        with app.run(): records, index, archive_sha = decode_remote.remote(run_id, digest(video), stride)
+        with app.run(): records, index, archive_sha = decode_remote.remote(run_id, digest(video), stride, span)
         validate_indices([r['sourceFrame'] for r in records], index)
     plan={'source_video':str(video), 'source_video_sha256':digest(video), 'source_frame_count':index,
-          'frames':records, 'stride':stride, 'code_revision':REV,'weights_revision':WEIGHTS_REV,
+          'frames':records, 'stride':stride, **({'shot_frames':list(span)} if span else {}), 'code_revision':REV,'weights_revision':WEIGHTS_REV,
           'weights_sha256':WEIGHTS_SHA,'rgb_archive_sha256':archive_sha,'rgb_archive_on_volume':run_id,
           'sensor_depth_uploaded':False,'groundtruth_uploaded':False,'new_training':False,
           'max_gpu_seconds':900,'max_gpu_attempts':1,'reserved_usd':2,
@@ -283,9 +284,10 @@ if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('mode',choices=['prepare','execute','collect'])
     p.add_argument('--output',type=Path,required=True);p.add_argument('--manifest',type=Path);p.add_argument('--sample');p.add_argument('--stride',type=int,default=3);p.add_argument('--run-id')
     p.add_argument('--video',type=Path,help='prepare from this video instead of --manifest/--sample; needs --run-id (decoded on Modal)')
+    p.add_argument('--frames',type=lambda s:tuple(int(v) for v in s.split(':')),metavar='START:END',help='prepare: only source frames START..END-1 (one continuous shot)')
     a=p.parse_args()
     if a.mode=='prepare':
         if a.video and not a.run_id:p.error('--video decodes on the volume and needs --run-id')
-        prepare(a.manifest,a.sample,a.output,a.stride,a.video,a.run_id if a.video else None)
+        prepare(a.manifest,a.sample,a.output,a.stride,a.video,a.run_id if a.video else None,a.frames)
     elif a.mode=='execute':execute(a.output,a.run_id)
     else:print(json.dumps(collect(a.output,a.run_id)),flush=True)

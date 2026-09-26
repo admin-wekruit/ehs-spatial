@@ -129,8 +129,10 @@ def fused_part(textured, object_map, entity, minimum=50):
         pixels = np.column_stack([part.visual.uv[:, 0] * width, (1 - part.visual.uv[:, 1]) * height])
         # An atlas page packs many views' tiles: one box over all the cut's UVs would take most of the page. Crop per tile.
         for ids, (x0, y0, x1, y1) in tiles(pixels, np.asarray(part.faces), (width, height)):
-            piece = part.submesh([ids], append=True)
-            pieces.append((piece, np.column_stack([piece.visual.uv[:, 0] * width, (1 - piece.visual.uv[:, 1]) * height]) - [x0, y0]))
+            # the tile's own vertices and pixels, as submesh would order them; submesh also gave every tile its own copy of the whole
+            # atlas page, which a 4096x3956 page (Walmart) and a floor of thousands of tiles took past 20 GB
+            used, faces = np.unique(np.asarray(part.faces)[ids], return_inverse=True)
+            pieces.append((trimesh.Trimesh(np.asarray(part.vertices)[used], faces.reshape(-1, 3), process=False), pixels[used] - [x0, y0]))
             patches.append(photo[y0:y1, x0:x1])
     parts, triangles = trimesh.Scene(), sum(len(p.faces) for p, _ in pieces) + sum(len(p.faces) for p in plain)
     if triangles < minimum:

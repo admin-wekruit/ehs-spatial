@@ -352,23 +352,57 @@ def collect(output, run_id, dataset=DATASET):
     return state
 
 
-def clip_archive(output, clip):
-    """RGB-only archive and hash manifest of another calibrated clip; same layout as the original room upload."""
+def clip_archive(output, clip, frames=None):
+    """RGB-only archive and hash manifest of another calibrated clip; same layout as the original room upload.
+    frames (START, END): only clip frames START..END-1 (one shot of an edited clip) are archived and tracked; the whole
+    clip's manifest is kept beside it as clip-input-manifest.json for clip_index."""
     dataset, records = CLIPS[clip]["dataset"], []
     for line in (dataset / "rgb.txt").read_text().splitlines():
         if not line or line.startswith("#"): continue
         stamp, relative = line.split()
         assert relative.startswith("rgb/") and (dataset / relative).resolve().is_relative_to(dataset.resolve())
         records.append({"source_index": len(records), "timestamp_text": stamp, "relative_path": relative, "sha256": sha(dataset / relative)})
-    save(output / "input-manifest.json", {"frame_count": len(records), "rgb_index_sha256": sha(dataset / "rgb.txt"),
-        "source_K_fx_fy_cx_cy": CLIPS[clip]["K"], "source_distortion": CLIPS[clip]["D"], "frames": records,
-        "groundtruth_included": False, "depth_included": False})
+    manifest = lambda rows: {"frame_count": len(rows), "rgb_index_sha256": sha(dataset / "rgb.txt"),
+        "source_K_fx_fy_cx_cy": CLIPS[clip]["K"], "source_distortion": CLIPS[clip]["D"], "frames": rows,
+        "groundtruth_included": False, "depth_included": False}
+    if frames:
+        save(output / "clip-input-manifest.json", manifest(records))
+        records = records[frames[0]:frames[1]]
+    save(output / "input-manifest.json", manifest(records))
     with tarfile.open(output / "input-rgb.tar", "w") as archive:
         for record in records:
             archive.add(dataset / record["relative_path"], arcname=record["relative_path"], recursive=False)
 
 
-def execute(output, run_id, reuse_run, clip="fr1-room"):
+def shot_to_clip(data, start, count):
+    """A one-shot prediction in clip frame numbers: one pose per clip frame, keyframe indices shifted by START. A frame outside
+    the shot holds the shot's first or last camera, a placeholder that is never evidence (consumers exclude those frames)."""
+    import numpy as np
+    at = np.clip(np.arange(count) - start, 0, len(data["poses_c2w"]) - 1)
+    return {**data, "poses_c2w": data["poses_c2w"][at], "poses_xyzw": data["poses_xyzw"][at],
+            "keyframe_source_indices": data["keyframe_source_indices"] + start,
+            "keyframe_final_upsample_mask_source_indices": data["keyframe_final_upsample_mask_source_indices"] + start}
+
+
+def clip_index(output, frames):
+    """Rewrite a finished one-shot run the way every consumer reads a run (prediction.npz and input-manifest.json in clip
+    frames); the remote's own prediction.npz, frames.jsonl and the shot's input-manifest.json move unchanged to shot/."""
+    import numpy as np
+    (output / "shot").mkdir()
+    for name in ("prediction.npz", "frames.jsonl", "input-manifest.json"):
+        (output / name).rename(output / "shot" / name)
+    (output / "clip-input-manifest.json").rename(output / "input-manifest.json")
+    count = len(json.loads((output / "input-manifest.json").read_text())["frames"])
+    with np.load(output / "shot" / "prediction.npz") as data:
+        assert len(data["poses_c2w"]) == frames[1] - frames[0] <= count
+        np.savez(output / "prediction.npz", **shot_to_clip(dict(data), frames[0], count))
+    state = json.loads((output / "run.json").read_text())
+    state.update(shot_frames=list(frames), clip_indexed={"from": "shot/prediction.npz (the remote's, hash-checked by collect)", "outside_shot_poses":
+                 "placeholder: the shot's first/last camera; never evidence, exclude those frames downstream", "prediction_sha256": sha(output / "prediction.npz")})
+    save(output / "run.json", state)
+
+
+def execute(output, run_id, reuse_run, clip="fr1-room", frames=None):
     """One GPU-only run using the already successful pinned build; the room clip also reuses its uploaded RGB archive."""
     assert run_id and all(c.isalnum() or c in "-_" for c in run_id)
     previous = json.loads((reuse_run / "run.json").read_text())
@@ -382,8 +416,10 @@ def execute(output, run_id, reuse_run, clip="fr1-room"):
         archive_path = reuse_run / "input-rgb.tar"
     else:
         output.mkdir(parents=True, exist_ok=False)
-        clip_archive(output, clip)
+        clip_archive(output, clip, frames)
         archive_path = output / "input-rgb.tar"
+    assert not frames or clip != "fr1-room", "one-shot runs are for video clips"
+    uploaded = f"{clip}-{frames[0]}-{frames[1]}" if frames else clip  # the volume folder of this upload
     manifest = json.loads((output / "input-manifest.json").read_text())
     assert not manifest["groundtruth_included"] and not manifest["depth_included"]
     assert manifest["rgb_index_sha256"] == sha(dataset / "rgb.txt")
@@ -405,13 +441,13 @@ def execute(output, run_id, reuse_run, clip="fr1-room"):
     with app.run():
         if clip != "fr1-room":  # upload is outside the GPU deadline
             with volume.batch_upload(force=True) as batch:
-                batch.put_file(archive_path, f"/clips/{clip}/input-rgb.tar")
-                batch.put_file(output / "input-manifest.json", f"/clips/{clip}/input-manifest.json")
+                batch.put_file(archive_path, f"/clips/{uploaded}/input-rgb.tar")
+                batch.put_file(output / "input-manifest.json", f"/clips/{uploaded}/input-manifest.json")
         deadline = time.time()+900
         state.update(status="gpu_submitting", app_id=app.app_id, gpu_deadline_unix=deadline)
         save(output / "run.json", state)
         call = infer.spawn(run_id, deadline, state["archive_sha256"], state["input_manifest_sha256"], state["cached_build_sha256"],
-                           clip=None if clip == "fr1-room" else clip)
+                           clip=None if clip == "fr1-room" else uploaded)
         state.update(status="gpu_running", gpu_call_id=call.object_id)
         save(output / "run.json", state); print(json.dumps(state), flush=True)
         try:
@@ -425,6 +461,8 @@ def execute(output, run_id, reuse_run, clip="fr1-room"):
         collected = collect(output, run_id, dataset)
         state["remote_run_sha256"] = sha(output / "remote-run.json")
         state["status"] = collected["status"]; save(output / "run.json", state)
+    if frames and state["status"] == "inference_complete":
+        clip_index(output, frames)
     return state
 
 
@@ -452,6 +490,9 @@ def self_check():
     lowmem = patched.split("    def update_lowmem", 1)[1].split("    def add_neighborhood_factors", 1)[0]
     assert lowmem.index("self.video.ba(") < lowmem.index("self.video.upsample(")
     assert "self.video.phase2_final_upsample_masks" in lowmem
+    shot = {"poses_c2w": np.arange(3.), "poses_xyzw": np.arange(3.), "keyframe_source_indices": np.array([0, 2]), "keyframe_final_upsample_mask_source_indices": np.array([0, 2])}
+    clip = shot_to_clip(shot, 2, 6)
+    assert clip["poses_c2w"].tolist() == [0, 0, 0, 1, 2, 2] and clip["keyframe_source_indices"].tolist() == [2, 4], "one-shot run in clip frames"
     print("DROID raster/calibration/capacity and pinned BA-before-upsampling self-check passed; no GPU invoked")
 
 
@@ -462,11 +503,15 @@ if __name__ == "__main__":
     parser.add_argument("--run-id")
     parser.add_argument("--reuse-build-from", type=Path)
     parser.add_argument("--clip", choices=sorted(CLIPS), default="fr1-room")
+    parser.add_argument("--frames", type=lambda s: tuple(int(v) for v in s.split(":")), metavar="START:END",
+                        help="track only clip frames START..END-1 (one continuous shot of an edited clip); the run is then rewritten in clip frame numbers")
     args=parser.parse_args()
     if args.mode=="self-check": self_check()
     else:
         assert args.run_id and args.output, "Explicit --run-id and --output required"
-        if args.mode=="collect": print(json.dumps(collect(args.output, args.run_id, CLIPS[args.clip]["dataset"]),indent=2))
+        if args.mode=="collect":
+            print(json.dumps(collect(args.output, args.run_id, CLIPS[args.clip]["dataset"]),indent=2))
+            if args.frames: clip_index(args.output, args.frames)
         else:
             assert args.reuse_build_from, "This entry reuses a successful build; --reuse-build-from required"
-            print(json.dumps(execute(args.output, args.run_id, args.reuse_build_from, args.clip),indent=2))
+            print(json.dumps(execute(args.output, args.run_id, args.reuse_build_from, args.clip, args.frames),indent=2))

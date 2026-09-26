@@ -49,7 +49,7 @@ W, H, SIDE = 1280, 720, 160  # the clip frame is the centre 960x720 of the video
 CAPTIONS = (648, 704, 160, 1120)  # y0 y1 x0 x1 band of ME340's burned-in captions (text rows 661-689, one centred line, widest x 228-1050)
 HOLD_OUT, KNOT_EVERY, DILATE = 8, 8, 15
 HELD_OUT_NOTE = ("validation, not an untouched test: the settings (Gaussian cap, steps, pose refinement, elongation cap, cleanup rule) were "
-                 "chosen on these frames and the seed surface was fused from views that include them; each is one frame (33 ms) from a "
+                 "chosen on these frames and the seed surface was fused from views that include them; each is one frame from a "
                  "training frame, so it scores the walked path, not views away from it")
 OFF = {"far": 1e9, "min_views": 0, "needle_ratio": 1e9, "needle_opacity": 0, "huge": 1e9, "huge_opacity": 0}  # a cleanup rule that drops nothing
 SHOW = (240, 400, 560, 784)  # held-out frames saved as real | render (ME340 frames 14-225 are another shot)
@@ -129,13 +129,14 @@ def timeline(knots, frames, every=KNOT_EVERY, used=None):
 
 
 def report_surfaces():
-    """The report's room (fused mesh + single-view-depth fill): vertices, vertex colours 0..1 and one ray-casting scene of both."""
+    """The report's room (fused mesh + single-view-depth fill): vertices, vertex colours 0..1 and one ray-casting scene of both.
+    The fill is one vertex-coloured geometry, or (fill_scene_holes.py --video) several textured ones, sampled to vertex colours."""
     import open3d as o3d
     import trimesh
     mesh = o3d.io.read_triangle_mesh(str(MESH))
-    fill = trimesh.load(FILL, process=False).geometry["single-view-depth-fill"]
-    parts = [(np.asarray(mesh.vertices), np.asarray(mesh.triangles), np.asarray(mesh.vertex_colors)),
-             (np.asarray(fill.vertices), np.asarray(fill.faces), fill.visual.vertex_colors[:, :3] / 255.)]
+    fills = [g for name, g in trimesh.load(FILL, process=False).geometry.items() if name.startswith("single-view-depth-fill")]
+    parts = [(np.asarray(mesh.vertices), np.asarray(mesh.triangles), np.asarray(mesh.vertex_colors))] + [
+        (np.asarray(g.vertices), np.asarray(g.faces), (g.visual.to_color() if g.visual.kind == "texture" else g.visual).vertex_colors[:, :3] / 255.) for g in fills]
     scene = o3d.t.geometry.RaycastingScene()
     for v, f, _ in parts:
         scene.add_triangles(o3d.core.Tensor(v.astype(np.float32)), o3d.core.Tensor(f.astype(np.uint32)))
@@ -608,7 +609,7 @@ def moderate_views(c2w, K, picks=MODERATE):
     """Free cameras a short drag off the path: each eye moved from a path camera by a small offset (right, up, back), looking at the
     point that camera saw at a pixel (given its depth)."""
     views = []
-    for frame, pixel, depth, offset in picks:
+    for frame, pixel, depth, offset in (p for p in picks if p[0] < len(c2w)):  # ponytail: ME340's picks; a shorter clip keeps those inside it
         R, t = c2w[frame][:3, :3], c2w[frame][:3, 3]
         views.append(look_at(t + R @ (np.array(offset) * [1, -1, -1]), R @ (np.linalg.inv(K) @ [*pixel, 1.] * depth) + t, -R[:, 1]))
     return np.array(views)
@@ -618,9 +619,10 @@ def comparison_views(report_c2w, K):
     """The views every model is compared in, from the report's cameras so they are the same for every run: three orbits like the
     report's default view (70 degrees across) and three moderate drags off the path (the viewer's free camera, 60 degrees high)."""
     k = lambda focal: np.array([[focal, 0, W / 2], [0, focal, H / 2], [0, 0, 1.]])
-    return (np.concatenate([orbit_views(report_c2w), moderate_views(report_c2w, K)]),
-            np.array([k(W / 2 / np.tan(np.radians(35)))] * 3 + [k(H / 2 / np.tan(np.radians(30)))] * 3),
-            [f"orbit-{j}" for j in range(3)] + [f"moderate-{j}" for j in range(3)])
+    moderate = moderate_views(report_c2w, K)
+    return (np.concatenate([orbit_views(report_c2w), moderate]),
+            np.array([k(W / 2 / np.tan(np.radians(35)))] * 3 + [k(H / 2 / np.tan(np.radians(30)))] * len(moderate)),
+            [f"orbit-{j}" for j in range(3)] + [f"moderate-{j}" for j in range(len(moderate))])
 
 
 def clean(args):
@@ -918,6 +920,9 @@ if __name__ == "__main__":
     parser.add_argument("--clip", type=Path, default=CLIP)
     parser.add_argument("--droid-run", type=Path, default=DROID)
     parser.add_argument("--masks", type=Path, default=MASKS, help="dynamic masks SOURCEINDEX-*.png in clip-frame pixels")
+    parser.add_argument("--mesh", type=Path, default=MESH, help="the report's fused room mesh (mono-anchored-mesh.ply): seeds, depth pull, cleanup distance")
+    parser.add_argument("--fill", type=Path, default=FILL, help="fill_scene_holes.py textured-scene.glb of that mesh: its single-view-depth-fill* geometries")
+    parser.add_argument("--scale", type=Path, default=SCALE, help="metric-scale.json of the depth run: metres per native unit")
     parser.add_argument("--captions", type=int, nargs=4, default=CAPTIONS, metavar=("Y0", "Y1", "X0", "X1"), help="burned-in caption band, video pixels (0 0 0 0: none)")
     parser.add_argument("--steps", type=int, default=30000)
     parser.add_argument("--cap", type=int, default=1500000, help="most Gaussians trained and exported")
@@ -937,4 +942,5 @@ if __name__ == "__main__":
     parser.add_argument("--skip", nargs="*", default=[], metavar="A-B", help="clip frames (inclusive ranges) left out of training and evaluation")
     parser.add_argument("--output", type=Path)
     a = parser.parse_args()
+    MESH, FILL, SCALE = a.mesh, a.fill, a.scale  # the defaults are ME340's; another clip passes its own
     self_check() if a.self_check else compare(a) if a.compare else pick(a) if a.pick else clean(a) if a.clean else run(a)

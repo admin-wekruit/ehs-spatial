@@ -366,8 +366,9 @@ def align(result_dir, files, poses):
             'outlier_source_frames': [f['sourceFrame'] for f, ok in zip(files, inliers) if not ok]}, (s, r, t), inliers
 
 
-def frame_stream(root, files, sim3, clip_k, conf_floor, sample=3):
-    """Per LingBot frame, in the report world: sample-grid depth, validity, K, camera, full-res colour, conf, facing."""
+def frame_stream(root, files, sim3, clip_k, conf_floor, sample=3, overlay=SUBTITLE_ROWS):
+    """Per LingBot frame, in the report world: sample-grid depth, validity, K, camera, full-res colour, conf, facing.
+    overlay: rows [y0, y1) of the uncropped frame under burned-in captions, never used (y0 == y1: none)."""
     import cv2
     s, r, t = sim3
     masks = {}
@@ -392,7 +393,7 @@ def frame_stream(root, files, sim3, clip_k, conf_floor, sample=3):
             h, w = depth.shape
             if grid is None:
                 fx, fy = sample_grid((h, w), sample)
-                grid = (fx, fy, (fy >= SUBTITLE_ROWS[0]) & (fy < SUBTITLE_ROWS[1]))
+                grid = (fx, fy, (fy >= overlay[0]) & (fy < overlay[1]))
             fx, fy, subtitles = grid
             full = np.eye(4)
             full[:3] = w2c
@@ -431,7 +432,7 @@ def load_run(run_id):
 
 
 @app.function(image=dense_image, cpu=(4, 4), memory=(16384, 16384), timeout=1800, retries=0, volumes={'/artifact': volume})
-def diagnose_remote(run_id, poses, clip_k, every=5, lag=5, conf_floor=1.):
+def diagnose_remote(run_id, poses, clip_k, every=5, lag=5, conf_floor=1., overlay=SUBTITLE_ROWS):
     """Alignment, confidence distribution, and how far neighbouring views' depths disagree (per confidence decile)."""
     volume.reload()
     root, execution = load_run(run_id)
@@ -439,7 +440,7 @@ def diagnose_remote(run_id, poses, clip_k, every=5, lag=5, conf_floor=1.):
     report, sim3, _ = align(root / 'result', files, np.asarray(poses))
     confs, pairs = [], []
     views = {}
-    for f in frame_stream(root, files, sim3, clip_k, conf_floor):
+    for f in frame_stream(root, files, sim3, clip_k, conf_floor, overlay=overlay):
         lb = f['lb']
         views[f['source']] = lb
         confs.append(lb['conf'][::4, ::4].ravel())
@@ -498,7 +499,7 @@ def build_map(root, files, poses, clip_k, config, out):
     analysis = {'frames': [], 'height': FULL_WH[1], 'width': FULL_WH[0], '_base': str(flow_masks)}
     full_grid = [g.astype(np.float32) for g in np.meshgrid(np.arange(FULL_WH[0]), np.arange(FULL_WH[1]))]
     votes, held, valid_share, step = {}, [], [], config['sample']
-    for f in frame_stream(root, files, sim3, clip_k, config['fill_conf'], step):
+    for f in frame_stream(root, files, sim3, clip_k, config['fill_conf'], step, tuple(config.get('overlay_rows', SUBTITLE_ROWS))):
         objects = []
         if f['masks']:  # the project's cross-view check leaves out the same moving pixels, as source-raster RGBA masks
             alpha = moving_lookup(f['masks'], *full_grid).astype(np.uint8) * 255
@@ -893,14 +894,14 @@ def build(args, diagnose_only=False):
     started = time.time()
     if diagnose_only:
         with app.run():
-            result = diagnose_remote.remote(args.run_id, poses, clip_k)
+            result = diagnose_remote.remote(args.run_id, poses, clip_k, overlay=args.overlay_rows)
         result['wall_seconds'] = time.time() - started
         save(args.output / 'diagnose.json', result)
         print(json.dumps(result, indent=1))
         return
     cuts = shot_cuts(args.clip / 'source-full.mp4')
     config = {'exclude': [[int(v) for v in span.split(':')] for span in args.exclude_frames], 'conf': args.conf, 'fill_conf': args.fill_conf, 'sample': args.sample, 'cell': args.cell / metres, 'tolerance': args.tolerance,
-              'tolerance_floor': args.tolerance_floor / metres, 'max_points': args.max_points, 'patch_radius': .03 / metres}
+              'tolerance_floor': args.tolerance_floor / metres, 'max_points': args.max_points, 'patch_radius': .03 / metres, 'overlay_rows': list(args.overlay_rows)}
     with app.run():
         summary = build_remote.remote(args.run_id, poses, clip_k, config)
     wall = time.time() - started
@@ -914,9 +915,9 @@ def build(args, diagnose_only=False):
             'cell_native': summary['cell_native_final'], 'cell_cm': round(summary['cell_native_final'] * metres * 100, 3),
             'fill_cell_cm': round(2 * summary['cell_native_final'] * metres * 100, 3),
             'confidence_threshold': args.conf, 'fill_points': summary['fill_points'],
-            'confidence_rule': (f'samples with LingBot depth_conf > {args.conf} are confident: the three lowest confidence deciles '
-                                '(conf < 1.061) were the only ones where under 90% of neighbouring views (20 source frames apart) '
-                                'agreed within 4% (diagnose.json by_conf_decile); the official demo shows conf > 1.5. Samples with '
+            'confidence_rule': (f'samples with LingBot depth_conf > {args.conf} are confident: the confidence deciles below it '
+                                'were the only ones where under 90% of neighbouring views agreed within 4% (diagnose.json by_conf_decile; '
+                                'ME340: the three lowest, conf < 1.061); the official demo shows conf > 1.5. Samples with '
                                 f'{args.fill_conf} < conf <= {args.conf} (mostly ceiling and far background) only fill what no confident '
                                 'sample covers and are replaced by any confident sample of the same surface'),
             'tolerance_relative': args.tolerance, 'tolerance_floor_cm': args.tolerance_floor * 100,
@@ -932,7 +933,7 @@ def build(args, diagnose_only=False):
                           'translation': summary['alignment']['translation']},
             'frames_used': {'lingbot_input_frames': len(plan['frames']), 'stride': plan['stride'], 'first_last': [plan['frames'][0]['sourceFrame'], plan['frames'][-1]['sourceFrame']],
                             'fused_into_map': summary['fused_frames'], 'held_out': len(summary['alignment']['outlier_source_frames']),
-                            'input': 'uncropped source-full.mp4 1280x720, every 2nd frame -> official crop mode 518x294',
+                            'input': f"uncropped source-full.mp4 1280x720, every {plan['stride']} frame(s) -> official crop mode 518x294",
                             'lingbot': {k: plan[k] for k in ('code_revision', 'weights_revision', 'weights_sha256')} | {'configuration': plan['configuration']},
                             'lingbot_run': {k: run[k] for k in ('gpu', 'inference_seconds', 'elapsed_seconds', 'peak_gpu_bytes', 'native_prediction_sha256')}
                                            | {'file': 'lingbot-run.json', 'predictions': f'Modal volume panoptes-lingbot-map:/{args.run_id}/result'}},
@@ -1021,6 +1022,8 @@ if __name__ == '__main__':
     p.add_argument('--tolerance-floor', type=float, default=.015, help='metres; minimum same-surface band')
     p.add_argument('--max-points', type=int, default=4_000_000)
     p.add_argument('--exclude-frames', nargs='*', default=[], metavar='START:END', help='source frames never fused, e.g. a cut-away shot (14:226 on ME340)')
+    p.add_argument('--overlay-rows', type=lambda s: tuple(int(v) for v in s.split(':')), default=SUBTITLE_ROWS, metavar='Y0:Y1',
+                   help='rows of the uncropped frame under burned-in captions, never used (default: ME340\'s 646:706; 0:0 for none)')
     a = p.parse_args()
     if a.mode == 'evaluate':
         evaluate(a)

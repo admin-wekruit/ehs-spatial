@@ -231,7 +231,7 @@ def view_metrics(entity, rows, clip, args, cache):
         if frame not in cache:
             cache.clear()  # observations come in frame order; one view is held at a time
             depth, moving = reliable(rows[frame], clip, args.dynamic_masks)
-            cache[frame] = depth, moving, facing(depth, clip.k_raster), subtitle_box(cv2.imread(str(clip.clip_frames[frame])))
+            cache[frame] = depth, moving, facing(depth, clip.k_raster), None if args.no_captions else subtitle_box(cv2.imread(str(clip.clip_frames[frame])))
         depth, moving, cos, caption = cache[frame]
         clip_mask = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE) > 0
         raster = clip.raster_mask(path)
@@ -403,6 +403,7 @@ def fit(vertices, faces, observed, eye=None, iterations=100, keep=.8):
     the mesh centroid stays on that camera's ray through where it started: depth, scale and rotation are refined, the
     source-view position is kept. Returns the 4x4 applied and the moved vertices.
     """
+    from ehs_spatial.platform.contracts import PlatformError
     from ehs_spatial.platform.spatial import similarity_transform
     total, current = np.eye(4), np.asarray(vertices, np.float64)
     low, high = FIT_GATE["scale_range"]
@@ -410,7 +411,10 @@ def fit(vertices, faces, observed, eye=None, iterations=100, keep=.8):
     for _ in range(iterations):
         target, distance = closest(current, faces, observed)
         inliers = distance <= np.quantile(distance, keep)
-        step = similarity_transform(target[inliers], observed[inliers])
+        try:
+            step = similarity_transform(target[inliers], observed[inliers])
+        except PlatformError:  # the closest mesh points collapse onto a line or a point: no further step, the gate judges the model as it stands
+            break
         scale = np.cbrt(np.linalg.det(step[:3, :3]))
         if not low <= scale * np.cbrt(np.linalg.det(total[:3, :3])) <= high:  # rigid: same rotation, centroids matched
             step[:3, :3] /= scale
@@ -424,7 +428,7 @@ def fit(vertices, faces, observed, eye=None, iterations=100, keep=.8):
     return total, current
 
 
-def seen(vertices, faces, observed, cameras, k, size=(640, 480), radius=2 * VOXEL):
+def seen(vertices, faces, observed, cameras, k, size=(640, 480), radius=None):
     """Observed vertices: an observed point within `radius`, facing a camera that saw the object and in its clear sight.
 
     Facing matters: the back of a thin part and the inner wall of a shell lie within `radius` of the front's points and in
@@ -433,6 +437,7 @@ def seen(vertices, faces, observed, cameras, k, size=(640, 480), radius=2 * VOXE
     import open3d as o3d
     import trimesh
     from scipy.spatial import cKDTree
+    radius = 2 * VOXEL if radius is None else radius  # VOXEL is set per clip in main()
     near = cKDTree(observed).query(vertices, distance_upper_bound=radius)[0] < np.inf
     mesh = trimesh.Trimesh(vertices, faces, process=False)
     normals = mesh.vertex_normals * (1. if mesh.volume >= 0 else -1.)  # outward, whichever way the generator wound its faces
@@ -1260,6 +1265,7 @@ def self_check():
     _, result = fit(moved, box.faces, samples, eye=eye)
     start = (moved.mean(0) - eye) / np.linalg.norm(moved.mean(0) - eye)
     assert np.linalg.norm(np.cross(start, result.mean(0) - eye)) < 1e-9
+    assert np.allclose(fit(box.vertices, box.faces, np.zeros((50, 3)))[0], np.eye(4)), "a degenerate registration ends the fit, not the run"
     # GLB: one buffer, BLEND material, RGBA read back unchanged; the plain variant has no material
     rgba = np.column_stack([np.full((len(slab.vertices), 3), 200), np.where(flags, OBSERVED_ALPHA, INFERRED_ALPHA)]).astype(np.uint8)
     blended, plain = glb(slab.vertices, slab.faces, rgba, True), glb(slab.vertices, slab.faces, rgba, False)
@@ -1325,6 +1331,7 @@ def self_check():
 
 
 def main():
+    global VOXEL, OCCLUSION
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--self-check", action="store_true")
     for name in ("droid-run", "depth-run", "object-map", "masks", "dynamic-masks", "clip", "output"):
@@ -1340,7 +1347,12 @@ def main():
     parser.add_argument("--function-id", default="fu-Hh2leT3x1kprDaWpWsZ09l", help="the deployed generate_object the transport must find")
     parser.add_argument("--max-usd", type=float, default=30.)
     parser.add_argument("--skip-frames", nargs="*", default=[], metavar="A-B", help="frame ranges never used as a view or for points (e.g. a cut-away shot whose cameras are wrong)")
+    parser.add_argument("--voxel-native", type=float, default=VOXEL, help="the depth run's fused voxel in native units (fuse-metrics.json voxel_native): observed and fit "
+                        "tolerances are counted in it (default: ME340's)")
+    parser.add_argument("--no-captions", action="store_true", help="the video has no burned-in captions: skip the white-text caption test (a bright floor sets it off)")
     args = parser.parse_args()
+    VOXEL, OCCLUSION = args.voxel_native, args.voxel_native / 2  # ponytail: module constants re-set once per run, as every helper reads them
+    FIT_GATE["max_fit_median_native"] = VOXEL
     if args.self_check:
         return self_check()
     missing = [n for n in ("droid_run", "depth_run", "object_map", "masks", "dynamic_masks", "clip", "output") if getattr(args, n) is None]
