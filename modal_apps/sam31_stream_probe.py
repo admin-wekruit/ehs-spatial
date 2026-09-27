@@ -8,11 +8,17 @@ uses. So a live feed is a frame list that hands out frame i once frame i has arr
   - outputs are post-processed 16 at a time: 1 here. The 15-frame hot-start delay stays, it is the algorithm;
   - every per-frame store (tracker memory, conditioning frames, cached masks, frame-wise scores) keeps every frame
     forever. prune() drops what the forward pass can no longer read.
+A fourth showed up only in a long run: a lost person's track is suppressed but keeps its slot, and after 16 slots
+every new person is refused. --evict-after frees such slots through the model's own removal path.
 One session loops a clip on one GPU for a fixed time. Reported: throughput, per-frame latency, GPU memory over time
-(unpruned first, then pruned), and identity agreement with offline tracks of the same frames. Timeout 2100 s, retries 0.
+(unpruned first, then pruned), and identity agreement with offline tracks of the same frames. Timeout per call, retries 0.
+
+Measured on ME340 looped, H100, eager (runs m0-sam31-stream-probe-me340 and -evict3, 2026-09-27): unpruned memory
+grows 10.4 GB per 1000 frames; pruned it is flat. Without eviction 16 slots fill by frame 4000 and recall falls to 26%.
+With --unpruned 0 --evict-after 60: 10.8 fps, 91/104 ms per frame (p50/p95), IDF1 0.90 against the offline windows.
 
   modal run modal_apps/sam31_stream_probe.py --droid-run RUN --output NEW_DIR [--minutes 25] [--unpruned 1798]
-      [--reference-tracks SAM3_TRACKS_RUN,...] [--reference-analysis MOTION_ANALYSIS_RUN] [--compile]
+      [--reference-tracks SAM3_TRACKS_RUN,...] [--reference-analysis MOTION_ANALYSIS_RUN] [--compile] [--evict-after FRAMES]
   python modal_apps/sam31_stream_probe.py --self-check
 """
 import io
@@ -84,8 +90,10 @@ def prune(state, frontier, window=WINDOW, keep_cond=KEEP_COND):
 
     Tracking frame t reads non-conditioning memory from t-1..t-6, object pointers from t-1..t-15 and the 4
     conditioning frames closest in time (video_tracking_multiplex.py, select_closest_cond_frames); going forward those
-    are the latest 4. Inputs and 'consolidated' frame sets are cut by the same frames because
-    propagate_in_video_preflight asserts they match.
+    are the latest 4. Each object also keeps its own latest input frame: removing an object de-conditions its input
+    frames, and a bucket left with no conditioning frame cannot track ("No points are provided", seen at the first
+    eviction). Older conditioning frames are never among the closest 4, so keeping them changes nothing tracked.
+    Inputs and 'consolidated' frame sets are cut by the same frames because propagate_in_video_preflight asserts they match.
     """
     old, gone = frontier - window, 0
 
@@ -100,14 +108,29 @@ def prune(state, frontier, window=WINDOW, keep_cond=KEEP_COND):
     drop(meta.get("obj_id_to_sam2_score_frame_wise", {}))
     drop(meta.get("rank0_metadata", {}).get("suppressed_obj_ids", {}))
     for s in state["sam2_inference_states"]:
-        keep = set(sorted(s["output_dict"]["cond_frame_outputs"])[-keep_cond:])
-        stores = [s["frames_already_tracked"], *s["consolidated_frame_inds"].values(),
-                  *s["point_inputs_per_obj"].values(), *s["mask_inputs_per_obj"].values()]
+        inputs = [*s["point_inputs_per_obj"].values(), *s["mask_inputs_per_obj"].values()]
+        keep = set(sorted(s["output_dict"]["cond_frame_outputs"])[-keep_cond:]) | {max(frames) for frames in inputs if frames}
+        stores = [s["frames_already_tracked"], *s["consolidated_frame_inds"].values(), *inputs]
         for outputs in (s["output_dict"], *s["output_dict_per_obj"].values(), *s["temp_output_dict_per_obj"].values()):
             stores += list(outputs.values())
         for store in stores:
             drop(store, keep)
     return gone
+
+
+def anchors_bucket(tracker, ident):
+    """True when removing this object would leave its bucket with no conditioning frame, so the bucket could not track.
+
+    Removal clears the object's input frames and downgrades each one no other object has input on
+    (clear_all_points_in_frame). An object added to an existing bucket lands on an already-tracked frame, which
+    add_new_masks stores as non-conditioning, so a bucket's conditioning frames are often all its first object's.
+    """
+    idx = tracker["obj_id_to_idx"].get(ident)
+    if idx is None:
+        return False
+    inputs = lambda i: set(tracker["point_inputs_per_obj"].get(i, {})) | set(tracker["mask_inputs_per_obj"].get(i, {}))
+    others = set().union(*(inputs(i) for i in tracker["obj_id_to_idx"].values() if i != idx))
+    return not set(tracker["output_dict"]["cond_frame_outputs"]) - (inputs(idx) - others)
 
 
 def census(tree, path="", out=None, seen=None, depth=0):
@@ -131,7 +154,7 @@ def census(tree, path="", out=None, seen=None, depth=0):
 
 @app.function(image=image, gpu=["H100", "A100-80GB"], timeout=TIMEOUT, retries=0, max_containers=1,
               volumes={"/cache": sam3_video.cache}, secrets=[modal.Secret.from_name("huggingface")])
-def stream_remote(jpegs, seconds, unpruned, text, compile_model=False):
+def stream_remote(jpegs, seconds, unpruned, text, compile_model=False, evict_after=0):
     """jpegs: one clip pass, looped. -> npz bytes: report + one row per (answered frame, object) + timing and memory series."""
     import psutil
     import torch
@@ -172,7 +195,7 @@ def stream_remote(jpegs, seconds, unpruned, text, compile_model=False):
     tracking.is_image_type = lambda resource_path: False
     tracking.tqdm = lambda iterable, **_: iterable  # a progress bar sized to the session floods the log
     frames = LiveFrames(decode, len(jpegs), int(seconds * MAX_FPS) + 1000)
-    stats = {"dropped": 0, "tracked_max": 0}
+    stats = {"dropped": 0, "tracked_max": 0, "anchored_skips": 0}
     inner = model._run_single_frame_inference
 
     def spy(*args, **kwargs):  # the model's own per-frame counts: objects tracked, and new ones refused for lack of slots
@@ -183,6 +206,36 @@ def stream_remote(jpegs, seconds, unpruned, text, compile_model=False):
         return out
 
     model._run_single_frame_inference = spy
+    streak, evicted = {}, []
+    if evict_after:  # the stock model suppresses a lost track but never frees its slot; after 16 slots new people are refused
+        hotstart = model._process_hotstart_gpu
+
+        def recycle(**kwargs):
+            """Remove, through the model's own hot-start removal path, a track it has kept suppressed (keep-alive <= 0) for evict_after frames in a row.
+
+            A track that anchors its bucket stays (see anchors_bucket): the first eviction without this guard stopped
+            the session ("No points are provided"). ponytail: a person hidden longer than evict_after comes back under
+            a new id; re-identification is the upgrade path.
+            """
+            remove, suppress, meta = hotstart(**kwargs)
+            if meta.get("N_obj", 0):
+                ids = kwargs["tracker_metadata_prev"]["obj_ids_all_gpu"].tolist()
+                assert len(ids) == meta["N_obj"], "keep-alive is indexed by position in obj_ids_all_gpu"
+                for ident, lost in zip(ids, (meta["trk_keep_alive"] <= 0).tolist()):
+                    streak[ident] = streak.get(ident, 0) + 1 if lost else 0
+                anchored = {i for tracker in state["sam2_inference_states"] for i in ids if streak[i] >= evict_after and anchors_bucket(tracker, i)}
+                stats["anchored_skips"] += len(anchored)
+                evict = [streak[i] >= evict_after and i not in anchored for i in ids]
+                if any(evict):
+                    evicted.extend([kwargs["frame_idx"], i] for i, e in zip(ids, evict) if e)
+                    for i, e in zip(ids, evict):
+                        if e:
+                            streak.pop(i)
+                    evict = torch.tensor(evict, device=remove.device)
+                    remove, meta["removed_mask"] = remove | evict, meta["removed_mask"] | evict
+            return remove, suppress, meta
+
+        model._process_hotstart_gpu = recycle
     started = time.perf_counter()
     state = model.init_state(resource_path=frames, offload_video_to_cpu=True)
     session = sam3_video._register(predictor, state)
@@ -233,7 +286,7 @@ def stream_remote(jpegs, seconds, unpruned, text, compile_model=False):
         report["error"] = f"{type(error).__name__}: {error}"[:800]
         report["stream_seconds"] = time.perf_counter() - started
     report.update(entries_pruned=pruned, lookahead_reads=frames.lookahead, stale_reads=frames.stale, peak_allocated=torch.cuda.max_memory_allocated(),
-                  objects_dropped_for_slots=stats["dropped"], objects_tracked_max=stats["tracked_max"], census=censuses, remote_seconds=time.perf_counter() - began)
+                  objects_dropped_for_slots=stats["dropped"], objects_tracked_max=stats["tracked_max"], evict_after=evict_after, evicted=evicted, anchored_skips=stats["anchored_skips"], census=censuses, remote_seconds=time.perf_counter() - began)
     buffer = io.BytesIO()
     np.savez_compressed(buffer, report=json.dumps(report), memory=np.array(memory, np.float64).reshape(-1, 7),
                         **{k: np.array(v, np.float64) for k, v in series.items()},
@@ -313,7 +366,7 @@ def summarize(found, refs, count, unpruned):
            "period_ms_p50": pct(period, 50) * 1e3 if len(period) else None, "period_ms_p95": pct(period, 95) * 1e3 if len(period) else None,
            "latency_ms_p50": pct(latency, 50) * 1e3 if len(latency) else None, "latency_ms_p95": pct(latency, 95) * 1e3 if len(latency) else None,
            "hotstart_delay_frames": report.get("hotstart_delay"), "lookahead_reads": report.get("lookahead_reads"), "stale_reads": report.get("stale_reads"),
-           "objects_tracked_max": report.get("objects_tracked_max"), "objects_dropped_for_slots": report.get("objects_dropped_for_slots"),
+           "objects_tracked_max": report.get("objects_tracked_max"), "objects_dropped_for_slots": report.get("objects_dropped_for_slots"), "evicted": len(report.get("evicted", [])), "anchored_skips": report.get("anchored_skips"),
            "peak_allocated_gb": report.get("peak_allocated", 0) / 2 ** 30, "timings": report.get("timings"), "remote_seconds": report.get("remote_seconds")}
     gb = lambda rows: rows[:, 3] / 2 ** 30
     grow = memory[(memory[:, 1] < unpruned) & (memory[:, 1] >= WARM)] if len(memory) else memory
@@ -334,7 +387,7 @@ def summarize(found, refs, count, unpruned):
 
 @app.local_entrypoint()
 def main(droid_run: str, output: str, minutes: float = 25, unpruned: int = 1798, text: str = "person",
-         reference_tracks: str = "", reference_analysis: str = "", frames: int = 0, compile: bool = False):
+         reference_tracks: str = "", reference_analysis: str = "", frames: int = 0, compile: bool = False, evict_after: int = 0):
     import cv2
     import mono_room as M
     droid_run, output = Path(droid_run), Path(output)
@@ -347,7 +400,7 @@ def main(droid_run: str, output: str, minutes: float = 25, unpruned: int = 1798,
     refs = load_references([Path(r) for r in reference_tracks.split(",") if r], Path(reference_analysis) if reference_analysis else None)
     output.mkdir(parents=True, exist_ok=True)  # an output holding stream.npz is scored again, not paid for again
     state = {"model": sam3_video.MODEL_ID, "revision": sam3_video.MODEL_REVISION, "source_commit": sam3_video.SOURCE_COMMIT, "cameras": str(droid_run),
-             "clip_frames": len(rows), "minutes": minutes, "unpruned_frames": unpruned, "text": text, "gpu": "H100, fallback A100-80GB", "compile": compile,
+             "clip_frames": len(rows), "minutes": minutes, "unpruned_frames": unpruned, "text": text, "gpu": "H100, fallback A100-80GB", "compile": compile, "evict_after": evict_after,
              "timeout_s": timeout, "retries": 0, "window": WINDOW, "keep_cond": KEEP_COND, "references": {k: v[2] for k, v in refs.items()}}
     (output / f"stream-{int(time.time())}.json").write_text(json.dumps(state, indent=1))
     began = time.time()
@@ -357,7 +410,7 @@ def main(droid_run: str, output: str, minutes: float = 25, unpruned: int = 1798,
         # the same frames sam3_motion_tracks.py tracked offline: same raster, same JPEG quality
         images = [M.prepare_image(cv2.imread(str(M.DATASET / r["relative_path"])), M.CALIBRATION, 2)[0] for r in rows]
         jpegs = [cv2.imencode(".jpg", f, [cv2.IMWRITE_JPEG_QUALITY, 95])[1].tobytes() for f in images]
-        answer = stream_remote.with_options(timeout=timeout).remote(jpegs, minutes * 60, unpruned, text, compile)
+        answer = stream_remote.with_options(timeout=timeout).remote(jpegs, minutes * 60, unpruned, text, compile, evict_after)
         (output / "stream.npz").write_bytes(answer)  # the provider's answer, before any local reading
         state["client_wall_seconds"] = time.time() - began
     found = np.load(io.BytesIO(answer))
@@ -383,18 +436,23 @@ def self_check():
         return {"output_dict": {"cond_frame_outputs": dict.fromkeys(cond), "non_cond_frame_outputs": dict.fromkeys(non_cond)},
                 "output_dict_per_obj": {0: {"cond_frame_outputs": dict.fromkeys(cond), "non_cond_frame_outputs": dict.fromkeys(non_cond)}},
                 "temp_output_dict_per_obj": {0: {"cond_frame_outputs": {}, "non_cond_frame_outputs": {}}},
-                "point_inputs_per_obj": {0: {}}, "mask_inputs_per_obj": {0: dict.fromkeys(cond)}, "frames_already_tracked": dict.fromkeys(non_cond),
+                "point_inputs_per_obj": {0: {}, 1: {}}, "mask_inputs_per_obj": {0: dict.fromkeys(cond[1:]), 1: {0: None}}, "frames_already_tracked": dict.fromkeys(non_cond),
                 "consolidated_frame_inds": {"cond_frame_outputs": set(cond), "non_cond_frame_outputs": set()}}
     cond, non_cond = [0, 16, 32, 48, 64, 150, 190], [f for f in range(200) if f not in (0, 16, 32, 48, 64, 150, 190)]
     state = {"cached_frame_outputs": dict.fromkeys(range(200)), "sam2_inference_states": [tracker(cond, non_cond)],
              "tracker_metadata": {"obj_id_to_sam2_score_frame_wise": dict.fromkeys(range(200)), "rank0_metadata": {"suppressed_obj_ids": dict.fromkeys(range(200))}}}
     assert prune(state, 199, window=64, keep_cond=4) > 0
     s = state["sam2_inference_states"][0]
-    assert sorted(s["output_dict"]["cond_frame_outputs"]) == [48, 64, 150, 190], "old conditioning frames go, the latest 4 stay"
+    assert sorted(s["output_dict"]["cond_frame_outputs"]) == [0, 48, 64, 150, 190], "old conditioning frames go; the latest 4 stay, and each object's own latest input"
     assert min(s["output_dict"]["non_cond_frame_outputs"]) == 135 and min(state["cached_frame_outputs"]) == 135, "memory the tracker still reads stays"
-    inputs = set(s["mask_inputs_per_obj"][0]) | set(s["point_inputs_per_obj"][0])
+    inputs = set().union(*s["mask_inputs_per_obj"].values(), *s["point_inputs_per_obj"].values())
     assert set().union(*s["consolidated_frame_inds"].values()) == inputs, "preflight's invariant: consolidated frames are the input frames"
     assert prune(state, 199, window=64, keep_cond=4) == 0, "pruning twice changes nothing"
+    bucket = {"obj_id_to_idx": {5: 0, 7: 1}, "point_inputs_per_obj": {0: {}, 1: {}}, "mask_inputs_per_obj": {0: {0: None}, 1: {14: None, 30: None}},
+              "output_dict": {"cond_frame_outputs": {0: None, 30: None}}}
+    assert not anchors_bucket(bucket, 5) and not anchors_bucket(bucket, 9), "frame 30 still conditions the bucket without object 5"
+    bucket["output_dict"]["cond_frame_outputs"].pop(30)
+    assert anchors_bucket(bucket, 5) and not anchors_bucket(bucket, 7), "object 5's frame 0 is the bucket's only conditioning frame"
 
     a, b = np.zeros((12, 16), bool), np.zeros((12, 16), bool)
     a[2:8, 1:4], b[2:8, 9:12] = True, True
