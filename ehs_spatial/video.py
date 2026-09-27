@@ -919,7 +919,8 @@ def contract_scale(scale: dict) -> dict:
     The platform accepts three states and its rule engine only gives PASS/FAIL on operator_anchored. Only a measurement
     may take that state: metric poses from the capture device. A carry height the operator stated but nobody measured is
     an assumption and becomes model_estimated, so the engine asks for calibration instead of deciding (PLAN.md section 6:
-    an assumed value is never stored as a measurement). A clip with no metres at all stays uncalibrated.
+    an assumed value is never stored as a measurement). A clip with no metres at all stays uncalibrated, and so does a clip
+    whose lens failed its floor-plane gate (intrinsics_uncertain): its geometry stays, in native units, and no rule decides.
     """
     status = scale.get("scale_status")
     if status == "device_metric":
@@ -936,6 +937,8 @@ def contract_scale(scale: dict) -> dict:
         return {"status": "model_estimated", "nativeToMeters": 1.0, "anchor": {"kind": "model_metric_depth", "measured": False}}
     if status == "uncalibrated":
         return {"status": "uncalibrated"}
+    if status == "intrinsics_uncertain":  # the shot's lens failed its floor-plane gate (M2 lens rule): no metres at all, whatever was stated
+        return {"status": "uncalibrated", "intrinsicsUncertain": True, "planeInlierFraction": scale.get("plane_inlier_fraction")}
     raise ValueError(f"unknown scale_status {status!r}: refuse rather than guess what it means")
 
 

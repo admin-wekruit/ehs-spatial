@@ -25,12 +25,14 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 from droid_room import CLIPS, DATASET, SOURCE_D, SOURCE_K, save, sha  # noqa: E402
 from droid_room import prepare_image as tum_raster  # noqa: E402
-from moge3_app import image as moge_image, volume  # noqa: E402  same MoGe-3 image and cached weights
+from moge3_app import REVISION as MOGE_REVISION, image as moge_image, volume  # noqa: E402  same MoGe-3 image, cached weights and pin
 
 image = moge_image.add_local_python_source("droid_room", "moge3_app")
 
 app = modal.App("panoptes-mono-room-once")
 MODEL = "Ruicheng/moge-3-vitl"
+DA3_REVISIONS = {"depth-anything/DA3-GIANT-1.1": "72ee9f89ce4e50d704e9d55ee9c646ec8dc25a19",  # HF revision pins for new runs;
+                 "depth-anything/DA3-BASE": "f4a6c9b3c95e41c82048423d3493a81ec3fa810e"}    # another model is refused, not fetched at main
 CALIBRATION = {"source_K_fx_fy_cx_cy": SOURCE_K, "source_distortion": SOURCE_D}
 
 
@@ -73,7 +75,7 @@ def infer_remote(frames, fov_x_deg):
     import cv2
     import torch
     from moge.model.v3 import MoGeModel
-    model = MoGeModel.from_pretrained(MODEL).to("cuda").eval()
+    model = MoGeModel.from_pretrained(MODEL, revision=MOGE_REVISION).to("cuda").eval()
     results = []
     for index, png in frames:
         rgb = cv2.cvtColor(cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
@@ -99,7 +101,7 @@ def infer_da3_remote(frames, w2c, K, model_name):
     import cv2
     import torch
     from depth_anything_3.api import DepthAnything3
-    model = DepthAnything3.from_pretrained(model_name).to("cuda")
+    model = DepthAnything3.from_pretrained(model_name, revision=DA3_REVISIONS[model_name]).to("cuda")
     images = [cv2.cvtColor(cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB) for _, png in frames]
     with torch.inference_mode():
         out = model.inference(images, extrinsics=np.asarray(w2c, np.float32), intrinsics=np.asarray(K, np.float32),
@@ -146,7 +148,7 @@ def infer(droid_run, output, stride, da3_model=None, midframes=False, every=None
     if not frames:
         return print("all requested keyframes cached")
     fov = float(np.degrees(2 * np.arctan(rectified.shape[1] / 2 / k[0])))
-    state = {"status": "gpu_running", "model": da3_model or MODEL, "fov_x_deg": fov, "requested": len(frames),
+    state = {"status": "gpu_running", "model": da3_model or MODEL, "model_revision": DA3_REVISIONS[da3_model] if da3_model else MOGE_REVISION, "fov_x_deg": fov, "requested": len(frames),
              "gpu": "A100-80GB" if da3_model else "L4", "timeout_s": 1200 if da3_model else 900, "retries": 0, "sensor_depth_uploaded": False, "groundtruth_uploaded": False,
              "droid_run": str(droid_run), "script_sha256": sha(Path(__file__))}
     with app.run():

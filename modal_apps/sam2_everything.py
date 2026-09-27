@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 from moge3_app import volume  # noqa: E402  the project's weight cache
 
-MODEL = "facebook/sam2.1-hiera-large"
+MODEL, REVISION = "facebook/sam2.1-hiera-large", "665f8e2ad61cf5f53d65644ff27c8ee525124610"  # HF revision pin for new runs
 SETTINGS = {"points_per_side": 32, "pred_iou_thresh": .8, "stability_score_thresh": .92, "min_mask_region_area": 200}
 MIN_AREA, KEEP_SHARE, COVERED, BACKGROUND_SHARE = 300, .25, .5, .08
 STUFF = ("floor", "wall", "ceiling")
@@ -36,13 +36,21 @@ image = (modal.Image.debian_slim(python_version="3.11").apt_install("git", "libg
 app = modal.App("panoptes-sam2-everything-once")
 
 
+def pinned_sam2():
+    """SAM 2.1 at REVISION: sam2's from_pretrained always fetches main, so fetch the pinned checkpoint and build it as build_sam2_hf does."""
+    from huggingface_hub import hf_hub_download
+    from sam2.build_sam import HF_MODEL_ID_TO_FILENAMES, build_sam2
+    config, checkpoint = HF_MODEL_ID_TO_FILENAMES[MODEL]
+    return build_sam2(config_file=config, ckpt_path=hf_hub_download(MODEL, checkpoint, revision=REVISION))
+
+
 @app.function(image=image, gpu="L4", volumes={"/cache": volume}, timeout=900, retries=0, max_containers=1)
 def segment_remote(frames, settings):
     """frames: [(source_index, png_bytes)] -> [(source_index, npz_bytes)] of bit-packed masks with SAM's own scores."""
     import cv2
     import torch
     from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
-    generator = SAM2AutomaticMaskGenerator.from_pretrained(MODEL, **settings)
+    generator = SAM2AutomaticMaskGenerator(pinned_sam2(), **settings)
     results = []
     for index, png in frames:
         rgb = cv2.cvtColor(cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
@@ -61,7 +69,7 @@ def box_masks_remote(items):
     import cv2
     import torch
     from sam2.sam2_image_predictor import SAM2ImagePredictor
-    predictor = SAM2ImagePredictor.from_pretrained(MODEL)
+    predictor = SAM2ImagePredictor(pinned_sam2())
     results = []
     for key, data, box in items:
         rgb = cv2.cvtColor(cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)

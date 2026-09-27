@@ -42,6 +42,7 @@ image = (
 volume = modal.Volume.from_name("sam3-hf-cache", create_if_missing=True)
 
 MODEL_ID = "facebook/sam3"
+REVISION = "3c879f39826c281e95690f02c7821c4de09afae7"  # HF revision pin for new runs (= sam3_video.SAM3_REVISION)
 
 
 def _encode_coco_rle(mask) -> str:
@@ -99,9 +100,9 @@ class Sam3:
         self.enter_at = time.time()
         t0 = time.time()
         self.torch = torch
-        self.processor = Sam3Processor.from_pretrained(MODEL_ID)
+        self.processor = Sam3Processor.from_pretrained(MODEL_ID, revision=REVISION)
         self.model = Sam3Model.from_pretrained(
-            MODEL_ID, torch_dtype=torch.bfloat16
+            MODEL_ID, revision=REVISION, torch_dtype=torch.bfloat16
         ).to("cuda")
         self.model.eval()
         volume.commit()

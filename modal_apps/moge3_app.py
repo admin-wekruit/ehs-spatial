@@ -34,6 +34,7 @@ image = (
 
 volume = modal.Volume.from_name("moge3-hf-cache", create_if_missing=True)
 
+MODEL, REVISION = "Ruicheng/moge-3-vitl", "184008f877d7ad1ad4c2cd2182a9bd1f63d0e5be"  # HF revision pin for new runs
 MAX_SIDE = 2048  # keep payloads sane; SAM masks live at <=1448px anyway
 
 
@@ -46,7 +47,7 @@ class MoGe3:
 
         t0 = time.time()
         self.torch = torch
-        self.model = MoGeModel.from_pretrained("Ruicheng/moge-3-vitl").to("cuda")
+        self.model = MoGeModel.from_pretrained(MODEL, revision=REVISION).to("cuda")
         self.model.eval()
         volume.commit()
         self.load_seconds = round(time.time() - t0, 1)
