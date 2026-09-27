@@ -1,24 +1,33 @@
 """Split a clip into its shots before anything reconstructs it: an edited video's cut makes one walk out of two places.
 
 Every consecutive frame pair is matched (ORB, 1000 features, cross-checked Hamming) and a RANSAC homography counts the
-inliers. Still matches in a thin band are dropped first: burned-in captions, logos and clocks survive a cut (39 of the 40
-inliers across ME340's cut at 226 sat on the caption line). Each test is judged against the clip's own +-WINDOW pairs,
-because texture and speed set the scale:
+inliers. Still matches that may be overlay are dropped first: burned-in captions, logos and clocks survive a cut (39 of
+the 40 inliers across ME340's cut at 226 sat on the caption line). That is every still match in the top or bottom
+OVERLAY_EDGE of the frame, where banners, tickers, clocks and subtitles sit (a top banner with a bottom subtitle is two
+bands), and all of them when they form one thin band anywhere. Each test is judged against the clip's own +-WINDOW
+pairs, because texture and speed set the scale; a pair that matches nothing (< GEOMETRY_INLIERS inliers) is left out of
+every median:
 
-  no coverage  a frame with < BLANK_KEYPOINTS keypoints (black, flat, defocused) belongs to no shot and its pairs leave
-               every median, so a long black gap can neither pull the median to zero nor join the shots around it;
+  no coverage  a frame with < BLANK_KEYPOINTS keypoints (black, flat, defocused), or one of >= MATCHLESS_RUN frames in a
+               row whose pairs match nothing (grain, static, blur with keypoints), belongs to no shot and its pairs leave
+               every median, so a long gap can neither pull the median to zero nor join the shots around it;
   cut / fade   a pair below CUT_SHARE of the median and below CUT_ABSOLUTE seeds a transition that grows to the
                neighbouring pairs still under FADE_SHARE; one pair is a cut, two or more a fade (frames of no shot);
   jump         the pair's inliers land >= JUMP_PX and >= JUMP_RATIO x the local median away from where both neighbour
                pairs' homographies put them: the camera jumped inside a place that still matches;
   dissolve     frames SPAN apart fall below SPAN_SHARE of their median (and CUT_ABSOLUTE) while the chained pair
                homographies say >= SPAN_OVERLAP of the view is shared: the picture changed, the camera did not move.
-               Only where no other test explains the span; the frames inside every low span are a fade.
+               The run grows to the spans under FADE_SHARE of their median, and every frame of its spans and SPAN more
+               on each side is no coverage (blended frames carry both places), whatever else found it; only a jump cut or
+               a blank gap explains such a run instead.
 
 A shot shorter than MIN_SHOT frames between two transitions is part of them (a dim frame at the edge of a black gap).
 Measured on the five delivered clips (every frame): exactly ME340 {14, 226}, Sam's Club {420}, Walmart {383}, Lightning
 none, and on 100 real-frame splices (hard cuts, same-place jumps, 15/30-frame dissolves, black/grey/defocused gaps) in
-research-notes/phase2/runs/m0-cut-eval-320.
+research-notes/phase2/runs/m0-cut-eval-320. With the grain, overlay-edge and dissolve rules (runs/m0-integrate-cuts, M):
+the same five clips exactly; the same splices 95/100 found, 0 false (in-sample); no detected dissolve leaves a frame of
+>= 25% of the other place in a shot (the 3 missed 30-frame dissolves still merge); grain gaps of 8-32 frames at sigma
+4-12 and a top banner plus bottom subtitle over four real cuts all split.
 
   python scripts/detect_shot_cuts.py --clip CLIP_DIR --output segments.json
   python scripts/detect_shot_cuts.py --self-check
@@ -32,8 +41,8 @@ import numpy as np
 
 CUT_SHARE, CUT_ABSOLUTE, FADE_SHARE, WINDOW = .1, 100, .5, 15
 RANSAC_PX, FEATURES = 3., 1000
-BLANK_KEYPOINTS, MIN_SHOT = 10, 3
-OVERLAY_PX, OVERLAY_BAND = 1.5, .1
+BLANK_KEYPOINTS, MIN_SHOT, MATCHLESS_RUN = 10, 3, 16
+OVERLAY_PX, OVERLAY_BAND, OVERLAY_EDGE = 1.5, .1, .2
 GEOMETRY_INLIERS, JUMP_PX, JUMP_RATIO = 12, 2., 10.
 SPAN, SPAN_SHARE, SPAN_OVERLAP = 8, .15, .75
 
@@ -43,19 +52,27 @@ def features(gray):
     return np.float32([k.pt for k in keys]).reshape(-1, 2), desc
 
 
+def overlay(rows, height):
+    """Which still matches may be overlay: those in the top or bottom OVERLAY_EDGE of the frame, and all of them when their
+    rows (10th to 90th percentile) span < OVERLAY_BAND of the height (a caption line, a logo, a clock anywhere).
+    ponytail: a static camera whose scene still-matches only at those edges loses them; its pairs then match nothing and
+    it is no coverage, never a false cut."""
+    edge = (rows < OVERLAY_EDGE * height) | (rows > (1 - OVERLAY_EDGE) * height)
+    return edge | (len(rows) >= 4 and np.ptp(np.percentile(rows, [10, 90])) < OVERLAY_BAND * height)
+
+
 def match(a, b, height):
-    """(inlier points in a, in b, homography or None) between two frames' ORB features. Still matches (<= OVERLAY_PX)
-    whose rows span < OVERLAY_BAND of the height are overlay, not scene, and are dropped before RANSAC."""
+    """(inlier points in a, in b, homography or None) between two frames' ORB features. Still matches (<= OVERLAY_PX) in
+    overlay bands are not scene and are dropped before RANSAC."""
     (pa, da), (pb, db) = a, b
     empty = np.zeros((0, 2), np.float32)
     if da is None or db is None or min(len(da), len(db)) < 4:
         return empty, empty, None
     m = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True).match(da, db)
     qa, qb = pa[[x.queryIdx for x in m]], pb[[x.trainIdx for x in m]]
-    still = np.linalg.norm(qb - qa, axis=1) <= OVERLAY_PX
-    # ponytail: a band test; an overlay taller than a tenth of the frame (a caption block) still counts as scene
-    if still.sum() >= 4 and np.ptp(np.percentile(qa[still, 1], [10, 90])) < OVERLAY_BAND * height:
-        qa, qb = qa[~still], qb[~still]
+    still = np.flatnonzero(np.linalg.norm(qb - qa, axis=1) <= OVERLAY_PX)
+    drop = still[overlay(qa[still, 1], height)] if len(still) else still
+    qa, qb = np.delete(qa, drop, 0), np.delete(qb, drop, 0)
     if len(qa) < 4:
         return empty, empty, None
     H, keep = cv2.findHomography(qa, qb, cv2.RANSAC, RANSAC_PX)
@@ -102,9 +119,15 @@ def local_median(values):
 
 
 def signals(m):
-    """What the rules read: blank frames; per pair inliers and jump, NaN where a pair touches a blank frame; per span
-    inliers and the share of the view the chained pair homographies keep over it."""
+    """What the rules read: blank frames (too few keypoints, or inside a run of >= MATCHLESS_RUN frames whose pairs both
+    match nothing); per pair inliers and jump, NaN where a pair touches a blank frame; per span inliers and the share of
+    the view the chained pair homographies keep over it."""
+    matchless = m["inliers"] < GEOMETRY_INLIERS
+    inner = np.r_[False, matchless[:-1] & matchless[1:], False]  # both of the frame's pairs match nothing
     blank = m["keypoints"] < BLANK_KEYPOINTS
+    for a, b in runs(inner | blank):
+        if b - a + 1 >= MATCHLESS_RUN:
+            blank[a:b + 1] = True
     touch = blank[:-1] | blank[1:]
     inliers, jump = np.where(touch, np.nan, m["inliers"]), np.where(touch, np.nan, m["jump"])
     h, w = m["shape"]
@@ -127,7 +150,7 @@ def scores(s):
     """Per pair (cut, jump) and per span (dissolve): the test's value over its firing level, >= 1 fires (the CUT_ABSOLUTE
     gate aside). The largest score outside every transition is how close a clip came to a false one."""
     with np.errstate(invalid="ignore", divide="ignore"):
-        cut = CUT_SHARE * local_median(s["inliers"]) / s["inliers"]
+        cut = CUT_SHARE * local_median(np.where(s["inliers"] < GEOMETRY_INLIERS, np.nan, s["inliers"])) / s["inliers"]
         jump = np.minimum(s["jump"] / JUMP_PX, s["jump"] / (JUMP_RATIO * local_median(s["jump"])))
         span = np.where(s["overlap"] >= SPAN_OVERLAP, SPAN_SHARE * local_median(s["spans"]) / s["spans"], 0)
     return cut, jump, span
@@ -169,19 +192,20 @@ def transitions(s):
         elif not any(a - 1 <= k <= b for a, b in fades + blank):
             cuts.append(k + 1)
             why[str(k + 1)] = "jump"
-    broken = (span >= 1) & (s["spans"] < CUT_ABSOLUTE)
-    for k0, k1 in runs(broken):
-        # spans k0..k1 reach frames k0..k1+SPAN; a transition another test found in there explains them
-        if any(k0 < c <= k1 + SPAN for c in cuts) or any(a <= k1 + SPAN and b > k0 for a, b in fades + blank):
+    broken, soft = (span >= 1) & (s["spans"] < CUT_ABSOLUTE), span >= SPAN_SHARE / FADE_SHARE
+    for k0, k1 in runs(soft):
+        # a run of spans under FADE_SHARE of their median holding one that fired reaches frames k0..k1+SPAN; a jump cut or a
+        # blank gap in there explains it, anything else is a blend
+        jumped = any(k0 < c <= k1 + SPAN and why[str(c)] == "jump" for c in cuts)
+        if not broken[k0:k1 + 1].any() or jumped or any(a <= k1 + SPAN and b > k0 for a, b in blank):
             continue
-        a, b = k1 + 1, k0 + SPAN - 1            # the frames strictly inside every low span
-        if a <= b:
-            fades.append([a, b])
-            why[f"{a}-{b}"] = "dissolve"
-        else:
-            cuts.append((k0 + k1 + SPAN + 1) // 2)
-            why[str(cuts[-1])] = "dissolve"
-    return {"cuts": sorted(cuts), "fades": sorted(fades), "noCoverage": blank, "why": why}
+        # the blend starts and ends further out, where frames SPAN apart still match (the 100 splices of
+        # runs/m0-integrate-cuts: without the margin 4 of 17 found 30-frame dissolves left 1-5 frames of >= 25% of the
+        # other place in a shot, with it none), so SPAN more on each side: no coverage, in neither shot
+        a, b = max(0, k0 - SPAN), min(len(s["blank"]) - 1, k1 + 2 * SPAN)
+        blank.append([a, b])
+        why[f"{a}-{b}"] = "dissolve"
+    return {"cuts": sorted(cuts), "fades": sorted(fades), "noCoverage": sorted(blank), "why": why}
 
 
 def segments(n_frames, cuts, gaps):
@@ -225,8 +249,9 @@ def clip_frames(clip):
 
 def self_check():
     """Synthetic walks over random textures spliced by a hard cut, a 15-frame dissolve, a fade through black, a 20-frame
-    black gap, a same-place jump and a 30-frame dissolve; a cut under a caption; then the rules alone on known signals,
-    including Walmart's bare-floor stretch that is no cut."""
+    black gap, a same-place jump and a 30-frame dissolve (no blended frame in a shot); a 20-frame gap of grain whose
+    keypoints match nothing; a cut under a caption, and under a caption plus a top banner; then the rules alone on known
+    signals, including Walmart's bare-floor stretch that is no cut."""
     rng = np.random.default_rng(0)
 
     def walk(seed, count, dx, dy, zoom):
@@ -244,10 +269,11 @@ def self_check():
     got = detect([np.clip(f + rng.normal(0, 2, f.shape), 0, 255).astype(np.uint8) for f in frames])
     assert got["cuts"] == [40, 238, 268], got
     assert got["why"]["268"] == "jump", ("a[99] -> a[130] still matches; only its geometry jumps", got["why"])
-    (d0, d1), (k0, k1) = got["fades"]
-    assert 100 <= d0 and d1 <= 114 and d1 - d0 >= 4, ("the dissolve is a fade inside its blended frames", got["fades"])
-    # ponytail: the dissolve's faint ends (alpha <= 3/16 and >= 13/16) stay with their shots; FADE_SHARE is the knob
-    assert 140 <= k0 and k1 <= 155, ("the fade through black", got["fades"])
+    in_shot = lambda segs: {f for a, b in segs for f in range(a, b + 1)}  # noqa: E731
+    blended = {100 + k for k in range(15) if .25 <= (k + 1) / 16 <= .75}  # frames carrying >= 25% of the other place
+    assert not blended & in_shot(got["segments"]), ("a blended frame of the dissolve sits in a shot", sorted(blended & in_shot(got["segments"])))
+    through_black = [[k0, k1] for k0, k1 in got["fades"] if k0 >= 130]
+    assert through_black and all(140 <= k0 and k1 <= 155 for k0, k1 in through_black), ("the fade through black", got["fades"])
     assert [188, 207] in got["noCoverage"], ("a 20-frame black gap is no coverage, not the middle of one shot", got["noCoverage"])
     assert got["segments"][0] == [0, 39] and [188 - 1, 188 - 1] not in got["segments"] and got["segments"][-3:] == [[208, 237], [238, 267], [268, len(frames) - 1]], got["segments"]
 
@@ -255,7 +281,14 @@ def self_check():
     slow = walk(4, 90, 1, .5, .0005)
     mixed = [cv2.addWeighted(slow[45 + k], 1 - (k + 1) / 31, b[k], (k + 1) / 31, 0) for k in range(30)]
     long = detect(slow[:45] + mixed + b[30:60])
+    blended = {45 + k for k in range(30) if .25 <= (k + 1) / 31 <= .75}
     assert any(w == "dissolve" for w in long["why"].values()) and len(long["segments"]) == 2, long
+    assert not blended & in_shot(long["segments"]), ("blended frames sit in a shot", sorted(blended & in_shot(long["segments"])), long["segments"])
+
+    # 20 frames of sensor grain between two places: ~180 keypoints a frame, none matching; the shots stay apart
+    grain = [np.clip(12 + np.random.default_rng(k).normal(0, 8, a[0].shape), 0, 255).astype(np.uint8) for k in range(20)]
+    noisy = detect(a[:40] + grain + b[:40])
+    assert noisy["segments"] == [[0, 39], [60, 99]] and [40, 59] in noisy["noCoverage"], (noisy["segments"], noisy["noCoverage"])
 
     # a cut under a boxed caption that stays on screen: its still matches alone hold the pair at ~300 inliers
     def caption(img):
@@ -265,6 +298,15 @@ def self_check():
         return img
     captioned = detect([caption(f) for f in a[:30] + c[:30]])
     assert captioned["cuts"] == [30], ("the caption is overlay, not scene", captioned["cuts"], captioned["inliers"][27:32])
+
+    def banner(img):  # a clock box and a two-line banner at the top: with the caption, still rows span the whole frame
+        img = cv2.rectangle(cv2.rectangle(img.copy(), (380, 8), (632, 36), 0, -1), (0, 40), (639, 86), 0, -1)
+        for x, y, text in ((386, 29, "2026-09-27 13:24:07 CAM 3"), (6, 58, "WAREHOUSE SAFETY WALK - LOADING DOCK B - SHIFT 2"),
+                           (6, 80, "forklift lanes, racking and the pedestrian crossing")):
+            cv2.putText(img, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, .6, 255, 2)
+        return img
+    overlaid = detect([banner(caption(f)) for f in a[:30] + c[:30]])
+    assert overlaid["cuts"] == [30], ("a top and a bottom band are both overlay", overlaid["cuts"], overlaid["inliers"][27:32])
 
     # the rules alone: lone low pairs are cuts (also at the first pair); a low middle with soft shoulders is one fade
     def known(counts, spans=None, overlap=1.):
@@ -279,9 +321,17 @@ def self_check():
     assert (known(flat)["cuts"], known(flat)["fades"]) == ([1], [[21, 23]]), known(flat)
     assert segments(61, [1], [[21, 23]]) == [[1, 20], [24, 60]], "frame 0 alone is too short to be a shot"
     spans = np.full(53, 500.)
-    spans[30:32] = 3
-    assert known(np.full(60, 600.), spans)["fades"] == [[32, 37]], known(np.full(60, 600.), spans)
-    assert known(np.full(60, 600.), spans, overlap=.5)["fades"] == [], "the same span on a fast pan is no dissolve"
+    spans[30:32] = 3  # spans 30 and 31 reach frames 30..39, and SPAN more on each side: 22..47 are no coverage
+    assert known(np.full(60, 600.), spans)["noCoverage"] == [[22, 47]], known(np.full(60, 600.), spans)
+    assert known(np.full(60, 600.), spans, overlap=.5)["noCoverage"] == [], "the same span on a fast pan is no dissolve"
+    one_low = np.full(60, 600.)
+    one_low[33] = 5  # one pair of the blend fell like a cut: the dissolve's frames still stay out of both shots
+    assert known(one_low, spans)["cuts"] == [34] and known(one_low, spans)["noCoverage"] == [[22, 47]], known(one_low, spans)
+    # 16 pairs in a row that match nothing (15 frames, short of MATCHLESS_RUN) hold half the window around their middle:
+    # unless they leave the median it falls to theirs, and the middle frames would make a shot of their own
+    matchless = np.full(60, 600.)
+    matchless[20:36] = 5
+    assert known(matchless)["fades"] == [[21, 35]], known(matchless)
     # walmart-190 pairs 590-639 (measured): the camera looks down at a bare floor, the count falls 10x over 12 frames
     floor = [230, 190, 139, 158, 152, 183, 156, 186, 160, 142, 187, 138, 127, 120, 74, 76, 86, 77, 76, 57, 51, 39, 38, 52, 23,
              25, 29, 30, 41, 42, 59, 58, 65, 91, 109, 131, 131, 171, 185, 161, 194, 237, 195, 230, 309, 353, 336, 383, 410, 375]
@@ -298,12 +348,13 @@ def main():
     if args.self_check:
         return self_check()
     result = {"clip": str(args.clip), "rule": {
-        "match": f"ORB {FEATURES}, cross-checked Hamming, RANSAC homography {RANSAC_PX} px; still matches (<= {OVERLAY_PX} px) in rows spanning < {OVERLAY_BAND} of the height dropped as overlay",
+        "match": f"ORB {FEATURES}, cross-checked Hamming, RANSAC homography {RANSAC_PX} px; still matches (<= {OVERLAY_PX} px) dropped as overlay in the top and bottom {OVERLAY_EDGE} of the frame, and all of them when their rows span < {OVERLAY_BAND} of the height",
+        "matchless": f"pairs under {GEOMETRY_INLIERS} inliers leave every median; {MATCHLESS_RUN}+ frames in a row between such pairs are no coverage",
         "noCoverage": f"frames with < {BLANK_KEYPOINTS} keypoints; their pairs leave every median",
         "cut": f"inliers < {CUT_SHARE} x median of +-{WINDOW} pairs and < {CUT_ABSOLUTE}",
         "grow": f"neighbouring pairs < {FADE_SHARE} x their median join the transition; one pair is a cut, more is a fade",
         "jump": f"inliers >= {JUMP_PX} px and >= {JUMP_RATIO} x the local median from both neighbour homographies ({GEOMETRY_INLIERS}+ inliers each)",
-        "dissolve": f"frames {SPAN} apart < {SPAN_SHARE} x their median and < {CUT_ABSOLUTE} while chained homographies keep >= {SPAN_OVERLAP} of the view",
+        "dissolve": f"frames {SPAN} apart < {SPAN_SHARE} x their median and < {CUT_ABSOLUTE} while chained homographies keep >= {SPAN_OVERLAP} of the view; the run grown to spans < {FADE_SHARE} x median is no coverage",
         "shot": f">= {MIN_SHOT} frames"},
         **detect(clip_frames(args.clip))}
     args.output.parent.mkdir(parents=True, exist_ok=True)
