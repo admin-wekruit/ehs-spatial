@@ -693,14 +693,16 @@ def box_mesh(points, up, step):
     return vertices @ axes, faces
 
 
-def cylinder_mesh(points, up, step, trials=500, sample=4000):
-    """Upright (gravity-aligned) cylinder around `points`, or None when their floor-plane projection is not an arc.
+def cylinder_mesh(points, up, step, trials=500, sample=4000, rounder=.5):
+    """Upright (gravity-aligned) cylinder around `points`; ValueError (the reason) when they are not shown to be round.
 
     Circle on the floor plane by RANSAC (3-point circles, most points within `step` of the circle; seeded, so the same
     points give the same model), then least squares on those points: floor spill, a lid or a neighbour projects off
-    the circle and pulls nothing. Extents at the 1st/99th height percentiles, at least one `step` tall; faces cut to
-    edges <= `step` for per-vertex colour. A radius above the arc's own chord (under ~60 degrees of arc) is refused: a
-    plane fits such points as well, and the circle's size would be a guess. Returns world vertices and faces.
+    the circle and pulls nothing (a Cauchy loss for what lands near it). Extents at the 1st/99th height percentiles, at least one `step` tall; faces cut to
+    edges <= `step` for per-vertex colour. Refused: a radius above the arc's own chord (under ~60 degrees of arc, a
+    plane fits as well), and a circle that does not leave under `rounder` of the best rectangle outline's median
+    residual on the same points. The gate's tolerance (a voxel, ~4 cm) cannot tell a square post from a round one: a
+    0.3 m post's faces lie within 1 cm of a circle, so roundness has to be shown here. Returns world vertices and faces.
     """
     import trimesh
     from scipy.optimize import least_squares
@@ -718,14 +720,23 @@ def cylinder_mesh(points, up, step, trials=500, sample=4000):
     radii = np.linalg.norm(tri[:, 0] - centres, axis=1)
     best = (np.abs(np.linalg.norm(pool[None] - centres[:, None], axis=2) - radii[:, None]) <= step).sum(1).argmax()
     ring = np.abs(np.linalg.norm(xy - centres[best], axis=1) - radii[best]) <= step
-    cx, cy, radius = least_squares(lambda p: np.linalg.norm(xy[ring] - p[:2], axis=1) - p[2], [*centres[best], radii[best]]).x
+    cx, cy, radius = least_squares(lambda p: np.linalg.norm(xy[ring] - p[:2], axis=1) - p[2], [*centres[best], radii[best]],
+                                   loss="cauchy", f_scale=step / 4).x  # lid points near the rim stay in the band: they must not shrink it
     radius = abs(radius)
     ring = np.abs(np.linalg.norm(xy - [cx, cy], axis=1) - radius) <= step
     if ring.sum() < 10:
-        return None
+        raise ValueError("fewer than 10 points on any circle")
     along = xy[ring] @ np.linalg.svd(xy[ring] - xy[ring].mean(0), full_matrices=False)[2][0]
     if not radius <= np.subtract(*np.percentile(along, [99, 1])):
-        return None
+        raise ValueError(f"radius {radius:.3f} above the arc's chord: too flat to tell from a plane")
+    circle, outline = np.median(np.abs(np.linalg.norm(xy[ring] - [cx, cy], axis=1) - radius)), np.inf
+    for yaw in np.radians(np.arange(90)):  # the best rectangle over yaw (a box seen at its corner is an L of two sides)
+        local = xy[ring] @ np.array([[np.cos(yaw), -np.sin(yaw)], [np.sin(yaw), np.cos(yaw)]])
+        lo, hi = np.percentile(local, [1, 99], 0)
+        inside = np.minimum(local - lo, hi - local).min(1)
+        outline = min(outline, np.median(np.where(inside > 0, inside, np.linalg.norm(np.maximum(np.maximum(lo - local, local - hi), 0), axis=1))))
+    if not circle < rounder * outline:
+        raise ValueError(f"circle residual {circle:.4f} not under {rounder} x the best rectangle's {outline:.4f}: not shown to be round")
     lo, hi = np.percentile(height, [1, 99])
     unit = trimesh.creation.cylinder(radius=radius, segment=[[cx, cy, lo], [cx, cy, max(hi, lo + step)]],
                                      sections=max(16, int(np.ceil(2 * np.pi * radius / step))))
@@ -746,10 +757,10 @@ def box_obtain(payload, args):
     shaping = ~np.isin(owner, [i for i in range(len(names)) if i % 2 and i != source])  # assess()'s held-out split, inverted
     if shaping.sum() < 10:
         return None, {"reason": f"too few points to shape a {args.generator}"}
-    shape = (cylinder_mesh if args.generator == "cylinder" else box_mesh)(observed[shaping], args.plan_up, 2 * VOXEL)
-    if shape is None:
-        return None, {"reason": "the points' floor-plane projection is not an arc: no cylinder"}
-    vertices, faces = shape
+    try:
+        vertices, faces = (cylinder_mesh if args.generator == "cylinder" else box_mesh)(observed[shaping], args.plan_up, 2 * VOXEL)
+    except ValueError as refusal:  # not shown to be round: left without a model
+        return None, {"reason": f"no cylinder: {refusal}"}
     crop = payload["views"][0]
     rgb, mask, k, c2w = crop["rgb"], np.asarray(crop["mask"], bool), np.asarray(crop["K"], float), np.asarray(crop["cameraToWorld"], float)
     colours = np.tile(np.median(rgb[mask], 0) if mask.any() else rgb.reshape(-1, 3).mean(0), (len(vertices), 1))
@@ -1339,29 +1350,44 @@ def self_check():
     assert closest(bv, bf, surface[:2000])[1].max() < .02, "every surface point lies on the fitted box"
     flat = trimesh.Trimesh(*box_mesh(surface[np.abs(surface @ turn[:, 2] - [1, -.3, 2] @ turn[:, 2] - .1) < .003], [0, -1., 0], .02))
     assert flat.is_watertight and .4 * .6 * .019 < flat.volume < .4 * .6 * .03, flat.volume  # a face seen straight on: one step thick
-    # cylinder: a drum (radius 0.15, 0.1..0.9 up) seen from one side, with its lid, 10% floor spill and a few stray points
-    # 0.6 m above it (a cable), is given back and fits it better than a box does; a 0.3 m square post seen from the same
-    # side (two faces and its top) fits a cylinder at least twice worse than the drum and worse than its own box (medians
-    # of the held-out half). A flat face gets no cylinder.
+    # cylinder: a drum (radius 0.15, 0.1..0.9 up) seen from one side, with its lid, floor spill (a third of the points)
+    # and a few stray points 0.6 m above it (a cable), is given back and fits it better than a box does (medians of the
+    # held-out half). A 0.3 m square post fits a cylinder at least twice worse than the drum, and worse than its own box;
+    # within the gate's tolerance all the same, so it gets no cylinder: not seen from 30 degrees with its top, not at its
+    # corner (an L). A flat face gets none either, nor a 35 degree arc.
     arc, rise = rng.uniform(np.pi + .2, 2 * np.pi - .2, 4000), rng.uniform(.1, .9, 4000)
     side = np.c_[1 + .15 * np.cos(arc), -rise, 2 + .15 * np.sin(arc)] + rng.normal(0, .002, (4000, 3))
     spoke, around = .15 * np.sqrt(rng.uniform(0, 1, 800)), rng.uniform(0, 2 * np.pi, 800)
     lid = np.c_[1 + spoke * np.cos(around), np.full(800, -.9), 2 + spoke * np.sin(around)]
-    spill = np.r_[np.c_[rng.uniform(.7, 1.3, 400), np.full(400, -.1), rng.uniform(1.6, 1.84, 400)], np.tile([1, -1.5, 1.9], (20, 1))]
+    spill = np.r_[np.c_[rng.uniform(.7, 1.3, 1600), np.full(1600, -.1), rng.uniform(1.6, 1.84, 1600)], np.tile([1, -1.5, 1.9], (20, 1))]
     cv, cf = cylinder_mesh(np.r_[side[1::2], lid, spill], [0, -1., 0], .02)  # shaped by half the side, judged by the other half
-    across = np.hypot(cv[:, 0] - 1, cv[:, 2] - 2)
-    assert trimesh.Trimesh(cv, cf).is_watertight and abs(across.max() - .15) < .005 and np.abs(np.sort(-cv[:, 1])[[0, -1]] - [.1, .9]).max() < .02, (across.max(), cv[:, 1].min())
+    lo, hi = cv.min(0), cv.max(0)
+    assert trimesh.Trimesh(cv, cf).is_watertight and np.abs((hi - lo)[[0, 2]] / 2 - .15).max() < .005 and np.abs((hi + lo)[[0, 2]] / 2 - [1, 2]).max() < .005, (lo, hi)
+    assert np.abs([-hi[1], -lo[1]] - np.array([.1, .9])).max() < .02, (lo, hi)
     held_out = lambda shape, points: np.median(closest(*shape(points[1::2], [0, -1., 0], .02), points[::2])[1])
     drum_fit = np.median(closest(cv, cf, side[::2])[1])
+    assert drum_fit < .005 and held_out(box_mesh, np.r_[side, side]) > 2 * drum_fit, "a box fits the drum worse than its cylinder"
     post = trimesh.creation.box(extents=[.3, .8, .3])
     samples, index = trimesh.sample.sample_surface_even(post, 12000, seed=1)
-    normals = post.face_normals[index] @ turn.T
-    front = (normals[:, 2] < -.1) | (normals[:, 1] < -.5)  # the faces a camera at -z and above sees
-    samples = samples[front] @ turn.T + [1, -.5, 2] + rng.normal(0, .002, (front.sum(), 3))
-    post_fit = held_out(cylinder_mesh, samples)
-    assert drum_fit < .005 and post_fit > 2 * drum_fit and held_out(box_mesh, samples) < post_fit, (drum_fit, post_fit)
-    assert held_out(box_mesh, np.r_[side, side]) > 2 * drum_fit, "a box fits the drum worse than its cylinder"
-    assert cylinder_mesh(surface[np.abs(surface @ turn[:, 2] - [1, -.3, 2] @ turn[:, 2] - .1) < .003], [0, -1., 0], .02) is None, "a flat face is no arc"
+
+    def seen_post(rotation, top):
+        normals = post.face_normals[index] @ rotation.T
+        front = (normals[:, 2] < -.1) | top & (normals[:, 1] < -.5)  # the faces a camera at -z (and above) sees
+        return samples[front] @ rotation.T + [1, -.5, 2] + rng.normal(0, .002, (front.sum(), 3))
+
+    def refusal(points):
+        try:
+            cylinder_mesh(points, [0, -1., 0], .02)
+        except ValueError as reason:
+            return str(reason)
+
+    posts = seen_post(turn, True), seen_post(trimesh.transformations.rotation_matrix(np.pi / 4, [0, 1, 0])[:3, :3], False)
+    post_fit = held_out(lambda *a: cylinder_mesh(*a, rounder=np.inf), posts[0])
+    assert post_fit > 2 * drum_fit and held_out(box_mesh, posts[0]) < post_fit, (drum_fit, post_fit)
+    assert all("not shown to be round" in (refusal(p) or "") for p in posts), [refusal(p) for p in posts]
+    assert refusal(surface[np.abs(surface @ turn[:, 2] - [1, -.3, 2] @ turn[:, 2] - .1) < .003]), "a flat face is no arc"
+    shallow = np.c_[1 + np.cos(arc / 4.5 + 1.4 * np.pi), -rise, 3 + np.sin(arc / 4.5 + 1.4 * np.pi)]  # 1/10 of a 1 m tank: the rest a guess
+    assert "chord" in (refusal(shallow) or ""), refusal(shallow)
     point = np.array([.3, -.2, 2.])
     p_clip, p_full = k_clip @ point, clip.k_full @ point
     assert np.allclose(clip.clip_to_full @ (p_clip / p_clip[2]), p_full / p_full[2])
@@ -1465,7 +1491,7 @@ def self_check():
             globals()["request"] = real
     print("complete_video_objects self-check passed: clip->source mask and K, crop depth lifts onto its plane, "
           "slab back face inferred / front observed, Sim3 fit recovered, BLEND and plain GLB round-trip RGBA, captions found, box IoU, "
-          "drum cylinder recovered through lid and spill, square post fits it worse, flat face no cylinder, "
+          "drum cylinder recovered through lid and spill, square post fits it worse and gets none, flat face none, "
           "small on the source frame, spread tries, journal found by call identity and read back")
 
 
