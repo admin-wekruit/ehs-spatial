@@ -6,9 +6,10 @@ run dir), ByteTrack identity, then a 3D lift that fits the floor plane from
 MoGe-2 metric mono depth on a few keyframes and ray-casts mask bottom-centers
 to that plane. The three banded temporal rules (keep-clear zone, person-to-
 vehicle min distance, person speed) run on the lifted tracks with the mono
-band (±0.35 m). A rule PASSes only on frames that covered it (zone in view, frame
-live, detector answered), a foot point decides only after lift_foot's checks, and
-distance/speed verdicts need measured metres (scale_gated) — the same judge_frame
+band (±0.35 m). A rule PASSes only on frames that covered it (zone floor observed,
+frame live, detector answered), a foot point decides only after lift_foot's checks, a
+person who cannot be placed still makes the rules they could touch NEEDS_REVIEW, and
+every verdict in metres needs measured metres (scale_gated) — the same judge_frame
 serves the live people loop (ehs_spatial/live_people.py).
 
 Accuracy tiers — be honest about which one this is:
@@ -27,15 +28,16 @@ import json
 import subprocess
 import time
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
+import shapely
 from shapely import wkt as shapely_wkt
-from shapely.geometry import LineString, Point, Polygon
+from shapely.geometry import LineString, MultiPoint, Point, Polygon, box
 
 from .artifacts import ArtifactStore
 from .contracts import ProviderManifest, RunManifest
@@ -44,12 +46,16 @@ from .providers.moge import MOGE_VERSION
 from .providers.sam3 import SAM3_ENDPOINT, decode_coco_rle, sam_backend_revision, sam_subscribe
 from .rules import ERROR_BUDGET_MONO_M
 
-COST_PER_SAM_CALL_USD = 0.01  # fal list price; an upper bound for our own L4 (E)
-# The old 150-call cap in dollars per rolling hour: a live stream is not stopped after 150 frames,
-# and a rerun loop cannot spend 150 fresh calls each time.
+COST_PER_SAM_CALL_USD = 0.01  # fal list price per call
+# Our Modal L4 (modal_apps/sam3_app.py, one container) bills uptime, not calls: L4 + 1 core + 8 GiB list price, as
+# scripts/complete_video_objects.py prices it, over the call plus the idle time the container stays up (E).
+MODAL_L4_USD_PER_S = .000222 + .0000131 + 8 * .00000222
+MODAL_SCALEDOWN_S = 60.0  # Modal's default idle window; sam3_app.py does not set one
+# Spend in dollars per rolling hour. A 1 Hz stream on the Modal L4 keeps one container up, about $0.91/h (E), so it
+# is never stopped; the same budget buys 150 fal calls. Running out is a coverage gap, never a crash (live_people).
 # ponytail: in-process only; a shared ledger once more than one worker spends on one account.
 SAM_SPEND_USD_PER_HOUR = 1.50
-MIN_BOX_HEIGHT_PX = 12
+MIN_BOX_HEIGHT_PX = 12  # a smaller mask is too small to lift: kept, but only as a person to review
 MOGE_KEYFRAMES = 3
 MIN_FLOOR_INLIER_FRACTION = 0.25
 BAND_M = ERROR_BUDGET_MONO_M  # single-camera tier: ±0.35 m
@@ -60,7 +66,13 @@ SPEED_BAND_MPS = 2 * BAND_M / SPEED_BASELINE_S  # both ends of the baseline off 
 MAX_HUMAN_SPEED_MPS = 4.0  # faster than this between two samples is a tracking error, not a person
 PERSON_HEIGHT_M = (1.3, 2.1)  # implied standing height a foot point must explain
 OCCLUSION_MARGIN_M = 0.3  # depth below the foot may be this much nearer than the floor there
-FLOOR_TOLERANCE_M = 0.1  # an observed point this close to the floor plane is floor
+FLOOR_TOLERANCE_M = 0.1  # an observed depth this close to the floor's along its ray is floor
+# Both depth tolerances grow with range: a depth map is off by a share of the range, not a fixed distance.
+# ponytail: about twice the median depth error measured on the test clips (was evaluate_video_policy's own copy);
+# a calibration study replaces it.
+DEPTH_RELATIVE = 0.05
+ZONE_SAMPLE_M = 0.25  # spacing of the zone floor points checked for coverage, finer than a person's footprint
+ZONE_SEEN_FRACTION = 0.95  # ponytail: uncalibrated; share of zone floor points that must be observed for a PASS
 BORDER_PX = 2
 DARK_MEAN = 12.0  # mean grey level (0-255) below which a frame shows nothing
 FROZEN_MEAN_ABS_DIFF = 0.25  # ponytail: uncalibrated; a real stream's noise floor sets it
@@ -173,8 +185,12 @@ def _cache_path(cache_dir: Path, frame_id: int, label: str) -> Path:
     return cache_dir / f"f{frame_id:06d}__{label.replace(' ', '_')}.json"
 
 
+class BudgetExhausted(ValueError):
+    """The rolling-hour spend guard has no money left for this call."""
+
+
 class HourlySpendGuard:
-    """Rolling one-hour cap on paid detector calls, checked before money is spent."""
+    """Rolling one-hour cap on paid detector spend, checked before money is spent."""
 
     def __init__(self, usd_per_hour: float = SAM_SPEND_USD_PER_HOUR, clock=time.monotonic) -> None:
         self.usd_per_hour, self.clock, self.spent = usd_per_hour, clock, deque()
@@ -186,10 +202,17 @@ class HourlySpendGuard:
         return self.usd_per_hour - sum(cost for _, cost in self.spent)
 
     def charge(self, usd: float) -> None:
-        if usd > self.remaining() + 1e-9:
-            raise ValueError(
+        """Book usd before a call; nothing left (even for a call billed afterwards, usd=0) raises."""
+        left = self.remaining()
+        if left <= 1e-9 or usd > left + 1e-9:
+            raise BudgetExhausted(
                 f"budget cap: ${usd:.2f} more would pass the ${self.usd_per_hour:.2f}/hour SAM spend guard"
             )
+        if usd:
+            self.record(usd)
+
+    def record(self, usd: float) -> None:
+        """Book money already spent (a call billed by the second, known only after it)."""
         self.spent.append((self.clock(), usd))
 
 
@@ -300,7 +323,7 @@ def load_detections(
                         width=payload["width"],
                     )
                     ys, xs = np.nonzero(mask)
-                    if not len(ys) or ys.max() - ys.min() < MIN_BOX_HEIGHT_PX:
+                    if not len(ys):  # a small mask is still a detection: lift_foot flags it, never drops it
                         continue
                     rows.append(
                         {
@@ -486,6 +509,11 @@ class FloorCamera:
     def to_floor(self, point: np.ndarray) -> tuple[float, float]:
         offset = np.asarray(point) - self.origin
         return float(offset @ self.lateral), float(offset @ self.forward)
+
+    def camera_points(self, floor_points: np.ndarray) -> np.ndarray:
+        """(n, 3) floor (x, y, height above the floor) -> camera frame."""
+        x, y, h = np.asarray(floor_points, float).T
+        return self.origin + np.outer(x, self.lateral) + np.outer(y, self.forward) + np.outer(h, self.normal)
 
     def project(self, xy: tuple[float, float]) -> tuple[float, float] | None:
         """Floor (x, y) metres -> full-frame pixel, None behind the camera."""
@@ -749,10 +777,12 @@ def lift_foot(
     and why not to trust it yet.
 
     plane is (n, d), n.X + d = 0 with n pointing up to the camera. A foot point is accepted only if
-    the box is off the image border, the box top implies a standing height of 1.3-2.1 m, and the
-    depth just below the foot pixel is floor at the expected range: nothing nearer by more than
-    0.3 m (an occluder hides the feet, so the box bottom is not the foot) and the floor was
-    observed there. Returns (foot, implied height m, reasons); empty reasons = accepted.
+    the box is at least MIN_BOX_HEIGHT_PX tall and off the image border, the box top implies a
+    standing height of 1.3-2.1 m, and the depth just below the foot pixel is floor at the expected
+    range: nothing nearer by more than 0.3 m or 5% of the range (an occluder hides the feet, so the
+    box bottom is not the foot) and the floor was observed there, within 0.1 m or 5% of the range.
+    Returns (foot, implied height m, reasons); empty reasons = accepted. A foot above the horizon
+    is (None, None, ["foot_above_horizon"]): callers keep that detection as a person to review.
     """
     x1, y1, x2, y2 = bbox
     width, height = image_wh
@@ -763,7 +793,7 @@ def lift_foot(
     if normal @ foot_ray >= -1e-9:
         return None, None, ["foot_above_horizon"]
     foot = (-offset / (normal @ foot_ray)) * foot_ray
-    reasons = []
+    reasons = ["box_too_small"] if y2 - y1 < MIN_BOX_HEIGHT_PX else []
     if x1 <= BORDER_PX or y1 <= BORDER_PX or x2 >= width - BORDER_PX or y2 >= height - BORDER_PX:
         reasons.append("box_touches_border")
     # Height: where the vertical through the foot passes closest to the ray through the box top.
@@ -783,14 +813,14 @@ def lift_foot(
         if ok.sum() >= 3:
             vs, us = np.nonzero(ok)
             rays = np.c_[us + cols.start, vs + rows.start, np.ones(len(us))] @ k_inv.T
-            expected = -offset / (rays @ normal)  # z of the floor along each ray
-            observed = rays * z[ok][:, None]
-            patch = (np.median(expected - z[ok]) * metres_per_unit,
-                     np.mean(np.abs(observed @ normal + offset) * metres_per_unit <= FLOOR_TOLERANCE_M))
+            expected = -offset / (rays @ normal) * metres_per_unit  # z of the floor along each ray
+            nearer = expected - z[ok] * metres_per_unit
+            patch = (np.median(nearer) > max(OCCLUSION_MARGIN_M, DEPTH_RELATIVE * np.median(expected)),
+                     np.mean(np.abs(nearer) <= np.maximum(FLOOR_TOLERANCE_M, DEPTH_RELATIVE * expected)))
     if patch is None:
         reasons.append("no_depth_below_foot")
     else:
-        if patch[0] > OCCLUSION_MARGIN_M:
+        if patch[0]:
             reasons.append("foot_occluded")
         if patch[1] < 0.5:
             reasons.append("foot_off_observed_floor")
@@ -801,22 +831,28 @@ def lift_tracks(
     tracks: dict[str, list[tuple[int, tuple[float, float, float, float]]]],
     camera: FloorCamera,
     image_wh: tuple[int, int] | None = None,
+    zone: Polygon | None = None,
 ) -> dict[str, dict[int, dict]]:
-    """track -> frame -> {xy, edge, review}. Bottom-centre lift assumes feet/wheels
+    """track -> frame -> {xy, edge, review, near_zone}. Bottom-centre lift assumes feet/wheels
     on the floor, so every foot passes lift_foot's checks against the fixed camera's
     static depth before it can decide a rule; non-person bottom corners give a ground
-    segment for distance measurement (near-side edge), as in the POC."""
+    segment for distance measurement (near-side edge), as in the POC. A box that cannot be
+    placed (foot above the horizon) stays, with xy None and its reason: a person nobody can
+    place is still a person. near_zone: the box overlaps where a person in the zone could appear."""
     if image_wh is None:
         image_wh = (int(round(2 * camera.intrinsics["cx"])), int(round(2 * camera.intrinsics["cy"])))
     plane = (camera.normal, camera.d)
+    region = image_region(camera.camera_points(zone_prism_points(zone)), camera.K, image_wh) if zone is not None else None
     lifted: dict[str, dict[int, dict]] = {}
     for track_id, samples in tracks.items():
         person = track_id.startswith(f"{PERSON_LABEL}-")
         for frame_id, bbox in samples:
             foot, height_m, reasons = lift_foot(bbox, image_wh, camera.K, plane, camera.depth, person=person)
+            entry: dict = {"xy": None if foot is None else camera.to_floor(foot), "review": reasons,
+                           "near_zone": region is None or region.intersects(box(*bbox))}
+            lifted.setdefault(track_id, {})[frame_id] = entry
             if foot is None:
                 continue
-            entry: dict = {"xy": camera.to_floor(foot), "review": reasons}
             if height_m is not None:
                 entry["height_m"] = round(height_m, 3)
             if not person:
@@ -825,8 +861,29 @@ def lift_tracks(
                 right = camera.lift_pixel(x2, y2)
                 if left is not None and right is not None and left != right:
                     entry["edge"] = (left, right)
-            lifted.setdefault(track_id, {})[frame_id] = entry
     return lifted
+
+
+def keep_untracked(
+    tracks: dict[str, list[tuple[int, tuple[float, float, float, float]]]],
+    detections: dict[int, dict[str, list[dict]]],
+    min_iou: float = 0.5,
+) -> dict[str, list[tuple[int, tuple[float, float, float, float]]]]:
+    """A detection the tracker gave no identity (ByteTrack holds back a first sighting) is still in that frame: it
+    joins as a one-frame track, so it can decide or block a rule but never gives a speed."""
+    tracked: dict[tuple[str, int], list] = {}
+    for track_id, samples in tracks.items():
+        for frame_id, bbox in samples:
+            tracked.setdefault((track_id.rsplit("-", 1)[0], frame_id), []).append(box(*bbox))
+    kept = dict(tracks)
+    for frame_id, per_label in detections.items():
+        for label, rows in per_label.items():
+            for ordinal, row in enumerate(rows):
+                shape = box(*row["bbox"])
+                if all(shape.intersection(other).area < min_iou * shape.union(other).area
+                       for other in tracked.get((label, frame_id), [])):
+                    kept[f"{label}-untracked-{frame_id}-{ordinal}"] = [(frame_id, row["bbox"])]
+    return kept
 
 
 # ------------------------------------------------------------------ judging
@@ -897,31 +954,76 @@ def frame_health(gray: np.ndarray, previous: np.ndarray | None) -> str | None:
     return None
 
 
-def zone_in_view(zone: Polygon, project: Callable, image_wh: tuple[int, int]) -> bool:
-    """Every zone corner projects in front of the camera and inside the image, so the whole
-    (convex hull of the) zone is in view."""
+def zone_floor_points(zone: Polygon) -> np.ndarray:
+    """(n, 3) floor points (x, y, height 0) covering the zone: its outline and a grid inside, ZONE_SAMPLE_M apart
+    (coarser for a huge zone, at most about 4000 points)."""
+    step = max(ZONE_SAMPLE_M, float(np.sqrt(zone.area / 4000)))
+    outline = shapely.get_coordinates(shapely.line_interpolate_point(zone.exterior, np.arange(0, zone.exterior.length, step)))
+    minx, miny, maxx, maxy = zone.bounds
+    xs, ys = (g.ravel() for g in np.meshgrid(np.arange(minx, maxx, step) + step / 2, np.arange(miny, maxy, step) + step / 2))
+    inside = shapely.contains_xy(zone, xs, ys)
+    xy = np.vstack([outline, np.c_[xs[inside], ys[inside]]])
+    return np.c_[xy, np.zeros(len(xy))]
+
+
+def zone_prism_points(zone: Polygon) -> np.ndarray:
+    """(n, 3) corners of the space a person standing in the zone can fill: the zone grown by the position band, from the
+    floor up to the tallest person."""
+    corners = np.array(zone.buffer(BAND_M).exterior.coords)
+    return np.vstack([np.c_[corners, np.full(len(corners), h)] for h in (0.0, PERSON_HEIGHT_M[1])])
+
+
+def image_region(points: np.ndarray, K: np.ndarray, image_wh: tuple[int, int]) -> Polygon:
+    """Where camera-frame points can appear in the image: the hull of their projections, or the whole image when any
+    is behind the camera (ponytail: clip at the near plane if that asks for review too often)."""
+    frame = box(0, 0, *image_wh)
+    if (points[:, 2] <= 1e-6).any():
+        return frame
+    pixels = points @ K.T / points[:, 2:3]
+    return MultiPoint(pixels[:, :2]).convex_hull.intersection(frame)
+
+
+def zone_floor_seen(points: np.ndarray, K: np.ndarray, depth: np.ndarray | None, image_wh: tuple[int, int],
+                    blocked: np.ndarray | None = None) -> bool:
+    """The zone floor was observed in this frame, not just in view: every camera-frame floor point projects in front
+    of the camera and inside the image, and at ZONE_SEEN_FRACTION of them the depth there reaches the floor (nothing
+    nearer by more than lift_foot's occlusion margin) and no detection covers the pixel (blocked, for a static depth
+    plate that cannot see a passing occluder)."""
     width, height = image_wh
-    for xy in zone.exterior.coords:
-        pixel = project(xy)
-        if pixel is None or not (0 <= pixel[0] < width and 0 <= pixel[1] < height):
-            return False
-    return True
+    if depth is None or (points[:, 2] <= 1e-6).any():
+        return False
+    pixels = points @ K.T / points[:, 2:3]
+    u, v = pixels[:, 0], pixels[:, 1]
+    if not ((u >= 0) & (u < width) & (v >= 0) & (v < height)).all():
+        return False
+    u, v = u.astype(int), v.astype(int)
+    observed, expected = depth[v, u], points[:, 2]  # metres, as every caller's depth is
+    seen = (observed > 0) & (expected - observed <= np.maximum(OCCLUSION_MARGIN_M, DEPTH_RELATIVE * expected))  # NaN: unseen
+    if blocked is not None:
+        seen &= ~blocked[v, u]
+    return bool(seen.mean() >= ZONE_SEEN_FRACTION)
 
 
-def track_speed(samples: list[tuple[float, tuple[float, float]]], t: float) -> tuple[float | None, str | None]:
+def track_speed(samples: Sequence[tuple[float, tuple[float, float]]], t: float) -> tuple[float | None, str | None]:
     """One track's speed at time t: a least-squares line through its accepted positions over
     the last SPEED_BASELINE_S seconds (from the newest sample at or before t - baseline).
 
     The baseline is fixed in seconds, so the value and its band do not move with the sample
     rate. (None, None) until a full baseline exists; (None, "jump") when two samples imply more
     than MAX_HUMAN_SPEED_MPS beyond the position band: the segment is a tracking error to
-    review, never a FAIL.
+    review, never a FAIL. samples are in time order; only the window is read, newest first, so
+    the cost does not grow with the track's history.
     """
-    past = [(s, xy) for s, xy in samples if s <= t + 1e-6]
-    starts = [i for i, (s, _) in enumerate(past) if s <= t - SPEED_BASELINE_S + 1e-6]
-    if not starts:
+    window = []
+    for s, xy in reversed(samples):
+        if s > t + 1e-6:
+            continue
+        window.append((s, xy))
+        if s <= t - SPEED_BASELINE_S + 1e-6:
+            break
+    else:
         return None, None
-    window = past[starts[-1]:]
+    window.reverse()
     if len(window) < 2 or window[-1][0] - window[0][0] > 2 * SPEED_BASELINE_S or window[-1][0] < t - 1e-6:
         return None, None  # too sparse, a gap too long to bridge, or the track is not seen now
     for (s0, a), (s1, b) in zip(window, window[1:]):
@@ -944,10 +1046,12 @@ def judge_frame(
     """The three rules at one instant; the batch judge and the live loop both call this.
 
     gap: why this instant shows nothing (no pose, dark, frozen, detector offline) -> every rule
-    NO_DATA. zone_seen: the whole zone was in view; without it nobody-in-the-zone is NO_DATA,
+    NO_DATA. zone_seen: the zone floor was observed; without it nobody-in-the-zone is NO_DATA,
     never PASS (a person seen inside still FAILs). Entries carry "review" reasons from
-    lift_foot: an unaccepted foot can only make a rule NEEDS_REVIEW. R2/R3 go through
-    scale_gated; the pre-gate verdict is kept for replay comparisons.
+    lift_foot and xy None when they could not be placed at all: such a person can only make a
+    rule NEEDS_REVIEW, and for R1 only if near_zone (their box overlaps where a person in the
+    zone could appear; missing counts as near). Zone membership is judged in metres with a
+    metre band, so R1 goes through scale_gated like R2/R3; the pre-gate verdict ("raw") is kept.
     """
     if gap is not None:
         return {rule: {"verdict": NO_DATA, "reason": gap} for rule in RULE_NAMES}
@@ -955,23 +1059,28 @@ def judge_frame(
     if zone is None:
         out["R1_zone"] = {"verdict": NO_DATA, "reason": "no zone"}
     else:
-        verdicts = [REVIEW if p.get("review") else zone_verdict(zone, p["xy"], BAND_M) for p in persons]
-        verdict = max(verdicts, key=lambda v: _SEVERITY[v]) if verdicts else PASS
-        out["R1_zone"] = {"verdict": NO_DATA if verdict == PASS and not zone_seen else verdict,
-                          "reason": None if zone_seen else "zone not fully in view"}
+        verdicts = [REVIEW if p.get("review") else zone_verdict(zone, p["xy"], BAND_M)
+                    for p in persons if p.get("near_zone", True) or not p.get("review")]
+        raw = max(verdicts, key=lambda v: _SEVERITY[v]) if verdicts else PASS
+        raw = NO_DATA if raw == PASS and not zone_seen else raw
+        out["R1_zone"] = {"verdict": scale_gated(raw, scale_record), "raw": raw,
+                          "reason": None if zone_seen else "zone floor not observed"}
     if persons and movers:
         pairs = []
         for person in persons:
-            point = Point(person["xy"])
             for mover in movers:
+                if person["xy"] is None or mover["xy"] is None:
+                    pairs.append((None, REVIEW))  # someone who could not be placed: the distance is unknown
+                    continue
                 geometry = LineString(mover["edge"]) if "edge" in mover else Point(mover["xy"])
-                distance = point.distance(geometry)
+                distance = Point(person["xy"]).distance(geometry)
                 raw = REVIEW if person.get("review") or mover.get("review") else banded_verdict(
                     distance, R2_MIN_SEPARATION_M, BAND_M, fail_low=True)
                 pairs.append((distance, raw))
         raw = max((v for _, v in pairs), key=lambda v: _SEVERITY[v])
+        known = [d for d, _ in pairs if d is not None]
         out["R2_min_distance"] = {"verdict": scale_gated(raw, scale_record), "raw": raw,
-                                  "value": round(min(d for d, _ in pairs), 3)}
+                                  "value": round(min(known), 3) if known else None}
     else:
         out["R2_min_distance"] = {"verdict": NO_DATA, "reason": "needs a person and a mover"}
     raws = [REVIEW if reason else banded_verdict(speed, R3_MAX_SPEED_MPS, SPEED_BAND_MPS, fail_low=False)
@@ -1007,7 +1116,8 @@ def judge(
     """The three rules over a sampled clip. Rules are person-centric: without a person
     detector every timeline is NO_DATA. coverage: frame -> {"gap": reason|None,
     "zone_seen": bool}; a frame without an entry never saw the zone, so it cannot PASS it. scale_record defaults to
-    the video-mono tier's model-metric depth, so R2/R3 give NEEDS_REVIEW, never PASS/FAIL."""
+    the video-mono tier's model-metric depth, so every rule gives NEEDS_REVIEW, never PASS/FAIL; the verdicts before
+    that gate are kept under "before_scale_gate"."""
     scale_record = scale_record or contract_scale({"scale_status": "model_metric"})
     coverage = coverage or {}
     person_samples = {
@@ -1016,7 +1126,8 @@ def judge(
         for track_id, samples in lifted.items() if track_id.startswith(f"{PERSON_LABEL}-")
     }
     timelines: dict[str, dict] = {rule: {} for rule in RULE_NAMES}
-    r2_values, r3_values, r3_raw = {}, {}, {}
+    before_gate: dict[str, dict] = {rule: {} for rule in RULE_NAMES}
+    r2_values, r3_values = {}, {}
     for frame_id in sorted(frame_times):
         t = frame_times[frame_id]
         persons = _points_at(lifted, frame_id, persons=True)
@@ -1027,17 +1138,16 @@ def judge(
                              zone, state.get("gap"), state.get("zone_seen", False), speeds, scale_record)
         for rule in RULE_NAMES:
             timelines[rule][frame_id] = result[rule]["verdict"]
+            before_gate[rule][frame_id] = result[rule].get("raw", result[rule]["verdict"])
         if result["R2_min_distance"].get("value") is not None:
             r2_values[frame_id] = result["R2_min_distance"]["value"]
         if result["R3_speed"].get("value") is not None:
             r3_values[frame_id] = result["R3_speed"]["value"]
-        if "raw" in result["R3_speed"]:
-            r3_raw[frame_id] = result["R3_speed"]["raw"]
     return {
         **timelines,
         "R2_values_m": r2_values,
         "R3_values_mps": r3_values,
-        "R3_before_scale_gate": r3_raw,
+        "before_scale_gate": before_gate,
         "speed_band_mps": round(SPEED_BAND_MPS, 3),
         "scale": scale_record,
     }
@@ -1073,7 +1183,7 @@ def render_topdown(
     path: Path,
 ) -> None:
     points = [
-        entry["xy"] for samples in lifted.values() for entry in samples.values()
+        entry["xy"] for samples in lifted.values() for entry in samples.values() if entry["xy"] is not None
     ]
     if not points:
         return
@@ -1102,7 +1212,7 @@ def render_topdown(
         zone_pixel = pixel((zone.centroid.x, zone.centroid.y))
         draw.text((zone_pixel[0] - 30, zone_pixel[1]), "keep-clear", fill=(200, 60, 60))
     for track_id, samples in sorted(lifted.items()):
-        trail = [pixel(samples[f]["xy"]) for f in sorted(samples)]
+        trail = [pixel(samples[f]["xy"]) for f in sorted(samples) if samples[f]["xy"] is not None]
         if len(trail) < 2:
             continue
         color = _color(track_id)
@@ -1113,7 +1223,7 @@ def render_topdown(
             if not track_id.startswith(f"{PERSON_LABEL}-"):
                 continue
             for frame_id, entry in samples.items():
-                if r1.get(frame_id) == FAIL and zone.contains(Point(entry["xy"])):
+                if r1.get(frame_id) == FAIL and entry["xy"] is not None and zone.contains(Point(entry["xy"])):
                     px, py = pixel(entry["xy"])
                     draw.ellipse(
                         [px - 4, py - 4, px + 4, py + 4],
@@ -1122,7 +1232,7 @@ def render_topdown(
                     )
     draw.text(
         (20, 8),
-        "estimated tracks (uncalibrated video-mono lift), red rings = R1 FAIL",
+        "estimated tracks (uncalibrated video-mono lift), red rings = R1 FAIL before the scale gate",
         fill=(60, 60, 60),
     )
     bar_y = y0 + margin / 2
@@ -1261,11 +1371,15 @@ def frame_coverage(
     frame_ids: list[int],
     zone: Polygon | None,
     camera: FloorCamera | None,
+    detections: dict[int, dict[str, list[dict]]] | None = None,
 ) -> dict[int, dict]:
     """frame -> {"gap", "zone_seen"} for judge_frame: a sampled frame covers the rules only
-    if it is neither dark nor frozen and the person detector answered for it."""
+    if it is neither dark nor frozen and the person detector answered for it; it saw the zone
+    only if the static depth plate reaches the zone floor and no detected box of that frame
+    stands in front of it."""
     coverage: dict[int, dict] = {}
     previous = None
+    floor_points = camera.camera_points(zone_floor_points(zone)) if zone is not None and camera is not None else None
     for frame_id in frame_ids:
         with Image.open(frames_dir / f"f{frame_id:06d}.jpg") as image:
             gray = np.asarray(image.convert("L"), dtype=np.float32)
@@ -1273,8 +1387,14 @@ def frame_coverage(
         previous = gray
         if gap is None and not _cache_path(cache_dir, frame_id, PERSON_LABEL).is_file():
             gap = "person detector offline"
-        zone_seen = zone is not None and camera is not None and zone_in_view(
-            zone, camera.project, (gray.shape[1], gray.shape[0]))
+        zone_seen = False
+        if floor_points is not None:
+            blocked = np.zeros(gray.shape, bool)
+            for rows in (detections or {}).get(frame_id, {}).values():
+                for row in rows:
+                    x1, y1, x2, y2 = (int(round(v)) for v in row["bbox"])
+                    blocked[max(0, y1):y2, max(0, x1):x2] = True
+            zone_seen = zone_floor_seen(floor_points, camera.K, camera.depth, (gray.shape[1], gray.shape[0]), blocked)
         coverage[frame_id] = {"gap": gap, "zone_seen": zone_seen}
     return coverage
 
@@ -1351,7 +1471,7 @@ def run_video_assessment(
         len(rows) for per_label in detections.values() for rows in per_label.values()
     )
 
-    tracks = (track_fn or bytetrack)(detections, frame_ids, native_fps, labels)
+    tracks = keep_untracked((track_fn or bytetrack)(detections, frame_ids, native_fps, labels), detections)
 
     keyframe_ids = sorted(
         {frame_ids[0], frame_ids[len(frame_ids) // 2], frame_ids[-1]}
@@ -1371,21 +1491,22 @@ def run_video_assessment(
         abstained = f"floor fit failed: {floor.get('reason', 'unknown')}"
 
     frame_times = {f: f / native_fps for f in frame_ids}
-    coverage = frame_coverage(paths.frames_dir, paths.sam_cache_dir, frame_ids, zone, camera)
+    coverage = frame_coverage(paths.frames_dir, paths.sam_cache_dir, frame_ids, zone, camera, detections)
     if abstained is None:
         with Image.open(paths.frames_dir / f"f{frame_ids[0]:06d}.jpg") as image:
             image_wh = image.size
-        lifted = lift_tracks(tracks, camera, image_wh)
+        lifted = lift_tracks(tracks, camera, image_wh, zone)
         judged = judge(lifted, zone, frame_times, coverage)
         if progress_cb is not None:
             progress_cb("rendering evidence")
-        render_topdown(lifted, zone, judged["R1_zone"], paths.topdown_png)
+        render_topdown(lifted, zone, judged["before_scale_gate"]["R1_zone"], paths.topdown_png)
     else:
         lifted = {}
         judged = {
             "R1_zone": {f: NO_DATA for f in frame_ids},
             "R2_min_distance": {f: NO_DATA for f in frame_ids},
             "R3_speed": {f: NO_DATA for f in frame_ids},
+            "before_scale_gate": {rule: {f: NO_DATA for f in frame_ids} for rule in RULE_NAMES},
             "R2_values_m": {},
             "R3_values_mps": {},
             "speed_band_mps": round(SPEED_BAND_MPS, 3),
@@ -1448,7 +1569,7 @@ def run_video_assessment(
         "trajectories": {
             track_id: {
                 str(frame): [round(v, 3) for v in entry["xy"]]
-                for frame, entry in sorted(samples.items())
+                for frame, entry in sorted(samples.items()) if entry["xy"] is not None
             }
             for track_id, samples in sorted(lifted.items())
         },
@@ -1458,6 +1579,10 @@ def run_video_assessment(
         },
         "timelines": {
             rule: {str(f): judged[rule][f] for f in frame_ids}
+            for rule in RULE_NAMES
+        },
+        "timelines_before_scale_gate": {
+            rule: {str(f): judged["before_scale_gate"][rule][f] for f in frame_ids}
             for rule in RULE_NAMES
         },
         "R2_min_distance_m": {
@@ -1520,7 +1645,12 @@ __all__ = [
     "lift_foot",
     "scale_gated",
     "track_speed",
-    "zone_in_view",
+    "BudgetExhausted",
+    "image_region",
+    "keep_untracked",
+    "zone_floor_points",
+    "zone_floor_seen",
+    "zone_prism_points",
     "fit_floor_from_keyframes",
     "fit_pinhole_from_grid",
     "judge",

@@ -16,9 +16,8 @@ import numpy as np
 from shapely.geometry import Polygon
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from ehs_spatial.video import contract_scale  # noqa: E402  the one scale gate, shared with the live people loop
+from ehs_spatial.video import DEPTH_RELATIVE, contract_scale  # noqa: E402  the one scale gate and depth band, shared with the people loops
 
-DEPTH_RELATIVE = .05  # ponytail: about twice the median depth error measured on the test clips; replace with a calibration study before trusting a band
 CONFIRMED = 3
 # OSHA 29 CFR 1910.36(g)(2): an exit access must be at least 28 inches wide at all points.
 RULE = {"kind": "geometry", "spec": {"predicate": "min_separation", "subject_labels": ["desk"], "object_labels": ["cabinet"], "threshold": .711, "unit": "m"}}
