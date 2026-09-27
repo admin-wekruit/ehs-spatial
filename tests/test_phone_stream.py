@@ -106,3 +106,29 @@ def test_both_consumers_call_the_same_frames_gaps(tmp_path):
         assert mapped["frames_integrated"] == 0 and not list((tmp_path / str(n)).glob("submap-*")), (change, mapped)
         assert people.last_verdict["R1_zone"][0] == "NO_DATA", (change, people.last_verdict)
         assert list(people.gaps) == list(mapped["coverage_gap_frames"]), (change, dict(people.gaps), mapped["coverage_gap_frames"])
+
+
+def test_credible_refuses_malformed_numbers_with_a_fixed_reason_and_never_raises():
+    base = phone_stream.header(0, 0., 0., [500., 500., 320., 240.], np.eye(4))
+    assert phone_stream.credible(base)[0] is None
+    for K in ([np.nan, np.nan, 320., 240.], [-600., -600., 320., 240.], "abc", [[1, 2], [3]], {"fx": 1}, None):
+        why, c2w, _ = phone_stream.credible({**base, "K": K})
+        assert why == "K not of the 640x480 raster" and c2w is None, K
+    for pose in ("abc", [[1, 0], [0]], {"a": 1}):
+        assert phone_stream.credible({**base, "cameraToWorld": pose})[0] == "no cameraToWorld", pose
+    reasons = {phone_stream.credible({**base, "worldOriginEpoch": e})[0] for e in (.5, 1.5, "0", False)}
+    assert reasons == {"world origin epoch not an int"}  # counter keys stay a fixed set, not one per bad value
+    assert phone_stream.credible({**base, "trackingState": "limited", "trackingStateReason": "x" * 50})[0] == "ARKit tracking limited (other reason)"
+    assert phone_stream.credible({**base, "trackingState": "limited", "trackingStateReason": "excessiveMotion"})[0] == "ARKit tracking limited (excessiveMotion)"
+    assert phone_stream.credible({**base, "trackingState": "weird"})[0] == "ARKit tracking state unknown"
+
+
+def test_the_map_reads_the_rgb_size_from_the_jpeg_header_without_decoding():
+    base = phone_stream.header(0, 0., 0., [500., 500., 320., 240.], np.eye(4))
+    small = cv2.imencode(".jpg", np.zeros((480, 640, 3), np.uint8))[1].tobytes()
+    big = cv2.imencode(".jpg", np.zeros((1440, 1920, 3), np.uint8))[1].tobytes()
+    assert phone_stream.jpeg_size(small) == (640, 480) and phone_stream.jpeg_size(big) == (1920, 1440) and phone_stream.jpeg_size(b"not a jpeg") is None
+    assert phone_stream.credible(base, small, decode=False) [0] is None and phone_stream.credible(base, small, decode=False)[2] is None
+    for decode in (False, True):
+        assert phone_stream.credible(base, big, decode=decode)[0] == "rgb not a 640x480 JPEG"
+    assert phone_stream.credible(base, b"not a jpeg", decode=False)[0] == "rgb not a 640x480 JPEG"

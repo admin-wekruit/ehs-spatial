@@ -26,6 +26,8 @@ import cv2
 import numpy as np
 
 TRACKING_NORMAL = "normal"
+TRACKING_STATES = ("normal", "limited", "notAvailable")  # ARCamera.TrackingState
+TRACKING_REASONS = ("initializing", "relocalizing", "excessiveMotion", "insufficientFeatures")  # ARCamera.TrackingState.Reason
 MIN_CONFIDENCE = 2  # ARKit high only: medium is mostly depth edges, which smear into a map and into a foot
 RASTER_WH = (640, 480)
 # K's principal point lies within this share of the raster of its centre (ARKit's is a few px off). K left at the
@@ -55,10 +57,33 @@ def unpack(message: bytes) -> tuple[dict, bytes, bytes, bytes]:
     return header, *blobs
 
 
+def numbers(value) -> np.ndarray:
+    """A header field as a flat float array; anything that is not a list of numbers (a string, a ragged list, a dict)
+    is one NaN, so a malformed header is a gap and never an exception that stops the worker."""
+    try:
+        return np.array(value, float).ravel() if value is not None else np.array([np.nan])
+    except (TypeError, ValueError):
+        return np.array([np.nan])
+
+
+def jpeg_size(data: bytes) -> tuple[int, int] | None:
+    """(width, height) from a JPEG's start-of-frame marker, without decoding the pixels; None when there is none."""
+    i = 2 if data[:2] == b"\xff\xd8" else len(data)
+    while i + 9 <= len(data):
+        if data[i] != 0xFF:
+            return None
+        marker, length = data[i + 1], struct.unpack(">H", data[i + 2:i + 4])[0]
+        if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):  # SOFn, not DHT/JPG/DAC
+            height, width = struct.unpack(">HH", data[i + 5:i + 9])
+            return width, height
+        i += 2 + length
+    return None
+
+
 def pose(header: dict) -> np.ndarray | None:
     """cameraToWorld as a 4x4, None when it is missing, not 16 finite numbers, or not a rigid transform: a pose that
     cannot be read is no pose, so the frame is a gap and not an integration at a made-up place."""
-    values = np.array(header.get("cameraToWorld") or [np.nan], float)
+    values = numbers(header.get("cameraToWorld"))
     if values.size != 16 or not np.isfinite(values).all():
         return None
     c2w = values.reshape(4, 4)
@@ -83,26 +108,33 @@ def depth_mm(depth: bytes, confidence: bytes = b"") -> np.ndarray | None:
     return millimetres
 
 
-def credible(header: dict, rgb: bytes = b"") -> tuple[str | None, np.ndarray | None, np.ndarray | None]:
+def credible(header: dict, rgb: bytes = b"", decode: bool = True) -> tuple[str | None, np.ndarray | None, np.ndarray | None]:
     """(why this frame is a coverage gap for every consumer or None, cameraToWorld 4x4, rgb as HxWx3 RGB or None when none
-    was sent). Credible: trackingState "normal", an int worldOriginEpoch (not a bool, a float or a string), a rigid finite
-    pose, K of the 640x480 raster, and an rgb, when sent, that decodes to 640x480. The one rule both consumers apply."""
+    was sent or decode is False). Credible: trackingState "normal", an int worldOriginEpoch (not a bool, a float or a
+    string), a rigid finite pose, K of the 640x480 raster, and an rgb, when sent, of 640x480. The one rule both consumers
+    apply. Reasons are a fixed set of strings (they are counter keys), never the frame's own values. decode=False (the
+    map, which never uses the pixels) reads the rgb size from its JPEG header instead of decoding it."""
     state, why = header.get("trackingState"), header.get("trackingStateReason")
     if state != TRACKING_NORMAL:
-        return f"ARKit tracking {state or 'state not sent'}" + (f" ({why})" if why else ""), None, None
+        state = state if state in TRACKING_STATES else "state not sent" if state is None else "state unknown"
+        return f"ARKit tracking {state}" + (f" ({why})" if why in TRACKING_REASONS else " (other reason)" if why else ""), None, None
     epoch = header.get("worldOriginEpoch")
     if type(epoch) is not int:
-        return "world origin epoch " + ("not sent" if epoch is None else f"{epoch!r} is not an int"), None, None
+        return "world origin epoch " + ("not sent" if epoch is None else "not an int"), None, None
     c2w = pose(header)
     if c2w is None:
         return "no cameraToWorld", None, None
-    K = np.array(header.get("K") or [np.nan], float).ravel()
+    K = numbers(header.get("K"))
     centre = np.array(RASTER_WH) / 2
     if K.size != 4 or not np.isfinite(K).all() or (K[:2] <= 0).any() or (np.abs(K[2:] - centre) > PRINCIPAL_POINT_SHARE * 2 * centre).any():
-        return f"K {header.get('K')} is not of the {RASTER_WH[0]}x{RASTER_WH[1]} raster", None, None
-    image = cv2.imdecode(np.frombuffer(rgb, np.uint8), cv2.IMREAD_COLOR) if rgb else None
-    if rgb and image is None:
+        return f"K not of the {RASTER_WH[0]}x{RASTER_WH[1]} raster", None, None
+    if not rgb:
+        return None, c2w, None
+    if jpeg_size(rgb) != RASTER_WH:  # both consumers judge the size from the header, so they give the same reason
+        return f"rgb not a {RASTER_WH[0]}x{RASTER_WH[1]} JPEG", None, None
+    if not decode:
+        return None, c2w, None
+    image = cv2.imdecode(np.frombuffer(rgb, np.uint8), cv2.IMREAD_COLOR)
+    if image is None or image.shape[1::-1] != RASTER_WH:  # a body that does not decode: only a consumer of the pixels can tell
         return "rgb does not decode", None, None
-    if image is not None and image.shape[1::-1] != RASTER_WH:
-        return f"rgb is {image.shape[1]}x{image.shape[0]}, not {RASTER_WH[0]}x{RASTER_WH[1]}", None, None
-    return None, c2w, None if image is None else cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    return None, c2w, cv2.cvtColor(image, cv2.COLOR_BGR2RGB)

@@ -833,3 +833,20 @@ def test_live_people_loop_self_check():
     from ehs_spatial.live_people import self_check
 
     self_check()
+
+
+def test_a_zone_cell_is_hidden_when_any_of_its_samples_is():
+    """Two samples per cell, one seen and one behind something 1 m nearer: every cell is hidden, so the 2 x 2 block is
+    floor a person could stand on unseen. Counting a cell as clear when any sample was seen would pass it."""
+    K = np.array([[500., 0, 320], [0, 500., 240], [0, 0, 1]])
+    points, cells = [], []
+    for ci, (a, b) in enumerate(((-.3, -.2), (.2, .3))):
+        for cj, (c, d) in enumerate(((-.3, -.2), (.2, .3))):
+            points += [(a, c, 2.), (b, d, 2.)]
+            cells += [(ci, cj), (ci, cj)]
+    points, cells = np.array(points), np.array(cells)
+    depth = np.full((480, 640), 2., np.float32)
+    assert video_module.zone_floor_seen(points, cells, K, depth, (640, 480))
+    for u, v in (points @ K.T / points[:, 2:3])[1::2, :2].astype(int):
+        depth[v, u] = 1.
+    assert not video_module.zone_floor_seen(points, cells, K, depth, (640, 480))

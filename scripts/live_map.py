@@ -429,7 +429,7 @@ def serve(conn, output, max_blocks=MAX_BLOCKS, sink=None):
             head, rgb, depth, confidence = unpack(message)
             t, epoch = head["t_capture"], head.get("worldOriginEpoch")
             first = t if first is None else first
-            (why, c2w, _), depth = credible(head, rgb), depth_mm(depth, confidence)
+            (why, c2w, _), depth = credible(head, rgb, decode=False), depth_mm(depth, confidence)  # the map never uses the pixels
             if why:  # tracking, epoch, pose, K or rgb: no credible place to integrate at
                 gap(why, t)
             elif live and epoch < live.epoch:
