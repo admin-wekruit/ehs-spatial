@@ -16,6 +16,7 @@ the web file holds <= --max-points). `evaluate` then measures it locally against
   python scripts/lingbot_dense_map.py --self-check
 """
 import argparse
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -366,13 +367,14 @@ def align(result_dir, files, poses):
             'outlier_source_frames': [f['sourceFrame'] for f, ok in zip(files, inliers) if not ok]}, (s, r, t), inliers
 
 
-def frame_stream(root, files, sim3, clip_k, conf_floor, sample=3, overlay=SUBTITLE_ROWS):
+def frame_stream(root, files, sim3, clip_k, conf_floor, sample=3, overlay=SUBTITLE_ROWS, masks_tar='dynamic-masks.tar'):
     """Per LingBot frame, in the report world: sample-grid depth, validity, K, camera, full-res colour, conf, facing.
-    overlay: rows [y0, y1) of the uncropped frame under burned-in captions, never used (y0 == y1: none)."""
+    overlay: rows [y0, y1) of the uncropped frame under burned-in captions, never used (y0 == y1: none).
+    masks_tar: the moving-entity masks upload_masks put on the volume (named by their content)."""
     import cv2
     s, r, t = sim3
     masks = {}
-    with tarfile.open(root / 'dynamic-masks.tar') as archive:
+    with tarfile.open(root / masks_tar) as archive:
         for m in archive.getmembers():
             masks.setdefault(int(m.name.split('-')[0]), []).append(archive.extractfile(m).read())
     wanted = {f['sourceFrame']: f for f in files}
@@ -432,7 +434,7 @@ def load_run(run_id):
 
 
 @app.function(image=dense_image, cpu=(4, 4), memory=(16384, 16384), timeout=1800, retries=0, volumes={'/artifact': volume})
-def diagnose_remote(run_id, poses, clip_k, every=5, lag=5, conf_floor=1., overlay=SUBTITLE_ROWS):
+def diagnose_remote(run_id, poses, clip_k, every=5, lag=5, conf_floor=1., overlay=SUBTITLE_ROWS, masks_tar='dynamic-masks.tar'):
     """Alignment, confidence distribution, and how far neighbouring views' depths disagree (per confidence decile)."""
     volume.reload()
     root, execution = load_run(run_id)
@@ -440,7 +442,7 @@ def diagnose_remote(run_id, poses, clip_k, every=5, lag=5, conf_floor=1., overla
     report, sim3, _ = align(root / 'result', files, np.asarray(poses))
     confs, pairs = [], []
     views = {}
-    for f in frame_stream(root, files, sim3, clip_k, conf_floor, overlay=overlay):
+    for f in frame_stream(root, files, sim3, clip_k, conf_floor, overlay=overlay, masks_tar=masks_tar):
         lb = f['lb']
         views[f['source']] = lb
         confs.append(lb['conf'][::4, ::4].ravel())
@@ -499,7 +501,8 @@ def build_map(root, files, poses, clip_k, config, out):
     analysis = {'frames': [], 'height': FULL_WH[1], 'width': FULL_WH[0], '_base': str(flow_masks)}
     full_grid = [g.astype(np.float32) for g in np.meshgrid(np.arange(FULL_WH[0]), np.arange(FULL_WH[1]))]
     votes, held, valid_share, step = {}, [], [], config['sample']
-    for f in frame_stream(root, files, sim3, clip_k, config['fill_conf'], step, tuple(config.get('overlay_rows', SUBTITLE_ROWS))):
+    for f in frame_stream(root, files, sim3, clip_k, config['fill_conf'], step, tuple(config.get('overlay_rows', SUBTITLE_ROWS)),
+                          config.get('masks_tar', 'dynamic-masks.tar')):
         objects = []
         if f['masks']:  # the project's cross-view check leaves out the same moving pixels, as source-raster RGBA masks
             alpha = moving_lookup(f['masks'], *full_grid).astype(np.uint8) * 255
@@ -577,16 +580,27 @@ def raster_k(clip_k):
     return np.array([[fx * 1.1, 0, cx * 1.1 - 32], [0, fy * 512 / 480, cy * 512 / 480 - 16], [0, 0, 1.]])
 
 
+def masks_tar_name(masks):
+    """The volume name of one masks set: dynamic-masks-<digest of its (file name, bytes)>.tar."""
+    h = hashlib.sha256()
+    for path in sorted(masks.glob('*.png')):
+        h.update(path.name.encode() + b'\0' + hashlib.sha256(path.read_bytes()).digest())
+    return f'dynamic-masks-{h.hexdigest()[:16]}.tar'
+
+
 def upload_masks(run_id, masks):
-    names = {e.path.split('/')[-1] for e in volume.iterdir(run_id)}
-    if 'dynamic-masks.tar' in names:
-        return
+    """Put these masks on the volume under the run id, named by their content, and return that name: a run id built
+    again with other masks gets their own tar (it used to reuse whatever {run_id}/dynamic-masks.tar held)."""
+    name = masks_tar_name(masks)
+    if name in {e.path.split('/')[-1] for e in volume.iterdir(run_id)}:
+        return name
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode='w') as archive:
         for path in sorted(masks.glob('*.png')):
             archive.add(path, arcname=path.name)
     with volume.batch_upload() as batch:
-        batch.put_file(io.BytesIO(buffer.getvalue()), f'{run_id}/dynamic-masks.tar')
+        batch.put_file(io.BytesIO(buffer.getvalue()), f'{run_id}/{name}')
+    return name
 
 
 def fetch(run_id, name, target):
@@ -862,11 +876,11 @@ def evaluate(args):
     info['metrics'] = {'alignment_to_fused_mesh': alignment, 'completeness': completeness, 'layering': layering,
                        'cross_view_check': {k: check[k] for k in ('passed', 'passing_pairs', 'threshold_median_pixels', 'required_pair_fraction', 'method')}
                        | {'pairs_checked': len(check['pairs']), 'median_of_pair_medians_px': round(float(np.median([p['median_reprojection_error_px'] for p in check['pairs']])), 3),
-                          'note': 'the project\'s check (build_lingbot_replay.check_temporal_geometry) run unchanged on all 450 LingBot frames at a 10-frame lag '
-                                  '(20 source frames); pairs across a shot cut find too few tracks and are skipped by the check itself',
+                          'note': f'the project\'s check (build_lingbot_replay.check_temporal_geometry) run unchanged on all {remote["frames"]} LingBot frames at a 10-frame lag; '
+                                  'pairs across a shot cut find too few tracks and are skipped by the check itself',
                           'pairs_within_one_shot': len(within)}}
     info['comparison_images'] = {'files': images, 'panels': 'real uncropped frame | this map, each point the square of its own sample (z-buffered) | '
-                                                            'published room surface (me340-filled-213 textured-scene.glb), ray cast', 'camera': 'report camera and full-frame K'}
+                                                            f'published room surface ({args.surface.parent.name}/{args.surface.name}), ray cast', 'camera': 'report camera and full-frame K'}
     save(out / 'points.json', info)
     print(json.dumps(info['metrics'], indent=1))
 
@@ -890,18 +904,19 @@ def shot_cuts(video, factor=8):
 def build(args, diagnose_only=False):
     poses, clip_k, _ = report_inputs(args.droid_run, args.clip)
     metres = json.loads((args.depth_run / 'metric-scale.json').read_text())['metres_per_native_unit']
-    upload_masks(args.run_id, args.masks)
+    masks_tar = upload_masks(args.run_id, args.masks)
     started = time.time()
     if diagnose_only:
         with app.run():
-            result = diagnose_remote.remote(args.run_id, poses, clip_k, overlay=args.overlay_rows)
+            result = diagnose_remote.remote(args.run_id, poses, clip_k, overlay=args.overlay_rows, masks_tar=masks_tar)
         result['wall_seconds'] = time.time() - started
         save(args.output / 'diagnose.json', result)
         print(json.dumps(result, indent=1))
         return
     cuts = shot_cuts(args.clip / 'source-full.mp4')
     config = {'exclude': [[int(v) for v in span.split(':')] for span in args.exclude_frames], 'conf': args.conf, 'fill_conf': args.fill_conf, 'sample': args.sample, 'cell': args.cell / metres, 'tolerance': args.tolerance,
-              'tolerance_floor': args.tolerance_floor / metres, 'max_points': args.max_points, 'patch_radius': .03 / metres, 'overlay_rows': list(args.overlay_rows)}
+              'tolerance_floor': args.tolerance_floor / metres, 'max_points': args.max_points, 'patch_radius': .03 / metres, 'overlay_rows': list(args.overlay_rows),
+              'masks_tar': masks_tar}
     with app.run():
         summary = build_remote.remote(args.run_id, poses, clip_k, config)
     wall = time.time() - started
@@ -1011,7 +1026,8 @@ if __name__ == '__main__':
         sys.exit()
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('mode', choices=['diagnose', 'build', 'evaluate'])
-    p.add_argument('--run-id')
+    # a lingbot_room.py output directory names its run (submission.json): the report runner passes the producer's directory
+    p.add_argument('--run-id', type=lambda v: json.loads((Path(v) / 'submission.json').read_text())['run_id'] if (Path(v) / 'submission.json').is_file() else v)
     for name in ['droid-run', 'clip', 'masks', 'output', 'mesh', 'surface', 'points', 'depth-run']:
         p.add_argument('--' + name, type=Path)
     p.add_argument('--conf', type=float, default=1.06, help='LingBot depth_conf above which a sample is confident (see diagnose)')

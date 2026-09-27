@@ -16,11 +16,17 @@ code change.
 
   python scripts/prepare_video_clip.py --video V --start 3572 --end 3611 --name lightning-3572 [--fov-deg 70]
   python scripts/prepare_video_clip.py --full-video CLIP_DIR   # the same frames uncropped, for the report's video panel
+  python scripts/prepare_video_clip.py --fov-of CLIP_DIR --frames A:B --output NEW_DIR   # MoGe-3 on 15 frames of one shot
+  python scripts/prepare_video_clip.py --derive CLIP_DIR --frames 0:B --fov-deg F --name N --output NEW_DIR
   python scripts/prepare_video_clip.py --self-check
+
+--derive: the parent's frames 0..B-1 (hard links, so frame i stays frame i) with K from a shot's own field of view; the
+playback and uncropped MP4s are written by the same functions as any clip (samsclub-337-a2 was made this way by hand).
 """
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -29,6 +35,7 @@ import numpy as np
 ART = Path("/Users/adam/Desktop/panoptes-public/research-notes/phase2")
 W, H = 640, 480  # the raster droid_room.prepare_image and mono_room's tum raster require
 FOV_FRAMES = 5   # frames MoGe-3 looks at when the focal length is estimated
+FOV_SHOT_FRAMES = 15  # --fov-of: frames spread over one shot (round(linspace(A, B-1, 15)), as samsclub-337-a2/shot-fov.py)
 
 
 def crop_box(width, height):
@@ -99,18 +106,74 @@ def playback(out, fps):
             "frame_mapping": "MP4 frame i is data row i of rgb.txt (zero-based, comments excluded)"}
 
 
-def estimate_fov(out):
-    """Median horizontal FoV MoGe-3 predicts on a few frames spread over the clip; one Modal L4 call per frame."""
+def moge_fov(picks):
+    """MoGe-3's horizontal FoV of each given frame file; one Modal L4 container, calls in sequence."""
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "modal_apps"))
     import moge3_app
-    frames = sorted((out / "rgb").glob("*.png"))
-    picks = [frames[int(i)] for i in np.linspace(0, len(frames) - 1, FOV_FRAMES)]
     with moge3_app.app.run():
         model = moge3_app.MoGe3()
-        per_frame = [model.infer.remote(p.read_bytes())["fov_x_deg"] for p in picks]
+        return [model.infer.remote(p.read_bytes())["fov_x_deg"] for p in picks]
+
+
+def estimate_fov(out):
+    """Median horizontal FoV MoGe-3 predicts on a few frames spread over the clip; one Modal L4 call per frame."""
+    frames = sorted((out / "rgb").glob("*.png"))
+    picks = [frames[int(i)] for i in np.linspace(0, len(frames) - 1, FOV_FRAMES)]
+    per_frame = moge_fov(picks)
     return {"source": "moge3_median_fov", "per_frame_deg": [round(v, 2) for v in per_frame],
             "frames": [p.name for p in picks], "fov_x_deg": float(np.median(per_frame)),
             "spread_deg": float(np.ptp(per_frame))}
+
+
+def data_rows(clip_dir):
+    return [line for line in (clip_dir / "rgb.txt").read_text().splitlines() if line.strip() and not line.startswith("#")]
+
+
+def shot_picks(span, count=FOV_SHOT_FRAMES):
+    """Clip frames MoGe-3 looks at on the shot [a, b): round(linspace(a, b - 1, count))."""
+    a, b = span
+    return [int(round(i)) for i in np.linspace(a, b - 1, count)]
+
+
+def fov_of(clip_dir, span, out):
+    """fov.json: MoGe-3's FoV on 15 frames of one shot of the clip (the schema of samsclub-337-a2/shot-fov.json)."""
+    out.mkdir(parents=True, exist_ok=True)
+    rows = data_rows(clip_dir)
+    picks = shot_picks(span)
+    per_frame = moge_fov([clip_dir / rows[i].split()[1] for i in picks])
+    result = {"model": "Ruicheng/moge-3-vitl (moge3_app.MoGe3, L4)", "clip": str(clip_dir), "shot": list(span),
+              "frames": [{"frame": i, "file": rows[i].split()[1], "fov_x_deg": f} for i, f in zip(picks, per_frame)],
+              "median_fov_x_deg": float(np.median(per_frame)), "mean": float(np.mean(per_frame)), "spread_deg": float(np.ptp(per_frame)),
+              "p25_p75": np.percentile(per_frame, [25, 75]).tolist()}
+    (out / "fov.json").write_text(json.dumps(result, indent=1))
+    return result
+
+
+def derive(parent, span, fov_deg, name, out):
+    """A clip of the parent's frames 0..B-1 (hard links: frame i stays frame i, so every run on the parent lines up) with K
+    from one shot's own field of view; source-rgb.mp4 and source-full.mp4 come from playback() and full_video()."""
+    a, b = span
+    assert a == 0, "a derived clip starts at the parent's frame 0, so clip frame i is parent frame i"
+    assert not out.exists(), f"{out} exists; clips are never overwritten"
+    rows = data_rows(parent)
+    assert 0 < b <= len(rows), f"--frames 0:{b} outside the parent's {len(rows)} frames"
+    rows = rows[:b]
+    (out / "rgb").mkdir(parents=True)
+    for row in rows:
+        os.link(parent / row.split()[1], out / row.split()[1])
+    header = [line for line in (parent / "rgb.txt").read_text().splitlines() if line.startswith("#")]
+    header.insert(2, f"# derived from {parent.name}: its frames 0-{b - 1}, K from a {fov_deg} deg field of view")
+    (out / "rgb.txt").write_text("\n".join(header + rows) + "\n")
+    clip = json.loads((parent / "clip.json").read_text())
+    fps = clip["source"]["fps"]
+    clip["name"], clip["dataset"], clip["K"] = name or out.name, str(out), intrinsics(fov_deg)
+    clip["playback"] = playback(out, fps)
+    clip["source"].update(end_s=round(clip["source"]["start_s"] + b / fps, 6), frames=b, requested_frames=b)
+    clip["intrinsics"] = {"source": "stated_for_this_shot", "fov_x_deg": fov_deg, "replaces": {"clip": parent.name, **clip["intrinsics"]}}
+    clip["shot_of"] = {"clip": parent.name, "frames": [0, b - 1], "why": f"frames 0-{b - 1} of {parent.name} (frame i here is frame i there) with K of this shot"}
+    clip["limitations"][0] = "intrinsics are not a calibration: the field of view estimated on this shot (--fov-deg)"
+    (out / "clip.json").write_text(json.dumps(clip, indent=1))
+    return {"clip": clip["name"], "frames": b, "K": clip["K"], "full": full_video(out)}
 
 
 def full_video(clip_dir, max_width=1280):
@@ -157,7 +220,8 @@ def run(args):
     with open(args.video, "rb") as stream:
         for block in iter(lambda: stream.read(1 << 22), b""):
             digest.update(block)
-    clip = {"name": args.name, "dataset": str(out), "K": intrinsics(fov["fov_x_deg"]), "D": [0.] * 5, "raster": "tum",
+    name = args.name or out.name  # droid_room registers clips by this name: the directory's own name is unique
+    clip = {"name": name, "dataset": str(out), "K": intrinsics(fov["fov_x_deg"]), "D": [0.] * 5, "raster": "tum",
             "playback": playback(out, facts["fps"]),
             "source_wh": [W, H], "calibrated": False,
             "source": {"video": str(args.video), "video_sha256": digest.hexdigest(), "start_s": args.start, "end_s": args.end, **facts},
@@ -167,7 +231,7 @@ def run(args):
                             "centre-cropped to 4:3: the left and right edges of the source frame are not used",
                             "no ground truth: camera and depth accuracy on this clip cannot be measured"]}
     (out / "clip.json").write_text(json.dumps(clip, indent=1))
-    print(json.dumps({"clip": args.name, "frames": facts["frames"], "fps": round(facts["fps"], 3), "crop": facts["crop_xywh"],
+    print(json.dumps({"clip": name, "frames": facts["frames"], "fps": round(facts["fps"], 3), "crop": facts["crop_xywh"],
                       "fov_x_deg": round(fov["fov_x_deg"], 2), "fov_spread_deg": fov.get("spread_deg"), "K": [round(v, 1) for v in clip["K"]]}))
 
 
@@ -179,6 +243,8 @@ def self_check():
     fx = intrinsics(90.)[0]
     assert abs(fx - 320.) < 1e-9, fx                                          # 90 deg across 640 px -> fx = 320
     assert abs(np.degrees(2 * np.arctan(W / 2 / intrinsics(62.)[0])) - 62.) < 1e-9
+    assert shot_picks((0, 420))[:3] == [0, 30, 60] and shot_picks((0, 420))[-1] == 419, "samsclub-337-a2/shot-fov.py's 15 frames"
+    assert shot_picks((383, 750)) == [383, 409, 435, 461, 488, 514, 540, 566, 592, 618, 644, 671, 697, 723, 749], "Walmart fov-check.json's frames"
     import tempfile
     import cv2
     with tempfile.TemporaryDirectory() as folder:                             # 2 s of a 10 fps 1280x720 video, cut 0.5-1.5 s
@@ -214,5 +280,17 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path)
     parser.add_argument("--fov-deg", type=float, help="stated horizontal field of view of the CROPPED 4:3 frame; omit to estimate with MoGe-3")
     parser.add_argument("--full-video", type=Path, help="an existing clip directory: write its frames uncropped as source-full.mp4")
+    parser.add_argument("--fov-of", type=Path, help="an existing clip directory: MoGe-3 FoV on 15 frames of the shot --frames A:B, written to --output/fov.json")
+    parser.add_argument("--derive", type=Path, help="parent clip directory: a new clip of its frames --frames 0:B with K from --fov-deg")
+    parser.add_argument("--frames", type=lambda s: tuple(int(v) for v in s.split(":")), metavar="A:B", help="with --fov-of / --derive: clip frames A..B-1")
     a = parser.parse_args()
-    self_check() if a.self_check else print(json.dumps(full_video(a.full_video))) if a.full_video else run(a)
+    if a.self_check:
+        self_check()
+    elif a.full_video:
+        print(json.dumps(full_video(a.full_video)))
+    elif a.fov_of:
+        print(json.dumps({k: v for k, v in fov_of(a.fov_of, a.frames, a.output).items() if k != "frames"}))
+    elif a.derive:
+        print(json.dumps(derive(a.derive, a.frames, a.fov_deg, a.name, a.output)))
+    else:
+        run(a)

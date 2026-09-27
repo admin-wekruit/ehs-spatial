@@ -502,7 +502,9 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path)
     parser.add_argument("--run-id")
     parser.add_argument("--reuse-build-from", type=Path)
-    parser.add_argument("--clip", choices=sorted(CLIPS), default="fr1-room")
+    # a clip directory names itself (its clip.json): the report runner passes a producer's directory, never a name it cannot know
+    parser.add_argument("--clip", choices=sorted(CLIPS), default="fr1-room",
+                        type=lambda v: json.loads((Path(v) / "clip.json").read_text())["name"] if (Path(v) / "clip.json").is_file() else v)
     parser.add_argument("--frames", type=lambda s: tuple(int(v) for v in s.split(":")), metavar="START:END",
                         help="track only clip frames START..END-1 (one continuous shot of an edited clip); the run is then rewritten in clip frame numbers")
     args=parser.parse_args()

@@ -43,6 +43,7 @@ import os
 from pathlib import Path
 import struct
 import sys
+import threading
 import time
 
 import cv2
@@ -539,6 +540,26 @@ def review(path, crop, vertices, faces, rgb, observed, c2w, up, caption):
     cv2.imwrite(str(path), sheet[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, 85])
 
 
+DISPATCH = threading.Lock()  # --workers: a cap check and the reservation it grants happen as one step
+
+
+def reserve(args, spent_usd, worst_usd):
+    """Reserve one worst-case call if it fits under --max-usd next to the calls other workers still have in flight.
+    Returns the USD already spent, or None (not reserved). ponytail: a RecGen call the transport has journaled counts
+    both in spent() and here until it returns, so near the cap parallel workers stop a call or two early."""
+    with DISPATCH:
+        usd = spent_usd()
+        if usd + (args.inflight + 1) * worst_usd > args.max_usd:
+            return None
+        args.inflight += 1
+        return usd
+
+
+def release(args):
+    with DISPATCH:
+        args.inflight -= 1
+
+
 def spent(journal):
     """(provider GPU seconds, local wall seconds, estimated USD) of every dispatch journaled so far, failures included.
 
@@ -638,13 +659,15 @@ def obtain(payload, base, args):
             return None, None
         if args.idle >= IDLE_STOP:
             return None, {"error": f"not requested: the last {args.idle} calls never got a GPU container"}
-        usd = spent(args.output / "journal")[2]
-        if usd + WORST_CALL_SECONDS * USD_PER_SECOND > args.max_usd:
-            return None, {"error": f"not requested: {usd:.2f} USD spent, one more worst-case call could pass the cap"}
-        use_gpu(args.gpu)
-        folder.mkdir(parents=True, exist_ok=True)
-        save(folder / "requested-gpu.json", {"gpu": args.gpu, "dispatchAttemptId": f"redispatch-{n}" if n else None})
-        mesh, record = request(attempt, folder, args.function_id)
+        if reserve(args, lambda: spent(args.output / "journal")[2], WORST_CALL_SECONDS * USD_PER_SECOND) is None:
+            return None, {"error": f"not requested: {spent(args.output / 'journal')[2]:.2f} USD spent, one more worst-case call could pass the cap"}
+        try:
+            use_gpu(args.gpu)
+            folder.mkdir(parents=True, exist_ok=True)
+            save(folder / "requested-gpu.json", {"gpu": args.gpu, "dispatchAttemptId": f"redispatch-{n}" if n else None})
+            mesh, record = request(attempt, folder, args.function_id)
+        finally:
+            release(args)
         if not state.exists():  # the transport named the journal differently: stop before a rerun could pay for it again
             raise RuntimeError(f"call_identity no longer matches recgen_transport: {folder} holds a call this script cannot find")
         print(json.dumps({"entity": payload["entityId"], "view": payload["anchorObservationId"], "seed": payload["seed"], "dispatch": n, "gpu": args.gpu,
@@ -700,7 +723,7 @@ def box_obtain(payload, args):
     if payload["seed"] != SEED:
         return None, {"reason": "a box does not depend on the seed"}
     entity, view = args.box_lookup[payload["entityId"], payload["anchorObservationId"]]
-    observed, names, _, _, owner, _ = observed_points(entity, view, args.rows, args.clip, args)
+    observed, names, _, _, owner, _ = observed_points(entity, view, args.rows, args.clip_data, args)
     source = names.index(view["observation"])
     shaping = ~np.isin(owner, [i for i in range(len(names)) if i % 2 and i != source])  # assess()'s held-out split, inverted
     if shaping.sum() < 10:
@@ -738,23 +761,26 @@ def sam3d_obtain(payload, folder, args):
             return None, {"error": "unresolved SAM 3D dispatch that may have run: never sent again"}
         if not args.invoke:
             return None, None
-        usd = sam3d_spent(args.output / "journal-sam3d")[1]
-        if usd + SAM3D_WORST_SECONDS * SAM3D_USD_PER_SECOND > args.max_usd:
-            return None, {"error": f"not requested: {usd:.2f} USD spent on SAM 3D, one more worst-case call could pass the cap"}
+        usd = reserve(args, lambda: sam3d_spent(args.output / "journal-sam3d")[1], SAM3D_WORST_SECONDS * SAM3D_USD_PER_SECOND)
+        if usd is None:
+            return None, {"error": f"not requested: {sam3d_spent(args.output / 'journal-sam3d')[1]:.2f} USD spent on SAM 3D, one more worst-case call could pass the cap"}
         import modal
         root.mkdir(parents=True, exist_ok=True)
         save(root / "dispatch.json", {"entity": payload["entityId"], "observation": payload["anchorObservationId"], "seed": payload["seed"], **SAM3D})
         started = time.time()
-        try:
-            out = modal.Cls.from_name(SAM3D["modalApp"], SAM3D["modalClass"])().run.remote(rgb, mask.astype(bool), sam3d_pointmap(depth, k.astype(float)), payload["seed"])
-        except Exception as error:  # the call may have run: kept as dispatched, never re-sent
-            save(root / "record.json", {"error": type(error).__name__, "detail": str(error)[:300], "seconds": time.time() - started})
-            return None, {"error": type(error).__name__}
-        if "error" in out:  # the worker's traceback: journaled with the dispatch, this input is never sent again
-            save(root / "record.json", {"error": out["error"][-2000:], "seconds": time.time() - started, "gpu": out.get("gpu")})
-            return None, {"error": "sam3d_worker_error"}
-        np.savez_compressed(root / "output.npz", **{k: out[k] for k in ("vertices", "faces", "colors", "objectToCamera")})
-        save(root / "record.json", {"seconds": time.time() - started, "workerSeconds": out["seconds"], "gpu": out["gpu"], "pins": out["pins"]})
+        try:  # the reservation holds until record.json (what sam3d_spent counts) is written
+            try:
+                out = modal.Cls.from_name(SAM3D["modalApp"], SAM3D["modalClass"])().run.remote(rgb, mask.astype(bool), sam3d_pointmap(depth, k.astype(float)), payload["seed"])
+            except Exception as error:  # the call may have run: kept as dispatched, never re-sent
+                save(root / "record.json", {"error": type(error).__name__, "detail": str(error)[:300], "seconds": time.time() - started})
+                return None, {"error": type(error).__name__}
+            if "error" in out:  # the worker's traceback: journaled with the dispatch, this input is never sent again
+                save(root / "record.json", {"error": out["error"][-2000:], "seconds": time.time() - started, "gpu": out.get("gpu")})
+                return None, {"error": "sam3d_worker_error"}
+            np.savez_compressed(root / "output.npz", **{k: out[k] for k in ("vertices", "faces", "colors", "objectToCamera")})
+            save(root / "record.json", {"seconds": time.time() - started, "workerSeconds": out["seconds"], "gpu": out["gpu"], "pins": out["pins"]})
+        finally:
+            release(args)
     out, record = np.load(root / "output.npz"), json.loads((root / "record.json").read_text())
     vertices = sam3d_to_world(out["vertices"], out["objectToCamera"], view["cameraToWorld"])
     telemetry = {"workerElapsedSeconds": record["seconds"], "gpuElapsedSeconds": record.get("workerSeconds")}
@@ -1060,20 +1086,27 @@ def sheet(path, chosen):
 
 def run(args):
     args.output.mkdir(parents=True, exist_ok=True)
+    seed = os.environ.get("PANOPTES_SEED_JOURNAL")  # the report runner's D17: an earlier run of this generator on the same inputs
+    if seed:  # its journals answer every call they hold, so no paid call is made twice; a copy, since this run prunes its own
+        import shutil
+        for name in ("journal", "journal-sam3d", "resegmented"):
+            if (Path(seed) / name).is_dir() and not (args.output / name).exists():
+                shutil.copytree(Path(seed) / name, args.output / name, symlinks=True)
+                print(json.dumps({"seededFrom": str(Path(seed) / name)}), flush=True)
     args.metres_per_native = json.loads((args.depth_run / "metric-scale.json").read_text())["metres_per_native_unit"]
     clip, rows, document, chosen, rejected = prepare(args)
-    args.rows, args.gpu, args.idle = rows, GPUS[0], 0  # A100-80GB had no capacity when this ran; the first re-send goes to A100-40GB
+    args.rows, args.gpu, args.idle, args.inflight = rows, GPUS[0], 0, 0  # A100-80GB had no capacity when this ran; the first re-send goes to A100-40GB
     sheet(args.output / "selection.jpg", chosen)
     plan_up = np.array(document["plan"]["up"]) if document.get("plan") else np.array([0, -1., 0])  # floor normal; image y is down
     from concurrent.futures import ThreadPoolExecutor
     journal, entries, placed = args.output / "journal", [], []  # placed: (entity, light vertices, light faces) of accepted models
-    pool = ThreadPoolExecutor(max_workers=1)  # one GPU call at a time, running ahead while the previous object is checked
+    pool = ThreadPoolExecutor(max_workers=args.workers)  # the first try of the next --workers objects runs ahead while this one is checked
     ahead = {}
     # the generator's call for one input: RecGen through its journaled transport, or self-hosted SAM 3D with its own journal
     call = (lambda payload, frame: (obtain, payload, journal_folder(journal, payload, frame, args.function_id), args)) if args.generator == "recgen" else \
            (lambda payload, frame: (sam3d_obtain, payload, args.output / "journal-sam3d" / payload["entityId"], args)) if args.generator == "sam3d" else \
            (lambda payload, frame: (box_obtain, payload, args))
-    args.clip, args.plan_up = clip, plan_up
+    args.clip_data, args.plan_up = clip, plan_up  # args.clip stays the path the manifest records
     args.box_lookup = {(c["entity"]["entityId"], view["observation"]): (c["entity"], view) for c in chosen for view in c["tries"]}
 
     def parent_of(c):
@@ -1125,12 +1158,13 @@ def run(args):
             parent = None if previous else parent_of(c)
             ahead[i] = parent, None if parent or previous else pool.submit(*call(c["payloads"][0], c["tries"][0]["frame"])), previous
 
-    queue(0)
-    for i, c in enumerate(chosen):
+    for i in range(args.workers):
+        queue(i)
+    for i, c in enumerate(chosen):  # judged strictly in entity order: only the generator calls run ahead, so results do not depend on --workers
         eid = c["entity"]["entityId"]
         parent, first, previous = ahead.pop(i)
-        parent = parent or (parent_of(c) if first else None)  # the object just before may have become its parent
-        queue(i + 1)
+        parent = parent or (parent_of(c) if first else None)  # an object just before may have become its parent
+        queue(i + args.workers)
         entry = {"entityId": eid, "label": c["entity"]["label"], "labelStatus": c["entity"].get("labelStatus"), "selection": c["why"], "seed": SEED}
         if c["entity"].get("labelStatus") != "clear":
             entry["labelUncertain"] = f"the VLM marked the name '{c['entity']['label']}' as {c['entity'].get('labelStatus')}"
@@ -1421,6 +1455,7 @@ def main():
     parser.add_argument("--voxel-native", type=float, default=VOXEL, help="the depth run's fused voxel in native units (fuse-metrics.json voxel_native): observed and fit "
                         "tolerances are counted in it (default: ME340's)")
     parser.add_argument("--no-captions", action="store_true", help="the video has no burned-in captions: skip the white-text caption test (a bright floor sets it off)")
+    parser.add_argument("--workers", type=int, default=1, help="generator calls in flight: the first try of the next N objects runs ahead; objects are still judged in order")
     args = parser.parse_args()
     BOX_VIEWS = args.generator == "box"
     VOXEL, OCCLUSION = args.voxel_native, args.voxel_native / 2  # ponytail: module constants re-set once per run, as every helper reads them
