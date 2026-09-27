@@ -72,6 +72,8 @@ GENERATOR = "RecGen (non-commercial research licence)"
 SAM3D = {"modalApp": "panoptes-sam3d-objects-research", "modalClass": "SAM3DObjects", "model": "facebook/sam-3d-objects",
          "modelRevision": "2e73555018d2741ccd486e56c24fac41155a1dc6", "codeRevision": "f91db411c50efee93d8db7aeb323885650f6f722",
          "generator": "SAM 3D Objects (SAM License: commercial use allowed, no ITAR/military/nuclear uses)"}
+BOX = "gravity-aligned box fitted to the video's own points (no learned model): kept only where the object is box-shaped enough to pass the same gate"
+GENERATORS = {"recgen": GENERATOR, "sam3d": SAM3D["generator"], "box": BOX}
 SAM3D_USD_PER_SECOND, SAM3D_WORST_SECONDS = .000694 + 4 * .0000131 + 32 * .00000222, 900  # modal_apps/sam3d_research.py's container and timeout
 # Modal list prices of the transport's container (A100-80GB + 8 cores + 64 GiB), per second; its client deadline is 240 s.
 USD_PER_SECOND, WORST_CALL_SECONDS = .000694 + 8 * .0000131 + 64 * .00000222, 240
@@ -82,6 +84,7 @@ RELEVANT = {"machine": ("machine", "mill", "lathe", "drill", "press", "saw", "gr
             "bin or box": ("bin", "box", "case", "container", "tub", "crate", "tray"),
             "cart": ("cart", "trolley"), "bench": ("bench", "workbench", "table", "tabletop"),
             "vise": ("vise", "clamp"), "monitor": ("monitor", "computer")}
+BOX_VIEWS = False            # --generator box sets it: views are not generator crops, so edge cuts and size do not disqualify them
 BORDER = 4                   # clip-frame pixels a best-view mask keeps clear of the frame edge
 
 
@@ -257,6 +260,8 @@ def failing(m):
     the source frame is cut at 'top/bottom' as well. 'small': under 1500 raster px and, on the source frame the
     generator's crop is cut from, a mask box under MIN_SOURCE_SIDE px on its short side (either size is enough)."""
     cut = set(m["cut"])
+    if BOX_VIEWS:  # the box is built from every agreeing view's points, not from this view's crop: only what spoils the view as a judge counts
+        return {name for name, bad in (("depth", m["depthShare"] < .5), ("person", m["personShare"] >= .02), ("caption", m["captionShare"] >= .02)) if bad}
     return {name for name, bad in (("side", cut & {"left", "right"}), ("top/bottom", cut & {"top", "bottom"}), ("raster edge", cut == {"raster edge"}),
                                    ("depth", m["depthShare"] < .5), ("person", m["personShare"] >= .02), ("caption", m["captionShare"] >= .02),
                                    ("small", m["area"] < 1500 and m["sourceShortSide"] < MIN_SOURCE_SIDE)) if bad}
@@ -667,6 +672,52 @@ def sam3d_to_world(vertices, object_to_camera, c2w):
     return camera @ np.asarray(c2w)[:3, :3].T + np.asarray(c2w)[:3, 3]
 
 
+def box_mesh(points, up, step):
+    """Gravity-aligned box around `points`: yaw of the smallest rectangle on the floor plane, extents at the 1st/99th
+    percentiles, at least one `step` thick (a face seen straight on), faces cut to edges <= `step` so each vertex can
+    carry its own colour. Returns world vertices and faces."""
+    import trimesh
+    up = np.asarray(up, float) / np.linalg.norm(up)
+    a = np.cross(up, [1., 0, 0] if abs(up[0]) < .9 else [0, 1., 0])
+    a /= np.linalg.norm(a)
+    b = np.cross(up, a)
+    angle = np.radians(cv2.minAreaRect(np.c_[points @ a, points @ b].astype(np.float32))[2])
+    x = np.cos(angle) * a + np.sin(angle) * b
+    axes = np.stack([x, np.cross(up, x), up])  # rows, right-handed
+    local = points @ axes.T
+    lo, hi = np.percentile(local, 1, 0), np.percentile(local, 99, 0)
+    hi = np.maximum(hi, lo + step)
+    unit = trimesh.creation.box(bounds=[lo, hi])
+    vertices, faces = trimesh.remesh.subdivide_to_size(unit.vertices, unit.faces, step)
+    return vertices @ axes, faces
+
+
+def box_obtain(payload, args):
+    """--generator box: the box of the points the ICP half of the agreeing views saw (the held-out half never shapes it),
+    coloured from the source crop where it faces that camera, elsewhere the mask's median colour. Deterministic, so a
+    second seed of the same view is not tried."""
+    import trimesh
+    if payload["seed"] != SEED:
+        return None, {"reason": "a box does not depend on the seed"}
+    entity, view = args.box_lookup[payload["entityId"], payload["anchorObservationId"]]
+    observed, names, _, _, owner, _ = observed_points(entity, view, args.rows, args.clip, args)
+    source = names.index(view["observation"])
+    shaping = ~np.isin(owner, [i for i in range(len(names)) if i % 2 and i != source])  # assess()'s held-out split, inverted
+    if shaping.sum() < 10:
+        return None, {"reason": "too few points to shape a box"}
+    vertices, faces = box_mesh(observed[shaping], args.plan_up, 2 * VOXEL)
+    crop = payload["views"][0]
+    rgb, mask, k, c2w = crop["rgb"], np.asarray(crop["mask"], bool), np.asarray(crop["K"], float), np.asarray(crop["cameraToWorld"], float)
+    colours = np.tile(np.median(rgb[mask], 0) if mask.any() else rgb.reshape(-1, 3).mean(0), (len(vertices), 1))
+    local = (vertices - c2w[:3, 3]) @ c2w[:3, :3]
+    z = np.maximum(local[:, 2], 1e-9)
+    u, v = np.round(k[0, 0] * local[:, 0] / z + k[0, 2]).astype(int), np.round(k[1, 1] * local[:, 1] / z + k[1, 2]).astype(int)
+    toward = ((c2w[:3, 3] - vertices) * trimesh.Trimesh(vertices, faces, process=False).vertex_normals).sum(1) > 0
+    ok = toward & (local[:, 2] > 0) & (u >= 0) & (v >= 0) & (u < rgb.shape[1]) & (v < rgb.shape[0])
+    colours[ok] = rgb[v[ok], u[ok]]
+    return (vertices, faces, colours.astype(np.float64)), {"generator": BOX, "shapedBy": int(shaping.sum())}
+
+
 def sam3d_spent(journal):
     """GPU seconds and USD of every SAM 3D call journaled under `journal` (container wall time x list price)."""
     seconds = sum(json.loads(p.read_text()).get("seconds", 0) for p in journal.rglob("sam3d-*/record.json")) if journal.exists() else 0
@@ -821,7 +872,7 @@ def assess(entity, view, crop, mesh, record, rows, clip, args):
                   "observedRule": f"within {2 * VOXEL} native of an observed point, facing one of the fit views' cameras and in its clear sight",
                   "skipFrames": sorted(args.skip),
                   "alpha": {"observed": OBSERVED_ALPHA, "inferred": INFERRED_ALPHA}, "triangles": len(faces), "seed": SEED, "sourceFrame": view["frame"],
-                  "generator": SAM3D["generator"] if args.generator == "sam3d" else GENERATOR, "pins": record.get("pins"), "providerRequestId": record.get("providerRequestId"),
+                  "generator": GENERATORS[args.generator], "pins": record.get("pins"), "providerRequestId": record.get("providerRequestId"),
                   "gpuType": ((record.get("runtimeEvidence") or {}).get("hardware") or {}).get("gpu"),
                   "gpuSeconds": telemetry.get("gpuElapsedSeconds"), "wallSeconds": telemetry.get("workerElapsedSeconds"),
                   "estimatedUsd": round((telemetry.get("workerElapsedSeconds") or 0) * (SAM3D_USD_PER_SECOND if args.generator == "sam3d" else USD_PER_SECOND), 4),
@@ -1020,7 +1071,10 @@ def run(args):
     ahead = {}
     # the generator's call for one input: RecGen through its journaled transport, or self-hosted SAM 3D with its own journal
     call = (lambda payload, frame: (obtain, payload, journal_folder(journal, payload, frame, args.function_id), args)) if args.generator == "recgen" else \
-           (lambda payload, frame: (sam3d_obtain, payload, args.output / "journal-sam3d" / payload["entityId"], args))
+           (lambda payload, frame: (sam3d_obtain, payload, args.output / "journal-sam3d" / payload["entityId"], args)) if args.generator == "sam3d" else \
+           (lambda payload, frame: (box_obtain, payload, args))
+    args.clip, args.plan_up = clip, plan_up
+    args.box_lookup = {(c["entity"]["entityId"], view["observation"]): (c["entity"], view) for c in chosen for view in c["tries"]}
 
     def parent_of(c):
         """The accepted model an extended entity mostly lies on (it is a part of that object), or None."""
@@ -1167,7 +1221,7 @@ def run(args):
                            **({} if state.get("status") == "received" else {"modal": modal_state(state_path)})})
     save(args.output / "manifest.json", {
         "schema": "phase2-video-object-models-v1", "coordinateFrame": "droid_final_native_world", "metresPerNativeUnit": args.metres_per_native,
-        "generator": SAM3D["generator"] if args.generator == "sam3d" else GENERATOR, "pins": SAM3D if args.generator == "sam3d" else ({k: records[0].get(k) for k in ("model_id", "model_revision", "code_revision", "weights_manifest_sha256")} if records else None),
+        "generator": GENERATORS[args.generator], "pins": SAM3D if args.generator == "sam3d" else ({k: records[0].get(k) for k in ("model_id", "model_revision", "code_revision", "weights_manifest_sha256")} if records else None),
         "route": {**RECGEN, "modalFunctionId": args.function_id, "transport": "ehs_spatial.platform.recgen_transport.invoke", "views": 1},
         "inputs": {k: str(getattr(args, k)) for k in ("droid_run", "depth_run", "object_map", "masks", "dynamic_masks", "clip")},
         "selectionRule": {"labelStatus": "clear", "excludedLabels": EXCLUDED, "minViews": MIN_VIEWS, "ehsEquipment": RELEVANT,
@@ -1224,6 +1278,22 @@ def self_check():
     assert failing(view) == {"side"} and failing({**view, "cut": ["raster edge"], "area": 900}) == {"raster edge", "small"}
     assert not failing({**view, "cut": [], "area": 900, "sourceShortSide": 80.}), "a compact view is large enough on the source frame"
     assert failing({**view, "cut": [], "personShare": .5}) == {"person"} and not usable([{**view, "cut": ["bottom"]}])
+    global BOX_VIEWS
+    BOX_VIEWS = True
+    assert not failing({**view, "cut": ["left", "top"], "area": 900}) and failing({**view, "depthShare": .2}) == {"depth"}, "box views: only judge-spoiling filters"
+    BOX_VIEWS = False
+    # box: a yawed 0.4 x 0.2 x 0.6 block's surface points (image y down, so up is -y) give back its size and yaw, closed and outward
+    rng = np.random.default_rng(0)
+    yaw = np.radians(30)
+    turn = np.array([[np.cos(yaw), 0, np.sin(yaw)], [0, 1, 0], [-np.sin(yaw), 0, np.cos(yaw)]])
+    block = trimesh.creation.box(extents=[.4, .6, .2])
+    surface = block.sample(20000, seed=0) @ turn.T + [1, -.3, 2] + rng.normal(0, .002, (20000, 3))
+    bv, bf = box_mesh(surface, [0, -1., 0], .02)
+    fitted = trimesh.Trimesh(bv, bf)
+    assert fitted.is_watertight and abs(fitted.volume - .048) < .003, fitted.volume  # 0.4 x 0.6 x 0.2: size and yaw both right
+    assert closest(bv, bf, surface[:2000])[1].max() < .02, "every surface point lies on the fitted box"
+    flat = trimesh.Trimesh(*box_mesh(surface[np.abs(surface @ turn[:, 2] - [1, -.3, 2] @ turn[:, 2] - .1) < .003], [0, -1., 0], .02))
+    assert flat.is_watertight and .4 * .6 * .019 < flat.volume < .4 * .6 * .03, flat.volume  # a face seen straight on: one step thick
     point = np.array([.3, -.2, 2.])
     p_clip, p_full = k_clip @ point, clip.k_full @ point
     assert np.allclose(clip.clip_to_full @ (p_clip / p_clip[2]), p_full / p_full[2])
@@ -1331,7 +1401,7 @@ def self_check():
 
 
 def main():
-    global VOXEL, OCCLUSION
+    global VOXEL, OCCLUSION, BOX_VIEWS
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--self-check", action="store_true")
     for name in ("droid-run", "depth-run", "object-map", "masks", "dynamic-masks", "clip", "output"):
@@ -1340,8 +1410,9 @@ def main():
     parser.add_argument("--exclude", nargs="*", default=[], help="ENTITY=reason: dropped at review, reason recorded")
     parser.add_argument("--count", type=int, default=COUNT)
     parser.add_argument("--all", action="store_true", help="after --entities, every named physical object of the qualifying rule (no count limit)")
-    parser.add_argument("--generator", choices=("recgen", "sam3d"), default="recgen",
-                        help="recgen: the deployed RecGen (non-commercial); sam3d: self-hosted SAM 3D Objects (modal deploy modal_apps/sam3d_research.py first)")
+    parser.add_argument("--generator", choices=("recgen", "sam3d", "box"), default="recgen",
+                        help="recgen: the deployed RecGen (non-commercial); sam3d: self-hosted SAM 3D Objects (modal deploy modal_apps/sam3d_research.py first); "
+                             "box: a gravity-aligned box of the video's own points, CPU only, same gate")
     parser.add_argument("--reassess", action="store_true", help="judge every journaled model again under the current gate (CPU; no call without --invoke)")
     parser.add_argument("--invoke", action="store_true", help="request missing models; without it only inputs, selection sheet and existing models are processed")
     parser.add_argument("--function-id", default="fu-Hh2leT3x1kprDaWpWsZ09l", help="the deployed generate_object the transport must find")
@@ -1351,6 +1422,7 @@ def main():
                         "tolerances are counted in it (default: ME340's)")
     parser.add_argument("--no-captions", action="store_true", help="the video has no burned-in captions: skip the white-text caption test (a bright floor sets it off)")
     args = parser.parse_args()
+    BOX_VIEWS = args.generator == "box"
     VOXEL, OCCLUSION = args.voxel_native, args.voxel_native / 2  # ponytail: module constants re-set once per run, as every helper reads them
     FIT_GATE["max_fit_median_native"] = VOXEL
     if args.self_check:
