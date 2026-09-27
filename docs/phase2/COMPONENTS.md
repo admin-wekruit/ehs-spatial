@@ -32,6 +32,7 @@
 | `scripts/prepare_arkit_clip.py` | 在用 | ARKitScenes → 带设备米制位姿的片段 |
 | `scripts/prepare_video_clip.py` | 新，在用 | 任意 MP4 → 640×480 片段：中心裁 4:3、缩放；K 来自 `--fov-deg` 或 MoGe-3 五帧中位数；写 `clip.json`（标 `calibrated: false`）。Lightning 3585–3611 s 是第一个用户 |
 | `scripts/scout_clip_segments.py` | 在用（无下游） | 给长视频打分选段；**选出的窗口没人切成片段** |
+| `scripts/detect_shot_cuts.py` | 新（M0，未接入） | 逐帧 ORB 单应内点 < 局部中位数（±15 对）0.1 倍且 < 100 → 切点；相邻 < 0.5 倍并入，≥2 对为淡入淡出；写 `segments.json`。五个片段每帧都跑：ME340 {14, 226}、Sam's Club {420}、Walmart {383}、Lightning 3585/3572 无（M）。**叠化只在内点下陷时抓得到**：真实帧拼接的 15 帧叠化 20 个只抓到 4 个（M），硬切 20/20 |
 | `modal_apps/droid_room.py` 的 `CLIPS` | 在用 | TUM 片段写死在 `:26-28`；另外自动登记 `data/clips/*/clip.json` |
 
 **缺口：** A1 第一版已有。剩下：另一个会话的 `motion_masks.fixed_video_frames` 补边到 640×368，与这里的裁 4:3 到 640×480 冲突，要定一套；畸变假设为零；选段结果（`scout_clip_segments`）还没接到转换器。
@@ -90,6 +91,7 @@
 | `scripts/name_video_entities.py` | 在用 | VLM 起名；**用云端 Gemini，违反 on-prem（A19）** |
 | `scripts/project_entities_to_frames.py` | 在用 | 实体投回每帧（可点击） |
 | `scripts/build_video_entity_model.py` | 在用（可选） | RecGen 生成模型，研究许可，HANDOFF 建议停用 |
+| `scripts/merge_object_models.py` | 新（M0） | 合并规则成代码：过闸门的学习模型 > 盒 > 空；两个生成器都过取留出拟合残差小的；盒与已选模型 3D 包围盒 IoU ≥ 0.25 或 ≥ 50% 顶点在 2 体素内则判重复；眼审排除照办。回放 run 231…303 逐实体一致（22/67/40，模型文件逐字节相同）；去掉 RecGen 为 14/64/33，丢 20 个只有 RecGen 过的对象（盒子运行当时排除了它们，要补一次盒子运行）；Sam's Club 的 64 里 051/052 原先是 030 的重复、从没眼审过（M） |
 | `ehs_spatial/platform/identity.py` | 平台 | 场景内与跨版本的同一/不同决策；**不做跨次匹配** |
 | `scripts/scene_inventory.py`（3045 行） | 照片 | 只看第一帧列物体、墙面、工位矩形、DXF 输出 |
 
