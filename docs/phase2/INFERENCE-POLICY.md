@@ -21,6 +21,7 @@ label it unobserved.**
 |---|---|---|---|
 | A structure | floor under and between things seen standing on it; walls and ceiling extended only between observed edges | one verified plane; things stand on the floor | free-space check + hidden-block test |
 | B objects | SAM 3D / RecGen complete shapes | the object was seen from >= 3 agreeing views | source view + held-out views (`complete_video_objects.py`) |
+| B objects, box | a gravity-aligned box of the video's own points, where no generator shape passed | the object is box-shaped (cartons, packs, pallets, panels) | the same gate; the box is shaped only by the half of the views the gate does not judge on; then reviewed by eye |
 | C support | a bench or machine body extended down to the floor | things do not float | free-space check + hidden-block test; translucent only |
 | D never | behind walls, inside cabinets, aisles nobody walked, small items | none | none, so it stays blank |
 
@@ -48,6 +49,14 @@ label it unobserved.**
   floor points within 0.5 m, dimmed to 85%.
 - Limit: where cameras only graze the floor the test is weaker (the control catches a 15 cm error in about half the
   seen floor), so under benches and in far corners the floor rests on the physical reason alone.
+
+## Box shapes (2026-09-27, `complete_video_objects.py --generator box`)
+
+Learned generators fail on shelf goods mostly for pose and size (ICP turned > 15 deg, or hit its scale clamp), since
+one image does not fix either. The box needs no learned model: it is fitted to what the video saw and judged by the same
+held-out test, so it survives only where the object really is box-shaped. The gate can still pass a thin flat thing
+whose box swallows its surroundings (a coiled hose on a bench, a plug among cords), so every accepted box is also
+checked by eye on its review sheet; ME340 dropped 2 of 6 that way, Sam's Club 2 of 23.
 
 ## Next, in this order
 
