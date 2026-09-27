@@ -6,21 +6,23 @@ same runs gives the same set and a changed profile (no RecGen, say) gives its ow
   1. a learned model that passed the gate beats a box, a box beats nothing;
   2. where both learned generators passed, the lower held-out fit residual (fitResidualNative) wins; a tie goes to the
      generator listed first (RecGen);
-  3. a box is only for an object no learned model passed. It is dropped as the same object as, or a part of, a model
-     already chosen (learned models first, then earlier boxes, in entity order) when their 3D bounding boxes overlap by
-     IoU >= DUP_IOU or >= DUP_NEAR of the box's vertices lie within 2 voxels of that model's surface;
-  4. every other box must pass box_free_space.py's per-pixel free-space test (--box-test, measured on that box run for
-     the same mesh; a box it did not measure fails); an eye review can still exclude more (--review: a merge.json whose
-     boxesDropped reasons start 'excluded at review').
+  3. a box is only for an object no learned model passed, and boxes are off unless an eye review of them is given
+     (--review: a merge.json whose boxesDropped reasons start 'excluded at review'): the per-pixel free-space test that
+     would replace the review is below its acceptance (plan section 5: boxes stay off until it passes). With a review, a
+     box is dropped as the same object as, or a part of, a model already chosen (learned models first, then earlier
+     boxes, in entity order) when their 3D bounding boxes overlap by IoU >= DUP_IOU or >= DUP_NEAR of the box's vertices
+     lie within 2 voxels of that model's surface, or when the review excluded it;
+  4. box_free_space.py's test (--box-test, measured on that box run for the same mesh bytes) is recorded for every box
+     under boxTest (empty = passes); it admits and drops nothing.
 
 Model folders are hard-linked, nothing is regenerated. --against compares with a delivered merge (entity sets, the
-choice per entity, the dropped boxes) and exits 1 on any difference; a box the delivered merge excluded at review and
-this one drops by the test is the same decision (listed as reviewByTest).
+choice per entity, the dropped boxes) and exits 1 on any difference.
 
   python scripts/merge_object_models.py [--recgen R] --sam3d S --box B --box-test BOX_TEST_JSON [--review MERGE_JSON] [--output NEW_DIR] [--against DELIVERED_DIR]
   python scripts/merge_object_models.py --self-check
 """
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -33,7 +35,9 @@ from complete_video_objects import box_iou, closest  # the same IoU and surface 
 import box_free_space
 
 DUP_IOU, DUP_NEAR = .25, .5
-REVIEWED, TESTED = "excluded at review", "failed the free-space test"
+REVIEWED = "excluded at review"
+BOXES_OFF = ("boxes off: no eye review given, and the free-space test is below its acceptance (held out it rejects 6 of "
+             "the 10 eye-dropped boxes and keeps 27 of 32; the plan asks 10 and >= 30, m0-box-test-study)")
 
 
 def accepted(run):
@@ -90,21 +94,22 @@ def merge(learned, boxes, excluded, voxel, mesh=load):
     return choice, folders, dropped
 
 
-def untested(boxes, tested):
-    """{box: reason} for every box the free-space test fails, or did not measure on this mesh."""
+def free_space(boxes, tested):
+    """{box: the free-space test's reasons to reject it ([] passes)}, for every box; a box it did not measure on these
+    mesh bytes, or measured under other test constants, is not tested."""
+    rule = {k: tested.get("rule", {}).get(k) for k in ("slack", "erodePx", "minJudged")}
+    if rule != {"slack": box_free_space.SLACK, "erodePx": box_free_space.ERODE, "minJudged": box_free_space.MIN_JUDGED}:
+        return {e: [f"measured under other test constants {rule}"] for e in sorted(boxes)}
     out = {}
-    for e, (_, folder, _) in boxes.items():
+    for e, (_, folder, _) in sorted(boxes.items()):
         m = tested["boxes"].get(e)
-        same = m and m["mesh_sha256"] == json.loads((folder / "validation.json").read_text())["mesh_sha256"]
-        reasons = box_free_space.verdict(m) if same else ["not measured on this mesh"]
-        if reasons:
-            out[e] = TESTED + ": " + "; ".join(reasons)
+        same = m and m["mesh_sha256"] == hashlib.sha256((folder / "model.glb").read_bytes()).hexdigest()
+        out[e] = box_free_space.verdict(m) if same else ["not measured on these mesh bytes"]
     return out
 
 
 def against(delivered, choice, dropped, labels):
-    """Differences from a delivered merge (empty when the replay reproduces it), and the boxes whose review exclusion
-    the test made."""
+    """Differences from a delivered merge; empty when the replay reproduces it."""
     theirs = json.loads((delivered / "merge.json").read_text())
     models = {p.name for p in (delivered / "models").iterdir() if p.is_dir()}
     assert models == set(theirs["choice"]), ("delivered models/ and merge.json disagree", sorted(models ^ set(theirs["choice"])))
@@ -112,15 +117,10 @@ def against(delivered, choice, dropped, labels):
     diff = {"missing": {e: tell(e, theirs["choice"][e]) for e in sorted(models - set(choice))},
             "extra": {e: tell(e, choice[e]) for e in sorted(set(choice) - models)},
             "changed": {e: f"{theirs['choice'][e]} -> {choice[e]}" for e in sorted(models & set(choice)) if theirs["choice"][e] != choice[e]},
-            "droppedDiffers": {}}
-    by_test = []
-    for e in sorted(set(dropped) | set(theirs.get("boxesDropped", {}))):
-        pair = [theirs.get("boxesDropped", {}).get(e), dropped.get(e)]
-        if pair[0] and pair[1] and pair[0].startswith(REVIEWED) and pair[1].startswith(TESTED):
-            by_test.append(e)
-        elif pair[0] != pair[1]:
-            diff["droppedDiffers"][e] = pair
-    return {k: v for k, v in diff.items() if v}, by_test
+            "droppedDiffers": {e: [theirs.get("boxesDropped", {}).get(e), dropped.get(e)]
+                               for e in sorted(set(dropped) | set(theirs.get("boxesDropped", {})))
+                               if theirs.get("boxesDropped", {}).get(e) != dropped.get(e)}}
+    return {k: v for k, v in diff.items() if v}
 
 
 def run(args):
@@ -131,19 +131,19 @@ def run(args):
     review = json.loads(args.review.read_text()).get("boxesDropped", {}) if args.review else {}
     tested = json.loads(args.box_test.read_text())
     assert Path(tested["box"]).resolve() == args.box.resolve(), ("the free-space test measured another box run", tested["box"])
-    excluded = {**untested(boxes, tested), **{e: why for e, why in review.items() if why.startswith(REVIEWED)}}
-    choice, folders, dropped = merge(learned, boxes, excluded, voxel)
+    excluded = {e: why for e, why in review.items() if why.startswith(REVIEWED)}
+    choice, folders, dropped = merge(learned, boxes if args.review else {}, excluded, voxel)
     residual = {e: {name: (r[e][0] if e in r else None) for name, r in learned + [("box", boxes)]} for e in choice}
     result = {"rule": " ".join(__doc__.split("\n\n")[2].split()), "inputs": {name: str(p) for name, p in
                                                                     (("recgen", args.recgen), ("sam3d", args.sam3d), ("box", args.box),
                                                                      ("boxTest", args.box_test), ("review", args.review)) if p},
-              "boxTestThresholds": box_free_space.THRESHOLDS,
+              "boxesOff": None if args.review else BOXES_OFF,
               "voxelNative": voxel, "counts": {"models": len(choice), **{g: sum(v == g for v in choice.values()) for g in ("recgen", "sam3d", "box")},
                                                "boxesDropped": len(dropped)},
-              "choice": choice, "labels": {e: labels[e] for e in choice}, "fitResidualNative": residual, "boxesDropped": dropped}
+              "choice": choice, "labels": {e: labels[e] for e in choice}, "fitResidualNative": residual, "boxesDropped": dropped,
+              "boxTest": {"admitsBoxes": False, "thresholds": box_free_space.THRESHOLDS, "reasons": free_space(boxes, tested)}}
     if args.against:
-        differences, by_test = against(args.against, choice, dropped, labels)
-        result["against"] = {"delivered": str(args.against), "differences": differences, "reviewByTest": by_test}
+        result["against"] = {"delivered": str(args.against), "differences": against(args.against, choice, dropped, labels)}
     if args.output:
         (args.output / "models").mkdir(parents=True, exist_ok=False)
         for e, folder in folders.items():
@@ -158,9 +158,9 @@ def run(args):
 
 def self_check():
     """Tiny runs on disk: residual choice and its tie, box only where no learned model passed, the two duplicate tests,
-    a box that rests on a model (kept), a box duplicating an earlier box, the free-space test gating boxes (a failed box,
-    a box measured on another mesh, a test of another run), the optional review, and the RecGen-free profile."""
-    import hashlib
+    a box that rests on a model (kept), a box duplicating an earlier box, the review excluding boxes, no box at all without
+    a review, the free-space test recorded but deciding nothing (a failed box, a box whose mesh bytes it did not measure,
+    a test under other constants, a test of another run), and the RecGen-free profile."""
     import tempfile
     import trimesh
 
@@ -201,14 +201,17 @@ def self_check():
             "object-i": (cube([20.05, 0, 0], [21, 1, 1]), .002),      # the same thing again: duplicate of the earlier box h (fails the test too)
             "object-j": (cube([30, 0, 0], [31, 1, 1]), .002),         # alone, passes the test, but excluded at review
             "object-k": (cube([40, 0, 0], [41, 1, 1]), .002),         # alone, fails the free-space test (and excluded at review)
-            "object-m": (cube([50, 0, 0], [51, 1, 1]), .002)})        # alone, but the test measured an earlier mesh
+            "object-m": (cube([50, 0, 0], [51, 1, 1]), .002)})        # alone, kept by the review; the test measured other bytes
         clean = {"views": {"object:1:0": {"judged": 100, "overhang": 0, "foreign": 0, "occluded": 0}}, "sourceFaceBacking": 1.}
         sha = lambda e: json.loads((boxes / "models" / e / "validation.json").read_text())["mesh_sha256"]
-        measured = {e: {**clean, "mesh_sha256": sha(e)} for e in ("object-e", "object-f", "object-g", "object-h", "object-i", "object-j")}
+        measured = {e: {**clean, "mesh_sha256": sha(e)} for e in ("object-a", "object-e", "object-f", "object-g", "object-h", "object-i", "object-j")}
         measured["object-k"] = {**clean, "mesh_sha256": sha("object-k"), "views": {"object:1:0": {**clean["views"]["object:1:0"], "overhang": 60}}}
-        measured["object-m"] = {**clean, "mesh_sha256": "0" * 64}
+        stale = boxes / "models" / "object-m" / "validation.json"  # its validation.json names bytes that are not its model.glb
+        stale.write_text(json.dumps({**json.loads(stale.read_text()), "mesh_sha256": "1" * 64}))
+        measured["object-m"] = {**clean, "mesh_sha256": "1" * 64}
         measured["object-i"] = measured["object-k"] | {"mesh_sha256": sha("object-i")}  # a duplicate that fails the test stays a duplicate
-        (root / "box-test.json").write_text(json.dumps({"box": str(boxes), "boxes": measured}))
+        rule = {"slack": box_free_space.SLACK, "erodePx": box_free_space.ERODE, "minJudged": box_free_space.MIN_JUDGED}
+        (root / "box-test.json").write_text(json.dumps({"box": str(boxes), "rule": rule, "boxes": measured}))
         review = root / "review.json"
         review.write_text(json.dumps({"boxesDropped": {"object-j": "excluded at review: sticks out", "object-k": "excluded at review: sticks out",
                                                        "object-x": "same object as or part of y"}}))
@@ -216,19 +219,23 @@ def self_check():
         assert run(args) == 0
         got = json.loads((root / "merged" / "merge.json").read_text())
         assert got["choice"] == {"object-a": "sam3d", "object-b": "recgen", "object-c": "recgen", "object-d": "sam3d",
-                                 "object-g": "box", "object-h": "box"}, got["choice"]
+                                 "object-g": "box", "object-h": "box", "object-m": "box"}, got["choice"]
         d = got["boxesDropped"]
-        assert set(d) == {"object-e", "object-f", "object-i", "object-j", "object-k", "object-m"}, d
+        assert set(d) == {"object-e", "object-f", "object-i", "object-j", "object-k"} and got["boxesOff"] is None, d
         assert "of object-a: 3D box IoU 0.4" in d["object-e"] and "of object-c" in d["object-f"] and "of object-h" in d["object-i"], d
         assert d["object-j"].startswith(REVIEWED) and d["object-k"].startswith(REVIEWED) and "IoU 0.00" in d["object-f"], d
-        assert d["object-m"] == TESTED + ": not measured on this mesh", d
-        # without the review the test alone drops k (the review's decision, by the test) but not j, which the review alone dropped
+        # the test is recorded for every box and decides nothing: m, which it could not measure, is kept by the review
+        tested = got["boxTest"]["reasons"]
+        assert {e for e, why in tested.items() if why} == {"object-i", "object-k", "object-m"} and tested["object-k"][0].startswith("overhang 60%"), tested
+        assert tested["object-m"] == ["not measured on these mesh bytes"] and not got["boxTest"]["admitsBoxes"], tested
+        other_rule = {"box": str(boxes), "rule": {**rule, "slack": .1}, "boxes": measured}
+        assert all(why[0].startswith("measured under other test constants") for why in free_space(accepted(boxes)[0], other_rule).values())
+        # without a review no box is chosen at all, whatever the test says; the test is still recorded
         alone = argparse.Namespace(**{**vars(args), "review": None, "output": root / "alone", "against": root / "merged"})
         assert run(alone) == 1
-        replay = json.loads((root / "alone" / "merge.json").read_text())["against"]
-        assert replay["differences"] == {"extra": {"object-j": "thing j (box)"}, "droppedDiffers": {"object-j": ["excluded at review: sticks out", None]}}, replay
-        assert replay["reviewByTest"] == ["object-k"], replay
-        assert json.loads((root / "alone" / "merge.json").read_text())["boxesDropped"]["object-k"].startswith(TESTED + ": overhang 60%")
+        off = json.loads((root / "alone" / "merge.json").read_text())
+        assert off["choice"] == {e: g for e, g in got["choice"].items() if g != "box"} and off["boxesOff"] == BOXES_OFF and not off["boxesDropped"], off
+        assert off["boxTest"] == got["boxTest"] and set(off["against"]["differences"]["missing"]) == {"object-g", "object-h", "object-m"}, off["against"]
         try:
             run(argparse.Namespace(**{**vars(args), "box": sam3d, "output": None}))
             raise RuntimeError("a free-space test of another box run was used")
@@ -252,8 +259,8 @@ def main():
     p.add_argument("--recgen", type=Path, help="complete_video_objects.py run with --generator recgen (omit for the commercial profile)")
     p.add_argument("--sam3d", type=Path, help="run with --generator sam3d")
     p.add_argument("--box", type=Path, help="run with --generator box")
-    p.add_argument("--box-test", type=Path, help="box_free_space.py's box-test.json of the --box run: only a box that passes it is taken")
-    p.add_argument("--review", type=Path, help="optional: a merge.json whose eye-review exclusions of boxes also apply")
+    p.add_argument("--box-test", type=Path, help="box_free_space.py's box-test.json of the --box run: recorded for every box, decides nothing")
+    p.add_argument("--review", type=Path, help="a merge.json whose eye review of the boxes applies; without it no box is taken")
     p.add_argument("--output", type=Path, help="new folder: merge.json and hard-linked models/")
     p.add_argument("--against", type=Path, help="a delivered merged folder to compare with; exit 1 on any difference")
     p.add_argument("--self-check", action="store_true")

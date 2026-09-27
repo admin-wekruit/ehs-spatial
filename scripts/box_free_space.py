@@ -17,9 +17,10 @@ alpha is marked from). A box fails when a median crosses THRESHOLDS or the face 
 fails (no pass without coverage), and so does one hidden past OCCLUDED in its median view.
 
 THRESHOLDS come from --study: fitted on two scenes and tested on the third for all three rotations, the eye review of
-the delivered merges as truth, then fitted once on all three. Held out it rejects 7 of the 10 eye-dropped boxes and keeps
-27 of 32 (M): a box that swallows an unsegmented neighbour lying at the object's own depth passes (ME340 145, 175), so
-it does not replace the eye review yet.
+the delivered merges as truth, then fitted once on all three. Held out it rejects 6 of the 10 eye-dropped boxes and keeps
+27 of 32 (M, m0-box-test-study: ME340 rejects 1 of 4, as 021, 145 and 175 pass; 021 is rejected only in-sample): a box
+that swallows an unsegmented neighbour lying at the object's own depth passes (ME340 145, 175). It does not replace the
+eye review: merge_object_models.py records it and takes no box without a review.
 
   python scripts/box_free_space.py --box BOX_RUN --output NEW_DIR
   python scripts/box_free_space.py --study TEST_DIR=DELIVERED_MERGED_DIR ... [--output NEW_DIR]
