@@ -51,7 +51,7 @@ def window_frames(keyframe_interval):
 
 @app.function(image=image, gpu=['H100!', 'A100-80GB'], cpu=(4, 4), memory=(16384, 16384), timeout=1200,
               retries=0, max_containers=1, min_containers=0, scaledown_window=2, volumes={'/artifact': volume})
-def serve(video, mode, frames, stride, keyframe_interval, submitted, budget_s, prefetch=True):
+def serve(video, mode, frames, stride, keyframe_interval, submitted, budget_s, prefetch=True, history_cap=0):
     entered = time.time()
     import collections
     import cv2
@@ -112,7 +112,20 @@ def serve(video, mode, frames, stride, keyframe_interval, submitted, budget_s, p
 
     def forward(block):
         with torch.autocast('cuda', dtype=torch.bfloat16):
-            return model.forward(block, num_frame_for_scale=SCALE, num_frame_per_block=block.shape[1], causal_inference=True)
+            out = model.forward(block, num_frame_for_scale=SCALE, num_frame_per_block=block.shape[1], causal_inference=True)
+        if history_cap: cap_history()
+        return out
+
+    def cap_history():
+        """Bound the two caches official streaming grows forever: special tokens of evicted frames (aggregator)
+        and the camera head's camera-token history (its one-token frames are never evicted). Not official."""
+        kv = model.aggregator.kv_cache
+        for key, v in kv.items():
+            if key.endswith('_special') and v is not None and v.shape[2] > history_cap: kv[key] = v[:, :, -history_cap:]
+        for cache in model.camera_head.kv_cache or []:
+            for key, v in cache.items():
+                if key[0] in 'kv' and torch.is_tensor(v) and v.shape[2] > SCALE + history_cap:
+                    cache[key] = torch.cat([v[:, :, :SCALE], v[:, :, -history_cap:]], 2)
 
     def emit(rows, out, keyframes):
         pe, depth = out['pose_enc'].float(), out['depth'].float()
@@ -179,7 +192,7 @@ def serve(video, mode, frames, stride, keyframe_interval, submitted, budget_s, p
         'weights_sha256': WEIGHTS_SHA, 'video_sha256': digest('/tmp/source.mp4'),
         'config': {'image_size': 518, 'scale_frames': SCALE, 'window': WINDOW, 'keyframe_interval': K,
                    'frames_per_window': L, 'overlap': SCALE if L else None, 'max_frame_num': rope, 'backend': 'sdpa',
-                   'camera_iterations': 4, 'prefetch': prefetch, 'dtype': 'bf16 aggregator, fp32 heads', 'stride': stride,
+                   'camera_iterations': 4, 'prefetch': prefetch, 'history_cap_keyframes': history_cap or None, 'dtype': 'bf16 aggregator, fp32 heads', 'stride': stride,
                    'source_frames': n_src, 'input_hw': list(x.shape[-2:])},
         'frames_requested': frames, 'frames_done': done, 'stopped_by_budget': done < frames,
         'preprocess_max_abs_diff_vs_official': preprocess_diff, 'cold_start': stages,
@@ -247,7 +260,11 @@ def analyze(a, warm=50):
                        'path_scale_vs_pass0': round(1 / s, 4), 'fit_rotation_deg': round(angle_deg(R), 2),
                        'fit_residual_over_path': round(float(np.sqrt(((A - (s * B @ R.T + tr)) ** 2).sum(1).mean())) / path0, 4),
                        'depth_scale_vs_pass0': round(float(np.median(a['depth_median'][ip] / a['depth_median'][i0])), 4)})
-    drift = {'pass0_path_length_model_units': round(path0, 4), 'passes': passes}
+    bad = [q for q in passes if q['center_error_over_path'] > .05 or q['camera_rotation_error_deg'] > 5]
+    drift = {'pass0_path_length_model_units': round(path0, 4), 'complete_passes': len(passes),
+             'worst_center_error_over_path': max(q['center_error_over_path'] for q in passes),
+             'worst_camera_rotation_error_deg': max(q['camera_rotation_error_deg'] for q in passes),
+             'passes_over_5pct_or_5deg': len(bad), 'first_bad_frame': bad[0]['first_frame'] if bad else None, 'passes': passes}
     if len(a['win_scale']):
         ws = a['win_scale']  # each window's Sim3 scale into the first window's frame
         step = ws / np.concatenate([[1], ws[:-1]])
@@ -265,20 +282,21 @@ def load(run_dir):
 
 @app.local_entrypoint()
 def main(out: str, mode: str = 'windowed', frames: int = 7560, stride: int = 2, keyframe_interval: int = 2,
-         gpu: str = '', budget: int = 1000, prefetch: bool = True):
+         gpu: str = '', budget: int = 1000, prefetch: bool = True, history_cap: int = 0, timeout: int = 1200):
     """7560 frames at stride 2 of a 25 fps shot = 12.5 fps for 10.1 min of stream."""
     assert mode in ('stream', 'windowed') and 0 < budget <= 1100
     video = CLIP / 'source-full.mp4'; out = Path(out); out.mkdir(parents=True, exist_ok=False)
-    fn = serve.with_options(gpu=gpu) if gpu else serve
+    assert budget + 100 <= timeout <= 1200
+    fn = serve.with_options(**({'gpu': gpu} if gpu else {}), timeout=timeout)
     submitted = time.time()
-    result = fn.remote(video.read_bytes(), mode, frames, stride, keyframe_interval, submitted, budget, prefetch)
+    result = fn.remote(video.read_bytes(), mode, frames, stride, keyframe_interval, submitted, budget, prefetch, history_cap)
     wall = time.time() - submitted
     (out / 'frames.npz').write_bytes(result['arrays'])
     (out / 'runner-at-execution.py').write_bytes(Path(__file__).read_bytes())
     save(out / 'run.json', {**result['summary'], 'client_wall_seconds': wall, 'source_video': str(video)})
     report = analyze(load(out)); save(out / 'report.json', report)
     print(json.dumps({'client_wall_seconds': round(wall, 1), 'gpu': result['summary']['gpu'],
-                      'cold_start': result['summary']['cold_start'], **report, 'drift': report['drift']['passes'][-3:]}), flush=True)
+                      'cold_start': result['summary']['cold_start'], **report, 'drift': {k: v for k, v in report['drift'].items() if k != 'passes'}}), flush=True)
 
 
 def self_check():
@@ -307,6 +325,7 @@ def self_check():
     assert last['pass'] == 5 and abs(last['path_scale_vs_pass0'] - 1.05) < 1e-3 and abs(last['fit_rotation_deg'] - 5) < 0.01
     assert abs(last['camera_rotation_error_deg'] - 5) < 0.01 and abs(last['depth_scale_vs_pass0'] - 1.05) < 1e-3
     assert last['fit_residual_over_path'] < 1e-3 and rep['drift']['passes'][0]['center_error_over_path'] == 0
+    assert rep['drift']['first_bad_frame'] is None and rep['drift']['worst_camera_rotation_error_deg'] == 5.0  # 5 deg is not over 5
     assert rep['latency']['p50_ms'] == 82.0 and rep['latency']['boundary_frames'] == 1 and rep['latency']['fps_all_frames'] < 12.2
     assert rep['memory']['flat'] and rep['go_10fps_flat_memory'] and rep['drift']['window_scales']['geometric_mean_step'] == round(1.1 ** .5, 4)
     rep = analyze({'src': src, 'pass_id': pas, 'pose': pose, 'depth_median': dm, 't_pre': np.full(n, 0.07), 't_in': np.full(n, 0.001),
