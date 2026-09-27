@@ -19,7 +19,7 @@ every median:
                homographies say >= SPAN_OVERLAP of the view is shared: the picture changed, the camera did not move.
                The run grows to the spans under FADE_SHARE of their median, and every frame of its spans and SPAN more
                on each side is no coverage (blended frames carry both places), whatever else found it; only a jump cut or
-               a blank gap explains such a run instead.
+               a measured blank gap explains such a run instead (another dissolve's span does not).
 
 A shot shorter than MIN_SHOT frames between two transitions is part of them (a dim frame at the edge of a black gap).
 Measured on the five delivered clips (every frame): exactly ME340 {14, 226}, Sam's Club {420}, Walmart {383}, Lightning
@@ -168,7 +168,8 @@ def transitions(s):
     cut, jump, span = scores(s)
     counts, n = s["inliers"], len(s["inliers"])
     low, soft = (cut >= 1) & (counts < CUT_ABSOLUTE), cut >= CUT_SHARE / FADE_SHARE
-    blank = runs(s["blank"])
+    measured = runs(s["blank"])
+    blank = list(measured)  # measured gaps, then each dissolve's no-coverage span
     cuts, fades, why, k = [], [], {f"{a}-{b}": "no coverage" for a, b in blank}, 0
     while k < n:
         if not low[k]:
@@ -195,9 +196,12 @@ def transitions(s):
     broken, soft = (span >= 1) & (s["spans"] < CUT_ABSOLUTE), span >= SPAN_SHARE / FADE_SHARE
     for k0, k1 in runs(soft):
         # a run of spans under FADE_SHARE of their median holding one that fired reaches frames k0..k1+SPAN; a jump cut or a
-        # blank gap in there explains it, anything else is a blend
+        # measured blank gap in there explains it, anything else is a blend. An earlier dissolve's span explains nothing: a
+        # dissolve split by one span back over FADE_SHARE is two runs, and the second reaches past the first's span.
+        # ponytail: one blank frame (keypoints < BLANK_KEYPOINTS) inside a real dissolve exempts it too, as the blank middle
+        # of a fade through black must; none in the 100 splices (integrate review), frame brightness would tell them apart
         jumped = any(k0 < c <= k1 + SPAN and why[str(c)] == "jump" for c in cuts)
-        if not broken[k0:k1 + 1].any() or jumped or any(a <= k1 + SPAN and b > k0 for a, b in blank):
+        if not broken[k0:k1 + 1].any() or jumped or any(a <= k1 + SPAN and b > k0 for a, b in measured):
             continue
         # the blend starts and ends further out, where frames SPAN apart still match (the 100 splices of
         # runs/m0-integrate-cuts: without the margin 4 of 17 found 30-frame dissolves left 1-5 frames of >= 25% of the
@@ -327,6 +331,17 @@ def self_check():
     one_low = np.full(60, 600.)
     one_low[33] = 5  # one pair of the blend fell like a cut: the dissolve's frames still stay out of both shots
     assert known(one_low, spans)["cuts"] == [34] and known(one_low, spans)["noCoverage"] == [[22, 47]], known(one_low, spans)
+    # the run grows to every span under FADE_SHARE of the median (a score >= SPAN_SHARE / FADE_SHARE): spans 26..36 sit
+    # at 100 of 500 around the two that fired, so 18..52 are no coverage, not the fired spans' 22..47
+    grown = spans.copy()
+    grown[[26, 27, 28, 29, 32, 33, 34, 35, 36]] = 100
+    assert known(np.full(60, 600.), grown)["noCoverage"] == [[18, 52]], known(np.full(60, 600.), grown)
+    # a dissolve split by one span back at the median is two runs, 30..31 and 33..44; the second reaches frames 25..60,
+    # past the first's 22..47, and the first's span is no blank gap that explains it: frames 48..60 stay out of every shot
+    split = np.full(93, 500.)
+    split[30:32] = split[33:45] = 3
+    parts = known(np.full(100, 600.), split)
+    assert parts["noCoverage"] == [[22, 47], [25, 60]] and segments(101, parts["cuts"], parts["noCoverage"]) == [[0, 21], [61, 100]], parts
     # 16 pairs in a row that match nothing (15 frames, short of MATCHLESS_RUN) hold half the window around their middle:
     # unless they leave the median it falls to theirs, and the middle frames would make a shot of their own
     matchless = np.full(60, 600.)

@@ -3,8 +3,9 @@ capture acting as that phone, and a worker that keeps an incremental TSDF and em
 The device's metric poses and LiDAR depth are used as they come: no SLAM, no model, no scale fit.
 
 The phone stream contract (header keys, blobs, the one codec) is ehs_spatial/phone_stream.py. The phone sends at most
-RATE_HZ of its 60 Hz frames. Only a 'normal' frame with an int worldOriginEpoch and a rigid pose is integrated; every
-other frame is a coverage gap. Each epoch is its own submap, never fused with another. The worker takes the newest
+RATE_HZ of its 60 Hz frames. Only a frame phone_stream.credible() passes ('normal' tracking, an int worldOriginEpoch, a
+rigid pose, K and rgb of the 640x480 raster: the people loop's own rule) is integrated; every other frame is a coverage
+gap, under credible()'s reason. Each epoch is its own submap, never fused with another. The worker takes the newest
 waiting message and drops the older ones (latest frame wins); each dropped run is a coverage gap.
 
 Submap output, OUTPUT/submap-EPOCH/: submap.json (epoch, voxel_size); patches/NNNNNN.npz, every block touched since the
@@ -47,7 +48,7 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from ehs_spatial.phone_stream import TRACKING_NORMAL, depth_mm, header, pack, pose, unpack  # noqa: E402  (the Modal image carries it too)
+from ehs_spatial.phone_stream import credible, depth_mm, header, pack, unpack  # noqa: E402  (the Modal image carries it too)
 
 VOXEL = .02  # m; one lowres LiDAR pixel covers 1.4 cm at 3 m
 TRUNC_VOXELS = 4.
@@ -425,18 +426,14 @@ def serve(conn, output, max_blocks=MAX_BLOCKS, sink=None):
             gap("dropped", t)
         if message is not None:
             t0 = time.perf_counter()
-            head, _, depth, confidence = unpack(message)
-            t, epoch, state = head["t_capture"], head.get("worldOriginEpoch"), head.get("trackingState")
+            head, rgb, depth, confidence = unpack(message)
+            t, epoch = head["t_capture"], head.get("worldOriginEpoch")
             first = t if first is None else first
-            c2w, depth = pose(head), depth_mm(depth, confidence)
-            if not isinstance(epoch, int):  # a missing field is not a credible pose either
-                gap("noEpoch", t)
-            elif state != TRACKING_NORMAL:
-                gap(f"{state}:{head.get('trackingStateReason')}", t)
+            (why, c2w, _), depth = credible(head, rgb), depth_mm(depth, confidence)
+            if why:  # tracking, epoch, pose, K or rgb: no credible place to integrate at
+                gap(why, t)
             elif live and epoch < live.epoch:
                 gap("epochWentBack", t)
-            elif c2w is None:  # null, NaN or not a rotation: no place to integrate at
-                gap("badPose", t)
             elif depth is None:
                 gap("noDepth", t)
             else:
@@ -754,8 +751,8 @@ def self_check():
         assert len(stats["submaps"]) == 3 and stats["frames_integrated"] == 8 and stats["submaps"][2]["patches"] == 0, stats
         z = [surface_points(*load_store(Path(directory) / "contract" / f"submap-{e}"))[:, 2] for e in (0, 1)]
         assert len(z[0]) and len(z[1]) and np.abs(z[0] - 2).max() < .02 and np.abs(z[1] - 3).max() < .02, (np.unique(z[0].round(2)), np.unique(z[1].round(2)))
-        assert stats["coverage_gap_frames"] == {"limited:excessiveMotion": 4, "notAvailable:None": 1, "noEpoch": 1, "epochWentBack": 1, "badPose": 2,
-                                                "noDepth": 1}, stats["coverage_gap_frames"]
+        assert stats["coverage_gap_frames"] == {"ARKit tracking limited (excessiveMotion)": 4, "ARKit tracking notAvailable": 1,
+                                                "world origin epoch not sent": 1, "epochWentBack": 1, "no cameraToWorld": 2, "noDepth": 1}, stats["coverage_gap_frames"]
         assert stats["coverage_gap_runs"] == 2 and stats["coverage_gap_longest_s"] == 5. and stats["first_t_capture"] == 0.  # frames 4 to 9 unbroken, then 14 to 17
         print(f"contract: 8 of 18 frames integrated into 2 submaps and an empty third (walls at {np.median(z[0]):.2f} m and {np.median(z[1]):.2f} m), gaps {stats['coverage_gap_frames']}")
 
@@ -771,6 +768,31 @@ def self_check():
         assert [p["extractable_t_capture"].tolist() for p in patches] == [[], [0., 1., 2.], [3.]], [p["extractable_t_capture"] for p in patches]
         assert not len(surface_points(as_blocks(patches[0]), voxel)) and len(surface_points(as_blocks(patches[1]), voxel))
         assert live.first_3d == live.patches[1]["t_written"] and len(live.latency) == 4
+
+        # a frame counts once EXTRACTABLE_SHARE (90%) of its sampled points are extractable, not a bare majority: a board over
+        # the left 30% of a known wall leaves the frame's other points extractable at once, and the frame waits for the board
+        out = Path(directory) / "share"
+        live, part = LiveMap(out, 5000, voxel, retain=10 ** 6), wall.copy()
+        part[:, :36] = 1500
+        for t, depth in enumerate([wall] * 3 + [part] * 3):
+            live.integrate(depth, k, np.eye(4), float(t))
+            live.emit()
+        live.close()
+        patches = [dict(np.load(p)) for p in sorted((out / "patches").glob("*.npz"))]
+        counted = {float(t): int(p["seq"]) for p in patches for t in p["extractable_t_capture"]}
+        assert counted[3.] == 6, ("the board frame counted before the board was in the map", counted)  # seq 4 is its own patch
+
+        # a frame whose surface never becomes extractable gives up PENDING_S after capture: it counts as never and leaves
+        # the pending list, so pending holds PENDING_S of frames however long the stream runs (a frame every 5 s of a wall
+        # 10 m from the last one, seen once each)
+        live = LiveMap(Path(directory) / "never", 5000, voxel)
+        for t in range(0, 80, 5):
+            away = np.eye(4)
+            away[0, 3] = 2. * t
+            live.integrate(wall, k, away, float(t))
+            live.emit()
+        live.close()
+        assert (live.never, [t for t, _, _ in live.pending]) == (9, [45., 50., 55., 60., 65., 70., 75.]), (live.never, len(live.pending))
 
         # a board stands 1.5 m out, the wall 2 m out shows for 50 frames (carving the board's voxels to free space at full
         # weight), then the board comes back: a returning-board frame counts only in a patch whose map shows the board (a
@@ -845,7 +867,8 @@ def self_check():
     assert head["seq"] == 7 and (rgb, depth, confidence) == (b"j", b"dd", b"")
     print("live map check passed: a moving camera around a box integrates to the box and room surfaces, patches and the block "
           "store rebuild the worker's map exactly, a moved box leaves the map (from evicted blocks too), non-normal poses and "
-          "epochs are kept apart, map latency counts extractable surface, writes are off the frame loop, a static scene's "
+          "epochs are kept apart, map latency counts extractable surface (90% of a frame's points; a frame never extractable "
+          "gives up after 30 s), writes are off the frame loop, a static scene's "
           "disk stays flat, the uplink is paced and the newest frame wins")
 
 

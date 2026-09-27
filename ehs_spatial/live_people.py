@@ -1,10 +1,10 @@
 """Live people/mover loop over the phone's posed RGB-D stream: timestamped 3D person tracks and rule findings.
 
 The stream contract is ehs_spatial/phone_stream.py, the same messages scripts/live_map.py integrates. decode_frame turns
-a message into the frame step() takes. Only a frame with trackingState "normal", in the worldOriginEpoch the floor and
-zone were drawn in, with rgb, a rigid pose and depth covers anything; any other frame is a coverage gap (NO_DATA), never
-an empty scene. Feet go through video.lift_foot and rules through video.judge_frame, so this loop and the offline video
-tier cannot disagree about a rule. State is bounded: speed samples older than two baselines, tracks unseen for
+a message into the frame step() takes. Only a frame phone_stream.credible() passes (the map's own rule), in the
+worldOriginEpoch the floor and zone were drawn in, with rgb and depth, covers anything; any other frame is a coverage gap
+(NO_DATA), never an empty scene. Feet go through video.lift_foot and rules through video.judge_frame, so this loop and
+the offline video tier cannot disagree about a rule. State is bounded: speed samples older than two baselines, tracks unseen for
 TRACK_KEEPALIVE_S and latencies beyond LATENCY_WINDOW frames are dropped.
 
   python -m ehs_spatial.live_people --self-check
@@ -23,7 +23,7 @@ import numpy as np
 from PIL import Image
 from shapely.geometry import Polygon, box
 
-from .phone_stream import TRACKING_NORMAL, depth_mm, header, pack, pose, unpack
+from .phone_stream import credible, depth_mm, header, pack, unpack
 from .providers.sam3 import SAM3_ENDPOINT, decode_coco_rle, sam_backend_revision, sam_subscribe
 from .video import (
     BAND_M, COST_PER_SAM_CALL_USD, MAX_HUMAN_SPEED_MPS, MODAL_L4_USD_PER_S, MODAL_SCALEDOWN_S, NO_DATA, RULE_NAMES,
@@ -36,18 +36,16 @@ LATENCY_WINDOW = 36000  # the last hour of frames at 10 Hz
 
 
 def decode_frame(message: bytes) -> dict:
-    """One stream message -> the frame step() takes: t (t_capture), frame (seq), rgb (HxWx3), K (3x3), cameraToWorld
-    (4x4 metres), depth (metres on its own raster, 0 where missing or below high confidence), and the header's
-    trackingState, trackingStateReason and worldOriginEpoch. A blob or pose that does not decode stays None, so the frame
-    becomes a gap."""
+    """One stream message -> the frame step() takes: t (t_capture), frame (seq), streamGap (phone_stream.credible's
+    reason, None when credible), rgb (HxWx3), K (3x3), cameraToWorld (4x4 metres), depth (metres on its own raster, 0
+    where missing or below high confidence) and the header's trackingState, trackingStateReason and worldOriginEpoch. A
+    blob that does not decode stays None, so the frame becomes a gap."""
     head, rgb, depth, confidence = unpack(message)
-    fx, fy, cx, cy = head["K"]
-    frame = {"t": float(head["t_capture"]), "frame": head.get("seq"), "K": np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1.0]]),
-             **{key: head.get(key) for key in ("trackingState", "trackingStateReason", "worldOriginEpoch")},
-             "rgb": None, "depth": None, "cameraToWorld": pose(head)}
-    image = cv2.imdecode(np.frombuffer(rgb, np.uint8), cv2.IMREAD_COLOR) if rgb else None
-    if image is not None:
-        frame["rgb"] = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    gap, c2w, image = credible(head, rgb)
+    fx, fy, cx, cy = head["K"] if gap is None else (np.nan,) * 4
+    frame = {"t": float(head["t_capture"]), "frame": head.get("seq"), "streamGap": gap, "rgb": image, "depth": None,
+             "K": np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1.0]]), "cameraToWorld": c2w,
+             **{key: head.get(key) for key in ("trackingState", "trackingStateReason", "worldOriginEpoch")}}
     millimetres = depth_mm(depth, confidence)
     if millimetres is not None:
         frame["depth"] = millimetres.astype(np.float32) / 1000.0
@@ -64,8 +62,11 @@ def on_raster(depth: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
 
 
 class Sam3Detector:
-    """SAM 3 text-prompt detection through the providers switch (SAM3_BACKEND), under the hourly spend guard. Returns
-    None when the detector cannot answer and raises BudgetExhausted when the guard has nothing left: both are gaps."""
+    """SAM 3 text-prompt detection through the providers switch (SAM3_BACKEND), under the hourly spend guard for the
+    backends that bill: fal per call (booked before it), our Modal L4 by the second (booked after it, and refused up front
+    once the guard is spent). http is our own GPU server, which nobody bills per call: the guard never charges or stops
+    it. Returns None when the detector cannot answer and raises BudgetExhausted when the guard has nothing left: both are
+    gaps."""
 
     def __init__(self, labels=("person",), subscriber: Callable = sam_subscribe, guard: HourlySpendGuard | None = None,
                  clock: Callable[[], float] = time.monotonic):
@@ -77,10 +78,12 @@ class Sam3Detector:
         Image.fromarray(frame["rgb"]).save(buffer, "JPEG", quality=92)
         uri = "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode()
         height, width = frame["rgb"].shape[:2]
-        modal = self.backend["backend"] == "modal"
+        backend = self.backend["backend"]
+        modal = backend == "modal"
         found = []
         for label in self.labels:
-            self.guard.charge(0.0 if modal else COST_PER_SAM_CALL_USD)  # fal bills per call; Modal after, by the second
+            if backend != "http":  # anything but our own server bills: fal (and a backend we do not know) per call
+                self.guard.charge(0.0 if modal else COST_PER_SAM_CALL_USD)
             started = self.clock()
             try:
                 response = self.subscriber(SAM3_ENDPOINT, arguments={
@@ -160,16 +163,14 @@ class PeopleLoop:
 
     def _gap(self, frame: dict) -> str | None:
         """Why this frame cannot cover a rule before anything is detected; resets state a bad pose would poison."""
-        tracking, epoch = frame.get("trackingState"), frame.get("worldOriginEpoch")
-        if tracking != TRACKING_NORMAL:
+        if frame["streamGap"]:
             for track in self.tracks.values():
                 track["samples"].clear()  # a pose that drifted and then snapped back must not feed a speed
-            why = frame.get("trackingStateReason")
-            return f"ARKit tracking {tracking or 'state not sent'}" + (f" ({why})" if why else "")
-        if epoch != self.world_epoch:
+            return frame["streamGap"]
+        if frame["worldOriginEpoch"] != self.world_epoch:  # an int: credible() refused anything else
             self.tracks.clear()  # positions from another world origin are not comparable
-            return f"world origin epoch {'not sent' if epoch is None else epoch}; floor and zone are in {self.world_epoch}"
-        missing = [name for name in ("rgb", "cameraToWorld", "depth") if frame.get(name) is None]
+            return f"world origin epoch {frame['worldOriginEpoch']}; floor and zone are in {self.world_epoch}"
+        missing = [name for name in ("rgb", "depth") if frame.get(name) is None]
         return f"no {' or '.join(missing)}" if missing else None
 
     def step(self, frame: dict) -> tuple[list[dict], list[dict]]:
@@ -398,6 +399,18 @@ def self_check() -> None:
     assert _r1(fresh(large), _message(0.0, rng))[0]["verdict"] == "PASS"
     shadow, rows = _r1(fresh(large), _message(0.0, rng, people=[(0.0, 13.0, 0.6, 0.0, 0.2)], walls=crate))
     assert not rows and shadow["verdict"] == NO_DATA and shadow["reason"] == "zone floor not observed", (shadow, rows)
+    #    A zone, or a part of one, narrower than two grid cells left no 2 x 2 block of hidden cell centres, so it PASSed
+    #    with none of that floor observed: a 0.15 m arm of the seen zone behind a post at z = 7.2, and whole 0.15 m and
+    #    0.05 m strips behind a wall. Their outline samples count too: hidden, NO_DATA; open, PASS.
+    arm = Polygon([(-1, 5), (1, 5), (1, 7), (0.15, 7), (0.15, 10), (0, 10), (0, 7), (-1, 7)])
+    strip = lambda width: Polygon([(-width / 2, 5), (width / 2, 5), (width / 2, 7), (-width / 2, 7)])  # noqa: E731
+    for zone, walls in ((arm, [(7.2, 3.0, 300, 340)]), (strip(0.15), [(4.5, 3.0, 0, 640)]), (strip(0.05), [(4.5, 3.0, 0, 640)])):
+        assert _r1(fresh(zone), _message(0.0, rng))[0]["verdict"] == "PASS", zone
+        narrow = _r1(fresh(zone), _message(0.0, rng, walls=walls))[0]
+        assert narrow["verdict"] == NO_DATA and narrow["reason"] == "zone floor not observed", (zone, narrow)
+    #    A zone half out of the image: the part in view is observed floor, the rest nobody saw. NO_DATA, never PASS.
+    half = _r1(fresh(Polygon([(2, 5), (5, 5), (5, 7), (2, 7)])), _message(0.0, rng))[0]
+    assert half["verdict"] == NO_DATA and half["reason"] == "zone floor not observed", half
 
     # 4. A person who cannot be placed is never nobody. In the zone: a 10 px head whose lowest pixel is above the
     #    horizon, a 10 px blob below it, and a head over a shelf (camera 1.2 m, shelf 1.25 m at z = 4.5) all make R1
@@ -412,6 +425,10 @@ def self_check() -> None:
     assert shelf.last_verdict["R3_speed"][0] == "NEEDS_REVIEW"  # nobody knows how fast an unplaced person moves
     aside, rows = _r1(fresh(_SEEN_ZONE), _message(0.0, rng, 1.2, [(-3.0, 6.0, 1.75, 1.25, 0.2)], [(4.5, 1.25, 0, 80)]))
     assert aside["verdict"] == "PASS" and rows[0]["review"] == ["foot_above_horizon"] and not rows[0]["nearZone"], rows
+    #    Near means within the position band of the zone: a head 0.3 m outside it (u 445-455, past the zone's own image
+    #    hull at u 440) is someone who could be in the zone, so R1 is NEEDS_REVIEW.
+    beside, rows = _r1(fresh(_SEEN_ZONE), _message(0.0, rng, people=[(1.3, 6.0, 1.75, 1.66, 0.05)]))
+    assert beside["verdict"] == "NEEDS_REVIEW" and rows[0]["nearZone"] and rows[0]["review"] == ["foot_above_horizon"], (beside, rows)
 
     # 5. An assumed scale decides nothing: a 2.5 m/s speed FAIL and a zone entry FAIL become NEEDS_REVIEW.
     fast, found = fresh(None, stated), []
@@ -428,7 +445,25 @@ def self_check() -> None:
                                   guard=HourlySpendGuard(0.02))
     broke.detector.backend = {"backend": "fal", "model_revision": "test"}
     found = [broke.step(decode_frame(_message(float(t), rng)[0]))[1] for t in range(3)]
-    assert found[2][0]["verdict"] == NO_DATA and found[2][0]["reason"].startswith("detector budget exhausted"), found
+    assert found[2][0]["verdict"] == NO_DATA and found[2][0]["reason"] == (
+        "detector budget exhausted (budget cap: $0.02 of the $0.02/hour SAM spend guard spent in the last hour)"), found
+    #    Our Modal L4 bills after the call, so it books nothing up front, but a spent guard refuses it before it starts;
+    #    http is our own GPU server, billed by nobody per call: a spent guard neither stops nor charges it.
+    asked = []
+
+    def answer(endpoint, arguments):
+        asked.append(endpoint)
+        return {"rle": [], "scores": []}
+    for backend in ("modal", "http"):
+        spent = Sam3Detector(subscriber=answer, guard=HourlySpendGuard(0.0))
+        spent.backend = {"backend": backend, "model_revision": "test"}
+        try:
+            assert spent({"rgb": np.zeros((8, 8, 3), np.uint8)}) == [] and backend == "http", f"{backend} ran on a spent guard"
+        except BudgetExhausted:
+            assert backend == "modal", "the spend guard stopped our own http server, which nobody bills per call"
+            assert not asked, "the Modal call started before the guard refused it"
+        assert not spent.guard.spent
+    assert len(asked) == 1
     unscored = Sam3Detector(subscriber=lambda endpoint, arguments: {"rle": ['{"size": [8, 8], "counts": [0, 64]}']},
                             guard=HourlySpendGuard(1.0))
     unscored.backend = {"backend": "fal", "model_revision": "test"}
@@ -470,9 +505,10 @@ def self_check() -> None:
     spent = latency_summary(slow)
     assert spent["detector"]["p50"] >= 0.05 > spent["covered_frames_without_detector"]["p95"], spent
     print("live people check passed: stream contract decoded (mm depth at 256x192); 1 Hz = 5 Hz verdicts; no pose, "
-          "limited tracking, a new world epoch, a hidden zone floor or a footprint-sized shadow in it, an offline or "
-          "broke detector are NO_DATA; unplaceable people near the zone are NEEDS_REVIEW; assumed metres decide "
-          "nothing; tracking loss and a new epoch reset tracks; state stays bounded")
+          "limited tracking, a new world epoch, a hidden zone floor, a footprint-sized shadow in it, a hidden narrow zone "
+          "or arm, a zone half out of view, an offline or broke detector are NO_DATA; unplaceable people within the band "
+          "of the zone are NEEDS_REVIEW; a spent guard stops Modal before the call and never stops our own http server; "
+          "assumed metres decide nothing; tracking loss and a new epoch reset tracks; state stays bounded")
 
 
 if __name__ == "__main__":

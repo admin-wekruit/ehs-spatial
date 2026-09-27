@@ -208,7 +208,8 @@ class HourlySpendGuard:
         left = self.remaining()
         if left <= 1e-9 or usd > left + 1e-9:
             raise BudgetExhausted(
-                f"budget cap: ${usd:.2f} more would pass the ${self.usd_per_hour:.2f}/hour SAM spend guard"
+                f"budget cap: ${self.usd_per_hour - left:.2f} of the ${self.usd_per_hour:.2f}/hour SAM spend guard spent "
+                "in the last hour" + (f", ${left:.2f} left for a ${usd:.2f} call" if left > 1e-9 else "")
             )
         if usd:
             self.record(usd)
@@ -958,17 +959,19 @@ def frame_health(gray: np.ndarray, previous: np.ndarray | None) -> str | None:
 
 def zone_floor_points(zone: Polygon) -> tuple[np.ndarray, np.ndarray]:
     """The zone floor's samples: (n, 3) points (x, y, height 0), its outline ZONE_SAMPLE_M apart and then the centres of
-    the ZONE_SAMPLE_M grid cells inside it; and (n, 2) int grid cells of those points, (-1, -1) on the outline.
+    the ZONE_SAMPLE_M grid cells inside it; and (n, 2) int grid cells of those points. An outline sample sits in the cell
+    it falls in, so a part of the zone narrower than two cells, which few or no cell centres fall in, is still sampled.
     ponytail: every cell of the zone, so the cost grows with its area (64 a square metre); fine for keep-clear zones."""
     step = ZONE_SAMPLE_M
     outline = shapely.get_coordinates(shapely.line_interpolate_point(zone.exterior, np.arange(0, zone.exterior.length, step)))
     minx, miny, maxx, maxy = zone.bounds
-    cols, rows = (g.ravel() for g in np.meshgrid(np.arange(int(np.ceil((maxx - minx) / step))),
-                                                   np.arange(int(np.ceil((maxy - miny) / step)))))
+    shape = np.maximum(np.ceil([(maxx - minx) / step, (maxy - miny) / step]).astype(int), 1)
+    cols, rows = (g.ravel() for g in np.meshgrid(np.arange(shape[0]), np.arange(shape[1])))
     xs, ys = minx + (cols + 0.5) * step, miny + (rows + 0.5) * step
     inside = shapely.contains_xy(zone, xs, ys)
     xy = np.vstack([outline, np.c_[xs[inside], ys[inside]]])
-    cells = np.vstack([np.full((len(outline), 2), -1), np.c_[cols[inside], rows[inside]]]).astype(int)
+    edge = np.clip(np.floor((outline - [minx, miny]) / step).astype(int), 0, shape - 1)
+    cells = np.vstack([edge, np.c_[cols[inside], rows[inside]]]).astype(int)
     return np.c_[xy, np.zeros(len(xy))], cells
 
 
@@ -995,8 +998,10 @@ def zone_floor_seen(points: np.ndarray, cells: np.ndarray, K: np.ndarray, depth:
     zone_floor_points' (points moved into the camera frame). Every point must project in front of the camera and inside
     the image. A sample is observed when the depth there reaches the floor (nothing nearer by more than lift_foot's
     occlusion margin) and no detection covers its pixel (blocked, for a static depth plate that cannot see a passing
-    occluder). Isolated unobserved samples are sensor noise; a 2 x 2 block of neighbouring unobserved grid samples is
-    floor where a PERSON_FOOTPRINT_M footprint could hide, so the zone is not seen.
+    occluder). A cell is hidden when any of its samples is. An isolated hidden cell is sensor noise; a 2 x 2 block of cells
+    whose sampled cells are all hidden is floor where a PERSON_FOOTPRINT_M footprint could hide, so the zone is not seen.
+    Cells no sample falls in are not zone, so a part of the zone one cell wide (a zone one cell wide: 1 x 2 blocks) is
+    judged by its own samples, outline included, and never passes for want of four hidden cells.
     ponytail: a footprint straddling the outline is judged by its part inside the zone only."""
     width, height = image_wh
     if depth is None or (points[:, 2] <= 1e-6).any():
@@ -1010,8 +1015,11 @@ def zone_floor_seen(points: np.ndarray, cells: np.ndarray, K: np.ndarray, depth:
     seen = (observed > 0) & (expected - observed <= np.maximum(OCCLUSION_MARGIN_M, DEPTH_RELATIVE * expected))  # NaN: unseen
     if blocked is not None:
         seen &= ~blocked[v, u]
-    hidden = set(map(tuple, cells[~seen & (cells[:, 0] >= 0)].tolist()))
-    return not any((i + 1, j) in hidden and (i, j + 1) in hidden and (i + 1, j + 1) in hidden for i, j in hidden)
+    sampled, clear = np.zeros((2, *np.maximum(cells.max(0) + 1, 2)), bool)  # at least 2 x 2: a one-cell-wide zone has blocks
+    sampled[tuple(cells.T)] = clear[tuple(cells.T)] = True
+    clear[tuple(cells[~seen].T)] = False
+    block = lambda a: a[:-1, :-1] | a[1:, :-1] | a[:-1, 1:] | a[1:, 1:]  # noqa: E731  any cell of each 2 x 2 block
+    return not (block(sampled) & ~block(clear)).any()
 
 
 def track_speed(samples: Sequence[tuple[float, tuple[float, float]]], t: float) -> tuple[float | None, str | None]:

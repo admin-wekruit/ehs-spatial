@@ -81,3 +81,28 @@ def test_a_bad_pose_or_confidence_plane_is_no_data():
     assert (got == np.where(levels == 2, 1500, 0)).all()  # only high confidence stays
     assert phone_stream.depth_mm(depth, cv2.imencode(".png", np.full((2, 2), 2, np.uint8))[1].tobytes()) is None
     assert phone_stream.depth_mm(cv2.imencode(".png", np.full((4, 4), 9, np.uint8))[1].tobytes()) is None  # not millimetres
+
+
+def test_both_consumers_call_the_same_frames_gaps(tmp_path):
+    """Each consumer coded the credibility rule itself and they disagreed: epoch 0.0 PASSed the people loop while the map
+    recorded a gap, epoch False was integrated into 'submap-False', and neither checked that K and rgb belong to the
+    640x480 raster (ARKit's own K is for 1920x1440: rays 3x off). Both now ask phone_stream.credible: each of these is a
+    gap in both, under the same reason, and the well-formed frame is covered by both."""
+    rng = np.random.default_rng(0)
+    head, rgb, depth, levels = phone_stream.unpack(live_people._message(0.0, rng)[0])
+    full = cv2.imencode(".jpg", cv2.resize(cv2.imdecode(np.frombuffer(rgb, np.uint8), cv2.IMREAD_COLOR), (1920, 1440)))[1].tobytes()
+    cases = [({}, rgb), ({"worldOriginEpoch": 0.0}, rgb), ({"worldOriginEpoch": False}, rgb), ({"worldOriginEpoch": "0"}, rgb),
+             ({"worldOriginEpoch": None}, rgb), ({"trackingState": "limited"}, rgb), ({"cameraToWorld": [float("nan")] * 16}, rgb),
+             ({"K": [1800.0, 1800.0, 960.0, 720.0]}, rgb), ({"K": [300.0, 300.0, 160.0, 120.0]}, rgb), ({}, full), ({}, b"not a jpeg")]
+    measured = contract_scale({"scale_status": "device_metric", "metres_per_native_unit": 1.0})
+    for n, (change, image) in enumerate(cases):
+        message = phone_stream.pack({**head, **change}, image, depth, levels)
+        mapped = live_map.serve(OneAtATime([message, b""]), tmp_path / str(n), 5000)
+        people = live_people.PeopleLoop([0, 0, 0], [0, -1, 0], measured, lambda frame: [], live_people._SEEN_ZONE)
+        people.step(live_people.decode_frame(message))
+        if n == 0:
+            assert mapped["frames_integrated"] == 1 and not people.gaps and people.last_verdict["R1_zone"][0] == "PASS"
+            continue
+        assert mapped["frames_integrated"] == 0 and not list((tmp_path / str(n)).glob("submap-*")), (change, mapped)
+        assert people.last_verdict["R1_zone"][0] == "NO_DATA", (change, people.last_verdict)
+        assert list(people.gaps) == list(mapped["coverage_gap_frames"]), (change, dict(people.gaps), mapped["coverage_gap_frames"])
