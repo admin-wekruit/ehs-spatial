@@ -1,16 +1,24 @@
 """Split a clip into its shots before anything reconstructs it: an edited video's cut makes one walk out of two places.
 
 Every consecutive frame pair is matched (ORB, 1000 features, cross-checked Hamming) and a RANSAC homography counts the
-inliers. Inside one shot the count moves with texture and speed, so it is judged against its own neighbourhood: a pair
-is low when it falls below CUT_SHARE of the median over +-WINDOW pairs and below CUT_ABSOLUTE. A low pair seeds a
-transition that grows to the neighbouring pairs still under FADE_SHARE of their median (a dissolve fades in and out
-around its low middle; a hard cut's neighbours are normal). One pair is a cut; two or more are a fade, and the frames
-inside a fade belong to no shot. Segments are the shots between them.
+inliers. Still matches in a thin band are dropped first: burned-in captions, logos and clocks survive a cut (39 of the 40
+inliers across ME340's cut at 226 sat on the caption line). Each test is judged against the clip's own +-WINDOW pairs,
+because texture and speed set the scale:
 
+  no coverage  a frame with < BLANK_KEYPOINTS keypoints (black, flat, defocused) belongs to no shot and its pairs leave
+               every median, so a long black gap can neither pull the median to zero nor join the shots around it;
+  cut / fade   a pair below CUT_SHARE of the median and below CUT_ABSOLUTE seeds a transition that grows to the
+               neighbouring pairs still under FADE_SHARE; one pair is a cut, two or more a fade (frames of no shot);
+  jump         the pair's inliers land >= JUMP_PX and >= JUMP_RATIO x the local median away from where both neighbour
+               pairs' homographies put them: the camera jumped inside a place that still matches;
+  dissolve     frames SPAN apart fall below SPAN_SHARE of their median (and CUT_ABSOLUTE) while the chained pair
+               homographies say >= SPAN_OVERLAP of the view is shared: the picture changed, the camera did not move.
+               Only where no other test explains the span; the frames inside every low span are a fade.
+
+A shot shorter than MIN_SHOT frames between two transitions is part of them (a dim frame at the edge of a black gap).
 Measured on the five delivered clips (every frame): exactly ME340 {14, 226}, Sam's Club {420}, Walmart {383}, Lightning
-none; the nearest miss inside a shot is Walmart's bare floor at 0.30 of its median. On real-frame splices: 20/20 hard
-cuts (one as a 1-frame fade: a blurred frame next to the cut). A dissolve is found only when its inliers dip:
-4 of 20 real-frame 15-frame dissolves (the synthetic one in --self-check is found).
+none, and on 100 real-frame splices (hard cuts, same-place jumps, 15/30-frame dissolves, black/grey/defocused gaps) in
+research-notes/phase2/runs/m0-cut-eval-320.
 
   python scripts/detect_shot_cuts.py --clip CLIP_DIR --output segments.json
   python scripts/detect_shot_cuts.py --self-check
@@ -24,6 +32,10 @@ import numpy as np
 
 CUT_SHARE, CUT_ABSOLUTE, FADE_SHARE, WINDOW = .1, 100, .5, 15
 RANSAC_PX, FEATURES = 3., 1000
+BLANK_KEYPOINTS, MIN_SHOT = 10, 3
+OVERLAY_PX, OVERLAY_BAND = 1.5, .1
+GEOMETRY_INLIERS, JUMP_PX, JUMP_RATIO = 12, 2., 10.
+SPAN, SPAN_SHARE, SPAN_OVERLAP = 8, .15, .75
 
 
 def features(gray):
@@ -31,38 +43,110 @@ def features(gray):
     return np.float32([k.pt for k in keys]).reshape(-1, 2), desc
 
 
-def inliers(a, b):
-    """Homography RANSAC inliers between two frames' ORB features (0 when either has too few)."""
+def match(a, b, height):
+    """(inlier points in a, in b, homography or None) between two frames' ORB features. Still matches (<= OVERLAY_PX)
+    whose rows span < OVERLAY_BAND of the height are overlay, not scene, and are dropped before RANSAC."""
     (pa, da), (pb, db) = a, b
+    empty = np.zeros((0, 2), np.float32)
     if da is None or db is None or min(len(da), len(db)) < 4:
-        return 0
+        return empty, empty, None
     m = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True).match(da, db)
-    if len(m) < 4:
-        return 0
-    _, keep = cv2.findHomography(pa[[x.queryIdx for x in m]], pb[[x.trainIdx for x in m]], cv2.RANSAC, RANSAC_PX)
-    return 0 if keep is None else int(keep.sum())
+    qa, qb = pa[[x.queryIdx for x in m]], pb[[x.trainIdx for x in m]]
+    still = np.linalg.norm(qb - qa, axis=1) <= OVERLAY_PX
+    # ponytail: a band test; an overlay taller than a tenth of the frame (a caption block) still counts as scene
+    if still.sum() >= 4 and np.ptp(np.percentile(qa[still, 1], [10, 90])) < OVERLAY_BAND * height:
+        qa, qb = qa[~still], qb[~still]
+    if len(qa) < 4:
+        return empty, empty, None
+    H, keep = cv2.findHomography(qa, qb, cv2.RANSAC, RANSAC_PX)
+    if keep is None:
+        return empty, empty, None
+    keep = keep.ravel() > 0
+    return qa[keep], qb[keep], H
 
 
-def pair_inliers(frames):
-    """inliers[k] is the pair (frame k, frame k+1), for an iterable of grayscale frames."""
-    out, last = [], None
+def measure(frames):
+    """Per frame keypoints; per pair k (frame k, k+1) inliers, homography (None under GEOMETRY_INLIERS) and jump (px);
+    per span (k, k+SPAN) inliers. Streams: only the last SPAN frames' features and two pairs' points are held."""
+    kept, keypoints, inliers, homographies, jump, spans, last = [], [], [], [], [], [], []
     for gray in frames:
         now = features(gray)
-        if last is not None:
-            out.append(inliers(last, now))
-        last = now
-    return np.array(out, float)
+        if kept:
+            a, b, H = match(kept[-1], now, gray.shape[0])
+            inliers.append(len(a))
+            homographies.append(H if len(a) >= GEOMETRY_INLIERS else None)
+            jump.append(np.nan)
+            last = (last + [(a, b)])[-2:]
+            if len(last) == 2:                   # pair k-1 is now between two known pairs
+                k = len(inliers) - 2
+                (pa, pb), near = last[0], [homographies[i] for i in (k - 1, k + 1) if i >= 0 and homographies[i] is not None]
+                if homographies[k] is not None and near:
+                    jump[k] = min(np.median(np.linalg.norm(cv2.perspectiveTransform(pa[None], h)[0] - pb, axis=1)) for h in near)
+        if len(kept) == SPAN:
+            spans.append(len(match(kept[0], now, gray.shape[0])[0]))
+        kept = (kept + [now])[-SPAN:]
+        keypoints.append(len(now[0]))
+        shape = gray.shape
+    return {"keypoints": np.array(keypoints), "inliers": np.array(inliers, float), "homographies": homographies,
+            "jump": np.array(jump, float), "spans": np.array(spans, float), "shape": shape}
 
 
-# ponytail: pair inliers only, so a dissolve that keeps matching passes as one shot; a learned shot-boundary model is the upgrade
-def transitions(counts):
-    """(cuts, fades) from pair inlier counts. A cut is the first frame of the new shot; a fade is [first, last] frame
-    that belongs to neither shot. Also returns the per-pair local median."""
-    n = len(counts)
-    median = np.array([np.median(counts[max(0, k - WINDOW):k + WINDOW + 1]) for k in range(n)])
-    low = (counts < CUT_SHARE * median) & (counts < CUT_ABSOLUTE)
-    soft = counts < FADE_SHARE * median
-    cuts, fades, k = [], [], 0
+def local_median(values):
+    """Median over +-WINDOW, ignoring NaN (pairs of blank frames); NaN where the whole window is NaN."""
+    out = np.full(len(values), np.nan)
+    for k in range(len(values)):
+        w = values[max(0, k - WINDOW):k + WINDOW + 1]
+        if np.isfinite(w).any():
+            out[k] = np.nanmedian(w)
+    return out
+
+
+def signals(m):
+    """What the rules read: blank frames; per pair inliers and jump, NaN where a pair touches a blank frame; per span
+    inliers and the share of the view the chained pair homographies keep over it."""
+    blank = m["keypoints"] < BLANK_KEYPOINTS
+    touch = blank[:-1] | blank[1:]
+    inliers, jump = np.where(touch, np.nan, m["inliers"]), np.where(touch, np.nan, m["jump"])
+    h, w = m["shape"]
+    gx, gy = np.meshgrid((np.arange(16) + .5) * w / 16, (np.arange(12) + .5) * h / 12)
+    grid = np.float32(np.c_[gx.ravel(), gy.ravel()])[None]
+    spans, overlap = m["spans"].copy(), np.full(len(m["spans"]), np.nan)
+    for k in range(len(spans)):
+        if blank[k] or blank[k + SPAN]:
+            spans[k] = np.nan
+        chain = np.eye(3)
+        for H in m["homographies"][k:k + SPAN]:
+            chain = None if H is None or chain is None else H @ chain
+        if chain is not None:
+            p = cv2.perspectiveTransform(grid, chain)[0]
+            overlap[k] = np.mean((p[:, 0] >= 0) & (p[:, 0] < w) & (p[:, 1] >= 0) & (p[:, 1] < h))
+    return {"blank": blank, "inliers": inliers, "jump": jump, "spans": spans, "overlap": overlap}
+
+
+def scores(s):
+    """Per pair (cut, jump) and per span (dissolve): the test's value over its firing level, >= 1 fires (the CUT_ABSOLUTE
+    gate aside). The largest score outside every transition is how close a clip came to a false one."""
+    with np.errstate(invalid="ignore", divide="ignore"):
+        cut = CUT_SHARE * local_median(s["inliers"]) / s["inliers"]
+        jump = np.minimum(s["jump"] / JUMP_PX, s["jump"] / (JUMP_RATIO * local_median(s["jump"])))
+        span = np.where(s["overlap"] >= SPAN_OVERLAP, SPAN_SHARE * local_median(s["spans"]) / s["spans"], 0)
+    return cut, jump, span
+
+
+def runs(mask):
+    """[first, last] of every run of True."""
+    edges = np.flatnonzero(np.diff(np.r_[0, np.asarray(mask, int), 0]))
+    return [[int(a), int(b) - 1] for a, b in zip(edges[::2], edges[1::2])]
+
+
+def transitions(s):
+    """{'cuts', 'fades', 'noCoverage', 'why'} from signals. A cut is the first frame of the new shot; a fade and a
+    no-coverage run are [first, last] frames that belong to no shot; 'why' names the test behind each."""
+    cut, jump, span = scores(s)
+    counts, n = s["inliers"], len(s["inliers"])
+    low, soft = (cut >= 1) & (counts < CUT_ABSOLUTE), cut >= CUT_SHARE / FADE_SHARE
+    blank = runs(s["blank"])
+    cuts, fades, why, k = [], [], {f"{a}-{b}": "no coverage" for a, b in blank}, 0
     while k < n:
         if not low[k]:
             k += 1
@@ -74,35 +158,64 @@ def transitions(counts):
             b += 1
         if a == b:
             cuts.append(a + 1)                  # pair (a, a+1): frame a+1 opens the new shot
+            why[str(a + 1)] = "inliers"
         else:
             fades.append([a + 1, b])            # frames a+1..b sit between two low pairs
+            why[f"{a + 1}-{b}"] = "inliers"
         k = b + 1
-    return cuts, fades, median
+    for k in map(int, np.flatnonzero(jump >= 1)):
+        if k + 1 in cuts:
+            why[str(k + 1)] += "+jump"
+        elif not any(a - 1 <= k <= b for a, b in fades + blank):
+            cuts.append(k + 1)
+            why[str(k + 1)] = "jump"
+    broken = (span >= 1) & (s["spans"] < CUT_ABSOLUTE)
+    for k0, k1 in runs(broken):
+        # spans k0..k1 reach frames k0..k1+SPAN; a transition another test found in there explains them
+        if any(k0 < c <= k1 + SPAN for c in cuts) or any(a <= k1 + SPAN and b > k0 for a, b in fades + blank):
+            continue
+        a, b = k1 + 1, k0 + SPAN - 1            # the frames strictly inside every low span
+        if a <= b:
+            fades.append([a, b])
+            why[f"{a}-{b}"] = "dissolve"
+        else:
+            cuts.append((k0 + k1 + SPAN + 1) // 2)
+            why[str(cuts[-1])] = "dissolve"
+    return {"cuts": sorted(cuts), "fades": sorted(fades), "noCoverage": blank, "why": why}
 
 
-def segments(n_frames, cuts, fades):
-    """Inclusive [first, last] shots: every frame outside a fade, split at cuts and fades."""
-    starts = sorted([0] + cuts + [b + 1 for _, b in fades])
-    stops = sorted([c - 1 for c in cuts] + [a - 1 for a, _ in fades] + [n_frames - 1])
-    return [[s, e] for s, e in zip(starts, stops) if e >= s]
+def segments(n_frames, cuts, gaps):
+    """Inclusive [first, last] shots of >= MIN_SHOT frames: every frame outside the gaps (fades, no coverage), split at cuts."""
+    shot = np.ones(n_frames, bool)
+    for a, b in gaps:
+        shot[a:b + 1] = False
+    edges = sorted({0, n_frames, *cuts, *[a for a, _ in gaps], *[b + 1 for _, b in gaps]})
+    return [[s, e - 1] for s, e in zip(edges, edges[1:]) if shot[s] and e - s >= MIN_SHOT]
+
+
+def closest(s, t):
+    """The highest score each test reached outside every transition (1 would have fired)."""
+    inside = np.zeros(len(s["inliers"]), bool)
+    for c in t["cuts"]:
+        inside[c - 1] = True
+    for a, b in t["fades"] + t["noCoverage"]:
+        inside[max(a - 1, 0):b + 1] = True
+    out = {}
+    for name, score, hit in zip(("cut", "jump", "dissolve"), scores(s),
+                                (inside, inside, np.array([inside[k:k + SPAN].any() for k in range(len(s["spans"]))], bool))):
+        score = np.where(hit | ~np.isfinite(score), -np.inf, score)
+        if np.isfinite(score).any():
+            k = int(np.argmax(score))
+            out[name] = {"pair" if name != "dissolve" else "spanFrom": k, "score": round(float(score[k]), 3)}
+    return out
 
 
 def detect(frames):
-    counts = pair_inliers(frames)
-    cuts, fades, median = transitions(counts)
-    ratio = counts / np.maximum(median, 1)
-    flagged = np.zeros(len(counts), bool)
-    for c in cuts:
-        flagged[c - 1] = True
-    for a, b in fades:
-        flagged[a - 1:b + 1] = True
-    closest = int(np.argmin(np.where(flagged, np.inf, ratio))) if (~flagged).any() else None
-    return {"frames": len(counts) + 1, "cuts": cuts, "fades": fades, "segments": segments(len(counts) + 1, cuts, fades),
-            "closestNonTransition": None if closest is None else {"frame": closest + 1, "inliers": int(counts[closest]),
-                                                                  "localMedian": float(median[closest]), "share": round(float(ratio[closest]), 3)},
-            "transitionShares": {str(c): round(float(ratio[c - 1]), 3) for c in cuts} |
-                                {f"{a}-{b}": round(float(ratio[a - 1:b + 1].min()), 3) for a, b in fades},
-            "inliers": counts.astype(int).tolist()}
+    s = signals(measure(frames))
+    t = transitions(s)
+    n = len(s["blank"])
+    return {"frames": n, **t, "segments": segments(n, t["cuts"], t["fades"] + t["noCoverage"]), "closestNonTransition": closest(s, t),
+            "inliers": [None if np.isnan(x) else int(x) for x in s["inliers"]]}
 
 
 def clip_frames(clip):
@@ -111,8 +224,9 @@ def clip_frames(clip):
 
 
 def self_check():
-    """Three synthetic walks over different random textures (TUM raster) spliced by a hard cut, a 15-frame dissolve and
-    a fade through black; then the rule alone on known counts, including Walmart's bare-floor stretch that is no cut."""
+    """Synthetic walks over random textures spliced by a hard cut, a 15-frame dissolve, a fade through black, a 20-frame
+    black gap, a same-place jump and a 30-frame dissolve; a cut under a caption; then the rules alone on known signals,
+    including Walmart's bare-floor stretch that is no cut."""
     rng = np.random.default_rng(0)
 
     def walk(seed, count, dx, dy, zoom):
@@ -122,30 +236,57 @@ def self_check():
         return [cv2.warpPerspective(big, np.array([[1 + i * zoom, .01, -dx * i - 200], [-.01, 1 + i * zoom, -dy * i - 200], [0, 0, 1]]),
                                     (640, 480)) for i in range(count)]
 
-    a, b, c = walk(1, 40, 4, 1.6, .002), walk(2, 75, -3, 2, -.001), walk(3, 48, 2, -3, .003)
+    a, b, c = walk(1, 150, 4, 1.6, .002), walk(2, 75, -3, 2, -.001), walk(3, 48, 2, -3, .003)
     dissolve = [cv2.addWeighted(b[60 + k], 1 - (k + 1) / 16, c[k], (k + 1) / 16, 0) for k in range(15)]
     black = [cv2.convertScaleAbs(c[40 + k], alpha=1 - k / 7) for k in range(8)] + [cv2.convertScaleAbs(a[k], alpha=k / 7) for k in range(8)]
-    frames = a[:40] + b[:60] + dissolve + c[15:40] + black + a[8:40]  # cut opens 40; dissolve 100-114; black 140-155
+    frames = a[:40] + b[:60] + dissolve + c[15:40] + black + a[8:40] + [np.full_like(a[0], 8)] * 20 + b[:30] + a[70:100] + a[130:150]
+    # cut opens 40; dissolve 100-114; fade through black 140-155; black gap 188-207; b opens 208, a 238; the jump opens 268
     got = detect([np.clip(f + rng.normal(0, 2, f.shape), 0, 255).astype(np.uint8) for f in frames])
-    assert got["cuts"] == [40], got
-    assert len(got["fades"]) == 2, got["fades"]
+    assert got["cuts"] == [40, 238, 268], got
+    assert got["why"]["268"] == "jump", ("a[99] -> a[130] still matches; only its geometry jumps", got["why"])
     (d0, d1), (k0, k1) = got["fades"]
     assert 100 <= d0 and d1 <= 114 and d1 - d0 >= 4, ("the dissolve is a fade inside its blended frames", got["fades"])
     # ponytail: the dissolve's faint ends (alpha <= 3/16 and >= 13/16) stay with their shots; FADE_SHARE is the knob
     assert 140 <= k0 and k1 <= 155, ("the fade through black", got["fades"])
-    assert got["segments"] == [[0, 39], [40, d0 - 1], [d1 + 1, k0 - 1], [k1 + 1, len(frames) - 1]], got["segments"]
-    # the rule alone: lone low pairs are cuts (also at the first pair); a low middle with soft shoulders is one fade
+    assert [188, 207] in got["noCoverage"], ("a 20-frame black gap is no coverage, not the middle of one shot", got["noCoverage"])
+    assert got["segments"][0] == [0, 39] and [188 - 1, 188 - 1] not in got["segments"] and got["segments"][-3:] == [[208, 237], [238, 267], [268, len(frames) - 1]], got["segments"]
+
+    # a 30-frame dissolve keeps every pair matching; only frames SPAN apart stop matching while the camera holds its course
+    slow = walk(4, 90, 1, .5, .0005)
+    mixed = [cv2.addWeighted(slow[45 + k], 1 - (k + 1) / 31, b[k], (k + 1) / 31, 0) for k in range(30)]
+    long = detect(slow[:45] + mixed + b[30:60])
+    assert any(w == "dissolve" for w in long["why"].values()) and len(long["segments"]) == 2, long
+
+    # a cut under a boxed caption that stays on screen: its still matches alone hold the pair at ~300 inliers
+    def caption(img):
+        img = cv2.rectangle(img.copy(), (0, 424), (639, 470), 0, -1)
+        for y, text in ((442, "SO THESE ARE THE ITEMS THAT WE USE FOR ALL THAT"), (464, "and over here we have the lathe, it can't vibrate")):
+            cv2.putText(img, text, (6, y), cv2.FONT_HERSHEY_SIMPLEX, .6, 255, 2)
+        return img
+    captioned = detect([caption(f) for f in a[:30] + c[:30]])
+    assert captioned["cuts"] == [30], ("the caption is overlay, not scene", captioned["cuts"], captioned["inliers"][27:32])
+
+    # the rules alone: lone low pairs are cuts (also at the first pair); a low middle with soft shoulders is one fade
+    def known(counts, spans=None, overlap=1.):
+        n = len(counts)
+        spans = np.full(n - SPAN + 1, 600.) if spans is None else np.asarray(spans, float)
+        return transitions({"blank": np.zeros(n + 1, bool), "inliers": np.asarray(counts, float), "jump": np.ones(n),
+                            "spans": spans, "overlap": np.full(len(spans), overlap)})
     flat = np.full(60, 600.)
     flat[[0, 20]] = 5
-    assert transitions(flat)[:2] == ([1, 21], []), transitions(flat)[:2]
+    assert known(flat)["cuts"] == [1, 21], known(flat)
     flat[20:24] = [250, 20, 10, 280]
-    assert transitions(flat)[:2] == ([1], [[21, 23]]), transitions(flat)[:2]
-    assert segments(61, [1], [[21, 23]]) == [[0, 0], [1, 20], [24, 60]]
+    assert (known(flat)["cuts"], known(flat)["fades"]) == ([1], [[21, 23]]), known(flat)
+    assert segments(61, [1], [[21, 23]]) == [[1, 20], [24, 60]], "frame 0 alone is too short to be a shot"
+    spans = np.full(53, 500.)
+    spans[30:32] = 3
+    assert known(np.full(60, 600.), spans)["fades"] == [[32, 37]], known(np.full(60, 600.), spans)
+    assert known(np.full(60, 600.), spans, overlap=.5)["fades"] == [], "the same span on a fast pan is no dissolve"
     # walmart-190 pairs 590-639 (measured): the camera looks down at a bare floor, the count falls 10x over 12 frames
     floor = [230, 190, 139, 158, 152, 183, 156, 186, 160, 142, 187, 138, 127, 120, 74, 76, 86, 77, 76, 57, 51, 39, 38, 52, 23,
              25, 29, 30, 41, 42, 59, 58, 65, 91, 109, 131, 131, 171, 185, 161, 194, 237, 195, 230, 309, 353, 336, 383, 410, 375]
-    assert transitions(np.array(floor, float))[:2] == ([], []), "a slow fall on a bland view is not a cut"
-    print("detect_shot_cuts self-check: passed", {k: got[k] for k in ("cuts", "fades", "segments", "transitionShares")})
+    assert known(floor)["cuts"] == [] and known(floor)["fades"] == [], "a slow fall on a bland view is not a cut"
+    print("detect_shot_cuts self-check: passed", {k: got[k] for k in ("cuts", "fades", "noCoverage", "segments", "why")})
 
 
 def main():
@@ -156,13 +297,18 @@ def main():
     args = p.parse_args()
     if args.self_check:
         return self_check()
-    result = {"clip": str(args.clip), "rule": {"match": f"ORB {FEATURES}, cross-checked Hamming, RANSAC homography {RANSAC_PX} px",
-                                                "cut": f"inliers < {CUT_SHARE} x median of +-{WINDOW} pairs and < {CUT_ABSOLUTE}",
-                                                "grow": f"neighbouring pairs < {FADE_SHARE} x their median join the transition; one pair is a cut, more is a fade"},
-              **detect(clip_frames(args.clip))}
+    result = {"clip": str(args.clip), "rule": {
+        "match": f"ORB {FEATURES}, cross-checked Hamming, RANSAC homography {RANSAC_PX} px; still matches (<= {OVERLAY_PX} px) in rows spanning < {OVERLAY_BAND} of the height dropped as overlay",
+        "noCoverage": f"frames with < {BLANK_KEYPOINTS} keypoints; their pairs leave every median",
+        "cut": f"inliers < {CUT_SHARE} x median of +-{WINDOW} pairs and < {CUT_ABSOLUTE}",
+        "grow": f"neighbouring pairs < {FADE_SHARE} x their median join the transition; one pair is a cut, more is a fade",
+        "jump": f"inliers >= {JUMP_PX} px and >= {JUMP_RATIO} x the local median from both neighbour homographies ({GEOMETRY_INLIERS}+ inliers each)",
+        "dissolve": f"frames {SPAN} apart < {SPAN_SHARE} x their median and < {CUT_ABSOLUTE} while chained homographies keep >= {SPAN_OVERLAP} of the view",
+        "shot": f">= {MIN_SHOT} frames"},
+        **detect(clip_frames(args.clip))}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=1) + "\n")
-    print(json.dumps({k: result[k] for k in ("clip", "frames", "cuts", "fades", "segments", "closestNonTransition")}))
+    print(json.dumps({k: result[k] for k in ("clip", "frames", "cuts", "fades", "noCoverage", "segments", "why", "closestNonTransition")}))
 
 
 if __name__ == "__main__":
