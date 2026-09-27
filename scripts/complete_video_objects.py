@@ -693,16 +693,36 @@ def box_mesh(points, up, step):
     return vertices @ axes, faces
 
 
+def rectangle_residual(xy, iterations=3):
+    """Median distance of floor-plane points to the nearest side of the best rectangle (yaw swept by degree).
+
+    Each side is re-set to the median of the points nearest it, so it runs through the middle of a noisy face as a
+    fitted circle does; sides at the points' outer percentiles would leave a thick face half its thickness away and
+    make any circle through its middle look twice as good. A flat face is a rectangle with one side on it; a box seen at
+    its corner, an L of two.
+    """
+    best = np.inf
+    for yaw in np.radians(np.arange(90)):
+        local = xy @ np.array([[np.cos(yaw), -np.sin(yaw)], [np.sin(yaw), np.cos(yaw)]])
+        sides = np.r_[np.percentile(local, 1, 0), np.percentile(local, 99, 0)]  # x0, y0, x1, y1
+        for _ in range(iterations):
+            nearest = np.abs(local[:, [0, 1, 0, 1]] - sides).argmin(1)
+            sides = np.array([np.median(local[nearest == k, k % 2]) if (nearest == k).any() else sides[k] for k in range(4)])
+        best = min(best, float(np.median(np.abs(local[:, [0, 1, 0, 1]] - sides).min(1))))
+    return best
+
+
 def cylinder_mesh(points, up, step, trials=500, sample=4000, rounder=.5):
     """Upright (gravity-aligned) cylinder around `points`; ValueError (the reason) when they are not shown to be round.
 
     Circle on the floor plane by RANSAC (3-point circles, most points within `step` of the circle; seeded, so the same
     points give the same model), then least squares on those points: floor spill, a lid or a neighbour projects off
     the circle and pulls nothing (a Cauchy loss for what lands near it). Extents at the 1st/99th height percentiles, at least one `step` tall; faces cut to
-    edges <= `step` for per-vertex colour. Refused: a radius above the arc's own chord (under ~60 degrees of arc, a
-    plane fits as well), and a circle that does not leave under `rounder` of the best rectangle outline's median
-    residual on the same points. The gate's tolerance (a voxel, ~4 cm) cannot tell a square post from a round one: a
-    0.3 m post's faces lie within 1 cm of a circle, so roundness has to be shown here. Returns world vertices and faces.
+    edges <= `step` for per-vertex colour. Refused: a radius above the arc's own chord (under ~60 degrees of arc, the
+    rest would be a guess), and a circle that does not leave under `rounder` of rectangle_residual on the same points
+    (a flat face or a box corner fits as well). The gate's tolerance (a voxel, ~4 cm) cannot tell a square post from a
+    round one: a 0.3 m post's faces lie within 1 cm of a circle, so roundness has to be shown here. Returns world
+    vertices and faces.
     """
     import trimesh
     from scipy.optimize import least_squares
@@ -729,12 +749,7 @@ def cylinder_mesh(points, up, step, trials=500, sample=4000, rounder=.5):
     along = xy[ring] @ np.linalg.svd(xy[ring] - xy[ring].mean(0), full_matrices=False)[2][0]
     if not radius <= np.subtract(*np.percentile(along, [99, 1])):
         raise ValueError(f"radius {radius:.3f} above the arc's chord: too flat to tell from a plane")
-    circle, outline = np.median(np.abs(np.linalg.norm(xy[ring] - [cx, cy], axis=1) - radius)), np.inf
-    for yaw in np.radians(np.arange(90)):  # the best rectangle over yaw (a box seen at its corner is an L of two sides)
-        local = xy[ring] @ np.array([[np.cos(yaw), -np.sin(yaw)], [np.sin(yaw), np.cos(yaw)]])
-        lo, hi = np.percentile(local, [1, 99], 0)
-        inside = np.minimum(local - lo, hi - local).min(1)
-        outline = min(outline, np.median(np.where(inside > 0, inside, np.linalg.norm(np.maximum(np.maximum(lo - local, local - hi), 0), axis=1))))
+    circle, outline = np.median(np.abs(np.linalg.norm(xy[ring] - [cx, cy], axis=1) - radius)), rectangle_residual(xy[ring])
     if not circle < rounder * outline:
         raise ValueError(f"circle residual {circle:.4f} not under {rounder} x the best rectangle's {outline:.4f}: not shown to be round")
     lo, hi = np.percentile(height, [1, 99])
@@ -1354,7 +1369,8 @@ def self_check():
     # and a few stray points 0.6 m above it (a cable), is given back and fits it better than a box does (medians of the
     # held-out half). A 0.3 m square post fits a cylinder at least twice worse than the drum, and worse than its own box;
     # within the gate's tolerance all the same, so it gets no cylinder: not seen from 30 degrees with its top, not at its
-    # corner (an L). A flat face gets none either, nor a 35 degree arc.
+    # corner (an L) under depth noise of half a step (as the scenes' is), where a circle through the middle of the noise
+    # beats sides at its edges. A flat face gets none either, nor a 35 degree arc.
     arc, rise = rng.uniform(np.pi + .2, 2 * np.pi - .2, 4000), rng.uniform(.1, .9, 4000)
     side = np.c_[1 + .15 * np.cos(arc), -rise, 2 + .15 * np.sin(arc)] + rng.normal(0, .002, (4000, 3))
     spoke, around = .15 * np.sqrt(rng.uniform(0, 1, 800)), rng.uniform(0, 2 * np.pi, 800)
@@ -1370,10 +1386,10 @@ def self_check():
     post = trimesh.creation.box(extents=[.3, .8, .3])
     samples, index = trimesh.sample.sample_surface_even(post, 12000, seed=1)
 
-    def seen_post(rotation, top):
+    def seen_post(rotation, top, noise):
         normals = post.face_normals[index] @ rotation.T
         front = (normals[:, 2] < -.1) | top & (normals[:, 1] < -.5)  # the faces a camera at -z (and above) sees
-        return samples[front] @ rotation.T + [1, -.5, 2] + rng.normal(0, .002, (front.sum(), 3))
+        return samples[front] @ rotation.T + [1, -.5, 2] + rng.normal(0, noise, (front.sum(), 3))
 
     def refusal(points):
         try:
@@ -1381,7 +1397,7 @@ def self_check():
         except ValueError as reason:
             return str(reason)
 
-    posts = seen_post(turn, True), seen_post(trimesh.transformations.rotation_matrix(np.pi / 4, [0, 1, 0])[:3, :3], False)
+    posts = seen_post(turn, True, .002), seen_post(trimesh.transformations.rotation_matrix(np.pi / 4, [0, 1, 0])[:3, :3], False, .01)
     post_fit = held_out(lambda *a: cylinder_mesh(*a, rounder=np.inf), posts[0])
     assert post_fit > 2 * drum_fit and held_out(box_mesh, posts[0]) < post_fit, (drum_fit, post_fit)
     assert all("not shown to be round" in (refusal(p) or "") for p in posts), [refusal(p) for p in posts]
