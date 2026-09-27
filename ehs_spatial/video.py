@@ -6,7 +6,10 @@ run dir), ByteTrack identity, then a 3D lift that fits the floor plane from
 MoGe-2 metric mono depth on a few keyframes and ray-casts mask bottom-centers
 to that plane. The three banded temporal rules (keep-clear zone, person-to-
 vehicle min distance, person speed) run on the lifted tracks with the mono
-band (±0.35 m).
+band (±0.35 m). A rule PASSes only on frames that covered it (zone in view, frame
+live, detector answered), a foot point decides only after lift_foot's checks, and
+distance/speed verdicts need measured metres (scale_gated) — the same judge_frame
+serves the live people loop (ehs_spatial/live_people.py).
 
 Accuracy tiers — be honest about which one this is:
 
@@ -23,6 +26,7 @@ Accuracy tiers — be honest about which one this is:
 import json
 import subprocess
 import time
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -37,17 +41,29 @@ from .artifacts import ArtifactStore
 from .contracts import ProviderManifest, RunManifest
 from .providers.base import ProviderError
 from .providers.moge import MOGE_VERSION
-from .providers.sam3 import SAM3_ENDPOINT, decode_coco_rle
+from .providers.sam3 import SAM3_ENDPOINT, decode_coco_rle, sam_backend_revision, sam_subscribe
 from .rules import ERROR_BUDGET_MONO_M
 
-COST_PER_SAM_CALL_USD = 0.01
-MAX_LIVE_CALLS = 150  # hard budget cap per run, same as the POC
+COST_PER_SAM_CALL_USD = 0.01  # fal list price; an upper bound for our own L4 (E)
+# The old 150-call cap in dollars per rolling hour: a live stream is not stopped after 150 frames,
+# and a rerun loop cannot spend 150 fresh calls each time.
+# ponytail: in-process only; a shared ledger once more than one worker spends on one account.
+SAM_SPEND_USD_PER_HOUR = 1.50
 MIN_BOX_HEIGHT_PX = 12
 MOGE_KEYFRAMES = 3
 MIN_FLOOR_INLIER_FRACTION = 0.25
 BAND_M = ERROR_BUDGET_MONO_M  # single-camera tier: ±0.35 m
 R2_MIN_SEPARATION_M = 2.0  # person-to-vehicle keep-apart
 R3_MAX_SPEED_MPS = 1.5  # walking-pace limit
+SPEED_BASELINE_S = 2.0  # speed is a line fitted over at least this long, whatever the sample rate
+SPEED_BAND_MPS = 2 * BAND_M / SPEED_BASELINE_S  # both ends of the baseline off by the band
+MAX_HUMAN_SPEED_MPS = 4.0  # faster than this between two samples is a tracking error, not a person
+PERSON_HEIGHT_M = (1.3, 2.1)  # implied standing height a foot point must explain
+OCCLUSION_MARGIN_M = 0.3  # depth below the foot may be this much nearer than the floor there
+FLOOR_TOLERANCE_M = 0.1  # an observed point this close to the floor plane is floor
+BORDER_PX = 2
+DARK_MEAN = 12.0  # mean grey level (0-255) below which a frame shows nothing
+FROZEN_MEAN_ABS_DIFF = 0.25  # ponytail: uncalibrated; a real stream's noise floor sets it
 PERSON_LABEL = "person"
 
 PASS, FAIL, REVIEW, NO_DATA = "PASS", "FAIL", "NEEDS_REVIEW", "NO_DATA"
@@ -157,10 +173,27 @@ def _cache_path(cache_dir: Path, frame_id: int, label: str) -> Path:
     return cache_dir / f"f{frame_id:06d}__{label.replace(' ', '_')}.json"
 
 
-def _default_sam_subscriber(endpoint: str, *, arguments: dict) -> dict:
-    import fal_client
+class HourlySpendGuard:
+    """Rolling one-hour cap on paid detector calls, checked before money is spent."""
 
-    return fal_client.subscribe(endpoint, arguments=arguments)
+    def __init__(self, usd_per_hour: float = SAM_SPEND_USD_PER_HOUR, clock=time.monotonic) -> None:
+        self.usd_per_hour, self.clock, self.spent = usd_per_hour, clock, deque()
+
+    def remaining(self) -> float:
+        now = self.clock()
+        while self.spent and now - self.spent[0][0] >= 3600:
+            self.spent.popleft()
+        return self.usd_per_hour - sum(cost for _, cost in self.spent)
+
+    def charge(self, usd: float) -> None:
+        if usd > self.remaining() + 1e-9:
+            raise ValueError(
+                f"budget cap: ${usd:.2f} more would pass the ${self.usd_per_hour:.2f}/hour SAM spend guard"
+            )
+        self.spent.append((self.clock(), usd))
+
+
+SAM_SPEND = HourlySpendGuard()  # one per process: the app and a live loop share it
 
 
 def _subscribe_with_backoff(subscriber, prompt: str, image_uri: str) -> dict:
@@ -191,9 +224,11 @@ def sam_stage(
     labels: tuple[str, ...],
     subscriber: Callable[..., dict],
     progress_cb: Callable[[str], None] | None = None,
+    guard: HourlySpendGuard | None = None,
 ) -> tuple[int, list[str]]:
     """Fill the per-frame SAM cache (one prompt per label). Returns
     (live_calls_made, failure keys). Rerunning a cached run costs $0."""
+    guard = guard or SAM_SPEND
     import base64
 
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -203,10 +238,11 @@ def sam_stage(
         for label in labels
         if not _cache_path(cache_dir, frame_id, label).is_file()
     ]
-    if len(planned) > MAX_LIVE_CALLS:
+    if len(planned) * COST_PER_SAM_CALL_USD > guard.remaining() + 1e-9:
         raise ValueError(
-            f"budget cap: {len(planned)} planned SAM calls exceed "
-            f"{MAX_LIVE_CALLS}; reduce sample rate, frames, or labels"
+            f"budget cap: {len(planned)} planned SAM calls exceed the "
+            f"${guard.usd_per_hour:.2f}/hour spend guard (${guard.remaining():.2f} left); "
+            "reduce sample rate, frames, or labels"
         )
     failures: list[str] = []
     calls_made = 0
@@ -218,6 +254,7 @@ def sam_stage(
             "data:image/jpeg;base64,"
             + base64.b64encode(frame_path.read_bytes()).decode()
         )
+        guard.charge(COST_PER_SAM_CALL_USD)
         try:
             response = _subscribe_with_backoff(subscriber, label, uri)
         except Exception as exc:
@@ -435,10 +472,28 @@ class FloorCamera:
             norm = np.linalg.norm(forward)
         self.forward = forward / norm
         self.lateral = np.cross(self.normal, self.forward)
+        self.depth: np.ndarray | None = None  # static depth of the keyframes, set by the floor fit
 
     @property
     def camera_height_m(self) -> float:
         return self.d
+
+    @property
+    def K(self) -> np.ndarray:
+        k = self.intrinsics
+        return np.array([[k["fx"], 0, k["cx"]], [0, k["fy"], k["cy"]], [0, 0, 1.0]])
+
+    def to_floor(self, point: np.ndarray) -> tuple[float, float]:
+        offset = np.asarray(point) - self.origin
+        return float(offset @ self.lateral), float(offset @ self.forward)
+
+    def project(self, xy: tuple[float, float]) -> tuple[float, float] | None:
+        """Floor (x, y) metres -> full-frame pixel, None behind the camera."""
+        point = self.origin + xy[0] * self.lateral + xy[1] * self.forward
+        if point[2] <= 1e-6:
+            return None
+        pixel = self.K @ (point / point[2])
+        return float(pixel[0]), float(pixel[1])
 
     def lift_pixel(self, u: float, v: float) -> tuple[float, float] | None:
         """Full-frame pixel -> (x, y) metres on the floor plane, or None
@@ -550,6 +605,19 @@ def _lower_image_points(
     return points[v > image_size[1] * 0.55]
 
 
+def _static_depth(clouds: list[np.ndarray], K: np.ndarray, image_size: tuple[int, int]) -> np.ndarray:
+    """Farthest surface per pixel over the keyframe clouds: the fixed camera's static depth,
+    so a person standing in one keyframe does not hide the floor behind them."""
+    width, height = image_size
+    depth = np.zeros((height, width))
+    for points in clouds:
+        points = points[np.isfinite(points).all(axis=1) & (points[:, 2] > 1e-6)]
+        pixels = np.rint(points @ K.T / points[:, 2:3]).astype(int)
+        inside = (pixels[:, 0] >= 0) & (pixels[:, 0] < width) & (pixels[:, 1] >= 0) & (pixels[:, 1] < height)
+        np.maximum.at(depth, (pixels[inside, 1], pixels[inside, 0]), points[inside, 2])
+    return depth
+
+
 def fit_floor_from_keyframes(
     frames_dir: Path,
     moge_dir: Path,
@@ -562,6 +630,7 @@ def fit_floor_from_keyframes(
     per-keyframe height spread is reported as a stability signal."""
     keyframes: list[dict] = []
     best: FloorCamera | None = None
+    clouds: list[np.ndarray] = []
     for frame_id in keyframe_ids:
         if progress_cb is not None:
             progress_cb(f"MoGe floor fit (frame {frame_id})")
@@ -576,6 +645,7 @@ def fit_floor_from_keyframes(
         if points is None:
             entry["error"] = "MoGe call or point cloud read failed"
             continue
+        clouds.append(points)
         grid = _organize_cloud(points, image_size)
         if grid is not None:
             intrinsics = fit_pinhole_from_grid(grid)
@@ -650,6 +720,7 @@ def fit_floor_from_keyframes(
             }
         )
         return None, summary
+    best.depth = _static_depth(clouds, best.K, image_size)
     summary.update(
         {
             "fitted": True,
@@ -663,21 +734,93 @@ def fit_floor_from_keyframes(
     return best, summary
 
 
+def lift_foot(
+    bbox: tuple[float, float, float, float],
+    image_wh: tuple[int, int],
+    K: np.ndarray,
+    plane: tuple[np.ndarray, float],
+    depth: np.ndarray | None,
+    exclude: np.ndarray | None = None,
+    metres_per_unit: float = 1.0,
+    person: bool = True,
+    foot_u: float | None = None,
+) -> tuple[np.ndarray | None, float | None, list[str]]:
+    """The foot pixel (box bottom, at foot_u or the box centre) on the floor, in the camera frame,
+    and why not to trust it yet.
+
+    plane is (n, d), n.X + d = 0 with n pointing up to the camera. A foot point is accepted only if
+    the box is off the image border, the box top implies a standing height of 1.3-2.1 m, and the
+    depth just below the foot pixel is floor at the expected range: nothing nearer by more than
+    0.3 m (an occluder hides the feet, so the box bottom is not the foot) and the floor was
+    observed there. Returns (foot, implied height m, reasons); empty reasons = accepted.
+    """
+    x1, y1, x2, y2 = bbox
+    width, height = image_wh
+    normal, offset = np.asarray(plane[0], float), float(plane[1])
+    k_inv = np.linalg.inv(K)
+    u = (x1 + x2) / 2.0 if foot_u is None else foot_u
+    foot_ray = k_inv @ np.array([u, y2, 1.0])
+    if normal @ foot_ray >= -1e-9:
+        return None, None, ["foot_above_horizon"]
+    foot = (-offset / (normal @ foot_ray)) * foot_ray
+    reasons = []
+    if x1 <= BORDER_PX or y1 <= BORDER_PX or x2 >= width - BORDER_PX or y2 >= height - BORDER_PX:
+        reasons.append("box_touches_border")
+    # Height: where the vertical through the foot passes closest to the ray through the box top.
+    top_ray = k_inv @ np.array([u, y1, 1.0])
+    b, c = normal @ top_ray, top_ray @ top_ray
+    implied = (b * (top_ray @ foot) - c * (normal @ foot)) / (c - b * b) * metres_per_unit
+    if person and not PERSON_HEIGHT_M[0] <= implied <= PERSON_HEIGHT_M[1]:
+        reasons.append("implied_height")
+    patch = None
+    if depth is not None:
+        rows = slice(int(np.ceil(y2)), min(height, int(np.ceil(y2)) + 4))
+        cols = slice(max(0, int(u) - 6), min(width, int(u) + 7))  # the foot pixel's neighbourhood, not the box width
+        z = depth[rows, cols]
+        ok = np.isfinite(z) & (z > 0)
+        if exclude is not None:
+            ok &= ~exclude[rows, cols]
+        if ok.sum() >= 3:
+            vs, us = np.nonzero(ok)
+            rays = np.c_[us + cols.start, vs + rows.start, np.ones(len(us))] @ k_inv.T
+            expected = -offset / (rays @ normal)  # z of the floor along each ray
+            observed = rays * z[ok][:, None]
+            patch = (np.median(expected - z[ok]) * metres_per_unit,
+                     np.mean(np.abs(observed @ normal + offset) * metres_per_unit <= FLOOR_TOLERANCE_M))
+    if patch is None:
+        reasons.append("no_depth_below_foot")
+    else:
+        if patch[0] > OCCLUSION_MARGIN_M:
+            reasons.append("foot_occluded")
+        if patch[1] < 0.5:
+            reasons.append("foot_off_observed_floor")
+    return foot, float(implied), reasons
+
+
 def lift_tracks(
     tracks: dict[str, list[tuple[int, tuple[float, float, float, float]]]],
     camera: FloorCamera,
+    image_wh: tuple[int, int] | None = None,
 ) -> dict[str, dict[int, dict]]:
-    """track -> frame -> {xy, edge}. Bottom-center lift assumes feet/wheels
-    on the floor; non-person bottom corners give a ground segment for
-    distance measurement (near-side edge), as in the POC."""
+    """track -> frame -> {xy, edge, review}. Bottom-centre lift assumes feet/wheels
+    on the floor, so every foot passes lift_foot's checks against the fixed camera's
+    static depth before it can decide a rule; non-person bottom corners give a ground
+    segment for distance measurement (near-side edge), as in the POC."""
+    if image_wh is None:
+        image_wh = (int(round(2 * camera.intrinsics["cx"])), int(round(2 * camera.intrinsics["cy"])))
+    plane = (camera.normal, camera.d)
     lifted: dict[str, dict[int, dict]] = {}
     for track_id, samples in tracks.items():
-        for frame_id, (x1, y1, x2, y2) in samples:
-            center = camera.lift_pixel((x1 + x2) / 2.0, y2)
-            if center is None:
+        person = track_id.startswith(f"{PERSON_LABEL}-")
+        for frame_id, bbox in samples:
+            foot, height_m, reasons = lift_foot(bbox, image_wh, camera.K, plane, camera.depth, person=person)
+            if foot is None:
                 continue
-            entry: dict = {"xy": center}
-            if not track_id.startswith(f"{PERSON_LABEL}-"):
+            entry: dict = {"xy": camera.to_floor(foot), "review": reasons}
+            if height_m is not None:
+                entry["height_m"] = round(height_m, 3)
+            if not person:
+                x1, _, x2, y2 = bbox
                 left = camera.lift_pixel(x1, y2)
                 right = camera.lift_pixel(x2, y2)
                 if left is not None and right is not None and left != right:
@@ -710,6 +853,139 @@ def zone_verdict(zone: Polygon, xy: tuple[float, float], band: float) -> str:
     return PASS if boundary_distance > band else REVIEW
 
 
+def contract_scale(scale: dict) -> dict:
+    """The platform's scale record for one metric-scale.json, decided by the scale that was actually written.
+
+    The platform accepts three states and its rule engine only gives PASS/FAIL on operator_anchored. Only a measurement
+    may take that state: metric poses from the capture device. A carry height the operator stated but nobody measured is
+    an assumption and becomes model_estimated, so the engine asks for calibration instead of deciding (PLAN.md section 6:
+    an assumed value is never stored as a measurement). A clip with no metres at all stays uncalibrated.
+    """
+    status = scale.get("scale_status")
+    if status == "device_metric":
+        return {"status": "operator_anchored", "nativeToMeters": scale["metres_per_native_unit"],
+                "anchor": {"kind": "device_metric_poses", "measured": True, "note": "metres come from the capture device's own poses; nothing was assumed"}}
+    if status in ("assumed_camera_height", "assumed_camera_height_floor_views_disagree"):
+        stated = scale["metres_per_native_unit"] * scale["camera_height_native_median"]  # the height the run was told, recovered exactly
+        return {"status": "model_estimated", "nativeToMeters": scale["metres_per_native_unit"],
+                "anchor": {"kind": "stated_carry_height", "metres": round(stated, 4), "measured": False,
+                           "floorViewsAgree": status == "assumed_camera_height",
+                           "modelEstimateMetresPerNative": scale.get("model_estimated_metres_per_native_unit"),
+                           "sourcesDisagreeOver10pct": scale.get("scale_sources_disagree_over_10pct")}}
+    if status == "model_metric":  # a model's own metric depth (MoGe): metres nobody measured
+        return {"status": "model_estimated", "nativeToMeters": 1.0, "anchor": {"kind": "model_metric_depth", "measured": False}}
+    if status == "uncalibrated":
+        return {"status": "uncalibrated"}
+    raise ValueError(f"unknown scale_status {status!r}: refuse rather than guess what it means")
+
+
+def scale_gated(verdict: str, scale_record: dict) -> str:
+    """The one gate every distance and speed verdict passes: without measured metres a
+    PASS or FAIL can only ask for review (需复核)."""
+    if verdict in (PASS, FAIL) and scale_record.get("status") != "operator_anchored":
+        return REVIEW
+    return verdict
+
+
+def frame_health(gray: np.ndarray, previous: np.ndarray | None) -> str | None:
+    """Why this frame cannot show a person (dark / frozen), None when it can."""
+    gray = np.asarray(gray, dtype=np.float32)
+    if gray.mean() < DARK_MEAN:
+        return "dark"
+    if previous is not None and previous.shape == gray.shape and np.abs(gray - previous).mean() < FROZEN_MEAN_ABS_DIFF:
+        return "frozen"
+    return None
+
+
+def zone_in_view(zone: Polygon, project: Callable, image_wh: tuple[int, int]) -> bool:
+    """Every zone corner projects in front of the camera and inside the image, so the whole
+    (convex hull of the) zone is in view."""
+    width, height = image_wh
+    for xy in zone.exterior.coords:
+        pixel = project(xy)
+        if pixel is None or not (0 <= pixel[0] < width and 0 <= pixel[1] < height):
+            return False
+    return True
+
+
+def track_speed(samples: list[tuple[float, tuple[float, float]]], t: float) -> tuple[float | None, str | None]:
+    """One track's speed at time t: a least-squares line through its accepted positions over
+    the last SPEED_BASELINE_S seconds (from the newest sample at or before t - baseline).
+
+    The baseline is fixed in seconds, so the value and its band do not move with the sample
+    rate. (None, None) until a full baseline exists; (None, "jump") when two samples imply more
+    than MAX_HUMAN_SPEED_MPS beyond the position band: the segment is a tracking error to
+    review, never a FAIL.
+    """
+    past = [(s, xy) for s, xy in samples if s <= t + 1e-6]
+    starts = [i for i, (s, _) in enumerate(past) if s <= t - SPEED_BASELINE_S + 1e-6]
+    if not starts:
+        return None, None
+    window = past[starts[-1]:]
+    if len(window) < 2 or window[-1][0] - window[0][0] > 2 * SPEED_BASELINE_S or window[-1][0] < t - 1e-6:
+        return None, None  # too sparse, a gap too long to bridge, or the track is not seen now
+    for (s0, a), (s1, b) in zip(window, window[1:]):
+        if (np.hypot(b[0] - a[0], b[1] - a[1]) - 2 * BAND_M) / max(s1 - s0, 1e-6) > MAX_HUMAN_SPEED_MPS:
+            return None, "jump"
+    times = np.array([s for s, _ in window])
+    slope = np.polyfit(times - times.mean(), np.array([xy for _, xy in window]), 1)[0]
+    return float(np.hypot(*slope)), None
+
+
+def judge_frame(
+    persons: list[dict],
+    movers: list[dict],
+    zone: Polygon | None,
+    gap: str | None,
+    zone_seen: bool,
+    speeds: list[tuple[float | None, str | None]],
+    scale_record: dict,
+) -> dict:
+    """The three rules at one instant; the batch judge and the live loop both call this.
+
+    gap: why this instant shows nothing (no pose, dark, frozen, detector offline) -> every rule
+    NO_DATA. zone_seen: the whole zone was in view; without it nobody-in-the-zone is NO_DATA,
+    never PASS (a person seen inside still FAILs). Entries carry "review" reasons from
+    lift_foot: an unaccepted foot can only make a rule NEEDS_REVIEW. R2/R3 go through
+    scale_gated; the pre-gate verdict is kept for replay comparisons.
+    """
+    if gap is not None:
+        return {rule: {"verdict": NO_DATA, "reason": gap} for rule in RULE_NAMES}
+    out = {}
+    if zone is None:
+        out["R1_zone"] = {"verdict": NO_DATA, "reason": "no zone"}
+    else:
+        verdicts = [REVIEW if p.get("review") else zone_verdict(zone, p["xy"], BAND_M) for p in persons]
+        verdict = max(verdicts, key=lambda v: _SEVERITY[v]) if verdicts else PASS
+        out["R1_zone"] = {"verdict": NO_DATA if verdict == PASS and not zone_seen else verdict,
+                          "reason": None if zone_seen else "zone not fully in view"}
+    if persons and movers:
+        pairs = []
+        for person in persons:
+            point = Point(person["xy"])
+            for mover in movers:
+                geometry = LineString(mover["edge"]) if "edge" in mover else Point(mover["xy"])
+                distance = point.distance(geometry)
+                raw = REVIEW if person.get("review") or mover.get("review") else banded_verdict(
+                    distance, R2_MIN_SEPARATION_M, BAND_M, fail_low=True)
+                pairs.append((distance, raw))
+        raw = max((v for _, v in pairs), key=lambda v: _SEVERITY[v])
+        out["R2_min_distance"] = {"verdict": scale_gated(raw, scale_record), "raw": raw,
+                                  "value": round(min(d for d, _ in pairs), 3)}
+    else:
+        out["R2_min_distance"] = {"verdict": NO_DATA, "reason": "needs a person and a mover"}
+    raws = [REVIEW if reason else banded_verdict(speed, R3_MAX_SPEED_MPS, SPEED_BAND_MPS, fail_low=False)
+            for speed, reason in speeds if speed is not None or reason]
+    if raws:
+        raw = max(raws, key=lambda v: _SEVERITY[v])
+        known = [speed for speed, _ in speeds if speed is not None]
+        out["R3_speed"] = {"verdict": scale_gated(raw, scale_record), "raw": raw,
+                           "value": round(max(known), 3) if known else None}
+    else:
+        out["R3_speed"] = {"verdict": NO_DATA, "reason": f"no track with a {SPEED_BASELINE_S:g} s baseline"}
+    return out
+
+
 def _points_at(
     lifted: dict[str, dict[int, dict]], frame_id: int, persons: bool
 ) -> list[tuple[str, dict]]:
@@ -724,75 +1000,46 @@ def _points_at(
 def judge(
     lifted: dict[str, dict[int, dict]],
     zone: Polygon | None,
-    frame_ids: list[int],
-    step_seconds: float,
+    frame_times: dict[int, float],
+    coverage: dict[int, dict] | None = None,
+    scale_record: dict | None = None,
 ) -> dict:
-    """The three banded temporal rules from the video POC. Rules are
-    person-centric: without a "person" label every timeline is NO_DATA."""
-    speed_band = 2 * BAND_M / step_seconds  # both endpoints off by the band
-    r1, r2, r3 = {}, {}, {}
-    r2_values, r3_values = {}, {}
-    for ordinal, frame_id in enumerate(frame_ids):
+    """The three rules over a sampled clip. Rules are person-centric: without a person
+    detector every timeline is NO_DATA. coverage: frame -> {"gap": reason|None,
+    "zone_seen": bool}; a frame without an entry never saw the zone, so it cannot PASS it. scale_record defaults to
+    the video-mono tier's model-metric depth, so R2/R3 give NEEDS_REVIEW, never PASS/FAIL."""
+    scale_record = scale_record or contract_scale({"scale_status": "model_metric"})
+    coverage = coverage or {}
+    person_samples = {
+        track_id: [(frame_times[f], entry["xy"]) for f, entry in sorted(samples.items())
+                   if f in frame_times and not entry.get("review")]
+        for track_id, samples in lifted.items() if track_id.startswith(f"{PERSON_LABEL}-")
+    }
+    timelines: dict[str, dict] = {rule: {} for rule in RULE_NAMES}
+    r2_values, r3_values, r3_raw = {}, {}, {}
+    for frame_id in sorted(frame_times):
+        t = frame_times[frame_id]
         persons = _points_at(lifted, frame_id, persons=True)
-        vehicles = _points_at(lifted, frame_id, persons=False)
-
-        # R1: nobody inside the keep-clear zone. No person -> zone clear;
-        # no zone authored -> nothing to judge.
-        if zone is None:
-            r1[frame_id] = NO_DATA
-        elif persons:
-            verdicts = [zone_verdict(zone, entry["xy"], BAND_M) for _, entry in persons]
-            r1[frame_id] = max(verdicts, key=lambda v: _SEVERITY[v])
-        else:
-            r1[frame_id] = PASS
-
-        # R2: min person-to-vehicle distance (person point to the vehicle's
-        # lifted bottom-edge segment when available, else its point).
-        if persons and vehicles:
-            distances = []
-            for _, person in persons:
-                point = Point(person["xy"])
-                for _, vehicle in vehicles:
-                    geometry = (
-                        LineString(vehicle["edge"])
-                        if "edge" in vehicle
-                        else Point(vehicle["xy"])
-                    )
-                    distances.append(point.distance(geometry))
-            minimum = min(distances)
-            r2_values[frame_id] = round(minimum, 3)
-            r2[frame_id] = banded_verdict(
-                minimum, R2_MIN_SEPARATION_M, BAND_M, fail_low=True
-            )
-        else:
-            r2[frame_id] = NO_DATA
-
-        # R3: person speed between consecutive samples of the same track.
-        speeds = []
-        if ordinal:
-            previous_frame = frame_ids[ordinal - 1]
-            for track_id, entry in persons:
-                before = lifted[track_id].get(previous_frame)
-                if before is None:
-                    continue
-                dx = entry["xy"][0] - before["xy"][0]
-                dy = entry["xy"][1] - before["xy"][1]
-                speeds.append((dx * dx + dy * dy) ** 0.5 / step_seconds)
-        if speeds:
-            fastest = max(speeds)
-            r3_values[frame_id] = round(fastest, 3)
-            r3[frame_id] = banded_verdict(
-                fastest, R3_MAX_SPEED_MPS, speed_band, fail_low=False
-            )
-        else:
-            r3[frame_id] = NO_DATA
+        speeds = [(None, "unaccepted foot") if entry.get("review") else track_speed(person_samples[track_id], t)
+                  for track_id, entry in persons]
+        state = coverage.get(frame_id, {})
+        result = judge_frame([e for _, e in persons], [e for _, e in _points_at(lifted, frame_id, persons=False)],
+                             zone, state.get("gap"), state.get("zone_seen", False), speeds, scale_record)
+        for rule in RULE_NAMES:
+            timelines[rule][frame_id] = result[rule]["verdict"]
+        if result["R2_min_distance"].get("value") is not None:
+            r2_values[frame_id] = result["R2_min_distance"]["value"]
+        if result["R3_speed"].get("value") is not None:
+            r3_values[frame_id] = result["R3_speed"]["value"]
+        if "raw" in result["R3_speed"]:
+            r3_raw[frame_id] = result["R3_speed"]["raw"]
     return {
-        "R1_zone": r1,
-        "R2_min_distance": r2,
-        "R3_speed": r3,
+        **timelines,
         "R2_values_m": r2_values,
         "R3_values_mps": r3_values,
-        "speed_band_mps": round(speed_band, 3),
+        "R3_before_scale_gate": r3_raw,
+        "speed_band_mps": round(SPEED_BAND_MPS, 3),
+        "scale": scale_record,
     }
 
 
@@ -981,7 +1228,7 @@ def render_overlay(
 
 
 # --------------------------------------------------------------------- run
-def _write_manifest(store: ArtifactStore, run_id: str, paths: VideoRunPaths) -> None:
+def _write_manifest(store: ArtifactStore, run_id: str, paths: VideoRunPaths, sam: dict) -> None:
     try:
         code_version = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
@@ -1001,9 +1248,35 @@ def _write_manifest(store: ArtifactStore, run_id: str, paths: VideoRunPaths) -> 
             gemini_model="unused",
             moge_version=MOGE_VERSION,
             code_version=code_version,
+            sam_backend=sam["backend"],
+            sam_model_revision=sam["model_revision"],
         ),
     )
     store.save_json(paths.manifest_json, manifest)
+
+
+def frame_coverage(
+    frames_dir: Path,
+    cache_dir: Path,
+    frame_ids: list[int],
+    zone: Polygon | None,
+    camera: FloorCamera | None,
+) -> dict[int, dict]:
+    """frame -> {"gap", "zone_seen"} for judge_frame: a sampled frame covers the rules only
+    if it is neither dark nor frozen and the person detector answered for it."""
+    coverage: dict[int, dict] = {}
+    previous = None
+    for frame_id in frame_ids:
+        with Image.open(frames_dir / f"f{frame_id:06d}.jpg") as image:
+            gray = np.asarray(image.convert("L"), dtype=np.float32)
+        gap = frame_health(gray, previous)
+        previous = gray
+        if gap is None and not _cache_path(cache_dir, frame_id, PERSON_LABEL).is_file():
+            gap = "person detector offline"
+        zone_seen = zone is not None and camera is not None and zone_in_view(
+            zone, camera.project, (gray.shape[1], gray.shape[0]))
+        coverage[frame_id] = {"gap": gap, "zone_seen": zone_seen}
+    return coverage
 
 
 def run_video_assessment(
@@ -1041,7 +1314,8 @@ def run_video_assessment(
             raise ValueError("zone_wkt must be a POLYGON")
     paths = video_paths(store, run_id)
     paths.root.mkdir(parents=True, exist_ok=True)
-    _write_manifest(store, run_id, paths)
+    sam = sam_backend_revision() if sam_subscriber is None else {"backend": "injected", "model_revision": "unknown"}
+    _write_manifest(store, run_id, paths, sam)
 
     if progress_cb is not None:
         progress_cb("extracting frames")
@@ -1063,14 +1337,14 @@ def run_video_assessment(
         paths.sam_cache_dir,
         frame_ids,
         labels,
-        sam_subscriber or _default_sam_subscriber,
+        sam_subscriber or sam_subscribe,
         progress_cb,
     )
     if failures and not calls_made:
         # Every uncached call failed: that is a provider outage, not an
         # empty scene — raise instead of abstaining on "no masks".
         raise ProviderError(
-            "fal", "sam3.video", f"all {len(failures)} SAM calls failed"
+            sam["backend"], "sam3.video", f"all {len(failures)} SAM calls failed"
         )
     detections = load_detections(paths.sam_cache_dir, frame_ids, labels)
     n_masks = sum(
@@ -1096,9 +1370,13 @@ def run_video_assessment(
     elif camera is None:
         abstained = f"floor fit failed: {floor.get('reason', 'unknown')}"
 
+    frame_times = {f: f / native_fps for f in frame_ids}
+    coverage = frame_coverage(paths.frames_dir, paths.sam_cache_dir, frame_ids, zone, camera)
     if abstained is None:
-        lifted = lift_tracks(tracks, camera)
-        judged = judge(lifted, zone, frame_ids, step_seconds)
+        with Image.open(paths.frames_dir / f"f{frame_ids[0]:06d}.jpg") as image:
+            image_wh = image.size
+        lifted = lift_tracks(tracks, camera, image_wh)
+        judged = judge(lifted, zone, frame_times, coverage)
         if progress_cb is not None:
             progress_cb("rendering evidence")
         render_topdown(lifted, zone, judged["R1_zone"], paths.topdown_png)
@@ -1110,7 +1388,8 @@ def run_video_assessment(
             "R3_speed": {f: NO_DATA for f in frame_ids},
             "R2_values_m": {},
             "R3_values_mps": {},
-            "speed_band_mps": round(2 * BAND_M / step_seconds, 3),
+            "speed_band_mps": round(SPEED_BAND_MPS, 3),
+            "scale": contract_scale({"scale_status": "model_metric"}),
         }
     if n_masks:
         render_overlay(
@@ -1148,13 +1427,20 @@ def run_video_assessment(
             "R2_min_separation_m": R2_MIN_SEPARATION_M,
             "R3_max_speed_mps": R3_MAX_SPEED_MPS,
             "speed_band_mps": judged["speed_band_mps"],
+            "speed_baseline_s": SPEED_BASELINE_S,
+            "max_human_speed_mps": MAX_HUMAN_SPEED_MPS,
+            "person_height_m": list(PERSON_HEIGHT_M),
+            "occlusion_margin_m": OCCLUSION_MARGIN_M,
         },
+        "scale": judged["scale"],
+        "coverage": {str(f): c for f, c in coverage.items()},
         "zone_wkt": zone.wkt if zone is not None else None,
         "spend": {
             "sam_calls": calls_made,
             "sam_cost_usd": round(calls_made * COST_PER_SAM_CALL_USD, 2),
             "moge_keyframes": len(keyframe_ids),
             "failed_sam_calls": failures,
+            "sam_backend": sam,
         },
         "tracks": {
             track_id: len(samples) for track_id, samples in sorted(tracks.items())
@@ -1164,6 +1450,10 @@ def run_video_assessment(
                 str(frame): [round(v, 3) for v in entry["xy"]]
                 for frame, entry in sorted(samples.items())
             }
+            for track_id, samples in sorted(lifted.items())
+        },
+        "foot_review": {
+            track_id: {str(frame): entry["review"] for frame, entry in sorted(samples.items()) if entry.get("review")}
             for track_id, samples in sorted(lifted.items())
         },
         "timelines": {
@@ -1220,9 +1510,17 @@ __all__ = [
     "BAND_M",
     "COST_PER_SAM_CALL_USD",
     "FloorCamera",
-    "MAX_LIVE_CALLS",
+    "HourlySpendGuard",
+    "SAM_SPEND_USD_PER_HOUR",
     "VideoRunPaths",
     "banded_verdict",
+    "contract_scale",
+    "frame_health",
+    "judge_frame",
+    "lift_foot",
+    "scale_gated",
+    "track_speed",
+    "zone_in_view",
     "fit_floor_from_keyframes",
     "fit_pinhole_from_grid",
     "judge",
