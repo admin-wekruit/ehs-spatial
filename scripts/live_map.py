@@ -11,7 +11,10 @@ Submap output, OUTPUT/submap-EPOCH/: submap.json (epoch, voxel_size); patches/NN
 previous patch, whole: blocks int32 (n, 3); tsdf int8 (n, 8, 8, 8) indexed [z, y, x], = round(127 * tsdf / truncation);
 weight uint16 (n, 8, 8, 8); last_observed float64 (n,), the t_capture of the newest frame that touched the block (views
 through it count); seq, epoch, voxel_size, t_capture_newest; extractable_t_capture, the frames whose surface first became
-extractable (weight >= MIN_WEIGHT) in this patch: a consumer's map latency is its receive time minus these. Voxel i of block
+extractable in this patch (for >= EXTRACTABLE_SHARE of SAMPLES of the frame's depth points, a TSDF zero crossing with
+weight >= MIN_WEIGHT on both sides on the point's camera ray within the truncation band of its depth): a consumer's map
+latency is its receive time minus these. Weight alone is not enough: carved free space has full weight and no surface.
+Voxel i of block
 b sits at (8 b + i) * voxel_size in the world. A consumer keeps the newest copy of each block. Only the last RETAIN_PATCHES
 patch files stay; blocks.sqlite holds the newest state of every block ever emitted (what a late consumer starts from, and
 where an evicted block comes back from), so the disk grows with the mapped area, not with time.
@@ -32,7 +35,6 @@ from pathlib import Path
 import queue
 import resource
 import sqlite3
-import struct
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
@@ -61,6 +63,11 @@ WINDOW = 20000  # per-frame and per-patch samples kept (rolling): the whole 125 
 PENDING_S = 30.  # a frame whose surface is not extractable this long after capture counts as never
 SAMPLES = 32  # surface points per frame followed for the map latency
 EXTRACTABLE_SHARE = .9  # a frame's surface is in the map once this share of its sampled points is
+# Where a sampled depth point's surface can be in the map: on its camera ray within the truncation band of its depth, the
+# only place the TSDF holds a surface that depth made. LiDAR noise and pose error put the fused crossing a few voxels off
+# one frame's depth: on 47333932, 30 frames on, 89% of frames have >= 90% of their samples' crossings within +-4 voxels,
+# 49% within +-2, 4% in the sample's own voxel pair (M, scratchpad extract_diag.py).
+RAY_VOXELS = np.arange(-TRUNC_VOXELS, TRUNC_VOXELS + 1)
 
 
 def take_latest(conn, timeout):
@@ -202,7 +209,7 @@ class LiveMap:
                            "PRIMARY KEY (x, y, z)) WITHOUT ROWID")
         self.cold, self.cold_keys = set(), None  # evicted blocks, whose newest state is in the store. ponytail: ~100 B a block, bounded by the map
         self.seq, self.evicted, self.restored, self.peak_blocks, self.newest, self.first_t, self.last_emit = 0, 0, 0, 0, None, None, 0.
-        self.pending = deque()  # (t_capture, voxel samples) of frames whose surface is not extractable yet: at most PENDING_S of them
+        self.pending = deque()  # (t_capture, its depth samples and camera centre in voxel units) of frames whose surface is not extractable yet: at most PENDING_S of them
         self.patches, self.latency = deque(maxlen=WINDOW), deque(maxlen=WINDOW)
         self.bytes_total, self.never, self.first_3d, self.failed = 0, 0, None, None
         self.writes = queue.Queue(2)  # a writer that falls behind holds the frame loop, whose waiting frames then drop as gaps
@@ -236,7 +243,7 @@ class LiveMap:
         pick = np.linspace(0, len(v) - 1, SAMPLES).astype(int)
         z = depth_mm[v[pick], u[pick]] / 1000
         camera = np.stack([(u[pick] - k[2]) / k[0] * z, (v[pick] - k[3]) / k[1] * z, z], 1)
-        self.pending.append((t_capture, np.round((camera @ c2w[:3, :3].T + c2w[:3, 3]) / self.voxel).astype(np.int64)))
+        self.pending.append((t_capture, (camera @ c2w[:3, :3].T + c2w[:3, 3]) / self.voxel, c2w[:3, 3] / self.voxel))
         return True
 
     def _seen_through(self, depth_mm, k, c2w):
@@ -306,16 +313,25 @@ class LiveMap:
                 "last_observed": self.last_observed[index]}
 
     def _extractable(self):
-        """t_capture of the waiting frames whose sampled surface now has weight >= MIN_WEIGHT; a frame waiting past PENDING_S gives up."""
+        """t_capture of the waiting frames whose surface a consumer can now extract: for >= EXTRACTABLE_SHARE of its
+        sampled depth points, two consecutive voxels on the point's camera ray (RAY_VOXELS around its depth) with weight
+        >= MIN_WEIGHT, |tsdf| < 1 and opposite signs, the crossing surface_points extracts (on the int8 tsdf a patch
+        carries). A frame waiting past PENDING_S gives up."""
         if not self.pending:
             return np.zeros(0)
-        times = np.array([t for t, _ in self.pending])
-        voxels = np.concatenate([p for _, p in self.pending])
+        times = np.array([t for t, _, _ in self.pending])
+        q = np.concatenate([p for _, p, _ in self.pending])
+        ray = q - np.repeat([o for _, _, o in self.pending], SAMPLES, 0)
+        ray /= np.linalg.norm(ray, axis=1, keepdims=True)
+        voxels = np.round(q[:, None] + RAY_VOXELS[:, None] * ray[:, None]).astype(np.int64).reshape(-1, 3)
         block = voxels // 8
         local = voxels - 8 * block
         index, found = (t.numpy() for t in self.grid.hashmap().find(self.o3c.Tensor(block.astype(np.int32))))
-        weight = self.grid.attribute("weight").numpy()[np.where(found, index, 0), local[:, 2], local[:, 1], local[:, 0], 0]
-        done = (np.where(found, weight, 0) >= MIN_WEIGHT).reshape(len(times), SAMPLES).mean(1) >= EXTRACTABLE_SHARE
+        at = (np.where(found, index, 0), local[:, 2], local[:, 1], local[:, 0], 0)
+        tsdf = (np.round(self.grid.attribute("tsdf").numpy()[at] * 127) / 127).reshape(len(q), -1)
+        ok = (found & (self.grid.attribute("weight").numpy()[at] >= MIN_WEIGHT)).reshape(len(q), -1) & (np.abs(tsdf) < 1)
+        crossing = (ok[:, :-1] & ok[:, 1:] & ((tsdf[:, :-1] > 0) != (tsdf[:, 1:] > 0))).any(1)
+        done = crossing.reshape(len(times), SAMPLES).mean(1) >= EXTRACTABLE_SHARE
         stale = ~done & (times < self.newest - PENDING_S)
         self.never += int(stale.sum())
         self.pending = deque(p for p, keep in zip(self.pending, ~done & ~stale) if keep)
@@ -576,7 +592,8 @@ def run(args):
         "frames_integrated": done["frames_integrated"], "integrated_fps": done["frames_integrated"] / sent["capture_s"],
         "uplink_mbit_s": sent["uplink_mbit_s"], "uplink_depth_mbit_s": sent["uplink_depth_mbit_s"],
         "map_latency_s_p50_p95_max": submap["map_latency_s_p50_p95_max"],
-        "map_latency_meaning": f"frame capture -> first patch written in which >= {EXTRACTABLE_SHARE:.0%} of its {SAMPLES} sampled surface points have weight >= {MIN_WEIGHT}",
+        "map_latency_meaning": f"frame capture -> first patch written in which >= {EXTRACTABLE_SHARE:.0%} of its {SAMPLES} sampled depth points "
+                               f"have a TSDF zero crossing (weight >= {MIN_WEIGHT} both sides) on their ray within +-{TRUNC_VOXELS:g} voxels",
         "frames_extractable": submap["frames_extractable"], "frames_never_extractable_30s": submap["frames_never_extractable"],
         "frames_pending_at_end": submap["frames_pending_at_end"],
         "time_to_first_extractable_3d_s": submap["first_3d_written"] - sent["stream_start"],
@@ -754,6 +771,27 @@ def self_check():
         assert [p["extractable_t_capture"].tolist() for p in patches] == [[], [0., 1., 2.], [3.]], [p["extractable_t_capture"] for p in patches]
         assert not len(surface_points(as_blocks(patches[0]), voxel)) and len(surface_points(as_blocks(patches[1]), voxel))
         assert live.first_3d == live.patches[1]["t_written"] and len(live.latency) == 4
+
+        # a board stands 1.5 m out, the wall 2 m out shows for 50 frames (carving the board's voxels to free space at full
+        # weight), then the board comes back: a returning-board frame counts only in a patch whose map shows the board (a
+        # surface within the truncation band: the old free space holds the new zero crossing back until the board's evidence wins)
+        out = Path(directory) / "board"
+        live, board = LiveMap(out, 5000, voxel, retain=10 ** 6), np.full(shape, 1500, np.uint16)
+        for n, depth in enumerate([board] * 10 + [wall] * 50 + [board] * 60):
+            live.integrate(depth, k, np.eye(4), n / 15)
+            live.emit()
+        live.close()
+        blocks, shown = {}, []
+        for path in sorted((out / "patches").glob("*.npz")):
+            with np.load(path) as patch:
+                blocks.update(as_blocks(patch))
+                on_board = int((np.abs(surface_points(blocks, voxel)[:, 2] - 1.5) <= TRUNC_VOXELS * voxel).sum())
+                shown += [(round(t * 15), on_board, int(patch["seq"]) - 1) for t in patch["extractable_t_capture"]]  # a patch per frame
+        first = max(n for t, n, _ in shown if t < 10)  # the board as its own first frames built it
+        back = [(t, n, at) for t, n, at in shown if t >= 60]
+        assert back and all(n > first / 2 for t, n, _ in back), ("a returning-board frame counted before the map showed the board", back[:5], first)
+        print(f"board returns at frame 60: that frame counts at frame {back[0][2]}'s patch, when the map has {back[0][1]} board points "
+              f"({first} at the start); {len(back)} of 60 counted")
 
         # patch writes run on their own thread: a slow write does not hold the frame loop
         slow = LiveMap(Path(directory) / "slow", 5000, voxel, sink=lambda data: time.sleep(.3))
