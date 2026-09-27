@@ -717,12 +717,12 @@ def cylinder_mesh(points, up, step, trials=500, sample=4000, rounder=.5):
 
     Circle on the floor plane by RANSAC (3-point circles, most points within `step` of the circle; seeded, so the same
     points give the same model), then least squares on those points: floor spill, a lid or a neighbour projects off
-    the circle and pulls nothing (a Cauchy loss for what lands near it). Extents at the 1st/99th height percentiles, at least one `step` tall; faces cut to
-    edges <= `step` for per-vertex colour. Refused: a radius above the arc's own chord (under ~60 degrees of arc, the
-    rest would be a guess), and a circle that does not leave under `rounder` of rectangle_residual on the same points
-    (a flat face or a box corner fits as well). The gate's tolerance (a voxel, ~4 cm) cannot tell a square post from a
-    round one: a 0.3 m post's faces lie within 1 cm of a circle, so roundness has to be shown here. Returns world
-    vertices and faces.
+    the circle and pulls nothing (a Cauchy loss for what lands near it). Extents at the 1st/99th height percentiles,
+    at least one `step` tall; faces cut to edges <= `step` for per-vertex colour. Refused: a radius above the arc's own
+    chord (under ~60 degrees of arc, the rest would be a guess), and a circle that does not leave under `rounder` of
+    rectangle_residual on the same points (a flat face or a box corner fits as well). The gate's tolerance (a voxel,
+    ~4 cm in these scenes, estimated scale) cannot tell a square post from a round one: a 0.3 m post's faces lie within
+    1 cm of a circle, so roundness has to be shown here. Returns world vertices and faces.
     """
     import trimesh
     from scipy.optimize import least_squares
