@@ -201,7 +201,8 @@ class PeopleLoop:
             region = None
             if self.zone is not None:
                 region = image_region(self.camera_points(self.zone_prism, rotation, centre), K, (width, height))
-                zone_seen = zone_floor_seen(self.camera_points(self.zone_floor, rotation, centre), K, depth, (width, height))
+                points, cells = self.zone_floor
+                zone_seen = zone_floor_seen(self.camera_points(points, rotation, centre), cells, K, depth, (width, height))
             exclude = np.any([d["mask"] for d in detections], axis=0) if detections else None
             taken: set = set()
             for detection in detections:
@@ -383,10 +384,20 @@ def self_check() -> None:
         assert _r1(loop, _message(t + 0.5, rng))[0]["verdict"] == "PASS"
     offline = PeopleLoop([0, 0, 0], [0, -1, 0], measured, lambda frame: None, _SEEN_ZONE)
     assert offline.step(decode_frame(_message(0.0, rng)[0]))[1][0]["reason"] == "person detector offline"
+    head, rgb, depth, _ = unpack(_message(0.0, rng)[0])
+    medium = pack(head, rgb, depth, cv2.imencode(".png", np.ones((192, 256), np.uint8))[1].tobytes())
+    assert not decode_frame(medium)["depth"].any()  # medium confidence over valid depth is no depth
 
     # 3. A zone hidden behind a wall is not seen, though its corners are in the image: NO_DATA, not PASS.
     hidden = _r1(fresh(_SEEN_ZONE), _message(0.0, rng, walls=[(4.5, 3.0, 0, 640)]))[0]
     assert hidden["verdict"] == NO_DATA and hidden["reason"] == "zone floor not observed", hidden
+    #    A 5 m x 10 m zone with a 0.5 m crate at z = 12 and a crouched worker behind it the detector cannot see: the
+    #    crate's floor shadow is about 4% of the zone (a 95%-seen rule PASSed it) but holds a footprint, so NO_DATA.
+    large = Polygon([(-2.5, 6), (2.5, 6), (2.5, 16), (-2.5, 16)])
+    crate = [(12.0, 0.7, 320 - 600 * 0.25 / 12, 320 + 600 * 0.25 / 12)]
+    assert _r1(fresh(large), _message(0.0, rng))[0]["verdict"] == "PASS"
+    shadow, rows = _r1(fresh(large), _message(0.0, rng, people=[(0.0, 13.0, 0.6, 0.0, 0.2)], walls=crate))
+    assert not rows and shadow["verdict"] == NO_DATA and shadow["reason"] == "zone floor not observed", (shadow, rows)
 
     # 4. A person who cannot be placed is never nobody. In the zone: a 10 px head whose lowest pixel is above the
     #    horizon, a 10 px blob below it, and a head over a shelf (camera 1.2 m, shelf 1.25 m at z = 4.5) all make R1
@@ -395,8 +406,10 @@ def self_check() -> None:
         small, rows = _r1(fresh(_SEEN_ZONE), _message(0.0, rng, people=[person]))
         assert small["verdict"] == "NEEDS_REVIEW" and reason in rows[0]["review"], (small, rows)
     head = (0.0, 6.0, 1.75, 1.25, 0.2)
-    over_shelf, rows = _r1(fresh(_SEEN_ZONE), _message(0.0, rng, 1.2, [head], [(4.5, 1.25, 0, 640)]))
+    shelf = fresh(_SEEN_ZONE)
+    over_shelf, rows = _r1(shelf, _message(0.0, rng, 1.2, [head], [(4.5, 1.25, 0, 640)]))
     assert over_shelf["verdict"] == "NEEDS_REVIEW" and rows[0]["review"] == ["foot_above_horizon"], (over_shelf, rows)
+    assert shelf.last_verdict["R3_speed"][0] == "NEEDS_REVIEW"  # nobody knows how fast an unplaced person moves
     aside, rows = _r1(fresh(_SEEN_ZONE), _message(0.0, rng, 1.2, [(-3.0, 6.0, 1.75, 1.25, 0.2)], [(4.5, 1.25, 0, 80)]))
     assert aside["verdict"] == "PASS" and rows[0]["review"] == ["foot_above_horizon"] and not rows[0]["nearZone"], rows
 
@@ -440,9 +453,26 @@ def self_check() -> None:
     for t in np.arange(10, 16, 1.0):
         _step(loop, _message(float(t), rng))
     assert not loop.tracks and loop.latencies.maxlen == LATENCY_WINDOW
+
+    # 8. What a bad pose would poison is reset: no speed baseline spans a 'limited' frame (the first speed comes 2 s
+    #    after it), and a new world epoch closes every track. Loop latency leaves the detector out.
+    walker, walk = fresh(), lambda t, **kw: _message(float(t), rng, people=[(-1.0 + 0.4 * t, 6.0, 1.75, 0.0, 0.2)], **kw)
+    for t in np.arange(0, 1.55, 0.1):
+        _step(walker, walk(t))
+    _step(walker, walk(1.6, tracking="limited", reason="excessiveMotion"))
+    after = [_step(walker, walk(t))[0][0]["speedMps"] for t in np.arange(1.7, 3.65, 0.1)]
+    assert after == [None] * len(after) and walker.tracks, after
+    assert _step(walker, walk(3.7, epoch=1))[0] == [] and not walker.tracks
+    slow = fresh(_SEEN_ZONE)
+    slow.detector = lambda frame: time.sleep(0.05) or []
+    for t in range(3):
+        slow.step(decode_frame(_message(float(t), rng)[0]))
+    spent = latency_summary(slow)
+    assert spent["detector"]["p50"] >= 0.05 > spent["covered_frames_without_detector"]["p95"], spent
     print("live people check passed: stream contract decoded (mm depth at 256x192); 1 Hz = 5 Hz verdicts; no pose, "
-          "limited tracking, a new world epoch, a hidden zone floor, an offline or broke detector are NO_DATA; "
-          "unplaceable people near the zone are NEEDS_REVIEW; assumed metres decide nothing; state stays bounded")
+          "limited tracking, a new world epoch, a hidden zone floor or a footprint-sized shadow in it, an offline or "
+          "broke detector are NO_DATA; unplaceable people near the zone are NEEDS_REVIEW; assumed metres decide "
+          "nothing; tracking loss and a new epoch reset tracks; state stays bounded")
 
 
 if __name__ == "__main__":

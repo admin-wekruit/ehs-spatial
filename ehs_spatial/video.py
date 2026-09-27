@@ -71,8 +71,10 @@ FLOOR_TOLERANCE_M = 0.1  # an observed depth this close to the floor's along its
 # ponytail: about twice the median depth error measured on the test clips (was evaluate_video_policy's own copy);
 # a calibration study replaces it.
 DEPTH_RELATIVE = 0.05
-ZONE_SAMPLE_M = 0.25  # spacing of the zone floor points checked for coverage, finer than a person's footprint
-ZONE_SEEN_FRACTION = 0.95  # ponytail: uncalibrated; share of zone floor points that must be observed for a PASS
+PERSON_FOOTPRINT_M = 0.5  # side of the floor square a person stands on; an unobserved patch this big can hide one
+# Zone floor grid: a PERSON_FOOTPRINT_M square, however turned, holds an axis-aligned square of side 0.5 / sqrt(2) =
+# 0.35 m, and that always holds 2 x 2 samples 0.125 m apart. So a hidden person leaves a 2 x 2 block of unobserved samples.
+ZONE_SAMPLE_M = 0.125
 BORDER_PX = 2
 DARK_MEAN = 12.0  # mean grey level (0-255) below which a frame shows nothing
 FROZEN_MEAN_ABS_DIFF = 0.25  # ponytail: uncalibrated; a real stream's noise floor sets it
@@ -954,16 +956,20 @@ def frame_health(gray: np.ndarray, previous: np.ndarray | None) -> str | None:
     return None
 
 
-def zone_floor_points(zone: Polygon) -> np.ndarray:
-    """(n, 3) floor points (x, y, height 0) covering the zone: its outline and a grid inside, ZONE_SAMPLE_M apart
-    (coarser for a huge zone, at most about 4000 points)."""
-    step = max(ZONE_SAMPLE_M, float(np.sqrt(zone.area / 4000)))
+def zone_floor_points(zone: Polygon) -> tuple[np.ndarray, np.ndarray]:
+    """The zone floor's samples: (n, 3) points (x, y, height 0), its outline ZONE_SAMPLE_M apart and then the centres of
+    the ZONE_SAMPLE_M grid cells inside it; and (n, 2) int grid cells of those points, (-1, -1) on the outline.
+    ponytail: every cell of the zone, so the cost grows with its area (64 a square metre); fine for keep-clear zones."""
+    step = ZONE_SAMPLE_M
     outline = shapely.get_coordinates(shapely.line_interpolate_point(zone.exterior, np.arange(0, zone.exterior.length, step)))
     minx, miny, maxx, maxy = zone.bounds
-    xs, ys = (g.ravel() for g in np.meshgrid(np.arange(minx, maxx, step) + step / 2, np.arange(miny, maxy, step) + step / 2))
+    cols, rows = (g.ravel() for g in np.meshgrid(np.arange(int(np.ceil((maxx - minx) / step))),
+                                                   np.arange(int(np.ceil((maxy - miny) / step)))))
+    xs, ys = minx + (cols + 0.5) * step, miny + (rows + 0.5) * step
     inside = shapely.contains_xy(zone, xs, ys)
     xy = np.vstack([outline, np.c_[xs[inside], ys[inside]]])
-    return np.c_[xy, np.zeros(len(xy))]
+    cells = np.vstack([np.full((len(outline), 2), -1), np.c_[cols[inside], rows[inside]]]).astype(int)
+    return np.c_[xy, np.zeros(len(xy))], cells
 
 
 def zone_prism_points(zone: Polygon) -> np.ndarray:
@@ -983,12 +989,15 @@ def image_region(points: np.ndarray, K: np.ndarray, image_wh: tuple[int, int]) -
     return MultiPoint(pixels[:, :2]).convex_hull.intersection(frame)
 
 
-def zone_floor_seen(points: np.ndarray, K: np.ndarray, depth: np.ndarray | None, image_wh: tuple[int, int],
-                    blocked: np.ndarray | None = None) -> bool:
-    """The zone floor was observed in this frame, not just in view: every camera-frame floor point projects in front
-    of the camera and inside the image, and at ZONE_SEEN_FRACTION of them the depth there reaches the floor (nothing
-    nearer by more than lift_foot's occlusion margin) and no detection covers the pixel (blocked, for a static depth
-    plate that cannot see a passing occluder)."""
+def zone_floor_seen(points: np.ndarray, cells: np.ndarray, K: np.ndarray, depth: np.ndarray | None,
+                    image_wh: tuple[int, int], blocked: np.ndarray | None = None) -> bool:
+    """The zone floor was observed in this frame well enough that nobody can stand on it unseen. points and cells are
+    zone_floor_points' (points moved into the camera frame). Every point must project in front of the camera and inside
+    the image. A sample is observed when the depth there reaches the floor (nothing nearer by more than lift_foot's
+    occlusion margin) and no detection covers its pixel (blocked, for a static depth plate that cannot see a passing
+    occluder). Isolated unobserved samples are sensor noise; a 2 x 2 block of neighbouring unobserved grid samples is
+    floor where a PERSON_FOOTPRINT_M footprint could hide, so the zone is not seen.
+    ponytail: a footprint straddling the outline is judged by its part inside the zone only."""
     width, height = image_wh
     if depth is None or (points[:, 2] <= 1e-6).any():
         return False
@@ -1001,7 +1010,8 @@ def zone_floor_seen(points: np.ndarray, K: np.ndarray, depth: np.ndarray | None,
     seen = (observed > 0) & (expected - observed <= np.maximum(OCCLUSION_MARGIN_M, DEPTH_RELATIVE * expected))  # NaN: unseen
     if blocked is not None:
         seen &= ~blocked[v, u]
-    return bool(seen.mean() >= ZONE_SEEN_FRACTION)
+    hidden = set(map(tuple, cells[~seen & (cells[:, 0] >= 0)].tolist()))
+    return not any((i + 1, j) in hidden and (i, j + 1) in hidden and (i + 1, j + 1) in hidden for i, j in hidden)
 
 
 def track_speed(samples: Sequence[tuple[float, tuple[float, float]]], t: float) -> tuple[float | None, str | None]:
@@ -1379,7 +1389,8 @@ def frame_coverage(
     stands in front of it."""
     coverage: dict[int, dict] = {}
     previous = None
-    floor_points = camera.camera_points(zone_floor_points(zone)) if zone is not None and camera is not None else None
+    floor_points, floor_cells = zone_floor_points(zone) if zone is not None and camera is not None else (None, None)
+    floor_points = None if floor_points is None else camera.camera_points(floor_points)
     for frame_id in frame_ids:
         with Image.open(frames_dir / f"f{frame_id:06d}.jpg") as image:
             gray = np.asarray(image.convert("L"), dtype=np.float32)
@@ -1394,7 +1405,7 @@ def frame_coverage(
                 for row in rows:
                     x1, y1, x2, y2 = (int(round(v)) for v in row["bbox"])
                     blocked[max(0, y1):y2, max(0, x1):x2] = True
-            zone_seen = zone_floor_seen(floor_points, camera.K, camera.depth, (gray.shape[1], gray.shape[0]), blocked)
+            zone_seen = zone_floor_seen(floor_points, floor_cells, camera.K, camera.depth, (gray.shape[1], gray.shape[0]), blocked)
         coverage[frame_id] = {"gap": gap, "zone_seen": zone_seen}
     return coverage
 

@@ -24,6 +24,7 @@ from ehs_spatial.video import (
     fit_floor_from_keyframes,
     fit_pinhole_from_grid,
     frame_health,
+    image_region,
     judge,
     judge_frame,
     keep_untracked,
@@ -288,9 +289,10 @@ def test_zone_floor_must_be_observed_not_just_in_view(tmp_path):
     camera = _camera(2.0)
     camera.depth = _floor_depth(camera)
     zone = shapely_wkt.loads("POLYGON ((-1 5, 1 5, 1 7, -1 7, -1 5))")
-    points = camera.camera_points(zone_floor_points(zone))
-    assert zone_floor_seen(points, camera.K, camera.depth, (640, 480))
-    assert not zone_floor_seen(points, camera.K, np.minimum(camera.depth, 3.5), (640, 480))  # a wall 3.5 m out
+    points, cells = zone_floor_points(zone)
+    points = camera.camera_points(points)
+    assert zone_floor_seen(points, cells, camera.K, camera.depth, (640, 480))
+    assert not zone_floor_seen(points, cells, camera.K, np.minimum(camera.depth, 3.5), (640, 480))  # a wall 3.5 m out
     frames_dir, cache_dir = tmp_path / "frames", tmp_path / "cache"
     frames_dir.mkdir()
     cache_dir.mkdir()
@@ -301,6 +303,62 @@ def test_zone_floor_must_be_observed_not_just_in_view(tmp_path):
     truck = {"car": [{"bbox": (150.0, 200.0, 500.0, 400.0), "score": 0.9}]}  # parked in front of the zone in frame 1
     coverage = video_module.frame_coverage(frames_dir, cache_dir, [0, 1], zone, camera, {1: truck})
     assert [coverage[f]["zone_seen"] for f in (0, 1)] == [True, False]
+
+
+def test_a_hidden_footprint_anywhere_in_the_zone_is_not_seen():
+    """ZONE_SEEN_FRACTION 0.95 let 5% of the zone floor go unobserved, more than a person covers on any zone over 2-5 m2.
+    Now any 0.5 m footprint, placed and turned anywhere inside the zone, hidden from a camera straight above, is found;
+    one unobserved sample alone (sensor noise) is not."""
+    import cv2
+    zone = shapely_wkt.loads("POLYGON ((0 0, 3 0, 3 3, 0 3, 0 0))")
+    points, cells = zone_floor_points(zone)
+    above = points - [1.5, 1.5, -4.0]  # camera 4 m over the zone's middle, looking down: x, y and 4 m depth
+    K, size = np.array([[100.0, 0, 160], [0, 100.0, 120], [0, 0, 1]]), (320, 240)
+    floor = np.full(size[::-1], 4.0)
+    assert zone_floor_seen(above, cells, K, floor, size)
+    rng = np.random.default_rng(0)
+    for _ in range(300):
+        angle, centre = rng.uniform(0, np.pi / 2), rng.uniform(0.36, 2.64, 2)  # 0.36 m: the turned footprint stays inside
+        rotation = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
+        corners = (np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]]) * video_module.PERSON_FOOTPRINT_M / 2) @ rotation.T + centre
+        pixels = (corners - 1.5) * 100 / 4 + [160, 120]
+        hidden = cv2.dilate(cv2.fillPoly(np.zeros(size[::-1], np.uint8), [np.round(pixels).astype(np.int32)], 1), np.ones((3, 3)))
+        occluded = np.where(hidden > 0, 3.0, floor)  # something 1 m tall over the footprint: its floor is not observed
+        assert not zone_floor_seen(above, cells, K, occluded, size), (angle, centre)
+    noisy = floor.copy()
+    lone = (above[cells[:, 0] == 5][:1] @ K.T)[0]
+    noisy[int(lone[1] / lone[2]), int(lone[0] / lone[2])] = 0.0  # one sample without depth
+    assert zone_floor_seen(above, cells, K, noisy, size)
+
+
+def test_an_unplaced_person_makes_distance_and_speed_review():
+    """judge_frame gave R2 PASS for a placed person 10 m from a mover while a person nobody could place stood beside it."""
+    placed, unplaced, mover = {"xy": (0.0, 0.0), "review": []}, {"xy": None, "review": ["foot_above_horizon"]}, {"xy": (10.0, 0.0)}
+    assert judge_frame([placed], [mover], None, None, True, [], _MEASURED)["R2_min_distance"]["verdict"] == "PASS"
+    assert judge_frame([placed, unplaced], [mover], None, None, True, [], _MEASURED)["R2_min_distance"]["verdict"] == "NEEDS_REVIEW"
+    lifted = {"person-1": {0: unplaced, 30: unplaced, 60: unplaced}}  # the batch judge: seen three times, never placed
+    assert judge(lifted, None, _TIMES, None, _MEASURED)["R3_speed"] == {0: "NEEDS_REVIEW", 30: "NEEDS_REVIEW", 60: "NEEDS_REVIEW"}
+
+
+def test_lift_foot_occlusion_margin_grows_with_range():
+    """At 20 m a depth 5% short is inside the depth error, not an occluder; a fixed 0.3 m margin flagged it."""
+    camera = _camera(3.4)
+    plane = (camera.normal, camera.d)
+    person = (310.0, 282.5, 330.0, 325.0)  # 1.7 m person 20 m out: foot v = 240 + 500 * 3.4 / 20
+    depth = _floor_depth(camera)
+    short = depth.copy()
+    short[325:329] -= 0.5  # 0.5 m nearer below the foot: 2.5% of the range
+    assert "foot_occluded" not in lift_foot(person, (640, 480), camera.K, plane, short)[2]
+    short[325:329] = depth[325:329] - 1.5  # 7.5% of the range: something stands there
+    assert "foot_occluded" in lift_foot(person, (640, 480), camera.K, plane, short)[2]
+
+
+def test_image_region_behind_the_camera_is_the_whole_frame():
+    """A zone prism with a corner behind the camera can appear anywhere in the image, never nowhere."""
+    K = np.array([[500.0, 0, 320], [0, 500.0, 240], [0, 0, 1]])
+    in_front = np.array([[-1.0, 0, 5], [1, 0, 5], [0, 1, 6]])
+    assert image_region(in_front, K, (640, 480)).area < 640 * 480 / 10
+    assert image_region(np.vstack([in_front, [0, 0, -1.0]]), K, (640, 480)).area == 640 * 480
 
 
 def test_track_speed_reads_only_its_window():
