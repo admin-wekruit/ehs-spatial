@@ -73,7 +73,8 @@ SAM3D = {"modalApp": "panoptes-sam3d-objects-research", "modalClass": "SAM3DObje
          "modelRevision": "2e73555018d2741ccd486e56c24fac41155a1dc6", "codeRevision": "f91db411c50efee93d8db7aeb323885650f6f722",
          "generator": "SAM 3D Objects (SAM License: commercial use allowed, no ITAR/military/nuclear uses)"}
 BOX = "gravity-aligned box fitted to the video's own points (no learned model): kept only where the object is box-shaped enough to pass the same gate"
-GENERATORS = {"recgen": GENERATOR, "sam3d": SAM3D["generator"], "box": BOX}
+CYLINDER = "upright cylinder fitted to the video's own points (no learned model): kept only where the object is an upright cylinder enough to pass the same gate"
+GENERATORS = {"recgen": GENERATOR, "sam3d": SAM3D["generator"], "box": BOX, "cylinder": CYLINDER}
 SAM3D_USD_PER_SECOND, SAM3D_WORST_SECONDS = .000694 + 4 * .0000131 + 32 * .00000222, 900  # modal_apps/sam3d_research.py's container and timeout
 # Modal list prices of the transport's container (A100-80GB + 8 cores + 64 GiB), per second; its client deadline is 240 s.
 USD_PER_SECOND, WORST_CALL_SECONDS = .000694 + 8 * .0000131 + 64 * .00000222, 240
@@ -84,7 +85,7 @@ RELEVANT = {"machine": ("machine", "mill", "lathe", "drill", "press", "saw", "gr
             "bin or box": ("bin", "box", "case", "container", "tub", "crate", "tray"),
             "cart": ("cart", "trolley"), "bench": ("bench", "workbench", "table", "tabletop"),
             "vise": ("vise", "clamp"), "monitor": ("monitor", "computer")}
-BOX_VIEWS = False            # --generator box sets it: views are not generator crops, so edge cuts and size do not disqualify them
+BOX_VIEWS = False            # --generator box or cylinder sets it: views are not generator crops, so edge cuts and size do not disqualify them
 BORDER = 4                   # clip-frame pixels a best-view mask keeps clear of the frame edge
 
 
@@ -692,20 +693,63 @@ def box_mesh(points, up, step):
     return vertices @ axes, faces
 
 
+def cylinder_mesh(points, up, step, trials=500, sample=4000):
+    """Upright (gravity-aligned) cylinder around `points`, or None when their floor-plane projection is not an arc.
+
+    Circle on the floor plane by RANSAC (3-point circles, most points within `step` of the circle; seeded, so the same
+    points give the same model), then least squares on those points: floor spill, a lid or a neighbour projects off
+    the circle and pulls nothing. Extents at the 1st/99th height percentiles, at least one `step` tall; faces cut to
+    edges <= `step` for per-vertex colour. A radius above the arc's own chord (under ~60 degrees of arc) is refused: a
+    plane fits such points as well, and the circle's size would be a guess. Returns world vertices and faces.
+    """
+    import trimesh
+    from scipy.optimize import least_squares
+    up = np.asarray(up, float) / np.linalg.norm(up)
+    a = np.cross(up, [1., 0, 0] if abs(up[0]) < .9 else [0, 1., 0])
+    a /= np.linalg.norm(a)
+    axes = np.stack([a, np.cross(up, a), up])  # rows, right-handed
+    xy, height = points @ axes[:2].T, points @ up
+    rng = np.random.default_rng(SEED)
+    pool = xy[rng.choice(len(xy), min(len(xy), sample), replace=False)]
+    tri = pool[rng.integers(0, len(pool), (trials, 3))]
+    lhs, rhs = 2 * (tri[:, 1:] - tri[:, :1]), (tri[:, 1:] ** 2).sum(2) - (tri[:, :1] ** 2).sum(2)
+    tri, lhs, rhs = (x[np.abs(np.linalg.det(lhs)) > 1e-12] for x in (tri, lhs, rhs))  # collinear triples have no circle
+    centres = np.linalg.solve(lhs, rhs[..., None])[..., 0]
+    radii = np.linalg.norm(tri[:, 0] - centres, axis=1)
+    best = (np.abs(np.linalg.norm(pool[None] - centres[:, None], axis=2) - radii[:, None]) <= step).sum(1).argmax()
+    ring = np.abs(np.linalg.norm(xy - centres[best], axis=1) - radii[best]) <= step
+    cx, cy, radius = least_squares(lambda p: np.linalg.norm(xy[ring] - p[:2], axis=1) - p[2], [*centres[best], radii[best]]).x
+    radius = abs(radius)
+    ring = np.abs(np.linalg.norm(xy - [cx, cy], axis=1) - radius) <= step
+    if ring.sum() < 10:
+        return None
+    along = xy[ring] @ np.linalg.svd(xy[ring] - xy[ring].mean(0), full_matrices=False)[2][0]
+    if not radius <= np.subtract(*np.percentile(along, [99, 1])):
+        return None
+    lo, hi = np.percentile(height, [1, 99])
+    unit = trimesh.creation.cylinder(radius=radius, segment=[[cx, cy, lo], [cx, cy, max(hi, lo + step)]],
+                                     sections=max(16, int(np.ceil(2 * np.pi * radius / step))))
+    vertices, faces = trimesh.remesh.subdivide_to_size(unit.vertices, unit.faces, step)
+    return vertices @ axes, faces
+
+
 def box_obtain(payload, args):
-    """--generator box: the box of the points the ICP half of the agreeing views saw (the held-out half never shapes it),
-    coloured from the source crop where it faces that camera, elsewhere the mask's median colour. Deterministic, so a
-    second seed of the same view is not tried."""
+    """--generator box or cylinder: the shape of the points the ICP half of the agreeing views saw (the held-out half
+    never shapes it), coloured from the source crop where it faces that camera, elsewhere the mask's median colour.
+    Deterministic, so a second seed of the same view is not tried."""
     import trimesh
     if payload["seed"] != SEED:
-        return None, {"reason": "a box does not depend on the seed"}
+        return None, {"reason": f"a {args.generator} does not depend on the seed"}
     entity, view = args.box_lookup[payload["entityId"], payload["anchorObservationId"]]
     observed, names, _, _, owner, _ = observed_points(entity, view, args.rows, args.clip, args)
     source = names.index(view["observation"])
     shaping = ~np.isin(owner, [i for i in range(len(names)) if i % 2 and i != source])  # assess()'s held-out split, inverted
     if shaping.sum() < 10:
-        return None, {"reason": "too few points to shape a box"}
-    vertices, faces = box_mesh(observed[shaping], args.plan_up, 2 * VOXEL)
+        return None, {"reason": f"too few points to shape a {args.generator}"}
+    shape = (cylinder_mesh if args.generator == "cylinder" else box_mesh)(observed[shaping], args.plan_up, 2 * VOXEL)
+    if shape is None:
+        return None, {"reason": "the points' floor-plane projection is not an arc: no cylinder"}
+    vertices, faces = shape
     crop = payload["views"][0]
     rgb, mask, k, c2w = crop["rgb"], np.asarray(crop["mask"], bool), np.asarray(crop["K"], float), np.asarray(crop["cameraToWorld"], float)
     colours = np.tile(np.median(rgb[mask], 0) if mask.any() else rgb.reshape(-1, 3).mean(0), (len(vertices), 1))
@@ -715,7 +759,7 @@ def box_obtain(payload, args):
     toward = ((c2w[:3, 3] - vertices) * trimesh.Trimesh(vertices, faces, process=False).vertex_normals).sum(1) > 0
     ok = toward & (local[:, 2] > 0) & (u >= 0) & (v >= 0) & (u < rgb.shape[1]) & (v < rgb.shape[0])
     colours[ok] = rgb[v[ok], u[ok]]
-    return (vertices, faces, colours.astype(np.float64)), {"generator": BOX, "shapedBy": int(shaping.sum())}
+    return (vertices, faces, colours.astype(np.float64)), {"generator": GENERATORS[args.generator], "shapedBy": int(shaping.sum())}
 
 
 def sam3d_spent(journal):
@@ -1060,6 +1104,7 @@ def sheet(path, chosen):
 
 def run(args):
     args.output.mkdir(parents=True, exist_ok=True)
+    inputs = {k: str(getattr(args, k)) for k in ("droid_run", "depth_run", "object_map", "masks", "dynamic_masks", "clip")}  # before args.clip becomes the Clip
     args.metres_per_native = json.loads((args.depth_run / "metric-scale.json").read_text())["metres_per_native_unit"]
     clip, rows, document, chosen, rejected = prepare(args)
     args.rows, args.gpu, args.idle = rows, GPUS[0], 0  # A100-80GB had no capacity when this ran; the first re-send goes to A100-40GB
@@ -1223,7 +1268,7 @@ def run(args):
         "schema": "phase2-video-object-models-v1", "coordinateFrame": "droid_final_native_world", "metresPerNativeUnit": args.metres_per_native,
         "generator": GENERATORS[args.generator], "pins": SAM3D if args.generator == "sam3d" else ({k: records[0].get(k) for k in ("model_id", "model_revision", "code_revision", "weights_manifest_sha256")} if records else None),
         "route": {**RECGEN, "modalFunctionId": args.function_id, "transport": "ehs_spatial.platform.recgen_transport.invoke", "views": 1},
-        "inputs": {k: str(getattr(args, k)) for k in ("droid_run", "depth_run", "object_map", "masks", "dynamic_masks", "clip")},
+        "inputs": inputs,
         "selectionRule": {"labelStatus": "clear", "excludedLabels": EXCLUDED, "minViews": MIN_VIEWS, "ehsEquipment": RELEVANT,
                           "order": "EHS equipment first, then support points; an entity whose 3D box has IoU >= 0.25 with an already chosen one is skipped",
                           "bestView": "mask clear of the border and of caption text, >= 50% reliable depth, not next to the moving person; max area x relative sharpness x frontality x solidity^2",
@@ -1294,6 +1339,29 @@ def self_check():
     assert closest(bv, bf, surface[:2000])[1].max() < .02, "every surface point lies on the fitted box"
     flat = trimesh.Trimesh(*box_mesh(surface[np.abs(surface @ turn[:, 2] - [1, -.3, 2] @ turn[:, 2] - .1) < .003], [0, -1., 0], .02))
     assert flat.is_watertight and .4 * .6 * .019 < flat.volume < .4 * .6 * .03, flat.volume  # a face seen straight on: one step thick
+    # cylinder: a drum (radius 0.15, 0.1..0.9 up) seen from one side, with its lid, 10% floor spill and a few stray points
+    # 0.6 m above it (a cable), is given back and fits it better than a box does; a 0.3 m square post seen from the same
+    # side (two faces and its top) fits a cylinder at least twice worse than the drum and worse than its own box (medians
+    # of the held-out half). A flat face gets no cylinder.
+    arc, rise = rng.uniform(np.pi + .2, 2 * np.pi - .2, 4000), rng.uniform(.1, .9, 4000)
+    side = np.c_[1 + .15 * np.cos(arc), -rise, 2 + .15 * np.sin(arc)] + rng.normal(0, .002, (4000, 3))
+    spoke, around = .15 * np.sqrt(rng.uniform(0, 1, 800)), rng.uniform(0, 2 * np.pi, 800)
+    lid = np.c_[1 + spoke * np.cos(around), np.full(800, -.9), 2 + spoke * np.sin(around)]
+    spill = np.r_[np.c_[rng.uniform(.7, 1.3, 400), np.full(400, -.1), rng.uniform(1.6, 1.84, 400)], np.tile([1, -1.5, 1.9], (20, 1))]
+    cv, cf = cylinder_mesh(np.r_[side[1::2], lid, spill], [0, -1., 0], .02)  # shaped by half the side, judged by the other half
+    across = np.hypot(cv[:, 0] - 1, cv[:, 2] - 2)
+    assert trimesh.Trimesh(cv, cf).is_watertight and abs(across.max() - .15) < .005 and np.abs(np.sort(-cv[:, 1])[[0, -1]] - [.1, .9]).max() < .02, (across.max(), cv[:, 1].min())
+    held_out = lambda shape, points: np.median(closest(*shape(points[1::2], [0, -1., 0], .02), points[::2])[1])
+    drum_fit = np.median(closest(cv, cf, side[::2])[1])
+    post = trimesh.creation.box(extents=[.3, .8, .3])
+    samples, index = trimesh.sample.sample_surface_even(post, 12000, seed=1)
+    normals = post.face_normals[index] @ turn.T
+    front = (normals[:, 2] < -.1) | (normals[:, 1] < -.5)  # the faces a camera at -z and above sees
+    samples = samples[front] @ turn.T + [1, -.5, 2] + rng.normal(0, .002, (front.sum(), 3))
+    post_fit = held_out(cylinder_mesh, samples)
+    assert drum_fit < .005 and post_fit > 2 * drum_fit and held_out(box_mesh, samples) < post_fit, (drum_fit, post_fit)
+    assert held_out(box_mesh, np.r_[side, side]) > 2 * drum_fit, "a box fits the drum worse than its cylinder"
+    assert cylinder_mesh(surface[np.abs(surface @ turn[:, 2] - [1, -.3, 2] @ turn[:, 2] - .1) < .003], [0, -1., 0], .02) is None, "a flat face is no arc"
     point = np.array([.3, -.2, 2.])
     p_clip, p_full = k_clip @ point, clip.k_full @ point
     assert np.allclose(clip.clip_to_full @ (p_clip / p_clip[2]), p_full / p_full[2])
@@ -1397,6 +1465,7 @@ def self_check():
             globals()["request"] = real
     print("complete_video_objects self-check passed: clip->source mask and K, crop depth lifts onto its plane, "
           "slab back face inferred / front observed, Sim3 fit recovered, BLEND and plain GLB round-trip RGBA, captions found, box IoU, "
+          "drum cylinder recovered through lid and spill, square post fits it worse, flat face no cylinder, "
           "small on the source frame, spread tries, journal found by call identity and read back")
 
 
@@ -1410,9 +1479,9 @@ def main():
     parser.add_argument("--exclude", nargs="*", default=[], help="ENTITY=reason: dropped at review, reason recorded")
     parser.add_argument("--count", type=int, default=COUNT)
     parser.add_argument("--all", action="store_true", help="after --entities, every named physical object of the qualifying rule (no count limit)")
-    parser.add_argument("--generator", choices=("recgen", "sam3d", "box"), default="recgen",
+    parser.add_argument("--generator", choices=("recgen", "sam3d", "box", "cylinder"), default="recgen",
                         help="recgen: the deployed RecGen (non-commercial); sam3d: self-hosted SAM 3D Objects (modal deploy modal_apps/sam3d_research.py first); "
-                             "box: a gravity-aligned box of the video's own points, CPU only, same gate")
+                             "box: a gravity-aligned box of the video's own points; cylinder: an upright cylinder of them (both CPU only, same gate)")
     parser.add_argument("--reassess", action="store_true", help="judge every journaled model again under the current gate (CPU; no call without --invoke)")
     parser.add_argument("--invoke", action="store_true", help="request missing models; without it only inputs, selection sheet and existing models are processed")
     parser.add_argument("--function-id", default="fu-Hh2leT3x1kprDaWpWsZ09l", help="the deployed generate_object the transport must find")
@@ -1422,7 +1491,7 @@ def main():
                         "tolerances are counted in it (default: ME340's)")
     parser.add_argument("--no-captions", action="store_true", help="the video has no burned-in captions: skip the white-text caption test (a bright floor sets it off)")
     args = parser.parse_args()
-    BOX_VIEWS = args.generator == "box"
+    BOX_VIEWS = args.generator in ("box", "cylinder")
     VOXEL, OCCLUSION = args.voxel_native, args.voxel_native / 2  # ponytail: module constants re-set once per run, as every helper reads them
     FIT_GATE["max_fit_median_native"] = VOXEL
     if args.self_check:
