@@ -1,7 +1,7 @@
 """Replay a capture as the live-core stream through the live people loop: ME340 (scored against the offline person
 layer) or the ARKitScenes 47333932 room scan (device-metric poses and LiDAR, no people).
 
-Every frame goes through the stream contract (ehs_spatial.live_people: header JSON, rgb JPEG, depth PNG16 mm at the
+Every frame goes through the stream contract (ehs_spatial.phone_stream: header JSON, rgb JPEG, depth PNG16 mm at the
 LiDAR raster 256x192, confidence PNG8) and back through decode_frame, so this loop reads what the phone sends.
 
 ME340 stand-ins, all stated: DROID poses (run 171) for phone VIO; DA3 posed depth (run 223, x its fused scale) for
@@ -10,7 +10,8 @@ shot from another camera: they go out with tracking "notAvailable" and no pose, 
 Metres are DROID units x the stated 1.6 m carry height (model_estimated), so every verdict is NEEDS_REVIEW by design;
 the pre-gate verdict is kept to compare sample rates.
 
-ARKit: poses, K and bytes come from live-core's own producer code (scripts/live_map.py of m0/live-core, imported);
+ARKit: poses and K come from live-core's own reader (scripts/live_map.py arkit_frames, imported), headers and bytes from
+the one codec;
 the floor is a plane fitted to confident LiDAR points, standing in for ARKit's plane detection. The capture records no
 tracking state or world epoch and has no people, so those are stated ("normal", 0) and the detector is a stand-in
 that reports nobody: a PASS there only means the zone floor was observed.
@@ -34,7 +35,8 @@ from shapely import wkt
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "modal_apps")]
-from ehs_spatial.live_people import MIN_CONFIDENCE, PeopleLoop, Sam3Detector, decode_frame, pack, run  # noqa: E402
+from ehs_spatial.live_people import PeopleLoop, Sam3Detector, decode_frame, run  # noqa: E402
+from ehs_spatial.phone_stream import MIN_CONFIDENCE, depth_mm, header, pack  # noqa: E402
 from ehs_spatial.video import R3_MAX_SPEED_MPS, SPEED_BAND_MPS, banded_verdict, contract_scale, track_speed  # noqa: E402
 
 PHASE2 = Path("/Users/adam/Desktop/panoptes-public/research-notes/phase2")
@@ -85,16 +87,15 @@ def stream(rate):
     for index in chosen:
         rgb, k = raster(cv2.imread(str(CLIP / rows[index][1])), calibration())
         t = float(rows[index][0]) - start
-        header = {"seq": index, "t_capture": t, "t_device": t, "K": [float(v) for v in k], "cameraToWorld": None,
-                  "tracking": "notAvailable", "world_epoch": 0}
+        head = header(index, t, t, k, None, "notAvailable")
         depth = confidence = b""
         if index not in CUT_AWAY and index in with_depth:
             mono = np.load(DEPTH / "mono" / f"{index:05d}.npz")
             depth, confidence = encode_depth(np.where(mono["mask"], mono["depth"], 0).astype(np.float64) * scale * metres)
             c2w = (keyframe_poses[keys[index]] if index in keys else poses[index]).astype(np.float64)
             c2w[:3, 3] *= metres
-            header.update(cameraToWorld=c2w.ravel().tolist(), tracking="normal")
-        yield pack(header, cv2.imencode(".jpg", rgb, [cv2.IMWRITE_JPEG_QUALITY, 90])[1].tobytes(), depth, confidence)
+            head = header(index, t, t, k, c2w)
+        yield pack(head, cv2.imencode(".jpg", rgb, [cv2.IMWRITE_JPEG_QUALITY, 90])[1].tobytes(), depth, confidence)
 
 
 def cached_detector():
@@ -150,8 +151,7 @@ def lidar_floor(raw, frames, live_map):
         depths = {live_map.stamp_of(n): n for n in depth_zip.namelist() if n.endswith(".png")}
         levels = {live_map.stamp_of(n): n for n in confidence_zip.namelist() if n.endswith(".png")}
         for text, _, c2w, k in frames[::100]:
-            z = decode_frame(pack({"t_capture": 0.0, "K": k}, b"", depth_zip.read(depths[text]),
-                                  confidence_zip.read(levels[text])))["depth"]
+            z = depth_mm(depth_zip.read(depths[text]), confidence_zip.read(levels[text])) / 1000.0
             fx, fy, cx, cy = np.array(k) * z.shape[1] / 640
             vs, us = np.nonzero(z > 0)
             camera = np.c_[(us + 0.5 - cx) / fx, (vs + 0.5 - cy) / fy, np.ones(len(us))] * z[vs, us][:, None]
@@ -170,7 +170,7 @@ def lidar_floor(raw, frames, live_map):
 
 
 def arkit_stream(raw, frames, live_map):
-    """ARKitScenes 47333932 as the phone sends it, through live-core's own code (arkit_frames, pack), every LiDAR frame
+    """ARKitScenes 47333932 as the phone sends it (live-core's arkit_frames, the one header and codec), every LiDAR frame
     in order; rgb only where the capture kept a wide image (about 1 frame in 29)."""
     with zipfile.ZipFile(raw / "wide.zip") as wide, zipfile.ZipFile(raw / "lowres_depth.zip") as depth, \
             zipfile.ZipFile(raw / "confidence.zip") as confidence:
@@ -182,14 +182,12 @@ def arkit_stream(raw, frames, live_map):
                 image = cv2.imdecode(np.frombuffer(wide.read(images[text]), np.uint8), cv2.IMREAD_COLOR)
                 rgb = cv2.imencode(".jpg", cv2.resize(image, (640, 480), interpolation=cv2.INTER_AREA),
                                    [cv2.IMWRITE_JPEG_QUALITY, 90])[1].tobytes()
-            yield live_map.pack({"seq": seq, "t_capture": t_device - frames[0][1], "t_device": t_device, "K": k,
-                                 "cameraToWorld": c2w.ravel().tolist(), "tracking": "normal", "world_epoch": 0},
-                                rgb, depth.read(f"lowres_depth/{prefix}_{text}.png"),
-                                confidence.read(f"confidence/{prefix}_{text}.png"))
+            yield pack(header(seq, t_device - frames[0][1], t_device, k, c2w), rgb, depth.read(f"lowres_depth/{prefix}_{text}.png"),
+                       confidence.read(f"confidence/{prefix}_{text}.png"))
 
 
 def replay_arkit(args):
-    import live_map  # scripts/live_map.py, from m0/live-core
+    import live_map  # scripts/live_map.py
 
     frames = live_map.arkit_frames(args.arkit)
     point, up = lidar_floor(args.arkit, frames, live_map)
@@ -199,7 +197,7 @@ def replay_arkit(args):
     started = time.perf_counter()
     counts = run((decode_frame(m) for m in arkit_stream(args.arkit, frames, live_map)), loop, args.output)
     r1 = [json.loads(line) for line in (args.output / "findings.jsonl").read_text().splitlines()]
-    summary = {"stream": {"capture": str(args.arkit), "producer": "scripts/live_map.py arkit_frames + pack (m0/live-core)",
+    summary = {"stream": {"capture": str(args.arkit), "producer": "scripts/live_map.py arkit_frames + ehs_spatial.phone_stream header/pack",
                           "detector": "stand-in reporting nobody (the room scan has no people): R1 PASS = zone floor observed",
                           "tracking_and_world_epoch": "stated normal / 0: ARKitScenes keeps neither"},
                "floor": {"point": point.round(4).tolist(), "up": up.round(5).tolist(), "camera_height_m_median":
@@ -225,7 +223,8 @@ def replay(args):
                 ious.append(max((iou(d["mask"], reference["mask"]) for d in found), default=0.0))
             for d in found or []:  # precision: does a cached person explain each live mask?
                 best = max((iou(d["mask"], r["mask"]) for r in references), default=0.0)
-                live_masks.append({"frame": frame["frame"], "score": round(d["score"], 3), "best_iou": round(float(best), 3)})
+                live_masks.append({"frame": frame["frame"], "score": d["score"] if d["score"] is None else round(d["score"], 3),
+                                   "best_iou": round(float(best), 3)})
             return found
     zone = wkt.loads(args.zone_wkt) if args.zone_wkt else None
     loop = PeopleLoop(np.array(scale["plane_point_native"]) * metres, scale["up_native"], record, detector, zone)
@@ -362,7 +361,7 @@ def self_check():
     frames = [decode_frame(m) for m in stream(1)]
     assert all(b["t"] - a["t"] >= 1.0 - 1e-6 for a, b in zip(frames, frames[1:]))
     gap = [f for f in frames if f["frame"] in CUT_AWAY]
-    assert gap and all(f["cameraToWorld"] is None and f["depth"] is None and f["tracking"] == "notAvailable" for f in gap)
+    assert gap and all(f["cameraToWorld"] is None and f["depth"] is None and f["trackingState"] == "notAvailable" for f in gap)
     posed = [f for f in frames if f["cameraToWorld"] is not None]
     assert posed and all(f["depth"].shape == (192, 256) and f["rgb"].shape == (480, 640, 3) for f in posed)
     fused = json.loads((DEPTH / "fuse-metrics.json").read_text())["scale_native_per_mono_metre_median"]

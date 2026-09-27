@@ -1,21 +1,11 @@
-"""Live map core for a moving phone that streams posed RGB-D (the future ARKit app): the stream contract, a 1x replay of an
-ARKitScenes raw capture acting as that phone, and a worker that keeps an incremental TSDF and emits a voxel patch about
-once a second. The device's metric poses and LiDAR depth are used as they come: no SLAM, no model, no scale fit.
+"""Live map core for a moving phone that streams posed RGB-D (the future ARKit app): a 1x replay of an ARKitScenes raw
+capture acting as that phone, and a worker that keeps an incremental TSDF and emits a voxel patch about once a second.
+The device's metric poses and LiDAR depth are used as they come: no SLAM, no model, no scale fit.
 
-Stream contract, one message per sent ARFrame (the phone sends at most RATE_HZ of its 60 Hz frames):
-    u32 little-endian header length | header JSON | rgb | depth | confidence      (blob sizes are header["sizes"])
-    header  seq; t_capture: wall-clock epoch seconds at capture (phone NTP-synced); t_device: ARKit timestamp;
-            K: [fx, fy, cx, cy] of the 640x480 rgb raster; cameraToWorld: 16 floats row-major, metres, OpenCV axes
-            (x right, y down, z forward: ARKit's camera.transform @ diag(1, -1, -1, 1));
-            trackingState: "normal" | "limited" | "notAvailable" (ARCamera.trackingState) and trackingStateReason: null or
-            ARKit's reason ("initializing", "excessiveMotion", "insufficientFeatures", "relocalizing");
-            worldOriginEpoch: an int the app increments whenever the world origin moves (relocalisation, a loaded ARWorldMap,
-            a tracking reset, setWorldOrigin). Only 'normal' frames are integrated; every other frame is a coverage gap.
-            Each epoch is its own submap: two epochs' poses share no frame until a Sim3 gate joins them, so they are never fused.
-    rgb         640x480 JPEG. May be empty: this public capture kept wide images for only 258 of its 7.5k ARFrames; the app always sends it.
-    depth       optional PNG uint16 millimetres, aligned with rgb (same field of view, lower resolution, K scaled by width)
-    confidence  optional PNG uint8 0/1/2 (ARConfidenceLevel), same size as depth
-The worker takes the newest waiting message and drops the older ones (latest frame wins); each dropped run is a coverage gap.
+The phone stream contract (header keys, blobs, the one codec) is ehs_spatial/phone_stream.py. The phone sends at most
+RATE_HZ of its 60 Hz frames. Only a 'normal' frame with an int worldOriginEpoch and a rigid pose is integrated; every
+other frame is a coverage gap. Each epoch is its own submap, never fused with another. The worker takes the newest
+waiting message and drops the older ones (latest frame wins); each dropped run is a coverage gap.
 
 Submap output, OUTPUT/submap-EPOCH/: submap.json (epoch, voxel_size); patches/NNNNNN.npz, every block touched since the
 previous patch, whole: blocks int32 (n, 3); tsdf int8 (n, 8, 8, 8) indexed [z, y, x], = round(127 * tsdf / truncation);
@@ -54,10 +44,12 @@ import zlib
 import cv2
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from ehs_spatial.phone_stream import TRACKING_NORMAL, depth_mm, header, pack, pose, unpack  # noqa: E402  (the Modal image carries it too)
+
 VOXEL = .02  # m; one lowres LiDAR pixel covers 1.4 cm at 3 m
 TRUNC_VOXELS = 4.
 DEPTH_MAX = 5.  # m, ARKit scene depth range
-MIN_CONFIDENCE = 2  # ARKit high only: medium is mostly depth edges, which smear into the map
 EMIT_EVERY_S = 1.
 MAX_BLOCKS = 32000  # the sliding cache: 32k blocks of float tsdf + weight are 130 MB
 SPARE_BLOCKS = 2000  # Open3D grows the hash (moving every buffer index) once size + a frame's blocks pass capacity; a LiDAR frame of 47333932 touches <= 910 (median 196)
@@ -69,21 +61,6 @@ WINDOW = 20000  # per-frame and per-patch samples kept (rolling): the whole 125 
 PENDING_S = 30.  # a frame whose surface is not extractable this long after capture counts as never
 SAMPLES = 32  # surface points per frame followed for the map latency
 EXTRACTABLE_SHARE = .9  # a frame's surface is in the map once this share of its sampled points is
-
-
-def pack(header, rgb=b"", depth=b"", confidence=b""):
-    text = json.dumps(dict(header, sizes=[len(rgb), len(depth), len(confidence)])).encode()
-    return struct.pack("<I", len(text)) + text + rgb + depth + confidence
-
-
-def unpack(message):
-    """(header, rgb, depth, confidence) of one message."""
-    n = struct.unpack_from("<I", message)[0]
-    header, at, blobs = json.loads(message[4:4 + n]), 4 + n, []
-    for size in header["sizes"]:
-        blobs.append(message[at:at + size])
-        at += size
-    return header, *blobs
 
 
 def take_latest(conn, timeout):
@@ -183,9 +160,7 @@ def produce(raw, send, rate_hz=RATE_HZ):
             t_capture = start + t_device - frames[0][1]
             time.sleep(max(0., t_capture - time.time()))
             png = depth.read(f"lowres_depth/{prefix}_{text}.png")
-            message = pack({"seq": seq, "t_capture": t_capture, "t_device": t_device, "K": k, "cameraToWorld": c2w.ravel().tolist(),
-                            "trackingState": "normal", "trackingStateReason": None, "worldOriginEpoch": 0},
-                           jpegs.get(text, b""), png, confidence.read(f"confidence/{prefix}_{text}.png"))
+            message = pack(header(seq, t_capture, t_device, k, c2w), jpegs.get(text, b""), png, confidence.read(f"confidence/{prefix}_{text}.png"))
             send(message)
             late.append(time.time() - t_capture)
             sent_bytes, depth_bytes = sent_bytes + len(message), depth_bytes + len(png)
@@ -434,27 +409,27 @@ def serve(conn, output, max_blocks=MAX_BLOCKS, sink=None):
             gap("dropped", t)
         if message is not None:
             t0 = time.perf_counter()
-            header, _, depth, confidence = unpack(message)
-            t, epoch, state = header["t_capture"], header.get("worldOriginEpoch"), header.get("trackingState")
+            head, _, depth, confidence = unpack(message)
+            t, epoch, state = head["t_capture"], head.get("worldOriginEpoch"), head.get("trackingState")
             first = t if first is None else first
+            c2w, depth = pose(head), depth_mm(depth, confidence)
             if not isinstance(epoch, int):  # a missing field is not a credible pose either
                 gap("noEpoch", t)
-            elif state != "normal":
-                gap(f"{state}:{header.get('trackingStateReason')}", t)
+            elif state != TRACKING_NORMAL:
+                gap(f"{state}:{head.get('trackingStateReason')}", t)
             elif live and epoch < live.epoch:
                 gap("epochWentBack", t)
-            elif not depth:
+            elif c2w is None:  # null, NaN or not a rotation: no place to integrate at
+                gap("badPose", t)
+            elif depth is None:
                 gap("noDepth", t)
             else:
                 if live is None or epoch != live.epoch:
                     if live:
                         submaps.append(live.close())
                     live = LiveMap(output / f"submap-{epoch}", max_blocks, epoch=epoch, sink=sink)
-                depth = cv2.imdecode(np.frombuffer(depth, np.uint8), cv2.IMREAD_UNCHANGED)
-                if confidence:
-                    depth[cv2.imdecode(np.frombuffer(confidence, np.uint8), cv2.IMREAD_UNCHANGED) < MIN_CONFIDENCE] = 0
-                k = np.array(header["K"]) * depth.shape[1] / 640
-                if live.integrate(depth, k, np.array(header["cameraToWorld"]).reshape(4, 4), t):
+                k = np.array(head["K"]) * depth.shape[1] / 640
+                if live.integrate(depth, k, c2w, t):
                     integrated, in_gap = integrated + 1, False
                     integrate_ms.append((time.perf_counter() - t0) * 1000)
                 else:
@@ -751,19 +726,21 @@ def self_check():
         png = cv2.imencode(".png", wall)[1].tobytes()
         moved = np.eye(4)
         moved[2, 3] = 1.  # the camera 1 m further along z: the same wall reading lands at z = 3
-        header = lambda n, state, reason, epoch, c2w: {"seq": n, "t_capture": float(n), "K": [v * 640 / 120 for v in k], "cameraToWorld": c2w.ravel().tolist(),
-                                                       "trackingState": state, "trackingStateReason": reason, "worldOriginEpoch": epoch}
-        stream = [header(n, "normal", None, 0, np.eye(4)) for n in range(4)] + [header(n, "limited", "excessiveMotion", 0, moved) for n in range(4, 8)]
-        stream += [header(8, "notAvailable", None, 0, moved), header(9, "normal", None, None, moved)]
-        stream += [header(n, "normal", None, 1, moved) for n in range(10, 14)]
-        blank = pack(header(14, "normal", None, 2, moved), b"", cv2.imencode(".png", 0 * wall)[1].tobytes())  # a submap whose one frame has no depth still closes
+        frame = lambda n, state, reason, epoch, c2w: header(n, float(n), float(n), [v * 640 / 120 for v in k], c2w, state, reason, epoch)
+        stream = [frame(n, "normal", None, 0, np.eye(4)) for n in range(4)] + [frame(n, "limited", "excessiveMotion", 0, moved) for n in range(4, 8)]
+        stream += [frame(8, "notAvailable", None, 0, moved), frame(9, "normal", None, None, moved)]
+        stream += [frame(n, "normal", None, 1, moved) for n in range(10, 14)]
+        # an older epoch after a newer one, a null pose and a NaN pose are gaps: none may reopen a submap or claim coverage
+        stream += [frame(14, "normal", None, 0, np.eye(4)), frame(15, "normal", None, 1, None), frame(16, "normal", None, 1, np.full((4, 4), np.nan))]
+        blank = pack(frame(17, "normal", None, 2, moved), b"", cv2.imencode(".png", 0 * wall)[1].tobytes())  # a submap whose one frame has no depth still closes
         stats = serve(OneAtATime([pack(h, b"", png) for h in stream] + [blank, b""]), Path(directory) / "contract", 5000)
         assert len(stats["submaps"]) == 3 and stats["frames_integrated"] == 8 and stats["submaps"][2]["patches"] == 0, stats
         z = [surface_points(*load_store(Path(directory) / "contract" / f"submap-{e}"))[:, 2] for e in (0, 1)]
         assert len(z[0]) and len(z[1]) and np.abs(z[0] - 2).max() < .02 and np.abs(z[1] - 3).max() < .02, (np.unique(z[0].round(2)), np.unique(z[1].round(2)))
-        assert stats["coverage_gap_frames"] == {"limited:excessiveMotion": 4, "notAvailable:None": 1, "noEpoch": 1, "noDepth": 1}, stats["coverage_gap_frames"]
-        assert stats["coverage_gap_runs"] == 2 and stats["coverage_gap_longest_s"] == 5. and stats["first_t_capture"] == 0.  # frames 4 to 9 unbroken, then 14
-        print(f"contract: 8 of 15 frames integrated into 2 submaps and an empty third (walls at {np.median(z[0]):.2f} m and {np.median(z[1]):.2f} m), gaps {stats['coverage_gap_frames']}")
+        assert stats["coverage_gap_frames"] == {"limited:excessiveMotion": 4, "notAvailable:None": 1, "noEpoch": 1, "epochWentBack": 1, "badPose": 2,
+                                                "noDepth": 1}, stats["coverage_gap_frames"]
+        assert stats["coverage_gap_runs"] == 2 and stats["coverage_gap_longest_s"] == 5. and stats["first_t_capture"] == 0.  # frames 4 to 9 unbroken, then 14 to 17
+        print(f"contract: 8 of 18 frames integrated into 2 submaps and an empty third (walls at {np.median(z[0]):.2f} m and {np.median(z[1]):.2f} m), gaps {stats['coverage_gap_frames']}")
 
         # map latency is capture -> the first patch in which the frame's surface is extractable (weight >= MIN_WEIGHT)
         out = Path(directory) / "latency"
@@ -826,8 +803,8 @@ def self_check():
         sender.send_bytes(b"")
         latest, dropped, ended = take_latest(receiver, 0)
         assert unpack(latest)[0]["t_capture"] == 4 and dropped == [] and ended
-    header, rgb, depth, confidence = unpack(pack({"seq": 7}, b"j", b"dd", b""))
-    assert header["seq"] == 7 and (rgb, depth, confidence) == (b"j", b"dd", b"")
+    head, rgb, depth, confidence = unpack(pack({"seq": 7}, b"j", b"dd", b""))
+    assert head["seq"] == 7 and (rgb, depth, confidence) == (b"j", b"dd", b"")
     print("live map check passed: a moving camera around a box integrates to the box and room surfaces, patches and the block "
           "store rebuild the worker's map exactly, a moved box leaves the map (from evicted blocks too), non-normal poses and "
           "epochs are kept apart, map latency counts extractable surface, writes are off the frame loop, a static scene's "

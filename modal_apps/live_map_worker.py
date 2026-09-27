@@ -28,7 +28,9 @@ app = modal.App("panoptes-live-map")
 image = (modal.Image.debian_slim(python_version="3.12")
          .apt_install("libgl1", "libgomp1")
          .pip_install("numpy==2.5.1", "scipy==1.18.0", "opencv-python-headless==5.0.0.93", "open3d==0.19.0", "fastapi[standard]==0.139.0")
-         .add_local_file(SCRIPTS / "live_map.py", "/root/live_map.py"))
+         .add_local_file(SCRIPTS / "live_map.py", "/root/live_map.py")
+         .add_local_file(SCRIPTS.parent / "ehs_spatial" / "__init__.py", "/root/ehs_spatial/__init__.py")  # the stream codec live_map imports
+         .add_local_file(SCRIPTS.parent / "ehs_spatial" / "phone_stream.py", "/root/ehs_spatial/phone_stream.py"))
 KEY = secrets.token_urlsafe(32) if modal.is_local() else ""
 
 

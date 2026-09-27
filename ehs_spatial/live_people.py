@@ -1,18 +1,11 @@
-"""Live people/mover loop over the live-core RGB-D stream: timestamped 3D person tracks and rule findings.
+"""Live people/mover loop over the phone's posed RGB-D stream: timestamped 3D person tracks and rule findings.
 
-Stream contract (scripts/live_map.py, m0/live-core 61ccd1a), one message per ARFrame:
-    u32 little-endian header length | header JSON | rgb | depth | confidence      (blob sizes are header["sizes"])
-    header  seq; t_capture: wall-clock epoch seconds at capture; t_device: ARKit timestamp; K: [fx, fy, cx, cy] of
-            the 640x480 rgb raster; cameraToWorld: 16 floats row-major, metres, OpenCV axes, null without a pose;
-            tracking: ARKit's camera tracking state, "normal" | "limited" | "notAvailable";
-            world_epoch: int, +1 each time ARKit resets its world origin (new session, failed relocalisation)
-    rgb JPEG (may be empty); depth PNG uint16 millimetres, same field of view as rgb at a lower resolution (K scaled
-    by width); confidence PNG uint8 0/1/2 (ARConfidenceLevel), same size as depth.
-decode_frame turns a message into the frame step() takes. Only a frame with "normal" tracking, in the world epoch
-the floor and zone were drawn in, with rgb, pose and depth covers anything; any other frame is a coverage gap
-(NO_DATA), never an empty scene. Feet go through video.lift_foot and rules through video.judge_frame, so this loop
-and the offline video tier cannot disagree about a rule. State is bounded: speed samples older than two baselines,
-tracks unseen for TRACK_KEEPALIVE_S and latencies beyond LATENCY_WINDOW frames are dropped.
+The stream contract is ehs_spatial/phone_stream.py, the same messages scripts/live_map.py integrates. decode_frame turns
+a message into the frame step() takes. Only a frame with trackingState "normal", in the worldOriginEpoch the floor and
+zone were drawn in, with rgb, a rigid pose and depth covers anything; any other frame is a coverage gap (NO_DATA), never
+an empty scene. Feet go through video.lift_foot and rules through video.judge_frame, so this loop and the offline video
+tier cannot disagree about a rule. State is bounded: speed samples older than two baselines, tracks unseen for
+TRACK_KEEPALIVE_S and latencies beyond LATENCY_WINDOW frames are dropped.
 
   python -m ehs_spatial.live_people --self-check
 """
@@ -20,7 +13,6 @@ tracks unseen for TRACK_KEEPALIVE_S and latencies beyond LATENCY_WINDOW frames a
 import base64
 import io
 import json
-import struct
 import time
 from collections import Counter, deque
 from collections.abc import Callable, Iterable
@@ -31,6 +23,7 @@ import numpy as np
 from PIL import Image
 from shapely.geometry import Polygon, box
 
+from .phone_stream import TRACKING_NORMAL, depth_mm, header, pack, pose, unpack
 from .providers.sam3 import SAM3_ENDPOINT, decode_coco_rle, sam_backend_revision, sam_subscribe
 from .video import (
     BAND_M, COST_PER_SAM_CALL_USD, MAX_HUMAN_SPEED_MPS, MODAL_L4_USD_PER_S, MODAL_SCALEDOWN_S, NO_DATA, RULE_NAMES,
@@ -40,44 +33,24 @@ from .video import (
 
 TRACK_KEEPALIVE_S = 5.0  # a track unseen this long is closed; a returning person gets a new id
 LATENCY_WINDOW = 36000  # the last hour of frames at 10 Hz
-TRACKING_NORMAL = "normal"
-MIN_CONFIDENCE = 2  # ARKit high confidence only, as live_map.py integrates
-
-
-def pack(header: dict, rgb: bytes = b"", depth: bytes = b"", confidence: bytes = b"") -> bytes:
-    """One stream message, byte for byte as scripts/live_map.py packs it.
-    ponytail: a copy of live-core's four-line codec until the two branches merge, then one import."""
-    text = json.dumps(dict(header, sizes=[len(rgb), len(depth), len(confidence)])).encode()
-    return struct.pack("<I", len(text)) + text + rgb + depth + confidence
 
 
 def decode_frame(message: bytes) -> dict:
     """One stream message -> the frame step() takes: t (t_capture), frame (seq), rgb (HxWx3), K (3x3), cameraToWorld
-    (4x4 metres), depth (metres on its own raster, 0 where missing or below high confidence), tracking, world_epoch.
-    A blob or pose that does not decode stays None, so the frame becomes a gap."""
-    length = struct.unpack_from("<I", message)[0]
-    header, at, blobs = json.loads(message[4:4 + length]), 4 + length, []
-    for size in header["sizes"]:
-        blobs.append(message[at:at + size])
-        at += size
-    rgb, depth, confidence = blobs
-    fx, fy, cx, cy = header["K"]
-    frame = {"t": float(header["t_capture"]), "frame": header.get("seq"), "tracking": header.get("tracking"),
-             "world_epoch": header.get("world_epoch"), "K": np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1.0]]),
-             "rgb": None, "depth": None, "cameraToWorld": None}
-    pose = np.array(header.get("cameraToWorld") or [np.nan], float)
-    if pose.size == 16 and np.isfinite(pose).all():
-        frame["cameraToWorld"] = pose.reshape(4, 4)
+    (4x4 metres), depth (metres on its own raster, 0 where missing or below high confidence), and the header's
+    trackingState, trackingStateReason and worldOriginEpoch. A blob or pose that does not decode stays None, so the frame
+    becomes a gap."""
+    head, rgb, depth, confidence = unpack(message)
+    fx, fy, cx, cy = head["K"]
+    frame = {"t": float(head["t_capture"]), "frame": head.get("seq"), "K": np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1.0]]),
+             **{key: head.get(key) for key in ("trackingState", "trackingStateReason", "worldOriginEpoch")},
+             "rgb": None, "depth": None, "cameraToWorld": pose(head)}
     image = cv2.imdecode(np.frombuffer(rgb, np.uint8), cv2.IMREAD_COLOR) if rgb else None
     if image is not None:
         frame["rgb"] = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    millimetres = cv2.imdecode(np.frombuffer(depth, np.uint8), cv2.IMREAD_UNCHANGED) if depth else None
+    millimetres = depth_mm(depth, confidence)
     if millimetres is not None:
-        metres = millimetres.astype(np.float32) / 1000.0
-        levels = cv2.imdecode(np.frombuffer(confidence, np.uint8), cv2.IMREAD_UNCHANGED) if confidence else None
-        if levels is not None and levels.shape == metres.shape:
-            metres[levels < MIN_CONFIDENCE] = 0
-        frame["depth"] = metres
+        frame["depth"] = millimetres.astype(np.float32) / 1000.0
     return frame
 
 
@@ -130,7 +103,7 @@ class Sam3Detector:
             for ordinal, rle in enumerate([rles] if isinstance(rles, str) else rles):
                 mask = decode_coco_rle(rle, height=height, width=width).astype(bool)
                 found.append({"label": label, "mask": mask,
-                              "score": float(scores[ordinal]) if ordinal < len(scores) else 1.0})
+                              "score": float(scores[ordinal]) if ordinal < len(scores) else None})  # none sent: none made up
         return found
 
 
@@ -187,11 +160,12 @@ class PeopleLoop:
 
     def _gap(self, frame: dict) -> str | None:
         """Why this frame cannot cover a rule before anything is detected; resets state a bad pose would poison."""
-        tracking, epoch = frame.get("tracking"), frame.get("world_epoch")
+        tracking, epoch = frame.get("trackingState"), frame.get("worldOriginEpoch")
         if tracking != TRACKING_NORMAL:
             for track in self.tracks.values():
                 track["samples"].clear()  # a pose that drifted and then snapped back must not feed a speed
-            return f"ARKit tracking {tracking or 'state not sent'}"
+            why = frame.get("trackingStateReason")
+            return f"ARKit tracking {tracking or 'state not sent'}" + (f" ({why})" if why else "")
         if epoch != self.world_epoch:
             self.tracks.clear()  # positions from another world origin are not comparable
             return f"world origin epoch {'not sent' if epoch is None else epoch}; floor and zone are in {self.world_epoch}"
@@ -333,7 +307,7 @@ def run(frames: Iterable[dict], loop: PeopleLoop, output: Path) -> dict:
 _SEEN_ZONE = Polygon([(-1, 5), (1, 5), (1, 7), (-1, 7)])  # floor metres (x, z) in front of the camera
 
 
-def _message(t, rng, camera_height=1.6, people=(), walls=(), tracking="normal", epoch=0, pose=True):
+def _message(t, rng, camera_height=1.6, people=(), walls=(), tracking="normal", epoch=0, posed=True, reason=None):
     """A synthetic ARFrame over a flat floor, camera looking along +z (K 600 px on the 640x480 raster). people:
     (x, z, top m, bottom m, half width m), the part between bottom and top visible; walls: (z, top m, u0, u1)
     fronto-parallel slabs standing on the floor. Depth goes out at 256x192 in millimetres, as LiDAR does.
@@ -353,12 +327,11 @@ def _message(t, rng, camera_height=1.6, people=(), walls=(), tracking="normal", 
     c2w = np.eye(4)
     c2w[:3, 3] = [0, -camera_height, 0]  # OpenCV world: y down, floor y = 0
     low = depth[((np.arange(192) + 0.5) * 2.5).astype(int)][:, ((np.arange(256) + 0.5) * 2.5).astype(int)]
-    header = {"seq": int(round(t * 1000)), "t_capture": t, "t_device": t, "K": [600.0, 600.0, 320.0, 240.0],
-              "cameraToWorld": c2w.ravel().tolist() if pose else None, "tracking": tracking, "world_epoch": epoch}
+    head = header(int(round(t * 1000)), t, t, [600.0, 600.0, 320.0, 240.0], c2w if posed else None, tracking, reason, epoch)
     rgb = cv2.imencode(".jpg", rng.integers(20, 235, (480, 640, 3), dtype=np.uint8), [cv2.IMWRITE_JPEG_QUALITY, 90])[1]
     millimetres = cv2.imencode(".png", np.clip(np.rint(low * 1000), 0, 65535).astype(np.uint16))[1]
     confidence = cv2.imencode(".png", np.where(low > 0, 2, 0).astype(np.uint8))[1]
-    return pack(header, rgb.tobytes(), millimetres.tobytes(), confidence.tobytes()), masks
+    return pack(head, rgb.tobytes(), millimetres.tobytes(), confidence.tobytes()), masks
 
 
 def _step(loop, message_masks):
@@ -400,8 +373,8 @@ def self_check() -> None:
     #    is NO_DATA; an offline detector too.
     rng, loop = np.random.default_rng(1), fresh(_SEEN_ZONE)
     assert _r1(loop, _message(0.0, rng))[0]["verdict"] == "PASS"
-    for t, kwargs, reason in ((1, {"pose": False}, "no cameraToWorld"),
-                              (2, {"tracking": "limited"}, "ARKit tracking limited"),
+    for t, kwargs, reason in ((1, {"posed": False}, "no cameraToWorld"),
+                              (2, {"tracking": "limited", "reason": "excessiveMotion"}, "ARKit tracking limited (excessiveMotion)"),
                               (3, {"tracking": "notAvailable"}, "ARKit tracking notAvailable"),
                               (4, {"tracking": None}, "ARKit tracking state not sent"),
                               (5, {"epoch": 1}, "world origin epoch 1; floor and zone are in 0")):
@@ -443,6 +416,10 @@ def self_check() -> None:
     broke.detector.backend = {"backend": "fal", "model_revision": "test"}
     found = [broke.step(decode_frame(_message(float(t), rng)[0]))[1] for t in range(3)]
     assert found[2][0]["verdict"] == NO_DATA and found[2][0]["reason"].startswith("detector budget exhausted"), found
+    unscored = Sam3Detector(subscriber=lambda endpoint, arguments: {"rle": ['{"size": [8, 8], "counts": [0, 64]}']},
+                            guard=HourlySpendGuard(1.0))
+    unscored.backend = {"backend": "fal", "model_revision": "test"}
+    assert unscored({"rgb": np.zeros((8, 8, 3), np.uint8)})[0]["score"] is None  # SAM sent no score: none is made up
     now = [0.0]
 
     def warm_call(endpoint, arguments):

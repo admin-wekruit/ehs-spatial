@@ -21,6 +21,7 @@
 | `object-map.json` | C4 `build_video_object_map` → `name_video_entities` | C7、R、C10 | `entityId`、`observations`、`centroidNative`、`footprintPlanNative`、`heightNative`、`baseNative`、`label`、`labelSource` |
 | `events.json` | C6 `video_events` | R | `windows[].events[{t0,t1,actor,action,near,ppe,safety_note}]`、`model`、`temperature` |
 | `policy-findings.json` / `scene-document.json` | C7 `evaluate_video_policy` | R | `findings[].machineResult`、`missingEvidence`、`applicability` |
+| 手机流消息（`ehs_spatial/phone_stream.py`，唯一的编解码） | ARKit 应用（现在由 `live_map.produce`、`replay_people_stream` 回放代替） | `scripts/live_map.py` 建图、`ehs_spatial/live_people.py` 人员 | `trackingState`（`normal` / `limited` / `notAvailable`）、`trackingStateReason`、`worldOriginEpoch`（int）、`cameraToWorld`（刚体，否则当缺口）、`t_capture` / `t_device`、`K`（640×480）；深度 PNG16 毫米 + 置信度 PNG8，只用高置信。两边读同一套键（`tests/test_phone_stream.py`） |
 | 平台场景文档（Postgres `scene_revisions.document`） | R `import_video_scene` | 平台全部 | `coordinateFrames[].scale{status,nativeToMeters,anchor}`（由 `evaluate_video_policy.contract_scale` 按 `scale_status` 生成，两处共用）、`entities`、`annotations` |
 
 ## C1 采集与片段
