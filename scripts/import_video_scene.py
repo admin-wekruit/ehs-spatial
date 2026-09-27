@@ -375,11 +375,15 @@ def build_document(args, put_asset, calibration, dataset):
             "measurements": measurements, "groupId": None, "visible": True, "sourceContext": False,
             "lineage": [{"operation": "offline_import", "sourceAssetId": source, "sourceRecordId": entity["entityId"], "method": object_map["associator"]}]})
     moving = {}  # motion track id -> report entity: the dynamic layer, one timed surface per sampled view
+    # A cut-away shot placed into the map by register_cut_shot.py (its own camera, aligned to the walk's) may carry moving
+    # surfaces; its static 3D still stays out (the object map was built from DROID's wrong cameras for it).
+    registered = [tuple(r["frames"]) for r in json.loads(args.dynamic_scene.read_text()).get("registeredShots", [])] if args.dynamic_scene else []
+    movable = lambda frame: walk(frame) or any(a <= frame < b for a, b in registered)
     if args.dynamic_scene:
         from attach_entities_to_replay import light_model
         identity = {"coordinateFrameId": FRAME, "position": [0., 0., 0.], "quaternion": [0., 0., 0., 1.], "scale": [1., 1., 1.]}
         named = {o["entityId"]: o.get("sourceLabel") for f in (json.loads(args.dynamic_analysis.read_text())["frames"] if args.dynamic_analysis else []) for o in f["objects"]}
-        for frame in (f for f in json.loads(args.dynamic_scene.read_text())["frames"] if walk(f["sourceFrame"])):
+        for frame in (f for f in json.loads(args.dynamic_scene.read_text())["frames"] if movable(f["sourceFrame"])):
             for o in (x for x in frame["objects"] if x.get("surface")):
                 data, record = light_model(args.dynamic_scene.parent / o["surface"]["meshUrl"], triangles=3000)  # a person's visible side needs no more
                 shape = trimesh.load(io.BytesIO(data), file_type="glb", force="mesh", process=False)
@@ -396,7 +400,7 @@ def build_document(args, put_asset, calibration, dataset):
             owners = {f["sourceFrame"]: [o for o in f["objects"] if any(p is not None for p in o.get("keypoints3d") or [])] for f in json.loads(args.skeleton_scene.read_text())["frames"]}
             lengths = [np.linalg.norm(np.subtract(o["keypoints3d"][i], o["keypoints3d"][j])) for f in owners.values() for o in f for i, j in o["bones"] if o["keypoints3d"][i] and o["keypoints3d"][j]]
             radius = .06 * float(np.median(lengths)) if lengths else .01
-            for frame in (f for f in json.loads(args.dynamic_scene.read_text())["frames"] if walk(f["sourceFrame"])):
+            for frame in (f for f in json.loads(args.dynamic_scene.read_text())["frames"] if movable(f["sourceFrame"])):
                 for o in (x for x in frame["objects"] if x["entityId"] in moving):
                     near = [c for c in owners.get(frame["sourceFrame"], []) if np.linalg.norm(np.subtract(c["centroid"], o["centroid"])) < .1]  # the same surface, lifted twice
                     if not near:
@@ -422,7 +426,7 @@ def build_document(args, put_asset, calibration, dataset):
         factor = 1. if uncalibrated else scale["metres_per_native_unit"]
         statics = [(ident("entity", e["entityId"]), e["label"], np.array(e["centroidNative"]) * factor) for e in object_map["entities"] if e.get("centroidNative")]
         tracks = {}
-        for frame in (f for f in json.loads(args.dynamic_scene.read_text())["frames"] if walk(f["sourceFrame"])):
+        for frame in (f for f in json.loads(args.dynamic_scene.read_text())["frames"] if movable(f["sourceFrame"])):
             for o in frame["objects"]:
                 if o["entityId"] in moving and o.get("centroid"):
                     tracks.setdefault(o["entityId"], []).append((frame["timeSec"], np.array(o["centroid"]) * factor))
@@ -479,7 +483,7 @@ def build_document(args, put_asset, calibration, dataset):
         document["annotations"].append({"id": ident("annotation", "video-events"), "kind": "video_events", "sourceAssetId": source, "model": memory["model"], "method": memory["method"],
             "windows": [{k: w.get(k) for k in ("t0", "t1", "caption", "events")} for w in memory["windows"]],
             "note": "model descriptions of each window; evidence for review and search, never a rule verdict"})
-    left_out = {"cut_away_frames": args.exclude_frames or [], "entities_whose_3d_came_only_from_cut_away_views": no_walk_3d, "entities_seen_only_in_cut_away_frames": entities_before_cuts - len(object_map["entities"]) - len(skipped),
+    left_out = {"cut_away_frames": args.exclude_frames or [], "cut_away_frames_registered_for_moving_objects_only": [list(r) for r in registered], "entities_whose_3d_came_only_from_cut_away_views": no_walk_3d, "entities_seen_only_in_cut_away_frames": entities_before_cuts - len(object_map["entities"]) - len(skipped),
                 "entities_shown_by_fused_cut": used_fused, "entities_shown_by_best_single_view": used_view, "unconfirmed_class_agnostic_fragments": len(skipped), "views_not_imported": sum(e["observationsNotImported"] for e in object_map["entities"])}
     if args.comparison_video:  # the clip split into static and dynamic layers, rendered from the clip's own camera (render_static_dynamic_video.py)
         rendered = json.loads(args.comparison_video.with_suffix(".json").read_text())
