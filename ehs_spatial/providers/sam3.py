@@ -231,6 +231,21 @@ def sam_subscribe(endpoint: str, *, arguments: dict[str, object]) -> object:
     raise ValueError(f"unknown SAM3_BACKEND {backend!r}")
 
 
+def sam_backend_revision() -> dict[str, str]:
+    """The backend sam_subscribe will use and the model it serves, for run manifests.
+    SAM3_MODEL_REVISION overrides when the serving side pins one."""
+    import os
+
+    from ..backends import service_backend
+
+    backend = service_backend("SAM3_BACKEND", "fal")
+    known = {
+        "fal": f"{SAM3_ENDPOINT} (vendor-managed weights; revision not exposed)",
+        "modal": "facebook/sam3, unpinned (modal_apps/sam3_app.py loads the default branch)",
+    }
+    return {"backend": backend, "model_revision": os.environ.get("SAM3_MODEL_REVISION", known.get(backend, "unknown"))}
+
+
 def _default_subscriber(endpoint: str, *, arguments: dict[str, object]) -> object:
     return sam_subscribe(endpoint, arguments=arguments)
 

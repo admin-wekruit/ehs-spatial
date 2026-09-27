@@ -16,21 +16,39 @@ from ehs_spatial.contracts import RunManifest
 from ehs_spatial.providers.base import ProviderError
 from ehs_spatial import video as video_module
 from ehs_spatial.video import (
+    BudgetExhausted,
     FloorCamera,
+    HourlySpendGuard,
     banded_verdict,
+    contract_scale,
     fit_floor_from_keyframes,
     fit_pinhole_from_grid,
+    frame_health,
     judge,
+    judge_frame,
+    keep_untracked,
+    lift_foot,
     lift_tracks,
+    track_speed,
     ransac_plane,
     run_video_assessment,
     sam_stage,
     sample_schedule,
     video_paths,
     worst_verdict,
+    zone_floor_points,
+    zone_floor_seen,
     zone_verdict,
 )
 from shapely import wkt as shapely_wkt
+
+_PROCESS_GUARD = video_module.SAM_SPEND
+
+
+@pytest.fixture(autouse=True)
+def _own_spend_guard(monkeypatch):
+    """Fake SAM calls charge a guard of their own, never the process's (they did: 20 charges a run)."""
+    monkeypatch.setattr(video_module, "SAM_SPEND", HourlySpendGuard())
 
 
 # ---------------------------------------------------------------- sampling
@@ -177,12 +195,132 @@ def test_lift_tracks_bottom_center_and_vehicle_edges():
         "person-1": [(0, (310.0, 400.0, 330.0, 440.0))],
         "forklift-1": [(0, (300.0, 400.0, 340.0, 440.0))],
     }
-    lifted = lift_tracks(tracks, camera)
+    lifted = lift_tracks(tracks, camera, (640, 480))
     assert lifted["person-1"][0]["xy"] == pytest.approx((0.0, 5.0))
     assert "edge" not in lifted["person-1"][0]
     assert "edge" in lifted["forklift-1"][0]
     left, right = lifted["forklift-1"][0]["edge"]
     assert left != right
+    # A 0.4 m tall "person" with no static depth below it is never accepted.
+    assert lifted["person-1"][0]["height_m"] == pytest.approx(0.4)
+    assert set(lifted["person-1"][0]["review"]) == {"implied_height", "no_depth_below_foot"}
+
+
+def _floor_depth(camera: FloorCamera, size=(640, 480)) -> np.ndarray:
+    """Static depth of an empty floor (and far wall above the horizon)."""
+    width, height = size
+    vv, uu = np.mgrid[0:height, 0:width]
+    rays = np.stack([(uu - 320.0) / 500.0, (vv - 240.0) / 500.0, np.ones_like(uu, float)], -1)
+    down = rays[..., 1]
+    return np.where(down > 1e-3, camera.d / np.maximum(down, 1e-3), 50.0)
+
+
+def test_lift_foot_accepts_only_a_plausible_visible_standing_foot():
+    camera = _camera(2.0)
+    plane, depth = (camera.normal, camera.d), _floor_depth(camera)
+    # 1.7 m person 5 m out: foot at v = 440, head at v = 240 + 500 * 0.3 / 5 = 270.
+    person = (310.0, 270.0, 330.0, 440.0)
+    foot, height, reasons = lift_foot(person, (640, 480), camera.K, plane, depth)
+    assert height == pytest.approx(1.7) and reasons == []
+    assert foot == pytest.approx([0.0, 2.0, 5.0])
+    assert "implied_height" in lift_foot((310.0, 390.0, 330.0, 440.0), (640, 480), camera.K, plane, depth)[2]
+    assert "box_touches_border" in lift_foot((310.0, 270.0, 330.0, 479.0), (640, 480), camera.K, plane, depth)[2]
+    # A bench 3 m out hides the feet: depth below the box is 2 m nearer than the floor there.
+    occluded = depth.copy()
+    occluded[440:450, 300:340] = 3.0
+    reasons = lift_foot(person, (640, 480), camera.K, plane, occluded)[2]
+    assert "foot_occluded" in reasons and "foot_off_observed_floor" in reasons
+    # A hole in the observed floor (a pit 0.5 m deep): not nearer, but not floor either.
+    pit = depth * 1.25
+    assert lift_foot(person, (640, 480), camera.K, plane, pit)[2] == ["foot_off_observed_floor"]
+    # MoGe's metres are a model's: height needs metres_per_unit to judge in metres.
+    assert lift_foot(person, (640, 480), camera.K, plane, depth, metres_per_unit=0.5)[1] == pytest.approx(0.85)
+
+
+def test_lift_foot_floor_tolerance_grows_with_range():
+    """A fixed 0.1 m floor tolerance rejected nearly every far foot on real fixed cameras (3 of 56 on bus g506)."""
+    camera = _camera(3.4)
+    plane = (camera.normal, camera.d)
+    person = (310.0, 282.5, 330.0, 325.0)  # 1.7 m person 20 m out: foot v = 240 + 500 * 3.4 / 20
+    long_4pct = _floor_depth(camera) * 1.04  # a mono depth model 4% long, inside its measured error
+    assert lift_foot(person, (640, 480), camera.K, plane, long_4pct)[2] == []
+    assert "foot_off_observed_floor" in lift_foot(person, (640, 480), camera.K, plane, _floor_depth(camera) * 1.2)[2]
+
+
+def test_lift_tracks_keeps_people_it_cannot_place():
+    """lift_tracks dropped a box whose foot is above the horizon, so a head over a shelf counted as nobody and the
+    zone PASSed. It stays, unplaced, and blocks a PASS when it overlaps where someone in the zone could appear."""
+    camera = _camera(1.2)
+    camera.depth = _floor_depth(camera)
+    zone = shapely_wkt.loads("POLYGON ((-1 4, 1 4, 1 6, -1 6, -1 4))")
+    tracks = {"person-1": [(0, (300.0, 185.0, 340.0, 233.0))],  # head over a 1.25 m shelf, standing 5 m out
+              "person-2": [(0, (1.0, 185.0, 40.0, 233.0))]}  # the same, 3 m to the side of the zone
+    lifted = lift_tracks(tracks, camera, (640, 480), zone)
+    assert lifted["person-1"][0] == {"xy": None, "review": ["foot_above_horizon"], "near_zone": True}
+    assert lifted["person-2"][0]["xy"] is None and lifted["person-2"][0]["near_zone"] is False
+    covered = {0: {"gap": None, "zone_seen": True}}
+    assert judge(lifted, zone, {0: 0.0}, covered, _MEASURED)["R1_zone"][0] == "NEEDS_REVIEW"
+    aside = {"person-2": lifted["person-2"]}
+    assert judge(aside, zone, {0: 0.0}, covered, _MEASURED)["R1_zone"][0] == "PASS"
+    assert "box_too_small" in lift_foot((310.0, 300.0, 330.0, 310.0), (640, 480), camera.K, (camera.normal, camera.d),
+                                        camera.depth, person=False)[2]  # a 10 px mover is not placed either
+
+
+def test_static_depth_keeps_the_farthest_surface():
+    """The fixed camera's depth plate: a person standing in one keyframe must not hide the floor behind them."""
+    camera = _camera(2.0)
+    floor = np.array([[0.0, 2.0, 5.0], [1.0, 2.0, 5.0]])  # two floor points 5 m out, at pixels (320, 440), (420, 440)
+    with_person = np.array([[0.0, 1.6, 4.0], [1.0, 2.0, 5.0]])  # someone 4 m out on the first point's ray
+    depth = video_module._static_depth([with_person, floor], camera.K, (640, 480))
+    assert depth[440, 320] == pytest.approx(5.0) and depth[440, 420] == pytest.approx(5.0) and (depth > 0).sum() == 2
+
+
+def test_untracked_detections_are_kept_as_one_frame_tracks():
+    """ByteTrack holds back a first sighting: a person seen in one sampled frame had no track and counted as nobody."""
+    detections = {0: {"person": [{"bbox": (10, 20, 20, 40), "score": 0.9}, {"bbox": (40, 20, 50, 40), "score": 0.9}]}}
+    tracks = {"person-1": [(0, (10.5, 20.0, 20.0, 40.0))]}
+    kept = keep_untracked(tracks, detections)
+    assert kept == {**tracks, "person-untracked-0-1": [(0, (40, 20, 50, 40))]}
+
+
+def test_zone_floor_must_be_observed_not_just_in_view(tmp_path):
+    """A zone behind a wall PASSed: only its corners were checked against the image."""
+    camera = _camera(2.0)
+    camera.depth = _floor_depth(camera)
+    zone = shapely_wkt.loads("POLYGON ((-1 5, 1 5, 1 7, -1 7, -1 5))")
+    points = camera.camera_points(zone_floor_points(zone))
+    assert zone_floor_seen(points, camera.K, camera.depth, (640, 480))
+    assert not zone_floor_seen(points, camera.K, np.minimum(camera.depth, 3.5), (640, 480))  # a wall 3.5 m out
+    frames_dir, cache_dir = tmp_path / "frames", tmp_path / "cache"
+    frames_dir.mkdir()
+    cache_dir.mkdir()
+    for frame_id in (0, 1):
+        Image.fromarray(np.random.default_rng(frame_id).integers(20, 235, (480, 640, 3), dtype=np.uint8)).save(
+            frames_dir / f"f{frame_id:06d}.jpg")
+        (cache_dir / f"f{frame_id:06d}__person.json").write_text("{}")
+    truck = {"car": [{"bbox": (150.0, 200.0, 500.0, 400.0), "score": 0.9}]}  # parked in front of the zone in frame 1
+    coverage = video_module.frame_coverage(frames_dir, cache_dir, [0, 1], zone, camera, {1: truck})
+    assert [coverage[f]["zone_seen"] for f in (0, 1)] == [True, False]
+
+
+def test_track_speed_reads_only_its_window():
+    """Live tracks kept every sample and track_speed scanned them all each step (32.8 ms a step at 30k frames)."""
+    from collections.abc import Sequence
+
+    class Counted(Sequence):
+        def __init__(self, items):
+            self.items, self.reads = items, 0
+
+        def __len__(self):
+            return len(self.items)
+
+        def __getitem__(self, index):
+            self.reads += 1
+            return self.items[index]
+
+    samples = Counted(_walker(10, 1.0, noise=0.0, seconds=10_000.0))
+    value, reason = track_speed(samples, 10_000.0)
+    assert reason is None and value == pytest.approx(1.0) and samples.reads < 30, samples.reads
 
 
 # ------------------------------------------------------------------ judging
@@ -217,32 +355,101 @@ def _lifted_fixture():
     }
 
 
+_TIMES = {0: 0.0, 30: 1.0, 60: 2.0}
+_MEASURED = contract_scale({"scale_status": "device_metric", "metres_per_native_unit": 1.0})
+
+
 def test_judge_timelines_on_synthetic_tracks():
-    frame_ids = [0, 30, 60]
     zone = shapely_wkt.loads("POLYGON ((-1 -1, 1 -1, 1 1, -1 1, -1 -1))")
-    judged = judge(_lifted_fixture(), zone, frame_ids, step_seconds=1.0)
-    assert judged["speed_band_mps"] == pytest.approx(0.7)
+    covered = {f: {"gap": None, "zone_seen": True} for f in _TIMES}
+    judged = judge(_lifted_fixture(), zone, _TIMES, covered, _MEASURED)
+    assert judged["speed_band_mps"] == pytest.approx(0.35)  # 2 x 0.35 m over the 2 s baseline
     assert judged["R1_zone"][0] == "FAIL"  # person inside the zone
     assert judged["R1_zone"][60] == "PASS"
     assert judged["R2_min_distance"][0] == "FAIL"
     assert judged["R2_min_distance"][60] == "NO_DATA"  # vehicle vanished
-    assert judged["R3_speed"][0] == "NO_DATA"  # no previous sample
-    assert judged["R3_speed"][30] == "FAIL"
-    assert judged["R3_speed"][60] == "PASS"
+    assert judged["R3_speed"][0] == "NO_DATA"  # no 2 s baseline yet
+    assert judged["R3_speed"][30] == "NO_DATA"
+    assert judged["R3_speed"][60] == "FAIL"  # line through 0, 4, 4.2 m: 2.1 m/s
     assert judged["R2_values_m"][0] == pytest.approx(1.0)
-    assert judged["R3_values_mps"][30] == pytest.approx(4.0)
+    assert judged["R3_values_mps"][60] == pytest.approx(2.1)
+
+
+def test_judge_scale_gate_turns_unmeasured_metres_into_review():
+    zone = shapely_wkt.loads("POLYGON ((-1 -1, 1 -1, 1 1, -1 1, -1 -1))")
+    judged = judge(_lifted_fixture(), zone, _TIMES)  # default: MoGe metres, a model's estimate
+    assert judged["scale"]["status"] == "model_estimated"
+    assert judged["R2_min_distance"][0] == "NEEDS_REVIEW"
+    assert judged["R3_speed"][60] == "NEEDS_REVIEW" and judged["before_scale_gate"]["R3_speed"][60] == "FAIL"
+    # A zone entry is judged in metres with a metre band: without measured metres it only asks for review.
+    assert judged["R1_zone"][0] == "NEEDS_REVIEW" and judged["before_scale_gate"]["R1_zone"][0] == "FAIL"
+    stated = contract_scale({"scale_status": "assumed_camera_height", "metres_per_native_unit": 2.0,
+                             "camera_height_native_median": 0.8})
+    assert judge(_lifted_fixture(), zone, _TIMES, scale_record=stated)["R2_min_distance"][0] == "NEEDS_REVIEW"
 
 
 def test_judge_without_zone_or_person_abstains():
-    frame_ids = [0, 30]
-    judged = judge(_lifted_fixture(), None, frame_ids, step_seconds=1.0)
+    judged = judge(_lifted_fixture(), None, _TIMES)
     assert set(judged["R1_zone"].values()) == {"NO_DATA"}
     lifted = {"car-1": {0: {"xy": (0.0, 1.0)}, 30: {"xy": (0.0, 1.0)}}}
     zone = shapely_wkt.loads("POLYGON ((0 0, 1 0, 1 1, 0 1, 0 0))")
-    judged = judge(lifted, zone, frame_ids, step_seconds=1.0)
-    assert set(judged["R1_zone"].values()) == {"PASS"}  # nobody in the zone
+    covered = {f: {"gap": None, "zone_seen": True} for f in _TIMES}
+    judged = judge(lifted, zone, _TIMES, covered, _MEASURED)
+    assert set(judged["R1_zone"].values()) == {"PASS"}  # nobody in a zone fully seen
     assert set(judged["R2_min_distance"].values()) == {"NO_DATA"}
     assert set(judged["R3_speed"].values()) == {"NO_DATA"}
+    assert set(judge(lifted, zone, _TIMES)["R1_zone"].values()) == {"NO_DATA"}  # no coverage evidence, no PASS
+
+
+def test_no_detection_is_no_data_unless_the_zone_was_covered():
+    """video.py used to PASS the zone rule whenever nobody was detected."""
+    zone = shapely_wkt.loads("POLYGON ((0 0, 1 0, 1 1, 0 1, 0 0))")
+    for gap in ("frozen", "dark", "person detector offline", "no camera pose"):
+        assert judge_frame([], [], zone, gap, True, [], _MEASURED)["R1_zone"]["verdict"] == "NO_DATA"
+    assert judge_frame([], [], zone, None, False, [], _MEASURED)["R1_zone"]["verdict"] == "NO_DATA"
+    assert judge_frame([], [], zone, None, True, [], _MEASURED)["R1_zone"]["verdict"] == "PASS"
+    inside = [{"xy": (0.5, 0.5)}]
+    assert judge_frame(inside, [], zone, None, False, [], _MEASURED)["R1_zone"]["verdict"] == "FAIL"  # seen inside
+    unsure = [{"xy": (5.0, 5.0), "review": ["foot_occluded"]}]
+    assert judge_frame(unsure, [], zone, None, True, [], _MEASURED)["R1_zone"]["verdict"] == "NEEDS_REVIEW"
+
+
+def test_frame_health_flags_dark_and_frozen_frames():
+    rng = np.random.default_rng(0)
+    frame = rng.uniform(0, 255, (48, 64))
+    assert frame_health(frame, None) is None
+    assert frame_health(frame, frame.copy()) == "frozen"
+    assert frame_health(frame * 0.02, None) == "dark"
+    assert frame_health(frame, rng.uniform(0, 255, (48, 64))) is None
+
+
+def _walker(rate_hz, speed=1.2, noise=0.1, seconds=10.0, seed=1):
+    rng = np.random.default_rng(seed)
+    times = np.arange(0, seconds + 1e-9, 1 / rate_hz)
+    return [(float(t), (float(speed * t + rng.normal(0, noise)), float(rng.normal(0, noise)))) for t in times]
+
+
+def test_speed_verdict_does_not_depend_on_the_sample_rate():
+    """The old band 2 x 0.35 m / step widened to 3.5 m/s at 5 Hz: any walker passed."""
+    for speed, expected in ((1.0, "PASS"), (2.4, "FAIL"), (1.55, "NEEDS_REVIEW")):
+        verdicts = set()
+        for rate in (1, 5, 10):
+            samples = _walker(rate, speed)
+            for t in (4.0, 7.0, 10.0):
+                value, reason = track_speed(samples, t)
+                assert reason is None and value == pytest.approx(speed, abs=0.2), (rate, t, value)
+                verdicts.add(banded_verdict(value, 1.5, 0.35, fail_low=False))
+        assert verdicts == {expected}, (speed, verdicts)
+    assert track_speed(_walker(5), 1.5) == (None, None)  # no 2 s baseline yet
+
+
+def test_an_impossible_jump_is_review_not_fail():
+    samples = _walker(5, 1.0, noise=0.0)
+    samples = [(t, (x + (6.0 if t >= 5.0 else 0.0), y)) for t, (x, y) in samples]  # identity swap at 5 s
+    assert track_speed(samples, 6.0) == (None, "jump")
+    assert track_speed(samples, 7.2)[1] is None  # the segment after the jump is clean again
+    result = judge_frame([{"xy": (0.0, 0.0)}], [], None, None, True, [track_speed(samples, 6.0)], _MEASURED)
+    assert result["R3_speed"]["verdict"] == "NEEDS_REVIEW"
 
 
 def test_worst_verdict_orders_by_severity():
@@ -282,8 +489,56 @@ def test_sam_stage_budget_cap_blocks_before_spending(tmp_path):
             list(range(80)),
             ("person", "car"),
             lambda *a, **k: calls.append(1),
+            guard=HourlySpendGuard(),
         )
     assert not calls
+
+
+def test_hourly_spend_guard_rolls_over_instead_of_capping_the_run():
+    now = [0.0]
+    guard = HourlySpendGuard(1.50, clock=lambda: now[0])
+    for _ in range(150):
+        guard.charge(0.01)
+    with pytest.raises(ValueError, match="budget cap"):
+        guard.charge(0.01)
+    now[0] = 3600.0  # an hour later a live stream keeps going
+    guard.charge(0.01)
+    assert guard.remaining() == pytest.approx(1.49)
+    guard.record(1.49)  # a per-second bill booked after the call
+    with pytest.raises(BudgetExhausted):
+        guard.charge(0.0)  # nothing left: even a call billed afterwards is refused
+
+
+def test_fake_sam_calls_never_charge_the_process_guard(tmp_path):
+    before = _PROCESS_GUARD.remaining()
+    run_video_assessment(
+        tmp_path / "clip.avi", store=ArtifactStore(tmp_path / "runs"), run_id="video-run-guard", labels=("person",),
+        sam_subscriber=_fake_sam_subscriber(), moge_runner=_fake_moge_runner(tmp_path), track_fn=_fake_track_fn,
+        frame_extractor=_fake_extractor([0, 30]),
+    )
+    assert _PROCESS_GUARD.remaining() == before
+
+
+def test_default_detector_routes_through_the_backend_switch(tmp_path, monkeypatch):
+    """_default_sam_subscriber called fal_client directly and ignored SAM3_BACKEND."""
+    routed = []
+
+    def switch(endpoint, *, arguments):
+        routed.append(endpoint)
+        return {"rle": [_encode_mask(_rect_mask(10, 20, 20, 40))], "scores": [0.9]}
+
+    monkeypatch.setattr(video_module, "sam_subscribe", switch)
+    monkeypatch.setenv("SAM3_BACKEND", "modal")
+    store = ArtifactStore(tmp_path / "runs")
+    run_video_assessment(
+        tmp_path / "clip.avi", store=store, run_id="video-run-switch", labels=("person",),
+        moge_runner=_fake_moge_runner(tmp_path), track_fn=_fake_track_fn,
+        frame_extractor=_fake_extractor([0, 30]),
+    )
+    assert len(routed) == 2
+    manifest = RunManifest.model_validate_json(video_paths(store, "video-run-switch").manifest_json.read_text())
+    assert manifest.providers.sam_backend == "modal"
+    assert "facebook/sam3" in manifest.providers.sam_model_revision
 
 
 def test_sam_stage_caches_and_reruns_free(tmp_path):
@@ -314,10 +569,9 @@ def test_sam_stage_caches_and_reruns_free(tmp_path):
 def _fake_extractor(frame_ids):
     def extract(video_path, frames_dir, sample_fps, max_frames):
         frames_dir.mkdir(parents=True, exist_ok=True)
-        for frame_id in frame_ids:
-            Image.new("RGB", (_W, _H), (120, 120, 120)).save(
-                frames_dir / f"f{frame_id:06d}.jpg"
-            )
+        for frame_id in frame_ids:  # frames that differ, as a live camera's do: identical ones are a frozen feed
+            noise = np.random.default_rng(frame_id).integers(60, 180, (_H, _W, 3), dtype=np.uint8)
+            Image.fromarray(noise).save(frames_dir / f"f{frame_id:06d}.jpg")
         return list(frame_ids), 30.0
 
     return extract
@@ -329,9 +583,9 @@ def _fake_sam_subscriber():
     def subscriber(endpoint, *, arguments):
         state["calls"] += 1
         if arguments["prompt"] == "person":
-            # Walks right along the bottom rows as calls advance.
+            # A 1.7 m person 6 m out walking right as calls advance: foot at v = 24 + 80 * 1.5 / 6 = 44.
             offset = min(40, 4 * state["calls"])
-            mask = _rect_mask(offset, 26, offset + 8, 46)
+            mask = _rect_mask(offset, 21, offset + 6, 44)
         else:
             mask = _rect_mask(2, 30, 14, 46)
         return {"rle": [_encode_mask(mask)], "scores": [0.9]}
@@ -373,7 +627,7 @@ def test_run_video_assessment_offline_end_to_end(tmp_path):
         sample_fps=1.0,
         max_frames=8,
         labels=("person", "car"),
-        zone_wkt="POLYGON ((-50 -50, 50 -50, 50 50, -50 50, -50 -50))",
+        zone_wkt="POLYGON ((-0.5 5.5, 0.5 5.5, 0.5 7.5, -0.5 7.5, -0.5 5.5))",
         sam_subscriber=_fake_sam_subscriber(),
         moge_runner=_fake_moge_runner(tmp_path),
         track_fn=_fake_track_fn,
@@ -410,6 +664,34 @@ def test_run_video_assessment_offline_end_to_end(tmp_path):
     positions = list(report["trajectories"]["person-1"].values())
     assert positions[0] != positions[-1]
     assert report["zone_wkt"].startswith("POLYGON")
+    assert [report["coverage"][str(f)]["gap"] for f in (0, 30, 60, 90)] == [None] * 4
+    # The walker's feet pass lift_foot; it starts 1.9 m right of the zone (seen: PASS) and ends inside it (FAIL).
+    assert report["foot_review"]["person-1"] == {}
+    assert report["coverage"]["0"]["zone_seen"] is True
+    assert report["timelines_before_scale_gate"]["R1_zone"]["0"] == "PASS"
+    assert report["timelines_before_scale_gate"]["R1_zone"]["90"] == "FAIL"
+    assert report["scale"]["status"] == "model_estimated"  # MoGe metres decide nothing: every rule asks for review
+    assert set(report["timelines"]["R1_zone"].values()) == {"NEEDS_REVIEW"}
+
+
+def test_load_detections_keeps_small_masks(tmp_path):
+    """Masks under 12 px were dropped before tracking: a distant or half-hidden person counted as nobody."""
+    (tmp_path / "f000000__person.json").write_text(json.dumps(
+        {"rle": [_encode_mask(_rect_mask(10, 20, 14, 28))], "scores": [0.8], "width": _W, "height": _H}))
+    assert [row["bbox"] for row in video_module.load_detections(tmp_path, [0], ("person",))[0]["person"]] == [
+        (10.0, 20.0, 14.0, 28.0)]
+
+
+def test_run_video_assessment_keeps_people_the_tracker_held_back(tmp_path):
+    """A detection the tracker gives no identity still decides R1: here the tracker names nobody at all."""
+    report = run_video_assessment(
+        tmp_path / "clip.avi", store=ArtifactStore(tmp_path / "runs"), run_id="video-run-untracked",
+        labels=("person", "car"), zone_wkt="POLYGON ((-0.5 5.5, 0.5 5.5, 0.5 7.5, -0.5 7.5, -0.5 5.5))",
+        sam_subscriber=_fake_sam_subscriber(), moge_runner=_fake_moge_runner(tmp_path),
+        track_fn=lambda *args: {}, frame_extractor=_fake_extractor([0, 30, 60, 90]),
+    )
+    assert report["timelines_before_scale_gate"]["R1_zone"]["90"] == "FAIL"
+    assert "person-untracked-90-0" in report["tracks"]
 
 
 def test_run_video_assessment_abstains_when_floor_fit_fails(tmp_path):
@@ -486,3 +768,10 @@ def test_run_video_assessment_validates_inputs(tmp_path):
             sam_subscriber=_fake_sam_subscriber(),
             frame_extractor=_fake_extractor([0]),
         )
+
+
+def test_live_people_loop_self_check():
+    """The streaming loop's own replay checks (1 Hz vs 5 Hz, gaps, offline detector, scale gate)."""
+    from ehs_spatial.live_people import self_check
+
+    self_check()

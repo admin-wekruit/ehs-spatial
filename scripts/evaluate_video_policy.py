@@ -16,35 +16,11 @@ import numpy as np
 from shapely.geometry import Polygon
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from ehs_spatial.video import DEPTH_RELATIVE, contract_scale  # noqa: E402  the one scale gate and depth band, shared with the people loops
 
-DEPTH_RELATIVE = .05  # ponytail: about twice the median depth error measured on the test clips; replace with a calibration study before trusting a band
 CONFIRMED = 3
 # OSHA 29 CFR 1910.36(g)(2): an exit access must be at least 28 inches wide at all points.
 RULE = {"kind": "geometry", "spec": {"predicate": "min_separation", "subject_labels": ["desk"], "object_labels": ["cabinet"], "threshold": .711, "unit": "m"}}
-
-
-def contract_scale(scale):
-    """The platform's scale record for one metric-scale.json, decided by the scale that was actually written.
-
-    The platform accepts three states and its rule engine only gives PASS/FAIL on operator_anchored. Only a measurement
-    may take that state: metric poses from the capture device. A carry height the operator stated but nobody measured is
-    an assumption and becomes model_estimated, so the engine asks for calibration instead of deciding (PLAN.md section 6:
-    an assumed value is never stored as a measurement). A clip with no metres at all stays uncalibrated.
-    """
-    status = scale.get("scale_status")
-    if status == "device_metric":
-        return {"status": "operator_anchored", "nativeToMeters": scale["metres_per_native_unit"],
-                "anchor": {"kind": "device_metric_poses", "measured": True, "note": "metres come from the capture device's own poses; nothing was assumed"}}
-    if status in ("assumed_camera_height", "assumed_camera_height_floor_views_disagree"):
-        stated = scale["metres_per_native_unit"] * scale["camera_height_native_median"]  # the height the run was told, recovered exactly
-        return {"status": "model_estimated", "nativeToMeters": scale["metres_per_native_unit"],
-                "anchor": {"kind": "stated_carry_height", "metres": round(stated, 4), "measured": False,
-                           "floorViewsAgree": status == "assumed_camera_height",
-                           "modelEstimateMetresPerNative": scale.get("model_estimated_metres_per_native_unit"),
-                           "sourcesDisagreeOver10pct": scale.get("scale_sources_disagree_over_10pct")}}
-    if status == "uncalibrated":
-        return {"status": "uncalibrated"}
-    raise ValueError(f"unknown scale_status {status!r}: refuse rather than guess what it means")
 
 
 def facts(entities, metres_per_native, scale_relative_uncertainty, subjects, objects):

@@ -217,6 +217,8 @@ class ProviderManifest(BaseModel):
     gemini_model: str
     moge_version: str
     code_version: str = "unknown"
+    sam_backend: str = "unknown"  # SAM3_BACKEND the run used, or "injected"
+    sam_model_revision: str = "unknown"
 
 
 class RunManifest(BaseModel):
