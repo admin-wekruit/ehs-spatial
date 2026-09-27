@@ -51,7 +51,7 @@ def window_frames(keyframe_interval):
 
 @app.function(image=image, gpu=['H100!', 'A100-80GB'], cpu=(4, 4), memory=(16384, 16384), timeout=1200,
               retries=0, max_containers=1, min_containers=0, scaledown_window=2, volumes={'/artifact': volume})
-def serve(video, mode, frames, stride, keyframe_interval, submitted, budget_s):
+def serve(video, mode, frames, stride, keyframe_interval, submitted, budget_s, prefetch=True):
     entered = time.time()
     import collections
     import cv2
@@ -103,7 +103,7 @@ def serve(video, mode, frames, stride, keyframe_interval, submitted, budget_s):
 
     n = len(order); dev = torch.device('cuda')
     pose = np.full((n, 9), np.nan, np.float32); dmed = np.full(n, np.nan, np.float32)
-    t_pre, t_fwd = np.full(n, np.nan), np.full(n, np.nan)
+    t_pre, t_in, t_fwd = np.full(n, np.nan), np.full(n, np.nan), np.full(n, np.nan)
     window_id = np.full(n, -1, np.int32); kf = np.zeros(n, bool); boundary = np.zeros(n, bool)
     mem, wins = [], []
     L = window_frames(K) if mode == 'windowed' else None
@@ -125,13 +125,21 @@ def serve(video, mode, frames, stride, keyframe_interval, submitted, budget_s):
             tail.append((xs[k], pe[:, k:k + 1], depth[:, k:k + 1], keyframes[k]))
             window_id[r], kf[r] = win, keyframes[k]
 
+    def prep(src):
+        a = time.perf_counter(); x = preprocess(rgb[src]); return x, time.perf_counter() - a
+
+    # prefetch: the next frame is resized on CPU while the GPU runs this one, as a live decoder thread would
+    pool = __import__('concurrent.futures').futures.ThreadPoolExecutor(1)
+    nxt = pool.submit(prep, order[0][0])
     loop_start = time.time(); torch.cuda.reset_peak_memory_stats()
     with torch.inference_mode():
         for j, (src, _) in enumerate(order):
             if time.time() - entered > budget_s: break
             a = time.perf_counter()
-            x = preprocess(rgb[src]).to(dev)[None, None]
-            b = time.perf_counter(); t_pre[j] = b - a
+            x, t_pre[j] = nxt.result() if prefetch else prep(src)
+            if prefetch and j + 1 < n: nxt = pool.submit(prep, order[j + 1][0])
+            x = x.to(dev)[None, None]
+            b = time.perf_counter(); t_in[j] = b - a
             if j < SCALE:  # the first scale block needs 8 frames; earlier ones wait (recorded as NaN)
                 pending.append(x)
                 if j < SCALE - 1: continue
@@ -163,7 +171,7 @@ def serve(video, mode, frames, stride, keyframe_interval, submitted, budget_s):
     done = int(np.isfinite(t_fwd).sum()) + SCALE - 1 if first_out else 0
     buf = io.BytesIO()
     np.savez_compressed(buf, src=np.array([s for s, _ in order]), pass_id=np.array([p for _, p in order]), pose=pose,
-        depth_median=dmed, t_pre=t_pre, t_fwd=t_fwd, window=window_id, keyframe=kf, boundary=boundary,
+        depth_median=dmed, t_pre=t_pre, t_in=t_in, t_fwd=t_fwd, window=window_id, keyframe=kf, boundary=boundary,
         mem=np.array(mem, np.float64).reshape(-1, 6), win_scale=np.array([w['scale'] for w in wins]))
     stages['first_pose_after_submit_s'] = first_out - submitted if first_out else None
     stages['first_pose_after_model_ready_s'] = first_out - model_ready if first_out else None
@@ -171,7 +179,7 @@ def serve(video, mode, frames, stride, keyframe_interval, submitted, budget_s):
         'weights_sha256': WEIGHTS_SHA, 'video_sha256': digest('/tmp/source.mp4'),
         'config': {'image_size': 518, 'scale_frames': SCALE, 'window': WINDOW, 'keyframe_interval': K,
                    'frames_per_window': L, 'overlap': SCALE if L else None, 'max_frame_num': rope, 'backend': 'sdpa',
-                   'camera_iterations': 4, 'dtype': 'bf16 aggregator, fp32 heads', 'stride': stride,
+                   'camera_iterations': 4, 'prefetch': prefetch, 'dtype': 'bf16 aggregator, fp32 heads', 'stride': stride,
                    'source_frames': n_src, 'input_hw': list(x.shape[-2:])},
         'frames_requested': frames, 'frames_done': done, 'stopped_by_budget': done < frames,
         'preprocess_max_abs_diff_vs_official': preprocess_diff, 'cold_start': stages,
@@ -195,17 +203,20 @@ def angle_deg(R):
 def analyze(a, warm=50):
     """Latency, memory and pass-against-pass-0 drift from the arrays serve() returns (E-free: all measured)."""
     from scipy.spatial.transform import Rotation
-    t = a['t_pre'] + a['t_fwd']; n = len(t); idx = np.arange(n); fed = np.isfinite(t)
+    # t_in: main thread waiting for the frame + upload (= preprocessing when not prefetched; runs before t_in existed were not)
+    t_in = a['t_in'] if 't_in' in a else a['t_pre']
+    t = t_in + a['t_fwd']; n = len(t); idx = np.arange(n); fed = np.isfinite(t)
+    lat = np.maximum(a['t_pre'], t_in) + a['t_fwd']  # frame handed over -> pose and depth on the host
     steady = fed & (idx >= warm) & ~a['boundary']
     ms = lambda x, p: round(float(np.percentile(x, p)) * 1000, 1)
     tenth = max(1, int(fed.sum() - warm) // 10)
     after = np.flatnonzero(fed & (idx >= warm))
     fps = lambda rows: round(len(rows) / float(t[rows].sum()), 2)
-    latency = {'warm_frames': int(steady.sum()), 'p50_ms': ms(t[steady], 50), 'p95_ms': ms(t[steady], 95),
-               'p99_ms': ms(t[steady], 99), 'max_ms': ms(t[steady], 100),
+    latency = {'warm_frames': int(steady.sum()), 'p50_ms': ms(lat[steady], 50), 'p95_ms': ms(lat[steady], 95),
+               'p99_ms': ms(lat[steady], 99), 'max_ms': ms(lat[steady], 100),
                'preprocess_p50_ms': ms(a['t_pre'][steady], 50), 'model_p50_ms': ms(a['t_fwd'][steady], 50),
                'boundary_frames': int(a['boundary'].sum()),
-               **({'boundary_p50_ms': ms(t[a['boundary']], 50), 'boundary_max_ms': ms(t[a['boundary']], 100)} if a['boundary'].any() else {}),
+               **({'boundary_p50_ms': ms(lat[a['boundary']], 50), 'boundary_max_ms': ms(lat[a['boundary']], 100)} if a['boundary'].any() else {}),
                'fps_all_frames': fps(np.flatnonzero(fed)), 'fps_first_tenth': fps(after[:tenth]), 'fps_last_tenth': fps(after[-tenth:])}
     m = a['mem'][a['mem'][:, 0] >= warm]; mb = 1 / 2 ** 20
     k = max(1, len(m) // 10)
@@ -238,9 +249,11 @@ def analyze(a, warm=50):
                        'depth_scale_vs_pass0': round(float(np.median(a['depth_median'][ip] / a['depth_median'][i0])), 4)})
     drift = {'pass0_path_length_model_units': round(path0, 4), 'passes': passes}
     if len(a['win_scale']):
-        ws = a['win_scale']
-        drift['window_scales'] = {'count': len(ws), 'median_abs_log': round(float(np.median(np.abs(np.log(ws)))), 4),
-                                  'min_max': [round(float(ws.min()), 4), round(float(ws.max()), 4)]}
+        ws = a['win_scale']  # each window's Sim3 scale into the first window's frame
+        step = ws / np.concatenate([[1], ws[:-1]])
+        drift['window_scales'] = {'count': len(ws), 'last_window_vs_first': round(float(ws[-1]), 4),
+                                  'geometric_mean_step': round(float(np.exp(np.log(step).mean())), 4),
+                                  'step_min_max': [round(float(step.min()), 4), round(float(step.max()), 4)]}
     go = latency['fps_all_frames'] >= 10 and latency['fps_last_tenth'] >= 10 and memory['flat']
     return {'latency': latency, 'memory': memory, 'drift': drift,
             'go_10fps_flat_memory': bool(go), 'measured': 'all numbers measured (M) from frames.npz'}
@@ -252,13 +265,13 @@ def load(run_dir):
 
 @app.local_entrypoint()
 def main(out: str, mode: str = 'windowed', frames: int = 7560, stride: int = 2, keyframe_interval: int = 2,
-         gpu: str = '', budget: int = 1000):
+         gpu: str = '', budget: int = 1000, prefetch: bool = True):
     """7560 frames at stride 2 of a 25 fps shot = 12.5 fps for 10.1 min of stream."""
     assert mode in ('stream', 'windowed') and 0 < budget <= 1100
     video = CLIP / 'source-full.mp4'; out = Path(out); out.mkdir(parents=True, exist_ok=False)
     fn = serve.with_options(gpu=gpu) if gpu else serve
     submitted = time.time()
-    result = fn.remote(video.read_bytes(), mode, frames, stride, keyframe_interval, submitted, budget)
+    result = fn.remote(video.read_bytes(), mode, frames, stride, keyframe_interval, submitted, budget, prefetch)
     wall = time.time() - submitted
     (out / 'frames.npz').write_bytes(result['arrays'])
     (out / 'runner-at-execution.py').write_bytes(Path(__file__).read_bytes())
@@ -295,7 +308,10 @@ def self_check():
     assert abs(last['camera_rotation_error_deg'] - 5) < 0.01 and abs(last['depth_scale_vs_pass0'] - 1.05) < 1e-3
     assert last['fit_residual_over_path'] < 1e-3 and rep['drift']['passes'][0]['center_error_over_path'] == 0
     assert rep['latency']['p50_ms'] == 82.0 and rep['latency']['boundary_frames'] == 1 and rep['latency']['fps_all_frames'] < 12.2
-    assert rep['memory']['flat'] and rep['go_10fps_flat_memory']
+    assert rep['memory']['flat'] and rep['go_10fps_flat_memory'] and rep['drift']['window_scales']['geometric_mean_step'] == round(1.1 ** .5, 4)
+    rep = analyze({'src': src, 'pass_id': pas, 'pose': pose, 'depth_median': dm, 't_pre': np.full(n, 0.07), 't_in': np.full(n, 0.001),
+                   't_fwd': t_fwd, 'boundary': boundary, 'mem': mem, 'win_scale': np.array([1.0, 1.1])}, warm=10)
+    assert rep['latency']['p50_ms'] == 150.0 and rep['latency']['fps_last_tenth'] == round(1 / 0.081, 2)  # prefetched: latency > 1 / fps
     mem[:, 3] += mem[:, 0] * 1e7; rep = analyze({**{'src': src, 'pass_id': pas, 'pose': pose, 'depth_median': dm}, 't_pre': np.full(n, 0.002),
                                                   't_fwd': t_fwd, 'boundary': boundary, 'mem': mem, 'win_scale': np.array([])}, warm=10)
     assert not rep['memory']['flat'] and not rep['go_10fps_flat_memory'] and 'window_scales' not in rep['drift']
