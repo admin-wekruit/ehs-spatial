@@ -349,6 +349,20 @@ def name_match(ours, theirs):
     return a.split()[-1] == b.split()[-1] or f" {a} " in f" {b} " or f" {b} " in f" {a} "
 
 
+def cascade_label(o):
+    """The cascade's name: in 'cascade' since run 009, in 'label' before (runs 001-008 displayed it); SAM 3's word when
+    the cascade gave none."""
+    c = o.get("cascade", {})
+    if "source" in c:
+        return c.get("label") or o["word"]
+    return o.get("label") or o["word"]
+
+
+def cascade_source(o):
+    c = o.get("cascade", {})
+    return (c.get("source") if "source" in c else o.get("label_source", "?")).split(" ")[0]
+
+
 def evaluate(run_dir):
     """Per report of ME340 165-195 s in RUN_DIR: walk-shot ATE vs DROID (E9's rule), and naming vs the delivered names:
     delivered named objects (clear/partial) matched to our objects by mask IoU >= 0.5 on shared frames (our segmented
@@ -389,7 +403,6 @@ def evaluate(run_dir):
         row["walk_shot"] = {"ate_m": round(float(np.sqrt((err ** 2).mean())), 4), "our_metres_over_reference": round(1 / s, 4),
                             "path_m_reference": round(float(np.linalg.norm(np.diff(target[:, :3, 3], axis=0), axis=1).sum()), 3)}
         objs = {o["id"]: o for o in latest["objects"]["data"]["objects"]}
-        first = {o["id"]: o for o in versions["objects"][0]["data"]["objects"]}
         blob = latest["outlines"]["blobs"]["analysis"]["sha256"]
         analysis = json.loads((rdir / "blobs" / blob).read_text())
         best = {}  # entity -> (iou, our object id)
@@ -447,23 +460,22 @@ def evaluate(run_dir):
                     top = max(top, (iou, ent), key=lambda x: x[0])
             if top[0] >= .5:
                 seen_pairs[oid] = top[1]
-        tally = {"sam3_word": [], "zero_shot_top1": [], "cascade_v1": [], "cascade_final": []}
+        tally = {"sam3_word": [], "zero_shot_top1": [], "cascade_final": []}
         by_source = {}
         detail = []
         for ent, oid in matched.items():
             o, theirs = objs[oid], names[ent]["category"]
             zs = (o.get("cascade", {}).get("zero_shot_top3") or [[None]])[0][0]
             ok = {"sam3_word": name_match(o["word"], theirs), "zero_shot_top1": name_match(zs, theirs),
-                  "cascade_v1": name_match(first.get(oid, o).get("label"), theirs), "cascade_final": name_match(o.get("label"), theirs)}
+                  "cascade_final": name_match(cascade_label(o), theirs)}
             for k, v in ok.items():
                 tally[k].append(v)
-            src = o.get("label_source", "?").split(" ")[0]
-            by_source.setdefault(src, []).append(ok["cascade_final"])
-            detail.append({"entity": ent, "delivered": theirs, "object": oid, "word": o["word"], "zero_shot": zs, "label": o.get("label"),
-                           "source": o.get("label_source"), "iou": round(best[ent][0], 3), **ok})
+            by_source.setdefault(cascade_source(o), []).append(ok["cascade_final"])
+            detail.append({"entity": ent, "delivered": theirs, "object": oid, "word": o["word"], "zero_shot": zs, "cascade_label": cascade_label(o),
+                           "source": cascade_source(o), "iou": round(best[ent][0], 3), **ok})
         from fast_report import segment
         vocab_words = latest["objects"]["data"].get("words", [])
-        bv = {"sam3_word": [], "zero_shot_top1": [], "zero_shot_context_top1": [], "cascade_v1": [], "cascade_final": [],
+        bv = {"sam3_word": [], "zero_shot_top1": [], "zero_shot_context_top1": [], "cascade_final": [], "displayed_label": [],
               "what_if_vlm_only_for_generic_sam3_words": []}
         bv_source = {}
         for oid, ent in seen_pairs.items():
@@ -471,16 +483,16 @@ def evaluate(run_dir):
             c = o.get("cascade", {})
             ok = {"sam3_word": name_match(o["word"], theirs), "zero_shot_top1": name_match((c.get("zero_shot_top3") or [[None]])[0][0], theirs),
                   "zero_shot_context_top1": name_match((c.get("zero_shot_context_top3") or [[None]])[0][0], theirs),
-                  "cascade_v1": name_match(first.get(oid, o).get("label"), theirs), "cascade_final": name_match(o.get("label"), theirs),
-                  "what_if_vlm_only_for_generic_sam3_words": name_match(o.get("label") if segment.is_generic(o["word"], vocab_words) else o["word"], theirs)}
+                  "cascade_final": name_match(cascade_label(o), theirs), "displayed_label": name_match(o.get("label"), theirs),
+                  "what_if_vlm_only_for_generic_sam3_words": name_match(cascade_label(o) if segment.is_generic(o["word"], vocab_words) else o["word"], theirs)}
             for k, v in ok.items():
                 bv[k].append(v)
-            bv_source.setdefault(o.get("label_source", "?").split(" ")[0], []).append(ok["cascade_final"])
+            bv_source.setdefault(cascade_source(o), []).append(ok["cascade_final"])
         row["naming_best_view"] = {"pairs": len(seen_pairs), "rule": "each object's best view (the VLM crop's frame), IoU >= 0.5 with one delivered object there",
                                    "accuracy": {k: {"correct": int(sum(v)), "of": len(v), "share": round(sum(v) / max(len(v), 1), 3)} for k, v in bv.items()},
                                    "final_by_source": {k: {"correct": int(sum(v)), "of": len(v)} for k, v in bv_source.items()},
-                                   "pairs_detail": [{"object": oid, "delivered": names[e]["category"], "label": objs[oid].get("label"), "word": objs[oid]["word"],
-                                                     "source": objs[oid].get("label_source")} for oid, e in seen_pairs.items()]}
+                                   "pairs_detail": [{"object": oid, "delivered": names[e]["category"], "cascade_label": cascade_label(objs[oid]),
+                                                     "word": objs[oid]["word"], "source": cascade_source(objs[oid])} for oid, e in seen_pairs.items()]}
         row["naming"] = {"delivered_named_on_our_frames": len({e for e in best}), "matched_iou_0.5": len(matched), "observation_pairs": pairs,
                          "accuracy": {k: {"correct": int(sum(v)), "of": len(v), "share": round(sum(v) / max(len(v), 1), 3)} for k, v in tally.items()},
                          "final_by_source": {k: {"correct": int(sum(v)), "of": len(v)} for k, v in by_source.items()},

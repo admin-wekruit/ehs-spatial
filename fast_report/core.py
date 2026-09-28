@@ -510,10 +510,20 @@ def analyse(m, mp4, opts, clock, writer, log):
         for gi in mem:
             by_frame.setdefault(int(vf[gi]), {}).setdefault(oi, []).append(int(gi))
 
-    labels_v1 = threading.Event()
+    # objects v1 at once: the name is SAM 3's word ('detected word, unverified', spec section 9). On ME340 it matched the
+    # delivered names more often than SigLIP zero-shot or Qwen3-VL naming (runs 005-008), so the cascade's name rides
+    # along in 'cascade' (v2) and never replaces it until a namer beats it
+    for o in objects:
+        o.update(label=o["word"], label_source="sam3 word vote", status="estimated box; name is a detected word, unverified")
+    obj_labels = ["object names are detected words or model outputs: unverified", SCALE_LABEL]
+    casc = {"objects": len(objects)}
+    writer.put("objects", copy.deepcopy({"objects": objects, "cascade": casc, "words": words}), None, "estimated+inferred", obj_labels)
+    clock.mark("objects_v1_put")
+    v1_labels = {o["id"]: o["label"] for o in objects}
 
     def outlines_job():
-        """Object keyframes 'segmented' (SAM 3 logits), other 5 fps keyframes 'projected' (E6b pair); beside the cascade."""
+        """Object keyframes 'segmented' (SAM 3 logits), other 5 fps keyframes 'projected' (E6b pair); beside the cascade,
+        with the first objects version's names."""
         with torch.inference_mode(), clock.stage("outlines", gpu=dev_geo):
             maps = []  # (entry, label map int16 numpy (0 = nothing, i + 1 = object i), sx, sy): polygons in the process pool
             oh, ow = H // 2, W // 2
@@ -541,7 +551,6 @@ def analyse(m, mp4, opts, clock, writer, log):
                                  lab.clamp(min=0).short().cpu().numpy(), W / DA3_HW[1], H / DA3_HW[0]))
             polys = list(m.proc_pool.map(segment.label_polygons, [x[1] for x in maps], [x[2] for x in maps], [x[3] for x in maps]))
             frames_out = []
-            labels_v1.wait(300)  # the polygons are ready; names as of the first objects version
             for (entry, _, _, _), found in zip(maps, polys):
                 entry["objects"] = [{"entityId": objects[v - 1]["id"], "label": v1_labels[objects[v - 1]["id"]], "polygons": poly, "source": entry["source"]}
                                     for v, poly in sorted(found.items())]
@@ -560,9 +569,8 @@ def analyse(m, mp4, opts, clock, writer, log):
     outlines_future = m.cpu_pool.submit(outlines_job)
 
     # cascade: every member mask -> masked crop -> SigLIP 2 (GPU 0); object = mean of its masks
-    casc = {"objects": len(objects)}
     obj_kf = sorted(by_frame)
-    blobs_obj = {}
+    blobs_obj, groups = {}, {}
     if objects:
         kf_index = {q: j for j, q in enumerate(obj_kf)}
         all_mem = np.concatenate(members)
@@ -596,19 +604,14 @@ def analyse(m, mp4, opts, clock, writer, log):
             blobs_obj = {"embeddings": (buf.getvalue(), {"mediaType": "application/octet-stream", "format": "npz",
                                                          "note": "SigLIP 2 object embeddings and zero-shot probabilities, for analysis"})}
         for o, r in zip(objects, recs):
-            o.update(label=r["label"] or o["word"], label_source=r["source"] or "sam3-vote (awaiting VLM)",
-                     cascade={k: v for k, v in r.items() if k not in ("label", "source", "sam3")})
+            o["cascade"] = {**{k: v for k, v in r.items() if k != "sam3"}, "source": r["source"] or "uncertain: to the VLM"}
         casc.update(crops=int(len(all_mem)), calibration=calib, cache_entries_before=len(cache), cache_used=use_cache,
                     cross_video_hits=sum(r["source"] == "cache:cross-video" for r in recs),
                     zero_shot_accepted=sum(r["source"] == "zero-shot" for r in recs), in_video_hits=sum(r["source"] == "cache:in-video" for r in recs),
                     uncertain=len(unsure), vlm_requests_objects=len(groups))
-    for o in objects:
-        o["status"] = "estimated box; name is a model output, unverified"
-    obj_labels = ["object names come from detectors and models: unverified", SCALE_LABEL]
-    writer.put("objects", copy.deepcopy({"objects": objects, "cascade": casc, "words": words}), blobs_obj, "estimated+inferred", obj_labels)
-    clock.mark("objects_v1_put")
-    v1_labels = {o["id"]: o["label"] for o in objects}
-    labels_v1.set()
+    if objects and not groups:
+        writer.put("objects", copy.deepcopy({"objects": objects, "cascade": casc, "words": words}), blobs_obj, "estimated+inferred", obj_labels)
+        clock.mark("objects_v2_put")
 
     def vlm_crop(gi):
         """The object's best view, full resolution: SAM 3's own mask outlined in red, 1.5 x its box, long side 448 px."""
@@ -638,16 +641,16 @@ def analyse(m, mp4, opts, clock, writer, log):
         answered = []
         for r, nm in zip(reps, names):
             for i in groups[r]:
-                o = objects[i]
+                c = objects[i]["cascade"]
                 if nm and nm != "none":
-                    o.update(label=nm, label_source="vlm" if i == r else "cache:in-video(vlm)")
+                    c.update(label=nm, source="vlm" if i == r else "cache:in-video(vlm)")
                 else:
-                    o.update(label=o["word"], label_source="vlm:none" if nm == "none" else "vlm:no answer")
-                o["cascade"]["vlm_answer"] = nm
+                    c.update(label=None, source="vlm:none" if nm == "none" else "vlm:no answer")
+                c["vlm_answer"] = nm
             if nm and nm != "none":
                 answered.append(r)
         if use_cache and answered:
-            cache.add(e_np[answered], [objects[r]["label"] for r in answered], video_sha, site, "vlm")
+            cache.add(e_np[answered], [objects[r]["cascade"]["label"] for r in answered], video_sha, site, "vlm")
             cache.save()
         casc.update(vlm={k: v for k, v in rec.items() if k != "texts"}, vlm_answered=len(answered), cache_entries_after=len(cache))
         writer.put("objects", copy.deepcopy({"objects": objects, "cascade": casc, "words": words}), blobs_obj, "estimated+inferred", obj_labels)
