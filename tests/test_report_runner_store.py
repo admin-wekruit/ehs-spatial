@@ -456,3 +456,19 @@ def test_adopted_runs_may_hold_dangling_links_and_absent_outputs(art):
 def dataclass_replace(spec_, **kw):
     import dataclasses
     return dataclasses.replace(spec_, **kw)
+
+
+def test_a_rerun_of_a_failed_key_reads_its_journals_back(art):
+    """A generator stage that failed after paid calls (Lightning RecGen, run 2) left them journaled in its -failed dir; the
+    re-run of the same key gets that folder as PANOPTES_SEED_JOURNAL, so complete_video_objects reads the received calls
+    back instead of calling (and uploading) again. A seed the graph set itself is kept."""
+    env = "import sys,os; open(sys.argv[1] + '/out.txt', 'w').write(os.environ.get('PANOPTES_SEED_JOURNAL', ''))"
+    s = st.Store(art)
+    key = s.key(spec("G", env))
+    failed = art / "runs" / f"toy-G-{key[:10]}-failed-20260928T022857"
+    (failed / "out/journal/object-206").mkdir(parents=True)
+    (art / "runs" / f"toy-G-{key[:10]}-failed-20260928T025325").mkdir()  # failed before any call: nothing to read back
+    done = st.Store(art).execute([spec("G", env)], st.Ledger())["G"]
+    assert (done.dir / "out.txt").read_text() == str(failed / "out")
+    kept = st.Store(art).execute([spec("H", env, env={"PANOPTES_SEED_JOURNAL": "/runs/finished/out"})], st.Ledger())["H"]
+    assert (kept.dir / "out.txt").read_text() == "/runs/finished/out"

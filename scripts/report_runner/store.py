@@ -417,6 +417,13 @@ class Store:
             except FileExistsError:
                 continue
 
+    def _failed_journals(self, spec, key):
+        """The out/ of the newest failed run of this key that journaled generator calls (complete_video_objects), or None.
+        ponytail: a seed the graph found (a finished run on the same inputs) wins; the two are never merged."""
+        runs = [d for d in (self.art / "runs").glob(f"{spec.site}-{spec.name}-{key[:10]}*-failed-*")
+                if any((d / "out" / j).is_dir() for j in ("journal", "journal-sam3d"))]
+        return max(runs, key=lambda d: d.stat().st_mtime) / "out" if runs else None
+
     def _stage(self, spec, stage_from, status, d, key):
         for kind in ("link", "copy"):
             for rel, ref in stage_from.get(kind, {}).items():
@@ -485,6 +492,9 @@ class Store:
                     cmds = self._argv(spec, commands, status, d, key, amount)
                     env = {k: v for k, v in os.environ.items() if k != "PANOPTES_PAID_BUDGET_USD"}  # unset: the tool makes no paid call
                     env.update({k: str(v) for k, v in spec.env.items()})
+                    journals = self._failed_journals(spec, key)
+                    if journals and "PANOPTES_SEED_JOURNAL" not in env:  # D17 for a failed run of these very inputs: its received calls are read back
+                        env["PANOPTES_SEED_JOURNAL"] = str(journals)
                     if spec.paid:
                         env["PANOPTES_PAID_BUDGET_USD"] = str(amount)  # a tool that reads it sees its own share only
                     cwd = self._sub(spec.cwd, spec, status, d, key) if spec.cwd else None
