@@ -37,7 +37,7 @@ DEPTH = PHASE2 / "runs/da3-posed-me340-223-shotc"
 
 WALK = list(range(228, 898, 3))  # today's 10 fps mask grid inside the walk shot (226 is the cut, 228 the first grid frame)
 E2_KEYS = WALK[::5]  # every 15th frame, ~2 fps, all on today's mask grid
-SPACINGS = (3, 6, 15, 30)  # source frames between keyframes: 10 (AMG-vs-AMG ceiling), 5, 2, 1 fps
+SPACINGS = (6, 15, 30)  # source frames between keyframes: 5, 2, 1 fps (distance 3 of spacing 6 = carry from the previous grid frame)
 BASIC = ["person", "floor"]
 EHS = ["machine", "cabinet", "shelf", "workbench", "cart", "ladder", "fire extinguisher", "bin", "box", "pallet", "forklift",
        "vise", "drill press", "lathe", "control panel", "hose", "cable", "door", "sign", "chair"]
@@ -356,7 +356,8 @@ def sam3_probe(pngs, labels_npz, named, sets, caps, loop_sets):
 
     for name, words in sets.items():  # warm-up: kernels, allocator, cudnn autotune; untimed
         batched(words, caps[name][-1], frames=[0, 1])
-    loop(BASIC, [0])
+    for name in loop_sets[:1]:
+        loop(sets[name], [0])
     report["batched"], report["loop"], results = {}, {}, {}
     for name, words in sets.items():
         report["batched"][name] = {"prompts": len(words)}
@@ -424,17 +425,17 @@ def sam3_probe(pngs, labels_npz, named, sets, caps, loop_sets):
         counts = report["detections_ge_0.4"].setdefault(n, {})
         for (_, w), (score, _) in out.items():
             counts[vocab[w]] = counts.get(vocab[w], 0) + int((score >= .4).sum())
-    saved, masks_out = [], []  # production-rule masks of sets a and b, for later lifting experiments
+    saved, masks_out = [], []  # production-rule masks of every non-oracle set, for later lifting experiments
     for i in range(len(images)):
         for k, (_, n, w, s, r) in enumerate(p for p in per_mask if p[0] == i):
-            if n in ("a", "b") and s >= .4 and r < 12:
+            if n != "c" and s >= .4 and r < 12:
                 saved.append((i, vocab.index(w), s))
                 masks_out.append(np.packbits(masks_of_frame[i][k].cpu().numpy()))
     report["peak_gpu_mb"] = round(torch.cuda.max_memory_allocated() / 2 ** 20)
     report["function_wall_s"] = round(time.time() - enter, 2)
     report["enter_at"] = enter
     blob = npz_bytes(frame_index=np.array([r[0] for r in saved], np.int16), word=np.array(vocab), word_index=np.array([r[1] for r in saved], np.int16),
-                     score=np.array([r[2] for r in saved], np.float32), masks=np.array(masks_out, np.uint8).reshape(len(masks_out), -1),
+                     score=np.array([r[2] for r in saved], np.float32), masks=np.array(masks_out, np.uint8).reshape(len(masks_out), -1) if masks_out else np.zeros((0, 0), np.uint8),
                      shape=np.array([height, width]))
     return json.dumps(report, default=str), blob  # plain JSON: nothing in the result needs torch to unpickle
 
@@ -640,7 +641,8 @@ def decode_local(wanted):
 
 
 @app.local_entrypoint()
-def main(out: str, only: str = "sam3,sam2,sam2old", smoke: bool = False, inputs: str = str(PHASE2 / "runs/m3-exp-e2-e6-segment-inputs")):
+def main(out: str, only: str = "sam3,sam2,sam2old", smoke: bool = False, inputs: str = str(PHASE2 / "runs/m3-exp-e2-e6-segment-inputs"),
+         extra_words: str = ""):
     out, inputs = Path(out), Path(inputs)
     prepare(inputs)
     mp4 = (CLIP / "source-rgb.mp4").read_bytes()
@@ -653,6 +655,10 @@ def main(out: str, only: str = "sam3,sam2,sam2old", smoke: bool = False, inputs:
     pngs = [(inputs / f"e2-{i:05d}.png").read_bytes() for i in keys]
     all_labels = np.load(io.BytesIO(labels_npz))["labels"]
     e2_labels = npz_bytes(labels=all_labels[[WALK.index(i) for i in keys]])
+    loop_sets = ["a", "b"]
+    if extra_words:  # a follow-up vocabulary: the 20 EHS words plus these ("|"-separated); speed and recall only
+        sets = {"d": EHS + extra_words.split("|")}
+        caps, loop_sets = {"d": [len(sets["d"]), 2 * len(sets["d"]), 4 * len(sets["d"])]}, []
     if smoke:
         sets, caps = {"a": BASIC, "b": EHS[:6]}, {"a": [4], "b": [12]}
         named = {k: {**v, "obs": [o for o in v["obs"] if o[0] < 4]} for k, v in named.items()}
@@ -660,7 +666,7 @@ def main(out: str, only: str = "sam3,sam2,sam2old", smoke: bool = False, inputs:
     wanted = set(only.split(","))
     if "sam3" in wanted:
         started["sam3"] = time.time()
-        calls["sam3"] = sam3_probe.spawn(pngs, e2_labels, named, sets, caps, ["a", "b"])
+        calls["sam3"] = sam3_probe.spawn(pngs, e2_labels, named, sets, caps, loop_sets)
     if "sam2" in wanted:
         started["sam2"] = time.time()
         calls["sam2"] = sam2_today.spawn(mp4, labels_npz, (inputs / "geometry.npz").read_bytes(), [2] if smoke else [5], smoke)
@@ -710,10 +716,10 @@ def verdicts(out):
             found = [e for e in pool if max((best.get(e, {}).get(f"{x}|{mode}", 0.) for x in sets), default=0.) >= .5]
             return {"found": len(found), "of": len(pool), "recall": round(len(found) / max(1, len(pool)), 4)}
         result["e2_recall"] = {f"{'+'.join(sets)}|{mode}|{pool_name}": recall(sets, mode, pool)
-                               for sets in (["a"], ["b"], ["a", "b"], ["c"], ["a", "b", "c"]) if all(x in sam3["batched"] for x in sets)
+                               for sets in (["a"], ["b"], ["a", "b"], ["c"], ["a", "b", "c"], ["d"]) if all(x in sam3["batched"] for x in sets)
                                for mode in ("prod", "loose") for pool_name, pool in (("on_keyframes", on_keys), ("walk_named", list(named)))}
-        result["e2_missed_by_ab_prod"] = sorted(named[e]["category"] for e in on_keys
-                                                if max(best.get(e, {}).get(f"{x}|prod", 0.) for x in "ab") < .5)
+        result["e2_missed_prod"] = sorted(named[e]["category"] for e in on_keys
+                                          if max(best.get(e, {}).get(f"{x}|prod", 0.) for x in sam3["batched"] if x != "c") < .5)
         speed = {}
         for name, runs in sam3["batched"].items():
             timed = {cap: r for cap, r in runs.items() if isinstance(r, dict)}
@@ -732,7 +738,7 @@ def verdicts(out):
         result["e6_today_amg_a100_s_M"] = round(sum(per_frame), 2)
         result["e6_today_amg_a100_s_per_frame_M"] = round(float(np.mean(per_frame)), 4)
         rows = {}
-        for spacing in SPACINGS[1:]:
+        for spacing in SPACINGS:
             step = spacing // 3
             keys = [k for k, _ in segments(len(per_frame), step)]
             amg_keys = sum(per_frame[k] for k in keys)
@@ -751,8 +757,6 @@ def verdicts(out):
                                   **got["agreement"]}
             rows[str(spacing)] = row
         result["e6"] = rows
-        result["e6_ceiling_reproject_3_frames"] = today["reprojection"]["3"]["agreement"]
-        result["e6_ceiling_no_warp_3_frames"] = today["reprojection"]["3"]["identity_no_warp_agreement"]
         result["amg_variants"] = today["amg_variants"]
         result["box_prompts"] = today["box_prompts"]
     return result
