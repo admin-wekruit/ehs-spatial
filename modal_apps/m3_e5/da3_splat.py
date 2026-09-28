@@ -6,7 +6,9 @@ skipped). Two variants in one A100-80GB call: `posed` (DROID cameras condition t
 fast path's case). The Gaussians live in the network's own frame, so each held-out DROID camera is carried into it by a Sim(3)
 fitted on the context cameras' centres (Umeyama); its residual is reported. Held-out renders are black where no context view saw
 the scene, which the score counts. PSNR/SSIM over the pixels splat_train scores (presenter masks dilated 15 px and the caption box
-left out), at the video's 1280x720 and at the network's 504x280.
+left out), at the video's 1280x720 and at the network's 504x280, for three sets of Gaussians: all of the context views'; without
+those from their presenter and caption pixels ("static", the same exclusion splat_train uses); and static ones from only the
+--nearest context views in time.
 
   python modal_apps/m3_e5/da3_splat.py --output NEW_DIR [--views 100]
   python modal_apps/m3_e5/da3_splat.py --self-check
