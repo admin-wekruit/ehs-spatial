@@ -9,7 +9,7 @@ One image, three Python environments, as the fast plan's resident container woul
 Each model family loads in its own process, all four at once, from the moment the function starts. single_use_containers: every call gets a
 fresh container, so each run is a cold start (the first one also pulls a new image onto a worker).
 
-  python modal_apps/m3_e5/cold_start.py --output NEW_DIR [--runs 2]
+  python modal_apps/m3_e5/cold_start.py --output NEW_DIR [--runs 2] [--eager]
 """
 import argparse
 import json
@@ -96,12 +96,14 @@ r["warm"] = time.time()
 
 
 @app.function(image=image, gpu="A100-80GB:2", cpu=8, memory=65536, timeout=1200, retries=0, single_use_containers=True, volumes=volumes)
-def cold_remote():
+def cold_remote(eager=False):
     import os
     import subprocess
     entered = time.time()
     procs = {}
     for name, (python, gpu, hf_home, code) in LOADERS.items():
+        if eager and name == "qwen3vl_vllm":  # no torch.compile, no CUDA-graph capture: faster start, slower decode
+            code = code.replace("seed=0)", "seed=0, enforce_eager=True)")
         env = {**os.environ, "CUDA_VISIBLE_DEVICES": gpu, "HF_HOME": hf_home, "HF_HUB_OFFLINE": "1", "LIDRA_SKIP_INIT": "true"}
         procs[name] = subprocess.Popen([python, "-c", code], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     out = {"entered_unix": entered, "models": {}}
@@ -122,23 +124,23 @@ def cold_remote():
 
 
 def run(args):
-    args.output.mkdir(parents=True, exist_ok=False)
+    args.output.mkdir(parents=True, exist_ok=False)  # one folder per invocation
     runs = []
     t_app = time.time()
     with modal.enable_output(), app.run():
         app_ready = time.time()
         for n in range(args.runs):
             submitted = time.time()
-            r = cold_remote.remote()
+            r = cold_remote.remote(args.eager)
             got = time.time()
             ok = [m for m in r["models"].values() if "warm_s" in m]
-            row = {"run": n, "submit_to_entry_s_M": round(r["entered_unix"] - submitted, 1), "gpus": r["gpus"],
+            row = {"run": n, "vllm_enforce_eager": args.eager, "submit_to_entry_s_M": round(r["entered_unix"] - submitted, 1), "gpus": r["gpus"],
                    "models": {k: {kk: round(vv, 1) for kk, vv in m.items()} if "error" not in m else m for k, m in r["models"].items()},
                    "all_loaded_from_entry_s_M": round(max(m["loaded_s"] for m in ok), 1) if len(ok) == len(r["models"]) else None,
                    "all_warm_from_entry_s_M": round(max(m["warm_s"] for m in ok), 1) if len(ok) == len(r["models"]) else None,
                    "client_wall_s_M": round(got - submitted, 1), "container_s_M": round(r["returned_unix"] - r["entered_unix"], 1)}
             row["all_warm_from_submit_s_M"] = row["all_warm_from_entry_s_M"] and round(row["all_warm_from_entry_s_M"] + row["submit_to_entry_s_M"], 1)
-            row["usd_estimate"] = round(USD_PER_S * row["client_wall_s_M"], 3)  # billed from container start, so bounded by the client wall
+            row["usd_estimate"] = round(USD_PER_S * (row["container_s_M"] + 60), 3)  # container time + 60 s boot allowance (E); queueing is not billed
             runs.append(row)
             print(json.dumps(row, indent=1), flush=True)
             (args.output / "result.json").write_text(json.dumps({"app_start_s_M": round(app_ready - t_app, 1), "runs": runs,
@@ -148,5 +150,6 @@ def run(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runs", type=int, default=2)
+    parser.add_argument("--eager", action="store_true", help="vLLM enforce_eager for Qwen3-VL")
     parser.add_argument("--output", type=Path, required=True)
     run(parser.parse_args())
