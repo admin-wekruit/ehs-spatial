@@ -754,11 +754,11 @@ def graph(ctx):
               gpu="A100-80GB", compute="modal", timeout_s=1200, est_usd=.05, est_s=300, models=pins(profile, "register"))
         scene = f"@movers-{s}-{e}:scene_dir"
         moved.append(f"movers-{s}-{e}")
-    box_excludes = None
+    box_excludes, unplanned = None, set()  # unplanned: generators whose plan is absent (they failed); the merge goes on without them
     if objects and "sam3d" in generators:
         plan = g.need("generator_plan", absent=None)
-        if plan is None:  # SAM 3D failed or was blocked: the box stage keeps the review excludes (merge needs SAM 3D, so no models)
-            box_excludes = dict(sorted(review_json.get("entitiesExcluded", {}).items()))
+        if plan is None:  # SAM 3D failed or was blocked: the box stage keeps the review excludes
+            box_excludes, unplanned = dict(sorted(review_json.get("entitiesExcluded", {}).items())), {"sam3d"}
         elif "recgen" in generators and plan["recgen_entities"]:
             ids = plan["recgen_entities"]
             generator("recgen", ["--entities", *ids, "--count", str(len(ids)),
@@ -780,12 +780,13 @@ def graph(ctx):
                            *(["--skip-frames", *skip] if skip else []), "--output", "@new/out"]], {"out": "out", "floor": "out/inferred-floor.json"}, est_s=300)
     g.decide("inferred_floor", "inferred_floor", floor="@floor_infer:floor")
     if objects and box_excludes is None and "generator_plan-box" in g.by:
-        box_excludes = g.need("generator_plan-box", absent=plan)["box_excludes"]
+        after = g.need("generator_plan-box", absent=None)
+        box_excludes, unplanned = (after or plan)["box_excludes"], unplanned | ({"recgen"} if after is None else set())
     if objects and "box" in generators:
         generator("box", ["--all", *(["--exclude", *[f"{k}={v}" for k, v in box_excludes.items()]] if box_excludes else [])], None, 0.)
         g.add("box_test", [[PY, S("box_free_space.py"), "--box", "@box:out", "--output", "@new/out"]], {"out": "out", "box_test": "out/box-test.json"}, est_s=300)
     if objects:
-        runs = [f"--{name}" for name in ("recgen", "sam3d", "box") if name in g.by]
+        runs = [f"--{name}" for name in ("recgen", "sam3d", "box") if name in g.by and name not in unplanned]
         g.add("merge", [[PY, S("merge_object_models.py"), *[w for flag in runs for w in (flag, f"@{flag[2:]}:out")],
                          *(["--box-test", "@box_test:box_test"] if "box" in g.by else []), *(["--review", str(review)] if review else []),
                          "--output", "@new/out"]], {"out": "out", "merge": "out/merge.json", "models": "out/models"}, leaves=review_leaf, est_s=120)

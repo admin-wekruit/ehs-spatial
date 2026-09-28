@@ -333,8 +333,11 @@ def test_a_failed_optional_decision_leaves_its_layer_blank():
     by = with_absent("walmart", "dense_gate", "generator_plan")
     assert flag(by["import"], "--dense-points") is None and "recgen" not in by and "box" in by and flag(by["box"], "--exclude") is None, \
         "no SAM 3D plan: the box stage keeps only the review's excludes (none for Walmart)"
+    assert flag(by["merge"], "--sam3d") is None and flag(by["merge"], "--box") == ["@box:out"], "the merge goes on without the failed SAM 3D"
     by = with_absent("walmart", "generator_plan-box")
     assert flag(by["box"], "--exclude") == ["object-003=accepted by SAM 3D"], "RecGen made no plan: the SAM 3D plan's box excludes"
+    assert flag(by["merge"], "--recgen") is None and flag(by["merge"], "--sam3d") == ["@sam3d:out"] and flag(by["import"], "--models") == ["@merge:models"], \
+        "the Lightning RecGen failed: the merge (and the models) go on with SAM 3D and box"
     with pytest.raises(RuntimeError, match="decision voxel could not be made"):
         with_absent("walmart", "voxel")
 
