@@ -330,6 +330,12 @@ def test_adopt_argv_differences(tmp_path):
     report, _, _ = run_toy(tmp_path / "d", elsewhere)
     assert "R07" in report.refused and any(d.startswith("T07: R07: --frames (D): different") for d in report.unlisted_diffs), report.unlisted_diffs
 
+    def other_node(fx, art):  # the entry names --frames, but at another node (T12): T07's --frames difference is still refused
+        listed(fx, art)
+        fx["deviations"][0]["flags"] = {"T12": ["--droid-run", "--frames"]}
+    report, _, _ = run_toy(tmp_path / "e", other_node)
+    assert "R07" in report.refused and any(d.startswith("T07: R07: --frames (D): different") for d in report.unlisted_diffs), report.unlisted_diffs
+
     def evidence(fx, art):  # equal argv, but the D flag's evidence check fails
         (art / "runs/toy-cam/run.json").write_text(json.dumps({"shot_frames": [0, 9]}))
     report, _, _ = run_toy(tmp_path / "c", evidence)
@@ -388,6 +394,53 @@ def test_a_research_decision_names_exactly_what_its_rule_read(tmp_path):
         report, store, _ = run_toy(tmp_path / change.__name__, change, rules=both)
         assert report.decisions["shots"] == "equal" and "shots" not in report.research_keys, change.__name__
         assert why in report.decisions["research-graph"] and not [e for e in store.entries if e["stage"] == "shots" and "research" in e["scope"]]
+
+
+def windows_graph(ctx):
+    """toy_graph plus a second decision, 'windows', whose rule reads the first ('shots') by its value."""
+    specs = toy_graph(ctx)
+    windows = S("windows", [["python", "-m", "report_runner.decide", "windows", "--out", "@new", "shots=@shots:decision"]],
+                {"shots": ("shots", ("decision",))}, {"decision": "windows.json"})
+    if "windows" not in ctx.decisions:
+        raise Pending("windows", specs[:3] + [windows])
+    return specs[:-1] + [windows, specs[-1]]
+
+
+def windows_rule(shots):
+    return {"value": {"shot": [json.loads(Path(shots).read_text())["value"]["primary"]]}, "evidence": {}, "rule": "windows@1"}
+
+
+def off_shots(segments):
+    return {"value": {"primary": [1, 10], "others": [[0, 1]], "mapped": True}}
+
+
+def run_two_decisions(tmp, shots=shots_rule, register=None):
+    art, video, fx = make_toy(tmp)
+    fx["decisions"]["windows"] = {"shot": [[0, 10]]}
+    fx["decision_inputs"]["windows"] = {"shots": "@decision:shots"}
+    fx["deviations"][0]["decisions"] = register or {}
+    (tmp / "fx.json").write_text(json.dumps(fx))
+    return A.adopt(tmp / "fx.json", video, FakeStore(art), graph=windows_graph, normalize=toy_normalize,
+                   rules={"shots": shots, "windows": windows_rule}, db=FakeDB(DOC))
+
+
+def test_a_research_decision_reads_an_earlier_decision_by_its_value(tmp_path):
+    """inputs_differ on an '@decision:' input: the later rule was fed the delivered value of the earlier decision, while its
+    research key holds the research value; the key stands for the rule's output only when the two values are equal."""
+    report = run_two_decisions(tmp_path / "same")
+    assert report.research_keys["windows"][1] == "replayed" and "research-graph" not in report.decisions
+    report = run_two_decisions(tmp_path / "other", shots=off_shots, register={"shots": ["primary", "others"]})
+    assert "shots" in report.research_keys and "windows" not in report.research_keys, "windows was computed from the delivered shots"
+    assert report.decisions["research-graph"].endswith("shots: the rule read @decision:shots, the research key names @shots:decision (another value)")
+
+
+def test_a_register_entry_excuses_only_the_decision_it_names(tmp_path):
+    """Two decisions: fields an entry names for 'windows' do not excuse the same fields of 'shots'."""
+    report = run_two_decisions(tmp_path / "a", shots=off_shots, register={"windows": ["primary", "others"]})
+    assert report.decisions["shots"] == "differs: others, primary" and report.decisions["windows"] == "equal"
+    assert any(d.startswith("decision shots: no register entry names ['others', 'primary']") for d in report.unlisted_diffs), report.unlisted_diffs
+    report = run_two_decisions(tmp_path / "b", shots=off_shots, register={"shots": ["primary", "others"]})
+    assert report.decisions["shots"] == "listed X1: others, primary" and not [d for d in report.unlisted_diffs if d.startswith("decision")]
 
 
 def test_a_register_node_gets_no_research_key(tmp_path):
