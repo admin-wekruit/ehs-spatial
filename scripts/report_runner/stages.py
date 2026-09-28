@@ -62,7 +62,7 @@ SCRIPT = {"source": "scripts/prepare_video_clip.py", "cuts": "scripts/detect_sho
 # masks) and gave the import --lens and the corrected scale limitation. The other kinds only saw a new contract_scale branch that
 # only the import reaches, or pins in code paths they do not run.
 VERSIONS = {kind: 2 if kind in ("source", "moge", "depth", "sam2", "floor_masks", "import") else 1 for kind in SCRIPT}
-DECIDE = "scripts/report_runner/decide.py"  # decision stages: versioned by their rule (profile.rules), not here
+DECIDE = "scripts/report_runner/decide.py"  # decision stages: versioned by their rule (decide.VERSIONS, rule_code), not here
 
 # every option's default, as each script's argparse declares it (tests/test_report_runner_stages.py re-reads them by AST)
 DEFAULTS = {
@@ -276,13 +276,45 @@ def deps_of(script):
                 names = [module] + [f"{module}.{a.name}" for a in node.names]
             else:
                 continue
-            for name in names:
-                path = name.replace(".", "/")
-                for folder in ("", "scripts/", "modal_apps/"):
-                    for candidate in (f"{folder}{path}.py", f"{folder}{path}/__init__.py"):
-                        if (REPO / candidate).is_file() and candidate not in seen:
-                            todo.append(candidate)
+            todo += [c for name in names for c in _module_files(name) if c not in seen]
     return tuple(sorted(seen))
+
+
+def _module_files(name):
+    """The repo files an import of `name` may load (scripts/ and modal_apps/ are on each other's path)."""
+    path = name.replace(".", "/")
+    return [c for folder in ("", "scripts/", "modal_apps/") for c in (f"{folder}{path}.py", f"{folder}{path}/__init__.py") if (REPO / c).is_file()]
+
+
+@functools.lru_cache(maxsize=None)
+def rule_code(rule, text=None):
+    """(deps, sha256) of one decision rule. sha256 covers the source of its function in decide.py and of every module-level
+    name that reaches (the stage entry point `decide` included, the version table not), plus the repo modules those import
+    and the scripts they run by name (dense_gate: lingbot_icp_refine.py), transitively. deps: decide.py and those files.
+    The sha is in the decision's key (research, commercial); tests/versions.json guards a bump of decide.VERSIONS."""
+    text = text or (REPO / DECIDE).read_text()
+    top = {}
+    for node in ast.parse(text).body:
+        if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+            top[node.name] = node
+        elif isinstance(node, ast.Assign):
+            top.update({n.id: node for t in node.targets for n in ast.walk(t) if isinstance(n, ast.Name)})
+    seen, todo, files = set(), [rule, "decide"], set()
+    while todo:
+        name = todo.pop()
+        if name in seen or name not in top or name in ("VERSIONS", "RULES"):
+            continue
+        seen.add(name)
+        for n in ast.walk(top[name]):
+            if isinstance(n, ast.Name):
+                todo.append(n.id)
+            elif isinstance(n, (ast.Import, ast.ImportFrom)):
+                files |= {f for m in ([a.name for a in n.names] if isinstance(n, ast.Import) else [n.module or ""]) for f in _module_files(m)}
+            elif isinstance(n, ast.Constant) and isinstance(n.value, str) and n.value.endswith(".py"):  # a script it runs
+                files |= set(_module_files(n.value[:-3]))
+    external = sorted({d for f in files for d in deps_of(f)} - {DECIDE})
+    segments = sorted({ast.get_source_segment(text, top[n]) for n in seen})
+    return (DECIDE, *external), hashlib.sha256(json.dumps([segments, deps_sha(external)]).encode()).hexdigest()
 
 
 def deps_sha(deps):
@@ -292,7 +324,10 @@ def deps_sha(deps):
 
 
 def current_versions():
-    return {kind: {"version": VERSIONS[kind], "depsSha256": deps_sha(deps_of(script) if script else ())} for kind, script in sorted(SCRIPT.items())}
+    """{kind: {version, depsSha256}} of every script kind and, as 'rule:NAME', of every decision rule (decide.VERSIONS)."""
+    from .decide import VERSIONS as RULE_VERSIONS
+    rows = {kind: {"version": VERSIONS[kind], "depsSha256": deps_sha(deps_of(script) if script else ())} for kind, script in sorted(SCRIPT.items())}
+    return rows | {f"rule:{name}": {"version": v, "depsSha256": rule_code(name)[1]} for name, v in sorted(RULE_VERSIONS.items())}
 
 
 def check_versions(recorded):
@@ -300,10 +335,11 @@ def check_versions(recorded):
     problems, now = [], current_versions()
     for kind, row in now.items():
         old = recorded.get(kind)
+        table = f"decide.VERSIONS['{kind[5:]}']" if kind.startswith("rule:") else f"VERSIONS['{kind}']"
         if old is None:
             problems.append(f"{kind}: not in versions.json; run python -m report_runner.stages --versions")
         elif old["depsSha256"] != row["depsSha256"] and old["version"] == row["version"]:
-            problems.append(f"{kind}: its code changed but VERSIONS['{kind}'] is still {row['version']}; bump it, then --versions")
+            problems.append(f"{kind}: its code changed but {table} is still {row['version']}; bump it, then --versions")
         elif old != row:
             problems.append(f"{kind}: versions.json is stale; run python -m report_runner.stages --versions")
     problems += [f"{kind}: in versions.json but not a stage kind" for kind in sorted(set(recorded) - set(now))]
@@ -350,9 +386,16 @@ def model_id(profile, role):
     return rows[role][0].split("#")[0] if role in rows else MODEL_IDS[role]
 
 
+def delivered(ctx):
+    return ctx.profile == "delivered" or _field(ctx.profile, "name") == "delivered"
+
+
 def previous_import(ctx):
     """The site's last imports.jsonl row: its record path (path only; the record holds a capability and is never opened) and
-    the published title, which a republish keeps (O1: titles are operator data)."""
+    the published title, which a republish keeps (O1: titles are operator data). Only the delivered profile or an explicit
+    --republish republishes; any other run imports a new report of its own, never a new version of a delivered one."""
+    if not (delivered(ctx) or getattr(ctx, "republish", False)):
+        return {}
     state = getattr(ctx.store, "state", None)  # the store's state folder ($ART/runs/report-runner); no store, no history
     index = Path(state) / "imports.jsonl" if state else None
     rows = [json.loads(line) for line in index.read_text().splitlines() if line.strip()] if index and index.exists() else []
@@ -411,10 +454,12 @@ class _Graph:
     def decide(self, name, rule, extra=None, link=None, leaves=None, **roles):
         """A decision stage: python -m report_runner.decide RULE --out @new role=... -> @new/RULE.json (role 'decision')."""
         versions = _field(self.profile, "rules", {})  # {decision: 'name@v'}, or 'adopted' for the delivered profile
-        rules = {rule: versions.get(rule, f"{rule}@unversioned") if isinstance(versions, dict) else f"{rule}@{versions}"}
+        deps, code = rule_code(rule)
+        # a rule that runs keys its version and its code; an adopted value (delivered) was never computed by this code
+        rules = {rule: f"{versions.get(rule, f'{rule}@unversioned')}#{code[:12]}" if isinstance(versions, dict) else f"{rule}@{versions}"}
         cmd = [PY, "-m", "report_runner.decide", rule, "--out", "@new", *[f"{r}={v}" for r, v in roles.items() if v is not None]]
         spec = self.add(name, [cmd], {"decision": f"{rule}.json", **(extra or {})}, link=link, leaves=leaves, rules=rules,
-                        deps=deps_of(DECIDE), env={"PYTHONPATH": str(REPO / "scripts")}, est_s=30)
+                        deps=deps, env={"PYTHONPATH": str(REPO / "scripts")}, est_s=30)
         self.decisions.add(name)
         return spec
 
@@ -488,7 +533,12 @@ def graph(ctx):
           gpu="L4", compute="modal", timeout_s=900, est_usd=.02, est_s=120, models=pins(profile, "lens"))
     g.decide("lens", "lens", shots="@shots:decision", clip="@source:out", moge="@moge:fov")
     g.decide("sam2_frames", "sam2_frames", census="@census:out", segments="@cuts:segments")
-    g.decide("floor_frames", "floor_frames", shots="@shots:decision")
+    # O1: the operator's floor-mask frames (REVIEW/<site>.floor-frames.json) enter the key by their bytes; the rule uses them
+    # only on the clip they name, so they never reach another window or video of this site
+    operator = Path(ctx.review) / f"{site}.floor-frames.json" if ctx.review else None
+    operator = operator if operator and operator.is_file() else None
+    g.decide("floor_frames", "floor_frames", leaves={"operator": operator} if operator else None, shots="@shots:decision",
+             **({"operator": str(operator), "clip": "@source:out"} if operator else {}))
     g.decide("track_windows", "track_windows", shots="@shots:decision")
     dense_map = bool(_field(profile, "dense_map", False))
     if dense_map:
@@ -663,7 +713,9 @@ def graph(ctx):
         if (s, e) not in registered or not g.need(f"other_shot-{s}-{e}")["accepted"] or e > n_cam:  # refused, or outside the camera clip: blank
             continue
         wins = windows["others"][i] if i < len(windows["others"]) else []
-        otracks, movers_analysis = [], "@analysis:analysis"  # ponytail: no other-shot windows only in delivered ME340 (X6): the mapped analysis
+        if not wins and not delivered(ctx):  # never the mapped shot's people in another shot: blank
+            continue
+        otracks, movers_analysis = [], "@analysis:analysis"  # delivered ME340 only (X6): its movers came from the mapped shot's analysis
         for ws, we in wins:
             g.add(f"otracks-{ws}-{we}", [[PY, M("sam3_motion_tracks.py"), "--droid-run", "@camera:out", "--frames", str(ws), str(we), "--text-only",
                                           "--output", "@new/out"]], TRACKS_OUT, gpu="A100-40GB", compute="modal", timeout_s=900, est_usd=.18, est_s=400,

@@ -274,6 +274,10 @@ class Store:
                 elif notes:
                     tok = tok.split("=", 1)[0]
                 full = self._expand(tok)
+                role, eq, value = full.partition("=")
+                if eq and not full.startswith("-") and value in leaves:  # a decision's role=PATH: the leaf's bytes, never its path
+                    norm.append({role: leaves[value]})
+                    continue
                 norm.append(leaves.get(full) or full.replace(str(self.art), "$ART").replace(str(self.repo), "$REPO"))
             out.append(norm)
         return out
@@ -608,8 +612,9 @@ def main(args):
     art = art_root()
     refuse = functools.partial(profiles.refuse, args.profile) if hasattr(profiles, "refuse") else None
     store, ledger = Store(art, scope=args.profile, verify=args.verify, refuse=refuse), Ledger.from_env()
-    # absolute paths: a key names the review file by its path ($REPO/...) as well as by its bytes
-    ctx = Ctx(args.site, Path(args.video).resolve(), args.start, args.end, args.profile, Path(args.review).resolve() if args.review else None, art, store)
+    # absolute paths, so a token names its leaf exactly (a key holds a leaf's bytes, never its path)
+    ctx = Ctx(args.site, Path(args.video).resolve(), args.start, args.end, args.profile, Path(args.review).resolve() if args.review else None, art, store,
+              republish=getattr(args, "republish", False))
     while True:
         try:
             specs = stages.graph(ctx)

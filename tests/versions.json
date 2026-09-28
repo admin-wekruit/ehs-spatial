@@ -100,7 +100,7 @@
   "version": 1
  },
  "names": {
-  "depsSha256": "66a6accd57c73bad6610852524a906c976117e5e143b0ec49b676e993c882060",
+  "depsSha256": "aeafd75572d8eed3067c4f39f1750fda4e7fad6e79df53349d803a76f3202b8a",
   "version": 1
  },
  "oanalysis": {
@@ -129,6 +129,66 @@
  },
  "register": {
   "depsSha256": "5a4566a96750e2946029dbe85622da3d8e5e4a3cf4fc3f910c7f0b423855d180",
+  "version": 1
+ },
+ "rule:dense_gate": {
+  "depsSha256": "3ef3fd0cef95fb957c02c26d46a212f7e446f672c0a0ca430c3e6e7a9e0d56ef",
+  "version": 1
+ },
+ "rule:floor_frames": {
+  "depsSha256": "ef14556c5710124be6da0376e3c575a9ebb1f0e5c24a502f79355c2244791dc1",
+  "version": 2
+ },
+ "rule:generator_plan": {
+  "depsSha256": "ad586cc2a555857daea935092ef79a7ac3c3cbdb856ca21274e84945460df6e7",
+  "version": 1
+ },
+ "rule:inferred_floor": {
+  "depsSha256": "e392d901cd9e3f3049897e898841b2709081e1bb3b9c3d934148602dbf2d0645",
+  "version": 1
+ },
+ "rule:lens": {
+  "depsSha256": "ed4d21a29dc534373d0510f320ca63665a593acb9182658fb5850435349d8905",
+  "version": 1
+ },
+ "rule:lingbot_conf": {
+  "depsSha256": "0ad160c0a2f56895eeb8c59eb078784d35672232fb1e492206ca499f7a41c044",
+  "version": 1
+ },
+ "rule:lingbot_stride": {
+  "depsSha256": "c4cd1ce3666ccdd58143a0ac1149434f9db3126df615256b7fbc549336c4cca7",
+  "version": 1
+ },
+ "rule:other_shot": {
+  "depsSha256": "3989d38e74e30a353e387dc68b293188bd6c1c07cd93719ce09a6630b8dd6289",
+  "version": 1
+ },
+ "rule:overlay": {
+  "depsSha256": "b5d2b95effb316f721f3330b15fa3b455d7178044b00069e1f4319758be4ffbb",
+  "version": 1
+ },
+ "rule:sam2_frames": {
+  "depsSha256": "f70a4b01f7db2abe7aa4e7ea442efd5d27caf54b123874c1c04bc0e8436e4604",
+  "version": 1
+ },
+ "rule:shots": {
+  "depsSha256": "ea1fd67de8a7e50e549a1d282fc79156fd722e2ddd1c8fd339ff199db4c1a5db",
+  "version": 1
+ },
+ "rule:splat_pick": {
+  "depsSha256": "1123aa34c7497d9e44ebd2353d126d4df3e0ce5c3f713e14dcb13ef2631b4f62",
+  "version": 1
+ },
+ "rule:static_filter": {
+  "depsSha256": "20f48ec5b9ff9f151c543d9a8b3ba55f6bce6e3b3e8794eae39ad344a5215117",
+  "version": 1
+ },
+ "rule:track_windows": {
+  "depsSha256": "8f5daf8d2ec7b842bc7ae2fed3cf84385f946e156a03af2b7ff14084eb106573",
+  "version": 1
+ },
+ "rule:voxel": {
+  "depsSha256": "d04b86ff87029435f23006a0362efe4b79934900710550fb4d154fe16bf059f5",
   "version": 1
  },
  "sam2": {

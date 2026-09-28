@@ -207,7 +207,8 @@ def test_graph_resolves_for_each_site(site):
     assert all(by[n].paid for n in ("census", "camera", "depth", "sam3d", "splat", "lingbot", "lingbot_build", "names")) and not by["fuse"].paid
     assert not by["box"].paid and by["lingbot_build"].gpu is None and by["lingbot_build"].worst_usd > 0 and by["depth"].gpu == "A100-80GB"
     assert "PYTHONPATH" in by["voxel"].env and "PYTHONPATH" not in by["fuse"].env
-    assert by["voxel"].rules == {"voxel": "voxel@1"} and by["fuse"].rules == {}
+    assert by["voxel"].rules == {"voxel": f"voxel@1#{stages.rule_code('voxel')[1][:12]}"} and by["fuse"].rules == {}, "a rule's version and code"
+    assert "scripts/lingbot_icp_refine.py" in by["dense_gate"].deps and by["voxel"].deps == (stages.DECIDE,), "the files a rule runs or imports"
     assert by["camera"].consumes == {("source" if site != "samsclub-a2" else "lens_clip"): "droid-frames"}
     assert by["lingbot"].consumes == {"source": "lingbot-source"} and by["lingbot"].inputs["source"] == ("source", ("source_full",))
     assert by["import"].consumes["lens_gate"] == "decision-value" and by["import"].inputs["lens_gate"] == ("lens_gate", ())
@@ -343,14 +344,39 @@ def test_generators_seed_from_the_store():
 
 def test_a_republish_keeps_the_published_title(tmp_path):
     """D14: --republish is the site's last imports.jsonl record path (path only) and a republish keeps the published title
-    (O1); a first import gets the rule title."""
+    (O1); a first import gets the rule title. Only the delivered profile or an explicit --republish republishes: a research
+    or commercial run on a delivered site imports a report of its own, never a new version of the delivered one."""
     c = ctx("walmart")
     first = {s.name: s for s in stages.graph(c)}["import"]
     assert flag(first, "--title") == ["walmart 03:10–03:40 (imported, not accepted)"] and flag(first, "--republish") is None
     (tmp_path / "imports.jsonl").write_text(json.dumps({"site": "walmart", "importRecordPath": "/art/.platform/imports/video-import-p.json", "title": "Walmart aisle"}) + "\n")
-    c = Ctx(*[getattr(c, f) for f in ("site", "video", "start", "end", "profile", "review", "art")], types.SimpleNamespace(state=tmp_path), c.decisions)
-    again = {s.name: s for s in stages.graph(c)}["import"]
-    assert flag(again, "--title") == ["Walmart aisle"] and flag(again, "--republish") == ["/art/.platform/imports/video-import-p.json"]
+    fields = [getattr(c, f) for f in ("site", "video", "start", "end", "profile", "review", "art")]
+    research = {s.name: s for s in stages.graph(Ctx(*fields, types.SimpleNamespace(state=tmp_path), c.decisions))}["import"]
+    assert flag(research, "--republish") is None and flag(research, "--title") == flag(first, "--title"), "research: a new report of its own"
+    for asked in (Ctx(*fields, types.SimpleNamespace(state=tmp_path), c.decisions, republish=True),
+                  Ctx(*fields[:4], types.SimpleNamespace(**{**vars(RESEARCH), "name": "delivered"}), *fields[5:], types.SimpleNamespace(state=tmp_path), c.decisions)):
+        again = {s.name: s for s in stages.graph(asked)}["import"]
+        assert flag(again, "--title") == ["Walmart aisle"] and flag(again, "--republish") == ["/art/.platform/imports/video-import-p.json"]
+
+
+def test_movers_never_take_the_mapped_shots_people():
+    """D3b: an accepted other shot without track windows of its own is left blank; only delivered ME340 (X6) moved the
+    mapped shot's analysis into it."""
+    values = {**SITES["me340"][2], "track_windows": {**SITES["me340"][2]["track_windows"], "others": []}}
+    assert not [n for n in build("me340", decisions=values) if n.startswith(("movers-", "otracks-"))]
+    delivered = build("me340", decisions=values, profile=types.SimpleNamespace(**{**vars(RESEARCH), "name": "delivered"}))
+    assert flag(delivered["movers-14-226"], "--analysis") == ["@analysis:analysis"]
+
+
+def test_floor_frames_take_the_operator_list_by_its_bytes(tmp_path):
+    """O1 kept in research: REVIEW/<site>.floor-frames.json is a leaf of floor_frames (its bytes, with the clip it names);
+    without it the rule's default applies."""
+    by = build("walmart")
+    operator = REVIEW / "walmart.floor-frames.json"
+    assert words(by["floor_frames"])[-3:] == ["shots=@shots:decision", f"operator={operator}", "clip=@source:out"] and by["floor_frames"].leaves == {"operator": operator}
+    (tmp_path / "walmart.json").write_bytes((REVIEW / "walmart.json").read_bytes())
+    bare = build("walmart", review=tmp_path)
+    assert words(bare["floor_frames"])[-1] == "shots=@shots:decision" and bare["floor_frames"].leaves == {}
 
 
 # ---------------------------------------------------------------- templates against the delivered runs (read-only)
@@ -528,6 +554,26 @@ def test_versions_guard_needs_a_bump_when_code_changes():
     assert [p for p in stages.check_versions(recorded) if p.startswith("fuse")] == ["fuse: versions.json is stale; run python -m report_runner.stages --versions"]
     assert {"modal_apps/mono_room.py", "modal_apps/droid_room.py", "modal_apps/moge3_app.py"} <= set(stages.deps_of("modal_apps/mono_room.py"))
     assert "scripts/report_runner/spec.py" in stages.deps_of("scripts/report_runner/stages.py"), "relative imports are followed"
+
+
+def test_a_changed_rule_needs_a_version_bump():
+    """Decision rules are guarded like the script kinds: each rule's code (its function in decide.py, every module-level
+    name it reaches, the modules it imports, the scripts it runs) is tests/versions.json 'rule:NAME', and is in its key."""
+    from report_runner import decide, profiles
+    assert profiles.M2_RULES == {n: f"{n}@{v}" for n, v in decide.VERSIONS.items()} and set(decide.VERSIONS) == set(decide.RULES)
+    text = (REPO / stages.DECIDE).read_text()
+    changed = text.replace("LENS_FRAMES, LENS_KEEP_DEG, MIN_PLANE_INLIERS = 15, 3., .90", "LENS_FRAMES, LENS_KEEP_DEG, MIN_PLANE_INLIERS = 15, 3.5, .90")
+    assert changed != text
+    moved = {r for r in decide.RULES if stages.rule_code(r, changed)[1] != stages.rule_code(r)[1]}
+    assert moved == {"lens"}, "a constant moves the rules that read it, and only those"
+    helper = text.replace('return json.loads(_file(path, name).read_text())', 'return json.loads(_file(path, name).read_text() or "{}")')
+    assert helper != text and {r for r in decide.RULES if stages.rule_code(r, helper)[1] != stages.rule_code(r)[1]} >= {"shots", "voxel", "lens", "generator_plan"}
+    recorded = stages.current_versions()
+    recorded["rule:lens"] = {**recorded["rule:lens"], "depsSha256": stages.rule_code("lens", changed)[1]}  # versions.json from before the edit
+    assert [p for p in stages.check_versions(recorded) if p.startswith("rule:lens")] == \
+        ["rule:lens: its code changed but decide.VERSIONS['lens'] is still 1; bump it, then --versions"]
+    assert {"scripts/lingbot_icp_refine.py", "scripts/lingbot_dense_map.py"} <= set(stages.rule_code("dense_gate")[0])
+    assert "scripts/register_cut_shot.py" in stages.rule_code("other_shot")[0] and "modal_apps/mono_room.py" in stages.rule_code("static_filter")[0]
 
 
 # ---------------------------------------------------------------- script fixes

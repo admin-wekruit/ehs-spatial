@@ -164,7 +164,8 @@ def toy_graph(ctx):
     specs = [S("R01", [["scripts/prepare_video_clip.py", "--video", str(ctx.video), "--start", "1", "--end", "2", "--name", "toy", "--output", "@new"]],
                outputs={"clip": "clip.json"}),
              S("R02", [["scripts/detect_shot_cuts.py", "--clip", "@R01", "--output", "@new/segments.json"]], {"clip": ("R01", ())}, {"segments": "segments.json"}),
-             S("shots", [["python", "-m", "report_runner.decide", "shots", "--segments", "@R02:segments"]], {"segments": ("R02", ("segments",))}, {"decision": "shots.json"})]
+             S("shots", [["python", "-m", "report_runner.decide", "shots", "--out", "@new", "segments=@R02:segments"]], {"segments": ("R02", ("segments",))},
+               {"decision": "shots.json"})]
     if "shots" not in ctx.decisions:
         raise Pending("shots", specs)
     a, b = ctx.decisions["shots"]["value"]["primary"]
@@ -262,7 +263,8 @@ def make_toy(tmp):
     fx = {"site": "me340", "clip": "toy", "video_sha256": A.sha256_file(video), "start": 1, "end": 2, "publication": "pub-toy",
           "expect": {"fingerprint": A.fingerprint(DOC, "Toy")}, "nodes": nodes,
           "decisions": {"shots": {"primary": [0, 10], "others": [], "mapped": True}}, "decision_inputs": {"shots": {"segments": "runs/toy-cuts/segments.json"}},
-          "deviations": [{"id": "X1", "class": "X", "nodes": ["T11", "T12"], "delivered": "old", "m2": "new", "reason": "toy", "decisions": []}]}
+          "deviations": [{"id": "X1", "class": "X", "nodes": ["T11", "T12"], "delivered": "old", "m2": "new", "reason": "toy", "decisions": {},
+                          "flags": {"T12": ["--droid-run"]}}]}
     return art, video, fx
 
 
@@ -315,11 +317,18 @@ def test_adopt_argv_differences(tmp_path):
     assert any(d.startswith("T07: R07: --frames (D): different: runner [\"0:10\"] vs delivered [\"0:9\"]") for d in report.unlisted_diffs), report.unlisted_diffs
     assert "R07" in report.refused and "R07" not in report.delivered_keys, "an unlisted difference is refused, not recorded"
 
-    def listed(fx, art):  # the same difference, listed in the register: seen, not unlisted
+    def listed(fx, art):  # the same difference, named by a register entry: seen, not unlisted
         m_flag(fx, art)
         fx["deviations"][0]["nodes"].append("T07")
+        fx["deviations"][0]["flags"]["T07"] = ["--frames"]
     report, _, _ = run_toy(tmp_path / "b", listed)
-    assert report.unlisted_diffs == [] and report.deviations_seen == ["X1"]
+    assert report.unlisted_diffs == [] and report.deviations_seen == ["X1"] and report.listed["R07"][1] == ["X1"]
+
+    def elsewhere(fx, art):  # the entry lists the node but names another flag: the --frames difference is still refused
+        listed(fx, art)
+        fx["deviations"][0]["flags"]["T07"] = ["--clip"]
+    report, _, _ = run_toy(tmp_path / "d", elsewhere)
+    assert "R07" in report.refused and any(d.startswith("T07: R07: --frames (D): different") for d in report.unlisted_diffs), report.unlisted_diffs
 
     def evidence(fx, art):  # equal argv, but the D flag's evidence check fails
         (art / "runs/toy-cam/run.json").write_text(json.dumps({"shot_frames": [0, 9]}))
@@ -334,17 +343,61 @@ def test_adopt_staging_and_decisions(tmp_path):
     report, _, _ = run_toy(tmp_path / "a", relink)
     assert any("link runs/toy-masks/floor-a does not resolve" in d for d in report.unlisted_diffs)
 
-    off = {"shots": lambda segments: {"value": {"primary": [1, 10], "others": [], "mapped": True}}}
+    off = {"shots": lambda segments: {"value": {"primary": [1, 10], "others": [[0, 1]], "mapped": True}}}
     report, _, _ = run_toy(tmp_path / "b", rules=off)
-    assert report.decisions == {"shots": "differs"} and any(d.startswith("decision shots") for d in report.unlisted_diffs)
+    assert report.decisions == {"shots": "differs: others, primary"} and any(d.startswith("decision shots") for d in report.unlisted_diffs)
 
-    def listed(fx, art):
-        fx["deviations"][0]["decisions"] = ["shots"]
-    art, video, fx = make_toy(tmp_path / "c")
-    listed(fx, art)
-    (tmp_path / "c/fx.json").write_text(json.dumps(fx))
-    report = A.adopt(tmp_path / "c/fx.json", video, FakeStore(art), graph=toy_graph, normalize=toy_normalize, rules=off, db=FakeDB(DOC))
-    assert report.decisions == {"shots": "listed X1"} and report.unlisted_diffs == []
+    def adopted_with(tmp, decisions, compare=None):
+        art, video, fx = make_toy(tmp)
+        fx["deviations"][0]["decisions"] = decisions
+        fx["decision_compare"] = compare or {}
+        (tmp / "fx.json").write_text(json.dumps(fx))
+        return A.adopt(tmp / "fx.json", video, FakeStore(art), graph=toy_graph, normalize=toy_normalize, rules=off, db=FakeDB(DOC))
+    report = adopted_with(tmp_path / "c", {"shots": ["primary", "others"]})
+    assert report.decisions == {"shots": "listed X1: others, primary"} and report.unlisted_diffs == []
+    report = adopted_with(tmp_path / "d", {"shots": ["primary"]})  # an entry excuses only the fields it names
+    assert report.decisions == {"shots": "differs: others"} and len(report.unlisted_diffs) == 1
+    report = adopted_with(tmp_path / "e", {"shots": ["primary"]}, {"shots": {"fields": ["primary", "mapped"]}})  # 'others' is evidence here
+    assert report.decisions == {"shots": "listed X1: primary"} and report.unlisted_diffs == []
+    assert A.decision_differences({"bands": [[648, 696]]}, {"bands": [[648, 704]]}) == ["bands"], "a band inside a tolerance is still a difference"
+    assert A.decision_differences({"ids": {"a": "accepted by SAM 3D"}}, {"ids": {"a": "modelled in 242"}}, {"ids": ["ids"]}) == [], "ids, not notes"
+
+
+def test_a_research_decision_names_exactly_what_its_rule_read(tmp_path):
+    """The blocker of the M2 review: a research decision is recorded only when its key's roles are the fixture's
+    decision_inputs, both ways, each the same file or the same earlier value; otherwise it is refused and the research graph
+    stops there. Omitting an input the rule read, naming one it did not read, or another file: refused."""
+    report, _, _ = run_toy(tmp_path / "ok")
+    assert report.research_keys["shots"][1] == "replayed" and "research-graph" not in report.decisions
+    both = {"shots": lambda segments=None, operator=None: shots_rule(segments) if segments else
+            {"value": {"primary": [0, 10], "others": [], "mapped": True}, "evidence": {}, "rule": "shots@1"}}
+
+    def read_more(fx, art):  # the rule also read the operator list; the research key does not name it
+        fx["decision_inputs"]["shots"]["operator"] = "runs/toy-cuts/segments.json"
+
+    def read_less(fx, art):  # the research key names segments; the rule read nothing
+        fx["decision_inputs"]["shots"] = {}
+
+    def other_file(fx, art):  # the same bytes in another run: not the file the key names
+        (art / "runs/toy-cuts2").mkdir()
+        (art / "runs/toy-cuts2/segments.json").write_bytes((art / "runs/toy-cuts/segments.json").read_bytes())
+        fx["decision_inputs"]["shots"]["segments"] = "runs/toy-cuts2/segments.json"
+    for change, why in ((read_more, "the rule read ['operator'], which the research key does not name"),
+                        (read_less, "the research key names ['segments'], which the rule did not read"),
+                        (other_file, "segments: the rule read runs/toy-cuts2/segments.json, the research key names @R02:segments")):
+        report, store, _ = run_toy(tmp_path / change.__name__, change, rules=both)
+        assert report.decisions["shots"] == "equal" and "shots" not in report.research_keys, change.__name__
+        assert why in report.decisions["research-graph"] and not [e for e in store.entries if e["stage"] == "shots" and "research" in e["scope"]]
+
+
+def test_a_register_node_gets_no_research_key(tmp_path):
+    """P7: a node the register lists is a research miss even when its argv is the delivered one (D8: the clip's K). Its
+    consumers still get research keys: they hold its bytes, so a research rebuild with equal bytes is an early cutoff."""
+    def unverified(fx, art):
+        fx["deviations"].append({"id": "D8", "class": "D", "nodes": ["T01"], "delivered": "K", "m2": "pinned", "reason": "unverified",
+                                 "decisions": {}, "flags": {}})
+    report, _, _ = run_toy(tmp_path, unverified)
+    assert report.unlisted_diffs == [] and "R01" in report.delivered_keys and "R01" not in report.research_keys and "R07" in report.research_keys
 
 
 def test_adopt_fingerprint_mismatch_is_reported(tmp_path):
@@ -404,7 +457,7 @@ def test_p1_argv_and_p3_decisions(site, tmp_path):
     report = A.adopt(FIXTURES / f"{site}.json", video_of(fx), real_store(tmp_path), only_rules=rules)
     print(site, report.counts, report.decisions)
     assert report.unlisted_diffs == []
-    assert not [n for n, v in report.decisions.items() if v == "differs"]
+    assert not [n for n, v in report.decisions.items() if v.startswith("differs")]
 
 
 def served(store, site, fx, profile):
@@ -605,6 +658,8 @@ def test_p8_one_changed_input_misses_exactly_its_dependents(tmp_path):
     review.mkdir()
     for f in (REPO / "docs/phase2/box-review-303").glob("*.json"):
         (review / f.name).write_bytes(f.read_bytes())
+    specs = delivered_ctx("walmart", fx, Store(ART, scope="delivered"), review=review)  # control: the same bytes in another folder
+    assert {r["stage"] for r in Store(ART, scope="delivered").plan(specs) if r["status"] != "hit"} == set(), "a review enters keys by its bytes, never its path"
     doc = json.loads((review / "walmart.json").read_text())
     doc["boxesApproved"][sorted(doc["boxesApproved"])[0]] = "0" * 64
     (review / "walmart.json").write_text(json.dumps(doc))

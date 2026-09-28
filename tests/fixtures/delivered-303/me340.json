@@ -3422,10 +3422,14 @@
    "delivered": "DROID bundle adjustment over the whole clip (keyframes 14 and 226 on the cuts)",
    "m2": "camera --frames 226:899; [0,13] and [14,225] go to D3",
    "reason": "the cut-away's cameras enter the bundle adjustment",
-   "decisions": [
-    "shots",
-    "track_windows"
-   ]
+   "decisions": {
+    "shots": [
+     "primary",
+     "others",
+     "registered"
+    ]
+   },
+   "flags": {}
   },
   {
    "id": "X2",
@@ -3436,7 +3440,12 @@
    "delivered": "metric over all 899 cameras; view 150 (cut-away) in the plane -> 2.8592 m/unit",
    "m2": "--exclude-frames -> 2.7946 (-2.3%)",
    "reason": "scale includes wrong cameras",
-   "decisions": []
+   "decisions": {},
+   "flags": {
+    "S06": [
+     "--exclude-frames"
+    ]
+   }
   },
   {
    "id": "X3",
@@ -3448,7 +3457,15 @@
    "delivered": "walk depth = subset of a joint 312-view DA3 pass",
    "m2": "fresh per-shot infer",
    "reason": "a joint stage is never served as a subset",
-   "decisions": []
+   "decisions": {},
+   "flags": {
+    "S05": [
+     "--exclude-frames"
+    ],
+    "S28": [
+     "<staged out/mono>"
+    ]
+   }
   },
   {
    "id": "X4",
@@ -3464,14 +3481,44 @@
     "S32",
     "S33",
     "S34",
-    "S23"
+    "S25b",
+    "S36"
    ],
-   "delivered": "object map, names, models, splat seeds and LingBot evaluate on the all-view 189",
+   "delivered": "object map, names, models (SAM 3D, RecGen, box), splat seeds, and LingBot build and evaluate on the all-view 189",
    "m2": "per-shot R17",
    "reason": "cut-away views take part in grouping and seeds",
-   "decisions": [
-    "dense_gate"
-   ]
+   "decisions": {
+    "dense_gate": [
+     "use",
+     "dir"
+    ]
+   },
+   "flags": {
+    "S16": [
+     "--depth-run",
+     "--floor"
+    ],
+    "S22": [
+     "--fill",
+     "--mesh",
+     "--scale"
+    ],
+    "S25a": [
+     "--depth-run"
+    ],
+    "S25b": [
+     "--depth-run"
+    ],
+    "S33": [
+     "--depth-run"
+    ],
+    "S34": [
+     "--depth-run"
+    ],
+    "S36": [
+     "--depth-run"
+    ]
+   }
   },
   {
    "id": "X5",
@@ -3485,9 +3532,18 @@
    "delivered": "model voxel 0.014 (script constant)",
    "m2": "0.01399 = round(0.04/2.8592, 6)",
    "reason": "the ME340 constant, not the rule",
-   "decisions": [
-    "voxel"
-   ]
+   "decisions": {},
+   "flags": {
+    "S33": [
+     "--voxel-native"
+    ],
+    "S34": [
+     "--voxel-native"
+    ],
+    "S36": [
+     "--voxel-native"
+    ]
+   }
   },
   {
    "id": "X6",
@@ -3502,9 +3558,20 @@
    "delivered": "motion pairs and track window 0 span the cut; hand --merge / --person-tracks",
    "m2": "tracks per shot, no cross-shot join (D3b)",
    "reason": "identity joined by eye across a cut",
-   "decisions": [
-    "track_windows"
-   ]
+   "decisions": {
+    "track_windows": [
+     "others"
+    ]
+   },
+   "flags": {
+    "S07": [
+     "--exclude-frames"
+    ],
+    "S39": [
+     "--merge",
+     "--person-tracks"
+    ]
+   }
   },
   {
    "id": "X7",
@@ -3516,7 +3583,13 @@
    "delivered": "outlines occlude against 196 (texture of 189)",
    "m2": "the published fill shell (R20)",
    "reason": "wrong occluder",
-   "decisions": []
+   "decisions": {},
+   "flags": {
+    "S19": [
+     "--mesh",
+     "--scene"
+    ]
+   }
   },
   {
    "id": "X8",
@@ -3528,7 +3601,15 @@
    "delivered": "LingBot on the whole video, stride 2, no --frames",
    "m2": "per-shot --frames 226:899",
    "reason": "the cut-away left as Sim3 outliers",
-   "decisions": []
+   "decisions": {},
+   "flags": {
+    "S24": [
+     "--frames"
+    ],
+    "S25b": [
+     "--exclude-frames"
+    ]
+   }
   },
   {
    "id": "X9",
@@ -3539,9 +3620,18 @@
    "delivered": "lens from 5 frames, one of them cut-away (80.57°)",
    "m2": "15 walk frames; expected kept (walk frames 79.4–81.3°)",
    "reason": "not wrong, not the rule",
-   "decisions": [
-    "lens"
-   ]
+   "decisions": {
+    "lens": [
+     "frames",
+     "fov_deg",
+     "keep"
+    ]
+   },
+   "flags": {
+    "S01L": [
+     "<commands>"
+    ]
+   }
   },
   {
    "id": "X13",
@@ -3552,7 +3642,8 @@
    "delivered": "limitation 'disagrees with the model scale estimate by about 20%' hard-coded (import_video_scene.py:496) while model_estimated_metres_per_native_unit is null",
    "m2": "the sentence only when a model estimate exists",
    "reason": "a false statement in the published document",
-   "decisions": []
+   "decisions": {},
+   "flags": {}
   },
   {
    "id": "D6",
@@ -3564,10 +3655,15 @@
    "delivered": "box run --exclude = the choice list of an intermediate merge",
    "m2": "learned-accepted ∪ review excludes (D17)",
    "reason": "the box excludes came from a merge that is not the delivered one",
-   "decisions": [
-    "generator_plan",
-    "generator_plan-box"
-   ]
+   "decisions": {
+    "generator_plan": [
+     "box_excludes"
+    ],
+    "generator_plan-box": [
+     "box_excludes"
+    ]
+   },
+   "flags": {}
   },
   {
    "id": "O1",
@@ -3582,9 +3678,16 @@
    "delivered": "operator data: floor-mask frame lists, entity notes and their order, review excludes, budgets, titles, hand-written clip scripts",
    "m2": "adopted for these clips (kept in research); default rules only for new clips",
    "reason": "not reproducible by a rule",
-   "decisions": [
-    "floor_frames"
-   ]
+   "decisions": {
+    "floor_frames": [
+     "value"
+    ]
+   },
+   "flags": {
+    "S34": [
+     "--entities"
+    ]
+   }
   },
   {
    "id": "X14",
@@ -3595,7 +3698,111 @@
    "delivered": "inferred floor 244 without --skip-frames: the cut-away cameras [14,226) vote on the floor that is published",
    "m2": "--skip-frames 14-225, as every other consumer of the camera run",
    "reason": "found at M2 integration: the cut-away shot is never evidence (as X2 for the metric scale)",
-   "decisions": []
+   "decisions": {},
+   "flags": {
+    "S31": [
+     "--skip-frames"
+    ]
+   }
+  },
+  {
+   "id": "D8",
+   "class": "D",
+   "nodes": [
+    "S01"
+   ],
+   "delivered": "clip K from MoGe-3 (Ruicheng/moge-3-vitl) at a revision nobody recorded: the median of the 5 per-frame FoVs in clip.json intrinsics",
+   "m2": "prepare_video_clip runs MoGe-3 pinned at 184008f877d7ad1ad4c2cd2182a9bd1f63d0e5be (source version 2); whether it gives the same K is unverified",
+   "reason": "unverified: no CPU replay exists (MoGe-3 needs an NVIDIA GPU: FlexGEMM/Triton); no other MoGe-3 record of this clip exists, but none names its revision. So the research source key does not claim the delivered clip: a research run rebuilds the clip (L4, ~$0.01), and early cutoff keeps everything after it a hit when its bytes are equal",
+   "decisions": {},
+   "flags": {}
+  },
+  {
+   "id": "D9",
+   "class": "D",
+   "nodes": [
+    "S33"
+   ],
+   "delivered": "RecGen on every entity (--all), the hand list (--entities) first",
+   "m2": "RecGen on the SAM 3D rejects only (D17); calls it shares with the delivered run are answered by its journal",
+   "reason": "a rule exists; the delivered set was not wrong",
+   "decisions": {
+    "generator_plan": [
+     "recgen_entities",
+     "excluded_all"
+    ],
+    "generator_plan-box": [
+     "recgen_entities",
+     "excluded_all"
+    ]
+   },
+   "flags": {
+    "S33": [
+     "--all",
+     "--count",
+     "--entities"
+    ]
+   }
+  },
+  {
+   "id": "D7",
+   "class": "D",
+   "nodes": [
+    "S22",
+    "S29",
+    "S30",
+    "S25a",
+    "S25b"
+   ],
+   "delivered": "overlay band 648:704 set by hand (texture/fill 648:704, LingBot 646:706, splat captions 648 704 160 1120)",
+   "m2": "rule D6 gives 648:696 (texture/fill 648:696, LingBot 646:698, splat captions 648 696 160 1120); it covers the caption rows 661-689 with 13 and 7 rows to spare",
+   "reason": "a rule exists; the delivered band was not wrong",
+   "decisions": {
+    "overlay": [
+     "bands",
+     "texture_rows",
+     "fill_rows",
+     "lingbot_rows",
+     "splat_captions"
+    ]
+   },
+   "flags": {}
+  },
+  {
+   "id": "D10",
+   "class": "D",
+   "nodes": [
+    "S22",
+    "S23"
+   ],
+   "delivered": "the trained splats.splat of 217 was not kept after its cleanup pick; 232 holds the pick (splats-clean) without the trained file",
+   "m2": "the pick stage links the trained splats beside its pick (R31 packaging)",
+   "reason": "a file the delivered folder does not keep, not a different value: the published splats are the pick",
+   "decisions": {},
+   "flags": {
+    "S22": [
+     "<staged out/splats.splat>"
+    ],
+    "S23": [
+     "<staged out/splats.splat>"
+    ]
+   }
+  },
+  {
+   "id": "D11",
+   "class": "D",
+   "nodes": [
+    "S33"
+   ],
+   "delivered": "RecGen 231 was re-assessed in place (complete_video_objects --reassess) after its calls were paid",
+   "m2": "one RecGen run, judged by the gate at HEAD",
+   "reason": "process, not a different value: --reassess re-applies the acceptance gate to the models the calls returned",
+   "decisions": {},
+   "flags": {
+    "S33": [
+     "<delivered also ran>"
+    ]
+   }
   }
  ],
  "decisions": {
@@ -4216,7 +4423,8 @@
   },
   "floor_frames": {
    "shots": "@decision:shots",
-   "operator": "@value:floor_frames"
+   "operator": "$REPO/docs/phase2/box-review-303/me340.floor-frames.json",
+   "clip": "data/clips/me340-165"
   },
   "other_shot-14-226": {
    "registration": "runs/me340-cutaway-register-304/registration.json"
@@ -4232,40 +4440,22 @@
   }
  },
  "decision_compare": {
-  "overlay": {
-   "band_within": {
-    "inner": [
-     661,
-     689
-    ],
-    "outer": [
-     640,
-     712
-    ]
-   }
-  },
   "dense_gate": {
    "fields": [
-    "use"
-   ]
-  },
-  "track_windows": {
-   "fields": [
-    "shot",
-    "stitch"
+    "use",
+    "dir"
    ]
   },
   "generator_plan-box": {
-   "keys": "box_excludes"
+   "ids": [
+    "box_excludes",
+    "excluded_all"
+   ]
   },
   "generator_plan": {
-   "keys": "recgen_entities"
-  },
-  "shots": {
-   "fields": [
-    "primary",
-    "others",
-    "mapped"
+   "ids": [
+    "box_excludes",
+    "excluded_all"
    ]
   }
  },

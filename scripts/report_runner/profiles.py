@@ -9,6 +9,8 @@ asks for; the modal apps carry the same constants (tests/test_report_runner_deci
 """
 from dataclasses import dataclass, field
 
+from report_runner.decide import VERSIONS as RULE_VERSIONS
+
 UNPINNED = "unpinned"
 
 # hf_id (or the service's own id) -> (revision, weights sha256, licence, commercial)
@@ -38,8 +40,7 @@ MODELS = {
 QWEN3VL_NAMING_GATE = {"status": "not-run", "set": "150 named crops over the three delivered object maps",
                        "reason": "needs GPU (Qwen3-VL-Embedding + Reranker on Modal); the M2 build workflow ran CPU only"}
 
-M2_RULES = {name: f"{name}@1" for name in ("shots", "other_shot", "lens", "voxel", "overlay", "lingbot_stride", "lingbot_conf", "dense_gate",
-                                             "inferred_floor", "track_windows", "splat_pick", "sam2_frames", "generator_plan", "floor_frames", "static_filter")}
+M2_RULES = {name: f"{name}@{v}" for name, v in RULE_VERSIONS.items()}  # stages adds each rule's code sha (stages.rule_code) to the key
 
 
 def row(role, hf_id):

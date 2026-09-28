@@ -2996,10 +2996,15 @@
    "delivered": "box for object-156 (a display on the moving cart, source frame 657) was approved",
    "m2": "review excludes apply to all generators -> 39",
    "reason": "wrong worse than blank",
-   "decisions": [
-    "generator_plan",
-    "generator_plan-box"
-   ]
+   "decisions": {
+    "generator_plan": [
+     "box_excludes"
+    ],
+    "generator_plan-box": [
+     "box_excludes"
+    ]
+   },
+   "flags": {}
   },
   {
    "id": "X12",
@@ -3010,9 +3015,12 @@
    "delivered": "plane inliers 0.884 claimed as assumed_camera_height",
    "m2": "intrinsics_uncertain (U1)",
    "reason": "the lens gate (>= 0.90) fails",
-   "decisions": [
-    "lens"
-   ]
+   "decisions": {
+    "lens": [
+     "scale_status"
+    ]
+   },
+   "flags": {}
   },
   {
    "id": "D3",
@@ -3023,7 +3031,12 @@
    "delivered": "events without marks",
    "m2": "marks from R14",
    "reason": "rule D15",
-   "decisions": []
+   "decisions": {},
+   "flags": {
+    "S23": [
+     "--marks"
+    ]
+   }
   },
   {
    "id": "D4",
@@ -3034,9 +3047,12 @@
    "delivered": "LingBot conf 1.06 (copied from ME340)",
    "m2": "1.01 (its own deciles)",
    "reason": "a rule exists; 1.06 was not wrong",
-   "decisions": [
-    "lingbot_conf"
-   ]
+   "decisions": {
+    "lingbot_conf": [
+     "value"
+    ]
+   },
+   "flags": {}
   },
   {
    "id": "D5",
@@ -3047,7 +3063,15 @@
    "delivered": "other shot [0,383) not attempted",
    "m2": "R32 attempt (expected refused)",
    "reason": "rule D3",
-   "decisions": []
+   "decisions": {
+    "shots": [
+     "registered"
+    ],
+    "track_windows": [
+     "others"
+    ]
+   },
+   "flags": {}
   },
   {
    "id": "X13",
@@ -3058,7 +3082,8 @@
    "delivered": "limitation 'disagrees with the model scale estimate by about 20%' hard-coded (import_video_scene.py:496) while model_estimated_metres_per_native_unit is null",
    "m2": "the sentence only when a model estimate exists",
    "reason": "a false statement in the published document",
-   "decisions": []
+   "decisions": {},
+   "flags": {}
   },
   {
    "id": "D6",
@@ -3070,10 +3095,15 @@
    "delivered": "box run --exclude = the choice list of an intermediate merge",
    "m2": "learned-accepted ∪ review excludes (D17)",
    "reason": "the box excludes came from a merge that is not the delivered one",
-   "decisions": [
-    "generator_plan",
-    "generator_plan-box"
-   ]
+   "decisions": {
+    "generator_plan": [
+     "box_excludes"
+    ],
+    "generator_plan-box": [
+     "box_excludes"
+    ]
+   },
+   "flags": {}
   },
   {
    "id": "O1",
@@ -3085,12 +3115,22 @@
     "S39",
     "S06"
    ],
-   "delivered": "operator data: floor-mask frame lists, entity notes and their order, review excludes, budgets, titles, hand-written clip scripts",
+   "delivered": "operator data: floor-mask frame lists, entity notes and their order, review excludes, budgets, titles, hand-written clip and lens scripts (not in the repo)",
    "m2": "adopted for these clips (kept in research); default rules only for new clips",
    "reason": "not reproducible by a rule",
-   "decisions": [
-    "floor_frames"
-   ]
+   "decisions": {
+    "floor_frames": [
+     "value"
+    ]
+   },
+   "flags": {
+    "S06": [
+     "<commands>"
+    ],
+    "S34": [
+     "--exclude"
+    ]
+   }
   },
   {
    "id": "X15",
@@ -3101,7 +3141,51 @@
    "delivered": "inferred floor 265 fused the un-refined LingBot map 258 (--dense 258; its floor sits 8.7 cm below the plane) although the ICP-refined 268-icp was the displayed map",
    "m2": "--dense is the map the dense gate accepts (D8 then D9): 268-icp",
    "reason": "found at M2 integration: the floor must be inferred from the map the report shows; the delivered floor was withheld by its own tests either way",
-   "decisions": []
+   "decisions": {},
+   "flags": {
+    "S29": [
+     "--dense"
+    ]
+   }
+  },
+  {
+   "id": "D8",
+   "class": "D",
+   "nodes": [
+    "S01"
+   ],
+   "delivered": "clip K from MoGe-3 (Ruicheng/moge-3-vitl) at a revision nobody recorded: the median of the 5 per-frame FoVs in clip.json intrinsics",
+   "m2": "prepare_video_clip runs MoGe-3 pinned at 184008f877d7ad1ad4c2cd2182a9bd1f63d0e5be (source version 2); whether it gives the same K is unverified",
+   "reason": "unverified: no CPU replay exists (MoGe-3 needs an NVIDIA GPU: FlexGEMM/Triton); the cached MoGe-3 records agree where they share a frame (frame 749: 51.34 deg in clip.json and in fov-check.json), but none names its revision. So the research source key does not claim the delivered clip: a research run rebuilds the clip (L4, ~$0.01), and early cutoff keeps everything after it a hit when its bytes are equal",
+   "decisions": {},
+   "flags": {}
+  },
+  {
+   "id": "D9",
+   "class": "D",
+   "nodes": [
+    "S33"
+   ],
+   "delivered": "RecGen on every entity (--all) minus the review excludes and the SAM 3D accepts (--exclude ...=accepted by SAM 3D)",
+   "m2": "RecGen on the SAM 3D rejects only (D17); calls it shares with the delivered run are answered by its journal",
+   "reason": "a rule exists; the delivered set was not wrong",
+   "decisions": {
+    "generator_plan": [
+     "recgen_entities",
+     "excluded_all"
+    ],
+    "generator_plan-box": [
+     "recgen_entities",
+     "excluded_all"
+    ]
+   },
+   "flags": {
+    "S33": [
+     "--all",
+     "--count",
+     "--entities"
+    ]
+   }
   }
  ],
  "decisions": {
@@ -3760,7 +3844,8 @@
   },
   "floor_frames": {
    "shots": "@decision:shots",
-   "operator": "@value:floor_frames"
+   "operator": "$REPO/docs/phase2/box-review-303/walmart.floor-frames.json",
+   "clip": "data/clips/walmart-190"
   },
   "generator_plan-box": {
    "sam3d": "runs/walmart-object-models-267-sam3d",
@@ -3775,26 +3860,20 @@
  "decision_compare": {
   "dense_gate": {
    "fields": [
-    "use"
-   ]
-  },
-  "track_windows": {
-   "fields": [
-    "shot",
-    "stitch"
+    "use",
+    "dir"
    ]
   },
   "generator_plan-box": {
-   "keys": "box_excludes"
+   "ids": [
+    "box_excludes",
+    "excluded_all"
+   ]
   },
   "generator_plan": {
-   "keys": "recgen_entities"
-  },
-  "shots": {
-   "fields": [
-    "primary",
-    "others",
-    "mapped"
+   "ids": [
+    "box_excludes",
+    "excluded_all"
    ]
   }
  },

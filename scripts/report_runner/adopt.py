@@ -10,10 +10,12 @@ record; resolve the delivered graph (profile delivered, decisions served from th
 stage names its delivered run in the fixture (node.graph: outputs by role, the recorded commands); the runner's resolved
 argv is compared with the recorded one flag by flag (paths as real paths, defaults filled, key-free flags and the flags a
 mode never reads dropped; D/I flags must also pass their evidence) and its staged inputs with the run's folder. No
-difference: the delivered key is recorded. Differences at a node the register (section 9) lists: recorded too, delivered
-scope only, with the differences in its lock and in the report. Any other difference: refused, reported exactly, not
-recorded. Then the decision rules run on the adopted inputs and are diffed against the fixture, and research keys are
-recorded where the M2 argv is the delivered one and the code is verified (recorded-rev, content, or --replay).
+difference: the delivered key is recorded. Differences the register (section 9) names, entry by entry (deviation.flags
+{node: [flag]}): recorded too, delivered scope only, with the differences in its lock and in the report. Any other
+difference, at a listed node or not: refused, reported exactly, not recorded. Then the decision rules run on the adopted
+inputs and are diffed against the fixture field by field (an entry excuses the fields deviation.decisions names), and
+research keys are recorded where the M2 argv is the delivered one, the register does not list the node, and the code is
+verified (recorded-rev, content, or --replay); a research decision only when its key names exactly what its rule read.
 
 Never opens .platform/imports/* (the records hold project capabilities): a record is found by a stat of its name only.
 """
@@ -39,7 +41,8 @@ FIXTURE_KEYS = {"site", "video_sha256", "start", "end", "publication", "nodes", 
 NODE_KEYS = {"id", "stage", "dirs", "outputs", "commands", "basis", "evidence", "patch", "staging"}
 DEVIATION_KEYS = {"id", "class", "nodes", "delivered", "m2", "reason"}
 REGISTER = {"X1", "X2", "X3", "X4", "X5", "X6", "X7", "X8", "X9", "X10", "X11", "X12", "X13", "D1", "D2", "D3", "D4", "D5", "D6", "O1",
-            "X14", "X15"}  # X14, X15: found when the runner resolved the delivered graph (M2 integration); not in design section 9
+            "X14", "X15",  # found when the runner resolved the delivered graph (M2 integration); not in design section 9
+            "D7", "D8", "D9", "D10", "D11"}  # found at the M2 review, once an entry excused only what it names (fields, flags)
 U_ALLOWED = {("R37", "--title"), ("R37", "--republish"), ("R37", "--request-suffix"), ("R24", "--marks")}  # R24 only on me340
 
 
@@ -214,6 +217,8 @@ def validate_fixture(fx):
         p += [f"deviation {d.get('id')}: not in the register" for _ in [0] if d.get("id") not in REGISTER]
         p += [f"deviation {d.get('id')}: node {i} not in this fixture" for i in d.get("nodes", []) if i not in seen]
         p += [f"deviation {d.get('id')}: class {d.get('class')}" for _ in [0] if d.get("class") not in ("X", "D", "O")]
+        p += [f"deviation {d.get('id')}: flags of {i}, which it does not list" for i in d.get("flags", {}) if i not in d.get("nodes", [])]
+        p += [f"deviation {d.get('id')}: decisions must be {{decision: [fields]}}"] if not isinstance(d.get("decisions", {}), dict) else []
     return p
 
 
@@ -488,8 +493,8 @@ class AdoptReport:
     unlisted_diffs: list = field(default_factory=list)   # anything else: the proof fails
     import_row: dict = None
     counts: dict = field(default_factory=dict)           # template / patch / staging / side / U
-    decisions: dict = field(default_factory=dict)        # decision -> "equal" | "listed X.." | "differs" | "not run: ..."
-    listed: dict = field(default_factory=dict)           # graph stage -> [node, register ids, [differences]]: adopted, delivered-only
+    decisions: dict = field(default_factory=dict)        # decision -> "equal" | "listed X..: fields" | "operator O1" | "differs: fields" | "not run: ..."
+    listed: dict = field(default_factory=dict)           # graph stage -> [node, register ids, [difference [the ids naming it]]]: delivered-only
     refused: dict = field(default_factory=dict)          # graph stage -> [node, [differences]]: not adopted
 
 
@@ -614,19 +619,19 @@ def resolve(graph, ctx, on_pending):
             on_pending(p)
 
 
-def compare_decision(got, want, how):
-    """Rule value against the delivered value: whole value (floats within 1e-6), named fields, dict keys, or a band inside."""
-    if not how:
-        return _close(got, want, 1e-6)
-    if "fields" in how:
-        return all(_close((got or {}).get(f), (want or {}).get(f), 1e-6) for f in how["fields"])
-    if "keys" in how:
-        return sorted((got or {}).get(how["keys"], {})) == sorted((want or {}).get(how["keys"], {}))
-    if "band_within" in how:
-        inner, outer = how["band_within"]["inner"], how["band_within"]["outer"]
-        bands = (got or {}).get("bands") or []
-        return len(bands) == 1 and outer[0] <= bands[0][0] <= inner[0] and inner[1] <= bands[0][1] <= outer[1]
-    raise ValueError(f"unknown comparison {how}")
+def decision_differences(got, want, how=None):
+    """The fields of the rule's value that are not the delivered value (floats within 1e-6; 'value' when it is not a dict);
+    [] is equal, and nothing else is. how (fixture decision_compare): {"fields": [...]} compares only those fields (the rest
+    is evidence the delivered value never held); {"ids": [...]} compares those fields by their keys (entity ids: the reason
+    texts are notes, as --exclude's are)."""
+    if not (isinstance(got, dict) and isinstance(want, dict)):
+        return [] if _close(got, want, 1e-6) else ["value"]
+    how = how or {}
+    unknown = set(how) - {"fields", "ids"}
+    assert not unknown, f"unknown comparison {sorted(unknown)}"
+    ids = set(how.get("ids", ()))
+    part = lambda value, f: sorted(value or {}) if f in ids else value
+    return [f for f in how.get("fields") or sorted(set(got) | set(want)) if not _close(part(got.get(f), f), part(want.get(f), f), 1e-6)]
 
 
 def decision_payload(value, source):
@@ -638,6 +643,18 @@ def rule_of(decision):
     return decision.split("-")[0]
 
 
+def rule_input(ref, art):
+    """A fixture decision input's path: ART-relative, or $ART/$REPO/..."""
+    return Path(expand(ref, art)) if ref.startswith("$") else Path(art) / ref
+
+
+def decision_roles(spec):
+    """{role: word} a decision stage passes its rule ('python -m report_runner.decide RULE --out @new role=...')."""
+    words = list(spec.commands[0])
+    words = words[words.index("report_runner.decide") + 2:] if "report_runner.decide" in words else words
+    return dict(w.split("=", 1) for i, w in enumerate(words) if "=" in w and not w.startswith("-") and (i == 0 or words[i - 1] != "--out"))
+
+
 def run_rules(fx, art, root, rules, only=None):
     """Every rule with inputs in the fixture (keyed by graph decision), fed the adopted (delivered) values of earlier
     decisions. Returns {decision: (result | None, error | None)}. Writes only under ROOT/adopted/rule-inputs/<site>/
@@ -646,20 +663,12 @@ def run_rules(fx, art, root, rules, only=None):
     folder.mkdir(parents=True, exist_ok=True)
     for name, value in fx["decisions"].items():
         (folder / f"{name}.json").write_text(json.dumps(decision_payload(value, fx["site"])))
-        (folder / f"{name}.operator.json").write_text(json.dumps({"frames": value} if isinstance(value, list) else value))
     out = {}
     for name, inputs in fx.get("decision_inputs", {}).items():
         rule = rules.get(rule_of(name))
         if rule is None or (only is not None and name not in only and rule_of(name) not in only):
             continue
-        paths = {}
-        for role, ref in inputs.items():
-            if ref.startswith("@decision:"):
-                paths[role] = folder / f"{ref.split(':', 1)[1]}.json"
-            elif ref.startswith("@value:"):
-                paths[role] = folder / f"{ref.split(':', 1)[1]}.operator.json"
-            else:
-                paths[role] = Path(expand(ref, art)) if ref.startswith("$") else Path(art) / ref
+        paths = {role: folder / f"{ref.split(':', 1)[1]}.json" if ref.startswith("@decision:") else rule_input(ref, art) for role, ref in inputs.items()}
         if "out" in inspect.signature(rule).parameters:
             paths["out"] = root / "replays" / f"decision-{fx['site']}-{name}-{time.strftime('%Y%m%d-%H%M%S')}"
         try:
@@ -684,8 +693,8 @@ def write_if_changed(path, text):
 def adopt(fixture: Path, video: Path, store, *, art=None, graph=None, normalize=None, rules=None, db=None, replay=False, only_rules=None) -> AdoptReport:
     """store: Part A's Store; graph/normalize: Part B's report_runner.stages; rules: Part C's decide.RULES. Unit tests pass
     fakes for all of them. A stage is adopted (delivered scope) when its resolved argv equals the delivered run's, or when
-    every difference is at a node the register lists; any other difference refuses it (reported exactly, not recorded).
-    The proof fails when unlisted_diffs is not empty."""
+    a register entry names every difference (node and flag); any other difference refuses it (reported exactly, not
+    recorded). The proof fails when unlisted_diffs is not empty."""
     from report_runner.spec import Ctx
     fx = load_fixture(fixture)
     art = Path(art or getattr(store, "art", None) or DEFAULT_ART)
@@ -700,10 +709,13 @@ def adopt(fixture: Path, video: Path, store, *, art=None, graph=None, normalize=
             rules = {}
     site = fx["site"]
     report = AdoptReport(site=site, counts={"template": 0, "patch": 0, "staging": 0, "side": 0, "U": 0})
-    listed = {}
+    listed, excuses = {}, {}  # node -> register ids (P7: a research miss); (node, flag) -> the ids whose text names that difference
     for d in fx["deviations"]:
         for i in d["nodes"]:
             listed.setdefault(i, []).append(d["id"])
+        for i, flags in d.get("flags", {}).items():
+            for f in flags:
+                excuses.setdefault((i, f), []).append(d["id"])
     for n in fx["nodes"]:
         if n["patch"] and n["patch"] not in listed.get(n["id"], []):
             listed.setdefault(n["id"], []).append(n["patch"])
@@ -765,7 +777,7 @@ def adopt(fixture: Path, video: Path, store, *, art=None, graph=None, normalize=
                 rows += [("<staging>", "M", f"different: {p}") for p in check_staging(node, art)]
             rows += argv_differences(fx, node, spec.name, spec, adopted, normalize, art, video)
             rows += staging_differences(spec, node, spec.name, adopted, art)
-            rows += [("<commands>", "M", f"different: delivered also ran {' '.join(map(str, c))[:300]}") for c in unassigned_commands(fx, node)
+            rows += [("<delivered also ran>", "M", f"different: delivered also ran {' '.join(map(str, c))[:300]}") for c in unassigned_commands(fx, node)
                      if spec.name == next(s for s in node["graph"])]
             lock = {"stage": spec.name, "version": spec.version, "argv": [[expand(w, art) for w in c] for _, c in recorded_commands(fx, node, spec.name)],
                     "argvSource": "recorded", "models": node.get("models", []), "git": {"commit": None, "dirty": False}, "patch": node["patch"]}
@@ -773,13 +785,15 @@ def adopt(fixture: Path, video: Path, store, *, art=None, graph=None, normalize=
             report.counts["patch" if node["patch"] else "template"] += 1
         report.counts["U"] += sum(r[2] == "unrecorded" for r in rows)
         rows = [r for r in rows if r[2] != "unrecorded"]
-        if rows and not (node and node["id"] in listed):
-            return refuse(spec.name, node, rows)
+        by = {r: excuses.get((node["id"], r[0]), []) if node else [] for r in rows}  # an entry excuses only the flags it names
+        if [r for r in rows if not by[r]]:
+            return refuse(spec.name, node, [r for r in rows if not by[r]])
+        ids = sorted({i for r in rows for i in by[r]})
         if rows:
-            report.listed[spec.name] = [node["id"], listed[node["id"]], [f"{f} ({b}): {s}" for f, b, s in rows]]
-            report.deviations_seen += listed[node["id"]]
+            report.listed[spec.name] = [node["id"], ids, [f"{f} ({b}): {s} [{' '.join(by[(f, b, s)])}]" for f, b, s in rows]]
+            report.deviations_seen += ids
         lock.update(adoptedFrom=node["dirs"] if node else None, differences=report.listed.get(spec.name, [None, [], []])[2],
-                    note="adopted: a recorded run, not re-executed" + (f"; listed {listed[node['id']]}: the runner's argv differs as recorded" if rows else ""))
+                    note="adopted: a recorded run, not re-executed" + (f"; listed {ids}: the runner's argv differs as recorded" if rows else ""))
         try:
             key = store.record(dataclasses.replace(spec, outputs=outputs), where, "delivered-only", ["delivered"], lock,
                                adopted_from=node["id"] if node else f"decision:{spec.name}")
@@ -828,17 +842,23 @@ def adopt(fixture: Path, video: Path, store, *, art=None, graph=None, normalize=
     # 5. decisions: every rule whose inputs are adopted, against the delivered value
     computed = run_rules(fx, art, root, rules, only_rules)
     for name, (result, error) in computed.items():
-        ids = [d["id"] for d in fx["deviations"] if name in d.get("decisions", [])]
         if error:
             report.decisions[name] = f"not run: {error}"
-        elif compare_decision(result["value"], fx["decisions"].get(name), fx.get("decision_compare", {}).get(name)):
-            report.decisions[name] = "equal"
-        elif ids:
-            report.decisions[name] = "listed " + " ".join(ids)
-            report.deviations_seen += ids
+            continue
+        # a register entry excuses only the fields of this decision it names; operator data (O) is equal by construction
+        naming = lambda field, classes="XDO": [d["id"] for d in fx["deviations"] if d["class"] in classes and field in d.get("decisions", {}).get(name, [])]
+        got, want = result["value"], fx["decisions"].get(name)
+        fields = decision_differences(got, want, fx.get("decision_compare", {}).get(name))
+        operator = (result.get("evidence") or {}).get("source") == "operator"  # equal by construction: it must be registered as O
+        unnamed = [f for f in fields if not naming(f)] + (["value (operator data)"] if operator and not naming("value", "O") else [])
+        ids = sorted({i for f in fields for i in naming(f)} | set(naming("value", "O") if operator else ()))
+        if unnamed:
+            report.decisions[name] = f"differs: {', '.join(unnamed)}"
+            shown = {f: [got.get(f), want.get(f)] for f in unnamed} if isinstance(got, dict) and isinstance(want, dict) else [got, want]
+            report.unlisted_diffs.append(f"decision {name}: no register entry names {unnamed}: rule vs delivered {_shown(shown)}")
         else:
-            report.decisions[name] = "differs"
-            report.unlisted_diffs.append(f"decision {name}: rule {result['value']!r} vs delivered {fx['decisions'].get(name)!r}")
+            report.decisions[name] = f"listed {' '.join(ids)}: {', '.join(fields)}" if fields else f"operator {' '.join(ids)}" if operator else "equal"
+            report.deviations_seen += ids
 
     # 4. research keys: stages whose M2 argv is the delivered one (no difference at all) and whose code is known current,
     # and the research decisions the rules computed, as far as the research graph resolves on them
@@ -847,7 +867,7 @@ def adopt(fixture: Path, video: Path, store, *, art=None, graph=None, normalize=
     def research_stage(spec):
         node, delivered = occupant.get(spec.name), specs_by_stage.get(spec.name)
         if (spec.name in report.research_keys or node is None or delivered is None or spec.name in report.listed
-                or node["patch"] or tuple(spec.commands) != tuple(delivered.commands)):
+                or node["id"] in listed or tuple(spec.commands) != tuple(delivered.commands)):  # a register node is a research miss (P7)
             return
         verified = verify_code(node, art)
         if not verified and replay and (node.get("verify") or {}).get("kind") == "replayed":
@@ -861,6 +881,26 @@ def adopt(fixture: Path, video: Path, store, *, art=None, graph=None, normalize=
                 return
             report.research_keys[spec.name] = [key, verified]
 
+    def inputs_differ(spec, name):
+        """Why the research key of decision `name` would not name exactly what its rule read (the fixture's decision_inputs),
+        or None. Both directions, role by role: the same file (real path), or for an earlier decision the same value (the
+        rule read the delivered one, the key holds the research one)."""
+        mine, read = decision_roles(spec), fx.get("decision_inputs", {}).get(name, {})
+        why = [f"the rule read {sorted(set(read) - set(mine))}, which the research key does not name"] if set(read) - set(mine) else []
+        why += [f"the research key names {sorted(set(mine) - set(read))}, which the rule did not read"] if set(mine) - set(read) else []
+        for role in sorted(set(mine) & set(read)):
+            ref, word, token = read[role], mine[role], TOKEN.fullmatch(mine[role])
+            if ref.startswith("@decision:"):
+                other = ref.split(":", 1)[1]
+                same = bool(token) and token.group(1) == other and canonical((research_ctx.decisions.get(other) or {}).get("value")) == canonical(fx["decisions"].get(other))
+            else:
+                try:
+                    same = os.path.realpath(substitute(word, root, root, adopted, art)) == os.path.realpath(rule_input(ref, art))
+                except KeyError:  # a producer that was not adopted
+                    same = False
+            why += [] if same else [f"{role}: the rule read {ref}, the research key names {word}" + (" (another value)" if token and ref.startswith("@decision:") else "")]
+        return "; ".join(why) or None
+
     def research_pending(p):
         for spec in p.specs:
             if "decision" not in spec.outputs:
@@ -868,10 +908,7 @@ def adopt(fixture: Path, video: Path, store, *, art=None, graph=None, normalize=
         result, error = computed.get(p.decision, (None, "no rule output"))
         result = {"evidence": {}, "rule": f"{rule_of(p.decision)}@unversioned", **(result or {})}
         spec = next(s for s in p.specs if s.name == p.decision)
-        wants = {w.split("=", 1)[0] for c in spec.commands for w in c[1:] if "=" in w and not w.startswith("-")}
-        missing = wants - set(fx.get("decision_inputs", {}).get(p.decision, {}))
-        if not error and missing:  # e.g. ME340 lens: no MoGe-3 run exists, the rule saw only the metric scale
-            error = f"the rule ran without {sorted(missing)}"
+        error = error or inputs_differ(spec, p.decision)  # e.g. Walmart lens: its rule read the metric scale, the research lens does not
         if error:
             raise MissingDecision(f"research decision {p.decision}: {error}")
         folder = Path(result.pop("folder", None) or root / "adopted/research-decisions" / site / p.decision)

@@ -77,6 +77,24 @@ def test_key_ignores_output_budgets_run_ids_and_note_text(art):
     assert base != key("--output", "/x/1", "--entities", "object-1=a pallet", models=(("depth", "da3", "unpinned", None),))
 
 
+def test_a_leaf_enters_the_key_by_its_bytes_never_its_path(tmp_path, art):
+    """A review file (or any leaf) reaches a key as its bytes, whether a tool takes it as '--review PATH' or a decision as
+    'review=PATH': a byte-identical copy elsewhere keys the same, one changed byte does not."""
+    s = st.Store(art)
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    review, copy = tmp_path / "a/walmart.json", tmp_path / "b/walmart.json"
+    review.write_text('{"boxesApproved": {}}')
+    copy.write_text('{"boxesApproved": {}}')
+
+    def keys(path):
+        leaves = {"review": path}
+        return (s.key(spec("plan", ARGV, "sam3d=x", f"review={path}", leaves=leaves)), s.key(spec("merge", ARGV, "--review", str(path), leaves=leaves)))
+    assert keys(review) == keys(copy)
+    copy.write_text('{"boxesApproved": {"object-1": "0"}}')
+    assert all(a != b for a, b in zip(keys(review), keys(copy)))
+
+
 def test_early_cutoff_keeps_downstream_hits(tmp_path, art):
     first = st.Store(art).execute(toy(tmp_path), st.Ledger())
     rebuilt = st.Store(art).execute(toy(tmp_path, version=2), st.Ledger())  # A reruns, same bytes

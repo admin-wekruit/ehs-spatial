@@ -3199,7 +3199,24 @@
    "delivered": "motion cue and tracks on old-K 260 (60.08°)",
    "m2": "on 280 (masks are image-space; early cutoff possible)",
    "reason": "the moving-layer chain predates the lens re-estimate",
-   "decisions": []
+   "decisions": {},
+   "flags": {
+    "N21": [
+     "--droid-run"
+    ],
+    "N22": [
+     "--droid-run"
+    ],
+    "N23": [
+     "--droid-run"
+    ],
+    "N25": [
+     "--droid-run"
+    ],
+    "N26": [
+     "--droid-run"
+    ]
+   }
   },
   {
    "id": "D1",
@@ -3210,7 +3227,12 @@
    "delivered": "outline mesh = texture 282",
    "m2": "fill 283",
    "reason": "a rule exists; the delivered value was not wrong",
-   "decisions": []
+   "decisions": {},
+   "flags": {
+    "N38": [
+     "--mesh"
+    ]
+   }
   },
   {
    "id": "D2",
@@ -3222,7 +3244,18 @@
    "delivered": "LingBot on the re-encoded CLIP_A video; diagnose on 260 / 261",
    "m2": "parent video --frames 0:420 on 280 / 281",
    "reason": "process, not a wrong value",
-   "decisions": []
+   "decisions": {},
+   "flags": {
+    "N27": [
+     "--frames",
+     "--video"
+    ],
+    "N28": [
+     "--clip",
+     "--depth-run",
+     "--droid-run"
+    ]
+   }
   },
   {
    "id": "D3",
@@ -3233,7 +3266,12 @@
    "delivered": "events without marks",
    "m2": "marks from R14",
    "reason": "rule D15",
-   "decisions": []
+   "decisions": {},
+   "flags": {
+    "N13": [
+     "--marks"
+    ]
+   }
   },
   {
    "id": "D5",
@@ -3244,7 +3282,15 @@
    "delivered": "other shot [420,750) not attempted",
    "m2": "R32 attempt (expected refused)",
    "reason": "rule D3",
-   "decisions": []
+   "decisions": {
+    "shots": [
+     "registered"
+    ],
+    "track_windows": [
+     "others"
+    ]
+   },
+   "flags": {}
   },
   {
    "id": "X13",
@@ -3255,7 +3301,8 @@
    "delivered": "limitation 'disagrees with the model scale estimate by about 20%' hard-coded (import_video_scene.py:496) while model_estimated_metres_per_native_unit is null",
    "m2": "the sentence only when a model estimate exists",
    "reason": "a false statement in the published document",
-   "decisions": []
+   "decisions": {},
+   "flags": {}
   },
   {
    "id": "D6",
@@ -3267,10 +3314,15 @@
    "delivered": "box run --exclude = the choice list of an intermediate merge",
    "m2": "learned-accepted ∪ review excludes (D17)",
    "reason": "the box excludes came from a merge that is not the delivered one",
-   "decisions": [
-    "generator_plan",
-    "generator_plan-box"
-   ]
+   "decisions": {
+    "generator_plan": [
+     "box_excludes"
+    ],
+    "generator_plan-box": [
+     "box_excludes"
+    ]
+   },
+   "flags": {}
   },
   {
    "id": "O1",
@@ -3282,12 +3334,62 @@
     "N51",
     "N05"
    ],
-   "delivered": "operator data: floor-mask frame lists, entity notes and their order, review excludes, budgets, titles, hand-written clip scripts",
+   "delivered": "operator data: floor-mask frame lists, entity notes and their order, review excludes, budgets, titles, hand-written clip and lens scripts (not in the repo)",
    "m2": "adopted for these clips (kept in research); default rules only for new clips",
    "reason": "not reproducible by a rule",
-   "decisions": [
-    "floor_frames"
-   ]
+   "decisions": {
+    "floor_frames": [
+     "value"
+    ]
+   },
+   "flags": {
+    "N05": [
+     "<script and positionals>"
+    ],
+    "N45": [
+     "--entities",
+     "--exclude"
+    ]
+   }
+  },
+  {
+   "id": "D8",
+   "class": "D",
+   "nodes": [
+    "N01"
+   ],
+   "delivered": "clip K from MoGe-3 (Ruicheng/moge-3-vitl) at a revision nobody recorded: the median of the 5 per-frame FoVs in clip.json intrinsics",
+   "m2": "prepare_video_clip runs MoGe-3 pinned at 184008f877d7ad1ad4c2cd2182a9bd1f63d0e5be (source version 2); whether it gives the same K is unverified",
+   "reason": "unverified: no CPU replay exists (MoGe-3 needs an NVIDIA GPU: FlexGEMM/Triton); the cached MoGe-3 records agree where they share a frame (frame 0: 55.32 deg in clip.json, 55.3194 in shot-fov.json), but none names its revision. So the research source key does not claim the delivered clip: a research run rebuilds the clip (L4, ~$0.01), and early cutoff keeps everything after it a hit when its bytes are equal",
+   "decisions": {},
+   "flags": {}
+  },
+  {
+   "id": "D9",
+   "class": "D",
+   "nodes": [
+    "N46"
+   ],
+   "delivered": "RecGen on a hand list (--entities: the SAM 3D rejects, then more entities)",
+   "m2": "RecGen on the SAM 3D rejects only (D17); calls it shares with the delivered run are answered by its journal",
+   "reason": "a rule exists; the delivered set was not wrong",
+   "decisions": {
+    "generator_plan": [
+     "recgen_entities",
+     "excluded_all"
+    ],
+    "generator_plan-box": [
+     "recgen_entities",
+     "excluded_all"
+    ]
+   },
+   "flags": {
+    "N46": [
+     "--all",
+     "--count",
+     "--entities"
+    ]
+   }
   }
  ],
  "decisions": {
@@ -3963,7 +4065,8 @@
   },
   "floor_frames": {
    "shots": "@decision:shots",
-   "operator": "@value:floor_frames"
+   "operator": "$REPO/docs/phase2/box-review-303/samsclub-a2.floor-frames.json",
+   "clip": "data/clips/samsclub-337"
   },
   "generator_plan-box": {
    "sam3d": "runs/samsclub-a2-object-models-291-sam3d",
@@ -3978,26 +4081,20 @@
  "decision_compare": {
   "dense_gate": {
    "fields": [
-    "use"
-   ]
-  },
-  "track_windows": {
-   "fields": [
-    "shot",
-    "stitch"
+    "use",
+    "dir"
    ]
   },
   "generator_plan-box": {
-   "keys": "box_excludes"
+   "ids": [
+    "box_excludes",
+    "excluded_all"
+   ]
   },
   "generator_plan": {
-   "keys": "recgen_entities"
-  },
-  "shots": {
-   "fields": [
-    "primary",
-    "others",
-    "mapped"
+   "ids": [
+    "box_excludes",
+    "excluded_all"
    ]
   }
  },

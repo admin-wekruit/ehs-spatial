@@ -125,6 +125,21 @@ def test_overlay_band(tmp_path):
         assert value["evidence"]["stillMovedMatches"] == matches
 
 
+def test_floor_frames_use_the_operator_list_only_on_its_clip(tmp_path):
+    """D18 / O1: the operator's frames when the list names this clip (source video sha256 and window), else the rule: a
+    new window or video of the same site never gets another clip's hand list."""
+    (tmp_path / "shots.json").write_text(json.dumps({"value": {"primary": [383, 750], "others": [[0, 383]], "mapped": True}}))
+    source = {"video_sha256": "a" * 64, "start_s": 190., "end_s": 220.}
+    (tmp_path / "operator.json").write_text(json.dumps({"floorFrames": [0, 66, 747], "clip": source}))
+    for window, expected in ((source, [0, 66, 747]), ({**source, "end_s": 219.}, decide.spaced_floor_frames([383, 750])),
+                             ({**source, "video_sha256": "b" * 64}, decide.spaced_floor_frames([383, 750]))):
+        (tmp_path / "clip").mkdir(exist_ok=True)
+        (tmp_path / "clip/clip.json").write_text(json.dumps({"source": window}))
+        got = run("floor_frames", tmp_path / "out", shots=tmp_path / "shots.json", operator=tmp_path / "operator.json", clip=tmp_path / "clip")
+        assert got["value"] == expected and got["evidence"]["source"] == ("operator" if window == source else "rule"), window
+    assert run("floor_frames", tmp_path / "out", shots=tmp_path / "shots.json")["value"] == decide.spaced_floor_frames([383, 750])
+
+
 @needs_art
 def test_other_shot_gate(tmp_path):
     value = run("other_shot", tmp_path, registration=RUNS / "me340-cutaway-register-304")["value"]

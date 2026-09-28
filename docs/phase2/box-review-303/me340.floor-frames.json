@@ -1,0 +1,22 @@
+{
+ "floorFrames": [
+  0,
+  75,
+  150,
+  225,
+  300,
+  375,
+  450,
+  525,
+  600,
+  675,
+  750,
+  825
+ ],
+ "clip": {
+  "video_sha256": "e7e9fdba7648dea2053a9af0ea9da4f6359d976c7175acd6fc5f63ff140c4a28",
+  "start_s": 165.0,
+  "end_s": 195.0
+ },
+ "note": "O1 operator data: the floor-mask frames the delivered report used (SAM 3 floor masks), chosen by hand. The rule floor_frames uses them only on this clip (source video sha256 and window); any other clip gets the default rule D18."
+}

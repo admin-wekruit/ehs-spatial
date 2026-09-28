@@ -39,8 +39,10 @@ FLOOR_MASK_FRAMES = 12
 PERSON_SHARE = .30
 PERSON = ("man", "woman", "person", "people", "worker", "human")  # the person words of complete_video_objects.EXCLUDED
 UNNAMED = "unnamed surface"
+# bump a rule's version when its code changes (tests/versions.json 'rule:NAME' guards it; stages.rule_code is what counts)
+# floor_frames 2: the operator list applies only to the clip it names (source video sha256 and window)
 VERSIONS = {name: 1 for name in ("shots", "other_shot", "lens", "voxel", "overlay", "lingbot_stride", "lingbot_conf", "dense_gate",
-                                 "inferred_floor", "track_windows", "splat_pick", "sam2_frames", "generator_plan", "floor_frames", "static_filter")}
+                                 "inferred_floor", "track_windows", "splat_pick", "sam2_frames", "generator_plan", "static_filter")} | {"floor_frames": 2}
 
 
 def _file(path, name):
@@ -394,12 +396,17 @@ def spaced_floor_frames(shot):
     return sorted({grid[i] for i in np.round(np.linspace(0, len(grid) - 1, FLOOR_MASK_FRAMES)).astype(int)})
 
 
-def floor_frames(shots, operator=None):
-    """D18. The operator's list for an adopted clip, else 12 evenly spaced frames on the every-3rd grid of the mapped shot."""
+def floor_frames(shots, operator=None, clip=None):
+    """D18. The operator's list (O1: REVIEW/<site>.floor-frames.json) when it names this clip (source video sha256 and window in
+    clip.json), else 12 evenly spaced frames on the every-3rd grid of the mapped shot."""
+    evidence = {"source": "rule", "count": FLOOR_MASK_FRAMES}
     if operator:
-        given = json.loads(Path(operator).read_text())
-        return _result("floor_frames", [int(f) for f in (given["frames"] if isinstance(given, dict) else given)], {"source": "operator"})
-    return _result("floor_frames", spaced_floor_frames(_value(shots, "shots")["primary"]), {"source": "rule", "count": FLOOR_MASK_FRAMES})
+        given, source = json.loads(Path(operator).read_text()), _json(clip, "clip.json")["source"]
+        this = {k: source[k] for k in ("video_sha256", "start_s", "end_s")}
+        if given["clip"] == this:
+            return _result("floor_frames", [int(f) for f in given["floorFrames"]], {"source": "operator", "clip": this})
+        evidence["operatorListFor"] = given["clip"]  # another clip's hand list is never used
+    return _result("floor_frames", spaced_floor_frames(_value(shots, "shots")["primary"]), evidence)
 
 
 def classify_people(shares, labels):

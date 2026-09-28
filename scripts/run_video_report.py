@@ -1,7 +1,7 @@
 """One command from an MP4 and a time window to a platform import (M2 report runner).
 
   python scripts/run_video_report.py --video MP4 --start S --end E --site NAME
-         [--profile research|commercial|delivered] [--review DIR] [--dry-run] [--publish] [--verify]
+         [--profile research|commercial|delivered] [--review DIR] [--dry-run] [--publish] [--verify] [--republish]
 
 Stages are content-addressed (scripts/report_runner/store.py): a stage whose key is already in
 $ART/runs/report-runner/keys.jsonl is served from its directory; the rest run, 4 at a time.
@@ -27,6 +27,8 @@ def parser():
     p.add_argument("--review", type=Path, help="eye review directory holding <site>.json (the only human input)")
     p.add_argument("--dry-run", action="store_true", help="print the plan (key, hit/miss/unresolved/refused, dir, USD, s); run and write nothing")
     p.add_argument("--publish", action="store_true", help="after a successful import: export, check, prepare, deploy")
+    p.add_argument("--republish", action="store_true", help="import as the next version of the site's last import (imports.jsonl); "
+                                                             "implied by --profile delivered, otherwise every run imports a new report")
     p.add_argument("--verify", action="store_true", help="check every hit by full sha256 instead of size and mtime")
     return p
 

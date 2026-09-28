@@ -63,3 +63,4 @@ class Ctx:
     art: Path
     store: object
     decisions: dict[str, dict] = field(default_factory=dict)  # decision -> {value, evidence, rule}
+    republish: bool = False  # the import becomes the next version of the site's last import (implied by the delivered profile)
