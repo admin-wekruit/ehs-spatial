@@ -41,10 +41,42 @@ def raster_rgb(bgr):
     return cv2.resize(bgr[:, x0:w - x0], (640, 480), interpolation=cv2.INTER_AREA)
 
 
-def gray_sharp(bgr):
+def decoder_loop(jobs, results):
+    """The resident decoder process: MP4 -> frames and their 640x480 grey raster into memory-mapped files, and
+    (index, sharpness) batches to `results`. Out of the main process, where the two SAM 3 threads hold the GIL (E9: decode
+    1.7 -> 4.5 s; run 010: 3.5-7.5 s)."""
     import cv2
-    gray = raster_gray(bgr)
-    return gray, float(cv2.Laplacian(gray, cv2.CV_32F).var())
+    while True:
+        job = jobs.get()
+        if job is None:
+            return
+        path, fpath, gpath, n_alloc, h, w = job
+        t = time.perf_counter()
+        fr = np.memmap(fpath, np.uint8, "r+", shape=(n_alloc, h, w, 3))
+        gr = np.memmap(gpath, np.uint8, "r+", shape=(n_alloc, 480, 640))
+        cap, i, batch = cv2.VideoCapture(path), 0, []
+        while i < n_alloc:
+            ok, img = cap.read()
+            if not ok:
+                break
+            fr[i] = img
+            gr[i] = g = raster_gray(img)
+            batch.append((i, float(cv2.Laplacian(g, cv2.CV_32F).var())))
+            i += 1
+            if len(batch) == 8:
+                results.put(batch)
+                batch = []
+        cap.release()
+        if batch:
+            results.put(batch)
+        del fr, gr
+        results.put(("done", i, round(time.perf_counter() - t, 3)))
+
+
+def measure_file(gpath, n_alloc, a, b, a0, b1):
+    """measure_chunk on grey frames [a0, b1) of the decoder's memory-mapped file: only indices cross the process pipe."""
+    gray = np.memmap(gpath, np.uint8, "r", shape=(n_alloc, 480, 640))
+    return measure_chunk(list(gray[a0:b1]), a, b, a0, b1)
 
 
 def measure_chunk(gray, a, b, a0, b1):
@@ -279,6 +311,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     cap = cv2.VideoCapture("/tmp/in.mp4")
     fps, n_total = cap.get(cv2.CAP_PROP_FPS), int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     W, H = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cap.release()
     writer.put("video", {"fps": fps, "frames": n_total, "wh": [W, H], "sha256": video_sha, "window_s": opts.get("window_s")},
                {"mp4": (mp4, {"mediaType": "video/mp4"})}, "observed", ["the uploaded video"])
     work = segment.SamWork(m.sams, dev_geo, clock, wave1)
@@ -289,7 +322,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     cuts_ready = threading.Event()
     early = m.cpu_pool.submit(work.worker, dev_geo, "geo before cuts", cuts_ready) if dev_geo != dev_seg else None
     vlm_frames = sorted({int((i + .5) * n_total / vlm.VOCAB_FRAMES) for i in range(vlm.VOCAB_FRAMES)})
-    frames, grays, futures, keys, chunk_at, chunk_done = [], [], [], [], [], {}
+    frames, futures, keys, chunk_at, chunk_done = [], [], [], [], {}
     decoded_all = threading.Event()
     results = {}
 
@@ -329,45 +362,53 @@ def analyse(m, mp4, opts, clock, writer, log):
     seeked = []
     vocab_future = m.vlm_pool.submit(vocab_then_events)
 
-    # decode on this thread; grey + sharpness on threads; cut chunks measured in processes; keyframe = sharpest of each
-    # BLOCK-frame block, picked one block behind decoding; every PERSON_FRAMES keyframes -> both GPUs + one SAM 3 task
+    # decode + grey + sharpness in the decoder process; cut chunks measured in processes as soon as their frames exist;
+    # keyframe = sharpest of each BLOCK-frame block, picked one block behind decoding; every PERSON_FRAMES keyframes -> both
+    # GPUs + one SAM 3 task
+    for old_file in getattr(m, "decode_files", []):  # the last run's maps: unlinking while mapped is safe
+        Path(old_file).unlink(missing_ok=True)
+    n_alloc, tag = n_total + 64, video_sha[:12] + f"-{time.time_ns()}"
+    fpath, gpath = f"/tmp/frames-{tag}.u8", f"/tmp/gray-{tag}.u8"
+    m.decode_files = [fpath, gpath]
+    fr = np.memmap(fpath, np.uint8, "w+", shape=(n_alloc, H, W, 3))
+    np.memmap(gpath, np.uint8, "w+", shape=(n_alloc, 480, 640)).flush()
+    m.dec_jobs.put(("/tmp/in.mp4", fpath, gpath, n_alloc, H, W))
     with clock.stage("decode", n={"frames": n_total}):
-        a, b0 = 0, 0
+        a, b0, sharp = 0, 0, []
 
-        def pick(b):
-            keys.append(max(range(b, min(b + BLOCK, len(frames))), key=lambda f: grays[f].result()[1]))
+        def pick(b, n_now):
+            keys.append(max(range(b, min(b + BLOCK, n_now)), key=lambda f: sharp[f]))
             if len(keys) % segment.PERSON_FRAMES == 0:
-                work.add_chunk([frames[f] for f in keys[-segment.PERSON_FRAMES:]])
+                work.add_chunk([fr[f] for f in keys[-segment.PERSON_FRAMES:]])
+
+        def measure(a1, b1, lo, hi):
+            futures.append(m.proc_pool.submit(measure_file, gpath, n_alloc, a1, b1, lo, hi))
+            chunk_at.append(clock.now())
+            futures[-1].add_done_callback(lambda f, i=len(futures) - 1: chunk_done.__setitem__(i, clock.now()))
         while True:
-            ok, bgr = cap.read()
-            if not ok:
+            msg = m.dec_results.get(timeout=300)
+            if msg[0] == "done":
+                n, summary["decoder_process_s"] = msg[1], msg[2]
                 break
-            frames.append(bgr)
-            grays.append(m.cpu_pool.submit(gray_sharp, bgr))
-            if len(frames) == a + CHUNK + dsc.SPAN + 1:
-                a0 = max(0, a - 2)
-                futures.append(m.proc_pool.submit(measure_chunk, [g.result()[0] for g in grays[a0:]], a, a + CHUNK, a0, len(frames)))
-                chunk_at.append(clock.now())
-                futures[-1].add_done_callback(lambda f, i=len(futures) - 1: chunk_done.__setitem__(i, clock.now()))
-                a += CHUNK
-            if len(frames) == b0 + 2 * BLOCK:
-                pick(b0)
-                b0 += BLOCK
-        cap.release()
-        n = len(frames)
+            for i, sh in msg:
+                sharp.append(sh)
+                if i + 1 == a + CHUNK + dsc.SPAN + 1:
+                    measure(a, a + CHUNK, max(0, a - 2), i + 1)
+                    a += CHUNK
+                if i + 1 == b0 + 2 * BLOCK:
+                    pick(b0, i + 1)
+                    b0 += BLOCK
+        frames = fr[:n]
         while b0 < n:
-            pick(b0)
+            pick(b0, n)
             b0 += BLOCK
         if len(keys) % segment.PERSON_FRAMES:
             work.add_chunk([frames[f] for f in keys[len(keys) - len(keys) % segment.PERSON_FRAMES:]])
         work.seal_decode()
         decoded_all.set()
-        gray_all = [g.result()[0] for g in grays]
         for a1 in range(a, n, TAIL):  # the tail in small pieces: after decoding it is on the critical path
-            b1, lo = min(a1 + TAIL, n), max(0, a1 - 2)
-            futures.append(m.proc_pool.submit(measure_chunk, gray_all[lo:min(n, b1 + dsc.SPAN + 1)], a1, b1, lo, min(n, b1 + dsc.SPAN + 1)))
-            chunk_at.append(clock.now())
-            futures[-1].add_done_callback(lambda f, i=len(futures) - 1: chunk_done.__setitem__(i, clock.now()))
+            b1 = min(a1 + TAIL, n)
+            measure(a1, b1, max(0, a1 - 2), min(n, b1 + dsc.SPAN + 1))
     with clock.stage("cuts"):
         parts = [f.result() for f in futures]
         cuts = cuts_from(stitch(parts), n)
@@ -712,8 +753,17 @@ def self_check():
         for k in ("keypoints", "inliers", "jump", "spans"):
             assert np.array_equal(mm[k], whole[k], equal_nan=True), (chunk, k)
     assert 30 in cuts_from(whole, len(frames))["cuts"]
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:  # the memory-mapped grey file the cut workers read gives the same measure
+        mm = np.memmap(f"{d}/g.u8", np.uint8, "w+", shape=(len(gray) + 5, 480, 640))
+        mm[:len(gray)] = np.stack(gray)
+        mm.flush()
+        got = stitch([measure_file(f"{d}/g.u8", len(gray) + 5, a, min(a + CHUNK, len(gray)), max(0, a - 2), min(len(gray), a + CHUNK + dsc.SPAN + 1))
+                      for a in range(0, len(gray), CHUNK)])
+        for k in ("keypoints", "inliers", "jump", "spans"):
+            assert np.array_equal(got[k], whole[k], equal_nan=True), k
     v, f, c = ribbon([[0, 0, 0], [1, 0, 0], [2, 0, 0]], [0, 1, 0])
     assert v.shape == (6, 3) and f.shape == (4, 3) and np.allclose(v[:, 1], .01)
     raw, meta = points_glb(np.zeros((3, 3)), np.zeros((3, 3), np.uint8), .03)
     assert raw[:4] == b"glTF" and len(raw) % 4 == 0 and meta["pointSizeNative"] == .03
-    print(f"core self-check ok: chunked cut measure == sequential (chunks 8/{CHUNK}/64), ribbon, GLB points")
+    print(f"core self-check ok: chunked cut measure == sequential (chunks 8/{CHUNK}/64, and from the memory-mapped file), ribbon, GLB points")
