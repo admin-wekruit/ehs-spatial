@@ -240,3 +240,46 @@ def test_untrusted_frames_become_coverage_gaps_downstream():
     delivered = build("walmart", profile=types.SimpleNamespace(**{**vars(RESEARCH), "name": "delivered", "omit": ("static_filter", "lens_gate", "trajectory")}))
     assert "trajectory" not in delivered and delivered["fuse"].stage_from["link"]["out/mono"] == "@depth:mono", "delivered keys unchanged"
 
+
+def test_the_title_is_the_source_time_in_the_delivered_style(tmp_path):
+    """Lightning's MP4 is a prepared clip (data/clips/lightning-3585/source-rgb.mp4) of YouTube 3585-3611 s: the title follows its
+    clip.json back to the source time, in the delivered reports' Chinese style, and says there are no metres (lens gate failed)."""
+    clip = write(tmp_path / "clips/lightning-3585/clip.json", {"playback": {"path": "source-rgb.mp4"},
+                                                             "source": {"video": "/d/YTDown.com_YouTube_Lightning-eMotors-Factory-Tour_720p.mp4", "start_s": 3585.0}})
+    c = types.SimpleNamespace(video=clip.parent / "source-rgb.mp4", start=0., end=26., site="lightning")
+    assert stages.title_of(c, "intrinsics_uncertain") == "Lightning eMotors 工厂 59:45–60:11（YouTube 普通视频，原生单位，未验收）"
+    assert stages.title_of(c, "assumed_camera_height").endswith("（YouTube 普通视频，估计尺度，未验收）")
+    other = types.SimpleNamespace(video=tmp_path / "walk.mp4", start=65., end=95., site="dock-7")
+    assert stages.title_of(other, None) == "dock-7 1:05–1:35（普通视频，原生单位，未验收）"
+    real = stages.art() / "data/clips/lightning-3585/source-rgb.mp4"
+    if real.is_file():
+        assert stages.origin(real, 0., 26.)[1:] == (3585., 3611.)
+
+
+def test_a_rerun_republishes_its_own_import_with_the_rule_title(tmp_path):
+    """The runner appends each new import to imports.jsonl; the next run of the same profile on the site republishes it (one
+    report, not a second one) under the rule's title, while a delivered report stays out of reach without --republish."""
+    from report_runner.spec import Ctx
+    from report_runner import store as st
+    start, end, values = SITES["walmart"]
+    record = "/art/.platform/imports/video-import-p.json"
+    rows = [{"site": "walmart", "importRecordPath": "/art/.platform/imports/video-import-delivered.json", "title": "Walmart aisle"},
+            {"site": "walmart", "profile": "commercial", "importRecordPath": "/art/.platform/imports/video-import-c.json", "title": "c"},
+            {"site": "walmart", "profile": "research", "importRecordPath": record, "title": "walmart 03:10–03:40 (imported, not accepted)"}]
+    (tmp_path / "imports.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    decisions = {k: {"value": v, "evidence": {}, "rule": k} for k, v in values.items()}
+    run = lambda profile: {s.name: s for s in stages.graph(Ctx("walmart", Path("/x/video.mp4"), start, end, profile, None, stages.art(),
+                                                                types.SimpleNamespace(state=tmp_path), dict(decisions)))}["import"]
+    research = run("research")
+    assert flag(research, "--republish") == [record] and flag(research, "--title") == ["Walmart 货架通道 3:10–3:40（普通视频，原生单位，未验收）"]
+    (tmp_path / "imports.jsonl").write_text(json.dumps(rows[0]) + "\n")
+    assert flag(run("research"), "--republish") is None, "never a new version of the delivered report"
+
+    log = 'runner output\n{\n "projectId": "84805f0d",\n "publicationId": "bdfe0603",\n "entities": 185\n}\n'
+    class Db:
+        def publication(self, pid):
+            return {"projectId": "84805f0d", "title": "t", "document": {"assets": [], "entities": [], "cameras": [], "observations": [], "annotations": []}}
+    row = st.record_import(tmp_path, tmp_path, "lightning", "research", "k" * 64, log, Db())
+    assert {k: row[k] for k in ("site", "profile", "key", "publicationId", "projectId", "title")} == \
+        {"site": "lightning", "profile": "research", "key": "k" * 64, "publicationId": "bdfe0603", "projectId": "84805f0d", "title": "t"}
+    assert row["importRecordPath"] is None and len(row["fingerprint"]) == 64 and json.loads((tmp_path / "imports.jsonl").read_text().splitlines()[-1]) == row

@@ -124,7 +124,7 @@ SITES = {  # clip window, and the decision values the rules give on the delivere
                          "static_filter": {"moved": [], "cleared": ["object-032"]}, "splat_pick": "negligible_1",
                          "other_shot-0-14": {"accepted": False}, "other_shot-14-226": {"accepted": True}, "generator_plan": PLAN,
                          "generator_plan-box": PLAN, "dense_gate": {"use": "raw", "dir": None}, "inferred_floor": True,
-                         "trajectory": {"untrusted": []}}),
+                         "lens_gate": {"scale_status": "assumed_camera_height"}, "trajectory": {"untrusted": []}}),
     "samsclub-a2": (337, 367, {"shots": {"primary": [0, 420], "others": [[420, 750]], "mapped": True}, "overlay": NONE,
                                "lens": {"keep": False, "fov_deg": 55.3194223319173}, "sam2_frames": list(range(0, 750, 3)),
                                "floor_frames": [0, 66, 135, 201, 270, 336, 405], "lingbot_stride": 1, "voxel": 0.00567, "lingbot_conf": 1.74,
@@ -132,14 +132,14 @@ SITES = {  # clip window, and the decision values the rules give on the delivere
                                "static_filter": {"moved": ["object-900"], "cleared": []}, "splat_pick": "negligible_1",
                                "other_shot-420-750": {"accepted": False}, "generator_plan": PLAN, "generator_plan-box": PLAN,
                                "dense_gate": {"use": "icp", "dir": "icp"}, "inferred_floor": False,
-                               "trajectory": {"untrusted": []}}),
+                               "lens_gate": {"scale_status": "assumed_camera_height"}, "trajectory": {"untrusted": []}}),
     "walmart": (190, 220, {"shots": {"primary": [383, 750], "others": [[0, 383]], "mapped": True}, "overlay": NONE,
                            "lens": {"keep": True, "fov_deg": 55.96}, "sam2_frames": list(range(0, 750, 3)), "floor_frames": [405, 471, 540, 606, 675, 747],
                            "lingbot_stride": 1, "voxel": 0.011858, "lingbot_conf": 1.01,
                            "track_windows": {"shot": [[383, 750]], "stitch": False, "others": [[[0, 383]]]},
                            "static_filter": {"moved": [], "cleared": []}, "splat_pick": "negligible_1", "other_shot-0-383": {"accepted": False},
                            "generator_plan": PLAN, "generator_plan-box": PLAN, "dense_gate": {"use": "icp", "dir": "icp"}, "inferred_floor": False,
-                           "trajectory": {"untrusted": []}}),
+                           "lens_gate": {"scale_status": "intrinsics_uncertain"}, "trajectory": {"untrusted": []}}),
 }
 # the shape of profiles.Profile (Part C): models {role: (hf_id, revision, weights_sha256, licence, commercial)}
 GIANT = ("depth-anything/DA3-GIANT-1.1", "72ee9f89", None, "CC BY-NC 4.0", False)
@@ -235,7 +235,7 @@ def test_me340_templates():
     assert flag(by["movers-14-226"], "--merge") is None and flag(by["movers-14-226"], "--person-tracks") is None, "no cross-shot join (D3b)"
     assert flag(by["import"], "--dynamic-scene") == ["@movers-14-226:scene"] and flag(by["import"], "--exclude-frames") == ["0:14", "14:226"]
     assert flag(by["import"], "--dense-points") == ["@lingbot_build:out"] and flag(by["import"], "--inferred-floor") == ["@floor_infer:out"]
-    assert flag(by["import"], "--title") == ["me340 02:45–03:15 (imported, not accepted)"]
+    assert flag(by["import"], "--title") == ["ME340 机加工车间 2:45–3:15（普通视频，估计尺度，未验收）"]
     assert flag(by["events"], "--marks") == ["@analysis:analysis"] and flag(by["outlines"], "--mesh") == ["@fill:shell"]
 
 
@@ -377,7 +377,7 @@ def test_a_republish_keeps_the_published_title(tmp_path):
     or commercial run on a delivered site imports a report of its own, never a new version of the delivered one."""
     c = ctx("walmart")
     first = {s.name: s for s in stages.graph(c)}["import"]
-    assert flag(first, "--title") == ["walmart 03:10–03:40 (imported, not accepted)"] and flag(first, "--republish") is None
+    assert flag(first, "--title") == ["Walmart 货架通道 3:10–3:40（普通视频，原生单位，未验收）"] and flag(first, "--republish") is None
     (tmp_path / "imports.jsonl").write_text(json.dumps({"site": "walmart", "importRecordPath": "/art/.platform/imports/video-import-p.json", "title": "Walmart aisle"}) + "\n")
     fields = [getattr(c, f) for f in ("site", "video", "start", "end", "profile", "review", "art")]
     research = {s.name: s for s in stages.graph(Ctx(*fields, types.SimpleNamespace(state=tmp_path), c.decisions))}["import"]
@@ -413,7 +413,7 @@ def test_the_cli_republishes_only_for_delivered_or_when_asked(tmp_path, monkeypa
             run_video_report.main(["--video", str(tmp_path / "v.mp4"), "--start", str(start), "--end", str(end), "--site", "walmart",
                                    "--review", str(REVIEW), "--profile", profile, "--dry-run", *extra])
         assert seen["profile"] == profile and flag(seen["import"], "--republish") == republish, (profile, extra)
-        assert flag(seen["import"], "--title") == (["Walmart aisle"] if republish else ["walmart 03:10–03:40 (imported, not accepted)"]), (profile, extra)
+        assert flag(seen["import"], "--title") == (["Walmart aisle"] if republish else ["Walmart 货架通道 3:10–3:40（普通视频，原生单位，未验收）"]), (profile, extra)
 
 
 def test_movers_never_take_the_mapped_shots_people():

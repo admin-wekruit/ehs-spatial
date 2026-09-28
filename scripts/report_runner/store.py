@@ -645,6 +645,27 @@ def _decision(output):
     return json.loads(Path(output.outputs.get("decision") or next(iter(output.outputs.values()))).read_text())
 
 
+def record_import(state, art, site, profile, key, log_text, db=None):
+    """Append a new import to imports.jsonl, so the next run of the same command republishes it (stages.previous_import) instead of
+    making a second report: its ids from the import's own output, the record by path only (never opened), and, when the platform
+    database answers (read-only), its published title, fingerprint and counts."""
+    adopt = importlib.import_module("report_runner.adopt")
+    ids = dict(re.findall(r'"(publicationId|projectId)":\s*"([^"]+)"', log_text))
+    row = {"site": site, "profile": profile, "key": key, "publicationId": ids["publicationId"], "projectId": ids.get("projectId"),
+           "importRecordPath": adopt.import_record(art, ids["publicationId"])}
+    try:  # ponytail: the row without fingerprint still republishes; the fingerprint is for the reproduction proof
+        published = (db or adopt.Database()).publication(ids["publicationId"])
+        row.update(projectId=published["projectId"], title=published["title"], fingerprint=adopt.fingerprint(published["document"], published["title"]),
+                   counts=adopt.counts(published["document"]))
+    except Exception as error:
+        say(f"imports.jsonl: {ids['publicationId']} recorded without its fingerprint ({type(error).__name__})")
+    row["at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    Path(state).mkdir(parents=True, exist_ok=True)
+    with open(Path(state) / "imports.jsonl", "a") as f:
+        f.write(json.dumps(row) + "\n")
+    return row
+
+
 def main(args):
     """The loop behind scripts/run_video_report.py. graph(ctx) raises Pending(decision, specs) until ctx.decisions holds
     what it needs; the decision stage is served or run, and graph is called again. The graph's last stage is the import."""
@@ -693,13 +714,15 @@ def main(args):
     if not isinstance(final, Hit):
         say(f"{specs[-1].name}: {final}")
         return 1
+    log = final.dir / "runner.log"
+    found = re.search(r'"publicationId":\s*"([^"]+)"', log.read_text()) if log.is_file() else None
     if final.verification != "ran":  # served from the cache: nothing was imported again; show what the import was given
         say(f"{specs[-1].name}: served from the cache ({final.verification}); no new import. Resolved command:")
         for cmd in store.resolve(specs[-1]):
             say("  " + " ".join(cmd))
+    elif found:
+        record_import(store.state, art, args.site, args.profile, store._resolved[(args.site, specs[-1].name)][1]["key"], log.read_text())
     if args.publish:
-        log = final.dir / "runner.log"
-        found = re.search(r'"publicationId":\s*"([^"]+)"', log.read_text()) if log.is_file() else None
         if not found:
             say("no publicationId in the import's output; not publishing")
             return 1

@@ -369,8 +369,36 @@ def _num(x):
     return text[:-2] if text.endswith(".0") else text
 
 
-def _mmss(seconds):
-    return f"{int(seconds // 60):02d}:{int(seconds % 60):02d}"
+def _mss(seconds):
+    return f"{int(seconds // 60)}:{int(seconds % 60):02d}"
+
+
+# O1: a site's place in the delivered reports' titles (operator data); another site is named by its own name
+PLACES = {"lightning": "Lightning eMotors 工厂", "me340": "ME340 机加工车间", "samsclub-a2": "Sam's Club 仓储通道", "walmart": "Walmart 货架通道"}
+SCALE_WORDS = {"device_metric": "设备尺度", "assumed_camera_height": "估计尺度", "assumed_camera_height_floor_views_disagree": "估计尺度", "model_metric": "估计尺度"}
+
+
+def origin(video, start, end):
+    """The window in the video it was cut from: a prepared clip's MP4 (its clip.json, beside it, names the source and window) is
+    followed back to that source (Lightning: data/clips/lightning-3585/source-rgb.mp4 0-26 s is YouTube 3585-3611 s)."""
+    video = Path(video)
+    for _ in range(8):
+        try:
+            clip = json.loads((video.parent / "clip.json").read_text())
+        except (OSError, ValueError):
+            break
+        if (clip.get("playback") or {}).get("path") != video.name:
+            break
+        start, end, video = start + clip["source"]["start_s"], end + clip["source"]["start_s"], Path(clip["source"]["video"])
+    return video, start, end
+
+
+def title_of(ctx, scale_status):
+    """The delivered reports' title style from the source time: place, window, what the video is, its scale, not accepted.
+    A scale the report does not claim in metres (the lens gate failed, or none was set) reads 原生单位 (native units)."""
+    video, start, end = origin(ctx.video, ctx.start, ctx.end)
+    kind = "YouTube 普通视频" if "youtube" in video.name.lower() else "普通视频"
+    return f"{PLACES.get(ctx.site, ctx.site)} {_mss(start)}–{_mss(end)}（{kind}，{SCALE_WORDS.get(scale_status, '原生单位')}，未验收）"
 
 
 def _field(obj, name, default=None):
@@ -404,14 +432,15 @@ def delivered(ctx):
 
 def previous_import(ctx):
     """The site's last imports.jsonl row: its record path (path only; the record holds a capability and is never opened) and
-    the published title, which a republish keeps (O1: titles are operator data). Only the delivered profile or an explicit
-    --republish republishes; any other run imports a new report of its own, never a new version of a delivered one."""
-    if not (delivered(ctx) or getattr(ctx, "republish", False)):
-        return {}
+    the published title, which a republish of a delivered report keeps (O1: titles are operator data). The delivered profile or
+    an explicit --republish republishes the site's last import; any other run republishes only its own profile's last import
+    (a row the runner appended), so a re-run of one command stays one report, never a new version of a delivered one."""
     state = getattr(ctx.store, "state", None)  # the store's state folder ($ART/runs/report-runner); no store, no history
     index = Path(state) / "imports.jsonl" if state else None
     rows = [json.loads(line) for line in index.read_text().splitlines() if line.strip()] if index and index.exists() else []
-    return next((r for r in reversed(rows) if r.get("site") == ctx.site and r.get("importRecordPath")), {})
+    name = ctx.profile if isinstance(ctx.profile, str) else _field(ctx.profile, "name")
+    mine = lambda r: delivered(ctx) or getattr(ctx, "republish", False) or (r.get("profile") is not None and r.get("profile") == name)
+    return next((r for r in reversed(rows) if r.get("site") == ctx.site and r.get("importRecordPath") and mine(r)), {})
 
 
 REQUIRED = object()
@@ -615,8 +644,10 @@ def graph(ctx):
     voxel = _num(g.need("voxel"))
 
     # R17b fuse, R18 moving layer, R21-R22b object map, names, static filter (D20); the lens gate on the mapped shot (D4)
+    scale_status = None
     if "lens_gate" not in omit:
         g.decide("lens_gate", "lens", shots="@shots:decision", clip="@source:out", moge="@moge:fov", metric="@metric:metric_scale")
+        scale_status = (g.need("lens_gate", absent=None) or {}).get("scale_status")  # the title says whether the report has a scale
     # D22 trusted path span: its untrusted frames are coverage gaps; fusion (and all built on it) takes only the other depth views
     views, untrusted = "@depth:mono", []
     if "trajectory" not in omit:
@@ -809,7 +840,8 @@ def graph(ctx):
     floor_kept = g.need("inferred_floor", absent=False)
     last = moved[-1] if moved else None
     previous = previous_import(ctx)
-    title = previous.get("title") or f"{site} {_mmss(ctx.start)}–{_mmss(ctx.end)} (imported, not accepted)"
+    # a delivered report keeps its published title (O1); a report of this runner gets the rule's title again
+    title = previous["title"] if previous.get("title") and not previous.get("profile") else title_of(ctx, scale_status)
     layers = [("--shell-glb", "@fill:out/textured-scene.glb", fill), ("--splats", "@splat_final:splats", splat),
               ("--dense-points", dense_dir, dense_dir), ("--inferred-floor", "@floor_infer:out", floor_kept), ("--models", "@merge:models", objects)]
     g.add("import", [[PY, S("import_video_scene.py"), "--droid-run", "@camera:out", "--depth-run", "@fuse:out", "--object-map", filtered,
