@@ -931,7 +931,7 @@ def build(args):
         answers = loaded["vlm"]["answers"] if "vlm" in loaded else {a["node"]: a for a in json.loads(loaded["output_text"])["elements"]}
     elif args.vlm:
         answers, requests = ask_vlm(emitted, views, k, rgb, fr, args.output, args.ledger)
-    fixes = json.loads(args.fixes.read_text())["fixes"] if args.fixes else []
+    fixes = [f for path in args.fixes or [] for f in json.loads(path.read_text())["fixes"]]  # rounds in order: a later fix wins
     applied = []
     for fix in fixes:
         if fix.get("node", "").startswith("shell/") and fix.get("kind") == "wrong_material" and fix.get("value") in PALETTE:
@@ -1113,7 +1113,7 @@ if __name__ == "__main__":
                         help="largest offset into the room at which the test must catch a moved element (spec: 0.30); every element records its own")
     parser.add_argument("--vlm", action="store_true", help="ask Gemini (paid, through the deployed report container) for materials")
     parser.add_argument("--vlm-answers", type=Path, help="shell.json of an earlier run (vlm.answers) or a provider answer: re-apply, no new call")
-    parser.add_argument("--fixes", type=Path, help="fixes.json from verify_twin.py")
+    parser.add_argument("--fixes", type=Path, nargs="+", help="fixes.json from verify_twin.py runs, in round order (cumulative)")
     parser.add_argument("--output", type=Path)
     arguments = parser.parse_args()
     self_check() if arguments.self_check else build(arguments)

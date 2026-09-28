@@ -1115,7 +1115,7 @@ def run(args):
         assigned.add(e)
 
     # fixes from verify (spec 4.4): style edits apply; floor support toggles are the only refits handled here
-    fixes = json.loads(args.fixes.read_text())["fixes"] if args.fixes else []
+    fixes = [f for path in args.fixes or [] for f in json.loads(path.read_text())["fixes"]]  # rounds in order: a later fix wins
     unhandled = []
     for obj in objects:
         obj["twinId"] = f"{SHORT[obj['answer']['category']]}_{obj['members'][0].split('-')[1]}"
@@ -1389,7 +1389,7 @@ def main():
     parser.add_argument("--output", type=Path)
     parser.add_argument("--invoke", action="store_true", help="make the paid Gemini style requests (else labels decide)")
     parser.add_argument("--vlm-answers", type=Path, help="answers.json of an earlier run: re-applied without a call")
-    parser.add_argument("--fixes", type=Path, help="fixes.json of a verify run")
+    parser.add_argument("--fixes", type=Path, nargs="+", help="fixes.json of verify runs, in round order (cumulative)")
     parser.add_argument("--entities", nargs="*", default=[], help="only these entities (a test run)")
     parser.add_argument("--max-usd", type=float, default=10., help="the shared ledger's cap (all builders)")
     args = parser.parse_args()

@@ -31,7 +31,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNS = Path("/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs")
 LEDGER = RUNS / "m4-twin-spend.jsonl"
 OBSERVED = {"points": RUNS / "me340-lingbot-map-222/dense-points.glb", "mesh": RUNS / "me340-filled-225/textured-scene.glb"}
-POINT_VOXEL_M = .015
+POINT_VOXEL_M = .025
 SHIPPED = ("twin.glb", "twin-all.glb", "twin.usda", "twin.usd", "twin.json", "verify.json", "fixes.json", "critique.json")
 
 
