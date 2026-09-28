@@ -90,3 +90,72 @@ def test_the_scale_sentence_quotes_only_a_measured_disagreement():
              "model_estimated_metres_per_native_unit": 7., "height_anchor_vs_model_estimate": None}
     assert "disagrees" not in importer.scale_limitation(scale, device=False) and "not measured" in importer.scale_limitation(scale, device=False)
 
+
+# ---------------------------------------------------------------- 3. any source size: the clip's own source-full.json
+def clip_of(tmp_path, wh, raster_xywh, frames=3):
+    """A clip folder with source-full.json and a source-full video of `frames` grey frames at `wh`."""
+    import cv2
+    clip = tmp_path / f"clip-{wh[0]}x{wh[1]}"
+    write(clip / "source-full.json", {"video": "source-full.avi", "width": wh[0], "height": wh[1], "raster_wh": [640, 480], "raster_in_video_xywh": list(raster_xywh)})
+    writer = cv2.VideoWriter(str(clip / "source-full.avi"), cv2.VideoWriter_fourcc(*"MJPG"), 30, tuple(wh))
+    for _ in range(frames):
+        writer.write(np.full((wh[1], wh[0], 3), 90, np.uint8))
+    writer.release()
+    return clip
+
+
+@pytest.fixture
+def splat(monkeypatch):
+    import splat_train
+    for name in ("W", "H", "SIDE", "TOP", "ZOOM", "MESH", "FILL"):  # use_frame and the test set these; restored afterwards
+        monkeypatch.setattr(splat_train, name, getattr(splat_train, name))
+    return splat_train
+
+
+def test_splats_train_on_a_640x480_source(tmp_path, splat):
+    """Lightning's clip is a 640x480 re-encode with no crop: the frame, K_video, masks and seeds follow its source-full.json (the first
+    run stopped on IndexError 484 vs 480 in seed_points, which assumed ME340's 1280x720)."""
+    import trimesh
+    clip = clip_of(tmp_path, (640, 480), (0, 0, 640, 480))
+    splat.use_frame(splat.frame_of(clip))
+    assert (splat.W, splat.H, splat.ZOOM) == (640, 480, 1.) and splat.frame_now()["SIDE"] == 0
+    k_clip = [500., 500., 319.5, 239.5]
+    assert np.allclose(splat.full_k(k_clip), [[500, 0, 319.5], [0, 500, 239.5], [0, 0, 1]]), "no crop, no zoom: the clip's own K"
+    person = np.zeros((480, 640), bool)
+    person[100:200, 0:50] = True
+    excluded = splat.excluded_full(person, (0, 0, 0, 0), dilate=0)
+    assert excluded.shape == (480, 640) and (excluded == person).all(), "the mask lands on the same pixels"
+    wall = trimesh.creation.box((2., 1.2, .01))  # a wall 2 in front of the camera that leaves the frame's edges empty
+    wall.apply_translation([0, 0, 2.])
+    wall.export(tmp_path / "mesh.ply")
+    trimesh.Scene({"room": wall}).export(tmp_path / "fill.glb")
+    splat.MESH, splat.FILL = tmp_path / "mesh.ply", tmp_path / "fill.glb"
+    c2w = np.tile(np.eye(4), (3, 1, 1))
+    xyz, rgb, seeds = splat.seed_points(clip / "source-full.avi", splat.full_k(k_clip), c2w, [0, 2], lambda i: np.zeros((480, 640), bool))
+    assert seeds["frame_seeds"] > 0 and len(xyz) == len(rgb), "rows beside the wall are seeded from the 640x480 frame"
+    me340 = clip_of(tmp_path, (1280, 720), (160, 0, 960, 720), frames=1)
+    splat.use_frame(splat.frame_of(me340))
+    assert np.allclose(splat.full_k(k_clip), [[750, 0, 1.5 * 319.5 + 160.25], [0, 750, 1.5 * 239.5 + .25], [0, 0, 1]]), "ME340 unchanged"
+
+
+def test_the_dense_map_follows_a_640x480_source(tmp_path):
+    """LingBot's crop of a 4:3 source is 518x392; the cross-view check's masks must come from the clip's own frame (the first run
+    drew them on ME340's 1280x720 and failed: (392,518) vs (294,518))."""
+    import lingbot_dense_map as ldm
+    from build_lingbot_replay import resize_mask
+    clip = clip_of(tmp_path, (640, 480), (0, 0, 640, 480), frames=1)
+    geometry = ldm.frame_geometry(clip)
+    assert geometry == {"full_wh": [640, 480], "x0": 0., "y0": 0., "scale": 1.}
+    assert ldm.frame_geometry(clip_of(tmp_path, (1280, 720), (160, 0, 960, 720), frames=1)) == ldm.ME340_GEOMETRY, "ME340 unchanged"
+    analysis, grid = ldm.flow_frame(geometry, tmp_path)
+    lingbot_raster = (392, 518)  # lingbot_room's official crop mode: width 518, height round(480 * 518 / 640 / 14) * 14
+    assert resize_mask(np.zeros((analysis["height"], analysis["width"]), bool), (analysis["height"], analysis["width"])).shape == lingbot_raster
+    fx, fy = ldm.sample_grid(lingbot_raster, 3, geometry["full_wh"])
+    assert fx.min() > -1 and fx.max() < 640 and fy.min() > -1 and fy.max() < 480, "samples stay inside the 640x480 frame"
+    import cv2
+    person = np.zeros((480, 640), np.uint8)
+    person[200:260, 100:160] = 255
+    mask = ldm.moving_lookup([cv2.imencode(".png", person)[1].tobytes()], *grid, geometry)
+    assert mask.shape == (480, 640) and mask[230, 130] and not mask[230, 300] and not mask[100, 130], "the mask lands where the person is"
+    k = ldm.full_k([500., 500., 319.5, 239.5], geometry)
+    assert np.allclose(k, [[500, 0, 319.5], [0, 500, 239.5], [0, 0, 1]])

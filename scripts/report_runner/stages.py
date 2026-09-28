@@ -71,8 +71,9 @@ SCRIPT = {"source": "scripts/prepare_video_clip.py", "cuts": "scripts/detect_sho
 # under (ADOPTED), whatever VERSIONS says later.
 ADOPTED = {kind: 2 if kind in ("source", "moge", "depth", "sam2", "floor_masks", "import") else 1 for kind in SCRIPT}
 # at the Lightning fixes: floor_infer 2 withholds the untested convex outline (no --dense); import 3 states no metric figure
-# without a scale that claims metres
-VERSIONS = ADOPTED | {"floor_infer": 2, "import": 3}
+# without a scale that claims metres; splat, splat_clean, lingbot_diagnose and lingbot_build 2 work in the clip's own video frame
+# (source-full.json), not ME340's 1280x720 (splat_final only picks, lingbot_dense_map's other readers only read points: unchanged)
+VERSIONS = ADOPTED | {"floor_infer": 2, "import": 3, "splat": 2, "splat_clean": 2, "lingbot_diagnose": 2, "lingbot_build": 2}
 DECIDE = "scripts/report_runner/decide.py"  # decision stages: versioned by their rule (decide.VERSIONS, rule_code), not here
 
 # every option's default, as each script's argparse declares it (tests/test_report_runner_stages.py re-reads them by AST)

@@ -1,7 +1,7 @@
 """Gaussian splats of a video report's static scene (gsplat, Apache-2.0) on Modal, in the report's world frame, for the web viewer.
 
 The report's room is a TSDF of monocular depth textured from 640x480 crops, so it looks soft. This fits 3D Gaussians to the uncropped
-1280x720 video frames seen from the report's own cameras (DROID poses_c2w with the video-frame intrinsics), seeded from the report's own
+video frames (the clip's source-full.mp4, whatever its size: source-full.json places the 640x480 raster in it) seen from the report's own cameras (DROID poses_c2w with the video-frame intrinsics), seeded from the report's own
 surfaces, so the splats share the world of its meshes and cameras. Kept out of the loss and of every metric: the presenter (the dynamic
 masks, which cover only the centre crop, mapped to the video frame and dilated) and each frame's burned-in caption box. Optional refinement,
 linear in time between knots every 8 frames and zero-mean over the clip so the world frame cannot drift: camera pose (a rotation about the
@@ -45,7 +45,9 @@ FILL = ART / "runs/me340-filled-213/textured-scene.glb"  # the report's room: th
 MASKS = ART / "runs/me340-dynamic-masks-188/masks"
 SCALE = ART / "runs/da3-posed-me340-189-fused-dynamic/metric-scale.json"
 FRAME_ID = "droid_final_native_world"
-W, H, SIDE = 1280, 720, 160  # the clip frame is the centre 960x720 of the video frame, resized by 2/3
+# the video frame and where the clip's 640x480 raster sits in it (source-full.json raster_in_video_xywh): ME340's 1280x720 with the
+# raster its centre 960x720 (x1.5); use_frame(frame_of(clip)) sets them for another clip, and every remote call gets its clip's frame
+W, H, SIDE, TOP, ZOOM = 1280, 720, 160, 0, 1.5
 CAPTIONS = (648, 704, 160, 1120)  # y0 y1 x0 x1 band of ME340's burned-in captions (text rows 661-689, one centred line, widest x 228-1050)
 HOLD_OUT, KNOT_EVERY, DILATE = 8, 8, 15
 HELD_OUT_NOTE = ("validation, not an untouched test: the settings (Gaussian cap, steps, pose refinement, elongation cap, cleanup rule) were "
@@ -72,10 +74,30 @@ app = modal.App("panoptes-splat-train-once")
 volume = modal.Volume.from_name("panoptes-splat-train", create_if_missing=True)
 
 
+def frame_of(clip):
+    """The clip's video frame (source-full.json): its size and where the 640x480 raster sits in it (one zoom for both axes)."""
+    full = json.loads((Path(clip) / "source-full.json").read_text())
+    x, y, w, h = full["raster_in_video_xywh"]
+    assert abs(w / 640 - h / 480) < 1e-9, f"the raster is scaled unevenly in the video: {w}x{h}"
+    return {"W": int(full["width"]), "H": int(full["height"]), "SIDE": int(round(x)), "TOP": int(round(y)), "ZOOM": w / 640}
+
+
+def use_frame(frame):
+    """Set the video frame every function here works in (a remote call gets the local one in its inputs)."""
+    global W, H, SIDE, TOP, ZOOM
+    W, H, SIDE, TOP, ZOOM = (frame[k] for k in ("W", "H", "SIDE", "TOP", "ZOOM"))
+
+
+def frame_now():
+    return {"W": W, "H": H, "SIDE": SIDE, "TOP": TOP, "ZOOM": ZOOM}
+
+
 def full_k(k_clip):
-    """Video-frame intrinsics from the clip frame's: x_video = 1.5 x_clip + 160.25, y_video = 1.5 y_clip + 0.25 (pixel centres)."""
+    """Video-frame intrinsics from the clip frame's: x_video = z x_clip + SIDE + (z - 1)/2 (pixel centres), y likewise with TOP; on
+    ME340 (z = 1.5) x_video = 1.5 x_clip + 160.25, y_video = 1.5 y_clip + 0.25."""
     fx, fy, cx, cy = k_clip
-    return np.array([[1.5 * fx, 0, 1.5 * cx + SIDE + .25], [0, 1.5 * fy, 1.5 * cy + .25], [0, 0, 1.]])
+    z, half = ZOOM, (ZOOM - 1) / 2
+    return np.array([[z * fx, 0, z * cx + SIDE + half], [0, z * fy, z * cy + TOP + half], [0, 0, 1.]])
 
 
 def excluded_full(clip_mask, caption=CAPTIONS, dilate=DILATE):
@@ -85,11 +107,12 @@ def excluded_full(clip_mask, caption=CAPTIONS, dilate=DILATE):
     """
     import cv2
     full = np.zeros((H, W), np.uint8)
-    full[:, SIDE:W - SIDE] = cv2.resize(clip_mask.astype(np.uint8), (W - 2 * SIDE, H), interpolation=cv2.INTER_NEAREST_EXACT)
+    right, bottom = SIDE + int(round(640 * ZOOM)), TOP + int(round(480 * ZOOM))
+    full[TOP:bottom, SIDE:right] = cv2.resize(clip_mask.astype(np.uint8), (right - SIDE, bottom - TOP), interpolation=cv2.INTER_NEAREST_EXACT)
     if clip_mask[:, 0].any():
         full[:, :SIDE] = 1
     if clip_mask[:, -1].any():
-        full[:, W - SIDE:] = 1
+        full[:, right:] = 1
     if dilate:
         full = cv2.dilate(full, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * dilate + 1, 2 * dilate + 1)))
     y0, y1, x0, x1 = caption
@@ -97,13 +120,14 @@ def excluded_full(clip_mask, caption=CAPTIONS, dilate=DILATE):
     return full > 0
 
 
-def caption_half_width(bgr, band=CAPTIONS, centre=W // 2):
+def caption_half_width(bgr, band=CAPTIONS, centre=None):
     """Half-width of the caption line in one video frame (0: none): white text pixels beside the dark caption box inside the band,
     mirrored about the centre the lines are set on, since text over a bright floor can go unseen."""
     import cv2
     y0, y1, x0, x1 = band
     if y1 <= y0 or x1 <= x0:
         return 0
+    centre = W // 2 if centre is None else centre
     rows = bgr[y0:y1, x0:x1]
     text = (rows.min(2) > 200) & (cv2.dilate((rows.max(2) < 70).astype(np.uint8), np.ones((5, 5), np.uint8)) > 0)
     cols = np.nonzero(text.sum(0) >= 2)[0] + x0
@@ -289,6 +313,7 @@ def corrections(knots, cfg, frame):
 def load(inputs):
     import cv2
     import torch
+    use_frame(inputs.get("frame") or frame_now())  # the local side's video frame (older inputs: ME340's)
     Path("/tmp/video.mp4").write_bytes(inputs["video"])
     n, capture = len(inputs["c2w"]), cv2.VideoCapture("/tmp/video.mp4")
     frames, excluded = torch.empty((n, H, W, 3), dtype=torch.uint8, device="cuda"), torch.empty((n, H, W), dtype=torch.bool, device="cuda")
@@ -576,8 +601,9 @@ def clean_remote(inputs, records, distance, rules, views, ks, png_rules=("none",
 
 
 @app.function(image=image, gpu=GPUS, cpu=CPU, memory=MEMORY_MIB, timeout=900, retries=0, max_containers=1, scaledown_window=2)
-def render_remote(files, views, ks):
-    """JPEGs of each named splat32 file from each view."""
+def render_remote(files, views, ks, frame=None):
+    """JPEGs of each named splat32 file from each view, in the given video frame."""
+    use_frame(frame or frame_now())
     started = time.time()
     jpgs = {name: shoot(as_model(records), views, ks, quality=92) for name, records in files.items()}
     return {"jpgs": jpgs, "container_seconds": round(time.time() - started, 1)}
@@ -609,7 +635,8 @@ def moderate_views(c2w, K, picks=MODERATE):
     """Free cameras a short drag off the path: each eye moved from a path camera by a small offset (right, up, back), looking at the
     point that camera saw at a pixel (given its depth)."""
     views = []
-    for frame, pixel, depth, offset in (p for p in picks if p[0] < len(c2w)):  # ponytail: ME340's picks; a shorter clip keeps those inside it
+    inside = lambda p: p[0] < len(c2w) and 0 <= p[1][0] < W and 0 <= p[1][1] < H  # ponytail: ME340's picks; another clip keeps those inside it
+    for frame, pixel, depth, offset in filter(inside, picks):
         R, t = c2w[frame][:3, :3], c2w[frame][:3, 3]
         views.append(look_at(t + R @ (np.array(offset) * [1, -1, -1]), R @ (np.linalg.inv(K) @ [*pixel, 1.] * depth) + t, -R[:, 1]))
     return np.array(views)
@@ -630,6 +657,7 @@ def clean(args):
     import cv2
     import open3d as o3d
     run_dir = args.clean
+    use_frame(frame_of(args.clip))
     state = json.loads((run_dir / "train.json").read_text())
     records = (run_dir / "splats.splat").read_bytes()
     saved = np.load(run_dir / "refined-cameras.npz")
@@ -656,7 +684,7 @@ def clean(args):
             masks[i] |= cv2.imread(str(path), cv2.IMREAD_GRAYSCALE) > 0
     video = args.clip / "source-full.mp4"
     inputs = {"video": video.read_bytes(), "masks": np.packbits(masks.reshape(n, -1), axis=1), "captions": caption_boxes(video, n, tuple(state["caption_band_y0_y1_x0_x1"])),
-              "K": np.array(state["K_video"]), "c2w": cameras, "xyz": None, "rgb": None, "metres": state["metres_per_native_unit"]}
+              "K": np.array(state["K_video"]), "c2w": cameras, "xyz": None, "rgb": None, "metres": state["metres_per_native_unit"], "frame": frame_now()}
     skip = set(state.get("skip_frames", []))
     inputs.update(train=[i for i in range(n) if i % HOLD_OUT and i not in skip], held=[i for i in range(0, n, HOLD_OUT) if i not in skip], skip=sorted(skip))
     off = OFF
@@ -730,11 +758,12 @@ def write_cameras(run_dir, fps):
 def compare(args):
     """Side-by-side sheets (one per fixed view, and all views) of splat files given as LABEL=PATH, rendered in one GPU call."""
     import cv2
+    use_frame(frame_of(args.clip))
     views, ks, names = comparison_views(np.load(args.droid_run / "prediction.npz")["poses_c2w"].astype(np.float64),
                                         full_k(json.loads((args.clip / "clip.json").read_text())["K"]))
     files = dict(item.split("=", 1) for item in args.compare)
     with modal.enable_output(), app.run():
-        result = render_remote.remote({label: Path(path).read_bytes() for label, path in files.items()}, views, ks)
+        result = render_remote.remote({label: Path(path).read_bytes() for label, path in files.items()}, views, ks, frame_now())
     args.output.mkdir(parents=True, exist_ok=True)
 
     def tile(jpg, label, size):
@@ -742,11 +771,11 @@ def compare(args):
         for colour, width in (((0, 0, 0), 5), ((255, 255, 255), 2)):
             cv2.putText(image, label, (14, 34), cv2.FONT_HERSHEY_SIMPLEX, .9, colour, width, cv2.LINE_AA)
         return image
-    rows = []
+    rows, big, small = [], (960, round(960 * H / W)), (640, round(640 * H / W))  # the video frame's aspect
     for v, view in enumerate(names):
-        cv2.imwrite(str(args.output / f"compare-{view}.jpg"), np.hstack([tile(result["jpgs"][f][v], f"{f}  {view}", (960, 540)) for f in files]),
+        cv2.imwrite(str(args.output / f"compare-{view}.jpg"), np.hstack([tile(result["jpgs"][f][v], f"{f}  {view}", big) for f in files]),
                     [cv2.IMWRITE_JPEG_QUALITY, 90])
-        rows.append(np.hstack([tile(result["jpgs"][f][v], f"{f}  {view}", (640, 360)) for f in files]))
+        rows.append(np.hstack([tile(result["jpgs"][f][v], f"{f}  {view}", small) for f in files]))
     cv2.imwrite(str(args.output / "compare-all.jpg"), np.vstack(rows), [cv2.IMWRITE_JPEG_QUALITY, 88])
     _, cost = usd("H100", result["container_seconds"] + 60)  # upper bound: the H100 rate
     (args.output / "compare.json").write_text(json.dumps({"files": files, "views": names, "c2w": views.tolist(), "K": ks.tolist(),
@@ -761,6 +790,7 @@ def usd(gpu_name, seconds):
 
 def run(args):
     import cv2
+    use_frame(frame_of(args.clip))
     clip = json.loads((args.clip / "clip.json").read_text())
     K, c2w = full_k(clip["K"]), np.load(args.droid_run / "prediction.npz")["poses_c2w"].astype(np.float64)
     n, video = len(c2w), args.clip / "source-full.mp4"
@@ -780,7 +810,7 @@ def run(args):
         (xyz, rgb, seeds), scale = seed_points(video, K, c2w, train[::16], lambda i: excluded_full(masks[i], captions[i])), None
     metres = json.loads(SCALE.read_text())["metres_per_native_unit"]
     inputs = {"video": video.read_bytes(), "masks": np.packbits(masks.reshape(n, -1), axis=1), "captions": captions, "K": K, "c2w": c2w,
-              "xyz": xyz, "rgb": rgb, "scale": scale, "train": train, "held": held, "metres": metres, "skip": skip,
+              "xyz": xyz, "rgb": rgb, "scale": scale, "train": train, "held": held, "metres": metres, "skip": skip, "frame": frame_now(),
               "depth": surface_depth(K, c2w) if args.depth_weight and not args.lingbot else None,
               "prior": (points, sizes / 2) if args.depth_weight and args.lingbot else None}
     base = {"steps": args.steps, "cap": args.cap, "checkpoint_every": 5000, "reserve_s": 120 if args.ablation else 420, "max_elongation": args.max_elongation,
@@ -796,7 +826,7 @@ def run(args):
              "max_minutes": args.max_minutes, "seeds": seeds, "clip": str(args.clip), "droid_run": str(args.droid_run), "masks": str(args.masks),
              "mesh": str(MESH), "fill": str(FILL), "caption_band_y0_y1_x0_x1": list(args.captions),
              "caption_box_mean_width_px": float((captions[:, 3] - captions[:, 2]).clip(0).mean()), "trained_frames": len(train), "held_out_frames": len(held),
-             "K_video": K.tolist(), "metres_per_native_unit": metres, "skip_frames": skip, "lingbot": str(args.lingbot) if args.lingbot else None,
+             "K_video": K.tolist(), "video_frame": frame_now(), "metres_per_native_unit": metres, "skip_frames": skip, "lingbot": str(args.lingbot) if args.lingbot else None,
              "depth_prior": None if not args.depth_weight else "LingBot map drawn from each training camera (points as opaque Gaussians, sigma half the sample size)"
              if args.lingbot else "report surfaces ray cast from each training camera"}
     (args.output / "launch.json").write_text(json.dumps(state, indent=1))
