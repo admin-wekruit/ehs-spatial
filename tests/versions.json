@@ -56,8 +56,8 @@
   "version": 1
  },
  "import": {
-  "depsSha256": "fae8a2c5ce13e82b82458c5c919c29d96db8757886ca583d2822533f7ece98f3",
-  "version": 2
+  "depsSha256": "4621f923ce5979d78a1df59f782bfe030198f8e9887f35d60770528f4cca9452",
+  "version": 3
  },
  "lens_clip": {
   "depsSha256": "efd39c3b317f25acc96bfb1d0756fff9fdf4990321b0052701d44b33b66e45cc",

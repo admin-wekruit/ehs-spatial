@@ -70,8 +70,9 @@ SCRIPT = {"source": "scripts/prepare_video_clip.py", "cuts": "scripts/detect_sho
 # The delivered profile only serves the adopted runs, which no code of today made: its keys keep the versions they were adopted
 # under (ADOPTED), whatever VERSIONS says later.
 ADOPTED = {kind: 2 if kind in ("source", "moge", "depth", "sam2", "floor_masks", "import") else 1 for kind in SCRIPT}
-# 2 at the Lightning fixes: floor_infer withholds the untested convex outline (no --dense)
-VERSIONS = ADOPTED | {"floor_infer": 2}
+# at the Lightning fixes: floor_infer 2 withholds the untested convex outline (no --dense); import 3 states no metric figure
+# without a scale that claims metres
+VERSIONS = ADOPTED | {"floor_infer": 2, "import": 3}
 DECIDE = "scripts/report_runner/decide.py"  # decision stages: versioned by their rule (decide.VERSIONS, rule_code), not here
 
 # every option's default, as each script's argparse declares it (tests/test_report_runner_stages.py re-reads them by AST)

@@ -55,3 +55,37 @@ def test_the_runner_never_asks_for_the_convex_outline():
     delivered = build("walmart", profile=types.SimpleNamespace(**{**vars(RESEARCH), "name": "delivered", "omit": ("static_filter", "lens_gate")}))
     assert delivered["floor_infer"].version == 1 and "lens_gate" not in delivered["inferred_floor"].inputs, \
         "the delivered profile keys its adopted runs under the versions they were adopted with"
+
+
+# ---------------------------------------------------------------- 2. no metric wording without a measured scale
+def test_a_report_without_metres_states_no_metric_figure(tmp_path):
+    import import_video_scene as importer
+    checked = {"generator": "SAM 3D Objects", "fitResidualNative": .00248, "fitResidualCm": 2.08, "observedShare": .128}
+    floor = {"basis": "floor plane (consensus over views) extended under and between things seen standing on it", "observed_share_of_this_floor": .3,
+             "area_m2": 463.2}
+    leaked = {"entities": [{"representations": [{"modelBasis": importer.model_basis(checked, False)}, {"modelBasis": importer.floor_basis(floor, False)}]}]}
+    assert [p for p, _ in importer.metric_claims(leaked)] == [".entities[0].representations[0].modelBasis", ".entities[0].representations[1].modelBasis"], \
+        "the Lightning import quoted 'residual 2.1 cm' and '463.2 m2' although its scale was uncalibrated"
+    native = {"entities": [{"representations": [{"modelBasis": importer.model_basis(checked, True)}, {"modelBasis": importer.floor_basis(floor, True)}]}],
+              "annotations": [{"limitations": ["sizes and distances are in native units, not metres."]}]}
+    assert importer.metric_claims(native) == [] and "0.00248 native units" in native["entities"][0]["representations"][0]["modelBasis"]
+    assert importer.unmeasured({"events": [{"near": ["about 2 meters from the cart"], "t0": 1.5}]}) == {"events": [{"near": ["about [distance not measured] from the cart"], "t0": 1.5}]}
+    with pytest.raises(ValueError, match="metric figures"):
+        importer.check_no_metres(leaked, uncalibrated=True)
+    importer.check_no_metres(leaked, uncalibrated=False)  # a scale that claims metres may say so
+    assert "check_no_metres(document, uncalibrated)" in (REPO / "scripts/import_video_scene.py").read_text(), "build_document runs the guard"
+
+    folder = tmp_path / "floor"
+    write(folder / "inferred-floor.json", {"dense": {"point_spacing_native": .002, "points": 10, "region": "floor seen ... gaps up to 0.5 m between them, on a 0.05 m grid",
+                                                     "colour_rule": "median colour of the nearest floor seen within 0.5 m"}})
+    (folder / "inferred-floor-points.glb").write_bytes(b"glb")
+    shell = types.SimpleNamespace(bounds=np.zeros((2, 3)))
+    points = lambda uncalibrated: importer.inferred_floor_points(folder, lambda *a: "asset", lambda *a: "id", {}, "source", shell, uncalibrated)
+    assert importer.metric_claims(points(False)) and importer.metric_claims(points(True)) == []
+
+
+def test_the_scale_sentence_quotes_only_a_measured_disagreement():
+    import import_video_scene as importer
+    scale = {"scale_status": "assumed_camera_height", "metres_per_native_unit": 8.38, "camera_height_native_median": .19,
+             "model_estimated_metres_per_native_unit": 7., "height_anchor_vs_model_estimate": None}
+    assert "disagrees" not in importer.scale_limitation(scale, device=False) and "not measured" in importer.scale_limitation(scale, device=False)
