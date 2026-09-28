@@ -61,6 +61,8 @@ SCRIPT = {"source": "scripts/prepare_video_clip.py", "cuts": "scripts/detect_sho
 # 2 at M2 integration: Part C pinned the HF revisions these tools load (MoGe-3: source and moge; DA3: depth; SAM 2.1; SAM 3: floor
 # masks) and gave the import --lens and the corrected scale limitation. The other kinds only saw a new contract_scale branch that
 # only the import reaches, or pins in code paths they do not run.
+# names not bumped at the M2 review: its deps changed only through profiles.M2_RULES (floor_frames@2), which
+# name_video_entities never reads (it reads QWEN3VL_NAMING_GATE).
 VERSIONS = {kind: 2 if kind in ("source", "moge", "depth", "sam2", "floor_masks", "import") else 1 for kind in SCRIPT}
 DECIDE = "scripts/report_runner/decide.py"  # decision stages: versioned by their rule (decide.VERSIONS, rule_code), not here
 
