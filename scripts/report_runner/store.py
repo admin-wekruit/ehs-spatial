@@ -32,9 +32,10 @@ from .profiles import hosting
 from .spec import Ctx, Hit, Pending
 
 REPO = Path(__file__).resolve().parents[2]
-# modal_apps/splat_train.USD_PER_S plus ehs_spatial.video.MODAL_L4_USD_PER_S (L4 + 1 core + 8 GiB); a test keeps them equal
-PRICES = {"H100": .001097, "A100-80GB": .000694, "A100-40GB": .000583, "cpu_core": .0000131, "memory_gib": .00000222,
-          "L4_1cpu_8gib": .000222 + .0000131 + 8 * .00000222}
+# Modal list prices per second (modal.com/pricing): modal_apps/splat_train.USD_PER_S plus the L4 of ehs_spatial.video.MODAL_L4_USD_PER_S;
+# a test keeps them equal, and each tool's own container rate equal to container_usd of what it requests
+PRICES = {"H100": .001097, "A100-80GB": .000694, "A100-40GB": .000583, "L4": .000222, "cpu_core": .0000131, "memory_gib": .00000222}
+TAIL_S = 60  # a Modal container may outlive the stage's last call by its scaledown window (60 s at most): part of the bound
 REDACT = re.compile(r"capabilit|token|secret", re.I)
 TOKEN = re.compile(r"(?<![\w.])@([A-Za-z][\w-]*)(?::([\w.-]+))?")
 RESERVED = {"new", "key", "clip"}
@@ -155,15 +156,63 @@ def _over_budget(spec, ledger):
     return f"worst case ${spec.worst_usd:.2f} does not fit the paid budget (${ledger.cap:.2f}, ${ledger.spent:.2f} booked)"
 
 
+def container_usd(gpu=None, cores=0, gib=0):
+    """List price per second of one Modal container: its GPU plus the CPU cores and memory it requests."""
+    return (PRICES[gpu] if gpu else 0.) + cores * PRICES["cpu_core"] + gib * PRICES["memory_gib"]
+
+
 def booked(spec, reserved, wall_s):
-    """What a finished paid stage books against the budget: its GPU's list price x wall seconds x the containers it keeps
-    busy at once (--workers), never more than it reserved. A stage without a GPU price (a Modal CPU container, a cloud
-    API) books its whole reservation. ponytail: wall time bounds billed container time; parse each tool's spend if it must be exact."""
-    rate = {**PRICES, "L4": PRICES["L4_1cpu_8gib"]}.get(spec.gpu)
-    if rate is None:
+    """What a finished paid stage books against the budget: its container's list price (spec.usd_per_s: the GPU plus the CPU and
+    memory it requests, or the tool's own rate) x (wall seconds + the scaledown tail), never more than it reserved. Every paid Modal
+    function here keeps one container at a time (max_containers=1, whatever --workers asks), so this bounds what Modal bills
+    without counting the workers' calls as containers (Lightning SAM 3D: 4 x wall booked $6.26 for a tool-counted $1.63).
+    A stage without a container price (a cloud API: names) books its reservation."""
+    if not spec.usd_per_s:
         return reserved
-    workers = next((int(c[c.index("--workers") + 1]) for c in spec.commands if "--workers" in c), 1)
-    return min(reserved, round(wall_s * rate * workers, 4))
+    return min(reserved, round((wall_s + TAIL_S) * spec.usd_per_s, 4))
+
+
+def recorded_run(art, row):
+    """(wall seconds, run directory) of a ledger row: its run's lock (finished at the row's time), or a failed run's life from its
+    directory's birth to the failure stamp in its name."""
+    from datetime import datetime
+    at = datetime.strptime(row["at"], "%Y-%m-%dT%H:%M:%S%z")
+    near = lambda t: abs((t - at).total_seconds()) <= 2
+    for d in sorted(Path(art, "runs").glob(f"{row['site']}-{row['stage']}-*")):
+        lock = d / "lock.json"
+        if lock.is_file() and near(datetime.strptime(json.loads(lock.read_text())["finished"], "%Y-%m-%dT%H:%M:%S%z")):
+            return json.loads(lock.read_text())["wall_s"], d
+        stamp = re.search(r"-failed-(\d{8}T\d{6})", d.name)
+        if stamp and near(datetime.strptime(stamp.group(1), "%Y%m%dT%H%M%S").astimezone(at.tzinfo)):
+            return datetime.strptime(stamp.group(1), "%Y%m%dT%H%M%S").timestamp() - d.stat().st_birthtime, d
+    raise LookupError(f"no run of {row['stage']} ended at {row['at']}")
+
+
+def reprice(path, art, usd_per_s, per_call=("recgen",)):
+    """Book a ledger's rows again at today's container rates (usd_per_s: {stage kind: USD/s}) from their recorded seconds: (wall +
+    TAIL_S) x rate; a per_call kind (RecGen: each call gets its own container, scaledown 0) had --workers of them at once, and its
+    journal's own per-call seconds bound it too. A row without a container rate (a cloud API) keeps its booking. The old file stays
+    beside it as .before-reprice."""
+    path = Path(path)
+    rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    out = []
+    for row in rows:
+        kind = row["stage"].split("-")[0]
+        rate = usd_per_s.get(kind)
+        if not rate:
+            out.append(row)
+            continue
+        wall, run = recorded_run(art, row)
+        usd = (wall + TAIL_S) * rate
+        if kind in per_call:
+            words = next((line for line in (run / "runner.log").read_text().splitlines() if line.startswith("$ ")), "").split()
+            usd *= int(words[words.index("--workers") + 1]) if "--workers" in words else 1
+            if (run / "out/journal").is_dir():
+                usd = min(usd, importlib.import_module("complete_video_objects").spent(run / "out/journal")[1] * rate)
+        out.append({**row, "usd": round(usd, 4), "wall_s": round(wall, 1), "usd_per_s": rate, "repricedFrom": row["usd"]})
+    shutil.copy2(path, path.with_name(path.name + ".before-reprice"))
+    path.write_text("".join(json.dumps(r) + "\n" for r in out))
+    return out
 
 
 class Ledger:
@@ -201,14 +250,15 @@ class Ledger:
             self.reserved[spec.name] = amount
             return True
 
-    def settle(self, spec, usd):
+    def settle(self, spec, usd, wall_s=None):
         with self._lock:
             self.reserved.pop(spec.name, None)
             self.spent += usd
             if self.path:
                 Path(self.path).parent.mkdir(parents=True, exist_ok=True)
                 with open(self.path, "a") as f:
-                    f.write(json.dumps({"stage": spec.name, "site": spec.site, "usd": usd, "at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}) + "\n")
+                    f.write(json.dumps({"stage": spec.name, "site": spec.site, "usd": usd, "at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                                        **({"wall_s": round(wall_s, 1), "usd_per_s": spec.usd_per_s} if wall_s is not None else {})}) + "\n")
 
 
 class Store:
@@ -508,7 +558,7 @@ class Store:
             lock = {"stage": spec.name, "site": spec.site, "version": spec.version, "depsSha256": git[1], "git": git[0], "argv": cmds,
                     "models": [dict(zip(("role", "id", "revision", "weightsSha256"), m), hosting=hosting(m[1])) for m in spec.models],  # 'cloud': a third-party API
                     "image": None, "modal": None,  # ponytail: the tool's own run.json records its image and app
-                    "gpu": {"requested": spec.gpu}, "usd": {"reserved": amount, "estimate": spec.est_usd, "booked": usd},
+                    "gpu": {"requested": spec.gpu}, "usd": {"reserved": amount, "estimate": spec.est_usd, "booked": usd, "perSecond": spec.usd_per_s},
                     "wall_s": wall, "started": started, "finished": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
             self._record(spec, key, digests, d, "ran", [self.scope or "research"], lock)
             return self._resolved[(spec.site, spec.name)]
@@ -522,7 +572,8 @@ class Store:
             return "failed"
         finally:
             if spec.paid:  # a failed stage books too
-                ledger.settle(spec, usd if usd is not None else booked(spec, amount, time.monotonic() - t0))
+                wall = time.monotonic() - t0
+                ledger.settle(spec, usd if usd is not None else booked(spec, amount, wall), wall)
 
     def _ready(self, spec, status, ledger):
         """A ready stage's status, or a job to submit when it must run."""

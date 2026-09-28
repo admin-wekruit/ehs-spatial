@@ -29,6 +29,7 @@ import re
 import sys
 
 from .spec import Pending, StageSpec
+from .store import container_usd
 
 REPO = Path(__file__).resolve().parents[2]
 PY = "python"  # resolved through PATH below: the key keeps the word, not this machine's interpreter
@@ -42,8 +43,18 @@ WORKERS = 4  # complete_video_objects --workers: generator calls in flight (outp
 SERIAL_GENERATORS = {"recgen"}
 CAPS = {"generator_usd": 10., "splat_minutes": 58.}  # profiles.CAPS; a profile may also cap one generator (<name>_usd)
 MODEL_IDS = {"depth": "depth-anything/DA3-GIANT-1.1", "register": "depth-anything/DA3-GIANT-1.1"}  # argv needs these; the rest are fixed in their scripts
-USD_PER_S = {"L4": .000222 + .0000131 + 8 * .00000222, "A100-40GB": .000583, "A100-80GB": .000694, "H100": .001097,
-             "cpu16": 4 * .0000131 + 16 * .00000222, "cpu24": 4 * .0000131 + 24 * .00000222}  # store.PRICES + Modal CPU containers
+# the Modal container each paid kind keeps busy, as its function requests it: (GPU, CPU cores, memory GiB); a function that requests
+# no CPU or memory is priced at 1 core + 8 GiB (as ehs_spatial.video.MODAL_L4_USD_PER_S), a GPU list at its dearest. Tests keep the
+# tools' own rates equal: SAM 3D (sam3d_research.USD_PER_SECOND), RecGen (complete_video_objects.USD_PER_SECOND), splat (splat_train.usd)
+CONTAINERS = {"source": ("L4", 1, 8), "moge": ("L4", 1, 8), "floor_masks": ("L4", 1, 8), "sam2": ("L4", 1, 8), "motion": ("L4", 1, 8),
+              "census": ("A100-40GB", 4, 16), "camera": ("A100-40GB", 4, 16),  # droid_room: cpu 4, 16 GiB
+              "tracks": ("A100-40GB", 1, 8), "otracks": ("A100-40GB", 1, 8), "events": ("A100-40GB", 1, 8),
+              "depth": ("A100-80GB", 1, 8), "register": ("A100-80GB", 1, 8), "movers": ("A100-80GB", 1, 8),
+              "lingbot": ("H100", 4, 32),  # lingbot_room execute: A100-80GB, H100 or A100-40GB, cpu 4, 32 GiB
+              "lingbot_diagnose": (None, 4, 16), "lingbot_build": (None, 4, 24),  # lingbot_dense_map's CPU containers
+              "splat": ("H100", 2, 12), "splat_clean": ("H100", 2, 12),  # splat_train: H100 first, CPU 2, 12 GiB
+              "sam3d": ("A100-80GB", 4, 32), "recgen": ("A100-80GB", 8, 64)}
+USD_PER_S = {kind: container_usd(*c) for kind, c in CONTAINERS.items()}
 
 # script of each stage kind (a stage's name is its kind, or kind-A-B for one span); None: staging only
 SCRIPT = {"source": "scripts/prepare_video_clip.py", "cuts": "scripts/detect_shot_cuts.py", "census": "modal_apps/droid_room.py",
@@ -463,7 +474,7 @@ class _Graph:
         return found["value"]
 
     def add(self, name, commands, outputs, *, link=None, copy=None, optional=(), droid_frames=None, lingbot_source=None,
-            leaves=None, env=None, gpu=None, rate=None, compute="cpu", timeout_s=3600, est_usd=0., est_s=60., worst_usd=None,
+            leaves=None, env=None, gpu=None, compute="cpu", timeout_s=3600, est_usd=0., est_s=60., worst_usd=None,
             budget_flags=None, models=(), rules=None, cwd=None, deps=None):
         """A StageSpec whose inputs are read off its tokens: role = producer name ('?' when optional); a producer consumed
         as droid frames or LingBot source, a decision's value (when only its JSON is read), else the referenced output
@@ -487,16 +498,16 @@ class _Graph:
             if mode != "outputs":
                 consumes[key] = mode
         kind = kind_of(name)
-        rate = rate or gpu  # USD_PER_S key of what the stage pays for: its GPU, or a Modal CPU container
-        paid = rate is not None or compute == "cloud"
+        rate = USD_PER_S[kind] if compute == "modal" else 0.  # its Modal container's list price; a cloud API books its reservation
+        paid = compute in ("modal", "cloud")
         spec = StageSpec(name=name, site=self.ctx.site, version=(ADOPTED if delivered(self.ctx) else VERSIONS).get(kind, 1),
                          deps=deps if deps is not None else deps_of(SCRIPT[kind]) if SCRIPT.get(kind) else (),
                          commands=tuple(tuple(c) for c in commands), inputs=inputs, consumes=consumes,
                          leaves={k: Path(v) for k, v in (leaves or {}).items()}, outputs=dict(outputs),
                          stage_from={k: dict(v) for k, v in (("link", link), ("copy", copy)) if v}, compute=compute, gpu=gpu,
-                         timeout_s=timeout_s, worst_usd=worst_usd if worst_usd is not None else round(timeout_s * USD_PER_S.get(rate or "", 0), 2),
+                         timeout_s=timeout_s, worst_usd=worst_usd if worst_usd is not None else round(timeout_s * rate, 2),
                          est_usd=est_usd, est_s=est_s, budget_flags=budget_flags or {}, models=tuple(models), rules=rules or {},
-                         env={**ENV, **(env or {})}, cwd=cwd, paid=paid)
+                         env={**ENV, **(env or {})}, cwd=cwd, paid=paid, usd_per_s=rate)
         self.specs.append(spec)
         self.by[name] = spec
         return spec
@@ -708,7 +719,7 @@ def graph(ctx):
                          *(["--skip", *skip] if skip else []), "--max-minutes", _num(minutes), "--output", "@new/out"]],
               {"out": "out", "splats": "out/splats.splat", "json": "out/splats.json", "train": "out/train.json", "launch": "out/launch.json",
                "cameras": "out/refined-cameras.npz"}, gpu="H100", compute="modal", timeout_s=int(minutes * 60) + 600, est_usd=1.4, est_s=minutes * 60,
-              worst_usd=round((minutes * 60 + 600) * USD_PER_S["H100"], 2), budget_flags={"--max-minutes": ("minutes", USD_PER_S["H100"])},
+              worst_usd=round((minutes * 60 + 600) * USD_PER_S["splat"], 2), budget_flags={"--max-minutes": ("minutes", USD_PER_S["splat"])},
               models=())
         trained = {f"out/{n}": f"@splat:{r}" for n, r in (("splats.splat", "splats"), ("splats.json", "json"), ("train.json", "train"),
                                                           ("launch.json", "launch"), ("refined-cameras.npz", "cameras"))}
@@ -724,7 +735,7 @@ def graph(ctx):
               timeout_s=1800, est_usd=.1, est_s=400, models=pins(profile, "dense"))
         dense = ["--run-id", "@lingbot:out", "--droid-run", "@camera:out", "--clip", f"@{cam}:out", "--masks", "@dynamic_masks:masks", "--depth-run", "@fuse:out"]
         g.add("lingbot_diagnose", [[PY, S("lingbot_dense_map.py"), "diagnose", *dense, "--overlay-rows", overlay["lingbot_rows"], "--output", "@new"]],
-              {"diagnose": "diagnose.json"}, rate="cpu16", compute="modal", timeout_s=1800, est_usd=.02, est_s=300)
+              {"diagnose": "diagnose.json"}, compute="modal", timeout_s=1800, est_usd=.02, est_s=300)
         g.decide("lingbot_conf", "lingbot_conf", diagnose="@lingbot_diagnose:diagnose")
     for s, e in (o for o in others if o in registered):
         g.add(f"register-{s}-{e}", [[PY, S("register_cut_shot.py"), "--droid-run", "@camera:out", "--depth-run", "@fuse:out", "--clip", "@source:out",
@@ -745,7 +756,7 @@ def graph(ctx):
         spec = g.add(name, [[PY, S("complete_video_objects.py"), *common, "--generator", name, *flags, "--workers", str(1 if name in SERIAL_GENERATORS else WORKERS),
                              *(["--max-usd", _num(usd), "--invoke"] if paid else []), "--output", "@new/out"]],
                      {"out": "out", "manifest": "out/manifest.json", "models": "out/models"}, gpu="A100-80GB" if paid else None,
-                     compute="modal" if paid else "cpu", timeout_s=int(usd / USD_PER_S["A100-80GB"]) + 3600 if paid else 7200,
+                     compute="modal" if paid else "cpu", timeout_s=int(usd / USD_PER_S[name]) + 3600 if paid else 7200,
                      worst_usd=usd or 0., est_usd=est, est_s=1800, budget_flags={"--max-usd": "usd"} if paid else None, models=pins(profile, name))
         g.seeded(spec, match)
         if paid:
@@ -771,7 +782,7 @@ def graph(ctx):
         g.add("lingbot_build", [[PY, S("lingbot_dense_map.py"), "build", *dense, "--mesh", "@fuse:mesh", "--conf", _num(conf),
                                  "--overlay-rows", overlay["lingbot_rows"], *late_exclude, "--output", "@new/out"]],
               {"out": "out", "points": "out/dense-points.glb", "info": "out/points.json", "attributes": "out/point-attributes.npz", "remote": "out/remote.json"},
-              copy={"out/plan.json": "@lingbot:plan", "out/diagnose.json": "@lingbot_diagnose:diagnose"}, rate="cpu24", compute="modal",
+              copy={"out/plan.json": "@lingbot:plan", "out/diagnose.json": "@lingbot_diagnose:diagnose"}, compute="modal",
               timeout_s=3600, est_usd=.05, est_s=900)
         g.decide("dense_gate", "dense_gate", map="@lingbot_build:out", fused="@fuse:out")
     moved, scene = [], "@dynamic:out"
