@@ -359,6 +359,34 @@ def test_a_republish_keeps_the_published_title(tmp_path):
         assert flag(again, "--title") == ["Walmart aisle"] and flag(again, "--republish") == ["/art/.platform/imports/video-import-p.json"]
 
 
+def test_the_cli_republishes_only_for_delivered_or_when_asked(tmp_path, monkeypatch):
+    """The same gate as the CLI drives it: run_video_report -> store.main -> Ctx with the real profile strings. The graph
+    is fed the section 5 values and stopped at its import stage; nothing is planned, run or written."""
+    import run_video_report
+    from report_runner import store
+    record = "/art/.platform/imports/video-import-p.json"
+    (tmp_path / "runs/report-runner").mkdir(parents=True)
+    (tmp_path / "runs/report-runner/imports.jsonl").write_text(json.dumps({"site": "walmart", "importRecordPath": record, "title": "Walmart aisle"}) + "\n")
+    monkeypatch.setattr(store, "art_root", lambda: tmp_path)
+    real, seen = stages.graph, {}
+
+    class Stop(Exception):
+        pass
+
+    def graph(c):
+        c.decisions.update({k: {"value": v, "evidence": {}, "rule": k} for k, v in SITES["walmart"][2].items() if k not in c.decisions})
+        seen["profile"], seen["import"] = c.profile, real(c)[-1]
+        raise Stop
+    monkeypatch.setattr(stages, "graph", graph)
+    start, end, _ = SITES["walmart"]
+    for profile, extra, republish in (("research", [], None), ("commercial", [], None), ("research", ["--republish"], [record]), ("delivered", [], [record])):
+        with pytest.raises(Stop):
+            run_video_report.main(["--video", str(tmp_path / "v.mp4"), "--start", str(start), "--end", str(end), "--site", "walmart",
+                                   "--review", str(REVIEW), "--profile", profile, "--dry-run", *extra])
+        assert seen["profile"] == profile and flag(seen["import"], "--republish") == republish, (profile, extra)
+        assert flag(seen["import"], "--title") == (["Walmart aisle"] if republish else ["walmart 03:10–03:40 (imported, not accepted)"]), (profile, extra)
+
+
 def test_movers_never_take_the_mapped_shots_people():
     """D3b: an accepted other shot without track windows of its own is left blank; only delivered ME340 (X6) moved the
     mapped shot's analysis into it."""
