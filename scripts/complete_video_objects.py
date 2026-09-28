@@ -695,20 +695,25 @@ def sam3d_to_world(vertices, object_to_camera, c2w):
     return camera @ np.asarray(c2w)[:3, :3].T + np.asarray(c2w)[:3, 3]
 
 
-def box_mesh(points, up, step):
+def box_fit(points, up):
     """Gravity-aligned box around `points`: yaw of the smallest rectangle on the floor plane, extents at the 1st/99th
-    percentiles, at least one `step` thick (a face seen straight on), faces cut to edges <= `step` so each vertex can
-    carry its own colour. Returns world vertices and faces."""
-    import trimesh
+    percentiles. Returns the axes (rows x, y, up; right-handed) and the local lo, hi corners (local = points @ axes.T)."""
     up = np.asarray(up, float) / np.linalg.norm(up)
     a = np.cross(up, [1., 0, 0] if abs(up[0]) < .9 else [0, 1., 0])
     a /= np.linalg.norm(a)
     b = np.cross(up, a)
     angle = np.radians(cv2.minAreaRect(np.c_[points @ a, points @ b].astype(np.float32))[2])
     x = np.cos(angle) * a + np.sin(angle) * b
-    axes = np.stack([x, np.cross(up, x), up])  # rows, right-handed
+    axes = np.stack([x, np.cross(up, x), up])
     local = points @ axes.T
-    lo, hi = np.percentile(local, 1, 0), np.percentile(local, 99, 0)
+    return axes, np.percentile(local, 1, 0), np.percentile(local, 99, 0)
+
+
+def box_mesh(points, up, step):
+    """box_fit's box, at least one `step` thick (a face seen straight on), faces cut to edges <= `step` so each vertex can
+    carry its own colour. Returns world vertices and faces."""
+    import trimesh
+    axes, lo, hi = box_fit(points, up)
     hi = np.maximum(hi, lo + step)
     unit = trimesh.creation.box(bounds=[lo, hi])
     vertices, faces = trimesh.remesh.subdivide_to_size(unit.vertices, unit.faces, step)
