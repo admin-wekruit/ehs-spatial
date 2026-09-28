@@ -183,6 +183,7 @@
 .report-video-stage svg polygon[data-pickable] { pointer-events: auto; cursor: pointer; }
 .report-video-stage svg polygon[data-pickable]:hover { fill: rgba(255, 214, 102, .22); }
 .report-video-stage svg polygon[data-selected] { fill: rgba(86, 214, 140, .25); stroke: #56d68c; stroke-width: 2; }
+.report-video-stage svg polygon[data-source="projected"] { stroke-dasharray: 5 4; fill: rgba(255, 214, 102, .03); }
 .report-video-stage svg .report-video-raster { fill: none; stroke: rgba(255, 255, 255, .45); stroke-width: 1; stroke-dasharray: 6 5; vector-effect: non-scaling-stroke; pointer-events: none; }
 .report-video-controls { display: flex; flex: 0 0 auto; gap: 8px; align-items: center; padding: 4px 8px; border-top: 1px solid var(--scene-border); font-size: 10px; }
 .report-video-controls input { flex: 1 1 auto; }
@@ -211,3 +212,33 @@
 .report-memory em { color: #9a5b00; font-style: normal; }
 .report-memory-time, .report-memory-actor { border: 1px solid var(--scene-border); background: #fff; padding: 0 6px; font-size: 11px; line-height: 18px; cursor: pointer; }
 span.report-memory-actor { cursor: default; }
+
+/* #/live/<reportId>: the fast report as its layers arrive (LiveReport.tsx) */
+.live-report { --scene-border: #cdd5cc; display: grid; gap: 8px; color: #243c31; }
+.live-report-head { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; font-size: 12px; }
+.live-report-head strong { font-size: 15px; }
+.live-report-head em { color: #b3261e; font-style: normal; }
+.live-report-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(320px, 2fr); gap: 8px; height: max(640px, calc(100dvh - 330px)); }
+.live-report-3d, .live-report-side { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--scene-border); border-radius: 4px; background: #f6f8f2; overflow: hidden; }
+.live-report-tools { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; padding: 5px 8px; border-bottom: 1px solid var(--scene-border); font-size: 11px; }
+.live-report-tools label { display: flex; gap: 4px; align-items: center; }
+.live-report-tools button { padding: 3px 8px; border: 1px solid #c7d2c2; border-radius: 2px; background: #fcfff8; font-size: 11px; }
+.live-report-tools button[aria-pressed="true"] { background: #243c31; color: #fff; }
+.live-report-viewer { flex: 1 1 auto; min-height: 0; }
+.live-report-labels { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; padding: 4px 8px; list-style: none; font-size: 10px; color: #66786b; border-top: 1px solid var(--scene-border); }
+.live-report-video { flex: 1 1 55%; min-height: 200px; display: flex; flex-direction: column; }
+.live-report-video > p { margin: auto; color: #66786b; font-size: 12px; }
+.live-report-card { flex: 0 0 auto; padding: 6px 12px; border-top: 1px solid var(--scene-border); font-size: 12px; }
+.live-report-card h3 { margin: 0 0 4px; font-size: 13px; }
+.live-report-card p, .live-report-card ul { margin: 2px 0; }
+.live-report-card small, .live-report-timing small { color: #66786b; }
+.live-report-timing { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 8px; font-size: 11px; }
+.live-report-timing > div { border: 1px solid var(--scene-border); border-radius: 4px; padding: 6px 10px; max-height: 260px; overflow: auto; background: #f6f8f2; }
+.live-report-timing h3 { margin: 0 0 4px; font-size: 12px; }
+.live-report-timing table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+.live-report-timing th, .live-report-timing td { padding: 1px 6px; text-align: right; border-bottom: 1px solid #e3e8e0; white-space: nowrap; }
+.live-report-timing th:first-child, .live-report-timing td:first-child { text-align: left; white-space: normal; }
+.live-report-timing td[data-over] { color: #fff; background: #b3261e; }
+.live-report-timing .live-report-boot td { color: #8a968d; }
+.live-report-flags { margin: 4px 0 0; padding-left: 16px; color: #b3261e; }
+@media (max-width: 900px) { .live-report-grid, .live-report-timing { grid-template-columns: 1fr; height: auto; } .live-report-viewer { height: 420px; } }

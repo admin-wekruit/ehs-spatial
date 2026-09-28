@@ -50,6 +50,8 @@ export function sceneRepresentationTasks(document:SceneDocument,frameId:string|n
   }).map(r=>({e,r})));
 }
 const taskKey=(tasks:ReturnType<typeof sceneRepresentationTasks>)=>JSON.stringify(tasks.map(({e,r})=>[e.id,r.id,r.assetId]));
+/** What a loaded representation's GPU buffers were made from; the same key in the next document reuses them. */
+export const representationKey=(entityId:string,r:any)=>JSON.stringify([entityId,r.id,r.kind,r.assetId??null,r.primitive??null]);
 
 export function selectionGeometry(document:SceneDocument,entity:any,frameId:string|null,layers:any,preview?:Transform) {
   if(!entity||entity.sourceContext||entity.visible===false||!frameId||isReferenceSurface(document,entity)||(entity.representations||[]).some((rep:any)=>isCurrentReferenceSurface(entity,rep,document.observations)))return {corners:[] as Vec[],transform:undefined,axisSpace:'native',editable:false};
@@ -134,7 +136,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
   const canvas=document.createElement('canvas');canvas.setAttribute('aria-label',options.locale==='en'?'Interactive scene':'交互场景');canvas.tabIndex=0;Object.assign(canvas.style,{position:'relative',touchAction:'none'});
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');Object.assign(svg.style,{position:'absolute',inset:'0',width:'100%',height:'100%',pointerEvents:'none'});stage.append(photo,canvas,svg);container.append(stage);
   const gl=canvas.getContext('webgl2',{alpha:true,antialias:true,preserveDrawingBuffer:true});if(!gl){stage.remove();throw Error('webgl_unavailable');}
-  let disposed=false,epoch=0,photoEpoch=0,doc:any={entities:[],cameras:[],coordinateFrames:[]},revisionId='',selection:any={},camera:Camera|null=null,radius=1,center:Vec=[0,0,0],frameId:string|null=null,gpu:GPU[]=[],abort=new AbortController(),preview=new Map<string,Transform>(),drag:any=null,axisDrag:any=null;
+  let disposed=false,epoch=0,photoEpoch=0,doc:any={entities:[],cameras:[],coordinateFrames:[]},revisionId='',selection:any={},camera:Camera|null=null,radius=1,center:Vec=[0,0,0],frameId:string|null=null,gpu:GPU[]=[],stale=new Set<GPU>(),abort=new AbortController(),preview=new Map<string,Transform>(),drag:any=null,axisDrag:any=null;
   let sceneAssetsSignature='',loadedLayerKey='',viewMode='free',backgroundOnly=false;let pickCursor:Vec|null=null;let navigationVersion=0,autoFit=true;let photoAbort=new AbortController(),photoObjectURL:string|null=null;
   let captureSize:{w:number;h:number;cw:number;ch:number}|null=null;let pathCache:{doc:any;frameId:string|null;path:ReturnType<typeof cameraPath>}={doc:null,frameId:null,path:[]};const streamedMeshes=new Map<string,Mesh>();const loadedRepresentations=new Set<string>(),assetStates=new Map<string,RepresentationLoadState>();
   let layers:any={observed_surface:true,generated_mesh:true,primitive:true,point_cloud:true,allBounds:false,opacity:.65,lighting:true,showCandidates:false,...options.layers};const cleanups:(()=>void)[]=[];
@@ -146,7 +148,9 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
   const u=Object.fromEntries(['vp','model','pointSize','pointWorld','pointScale','ceiling','image','pickColor','selected','pick','opacity','lighting','tint','baseColorFactor','alphaMode','alphaCutoff'].map(n=>[n,gl.getUniformLocation(program,n)]));
   const attrs=['p','n','c','uv','a'].map(n=>gl.getAttribLocation(program,n));for(const a of attrs)gl.enableVertexAttribArray(a);gl.uniform1i(u.image,0);
   function releaseMesh(g:GPU){gl!.deleteBuffer(g.vertex);gl!.deleteBuffer(g.index);gl!.deleteTexture(g.texture);}
-  function release(){gpu.forEach(releaseMesh);gpu=[];loadedRepresentations.clear();assetStates.clear();}
+  function release(){gpu.forEach(releaseMesh);gpu=[];stale.clear();loadedRepresentations.clear();assetStates.clear();}
+  // The previous content of a representation, drawn until its new asset is loaded (or failed), then released.
+  function replaced(entityId:string,representationId:string){const old=gpu.filter(g=>stale.has(g)&&g.entityId===entityId&&g.representation.id===representationId);old.forEach(g=>{releaseMesh(g);stale.delete(g);});if(old.length)gpu=gpu.filter(g=>!old.includes(g));}
   function entity(id:string){return doc.entities.find((e:any)=>e.id===id);}
   function model(g:GPU){const e=entity(g.entityId),t=g.representation.kind==='observed_surface'||g.representation.kind==='point_cloud'?g.representation.transform:preview.get(g.entityId)||e?.currentModelTransform||g.representation.transform;return matmul(transformMatrix(t),g.mesh.matrix);}
   // A point cloud drawn at its world size (round, 1-16 device px) when it declares its cell size in native units, on the
@@ -245,7 +249,10 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
       }
     }
     if(layers.showBounds===false&&!layers.showAxes)return;
-    const ids=layers.showBounds===false?[]:layers.allBounds?doc.entities.filter((e:any)=>!e.sourceContext).map((e:any)=>e.id):[selection.entityId];for(const id of ids){if(!id)continue;const ps=selectedGeometry(id).corners;if(!ps.length)continue;const box=ps.map(project);for(let i=0;i<8;i++)for(let k=0;k<3;k++)if(!(i&(1<<k)))line(box[i],box[i|(1<<k)],id===selection.entityId?'#7ae6cf':'#607e89');}
+    const ids=layers.showBounds===false?[]:layers.allBounds?doc.entities.filter((e:any)=>!e.sourceContext).map((e:any)=>e.id):[selection.entityId];for(const id of ids){if(!id)continue;const ps=selectedGeometry(id).corners;if(!ps.length)continue;const box=ps.map(project);for(let i=0;i<8;i++)for(let k=0;k<3;k++)if(!(i&(1<<k)))line(box[i],box[i|(1<<k)],id===selection.entityId?'#7ae6cf':'#607e89');
+      // Names over the boxes (layers.labels): the selected one always, others once their box is 40 px wide on screen.
+      // ponytail: a fixed width, no collision layout; a label list is the next step if dense scenes need every name.
+      const on=box.filter(Boolean) as Vec[],xs=on.map(p=>p[0]);if(layers.labels&&on.length===8&&(id===selection.entityId||Math.max(...xs)-Math.min(...xs)>=40)){const el=document.createElementNS(svg.namespaceURI,'text');el.textContent=entity(id)?.label||'';for(const[k,v]of Object.entries({x:Math.min(...xs),y:Math.min(...on.map(p=>p[1]))-4,fill:id===selection.entityId?'#7ae6cf':'#e4ece7',stroke:'#111b21','stroke-width':3,'paint-order':'stroke','font-size':12}))el.setAttribute(k,String(v));svg.append(el);}}
     const axisId=layers.axisEntityId||selection.entityId,e=entity(axisId),axes=selectedAxes(axisId);if(e&&axes){const {geometry,origin,length}=axes,t=geometry.transform;
       for(let k=0;k<3;k++){const {direction,end,color}=axes.axes[k],a=project(origin),b=project(end),labelSize=overlay?24:14,labelOffset=overlay?8:5;line(a,b,color,overlay?5:3);if(!a||!b)continue;
         const label=document.createElementNS(svg.namespaceURI,'text');label.textContent='XYZ'[k];for(const[key,value]of Object.entries({x:b[0]+labelOffset,y:b[1]-labelOffset,fill:color,'font-size':labelSize,'font-weight':700}))label.setAttribute(key,String(value));svg.append(label);
@@ -333,7 +340,15 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
     const next=revision.document||revision;if(!next||!Array.isArray(next.entities)||!Array.isArray(next.cameras))throw Error('invalid_scene_document');const nextFrame=layers.imageId?cameraForImage(next,layers.imageId)?.coordinateFrameId||null:currentCameras(next).find((c:any)=>c.id===selection.cameraId)?.coordinateFrameId||currentCameras(next)[0]?.coordinateFrameId||next.coordinateFrames?.[0]?.id||null;const tasks=sceneRepresentationTasks(next,nextFrame,layers),layerKey=taskKey(tasks);const signature=JSON.stringify([layerKey,next.entities.map((e:any)=>[e.id,e.activeModelRepresentationId,(e.representations||[]).map((r:any)=>[r.id,r.assetId,r.kind,r.primitive,r.placementState,r.placementReason,r.sourceValidity])]),next.assets]);
     if(signature===sceneAssetsSignature&&doc.captureId===next.captureId){doc=next;layers.observations=doc.observations;if(layers.imageId)frameId=cameraForImage(doc,layers.imageId)?.coordinateFrameId||null;revisionId=revision.id||'';preview.clear();for(const g of gpu){const r=entity(g.entityId)?.representations?.find((r:any)=>r.id===g.representation.id);if(r)g.representation=r;}dimensions();draw();loadProgress();return;}
     if(doc.captureId!==next.captureId)streamedMeshes.clear();
-    sceneAssetsSignature=signature;loadedLayerKey=layerKey;const n=++epoch;abort.abort();abort=new AbortController();release();preview.clear();doc=next;layers.observations=doc.observations;revisionId=revision.id||'';frameId=nextFrame;
+    sceneAssetsSignature=signature;loadedLayerKey=layerKey;const n=++epoch;abort.abort();abort=new AbortController();preview.clear();
+    // A new layer (a live report grows while it is open) keeps what is already on the GPU: an unchanged (entity,
+    // representation, asset) is neither fetched nor uploaded again. A representation whose asset changed (a quick room,
+    // then the full one) stays drawn until its new asset is up; everything else is released as before.
+    const keys=new Set(tasks.map(({e,r})=>representationKey(e.id,r))),kept=gpu.filter(g=>keys.has(representationKey(g.entityId,g.representation))&&loadedRepresentations.has(g.entityId+'/'+g.representation.id)),keptKeys=new Set(kept.map(g=>g.entityId+'/'+g.representation.id));
+    const replacing=new Set(tasks.map(({e,r})=>e.id+'/'+r.id));for(const g of gpu)if(!kept.includes(g)&&replacing.has(g.entityId+'/'+g.representation.id))stale.add(g);else stale.delete(g);
+    gpu.filter(g=>!kept.includes(g)&&!stale.has(g)).forEach(releaseMesh);gpu=gpu.filter(g=>kept.includes(g)||stale.has(g));for(const key of [...loadedRepresentations])if(!keptKeys.has(key))loadedRepresentations.delete(key);for(const key of [...assetStates.keys()])if(!keptKeys.has(key))assetStates.delete(key);
+    doc=next;layers.observations=doc.observations;revisionId=revision.id||'';frameId=nextFrame;for(const g of gpu){const r=entity(g.entityId)?.representations?.find((r:any)=>r.id===g.representation.id);if(r)g.representation=r;}
+    tasks.splice(0,tasks.length,...tasks.filter(({e,r})=>!keptKeys.has(e.id+'/'+r.id)));
     if(!camera){if(currentCameras(doc)[0])setCamera(currentCameras(doc)[0].id);else setCamera('free');}else if(camera.exact&&currentCameras(doc).some((c:any)=>c.id===camera!.frame.id))setCamera(camera.frame.id);
     emit('loadProgress',{phase:'metadata',loaded:0,total:doc.entities.length});
     const fitVersion=navigationVersion,initialRadius=radius;
@@ -359,10 +374,10 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
         const current=entity(e.id)?.representations?.find((rep:any)=>rep.id===r.id);
         if(!current)throw Error('representation_not_found');
         for(const g of staged)g.representation=current;
-        gpu.push(...staged);loadedRepresentations.add(key);
+        gpu.push(...staged);loadedRepresentations.add(key);replaced(e.id,r.id);
         assetStates.set(key,{entityId:e.id,representationId:r.id,assetId:r.assetId||null,state:'ready',errorCode:null,vertexCount:meshes.reduce((sum,mesh)=>sum+mesh.vertices.length/12,0),triangleCount:meshes.reduce((sum,mesh)=>sum+(mesh.mode===4?mesh.indices.length/3:0),0)});
         dimensions();draw();
-      }catch(error:any){gpu=gpu.filter(g=>!staged.includes(g));loadedRepresentations.delete(key);staged.forEach(releaseMesh);if(n===epoch&&!disposed&&error.name!=='AbortError'){assetStates.set(key,{entityId:e.id,representationId:r.id,assetId:r.assetId||null,state:'error',vertexCount:0,triangleCount:0,errorCode:error.message});emit('loadError',{code:error.message,entityId:e.id,representationId:r.id,assetId:r.assetId});}}
+      }catch(error:any){gpu=gpu.filter(g=>!staged.includes(g));loadedRepresentations.delete(key);staged.forEach(releaseMesh);if(n===epoch)replaced(e.id,r.id);if(n===epoch&&!disposed&&error.name!=='AbortError'){assetStates.set(key,{entityId:e.id,representationId:r.id,assetId:r.assetId||null,state:'error',vertexCount:0,triangleCount:0,errorCode:error.message});emit('loadError',{code:error.message,entityId:e.id,representationId:r.id,assetId:r.assetId});}}
       if(!r.timeRange&&--staticLeft===0&&n===epoch&&!disposed){fit();backgroundOnly=tasks.length>0;if(backgroundOnly)workers.push(load(),load(),load(),load());}
       if(n===epoch&&!disposed)loadProgress();
     }}
