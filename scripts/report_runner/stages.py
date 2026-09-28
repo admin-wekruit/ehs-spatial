@@ -78,6 +78,8 @@ SCRIPT = {"source": "scripts/prepare_video_clip.py", "cuts": "scripts/detect_sho
 # names not bumped at the M2 review: its deps changed only through profiles.M2_RULES (floor_frames@2), which
 # name_video_entities never reads (it reads QWEN3VL_NAMING_GATE); nor for U6 (commercial names with Gemini: profiles.CLOUD,
 # Profile.cloud, the commercial rows), which only the runner reads; a commercial names key changes through its model pins.
+# Nor at the Lightning fixes (M2_RULES inferred_floor@2, lingbot_conf@2, trajectory@1; the delivered profile's omit), for the same
+# reason; sam3d, recgen, box, box_test and merge not for recgen_transport's re-upload check, which changes no output.
 # The delivered profile only serves the adopted runs, which no code of today made: its keys keep the versions they were adopted
 # under (ADOPTED), whatever VERSIONS says later.
 ADOPTED = {kind: 2 if kind in ("source", "moge", "depth", "sam2", "floor_masks", "import") else 1 for kind in SCRIPT}
