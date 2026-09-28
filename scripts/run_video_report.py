@@ -4,8 +4,9 @@
          [--profile research|commercial|delivered] [--review DIR] [--dry-run] [--publish] [--verify] [--republish]
 
 Stages are content-addressed (scripts/report_runner/store.py): a stage whose key is already in
-$ART/runs/report-runner/keys.jsonl is served from its directory; the rest run, 4 at a time.
-PANOPTES_PAID_BUDGET_USD caps the run's paid calls; unset, the run stops before its first paid cache miss.
+$ART/runs/report-runner/keys.jsonl is served from its directory; the rest run, 4 at a time, paid stages one at a time.
+PANOPTES_PAID_BUDGET_USD caps the run's paid calls; unset, the run stops before its first paid cache miss. A re-run of the
+same command continues its budget ($ART/runs/report-runner/ledgers/): each paid stage books list price x wall seconds.
 PANOPTES_DATABASE_URL and PANOPTES_BLOB_ROOT are needed by the import only.
 """
 import argparse

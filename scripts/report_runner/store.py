@@ -152,23 +152,38 @@ def _symbolic(spec, status):
 def _over_budget(spec, ledger):
     if ledger.cap is None:
         return f"a paid stage (worst case ${spec.worst_usd:.2f}) and PANOPTES_PAID_BUDGET_USD is unset: no paid call"
-    return f"worst case ${spec.worst_usd:.2f} does not fit the paid budget (${ledger.cap:.2f})"
+    return f"worst case ${spec.worst_usd:.2f} does not fit the paid budget (${ledger.cap:.2f}, ${ledger.spent:.2f} booked)"
+
+
+def booked(spec, reserved, wall_s):
+    """What a finished paid stage books against the budget: its GPU's list price x wall seconds x the containers it keeps
+    busy at once (--workers), never more than it reserved. A stage without a GPU price (a Modal CPU container, a cloud
+    API) books its whole reservation. ponytail: wall time bounds billed container time; parse each tool's spend if it must be exact."""
+    rate = {**PRICES, "L4": PRICES["L4_1cpu_8gib"]}.get(spec.gpu)
+    if rate is None:
+        return reserved
+    workers = next((int(c[c.index("--workers") + 1]) for c in spec.commands if "--workers" in c), 1)
+    return min(reserved, round(wall_s * rate * workers, 4))
 
 
 class Ledger:
     """The run's paid budget (PANOPTES_PAID_BUDGET_USD). None: no paid call at all. A paid stage reserves its worst case
-    before it starts; one with budget flags may instead be capped to what is left."""
+    before it starts (one with budget flags may instead be capped to what is left) and books what it cost when it ends
+    (booked()). With a path, every booking is appended there and a re-run of the same command starts from their sum: the
+    cap holds for the command, not for one process."""
 
-    def __init__(self, cap_usd=None):
-        self.cap, self.spent, self.reserved, self._lock = cap_usd, 0.0, {}, threading.Lock()
+    def __init__(self, cap_usd=None, path=None):
+        self.cap, self.spent, self.reserved, self._lock, self.path = cap_usd, 0.0, {}, threading.Lock(), path
+        if path and Path(path).is_file():
+            self.spent = sum(json.loads(line)["usd"] for line in Path(path).read_text().splitlines() if line.strip())
 
     @classmethod
-    def from_env(cls):
+    def from_env(cls, path=None):
         value = os.environ.get("PANOPTES_PAID_BUDGET_USD")
         cap = float(value) if value is not None else None
         if cap is not None and not (math.isfinite(cap) and cap >= 0):
             raise ValueError("Invalid PANOPTES_PAID_BUDGET_USD")
-        return cls(cap)
+        return cls(cap, path)
 
     def remaining(self):
         return self.cap - self.spent - sum(self.reserved.values())
@@ -190,6 +205,10 @@ class Ledger:
         with self._lock:
             self.reserved.pop(spec.name, None)
             self.spent += usd
+            if self.path:
+                Path(self.path).parent.mkdir(parents=True, exist_ok=True)
+                with open(self.path, "a") as f:
+                    f.write(json.dumps({"stage": spec.name, "site": spec.site, "usd": usd, "at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}) + "\n")
 
 
 class Store:
@@ -455,7 +474,7 @@ class Store:
 
     def _run(self, spec, key, digests, status, git, ledger):
         amount = ledger.reserved.get(spec.name, 0.0) if spec.paid else 0.0
-        started, t0, d = time.strftime("%Y-%m-%dT%H:%M:%S%z"), time.monotonic(), None
+        started, t0, d, usd = time.strftime("%Y-%m-%dT%H:%M:%S%z"), time.monotonic(), None, None
         try:
             d = self._new_dir(spec, key)
             with (d / "runner.log").open("w") as log:
@@ -473,11 +492,13 @@ class Store:
                 except Exception as exc:
                     log.write(f"runner: failed: {exc}\n")
                     raise
+            wall = round(time.monotonic() - t0, 1)
+            usd = booked(spec, amount, wall) if spec.paid else 0.0
             lock = {"stage": spec.name, "site": spec.site, "version": spec.version, "depsSha256": git[1], "git": git[0], "argv": cmds,
                     "models": [dict(zip(("role", "id", "revision", "weightsSha256"), m), hosting=hosting(m[1])) for m in spec.models],  # 'cloud': a third-party API
                     "image": None, "modal": None,  # ponytail: the tool's own run.json records its image and app
-                    "gpu": {"requested": spec.gpu}, "usd": {"reserved": amount, "estimate": spec.est_usd},
-                    "wall_s": round(time.monotonic() - t0, 1), "started": started, "finished": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+                    "gpu": {"requested": spec.gpu}, "usd": {"reserved": amount, "estimate": spec.est_usd, "booked": usd},
+                    "wall_s": wall, "started": started, "finished": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
             self._record(spec, key, digests, d, "ran", [self.scope or "research"], lock)
             return self._resolved[(spec.site, spec.name)]
         except Exception as exc:
@@ -487,8 +508,8 @@ class Store:
             say(f"{spec.name}: failed ({exc}); {failed}")
             return "failed"
         finally:
-            if spec.paid:
-                ledger.settle(spec, amount)  # ponytail: books the reservation; parse each tool's own spend if budgets get tight
+            if spec.paid:  # a failed stage books too
+                ledger.settle(spec, usd if usd is not None else booked(spec, amount, time.monotonic() - t0))
 
     def _ready(self, spec, status, ledger):
         """A ready stage's status, or a job to submit when it must run."""
@@ -517,11 +538,15 @@ class Store:
         by_name = self._check(specs)
         order = TopologicalSorter({n: {p for p, _ in s.inputs.values()} for n, s in by_name.items()})
         order.prepare()
-        status, running, stop = {}, {}, False
+        status, running, stop, waiting = {}, {}, False, []
         with cf.ThreadPoolExecutor(workers) as pool:
             while order.is_active():
-                for name in order.get_ready():
+                ready, waiting = waiting + list(order.get_ready()), []
+                for name in ready:
                     spec = by_name[name]
+                    if spec.paid and not stop and any(by_name[n].paid for n in running.values()):
+                        waiting.append(name)  # one paid stage at a time: it reserves only after the one before has booked its cost
+                        continue
                     r = "blocked" if stop else self._ready(spec, status, ledger)
                     stop = stop or (r == "refused" and spec.paid and ledger.cap is None)  # no budget: stop before the first paid miss
                     if callable(r):
@@ -555,6 +580,8 @@ class Store:
         ponytail: the dirty-dependency refusal needs git, so it shows up only when the stage runs."""
         by_name = self._check(specs)
         sim = Ledger(ledger.cap) if ledger else None
+        if sim:
+            sim.spent = ledger.spent
         status, rows = {}, []
         for name in TopologicalSorter({n: {p for p, _ in s.inputs.values()} for n, s in by_name.items()}).static_order():
             spec = by_name[name]
@@ -571,6 +598,8 @@ class Store:
                     row.update(status="hit", key=key, dir=self._rel(found[0].dir), usd=0.0, s=0.0)
                 else:
                     fits = sim is None or sim.reserve(spec)
+                    if sim and fits and spec.paid:
+                        sim.settle(spec, min(sim.reserved[name], spec.est_usd))  # paid stages run one at a time
                     row.update(status="miss" if fits else "refused", key=key, dir=f"runs/{spec.site}-{name}-{key[:10]}",
                                **({} if fits else {"why": _over_budget(spec, sim)}))
                 status[name] = found or row["status"]
@@ -610,7 +639,9 @@ def main(args):
     cache_only = getattr(profile, "cache_only", False)
     art = art_root()
     refuse = functools.partial(profiles.refuse, args.profile) if hasattr(profiles, "refuse") else None
-    store, ledger = Store(art, scope=args.profile, verify=args.verify, refuse=refuse), Ledger.from_env()
+    store = Store(art, scope=args.profile, verify=args.verify, refuse=refuse)
+    command = sha(canonical([args.site, str(Path(args.video).resolve()), args.start, args.end, args.profile]))[:16]
+    ledger = Ledger.from_env(store.state / "ledgers" / f"{args.site}-{command}.jsonl")  # a re-run continues this command's budget
     # absolute paths, so a token names its leaf exactly (a key holds a leaf's bytes, never its path)
     ctx = Ctx(args.site, Path(args.video).resolve(), args.start, args.end, args.profile, Path(args.review).resolve() if args.review else None, art, store,
               republish=getattr(args, "republish", False))

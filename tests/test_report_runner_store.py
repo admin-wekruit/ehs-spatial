@@ -137,6 +137,52 @@ def test_budget_refuses_over_cap_and_caps_generators(tmp_path, art):
     assert json.loads((result["S"].dir / "out.txt").read_text()) == ["--max-minutes", "5.0"]
 
 
+def test_a_paid_stage_books_list_price_times_seconds(tmp_path, art):
+    """A paid stage reserves its worst case but books its GPU's list price x wall seconds (x --workers), so the budget
+    left for the next stages is not eaten by timeouts that never happened. Without a GPU price it books the reservation."""
+    ledger, slow = st.Ledger(15.), "import sys,time; time.sleep(1); open(sys.argv[1] + '/out.txt', 'w').write('x')"
+    one = spec("H", slow, paid=True, gpu="H100", worst_usd=4.)
+    four = spec("G", slow, "--workers", "4", paid=True, gpu="A100-80GB", worst_usd=5.)
+    result = st.Store(art).execute([one, four], ledger)
+    locks = {n: json.loads((result[n].dir / "lock.json").read_text()) for n in ("H", "G")}
+    assert locks["H"]["usd"]["booked"] == round(locks["H"]["wall_s"] * st.PRICES["H100"], 4) < .05
+    assert locks["G"]["usd"]["booked"] == round(locks["G"]["wall_s"] * st.PRICES["A100-80GB"] * 4, 4) < .05 and locks["G"]["wall_s"] >= 1
+    assert ledger.spent == pytest.approx(sum(lock["usd"]["booked"] for lock in locks.values())) and ledger.remaining() > 14.9
+    assert st.booked(spec("C", TOUCH, paid=True, worst_usd=.5), .5, 10.) == .5 and st.booked(one, 4., 10 ** 6) == 4.
+    serial = [spec(f"S{i}", TOUCH, str(i), paid=True, worst_usd=.6, est_usd=.1) for i in range(3)]  # the dry run plans the same way
+    assert [r["status"] for r in st.Store(art).plan(serial, st.Ledger(1.))] == ["miss"] * 3
+    assert [r["status"] for r in st.Store(art).plan(serial, st.Ledger(.65))] == ["miss", "refused", "refused"]
+
+
+def test_paid_stages_run_one_at_a_time(tmp_path, art):
+    """A paid stage starts only after the paid stage before it has booked its cost; unpaid stages still overlap."""
+    code = "import sys,time; t=time.time(); time.sleep(.4); open(sys.argv[1]+'/out.txt','w').write(f'{t} {time.time()}')"
+    result = st.Store(art).execute([spec(f"P{i}", code, str(i), paid=True, worst_usd=.1) for i in range(3)] +
+                                   [spec(f"U{i}", code, str(i)) for i in range(3)], st.Ledger(1.), workers=4)
+    spans = {n: tuple(map(float, (h.dir / "out.txt").read_text().split())) for n, h in result.items()}
+    paid = sorted(v for n, v in spans.items() if n.startswith("P"))
+    assert all(a[1] <= b[0] for a, b in zip(paid, paid[1:])), paid
+    unpaid = [v for n, v in spans.items() if n.startswith("U")]
+    assert max(sum(a <= t < b for a, b in unpaid) for t, _ in unpaid) > 1
+
+
+def test_a_rerun_of_the_same_command_continues_its_budget(tmp_path, art, monkeypatch):
+    """The ledger of a command ($ART/runs/report-runner/ledgers/) keeps what its paid stages booked: a re-run after a fix
+    starts from that sum, never from a fresh cap. Another window of the video has a ledger of its own."""
+    path = art / "runs/report-runner/ledgers/toy-x.jsonl"
+    first = st.Ledger(1., path)
+    first.reserve(spec("P", TOUCH, paid=True, worst_usd=.7))
+    first.settle(spec("P", TOUCH, paid=True, worst_usd=.7), .7)
+    again = st.Ledger(1., path)
+    assert again.spent == .7 and not again.reserve(spec("Q", TOUCH, paid=True, worst_usd=.5)) and st.Ledger(1.).spent == 0
+    seen = []
+    monkeypatch.setattr(st.Ledger, "from_env", classmethod(lambda cls, path=None: seen.append(path) or cls(None, path)))
+    fake_modules(monkeypatch, art, decided_graph(tmp_path))
+    for argv in (CLI, CLI, [*CLI[:5], "3", *CLI[6:]]):
+        run_video_report.main(argv)
+    assert seen[0] == seen[1] != seen[2] and seen[0].parent == art / "runs/report-runner/ledgers" and seen[0].name.startswith("toy-")
+
+
 def test_no_budget_stops_before_the_first_paid_miss(tmp_path, art):
     marker = tmp_path / "paid-ran"
     graph = [spec("P", f"open({str(marker)!r}, 'w')", paid=True, worst_usd=.01), spec("Z", TOUCH),
