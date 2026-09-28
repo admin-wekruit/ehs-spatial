@@ -186,3 +186,57 @@ def test_no_review_no_box_run():
     c.decisions["generator_plan"] = {"value": None, "absent": "failed"}  # SAM 3D failed too: nothing to merge, no model layer
     by = {s.name: s for s in stages.graph(c)}
     assert "merge" not in by and flag(by["import"], "--models") is None
+
+
+def test_trust_flags_mark_jumps_height_and_scale_breaks():
+    fps, n = 30., 300
+    centres = np.c_[np.linspace(0, 3, n), np.zeros(n), np.zeros(n)]
+    centres[150:] += [.5, 0, 0]  # one 0.5 jump between frames 149 and 150
+    height = np.full(n, 1.6)
+    height[60:64] += .5  # a 0.5 m bump for 4 frames
+    scales = {f: 1. for f in range(0, n, 20)} | {240: 1.2}  # one keyframe 20% off its neighbours
+    flags = decide.trust_flags(centres, fps, height, scales)
+    assert decide._runs(flags["step"]) == [[149, 151]] and decide._runs(flags["height"]) == [[60, 64]]
+    assert decide._runs(flags["scale"]) == [[231, 251]], "the frames nearest that keyframe (a tie goes to the earlier)"
+    assert not decide.trust_flags(centres[:100], fps, None, None)["height"].any(), "no scale: the height is not tested"
+    assert decide.untrusted_spans(flags["step"] | flags["height"], 60, 1000) == [[1060, 1064], [1149, 1151]]
+    assert decide.untrusted_spans(np.r_[np.ones(10, bool), np.zeros(30, bool), np.ones(5, bool)], 60) == [[0, 45]], "gaps under 2 s join"
+
+
+LIGHTNING = {"droid": RUNS / "lightning-camera-d103dc8506/out", "census": RUNS / "lightning-census-3246b65ce7/out",
+             "metric": RUNS / "lightning-metric-4a4f97e50a/out/metric-scale.json", "depth": RUNS / "lightning-depth-ca6e35504c/out",
+             "clip": RUNS / "lightning-source-f52145a438/out"}
+
+
+@pytest.mark.skipif(not all(p.exists() for p in LIGHTNING.values()), reason="the Lightning one-shot runs are not on this machine")
+def test_lightning_frames_460_to_630_are_not_trusted(tmp_path):
+    """The Lightning camera path on the first one-shot run: frames 460-630 were known bad (plan: trust about 96-450). The rule on
+    its camera run leaves 443-594 out (steps of 10x the rolling median at 443 and 467, heights 0.3 m off at 491-593) and the start
+    up to 101 (keyframe anchor scales jumping > 5% within 2 s); the census run (another DROID run) jumps there too (441-469)."""
+    shots = write(tmp_path / "shots.json", {"value": {"primary": [0, 779]}})
+    result = decide.trajectory(LIGHTNING["droid"], LIGHTNING["metric"], LIGHTNING["depth"], shots, LIGHTNING["clip"], tmp_path / "out")
+    bad = np.zeros(779, bool)
+    for a, b in result["value"]["untrusted"]:
+        bad[a:b] = True
+    assert bad[460:591].all() and bad[460:630].mean() > .75, result["value"]
+    assert not bad[101:369].any() and bad[96:441].mean() < .03, "the hand-trusted 96-450 stays, bar a two-frame jump at 369"
+    views = sorted((tmp_path / "out/mono").iterdir())
+    assert views and all(v.is_symlink() and v.exists() and not bad[int(v.stem)] for v in views), "fusion reads only trusted views"
+    assert len(views) + result["value"]["viewsLeftOut"] == len(list((LIGHTNING["depth"] / "mono").glob("*.npz")))
+    census = np.load(LIGHTNING["census"] / "prediction.npz")["poses_c2w"][:, :3, 3].astype(float)  # its own world frame: steps only
+    spans = decide.untrusted_spans(decide.trust_flags(census, 29.97)["step"], 60)
+    assert any(a < 470 and b > 441 for a, b in spans), spans
+
+
+def test_untrusted_frames_become_coverage_gaps_downstream():
+    values = {**SITES["walmart"][2], "trajectory": {"untrusted": [[443, 594]]}}
+    by = build("walmart", decisions=values)
+    assert by["fuse"].stage_from["link"]["out/mono"] == "@trajectory:mono" and by["dynamic"].stage_from["link"]["out/mono"] == "@trajectory:mono"
+    assert by["trajectory"].commands[0][3:5] == ("trajectory", "--out") and set(by["trajectory"].outputs) == {"decision", "mono"}
+    assert flag(by["splat"], "--skip") == ["0-382", "443-593"] and flag(by["sam3d"], "--skip-frames") == ["0-382", "443-593"]
+    assert flag(by["floor_infer"], "--skip-frames") == ["0-382", "443-593"] and flag(by["lingbot_build"], "--exclude-frames") == ["0:383", "443:594"]
+    assert flag(by["import"], "--exclude-frames") == ["0:383"] and flag(by["import"], "--untrusted-frames") == ["443:594"]
+    assert flag(by["depth"], "--exclude-frames") == ["0:383"], "the depth views are inferred before the path is judged"
+    delivered = build("walmart", profile=types.SimpleNamespace(**{**vars(RESEARCH), "name": "delivered", "omit": ("static_filter", "lens_gate", "trajectory")}))
+    assert "trajectory" not in delivered and delivered["fuse"].stage_from["link"]["out/mono"] == "@depth:mono", "delivered keys unchanged"
+

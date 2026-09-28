@@ -50,7 +50,7 @@ QWEN3VL_NAMING_GATE = {"status": "not-run", "set": "150 named crops over the thr
 # = decide.VERSIONS (tests keep them equal; not imported: name_video_entities reads this module, and decide.py would join its
 # deps); stages adds each rule's code sha (stages.rule_code) to the key
 M2_RULES = {name: f"{name}@1" for name in ("shots", "other_shot", "lens", "voxel", "overlay", "lingbot_stride", "dense_gate",
-                                             "track_windows", "splat_pick", "sam2_frames", "generator_plan", "static_filter")} | {
+                                             "track_windows", "splat_pick", "sam2_frames", "generator_plan", "static_filter", "trajectory")} | {
     "floor_frames": "floor_frames@2", "inferred_floor": "inferred_floor@2", "lingbot_conf": "lingbot_conf@2"}
 
 
@@ -84,8 +84,9 @@ PROFILES = {
     "research": Profile("research", RESEARCH_MODELS, ("sam3d", "recgen", "box"), True, "gemini", False, M2_RULES, CAPS),
     # U6 (2026-09-27): commercial names with Gemini, flagged as a cloud dependency (hosting 'cloud' in every lock of the stage)
     "commercial": Profile("commercial", COMMERCIAL_MODELS, ("sam3d", "box"), False, "gemini", False, M2_RULES, CAPS, cloud=("names",)),
-    # the delivered reports ran all three generators and neither the static filter (D20) nor the lens gate on the import (D4)
-    "delivered": Profile("delivered", {}, ("sam3d", "recgen", "box"), True, "gemini", True, "adopted", {}, ("static_filter", "lens_gate")),
+    # the delivered reports ran all three generators and neither the static filter (D20), the lens gate on the import (D4) nor the
+    # trusted path span (D22)
+    "delivered": Profile("delivered", {}, ("sam3d", "recgen", "box"), True, "gemini", True, "adopted", {}, ("static_filter", "lens_gate", "trajectory")),
 }
 
 

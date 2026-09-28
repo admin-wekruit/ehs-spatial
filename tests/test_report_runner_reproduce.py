@@ -740,7 +740,7 @@ def test_p9_commercial_refuses_the_non_commercial_stages():
     from report_runner import profiles
     from report_runner.store import Store
     fx = fixture("walmart")
-    extra = {"static_filter": {"moved": [], "cleared": []}, "lens_gate": fx["decisions"]["lens"], "other_shot-0-383": {"accepted": False},
+    extra = {"static_filter": {"moved": [], "cleared": []}, "lens_gate": fx["decisions"]["lens"], "trajectory": {"untrusted": []}, "other_shot-0-383": {"accepted": False},
              "shots": {k: v for k, v in fx["decisions"]["shots"].items() if k != "registered"}}  # M2: every other shot is registered (D3)
     store = Store(ART, scope="commercial", refuse=lambda spec: profiles.refuse("commercial", spec))
     specs = delivered_ctx("walmart", fx, store, profile="commercial", extra=extra)

@@ -104,7 +104,7 @@ DEFAULTS = {
     "scripts/complete_video_objects.py": {'--self-check': False, '--droid-run': None, '--depth-run': None, '--object-map': None, '--masks': None, '--dynamic-masks': None, '--clip': None, '--output': None, '--entities': [], '--exclude': [], '--count': 10, '--all': False, '--generator': 'recgen', '--reassess': False, '--invoke': False, '--function-id': 'fu-Hh2leT3x1kprDaWpWsZ09l', '--max-usd': 30.0, '--skip-frames': [], '--voxel-native': 0.014, '--no-captions': False, '--workers': 1},
     "scripts/box_free_space.py": {'--box': None, '--study': None, '--output': None, '--self-check': False},
     "scripts/merge_object_models.py": {'--recgen': None, '--sam3d': None, '--box': None, '--box-test': None, '--review': None, '--output': None, '--against': None, '--self-check': False},
-    "scripts/import_video_scene.py": {'--droid-run': None, '--depth-run': None, '--object-map': None, '--masks': None, '--policy': None, '--models': None, '--video': None, '--exclude-frames': None, '--dense-points': None, '--splats': None, '--full-video': None, '--analysis': None, '--inferred-floor': None, '--shell-glb': None, '--comparison-video': None, '--republish': None, '--dynamic-scene': None, '--video-events': None, '--skeleton-scene': None, '--dynamic-analysis': None, '--title': 'Video workcell (imported, not accepted)', '--output-dir': '.platform/imports', '--request-suffix': '1', '--lens': None},
+    "scripts/import_video_scene.py": {'--droid-run': None, '--depth-run': None, '--object-map': None, '--masks': None, '--policy': None, '--models': None, '--video': None, '--exclude-frames': None, '--dense-points': None, '--splats': None, '--full-video': None, '--analysis': None, '--inferred-floor': None, '--shell-glb': None, '--comparison-video': None, '--republish': None, '--dynamic-scene': None, '--video-events': None, '--skeleton-scene': None, '--dynamic-analysis': None, '--title': 'Video workcell (imported, not accepted)', '--output-dir': '.platform/imports', '--request-suffix': '1', '--lens': None, '--untrusted-frames': None},
 }
 PENDING_FLAGS = {}  # flags another part adds later (the AST test accepts either state); Part C's --lens and --namer have landed
 
@@ -116,7 +116,7 @@ SPANS = {("scripts/prepare_video_clip.py", "--frames"): "colon", ("modal_apps/dr
          ("scripts/texture_fused_mesh.py", "--overlay-rows"): "colon", ("scripts/fill_scene_holes.py", "--overlay-rows"): "colon",
          ("scripts/infer_room_floor.py", "--skip-frames"): "dash", ("modal_apps/splat_train.py", "--skip"): "dash",
          ("scripts/register_cut_shot.py", "--shot"): "colon", ("scripts/complete_video_objects.py", "--skip-frames"): "dash",
-         ("scripts/import_video_scene.py", "--exclude-frames"): "colon"}
+         ("scripts/import_video_scene.py", "--exclude-frames"): "colon", ("scripts/import_video_scene.py", "--untrusted-frames"): "colon"}
 # not in a key: where outputs go, paid-call switches, budgets, run ids, execution knobs (store.KEY_DROP_* plus --workers, --name,
 # --output-dir); NOTE_FLAGS keep 'id' and drop '=free text'
 KEY_DROPPED = {"--output", "--invoke", "--run-id", "--reuse-build-from", "--max-usd", "--max-minutes", "--republish", "--request-suffix",
@@ -617,15 +617,24 @@ def graph(ctx):
     # R17b fuse, R18 moving layer, R21-R22b object map, names, static filter (D20); the lens gate on the mapped shot (D4)
     if "lens_gate" not in omit:
         g.decide("lens_gate", "lens", shots="@shots:decision", clip="@source:out", moge="@moge:fov", metric="@metric:metric_scale")
+    # D22 trusted path span: its untrusted frames are coverage gaps; fusion (and all built on it) takes only the other depth views
+    views, untrusted = "@depth:mono", []
+    if "trajectory" not in omit:
+        g.decide("trajectory", "trajectory", extra={"mono": "mono"}, droid="@camera:out", metric="@metric:metric_scale", depth="@depth:out",
+                 shots="@shots:decision", clip=f"@{cam}:out")
+        untrusted, views = [tuple(u) for u in g.need("trajectory")["untrusted"]], "@trajectory:mono"
+    gaps = sorted(others_cam + untrusted)  # frames no later stage takes a view from: other shots, untrusted cameras
+    skip = [fmt_span(o, "dash") for o in gaps]
+    late_exclude = ["--exclude-frames", *[fmt_span(o, "colon") for o in gaps]] if gaps else []
     g.add("fuse", [[*mono, "fuse", "--droid-run", "@camera:out", "--output", "@new/out", "--voxel-length-native", voxel, "--support-relative", "0.02",
                     "--support-all-views", "--edge-jump", "0.03", "--carve", "--dynamic-masks", "@dynamic_masks:masks", "--video", f"@{cam}:source_rgb",
                     "--floor-plane", "@metric:metric_scale"]],
           {"out": "out", "mesh": "out/mono-anchored-mesh.ply", "predicted": "out/predicted-scene.glb", "points": "out/supported-keyframe-points.glb",
            "scene": "out/scene.json", "metrics": "out/fuse-metrics.json", "metric_scale": "out/metric-scale.json", "support": "out/droid-support.npz"},
-          link={"out/mono": "@depth:mono"}, copy={"out/infer.json": "@depth:infer", "out/metric-scale.json": "@metric:metric_scale"}, est_s=600)
+          link={"out/mono": views}, copy={"out/infer.json": "@depth:infer", "out/metric-scale.json": "@metric:metric_scale"}, est_s=600)
     g.add("dynamic", [[*mono, "dynamic", "--droid-run", "@camera:out", "--output", "@new/out", "--analysis", "@analysis:analysis"]],
           {"out": "out", "scene": "out/scene.json", "surfaces": "out/dynamic"},
-          link={"out/mono": "@depth:mono", "out/droid-support.npz": "@fuse:support"},
+          link={"out/mono": views, "out/droid-support.npz": "@fuse:support"},
           copy={"out/metric-scale.json": "@fuse:metric_scale", "out/infer.json": "@depth:infer", "out/scene.json": "@fuse:scene"}, est_s=300)
     g.add("object_map", [[PY, S("build_video_object_map.py"), "--droid-run", "@camera:out", "--depth-run", "@fuse:out", "--masks", "@mask_root:out",
                           "--floor", "@fuse:metric_scale", "--dynamic-masks", "@dynamic_masks:masks", "--method", "overlap", "--output", "@new/out"]],
@@ -729,7 +738,7 @@ def graph(ctx):
         dense_map = conf is not None  # no confidence (the LingBot run or its diagnosis failed, or no decile agreed): no dense points
     if dense_map:
         g.add("lingbot_build", [[PY, S("lingbot_dense_map.py"), "build", *dense, "--mesh", "@fuse:mesh", "--conf", _num(conf),
-                                 "--overlay-rows", overlay["lingbot_rows"], *exclude, "--output", "@new/out"]],
+                                 "--overlay-rows", overlay["lingbot_rows"], *late_exclude, "--output", "@new/out"]],
               {"out": "out", "points": "out/dense-points.glb", "info": "out/points.json", "attributes": "out/point-attributes.npz", "remote": "out/remote.json"},
               copy={"out/plan.json": "@lingbot:plan", "out/diagnose.json": "@lingbot_diagnose:diagnose"}, rate="cpu24", compute="modal",
               timeout_s=3600, est_usd=.05, est_s=900)
@@ -808,7 +817,8 @@ def graph(ctx):
                       "--analysis", "@outlines:analysis", "--dynamic-scene", f"@{last}:scene" if last else "@dynamic:scene",
                       "--dynamic-analysis", f"@{last}:analysis" if last else "@analysis:analysis", "--video-events", "@events:events",
                       *[w for flag, token, on in layers if on for w in (flag, token)],
-                      *(["--exclude-frames", *[fmt_span(o, "colon") for o in others]] if others else []), "--title", title,
+                      *(["--exclude-frames", *[fmt_span(o, "colon") for o in others]] if others else []),
+                      *(["--untrusted-frames", *[fmt_span(u, "colon") for u in untrusted]] if untrusted else []), "--title", title,
                       *(["--republish", previous["importRecordPath"]] if previous else []), "--request-suffix", "@key",
                       *(["--lens", "@lens_gate:decision"] if "lens_gate" not in omit else [])]],
           {"log": "runner.log"}, optional={"fill", "splat_final", "lingbot_build", "dense_gate", "floor_infer", "merge", "events", *moved},

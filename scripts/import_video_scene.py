@@ -236,7 +236,8 @@ def build_document(args, put_asset, calibration, dataset):
     object_map = json.loads((args.object_map / "object-map.json").read_text())
     # A cut-away shot (an edited clip jumping to another camera and lens) is not part of the walk: its frames' cameras and depth
     # place things wrongly, so nothing 3D comes from them. The video still plays them; only their moving-object masks are drawn.
-    cuts = [tuple(int(v) for v in span.split(":")) for span in args.exclude_frames or []]
+    untrusted = getattr(args, "untrusted_frames", None) or []  # the trusted-path rule refused these cameras: coverage gaps, like a cut
+    cuts = [tuple(int(v) for v in span.split(":")) for span in [*(args.exclude_frames or []), *untrusted]]
     assert all(a < b for a, b in cuts), "--exclude-frames spans are START:END with START < END"
     walk = lambda frame: not any(a <= frame < b for a, b in cuts)
     entities_before_cuts = len(object_map["entities"])
@@ -559,6 +560,7 @@ def build_document(args, put_asset, calibration, dataset):
             "windows": [{k: w.get(k) for k in ("t0", "t1", "caption", "events")} for w in memory["windows"]],
             "note": "model descriptions of each window; evidence for review and search, never a rule verdict"})
     left_out = {"cut_away_frames": args.exclude_frames or [], "cut_away_frames_registered_for_moving_objects_only": [list(r) for r in registered], "entities_whose_3d_came_only_from_cut_away_views": no_walk_3d, "entities_seen_only_in_cut_away_frames": entities_before_cuts - len(object_map["entities"]) - len(skipped),
+                **({"untrusted_camera_frames": untrusted} if untrusted else {}),
                 "entities_shown_by_fused_cut": used_fused, "entities_shown_by_best_single_view": used_view, "unconfirmed_class_agnostic_fragments": len(skipped), "views_not_imported": sum(e["observationsNotImported"] for e in object_map["entities"])}
     if args.comparison_video:  # the clip split into static and dynamic layers, rendered from the clip's own camera (render_static_dynamic_video.py)
         rendered = json.loads(args.comparison_video.with_suffix(".json").read_text())
@@ -632,6 +634,8 @@ if __name__ == "__main__":
         parser.add_argument("--" + name, type=Path, required=name not in ("policy", "models"))
     parser.add_argument("--video", type=Path, help="source video to show as a report view (needs --analysis)")
     parser.add_argument("--exclude-frames", nargs="*", metavar="START:END", help="cut-away shots (source frames START..END-1): no cameras, outlines or surfaces from them")
+    parser.add_argument("--untrusted-frames", nargs="*", metavar="START:END", help="frames of the mapped shot whose cameras the trusted-path rule "
+                        "refused (report_runner.decide trajectory): coverage gaps, no cameras, outlines or surfaces from them")
     parser.add_argument("--dense-points", type=Path, help="dense display point map (dense-points.glb + points.json with cell_native): replaces the room's supported-points cloud")
     parser.add_argument("--splats", type=Path, help="a splat_train.py .splat file (its .json beside it): the photo-real appearance layer")
     parser.add_argument("--full-video", type=Path, help="prepare_video_clip.py --full-video source-full.json: the uncropped frames, shown in place of --video")

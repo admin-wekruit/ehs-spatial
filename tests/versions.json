@@ -56,7 +56,7 @@
   "version": 1
  },
  "import": {
-  "depsSha256": "2be9c87a8b2a129f347bb4c0d16a2ff2f8651074cbf6e6b4e0439b1acacf78d0",
+  "depsSha256": "1fd4de149caa52951c038734335771e565f6a08d7ffe62a52fd642d0206da824",
   "version": 3
  },
  "lens_clip": {
@@ -100,7 +100,7 @@
   "version": 1
  },
  "names": {
-  "depsSha256": "8ff7ae82023c3aa2522de4df87198f7a38bfed194e01c38b639dd3700ae7fbea",
+  "depsSha256": "368ab59ee69ecf75d4c1762ea13a9bce1a254ee89e67dfbf1f1553c7856076e6",
   "version": 1
  },
  "oanalysis": {
@@ -185,6 +185,10 @@
  },
  "rule:track_windows": {
   "depsSha256": "8f5daf8d2ec7b842bc7ae2fed3cf84385f946e156a03af2b7ff14084eb106573",
+  "version": 1
+ },
+ "rule:trajectory": {
+  "depsSha256": "ea2598db3bec5d9dd36f4cc45346343aee9fab163d6ee0f322536959e129c347",
   "version": 1
  },
  "rule:voxel": {
