@@ -287,13 +287,18 @@ def test_a_rerun_republishes_its_own_import_with_the_rule_title(tmp_path):
 
 # ---------------------------------------------------------------- 7. publish: the proven manual flow
 @pytest.mark.parametrize("passes", [True, False])
-def test_publish_follows_the_manual_flow(tmp_path, passes):
+def test_publish_follows_the_manual_flow(tmp_path, passes, monkeypatch):
     """Export into the shared catalog, clone the blobs the project's previous publication holds, prepare a new HTTP dir, check the
     new publication against the API and the whole catalog, deploy the shared publication_site app from the platform repo only when
-    every check passes, then remove the previous HTTP dir (publish-4.sh). A failed check deploys nothing and removes nothing."""
+    every check passes, then remove the previous HTTP dir (publish-4.sh). A failed check deploys nothing and removes nothing.
+    An earlier check's link to a catalog that is gone is replaced, not tripped over."""
     import contextlib
     import shutil
+    import tempfile
     from report_runner import publish as P
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    (tmp_path / "publication-check-new-pub").mkdir()
+    (tmp_path / "publication-check-new-pub/new-pub").symlink_to(tmp_path / "gone-catalog/new-pub")
     platform = tmp_path / "platform"
     catalog = platform / ".platform/publication-catalog"
     (catalog / "old-pub/blobs").mkdir(parents=True)

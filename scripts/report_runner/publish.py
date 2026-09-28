@@ -132,8 +132,11 @@ def publish(publication_id, *, dry_run, art=None, platform=PLATFORM, catalog=Non
             if name == "check new":
                 single = Path(env["single"])
                 single.mkdir(parents=True, exist_ok=True)
-                if not (single / publication_id).exists():
-                    (single / publication_id).symlink_to(catalog / publication_id)
+                link = single / publication_id
+                if link.is_symlink():  # an earlier check's link, to another catalog or dangling: this check reads this catalog's copy
+                    link.unlink()
+                if not link.exists():
+                    link.symlink_to(catalog / publication_id)
             done = run(argv, cwd=cwd, env={**os.environ, **{k: v for k, v in env.items() if k.isupper()}}, capture_output=True, text=True)
             passes = [line for line in (done.stdout or "").splitlines() if line.startswith("PASS")]
             say(f"{name}: exit {done.returncode}" + "".join(f"\n  {line[:110]}" for line in passes))
