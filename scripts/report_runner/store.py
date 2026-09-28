@@ -28,6 +28,7 @@ import subprocess
 import threading
 import time
 
+from .profiles import hosting
 from .spec import Ctx, Hit, Pending
 
 REPO = Path(__file__).resolve().parents[2]
@@ -473,7 +474,7 @@ class Store:
                     log.write(f"runner: failed: {exc}\n")
                     raise
             lock = {"stage": spec.name, "site": spec.site, "version": spec.version, "depsSha256": git[1], "git": git[0], "argv": cmds,
-                    "models": [dict(zip(("role", "id", "revision", "weightsSha256"), m)) for m in spec.models],
+                    "models": [dict(zip(("role", "id", "revision", "weightsSha256"), m), hosting=hosting(m[1])) for m in spec.models],  # 'cloud': a third-party API
                     "image": None, "modal": None,  # ponytail: the tool's own run.json records its image and app
                     "gpu": {"requested": spec.gpu}, "usd": {"reserved": amount, "estimate": spec.est_usd},
                     "wall_s": round(time.monotonic() - t0, 1), "started": started, "finished": time.strftime("%Y-%m-%dT%H:%M:%S%z")}

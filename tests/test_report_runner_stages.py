@@ -314,6 +314,8 @@ def test_part_c_profiles_when_present():
         check_structure(specs)
         if name == "research":
             assert all(profiles.refuse(name, s) is None for s in specs)
+        names = next(s for s in specs if s.name == "names")  # U6: both name with Gemini, a cloud call
+        assert names.compute == "cloud" and profiles.refuse(name, names) is None and profiles.hosting(names.models[0][1]) == "cloud"
 
 
 def test_no_mapped_shot_stops():

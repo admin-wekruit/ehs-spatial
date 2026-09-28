@@ -62,7 +62,8 @@ SCRIPT = {"source": "scripts/prepare_video_clip.py", "cuts": "scripts/detect_sho
 # masks) and gave the import --lens and the corrected scale limitation. The other kinds only saw a new contract_scale branch that
 # only the import reaches, or pins in code paths they do not run.
 # names not bumped at the M2 review: its deps changed only through profiles.M2_RULES (floor_frames@2), which
-# name_video_entities never reads (it reads QWEN3VL_NAMING_GATE).
+# name_video_entities never reads (it reads QWEN3VL_NAMING_GATE); nor for U6 (commercial names with Gemini: profiles.CLOUD,
+# Profile.cloud, the commercial rows), which only the runner reads; a commercial names key changes through its model pins.
 VERSIONS = {kind: 2 if kind in ("source", "moge", "depth", "sam2", "floor_masks", "import") else 1 for kind in SCRIPT}
 DECIDE = "scripts/report_runner/decide.py"  # decision stages: versioned by their rule (decide.VERSIONS, rule_code), not here
 

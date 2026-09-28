@@ -244,6 +244,14 @@ def test_a_whole_directory_output_is_signed_after_its_lock(tmp_path, art):
     assert st.Store(art).lookup(whole[0]).dir == ran.dir and st.Store(art).lookup(whole[0], verify=True).dir == ran.dir
 
 
+def test_the_lock_marks_each_model_cloud_or_on_prem(art):
+    """A lock (the stage's run manifest) records each model's hosting: 'cloud' for a third-party API (profiles.CLOUD)."""
+    models = (("names", "gemini (panoptes-report-workspace)", "unpinned", None), ("depth", "depth-anything/DA3-BASE", "f4a6c9b3", None))
+    ran = st.Store(art).execute([spec("N", TOUCH, models=models, compute="cloud")], st.Ledger())["N"]
+    lock = json.loads((ran.dir / "lock.json").read_text())
+    assert [(m["role"], m["hosting"]) for m in lock["models"]] == [("names", "cloud"), ("depth", "on-prem")]
+
+
 def test_decision_value_and_droid_frame_digests(art):
     s = st.Store(art)
     d = art / "runs/decide"

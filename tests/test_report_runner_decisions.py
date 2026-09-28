@@ -259,10 +259,22 @@ def test_profiles_refuse_every_unverified_licence():
     assert "no pinned revision" in profiles.refuse("commercial", {"models": [("depth", "depth-anything/DA3-BASE", profiles.UNPINNED, None)]})
     assert profiles.refuse("commercial", {"models": [("x", "someone/new-model", "abc", None)]}), "an unknown model is refused"
     assert delivered.cache_only and delivered.rules == "adopted" and not research.cache_only and not commercial.cache_only
-    assert commercial.namer == "qwen3vl" and not commercial.dense_map and "recgen" not in commercial.generators
+    assert commercial.namer == "gemini" and not commercial.dense_map and "recgen" not in commercial.generators
     assert all(profiles.refuse(commercial, {"models": [(role, *row[:3])]}) for role, row in commercial.models.items() if role in ("camera", "register", "lens")), \
         "commercial stays blocked on the licences still to verify (DROID, MoGe-3 weights, DA3-BASE camera head)"
     assert profiles.QWEN3VL_NAMING_GATE["status"] == "not-run"
+
+
+def test_commercial_names_with_gemini_as_a_cloud_dependency():
+    """U6 (2026-09-27): the commercial profile names with Gemini. It is the profile's one cloud dependency (not on-prem) and
+    is allowed in the names role only; every other model of the profile is on-prem."""
+    commercial = profiles.PROFILES["commercial"]
+    gemini = commercial.models["names"][0]
+    assert commercial.namer == "gemini" and commercial.cloud == ("names",) and profiles.CLOUD == {gemini}
+    assert profiles.refuse(commercial, {"models": [("names", gemini, profiles.UNPINNED, None)]}) is None
+    assert "not verified" in profiles.refuse(commercial, {"models": [("events", gemini, profiles.UNPINNED, None)]}), "another role stays refused"
+    assert {role: profiles.hosting(row[0]) for role, row in commercial.models.items() if profiles.hosting(row[0]) == "cloud"} == {"names": "cloud"}
+    assert profiles.PROFILES["research"].cloud == () and profiles.hosting(profiles.PROFILES["research"].models["names"][0]) == "cloud"
 
 
 def test_profile_pins_equal_the_modal_apps():

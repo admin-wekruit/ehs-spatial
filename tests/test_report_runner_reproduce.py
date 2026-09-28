@@ -747,7 +747,8 @@ def test_p9_commercial_refuses_the_non_commercial_stages():
     rows = {r["stage"]: r for r in store.plan(specs)}
     refused = {n: r["why"] for n, r in rows.items() if r["status"] == "refused"}
     assert {"source", "census", "moge", "camera", "register-0-383"} <= set(refused)
-    assert "lingbot" not in rows and "recgen" not in rows and "names" not in rows, "commercial: no LingBot, no RecGen, names blank until Qwen3-VL passes"
+    assert "lingbot" not in rows and "recgen" not in rows, "commercial: no LingBot, no RecGen"
+    assert "names" not in refused and {"names", "sam3d", "box", "merge"} <= set(rows), "commercial names with Gemini (U6, a cloud dependency)"
     for name, why in refused.items():
         spec = next(s for s in specs if s.name == name)
         assert spec.models and ("commercial use" in why or "pinned" in why), (name, why)
