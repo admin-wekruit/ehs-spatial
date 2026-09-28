@@ -619,9 +619,10 @@ def closure(specs, seeds):
 @pytest.mark.parametrize("site", A.SITES)
 def test_p7_research_misses_are_the_register(site):
     """P7: --profile research --dry-run misses exactly the closure of the site's deviations over the graph."""
-    pytest.skip("not provable in the M2 CPU workflow: the research graph stops at decisions no cached run can feed (static_filter, "
-                "other_shot of Sam's Club/Walmart, the ME340 lens without a MoGe-3 run) and most research keys need a CPU replay "
-                "(adopt --replay) or a GPU call (U5); adopt records research keys only up to there")
+    pytest.skip("not provable in the M2 CPU workflow: adopt's research graph stops at lens on all three sites (Walmart and Sam's "
+                "Club: the adopted lens rule read the metric scale, which the research lens key does not name; ME340: no MoGe-3 run), "
+                "the research source is unverified (D8: MoGe-3 revision), and the rest needs a GPU call (U5); adopt records "
+                "research keys only up to there (cuts, census, shots)")
 
 
 def delivered_ctx(site, fx, store, review=REPO / "docs/phase2/box-review-303", end=None, profile="delivered", extra=None):
