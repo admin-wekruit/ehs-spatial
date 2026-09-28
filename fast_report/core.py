@@ -582,7 +582,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                                               voc["mask"][bt], masked=False), txt)
             m.emb.release()
         with clock.stage("cascade.decide", n={"objects": len(objects)}):
-            cache = cascade.LabelCache("/v/layers/label-cache/siglip2-base-p16-224-v2.npz")
+            cache = cascade.LabelCache("/v/layers/label-cache/siglip2-base-p16-224-v3.npz")
             e_np, p_np, c_np = obj_emb.cpu().numpy(), probs.cpu().numpy(), ctx.cpu().numpy()
             tau, calib = cascade.calibrate(e_np, [list(objs) for objs in by_frame.values()])
             recs, unsure = cascade.decide(e_np, p_np, words, [o["word"] for o in objects], cache, video_sha, tau,
