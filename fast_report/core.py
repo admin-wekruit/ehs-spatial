@@ -292,8 +292,14 @@ def analyse(m, mp4, opts, clock, writer, log):
     def vocab_then_events():
         """GPU 1's vLLM: the vocabulary first (it gates wave 2), then events (they gate nothing)."""
         try:
+            with clock.stage("vlm.vocab.frames", n={"frames": len(vlm_frames)}):  # seek: no waiting for the decoder to get there
+                reader = cv2.VideoCapture("/tmp/in.mp4")
+                for f in vlm_frames:
+                    reader.set(cv2.CAP_PROP_POS_FRAMES, f)
+                    seeked.append(reader.read()[1])
+                reader.release()
             with clock.stage("vlm.vocab", n={"frames": len(vlm_frames)}):
-                pngs = [cv2.imencode(".png", raster_rgb(frames[f]))[1].tobytes() for f in vlm_frames]
+                pngs = [cv2.imencode(".png", raster_rgb(img))[1].tobytes() for img in seeked]
                 work.hold.set()  # GPU 1's SAM 3 waits: the vocabulary gates wave 2 and decodes 3-5x faster alone
                 words, rec = vlm.vocab(pngs)
             results["vocab"] = {**rec, "words": words, "frames": vlm_frames}
@@ -319,7 +325,8 @@ def analyse(m, mp4, opts, clock, writer, log):
                    None, "inferred", ["events are Qwen3-VL-8B descriptions of the frames: model output, not findings"])
         clock.mark("events_put")
         return ev
-    vocab_future = None
+    seeked = []
+    vocab_future = m.vlm_pool.submit(vocab_then_events)
 
     # decode on this thread; grey + sharpness on threads; cut chunks measured in processes; keyframe = sharpest of each
     # BLOCK-frame block, picked one block behind decoding; every PERSON_FRAMES keyframes -> both GPUs + one SAM 3 task
@@ -345,8 +352,6 @@ def analyse(m, mp4, opts, clock, writer, log):
             if len(frames) == b0 + 2 * BLOCK:
                 pick(b0)
                 b0 += BLOCK
-            if vocab_future is None and len(frames) > vlm_frames[-1]:
-                vocab_future = m.vlm_pool.submit(vocab_then_events)
         cap.release()
         n = len(frames)
         while b0 < n:
@@ -356,8 +361,6 @@ def analyse(m, mp4, opts, clock, writer, log):
             work.add_chunk([frames[f] for f in keys[len(keys) - len(keys) % segment.PERSON_FRAMES:]])
         work.seal_decode()
         decoded_all.set()
-        if vocab_future is None:
-            vocab_future = m.vlm_pool.submit(vocab_then_events)
         gray_all = [g.result()[0] for g in grays]
         for a1 in range(a, n, TAIL):  # the tail in small pieces: after decoding it is on the critical path
             b1, lo = min(a1 + TAIL, n), max(0, a1 - 2)
@@ -506,6 +509,55 @@ def analyse(m, mp4, opts, clock, writer, log):
         for gi in mem:
             by_frame.setdefault(int(vf[gi]), {}).setdefault(oi, []).append(int(gi))
 
+    labels_v1 = threading.Event()
+
+    def outlines_job():
+        """Object keyframes 'segmented' (SAM 3 logits), other 5 fps keyframes 'projected' (E6b pair); beside the cascade."""
+        with torch.inference_mode(), clock.stage("outlines", gpu=dev_geo):
+            maps = []  # (entry, label map int16 numpy (0 = nothing, i + 1 = object i), sx, sy): polygons in the process pool
+            oh, ow = H // 2, W // 2
+            for q, objs in sorted(by_frame.items()):
+                ids = list(objs)
+                lg = torch.stack([voc["logits"][torch.tensor(objs[o], device=dev_geo)].float().amax(0) for o in ids])
+                lab = segment.paint(F.interpolate(lg[None], size=(oh, ow), mode="bilinear", align_corners=False)[0] > 0)
+                lab = torch.cat([torch.zeros(1, dtype=torch.long, device=dev_geo), torch.tensor(ids, device=dev_geo) + 1])[lab]
+                maps.append(({"timeSec": round(keys[q] / fps, 4), "sourceFrame": int(keys[q]), "source": "segmented"}, lab.short().cpu().numpy(), W / ow, H / oh))
+            for si, gg in enumerate(geo):
+                pos = gg["pos"]
+                obj_local = [j for j, q in enumerate(pos) if q in by_frame]
+                if not obj_local:
+                    continue
+                items = {j: [(o, voc["mask"][torch.tensor(g_, device=dev_geo)].any(0)) for o, g_ in by_frame[pos[j]].items() if objects[o]["shot"] == si]
+                         for j in obj_local}
+                idm = segment.id_maps(items, len(pos), dev_geo)
+                people_local = dyn[torch.tensor(pos, device=dev_geo)]
+                for j, q in enumerate(pos):
+                    if q in by_frame:
+                        continue
+                    lab = segment.project_pair(idm, gg["depth_m"], gg["K"], gg["c2w_m"], obj_local, j)
+                    lab[people_local[j]] = -1  # people are not projected (E6b caveat): cut out with this frame's SAM 3 person mask
+                    maps.append(({"timeSec": round(keys[q] / fps, 4), "sourceFrame": int(keys[q]), "source": "projected"},
+                                 lab.clamp(min=0).short().cpu().numpy(), W / DA3_HW[1], H / DA3_HW[0]))
+            polys = list(m.proc_pool.map(segment.label_polygons, [x[1] for x in maps], [x[2] for x in maps], [x[3] for x in maps]))
+            frames_out = []
+            labels_v1.wait(300)  # the polygons are ready; names as of the first objects version
+            for (entry, _, _, _), found in zip(maps, polys):
+                entry["objects"] = [{"entityId": objects[v - 1]["id"], "label": v1_labels[objects[v - 1]["id"]], "polygons": poly, "source": entry["source"]}
+                                    for v, poly in sorted(found.items())]
+                frames_out.append(entry)
+            frames_out.sort(key=lambda e: e["timeSec"])
+            for e, nxt in zip(frames_out, frames_out[1:] + [None]):
+                e["endTimeSec"] = nxt["timeSec"] if nxt else round(e["timeSec"] + BLOCK / fps, 4)
+            analysis = json.dumps({"width": W, "height": H, "frames": frames_out}, separators=(",", ":")).encode()
+        writer.put("outlines", {"analysis": "blob", "frames": len(frames_out), "segmented": sum(e["source"] == "segmented" for e in frames_out),
+                                "projected": sum(e["source"] == "projected" for e in frames_out)},
+                   {"analysis": (analysis, {"mediaType": "application/json", "format": "video-analysis"})}, "observed(segmented)/estimated(projected)",
+                   ["'segmented' outlines are SAM 3 masks on keyframes; 'projected' ones are carried from 3D (E6b 'pair'): no accuracy claimed",
+                    "labels as of the first objects version; the objects layer holds the latest"])
+        clock.mark("outlines_put")
+
+    outlines_future = m.cpu_pool.submit(outlines_job)
+
     # cascade: every member mask -> masked crop -> SigLIP 2 (GPU 0); object = mean of its masks
     casc = {"objects": len(objects)}
     obj_kf = sorted(by_frame)
@@ -554,6 +606,8 @@ def analyse(m, mp4, opts, clock, writer, log):
     obj_labels = ["object names come from detectors and models: unverified", SCALE_LABEL]
     writer.put("objects", copy.deepcopy({"objects": objects, "cascade": casc, "words": words}), blobs_obj, "estimated+inferred", obj_labels)
     clock.mark("objects_v1_put")
+    v1_labels = {o["id"]: o["label"] for o in objects}
+    labels_v1.set()
 
     def vlm_crop(gi):
         """The object's best view, full resolution: SAM 3's own mask outlined in red, 1.5 x its box, long side 448 px."""
@@ -599,60 +653,19 @@ def analyse(m, mp4, opts, clock, writer, log):
         clock.mark("objects_v2_put")
     esc = m.vlm_pool.submit(escalate) if objects and groups else None
 
-    # ---------- outlines: object keyframes 'segmented' (SAM 3 logits), other 5 fps keyframes 'projected' (E6b pair) ----------
-    with torch.inference_mode(), clock.stage("outlines", gpu=dev_geo):
-        maps = []  # (entry, label map int16 numpy (0 = nothing, i + 1 = object i), sx, sy): polygons in the process pool
-        oh, ow = H // 2, W // 2
-        for q, objs in sorted(by_frame.items()):
-            ids = list(objs)
-            lg = torch.stack([voc["logits"][torch.tensor(objs[o], device=dev_geo)].float().amax(0) for o in ids])
-            lab = segment.paint(F.interpolate(lg[None], size=(oh, ow), mode="bilinear", align_corners=False)[0] > 0)
-            lab = torch.cat([torch.zeros(1, dtype=torch.long, device=dev_geo), torch.tensor(ids, device=dev_geo) + 1])[lab]
-            maps.append(({"timeSec": round(keys[q] / fps, 4), "sourceFrame": int(keys[q]), "source": "segmented"}, lab.short().cpu().numpy(), W / ow, H / oh))
-        for si, gg in enumerate(geo):
-            pos = gg["pos"]
-            obj_local = [j for j, q in enumerate(pos) if q in by_frame]
-            if not obj_local:
-                continue
-            items = {j: [(o, voc["mask"][torch.tensor(g_, device=dev_geo)].any(0)) for o, g_ in by_frame[pos[j]].items() if objects[o]["shot"] == si]
-                     for j in obj_local}
-            idm = segment.id_maps(items, len(pos), dev_geo)
-            people_local = dyn[torch.tensor(pos, device=dev_geo)]
-            for j, q in enumerate(pos):
-                if q in by_frame:
-                    continue
-                lab = segment.project_pair(idm, gg["depth_m"], gg["K"], gg["c2w_m"], obj_local, j)
-                lab[people_local[j]] = -1  # people are not projected (E6b caveat): cut out with this frame's SAM 3 person mask
-                maps.append(({"timeSec": round(keys[q] / fps, 4), "sourceFrame": int(keys[q]), "source": "projected"},
-                             lab.clamp(min=0).short().cpu().numpy(), W / DA3_HW[1], H / DA3_HW[0]))
-        polys = list(m.proc_pool.map(segment.label_polygons, [x[1] for x in maps], [x[2] for x in maps], [x[3] for x in maps]))
-        frames_out = []
-        for (entry, _, _, _), found in zip(maps, polys):
-            entry["objects"] = [{"entityId": objects[v - 1]["id"], "label": objects[v - 1]["label"], "polygons": poly, "source": entry["source"]}
-                                for v, poly in sorted(found.items())]
-            frames_out.append(entry)
-        frames_out.sort(key=lambda e: e["timeSec"])
-        for e, nxt in zip(frames_out, frames_out[1:] + [None]):
-            e["endTimeSec"] = nxt["timeSec"] if nxt else round(e["timeSec"] + BLOCK / fps, 4)
-        analysis = json.dumps({"width": W, "height": H, "frames": frames_out}, separators=(",", ":")).encode()
-    writer.put("outlines", {"analysis": "blob", "frames": len(frames_out), "segmented": sum(e["source"] == "segmented" for e in frames_out),
-                            "projected": sum(e["source"] == "projected" for e in frames_out)},
-               {"analysis": (analysis, {"mediaType": "application/json", "format": "video-analysis"})}, "observed(segmented)/estimated(projected)",
-               ["'segmented' outlines are SAM 3 masks on keyframes; 'projected' ones are carried from 3D (E6b 'pair'): no accuracy claimed",
-                "labels as of the first objects version; the objects layer holds the latest"])
-    clock.mark("outlines_put")
-
     # hand-off for the SAM 3D / splat builders (in process, GPU tensors): Shot and Obj as FAST-BUILD-SPEC section 12
     m.last = {"shots": [{"index": si, "frames": shots[si], "keys": [keys[q] for q in gg["pos"]], "depth_m": gg["depth_m"], "K": gg["K"],
                          "c2w_m": gg["c2w_m"], "colors": shots_gpu[si]["colors"], "person": dyn[torch.tensor(gg["pos"], device=dev_geo)],
                          "mpu": gg["mpu"], "scale_status": "estimated"} for si, gg in enumerate(geo)],
               "objs": [{**o, "mask_logits_lr": voc["logits"][obj_masks_on[i][1]]} for i, o in enumerate(objects)], "frames": frames}
+    outlines_future.result()
     ev = vocab_future.result()
     if esc is not None:
         esc.result()
     summary.update(frames=n, fps=fps, wh=[W, H], cuts=cuts, keyframes=len(keys), object_keyframes=len(range(0, len(keys), segment.OBJECT_EVERY)),
                    words=len(words), wave2_words=len(work.wave2 or []), vocab=results.get("vocab"), sam3_tasks_by_worker=work.by_worker,
                    sam3_gpu1_held_for_vocab_s=round(work.held_s, 3),
+                   vocab_frames_equal_decoded=[bool(img is not None and np.array_equal(img, frames[f])) for img, f in zip(seeked, vlm_frames)],
                    detections={"person": int(is_person.sum()), "floor": int((~is_person).sum()), "vocabulary_masks": int(len(voc["frame"])) if voc else 0,
                                "vocabulary_masks_kept": int(len(kept))},
                    objects=len(objects), cascade=casc, events_windows=len(ev), vllm_engine_stats=vlm.throughput(),

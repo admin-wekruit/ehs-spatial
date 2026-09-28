@@ -184,7 +184,11 @@ class FastReport:
             jobs = [pool.submit(vlm.chat, [vlm.image_block(png, "image/png")] * 5 + [{"type": "text", "text": "List objects."}], max_tokens=8)]
             jobs += [pool.submit(vlm.chat, [vlm.image_block(noise)] * k + [{"type": "text", "text": "Describe."}], max_tokens=8) for k in (24, 36)]
             [j.result() for j in jobs]
-        return round(time.perf_counter() - t, 2)
+        warm_s = round(time.perf_counter() - t, 2)
+        t = time.perf_counter()  # idle decode speed, one sequence, 256 new tokens: the reference for the runs' vLLM numbers
+        _, usage = vlm.chat([{"type": "text", "text": "Count from 1 to 500, separated by commas."}], max_tokens=256, ignore_eos=True)
+        self.boot_record["vllm_idle_one_sequence_decode_per_s"] = round(usage["completion_tokens"] / (time.perf_counter() - t), 1)
+        return warm_s
 
     @modal.exit()
     def stop(self):
