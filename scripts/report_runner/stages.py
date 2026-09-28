@@ -788,11 +788,12 @@ def graph(ctx):
     if objects and box_excludes is None and "generator_plan-box" in g.by:
         after = g.need("generator_plan-box", absent=None)
         box_excludes, unplanned = (after or plan)["box_excludes"], unplanned | ({"recgen"} if after is None else set())
-    if objects and "box" in generators:
+    if objects and "box" in generators and review:  # D13: a box is shown only with an eye review that approves its mesh; none, no box run
         generator("box", ["--all", *(["--exclude", *[f"{k}={v}" for k, v in box_excludes.items()]] if box_excludes else [])], None, 0.)
         g.add("box_test", [[PY, S("box_free_space.py"), "--box", "@box:out", "--output", "@new/out"]], {"out": "out", "box_test": "out/box-test.json"}, est_s=300)
+    runs = [f"--{name}" for name in ("recgen", "sam3d", "box") if name in g.by and name not in unplanned]
+    objects = objects and bool(runs)  # no generator left to merge: no model layer
     if objects:
-        runs = [f"--{name}" for name in ("recgen", "sam3d", "box") if name in g.by and name not in unplanned]
         g.add("merge", [[PY, S("merge_object_models.py"), *[w for flag in runs for w in (flag, f"@{flag[2:]}:out")],
                          *(["--box-test", "@box_test:box_test"] if "box" in g.by else []), *(["--review", str(review)] if review else []),
                          "--output", "@new/out"]], {"out": "out", "merge": "out/merge.json", "models": "out/models"}, leaves=review_leaf, est_s=120)

@@ -173,3 +173,16 @@ def test_no_agreeing_decile_withholds_the_dense_map(tmp_path):
         assert decide.lingbot_conf(cached)["value"] is None
     by = build("walmart", decisions={**SITES["walmart"][2], "lingbot_conf": None})
     assert "lingbot_build" not in by and "dense_gate" not in by and flag(by["import"], "--dense-points") is None
+
+
+def test_no_review_no_box_run():
+    """Boxes are shown only with an eye review that approves their meshes (D13); without --review the box stage (29 min on 4 CPU
+    workers for Lightning) is not run at all."""
+    by = build("walmart", review=None)
+    assert not {"box", "box_test"} & set(by) and "sam3d" in by
+    assert flag(by["merge"], "--box") is None and flag(by["merge"], "--box-test") is None and flag(by["merge"], "--sam3d") == ["@sam3d:out"]
+    assert {"box", "box_test"} <= set(build("walmart")), "with the review the boxes are generated and tested"
+    c = ctx("walmart", review=None)
+    c.decisions["generator_plan"] = {"value": None, "absent": "failed"}  # SAM 3D failed too: nothing to merge, no model layer
+    by = {s.name: s for s in stages.graph(c)}
+    assert "merge" not in by and flag(by["import"], "--models") is None
