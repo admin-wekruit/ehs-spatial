@@ -109,7 +109,7 @@ class FastReport:
 10. 冷启动预计 100–130 s [E]。已知的最长一段是 vLLM，83–107 s [M]。
 
 **`run()` 是生成器：**
-- 每次 commit 后，把写入器的事件原样 yield 出去（第 7 节）。
+- 写入器每写好一批，就把它的事件原样 yield 出去：先发补丁和 blob（记 `sent_s`），commit 返回后再发一条 `written`（第 7 节）。
 - 最后一个事件是 `run.json`。
 - `options` 的字段：
   - `vocab`：`qwen` 或 `gemini`；
