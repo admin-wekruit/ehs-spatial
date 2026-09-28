@@ -584,6 +584,8 @@ def evaluate(layers, site, gpu=False, fps=None):
                                  "pass": run["word_match_recall"] > fixed["word_match_recall"]}
         if "outlines" in result:
             rows["outlines"] = {"frames": want, **outline_rows(result["outlines"]), "criterion": "report only, no accuracy claim", "pass": None}
+        else:
+            skipped["outlines"] = "no outlines layer"
     elif not gpu:
         skipped.update({k: "needs --gpu" for k in ("objects_2d", "vocab_control", "outlines")})
     return {"schema": "panoptes-fast-eval-v1", "site": site, "report": layers.get("_report"), "reference_publication": ref["publication"],
