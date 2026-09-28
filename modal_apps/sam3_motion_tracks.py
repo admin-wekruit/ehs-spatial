@@ -11,6 +11,7 @@ One A100 call, timeout 900 s, retries 0; every stage reports its own error inste
 
   python modal_apps/sam3_motion_tracks.py --droid-run RUN --motion MOTION_RUN --frames 500 800 --output NEW_DIR [--reference MASK_DIR]
   python modal_apps/sam3_motion_tracks.py --video CLIP --fixed-camera --motion MOTION_RUN --frames 0 133 --text '' --output NEW_DIR
+  python modal_apps/sam3_motion_tracks.py --droid-run RUN --frames 14 226 --text-only --output NEW_DIR   # another shot: the text prompt alone
   python modal_apps/sam3_motion_tracks.py --self-check
 """
 import argparse
@@ -111,7 +112,8 @@ def track_remote(jpegs, seeds, text):
             predictor.handle_request({"type": "add_prompt", "session_id": session, "frame_index": 0, "text": text})
             return propagate(session)
 
-        session_of("motion", by_motion)
+        if seeds:  # --text-only sends none: no motion session at all
+            session_of("motion", by_motion)
         if text:
             session_of("text", by_text)
     report["remote_seconds"] = time.perf_counter() - started
@@ -172,14 +174,17 @@ def run(args):
         raise ValueError('Choose --droid-run or --video with --fixed-camera')
     if args.video and args.reference:
         raise ValueError('--reference is supported only with --droid-run')
+    text_only = getattr(args, "text_only", False)  # another shot of the clip: its cameras are not the map's, so no motion cue; the prompt alone
+    if text_only and (not args.text or args.motion or args.reference):
+        raise ValueError('--text-only needs a --text prompt and takes no --motion or --reference')
     first, last = args.frames
     stride = getattr(args, "stride", 1)
-    motion = json.loads((args.motion / "motion.json").read_text())
+    motion = {} if text_only else json.loads((args.motion / "motion.json").read_text())
     source = None
     if args.video:
         from motion_masks import fixed_video_frames
         images, source = fixed_video_frames(args.video)
-        if motion.get('source') != source or motion.get('cameras') is not None:
+        if not text_only and (motion.get('source') != source or motion.get('cameras') is not None):
             raise ValueError('Motion source video or decoded raster differs from tracker source')
         frame_count = len(images)
         frames = images[first:last]
@@ -187,7 +192,7 @@ def run(args):
         import mono_room as M
         M.use_clip(args.droid_run)
         manifest = json.loads((args.droid_run / "input-manifest.json").read_text())
-        if motion.get('source') or Path(motion['cameras']).resolve() != args.droid_run.resolve():
+        if not text_only and (motion.get('source') or Path(motion['cameras']).resolve() != args.droid_run.resolve()):
             raise ValueError('Motion source cameras differ from tracker source')
         frame_count = len(manifest['frames'])
         frames = []
@@ -195,17 +200,16 @@ def run(args):
         raise ValueError('--frames must stay inside the source frame range')
     if not args.video:
         frames = [M.prepare_image(cv2.imread(str(M.DATASET / manifest["frames"][i]["relative_path"])), M.CALIBRATION, 2)[0] for i in range(first, last)]
-    moving = {r["frame"]: cv2.imread(str(args.motion / f"{r['frame']:05d}-moving.png"), 0) > 0 for r in motion["frames"]}
+    moving = {r["frame"]: cv2.imread(str(args.motion / f"{r['frame']:05d}-moving.png"), 0) > 0 for r in motion.get("frames", [])}
     if any(mask.shape != frames[0].shape[:2] for mask in moving.values()):
         raise ValueError('Motion masks differ from tracker source raster')
-    if not args.video:
-        pass
     frames = frames[::stride]            # the tracker needs only enough overlap between frames, not every one
-    seeds = seeds_of(moving, first, last, stride)
-    assert seeds, "the motion run found nothing large enough to seed a track in these frames"
+    seeds = [] if text_only else seeds_of(moving, first, last, stride)
+    assert seeds or text_only, "the motion run found nothing large enough to seed a track in these frames"
     args.output.mkdir(parents=True, exist_ok=True)  # an output holding tracks.npz is read again, not paid for again
     state = {"status": "gpu_running", "model": sam3_video.MODEL_ID, "revision": sam3_video.MODEL_REVISION, "source_commit": sam3_video.SOURCE_COMMIT, "frames": [first, last],
-             "seed_candidates": len(seeds), "text": args.text, "stride": stride, "tracked_frames": len(frames), "gpu": "A100-40GB", "timeout_s": 900, "retries": 0, "motion_run": str(args.motion), "cameras": str(args.droid_run) if args.droid_run else None}
+             "seed_candidates": len(seeds), "text": args.text, "stride": stride, "tracked_frames": len(frames), "gpu": "A100-40GB", "timeout_s": 900, "retries": 0,
+             "motion_run": None if text_only else str(args.motion), "cameras": str(args.droid_run) if args.droid_run else None, **({"text_only": True} if text_only else {})}
     if source:
         state['source'] = source
     (args.output / f"tracks-{int(time.time())}.json").write_text(json.dumps(state, indent=1))
@@ -232,7 +236,8 @@ def run(args):
             if key.startswith(name + "/"):
                 _, frame, ident = key.split("/")
                 tracks.setdefault(int(ident), {})[int(frame) * stride] = np.unpackbits(found[key])[:h * w].reshape(h, w).astype(bool)
-        objects[name] = [{"object": ident, "frames": len(masks), "moving_share_median": moving_share(masks, first, args.motion)} for ident, masks in sorted(tracks.items())]
+        objects[name] = [{"object": ident, "frames": len(masks), "moving_share_median": None if text_only else moving_share(masks, first, args.motion)}
+                         for ident, masks in sorted(tracks.items())]
         for o in objects[name]:  # a tracker follows whatever it is clicked on; only a track that keeps moving is dynamic
             o["kept"] = o["moving_share_median"] is not None and o["moving_share_median"] >= MOVING_SHARE
             o['reason'] = ('no_trusted_motion_samples' if o['moving_share_median'] is None else
@@ -255,7 +260,11 @@ def run(args):
                              "pixel_recall": sum((s & t).sum() for s, t in rows) / max(sum(t.sum() for _, t in rows), 1),
                              "pixel_precision": sum((s & t).sum() for s, t in rows) / max(sum(s.sum() for s, _ in rows), 1)}
     motion_stage = report['stages'].get('motion', {})
-    if motion_stage.get('error'):
+    if text_only and report['stages'].get('text', {}).get('error'):
+        state.update(status='failed', reason='text_tracker_error')
+    elif text_only:  # a text track counts whether or not it moved (motion_tracks_to_analysis): only the text session is judged
+        state['status'] = 'complete'
+    elif motion_stage.get('error'):
         state.update(status='failed', reason='motion_tracker_error')
     elif not objects.get('motion'):
         state.update(status='unverified', reason='no_motion_tracks')
@@ -304,6 +313,7 @@ if __name__ == "__main__":
     parser.add_argument("--motion", type=Path, help="motion_masks.py run of the same clip")
     parser.add_argument("--frames", type=int, nargs=2, help="first and one-past-last source frame of the clip to track")
     parser.add_argument("--text", default="person", help="also track this SAM 3.1 text prompt in a second session, for comparison; empty to skip")
+    parser.add_argument("--text-only", action="store_true", help="track only the --text prompt (no --motion, no motion session): another shot of an edited clip")
     parser.add_argument("--reference", type=Path, help="SOURCEINDEX-*.png masks to measure against (never an input)")
     parser.add_argument("--output", type=Path)
     a = parser.parse_args()

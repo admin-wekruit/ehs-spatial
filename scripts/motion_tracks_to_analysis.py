@@ -46,13 +46,22 @@ def identity_of(stitched):
     return lambda n, track: report["identities"].get(f"w{n}:{folds[n].get(track, track)}")
 
 
+def named_by_text(stitched):
+    """(window, "stage/id") -> True when the stitch folded this track into a text-prompted track of its window (the same
+    object): it then carries the prompt as its label, as that track does. Without a stitch only text tracks are named."""
+    if stitched is None:
+        return lambda n, track: track.startswith("text/")
+    folds = [w.get("folded_into_text", {}) for w in json.loads((stitched / "stitched.json").read_text())["windows"]]
+    return lambda n, track: folds[n].get(track, track).startswith("text/")
+
+
 def run(args):
     import cv2
     import mono_room as M
     M.use_clip(args.droid_run)
     runs = [(t, json.loads((t / "tracks.json").read_text())) for t in args.tracks]
     windows = [tuple(state["frames"]) for _, state in runs]
-    identity = identity_of(args.stitched)
+    identity, named = identity_of(args.stitched), named_by_text(args.stitched)
     (args.output / "masks").mkdir(parents=True, exist_ok=False)
     frames, kept_ids, pixels = {}, [], {}
     for n, (path, state) in enumerate(runs):
@@ -78,9 +87,10 @@ def run(args):
             pixels.setdefault(frame, []).append((stage, mask))
             name = f"{frame:05d}-{entity}.png"
             cv2.imwrite(str(args.output / "masks" / name), to_source(mask, M.CALIBRATION, M.RASTER).astype(np.uint8) * 255)
-            frames.setdefault(frame, []).append({"entityId": entity, "maskUrl": f"masks/{name}", "label": "moving object" if stage == "motion" else state["text"],
-                                                 "sourceLabel": None if stage == "motion" else state["text"],
-                                                 "source": "motion-seeded SAM 3.1 track" if stage == "motion" else f"SAM 3.1 text prompt '{state['text']}'"})
+            text = state["text"] if named(n, f"{stage}/{ident}") else None  # a motion track folded into a text track keeps the prompt
+            frames.setdefault(frame, []).append({"entityId": entity, "maskUrl": f"masks/{name}", "label": text or "moving object", "sourceLabel": text,
+                                                 "source": f"SAM 3.1 text prompt '{state['text']}'" if stage == "text" else
+                                                           f"motion-seeded SAM 3.1 track, the same object as the text prompt '{text}' track" if text else "motion-seeded SAM 3.1 track"})
             if entity not in kept_ids:
                 kept_ids.append(entity)
     for frame, objects in frames.items():  # a mover also found by the text prompt appears once, under its name
@@ -103,10 +113,12 @@ def self_check():
     assert redundant(a, [b]) and not redundant(c, [b]), "a mover inside a named track is dropped; a separate one is kept"
     import tempfile
     with tempfile.TemporaryDirectory() as folder:
-        (Path(folder) / "stitched.json").write_text(json.dumps({"windows": [{"folded_into_text": {"text/5": "text/1"}}, {"folded_into_text": {}}],
+        (Path(folder) / "stitched.json").write_text(json.dumps({"windows": [{"folded_into_text": {"text/5": "text/1", "motion/2": "text/1"}}, {"folded_into_text": {}}],
                                                                "identities": {"w0:text/1": "p", "w1:text/3": "p"}}))
-        identity = identity_of(Path(folder))
+        identity, named = identity_of(Path(folder)), named_by_text(Path(folder))
         assert identity(0, "text/5") == identity(1, "text/3") == "p" and identity(1, "text/9") is None, "stitched ids follow folds and joins"
+        assert named(0, "motion/2") and named(1, "text/3") and not named(0, "motion/4") and not named(1, "motion/2"), "a folded motion track is named by the prompt"
+    assert named_by_text(None)(0, "text/1") and not named_by_text(None)(0, "motion/1")
     print("motion track analysis check passed: each frame comes from one window, split between window centres; named tracks win")
 
 
