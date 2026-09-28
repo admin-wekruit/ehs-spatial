@@ -43,3 +43,81 @@ python modal_apps/e4_sam3d_fast.py self-check
 - 241's meshes are mapped to the new tries by (observation, seed): 89 of its 92 tries mapped.
 - One object (object-026) picked different views on Linux, because the sharpness scores were close.
 - The current rerun and baseline differ only in those decode levels and GPU nondeterminism. Together they show the run-to-run noise of the gate.
+
+## Results (2026-09-28)
+
+All numbers are measured (M) unless marked E. GPU: A100-SXM4-80GB.
+
+### Seconds per call
+
+"Warm" is the worker's span around the upstream `run()`, excluding the input load. n = 113 tries per arm (30 for crop).
+
+| Arm | Stage 1 | Stage 2 | Warm s/call, median (p10–p90) | Stage 1 s | Stage 2 s |
+|---|---|---|---|---|---|
+| current | 25 + CFG | 25 + CFG | 10.52 (10.32–11.19) | 5.25 | 4.98 |
+| fast (plan) | shortcut 4 | 12 + CFG | 3.45 (3.36–3.91) | 0.61 | 2.58 |
+| fast-s2d | shortcut 4 | shortcut 4 | 1.58 (1.45–1.79) | 0.63 | 0.66 |
+| fast-crop | shortcut 4 | 12 + CFG | 3.33 (3.26–3.65), crop 541² vs whole 1280x720 frame | 0.62 | 2.52 |
+| s1cfg12 (follow-up) | 12 + CFG | shortcut 4 | 3.49 (3.33–4.04) | 2.58 | 0.61 |
+
+- Mesh decode: 0.13 s. The rest of a call is about 0.1 s.
+- A process's first call: 14 s (the decoder's one-off set-up).
+- Model load in the process: 58 s (47–50 s each when two processes load together).
+- Container start to function entry: 8–36 s (image cached).
+
+### Gate pass rate
+
+Same 30 objects and the unchanged gate (`complete_video_objects.assess`), run on every try.
+
+| Arm | Objects accepted, try 1 | Within 2 tries | Within all tries (runner policy) | Per try |
+|---|---|---|---|---|
+| baseline (241's meshes) | 4 | 6 | 8 (26.7%) | 8/89 |
+| current, rerun | 3 | 5 | 7 (23.3%) | 12/113 (10.6%) |
+| fast | 1 | 2 | 4 (13.3%) | 5/113 (4.4%) |
+| fast-s2d | 1 | 2 | 4 (13.3%) | 5/113 (4.4%) |
+| fast-crop (try 1 only) | 2 | – | – | 2/30 |
+| s1cfg12 | 5 | 6 | 7 (23.3%) | 9/113 (8.0%) |
+
+**Noise.** The same settings run twice (241 against the Modal rerun) disagree on 3 of 30 objects and on 4 of 89 paired tries. At n = 30, a difference of up to about 3 objects is within that run-to-run noise.
+
+**The stage-1 shortcut is what fails.** It drops CFG, and the layout gets worse:
+- Median silhouette IoU: 0.606 → 0.523.
+- "ICP scale at clamp" rejections: 13 → 34.
+- Source-view failures: 75 → 103 of 113.
+- Paired per try against current: 11 tries pass only under current, 4 only under fast (McNemar p = 0.12).
+
+**Stage-2 steps do not change a single gate decision.** fast and fast-s2d have identical outcomes on all 113 tries; the meshes differ only in detail.
+
+The follow-up keeps stage 1 with CFG at 12 steps and uses the shortcut only in stage 2. It matches current on objects (7 = 7). Per try, 7 pass only under s1cfg12 and 10 only under current (p = 0.63).
+
+### 1 vs 2 processes on one A100-80GB
+
+Measured on the same 20 fast calls. Each process loads its own inputs in the timed span.
+
+| Setup | Wall per call (effective) | Calls/min | GPU memory, peak | GPU utilisation, mean |
+|---|---|---|---|---|
+| 1 process | 4.18 s (3.40 s compute) | 14.3 | 34.5 GB | 54% |
+| 2 processes | 2.97 s | 20.2 | 53.5 GB | 91% |
+| 2 processes + MPS | 2.09 s | 28.7 | 53.5 GB | 80% |
+
+MPS works on Modal: `nvidia-cuda-mps-control -d` starts, a server is spawned and both clients attach. Against the single-process compute rate, 2 processes are 1.14x and 2 processes with MPS are 1.63x.
+
+### Gate CPU cost
+
+Two-core container:
+- `assess()`: median 23 s per try (p90 38 s).
+- `prepare()`: median 46 s per object (p90 102 s); it loads all 312 posed views.
+
+At 3.5 s of GPU per try, one SAM 3D process needs about 7 such containers to keep up [E]. In the fast path, the gate costs more than generation.
+
+### Cost
+
+$4.17 measured: list price x function seconds; the GPU part is local wall time, an upper bound.
+- inputs $0.25
+- smoke $0.32
+- bench $2.31
+- gate $0.60
+- follow-up bench $0.52
+- follow-up gate $0.19
+
+Container start-up for about 90 CPU containers is not included, about +$0.1 [E].

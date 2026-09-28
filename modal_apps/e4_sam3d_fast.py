@@ -9,6 +9,8 @@ prepare, assess and try order, no --invoke); only what sits in the SAM 3D journa
             fast      stage 1 shortcut (use_stage1_distillation) 4 steps, stage 2 12 steps
             fast-s2d  fast, and stage 2 shortcut (use_stage2_distillation) at 4 steps too
             fast-crop fast on the source-grid crop and its own K instead of the whole frame (attempt 1 only)
+            s1cfg12   follow-up after the first gate: stage 1 without the shortcut (CFG kept) at 12 steps, stage 2 shortcut 4 steps
+                      (bench_step --only s1cfg12, then gate_step --arms s1cfg12)
             every other arm runs every try the runner would make: up to 4 views, then the best view with the extra seed
   GPU       one A100-80GB container; the parent never touches CUDA, each SAM 3D process is a subprocess:
             A 1 process (all arms, then a 20-call throughput block), B 2 processes (same 20 calls), C 2 processes under MPS
@@ -48,8 +50,10 @@ ENTITIES = ("object-019 object-035 object-001 object-017 object-106 object-012 o
             "object-109 object-189 object-094 object-182 object-104 object-034 object-033 object-023 object-026 object-036").split()
 FAST = {"use_stage1_distillation": True, "stage1_inference_steps": 4, "stage2_inference_steps": 12}
 ARMS = {"current": {}, "fast": FAST, "fast-crop": FAST,
-        "fast-s2d": {**FAST, "use_stage2_distillation": True, "stage2_inference_steps": 4}}
+        "fast-s2d": {**FAST, "use_stage2_distillation": True, "stage2_inference_steps": 4},
+        "s1cfg12": {"stage1_inference_steps": 12, "use_stage2_distillation": True, "stage2_inference_steps": 4}}  # follow-up (--only)
 GATED = ("baseline", "fast", "fast-s2d", "current", "fast-crop")
+FOLLOW_UP = ("s1cfg12",)
 STAGES = ("compute_pointmap", "preprocess_image", "sample_sparse_structure", "pose_decoder", "sample_slat", "decode_slat", "postprocess_slat_output")
 GPU_USD_S = .000694 + 8 * .0000131 + 64 * .00000222  # Modal list price: A100-80GB + 8 cores + 64 GiB
 CPU_USD_S = 2 * .0000131 + 8 * .00000222              # 2 cores + 8 GiB
@@ -321,7 +325,7 @@ def processes(name, job_lists, deadline, env=None, warmup=()):
 
 @app.function(image=gpu_image, gpu="A100-80GB", cpu=8, memory=65536, timeout=3000, retries=0,
               volumes={"/weights": sam3d_research.weights, str(ART): data}, secrets=[modal.Secret.from_name("huggingface")])
-def bench(smoke=False):
+def bench(smoke=False, only=""):
     from huggingface_hub import snapshot_download
     entered = time.time()
     t = time.time()
@@ -339,6 +343,11 @@ def bench(smoke=False):
     warm = [job("fast", first[0], "warmup", save=False)]
     jobs = [job("fast", r, "tp1", save=False) for r in tp] + [job(arm, r, arm) for arm in ("fast", "fast-s2d", "current") for r in every]
     jobs += [job("fast-crop", r, "fast-crop") for r in first]
+    if only:  # one more arm on every try, one process
+        report["phases"].append(processes("A-1proc-" + only, [[job(only, r, only) for r in every]], time.time() + 900, warmup=warm))
+        data.commit()
+        report["exited"] = time.time()
+        return report
     report["phases"].append(processes("A-1proc", [jobs], time.time() + (300 if smoke else 2200), warmup=warm))
     data.commit()
     split = [[job("fast", r, "tp2", save=False) for r in tp[i::2]] for i in range(2)]
@@ -416,14 +425,14 @@ def inputs_step():
 
 
 @app.local_entrypoint()
-def bench_step(smoke: bool = False):
+def bench_step(smoke: bool = False, only: str = ""):
     called = time.time()
-    report = bench.remote(smoke)
+    report = bench.remote(smoke, only)
     report.update(called=called, returned=time.time(), coldStartSeconds=round(report["entered"] - called, 1),
                   containerSeconds=round(report["exited"] - report["entered"], 1))
     report["usdUpperBound"] = round((report["returned"] - called) * GPU_USD_S, 3)
-    save_local("bench-smoke.json" if smoke else "bench.json", report)
-    print(json.dumps({k: report[k] for k in ("coldStartSeconds", "containerSeconds", "usdUpperBound", "mps")}, default=str)[:1500])
+    save_local("bench-smoke.json" if smoke else f"bench-{only}.json" if only else "bench.json", report)
+    print(json.dumps({k: report.get(k) for k in ("coldStartSeconds", "containerSeconds", "usdUpperBound", "mps")}, default=str)[:1500])
 
 
 @app.local_entrypoint()
@@ -431,7 +440,7 @@ def gate_step(arms: str = ",".join(GATED), only: str = ""):
     started = time.time()
     eids = only.split(",") if only else ENTITIES
     results = list(gate.map(eids, kwargs={"arms": arms.split(",")}, return_exceptions=True))
-    save_local("gate-" + (only.replace(",", "_") or "all") + ".json",
+    save_local("gate-" + (only.replace(",", "_") or "all") + ("" if arms == ",".join(GATED) else "-" + arms.replace(",", "_")) + ".json",
                {"wallSeconds": round(time.time() - started, 1), "results": [r if isinstance(r, dict) else repr(r) for r in results]})
     print(json.dumps({"wallSeconds": round(time.time() - started, 1), "errors": [repr(r)[:400] for r in results if not isinstance(r, dict)]}))
 
@@ -450,11 +459,18 @@ def percentiles(values):
 
 def summary():
     bench_report = json.loads((LOCAL_OUT / "bench.json").read_text())
+    follow = [json.loads((LOCAL_OUT / f"bench-{a}.json").read_text()) for a in FOLLOW_UP if (LOCAL_OUT / f"bench-{a}.json").exists()]
     gate_report = json.loads((LOCAL_OUT / "gate-all.json").read_text())["results"]
+    for a in FOLLOW_UP:  # the follow-up arm's tries join each object's
+        extra = LOCAL_OUT / f"gate-all-{a}.json"
+        by = {r["eid"]: r for r in json.loads(extra.read_text())["results"] if isinstance(r, dict)} if extra.exists() else {}
+        for r in gate_report:
+            if isinstance(r, dict) and r["eid"] in by:
+                r["tries"] += by[r["eid"]]["tries"]
     seed = {o["entityId"]: o for o in json.loads((SEED_RUN / "manifest.json").read_text())["objects"]}
-    calls = [r for p in bench_report["phases"] for rep in p["reports"] for r in rep.get("results", []) if "seconds" in r]
+    calls = [r for b in [bench_report, *follow] for p in b["phases"] for rep in p["reports"] for r in rep.get("results", []) if "seconds" in r]
     out = {"calls": {}, "throughput": {}, "gate": {}, "cost": {}}
-    for block in ("warmup", "fast", "current", "fast-s2d", "fast-crop", "tp1", "tp2", "tp2mps"):
+    for block in ("warmup", "fast", "current", "fast-s2d", "fast-crop", *FOLLOW_UP, "tp1", "tp2", "tp2mps"):
         rows = [r for r in calls if r["block"] == block]
         if rows:
             stages = {s: percentiles([r["stages"].get(s, 0) for r in rows])["median"] for s in STAGES}
@@ -471,7 +487,7 @@ def summary():
     ok = [r for r in gate_report if isinstance(r, dict)]
     tries, eids = [dict(t, eid=r["eid"]) for r in ok for t in r["tries"]], [r["eid"] for r in ok]
     judged = lambda arm: {(t["eid"], t["attempt"]): t["accepted"] for t in tries if t["arm"] == arm and t["generated"]}
-    for arm in GATED:
+    for arm in GATED + FOLLOW_UP:
         js = judged(arm)
         out["gate"][arm] = {"objects": len(eids), "triesJudged": len(js), "triesAccepted": sum(js.values()),
                             "perTryRate": round(sum(js.values()) / max(len(js), 1), 3),
@@ -479,7 +495,7 @@ def summary():
                             "assessSeconds": percentiles([t["assessSeconds"] for t in tries if t["arm"] == arm and t["generated"]])}
     out["gate"]["paired"] = {}
     for a, b in (("baseline", "current"), ("current", "fast"), ("current", "fast-s2d"), ("baseline", "fast"), ("baseline", "fast-s2d"),
-                 ("fast", "fast-crop")):
+                 ("fast", "fast-crop"), ("current", "s1cfg12"), ("baseline", "s1cfg12")):
         ja, jb = judged(a), judged(b)
         both = sorted(ja.keys() & jb.keys())
         oa, ob = ({e for e in eids if within(tries, arm, e, 5)} for arm in (a, b))
