@@ -266,18 +266,22 @@ def analyse(m, mp4, opts, clock, writer, log):
     dev_geo, dev_seg = m.dev_geo, m.dev_seg
     video_sha = sha256(mp4)
     site = opts.get("site") or "unknown"
-    use_cache = opts.get("cache", True)
+    use_cache = opts.get("cache", True)  # the cross-video label cache (and remembering this video's words)
+    # the site's earlier words in wave 1 (spec section 11): opt-in, because the words of two visits add up (runs 004/005:
+    # 57 + 39 = 96 words, objects 7 s later than one visit's 56)
+    site_vocab = use_cache and opts.get("site_vocab", False)
     site_path = f"/v/layers/sites/{site}/vocab.json"
-    cached_words = vlm.site_words(site_path, video_sha) if use_cache else []
+    cached_words = vlm.site_words(site_path, video_sha) if site_vocab else []
     wave1 = list(dict.fromkeys(vlm.CORE + cached_words))
-    summary = {"video_sha256": video_sha, "site": site, "cache": use_cache, "wave1_words": wave1, "site_cached_words": len(cached_words)}
+    summary = {"video_sha256": video_sha, "site": site, "cache": use_cache, "site_vocab": site_vocab, "wave1_words": wave1,
+               "site_cached_words": len(cached_words)}
     Path("/tmp/in.mp4").write_bytes(mp4)
     cap = cv2.VideoCapture("/tmp/in.mp4")
     fps, n_total = cap.get(cv2.CAP_PROP_FPS), int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     W, H = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     writer.put("video", {"fps": fps, "frames": n_total, "wh": [W, H], "sha256": video_sha, "window_s": opts.get("window_s")},
                {"mp4": (mp4, {"mediaType": "video/mp4"})}, "observed", ["the uploaded video"])
-    work = segment.SamWork(m.sams, dev_geo, clock, wave1, hold_dev=dev_seg)  # vLLM serves from dev_seg
+    work = segment.SamWork(m.sams, dev_geo, clock, wave1)
     for words in (("person", "floor"), tuple(wave1)):
         for s in m.sams.values():
             s.text(words)
@@ -300,13 +304,10 @@ def analyse(m, mp4, opts, clock, writer, log):
                 reader.release()
             with clock.stage("vlm.vocab", n={"frames": len(vlm_frames)}):
                 pngs = [cv2.imencode(".png", raster_rgb(img))[1].tobytes() for img in seeked]
-                work.hold.set()  # GPU 1's SAM 3 waits: the vocabulary gates wave 2 and decodes 3-5x faster alone
                 words, rec = vlm.vocab(pngs)
             results["vocab"] = {**rec, "words": words, "frames": vlm_frames}
         except Exception as error:  # noqa: BLE001  no vocabulary: wave 1 alone, recorded
             words, results["vocab"] = [], {"error": repr(error)[:500]}
-        finally:
-            work.hold.clear()
         decoded_all.wait()
         results["wave2_words"] = work.set_wave2(words, len(keys))
         clock.mark("vocab_known")
@@ -664,7 +665,6 @@ def analyse(m, mp4, opts, clock, writer, log):
         esc.result()
     summary.update(frames=n, fps=fps, wh=[W, H], cuts=cuts, keyframes=len(keys), object_keyframes=len(range(0, len(keys), segment.OBJECT_EVERY)),
                    words=len(words), wave2_words=len(work.wave2 or []), vocab=results.get("vocab"), sam3_tasks_by_worker=work.by_worker,
-                   sam3_gpu1_held_for_vocab_s=round(work.held_s, 3),
                    vocab_frames_equal_decoded=[bool(img is not None and np.array_equal(img, frames[f])) for img, f in zip(seeked, vlm_frames)],
                    detections={"person": int(is_person.sum()), "floor": int((~is_person).sum()), "vocabulary_masks": int(len(voc["frame"])) if voc else 0,
                                "vocabulary_masks_kept": int(len(kept))},

@@ -7,7 +7,6 @@ in-between 5 fps keyframes 'projected' with E6b's 'pair' rule, people cut out).
 import itertools
 import queue
 import threading
-import time
 
 import numpy as np
 
@@ -106,17 +105,16 @@ class SamWork:
         geometry layers, back by 8-10 s once the site cache made wave 1 58 words long);
       1 ('wave1', chunk start): wave 1 on those object keyframes, on the kept features;
       2 ('wave2', keyframe): the VLM's new words on one object keyframe, on the kept features.
-    hold: while set, the GPU that serves vLLM takes no task (run 002: vLLM decoded at 2-30 per s beside SAM 3 on the
-    same GPU, 70-100 alone, and the vocabulary gates wave 2)."""
+    No GPU is held for vLLM: holding GPU 1 while the vocabulary decoded (runs 003-005) made it 1.5x faster but left 7 s
+    of GPU 1 idle, and total SAM 3 work, not the vocabulary, is what the objects wait for once it starts at t = 0.5 s."""
 
-    def __init__(self, sams, dev_out, clock, wave1, hold_dev=None):
+    def __init__(self, sams, dev_out, clock, wave1):
         self.sams, self.dev_out, self.clock, self.wave1, self.wave2 = sams, dev_out, clock, list(wave1), None
         self.tasks, self.order, self.lock = queue.PriorityQueue(), itertools.count(), threading.Lock()
         self.chunks = {d: [] for d in sams}
         self.cache, self.person, self.vocab = {}, [], []
         self.total, self.done = {"person": None, "wave1": None, "wave2": None}, {"person": 0, "wave1": 0, "wave2": 0}
         self.decoded, self.vocab_known, self.person_ready, self.all_ready = (threading.Event() for _ in range(4))
-        self.hold, self.hold_dev, self.held_s = threading.Event(), hold_dev, 0.
         self.by_worker, self.error = {}, None
 
     @property
@@ -188,12 +186,6 @@ class SamWork:
         sam, got, gpu = self.sams[dev], {"person": 0, "wave1": 0, "wave2": 0}, dev.index
         with torch.cuda.device(dev), torch.inference_mode():
             while not (until is not None and until.is_set()) and self.error is None and not self.all_ready.is_set():
-                if dev == self.hold_dev and self.hold.is_set():
-                    t = time.perf_counter()
-                    while self.hold.is_set() and self.error is None and not self.all_ready.is_set() and not (until is not None and until.is_set()):
-                        time.sleep(.005)
-                    self.held_s += time.perf_counter() - t
-                    continue
                 try:
                     _, _, kind, x = self.tasks.get(timeout=.01)
                 except queue.Empty:

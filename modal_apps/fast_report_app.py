@@ -5,7 +5,8 @@ the analysis time); run() takes the MP4 bytes and yields every layer patch as th
 Analysis time = seconds from the MP4 bytes in the container to each layer written (Volume commit returned).
 
   modal run modal_apps/fast_report_app.py --video PATH --start S --end E --site NAME --out RUNS/fb-a-core-NNN \
-      [--windows "S-E[:nocache],S-E,..."]  # several windows of the same video in one boot (first one = the first call)
+      [--windows "S-E[:nocache|:site],S-E,..."]  # windows of the same video, one boot (the first = the first call);
+                                                  # nocache: no label cache; site: the site's earlier words in wave 1
   modal run modal_apps/fast_report_app.py::setup      # image check + SigLIP 2 weights to the models volume (once)
   python modal_apps/fast_report_app.py --self-check    # CPU only: cuts, flood rules, naming, cascade, parsing
   python modal_apps/fast_report_app.py --evaluate RUN_DIR   # local numpy: poses vs DROID, naming vs the delivered names
@@ -282,7 +283,7 @@ def main(video: str, start: float = 0., end: float = 0., site: str = "site", out
         if not path.exists():
             clip = cut(video, a, b, path)
             (out / f"input-{a:g}-{b:g}.json").write_text(json.dumps({"video": video, "start_s": a, "end_s": b, **clip}, indent=1))
-        plan.append((a, b, flag != "nocache", path.read_bytes()))
+        plan.append((a, b, flag, path.read_bytes()))
     fr = FastReport()
     submitted = time.time()
     boot = fr.boot_info.remote()
@@ -290,10 +291,11 @@ def main(video: str, start: float = 0., end: float = 0., site: str = "site", out
     (out / "boot.json").write_text(json.dumps(boot, indent=1, default=plain))
     print("ready:", json.dumps({k: v for k, v in boot.items() if k.endswith("_s") or k in ("mps", "gpus", "resident_gb")}), flush=True)
     rows = []
-    for i, (a, b, use_cache, mp4) in enumerate(plan):
+    for i, (a, b, flag, mp4) in enumerate(plan):
+        use_cache = flag != "nocache"
         digest = hashlib.sha256(mp4).hexdigest()
         report_id = f"fb-{site}-{digest[:8]}-{int(time.time())}"
-        options = {"cache": use_cache, "window_s": [a, b], "client_has": [digest]}
+        options = {"cache": use_cache, "site_vocab": flag == "site", "window_s": [a, b], "client_has": [digest]}
         called, got = time.time(), {}
         run = None
         for e in fr.run.remote_gen(mp4, site, report_id, options):
