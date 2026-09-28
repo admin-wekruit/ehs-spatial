@@ -112,15 +112,16 @@ def test_published_fingerprints():
 
 # ------------------------------------------------------------------------------------------------------------ publish
 
-def test_publish_dry_run_runs_nothing(capsys):
+def test_publish_dry_run_runs_nothing(capsys, tmp_path):
     calls = []
-    argvs = P.publish("0000-pub", dry_run=True, catalog="/cat", http="/http", run=lambda *a, **k: calls.append(a))
+    code = P.publish("0000-pub", dry_run=True, platform=tmp_path / "platform", catalog="/cat", run=lambda *a, **k: calls.append(a), stamp="S")
     printed = capsys.readouterr().out.strip().splitlines()
-    assert calls == [] and len(argvs) == 4 and len(printed) == 4
-    assert "export_platform_publication.py" in printed[0] and "--api http://127.0.0.1:8792" in printed[0] and "--output /cat/0000-pub" in printed[0]
-    assert "check_publication_site.py --catalog /cat --source-api" in printed[1] and "prepare_publication_site.py --catalog /cat --output /http" in printed[2]
-    assert printed[3].startswith("PANOPTES_PUBLICATION_CATALOG=/cat PANOPTES_PUBLICATION_HTTP=/http ") and "deploy" in printed[3]
-    P.self_check()
+    assert code == 0 and calls == [] and [line.split(":")[0] for line in printed] == \
+        ["export", "clone blobs", "prepare", "check new", "check all", "deploy", "remove old http"]
+    assert "export_platform_publication.py --api http://127.0.0.1:8792 --publication 0000-pub --output /cat/0000-pub" in printed[0]
+    assert "prepare_publication_site.py --catalog /cat --output /publication-http-S" in printed[2] and "--source-api http://127.0.0.1:8792" in printed[3]
+    assert printed[5].startswith("deploy: PANOPTES_PUBLICATION_CATALOG=/cat PANOPTES_PUBLICATION_HTTP=/publication-http-S ")
+    assert "modal deploy modal_apps/publication_site.py" in printed[5] and printed[5].endswith(f"[in {tmp_path / 'platform'}]")
 
 
 # ------------------------------------------------------------------------------------------------ adopt, toy fixture

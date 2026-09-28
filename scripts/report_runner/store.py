@@ -777,5 +777,5 @@ def main(args):
         if not found:
             say("no publicationId in the import's output; not publishing")
             return 1
-        importlib.import_module("report_runner.publish").publish(found.group(1), dry_run=False)
+        return importlib.import_module("report_runner.publish").publish(found.group(1), dry_run=False, art=art)
     return 0

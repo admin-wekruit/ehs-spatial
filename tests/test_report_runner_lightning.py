@@ -283,3 +283,58 @@ def test_a_rerun_republishes_its_own_import_with_the_rule_title(tmp_path):
     assert {k: row[k] for k in ("site", "profile", "key", "publicationId", "projectId", "title")} == \
         {"site": "lightning", "profile": "research", "key": "k" * 64, "publicationId": "bdfe0603", "projectId": "84805f0d", "title": "t"}
     assert row["importRecordPath"] is None and len(row["fingerprint"]) == 64 and json.loads((tmp_path / "imports.jsonl").read_text().splitlines()[-1]) == row
+
+
+# ---------------------------------------------------------------- 7. publish: the proven manual flow
+@pytest.mark.parametrize("passes", [True, False])
+def test_publish_follows_the_manual_flow(tmp_path, passes):
+    """Export into the shared catalog, clone the blobs the project's previous publication holds, prepare a new HTTP dir, check the
+    new publication against the API and the whole catalog, deploy the shared publication_site app from the platform repo only when
+    every check passes, then remove the previous HTTP dir (publish-4.sh). A failed check deploys nothing and removes nothing."""
+    import contextlib
+    import shutil
+    from report_runner import publish as P
+    platform = tmp_path / "platform"
+    catalog = platform / ".platform/publication-catalog"
+    (catalog / "old-pub/blobs").mkdir(parents=True)
+    (catalog / "old-pub/blobs/aaa").write_bytes(b"shared bytes")
+    (catalog / "other-project/blobs").mkdir(parents=True)
+    old_http = platform / ".platform/publication-http-20260927b"
+    old_http.mkdir()
+    calls = []
+
+    def run(argv, cwd=None, env=None, **_):
+        calls.append((Path(argv[1]).name if argv[0] != "rm" and len(argv) > 1 else argv[0], cwd, {k: env[k] for k in env if k.startswith("PANOPTES_PUBLICATION")}))
+        out = ""
+        if "export_platform_publication.py" in argv[1]:
+            (catalog / "new-pub/blobs").mkdir(parents=True)
+            (catalog / "new-pub/bundle.json").write_text("{}")
+            (catalog / "new-pub/blobs/aaa").write_bytes(b"shared bytes")
+            (catalog / "new-pub/blobs/bbb").write_bytes(b"new bytes")
+        elif "prepare_publication_site.py" in argv[1]:
+            Path(argv[-1]).mkdir()
+        elif "check_publication_site.py" in argv[1]:
+            ok = passes or "--source-api" in argv
+            out = "PASS: regressions\nPASS: 1 published bundles\n" if ok else "PASS: regressions\n"
+            if "--source-api" in argv:
+                assert [p.name for p in Path(argv[argv.index("--catalog") + 1]).iterdir()] == ["new-pub"], "the new publication alone"
+        elif argv[0] == "rm":
+            shutil.rmtree(argv[-1])
+        return subprocess.CompletedProcess(argv, 0, out, "")
+
+    class Db:
+        def publication(self, pid):
+            return {"projectId": "lightning-project"}
+
+        def project_publications(self, project):
+            return ["new-pub", "gone-pub", "old-pub"]  # newest first; gone-pub was never exported
+    code = P.publish("new-pub", dry_run=False, platform=platform, db=Db(), run=run, server=lambda art: contextlib.nullcontext(), stamp="20260928T120000")
+    new_http = platform / ".platform/publication-http-20260928T120000"
+    assert (catalog / "new-pub/blobs/aaa").read_bytes() == b"shared bytes" and not list(catalog.glob("new-pub/blobs/*.clone"))
+    if passes:
+        assert code == 0 and [c[0] for c in calls] == ["export_platform_publication.py", "prepare_publication_site.py", "check_publication_site.py",
+                                                       "check_publication_site.py", "deploy", "rm"]
+        assert calls[4][1] == platform and calls[4][2] == {"PANOPTES_PUBLICATION_CATALOG": str(catalog), "PANOPTES_PUBLICATION_HTTP": str(new_http)}
+        assert not old_http.exists() and new_http.is_dir()
+    else:
+        assert code == 1 and "deploy" not in [c[0] for c in calls] and old_http.is_dir(), "a failed check never reaches the deploy"
