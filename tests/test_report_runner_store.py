@@ -409,6 +409,27 @@ def test_dry_run_is_inert(tmp_path, art, monkeypatch, capsys):
     assert sorted((str(p), p.stat().st_mtime_ns) for p in tmp_path.rglob("*")) == before
 
 
+def test_fresh_serves_only_the_runners_own_runs(tmp_path, art, monkeypatch, capsys):
+    """--fresh: an adopted hand-built run (replayed, recorded or delivered) is never a hit nor a generator journal seed; a stage
+    this runner ran itself still is, so a re-run of a fresh command continues where it stopped."""
+    d = art / "runs/adopted-a"
+    d.mkdir(parents=True)
+    (d / "out.txt").write_text("hello")
+    a, b, c = toy(tmp_path)
+    st.Store(art).record(a, d, "replayed", ["research"], {}, adopted_from="S01")
+    assert st.Store(art, scope="research").lookup(a).dir == d and st.Store(art).latest("A", {}).dir == d
+    assert st.Store(art, scope="research", fresh=True).lookup(a) is None and st.Store(art, fresh=True).latest("A", {}) is None
+    fake_modules(monkeypatch, art, decided_graph(tmp_path))
+    assert run_video_report.main([*CLI, "--dry-run"]) == 0
+    assert capsys.readouterr().out.splitlines()[1].split()[:2] == ["A", "hit"]
+    assert run_video_report.main([*CLI, "--fresh", "--dry-run"]) == 0
+    assert capsys.readouterr().out.splitlines()[1].split()[:2] == ["A", "miss"]
+    ran = st.Store(art, scope="research", fresh=True).execute([a, b, c], st.Ledger())
+    assert ran["A"].dir != d and all(h.verification == "ran" for h in ran.values())
+    again = st.Store(art, scope="research", fresh=True).execute([a, b, c], st.Ledger())
+    assert {n: h.dir for n, h in again.items()} == {n: h.dir for n, h in ran.items()}
+
+
 def test_prices_match_the_code():
     tree = ast.parse((REPO / "modal_apps/splat_train.py").read_text())
     usd = next(ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "USD_PER_S")

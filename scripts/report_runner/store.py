@@ -262,9 +262,11 @@ class Ledger:
 
 
 class Store:
-    def __init__(self, art, scope=None, verify=False, repo=REPO, refuse=None):
-        """refuse(spec) -> reason | None: the profile's refusals (profiles.refuse), checked before any lookup or run."""
-        self.art, self.scope, self.verify, self.repo, self.refuse = Path(art), scope, verify, Path(repo), refuse
+    def __init__(self, art, scope=None, verify=False, repo=REPO, refuse=None, fresh=False):
+        """refuse(spec) -> reason | None: the profile's refusals (profiles.refuse), checked before any lookup or run.
+        fresh: only runs this runner executed itself (verification 'ran') are hits or journal seeds, never an adopted,
+        replayed or recorded hand-built run."""
+        self.art, self.scope, self.verify, self.repo, self.refuse, self.fresh = Path(art), scope, verify, Path(repo), refuse, fresh
         self.state = self.art / "runs/report-runner"
         self.index = self.state / "keys.jsonl"
         self._resolved = {}  # (site, stage) -> (Hit, index entry)
@@ -298,9 +300,13 @@ class Store:
             outputs[role] = d / rel
         return Hit(d, outputs, entry["verification"])
 
+    def _mine(self, entry):
+        return not self.fresh or entry["verification"] == "ran"
+
     def _find(self, spec, key, verify):
         for entry in reversed(self._entries()):
-            if entry["key"] != key or (self.scope and self.scope not in entry["scope"]) or set(spec.outputs) - set(entry["outputs"]):
+            if entry["key"] != key or (self.scope and self.scope not in entry["scope"]) or set(spec.outputs) - set(entry["outputs"]) \
+                    or not self._mine(entry):
                 continue
             hit = self._valid(entry, verify)
             if hit:
@@ -381,7 +387,7 @@ class Store:
     def latest(self, stage, match):
         """The newest valid run of `stage` whose consumed digests include `match` (generator journal seeding, D17)."""
         for entry in reversed(self._entries()):
-            if entry["stage"] == stage and all(entry["inputs"].get(r) == d for r, d in match.items()):
+            if entry["stage"] == stage and self._mine(entry) and all(entry["inputs"].get(r) == d for r, d in match.items()):
                 hit = self._valid(entry, self.verify)
                 if hit:
                     return hit
@@ -726,7 +732,7 @@ def main(args):
     cache_only = getattr(profile, "cache_only", False)
     art = art_root()
     refuse = functools.partial(profiles.refuse, args.profile) if hasattr(profiles, "refuse") else None
-    store = Store(art, scope=args.profile, verify=args.verify, refuse=refuse)
+    store = Store(art, scope=args.profile, verify=args.verify, refuse=refuse, fresh=getattr(args, "fresh", False))
     command = sha(canonical([args.site, str(Path(args.video).resolve()), args.start, args.end, args.profile]))[:16]
     ledger = Ledger.from_env(store.state / "ledgers" / f"{args.site}-{command}.jsonl")  # a re-run continues this command's budget
     # absolute paths, so a token names its leaf exactly (a key holds a leaf's bytes, never its path)

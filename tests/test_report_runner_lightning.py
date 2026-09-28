@@ -251,6 +251,10 @@ def test_the_title_is_the_source_time_in_the_delivered_style(tmp_path):
     assert stages.title_of(c, "assumed_camera_height").endswith("（YouTube 普通视频，估计尺度，未验收）")
     other = types.SimpleNamespace(video=tmp_path / "walk.mp4", start=65., end=95., site="dock-7")
     assert stages.title_of(other, None) == "dock-7 1:05–1:35（普通视频，原生单位，未验收）"
+    # a site '<place>-<run>' is at that place; a --fresh run (every stage ran in this runner) says so
+    fresh = types.SimpleNamespace(video=tmp_path / "YTDown.com_YouTube_SAM-S-CLUB_720p.mp4", start=337., end=367., site="samsclub-oneshot",
+                                  store=types.SimpleNamespace(fresh=True))
+    assert stages.title_of(fresh, "assumed_camera_height") == "Sam's Club 仓储通道 5:37–6:07（YouTube 普通视频，估计尺度，一键生成，未验收）"
     real = stages.art() / "data/clips/lightning-3585/source-rgb.mp4"
     if real.is_file():
         assert stages.origin(real, 0., 26.)[1:] == (3585., 3611.)
