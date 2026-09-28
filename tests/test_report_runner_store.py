@@ -235,6 +235,15 @@ def test_record_scope_lock_path_disjoint_roles_and_latest(tmp_path, art):
     assert s.latest("R17", {"depth": digest}).dir == d and s.latest("R17", {"depth": "0" * 64}) is None
 
 
+def test_a_whole_directory_output_is_signed_after_its_lock(tmp_path, art):
+    """An output role '.' is the stage's whole directory, lock.json included: the lock is written before the signatures are
+    taken, so the run is a hit afterwards, by size and mtime and by full sha256."""
+    whole = [spec("W", TOUCH, outputs={"all": "."})]
+    ran = st.Store(art).execute(whole, st.Ledger())["W"]
+    assert (ran.dir / "lock.json").is_file() and ran.verification == "ran"
+    assert st.Store(art).lookup(whole[0]).dir == ran.dir and st.Store(art).lookup(whole[0], verify=True).dir == ran.dir
+
+
 def test_decision_value_and_droid_frame_digests(art):
     s = st.Store(art)
     d = art / "runs/decide"

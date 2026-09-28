@@ -321,19 +321,17 @@ class Store:
         return self._record(spec, key, digests, Path(dir), verification, scope, lock, adopted_from)
 
     def _record(self, spec, key, digests, d, verification, scope, lock, adopted_from=None):
-        outputs = {}
+        absent = {role for role, rel in spec.outputs.items() if rel is None and adopted_from}  # e.g. ME340 217's trained splats.splat: gone, its cleaned pick is kept
         for role, rel in spec.outputs.items():
-            if rel is None and adopted_from:  # e.g. ME340 217's trained splats.splat: gone, its cleaned pick is kept
-                outputs[role] = [None, 0, 0, "absent"]
-                continue
-            if not (d / rel).exists():
+            if role not in absent and not (d / rel).exists():
                 raise FileNotFoundError(f"{spec.name}: output {role} is missing: {d / rel}")
-            outputs[role] = [rel, *stat_sig(d / rel), content_sha(d / rel)]
-        rel_dir = self._rel(d)  # several stages may share an adopted run's files (171 is census and camera); a run's own dir is fresh
+        # the lock before the signatures: an output role '.' (the whole directory) is signed with its lock.json in it
         lock_path = self.state / "adopted/locks" / f"{key}.json" if adopted_from else d / "lock.json"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         lock_path.write_text(json.dumps(dict(lock, key=key), indent=1, default=str))
-        entry = {"key": key, "stage": spec.name, "site": spec.site, "dir": rel_dir, "inputs": digests, "outputs": outputs,
+        outputs = {role: [None, 0, 0, "absent"] if role in absent else [rel, *stat_sig(d / rel), content_sha(d / rel)] for role, rel in spec.outputs.items()}
+        rel_dir = self._rel(d)  # several stages may share an adopted run's files (171 is census and camera); a run's own dir is fresh
+        entry ={"key": key, "stage": spec.name, "site": spec.site, "dir": rel_dir, "inputs": digests, "outputs": outputs,
                  "outputDigest": sha(canonical(sorted((r, o[3]) for r, o in outputs.items()))), "verification": verification,
                  "scope": list(scope), "lock": self._rel(lock_path), "adoptedFrom": adopted_from, "at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
         with self._lock:
