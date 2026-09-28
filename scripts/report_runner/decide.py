@@ -320,12 +320,12 @@ def dense_gate(map, fused, out):
                     "floorBandM": FLOOR_BAND_M, "floorCellM": FLOOR_CELL_M}})
 
 
-def inferred_floor(floor, lens=None):
+def inferred_floor(floor, gate=None):
     """D9. Import the inferred floor only if its own tests kept it: a model tested against a dense map (dense.validation), on a
-    floor plane the lens gate passed (lens: the lens_gate decision). The convex outline (no dense map) was never tested, and
-    an intrinsics_uncertain plane is no verified floor: both withheld (a wrong floor is worse than none)."""
+    floor plane the lens gate passed (gate: the lens_gate decision, lens.json). The convex outline (no dense map) was never
+    tested, and an intrinsics_uncertain plane is no verified floor: both withheld (a wrong floor is worse than none)."""
     record = _json(floor, "inferred-floor.json")
-    status = _value(lens, "lens")["scale_status"] if lens else None
+    status = _value(gate, "lens")["scale_status"] if gate else None
     why = (record.get("reason") or "withheld by its own tests" if record["kind"] == "inferred_floor_withheld" else
            "no dense-map validation: the convex outline was never tested against the video" if not (record.get("dense") or {}).get("validation") else
            "the floor plane failed the lens gate (intrinsics_uncertain): no verified plane to extend" if status == "intrinsics_uncertain" else None)

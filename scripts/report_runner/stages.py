@@ -783,7 +783,7 @@ def graph(ctx):
         dense_dir = {"raw": "@lingbot_build:out", "icp": "@dense_gate/icp"}.get(use)
     g.add("floor_infer", [[PY, S("infer_room_floor.py"), "--fused", "@fuse:out", *(["--dense", dense_dir, "--droid-run", "@camera:out"] if dense_dir else []),
                            *(["--skip-frames", *skip] if skip else []), "--output", "@new/out"]], {"out": "out", "floor": "out/inferred-floor.json"}, est_s=300)
-    g.decide("inferred_floor", "inferred_floor", floor="@floor_infer:floor", lens=None if "lens_gate" in omit else "@lens_gate:decision")
+    g.decide("inferred_floor", "inferred_floor", floor="@floor_infer:floor", gate=None if "lens_gate" in omit else "@lens_gate:decision")
     if objects and box_excludes is None and "generator_plan-box" in g.by:
         after = g.need("generator_plan-box", absent=None)
         box_excludes, unplanned = (after or plan)["box_excludes"], unplanned | ({"recgen"} if after is None else set())

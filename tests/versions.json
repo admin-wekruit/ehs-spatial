@@ -144,7 +144,7 @@
   "version": 1
  },
  "rule:inferred_floor": {
-  "depsSha256": "5f0d260060bf6c66d2d08448794106d236235fa375b44040af7e4ef5fabba91d",
+  "depsSha256": "b7617178a907ffa1ccf712c5678c61c880a5f9787e07131c3b294a388f990e41",
   "version": 2
  },
  "rule:lens": {

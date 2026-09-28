@@ -50,7 +50,7 @@ def test_the_runner_never_asks_for_the_convex_outline():
     values = {**SITES["walmart"][2], "dense_gate": {"use": None, "dir": None}}
     by = build("walmart", decisions=values)
     assert flag(by["floor_infer"], "--dense") is None and flag(by["floor_infer"], "--legacy-convex") is None
-    assert "lens=@lens_gate:decision" in by["inferred_floor"].commands[0] and by["inferred_floor"].inputs["lens_gate"] == ("lens_gate", ())
+    assert "gate=@lens_gate:decision" in by["inferred_floor"].commands[0] and by["inferred_floor"].inputs["lens_gate"] == ("lens_gate", ())
     assert by["floor_infer"].version == 2
     delivered = build("walmart", profile=types.SimpleNamespace(**{**vars(RESEARCH), "name": "delivered", "omit": ("static_filter", "lens_gate")}))
     assert delivered["floor_infer"].version == 1 and "lens_gate" not in delivered["inferred_floor"].inputs, \
@@ -89,3 +89,4 @@ def test_the_scale_sentence_quotes_only_a_measured_disagreement():
     scale = {"scale_status": "assumed_camera_height", "metres_per_native_unit": 8.38, "camera_height_native_median": .19,
              "model_estimated_metres_per_native_unit": 7., "height_anchor_vs_model_estimate": None}
     assert "disagrees" not in importer.scale_limitation(scale, device=False) and "not measured" in importer.scale_limitation(scale, device=False)
+
