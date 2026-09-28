@@ -521,34 +521,52 @@ def analyse(m, mp4, opts, clock, writer, log):
     clock.mark("objects_v1_put")
     v1_labels = {o["id"]: o["label"] for o in objects}
 
+    maps_ready = threading.Event()
+
     def outlines_job():
         """Object keyframes 'segmented' (SAM 3 logits), other 5 fps keyframes 'projected' (E6b pair); beside the cascade,
-        with the first objects version's names."""
-        with torch.inference_mode(), clock.stage("outlines", gpu=dev_geo):
+        with the first objects version's names. Per frame, every object's union of its masks in one reduction."""
+        try:
+            members_of = {}  # keyframe -> (object ids, their masks' indices, owner of each mask)
+            for q, objs in by_frame.items():
+                ids = list(objs)
+                members_of[q] = (ids, torch.tensor([gi for o in ids for gi in objs[o]], device=dev_geo),
+                                 torch.tensor([k for k, o in enumerate(ids) for _ in objs[o]], device=dev_geo))
+
+            def per_object(x, q, fill):
+                ids, idx, owner = members_of[q]
+                return torch.full((len(ids), *x.shape[1:]), fill, dtype=torch.half, device=dev_geo).index_reduce_(0, owner, x[idx].half(), "amax")
+
+            def global_ids(q, lab):
+                return torch.cat([torch.zeros(1, dtype=torch.long, device=dev_geo), torch.tensor(members_of[q][0], device=dev_geo) + 1])[lab]
             maps = []  # (entry, label map int16 numpy (0 = nothing, i + 1 = object i), sx, sy): polygons in the process pool
             oh, ow = H // 2, W // 2
-            for q, objs in sorted(by_frame.items()):
-                ids = list(objs)
-                lg = torch.stack([voc["logits"][torch.tensor(objs[o], device=dev_geo)].float().amax(0) for o in ids])
-                lab = segment.paint(F.interpolate(lg[None], size=(oh, ow), mode="bilinear", align_corners=False)[0] > 0)
-                lab = torch.cat([torch.zeros(1, dtype=torch.long, device=dev_geo), torch.tensor(ids, device=dev_geo) + 1])[lab]
-                maps.append(({"timeSec": round(keys[q] / fps, 4), "sourceFrame": int(keys[q]), "source": "segmented"}, lab.short().cpu().numpy(), W / ow, H / oh))
-            for si, gg in enumerate(geo):
-                pos = gg["pos"]
-                obj_local = [j for j, q in enumerate(pos) if q in by_frame]
-                if not obj_local:
-                    continue
-                items = {j: [(o, voc["mask"][torch.tensor(g_, device=dev_geo)].any(0)) for o, g_ in by_frame[pos[j]].items() if objects[o]["shot"] == si]
-                         for j in obj_local}
-                idm = segment.id_maps(items, len(pos), dev_geo)
-                people_local = dyn[torch.tensor(pos, device=dev_geo)]
-                for j, q in enumerate(pos):
-                    if q in by_frame:
+            with torch.inference_mode(), clock.stage("outlines.segmented", gpu=dev_geo, n={"frames": len(by_frame)}):
+                for q in sorted(by_frame):
+                    lg = per_object(voc["logits"], q, -1e4).float()
+                    lab = segment.paint(F.interpolate(lg[None], size=(oh, ow), mode="bilinear", align_corners=False)[0] > 0)
+                    maps.append(({"timeSec": round(keys[q] / fps, 4), "sourceFrame": int(keys[q]), "source": "segmented"},
+                                 global_ids(q, lab).short().cpu().numpy(), W / ow, H / oh))
+            with torch.inference_mode(), clock.stage("outlines.projected", gpu=dev_geo):
+                for si, gg in enumerate(geo):
+                    pos = gg["pos"]
+                    obj_local = [j for j, q in enumerate(pos) if q in by_frame]
+                    if not obj_local:
                         continue
-                    lab = segment.project_pair(idm, gg["depth_m"], gg["K"], gg["c2w_m"], obj_local, j)
-                    lab[people_local[j]] = -1  # people are not projected (E6b caveat): cut out with this frame's SAM 3 person mask
-                    maps.append(({"timeSec": round(keys[q] / fps, 4), "sourceFrame": int(keys[q]), "source": "projected"},
-                                 lab.clamp(min=0).short().cpu().numpy(), W / DA3_HW[1], H / DA3_HW[0]))
+                    idm = torch.zeros((len(pos), *DA3_HW), dtype=torch.long, device=dev_geo)
+                    for j in obj_local:  # every object on a keyframe belongs to that keyframe's shot (the lift is per shot)
+                        idm[j] = global_ids(pos[j], segment.paint(per_object(voc["mask"], pos[j], 0) > 0))
+                    people_local = dyn[torch.tensor(pos, device=dev_geo)]
+                    for j, q in enumerate(pos):
+                        if q in by_frame:
+                            continue
+                        lab = segment.project_pair(idm, gg["depth_m"], gg["K"], gg["c2w_m"], obj_local, j)
+                        lab[people_local[j]] = -1  # people are not projected (E6b caveat): cut out with this frame's SAM 3 person mask
+                        maps.append(({"timeSec": round(keys[q] / fps, 4), "sourceFrame": int(keys[q]), "source": "projected"},
+                                     lab.clamp(min=0).short().cpu().numpy(), W / DA3_HW[1], H / DA3_HW[0]))
+        finally:
+            maps_ready.set()  # the cascade's SigLIP pass waits for the GPU part of the outlines, never longer
+        with clock.stage("outlines.polygons", n={"frames": len(maps)}):
             polys = list(m.proc_pool.map(segment.label_polygons, [x[1] for x in maps], [x[2] for x in maps], [x[3] for x in maps]))
             frames_out = []
             for (entry, _, _, _), found in zip(maps, polys):
@@ -571,6 +589,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     # cascade: every member mask -> masked crop -> SigLIP 2 (GPU 0); object = mean of its masks
     obj_kf = sorted(by_frame)
     blobs_obj, groups = {}, {}
+    maps_ready.wait()  # the outlines are a spec layer (<= 30 s); the cascade only feeds objects v2
     if objects:
         kf_index = {q: j for j, q in enumerate(obj_kf)}
         all_mem = np.concatenate(members)

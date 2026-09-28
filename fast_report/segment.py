@@ -411,17 +411,6 @@ def finish(key, hw):
     return lab[0, 0].long()
 
 
-def id_maps(obj_masks_by_frame, n_frames, dev):
-    """{local frame: [(object number, DA3-grid mask)]} -> (n, H, W) long, 0 = background, object number + 1; larger
-    masks painted first so a small object in front of a big one keeps its pixels."""
-    import torch
-    out = torch.zeros((n_frames, *DA3_HW), dtype=torch.long, device=dev)
-    for f, items in obj_masks_by_frame.items():
-        for o, m in sorted(items, key=lambda x: -int(x[1].sum())):
-            out[f][m] = o + 1
-    return out
-
-
 def project_pair(ids, depth_m, K, c2w_m, keys_local, target):
     """E6b 'pair': the two object keyframes around `target` (local index), the nearer first; the other fills what the
     nearer cannot see. ids: (n,H,W) id maps (valid on keys_local). -> (H,W) long, -1 = nothing, 0 = background."""
@@ -461,4 +450,6 @@ def self_check():
     kept, votes = dedupe(torch.tensor([0, 0, 0, 0, 1]), torch.tensor([0, 1, 0, 0, 1]), torch.tensor([.9, .8, .7, .6, .5]), masks)
     assert kept.tolist() == [0, 3, 4], kept
     assert sorted((int(a), int(w)) for a, w, _ in votes) == [(0, 0), (0, 1), (3, 0), (4, 1)], votes
+    lab = paint(masks[[0, 2, 3]])  # 2 lies inside 0: the smaller one keeps its pixels
+    assert int(lab[20, 20]) == 2 and int(lab[45, 45]) == 1 and int(lab[120, 120]) == 3 and int(lab[200, 400]) == 0
     print("segment self-check ok: flood merge/drop, naming, polygons")
