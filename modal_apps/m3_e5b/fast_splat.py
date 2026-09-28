@@ -114,9 +114,13 @@ def fit(cfg, data, rank=0, world=1):
         scale = .1 * np.sqrt((cKDTree(xyz).query(xyz, k=4)[0][:, 1:] ** 2).mean(1)).clip(1e-4)
     tensors = {"means": torch.tensor(xyz), "scales": torch.log(torch.tensor(scale, dtype=torch.float32))[:, None].repeat(1, 3),
                "quats": torch.rand(len(xyz), 4), "opacities": torch.logit(torch.full((len(xyz),), .5)), "colors": torch.logit(torch.tensor(rgb).clamp(.02, .98))}
+    if data.get("init"):  # go on from an earlier run's Gaussians and pose knots (fast report: preview, then background training)
+        tensors = {k: v.detach() for k, v in data["init"]["params"].items()}
     params = torch.nn.ParameterDict({k: torch.nn.Parameter(v.float().cuda()) for k, v in tensors.items()})
     n_knots = len(data["c2w"]) // st.KNOT_EVERY + 2
     knots = torch.zeros(n_knots, 6, device="cuda", requires_grad=cfg["pose"])
+    if data.get("init"):
+        knots = data["init"]["knots"].detach().clone().requires_grad_(cfg["pose"])
     trained = torch.tensor(data["train"], device="cuda") // st.KNOT_EVERY
     used = torch.zeros(n_knots, dtype=torch.bool, device="cuda").index_fill_(0, torch.cat([trained, trained + 1]), True)
     weights = (used.float() / used.sum())[:, None]
@@ -154,6 +158,8 @@ def fit(cfg, data, rank=0, world=1):
             while rank == 0 and wanted and elapsed >= wanted[0]:
                 snaps.append({"at_s": wanted.pop(0), "step": step, "elapsed_s": round(elapsed, 1),
                               "params": {k: v.detach().clone() for k, v in params.items()}, "knots": knots.detach().clone()})
+                if cfg.get("on_snapshot"):  # handed out now (fast report), not after training
+                    cfg["on_snapshot"](snaps.pop())
             if budget:
                 progress = elapsed / budget
                 if progress >= 5 / 6:
