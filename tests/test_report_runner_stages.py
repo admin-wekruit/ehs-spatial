@@ -260,6 +260,7 @@ def test_walmart_templates():
     assert flag(by["box"], "--exclude") == ["object-003=accepted by SAM 3D"] and flag(by["box"], "--invoke") is None
     assert flag(by["merge"], "--review") == [str(REVIEW / "walmart.json")] and by["merge"].leaves == {"review": REVIEW / "walmart.json"}
     assert by["sam3d"].budget_flags == {"--max-usd": "usd"} and flag(by["sam3d"], "--max-usd") == ["10"] and flag(by["sam3d"], "--workers") == ["4"]
+    assert flag(by["recgen"], "--workers") == ["1"] and flag(by["box"], "--workers") == ["4"], "RecGen journals under a process-wide env var: one call at a time"
     assert by["camera"].models == (("camera", "princeton-vl/DROID-SLAM", "2dfd39f0", None),) and by["splat"].models == () and by["box"].models == ()
     assert by["splat"].budget_flags == {"--max-minutes": ("minutes", stages.USD_PER_S["H100"])} and flag(by["splat"], "--max-minutes") == ["58"]
 

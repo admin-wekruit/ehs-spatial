@@ -37,6 +37,9 @@ TOKEN = re.compile(r"(?<![\w.])@([A-Za-z][\w-]*)(?::([\w.-]+))?")  # spec.py's g
 RESERVED = {"new", "key", "clip"}
 DROID_BUILD = "$ART/runs/droid-me340-165-171"  # --reuse-build-from: the compiled DROID build every run reuses (not in the key)
 WORKERS = 4  # complete_video_objects --workers: generator calls in flight (outputs do not depend on it)
+# RecGen runs one call at a time: recgen_transport journals each call under the process-wide PANOPTES_RECGEN_JOURNAL, which
+# complete_video_objects sets per call, so parallel calls journal into each other's folders (the first Lightning run failed so)
+SERIAL_GENERATORS = {"recgen"}
 CAPS = {"generator_usd": 10., "splat_minutes": 58.}  # profiles.CAPS; a profile may also cap one generator (<name>_usd)
 MODEL_IDS = {"depth": "depth-anything/DA3-GIANT-1.1", "register": "depth-anything/DA3-GIANT-1.1"}  # argv needs these; the rest are fixed in their scripts
 USD_PER_S = {"L4": .000222 + .0000131 + 8 * .00000222, "A100-40GB": .000583, "A100-80GB": .000694, "H100": .001097,
@@ -693,7 +696,7 @@ def graph(ctx):
 
     def generator(name, flags, usd, est):
         paid = usd is not None
-        spec = g.add(name, [[PY, S("complete_video_objects.py"), *common, "--generator", name, *flags, "--workers", str(WORKERS),
+        spec = g.add(name, [[PY, S("complete_video_objects.py"), *common, "--generator", name, *flags, "--workers", str(1 if name in SERIAL_GENERATORS else WORKERS),
                              *(["--max-usd", _num(usd), "--invoke"] if paid else []), "--output", "@new/out"]],
                      {"out": "out", "manifest": "out/manifest.json", "models": "out/models"}, gpu="A100-80GB" if paid else None,
                      compute="modal" if paid else "cpu", timeout_s=int(usd / USD_PER_S["A100-80GB"]) + 3600 if paid else 7200,
