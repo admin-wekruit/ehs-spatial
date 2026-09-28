@@ -274,10 +274,10 @@ def expose(image, gain):
     return image @ (torch.eye(3, device=image.device) + gain[:9].view(3, 3)).T + gain[9:]
 
 
-def render(model, view, K, background=None, mode="RGB"):
+def render(model, view, K, background=None, mode="RGB", size=None):
     from gsplat import rasterization
     colours, alphas, info = rasterization(model["means"], model["quats"], model["scales"], model["opacities"], model["colors"], view[None], K[None],
-                                          W, H, packed=False, rasterize_mode="classic", render_mode=mode, backgrounds=None if background is None else background[None])
+                                          *(size or (W, H)), packed=False, rasterize_mode="classic", render_mode=mode, backgrounds=None if background is None else background[None])
     return colours[0], info
 
 
@@ -366,6 +366,10 @@ def fit(cfg, data, ckpt, stop_at):
     state = strategy.initialize_state()
     frames, excluded, K, c2w = data["frames"], data["excluded"], data["K"], data["c2w"]
     decay, order, losses, pulls, started, done = .01 ** (1 / steps), [], [], [], time.time(), start
+    small = cfg.get("train_scale", 1)  # train on 1/small of the video frame's width and height
+    assert small == 1 or not (cfg.get("depth_weight") and data["depth"] is not None), "the depth pull is on full-size 8 px blocks"
+    K = K.clone()
+    K[2, 2] = small  # K / small scales focal lengths and centres (gsplat's +0.5 centres scale with the pixels) and keeps K[2, 2] = 1
     for step in range(start, steps):
         if time.time() > stop_at:
             break
@@ -376,10 +380,14 @@ def fit(cfg, data, ckpt, stop_at):
             group["lr"] = lr[group["name"]] * decay ** step
         pose, gain = corrections(knots, cfg, i)
         prior = cfg.get("depth_weight") and data["depth"] is not None
-        image, info = render(activated(params), viewmat(c2w[i], pose), K, background=torch.rand(3, device="cuda"), mode="RGB+ED" if prior else "RGB")
+        image, info = render(activated(params), viewmat(c2w[i], pose), K / small, background=torch.rand(3, device="cuda"), mode="RGB+ED" if prior else "RGB",
+                             size=(W // small, H // small))
         image, depth = (image[..., :3], image[..., 3]) if prior else (image, None)
         image = image if gain is None else expose(image, gain)
         target, valid = frames[i].float() / 255, (~excluded[i]).float()
+        if small > 1:  # ponytail: area-downsampled target, a block with any excluded pixel is excluded; train only, evaluation stays full size
+            target = torch.nn.functional.avg_pool2d(target.permute(2, 0, 1)[None], small)[0].permute(1, 2, 0)
+            valid = -torch.nn.functional.max_pool2d(-valid[None, None], small)[0, 0]
         l1 = ((image - target).abs().mean(-1) * valid).sum() / valid.sum()
         ssim = (ssim_map(image, target) * valid).sum() / valid.sum()
         loss = .8 * l1 + .2 * (1 - ssim) + .01 * torch.sigmoid(params["opacities"]).mean() + .01 * torch.exp(params["scales"]).mean()
@@ -814,7 +822,7 @@ def run(args):
               "depth": surface_depth(K, c2w) if args.depth_weight and not args.lingbot else None,
               "prior": (points, sizes / 2) if args.depth_weight and args.lingbot else None}
     base = {"steps": args.steps, "cap": args.cap, "checkpoint_every": 5000, "reserve_s": 120 if args.ablation else 420, "max_elongation": args.max_elongation,
-            "depth_weight": args.depth_weight}
+            "depth_weight": args.depth_weight, "train_scale": args.train_scale}
     configs = ({"plain": {**base, "pose": False, "exposure": False, "export": False}, "exposure": {**base, "pose": False, "exposure": True, "export": False},
                 "exposure_pose": {**base, "pose": True, "exposure": True, "export": False}} if args.ablation else
                {"final": {**base, "pose": args.pose, "exposure": args.exposure, "export": True}})
@@ -822,7 +830,7 @@ def run(args):
     args.output.mkdir(parents=True, exist_ok=True)
     assert not (args.output / "train.json").exists() and (args.resume or not (args.output / "launch.json").exists()), \
         "output already holds a run, or a launched one that may still be running (--resume it)"
-    state = {"status": "gpu_running", "run": run_name, "volume": "panoptes-splat-train", "configs": configs, "gpu_fallback": GPUS, "retries": 0,
+    state = {"status": "gpu_running", "run": run_name, "volume": "panoptes-splat-train", "configs": configs, "gpu_fallback": [args.gpu] if args.gpu else GPUS, "retries": 0,
              "max_minutes": args.max_minutes, "seeds": seeds, "clip": str(args.clip), "droid_run": str(args.droid_run), "masks": str(args.masks),
              "mesh": str(MESH), "fill": str(FILL), "caption_band_y0_y1_x0_x1": list(args.captions),
              "caption_box_mean_width_px": float((captions[:, 3] - captions[:, 2]).clip(0).mean()), "trained_frames": len(train), "held_out_frames": len(held),
@@ -835,7 +843,7 @@ def run(args):
         state["app_id"] = app.app_id
         (args.output / "launch.json").write_text(json.dumps(state, indent=1))
         deadline = time.time() + 60 * args.max_minutes
-        result = train_remote.with_options(timeout=int(60 * args.max_minutes) + 120).remote(inputs, configs, run_name, deadline)
+        result = train_remote.with_options(timeout=int(60 * args.max_minutes) + 120, **({"gpu": args.gpu} if args.gpu else {})).remote(inputs, configs, run_name, deadline)
     call_seconds = time.time() - started
     kind, cost = usd(result["gpu"], result["container_seconds"] + 60)  # + container start and imports, which the function cannot time
     state.update(status="complete", gpu=result["gpu"], gpu_kind=kind, gsplat=result["gsplat"], torch=result["torch"], container_seconds=result["container_seconds"],
@@ -970,6 +978,8 @@ if __name__ == "__main__":
     parser.add_argument("--clean", type=Path, help="a finished run's directory: score cleanup rules on its splats.splat (GPU)")
     parser.add_argument("--pick", help="with --clean: write splats-clean.* under this scored rule (local, no GPU)")
     parser.add_argument("--skip", nargs="*", default=[], metavar="A-B", help="clip frames (inclusive ranges) left out of training and evaluation")
+    parser.add_argument("--train-scale", type=int, default=1, help="train on 1/N of the frame's width and height (N=2: half size); held-out scoring stays full size")
+    parser.add_argument("--gpu", help="one Modal GPU type instead of the H100-first fallback list, e.g. A100-80GB")
     parser.add_argument("--output", type=Path)
     a = parser.parse_args()
     MESH, FILL, SCALE = a.mesh, a.fill, a.scale  # the defaults are ME340's; another clip passes its own
