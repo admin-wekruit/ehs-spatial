@@ -30,6 +30,7 @@ PHASE2 = Path("/Users/adam/Desktop/panoptes-public/research-notes/phase2")
 DA3_CODE = "3d835ec1a5802d64a8b8b15f817a1ab54809bfe4"
 DA3_MODEL, DA3_REV = "depth-anything/DA3-GIANT-1.1", "72ee9f89ce4e50d704e9d55ee9c646ec8dc25a19"
 PROCS, CPU, MEMORY_GIB, GPU = 24, 32, 160, "A100-80GB:2"
+VLLM_MPS = False  # vLLM outside MPS; this process (and SAM 3D later, E4) inside
 PRICE = {"A100-80GB": .000694, "cpu_core": .0000131, "gib": .00000222}  # Modal list $/s
 
 app = modal.App("panoptes-fast-report")
@@ -110,7 +111,8 @@ class FastReport:
         os.environ.update(env)
         started = subprocess.run(["nvidia-cuda-mps-control", "-d"], capture_output=True, text=True)  # before any CUDA context
         b["mps"] = started.returncode == 0
-        self.vllm = vlm.start(1)  # first: its load overlaps everything below; GPU 1 stays empty until it has profiled
+        self.vllm = vlm.start(1, mps=VLLM_MPS)  # first: its load overlaps everything below; GPU 1 stays empty until it has profiled
+        b["vllm_mps"] = VLLM_MPS
         lap("vllm_spawned_s")
         self.proc_pool = ProcessPoolExecutor(PROCS, mp_context=multiprocessing.get_context("spawn"))
         self.proc_pool.map(core.warm_worker, range(PROCS))
@@ -453,14 +455,18 @@ def evaluate(run_dir):
             by_source.setdefault(src, []).append(ok["cascade_final"])
             detail.append({"entity": ent, "delivered": theirs, "object": oid, "word": o["word"], "zero_shot": zs, "label": o.get("label"),
                            "source": o.get("label_source"), "iou": round(best[ent][0], 3), **ok})
-        bv = {"sam3_word": [], "zero_shot_top1": [], "zero_shot_context_top1": [], "cascade_v1": [], "cascade_final": []}
+        from fast_report import segment
+        vocab_words = latest["objects"]["data"].get("words", [])
+        bv = {"sam3_word": [], "zero_shot_top1": [], "zero_shot_context_top1": [], "cascade_v1": [], "cascade_final": [],
+              "what_if_vlm_only_for_generic_sam3_words": []}
         bv_source = {}
         for oid, ent in seen_pairs.items():
             o, theirs = objs[oid], names[ent]["category"]
             c = o.get("cascade", {})
             ok = {"sam3_word": name_match(o["word"], theirs), "zero_shot_top1": name_match((c.get("zero_shot_top3") or [[None]])[0][0], theirs),
                   "zero_shot_context_top1": name_match((c.get("zero_shot_context_top3") or [[None]])[0][0], theirs),
-                  "cascade_v1": name_match(first.get(oid, o).get("label"), theirs), "cascade_final": name_match(o.get("label"), theirs)}
+                  "cascade_v1": name_match(first.get(oid, o).get("label"), theirs), "cascade_final": name_match(o.get("label"), theirs),
+                  "what_if_vlm_only_for_generic_sam3_words": name_match(o.get("label") if segment.is_generic(o["word"], vocab_words) else o["word"], theirs)}
             for k, v in ok.items():
                 bv[k].append(v)
             bv_source.setdefault(o.get("label_source", "?").split(" ")[0], []).append(ok["cascade_final"])

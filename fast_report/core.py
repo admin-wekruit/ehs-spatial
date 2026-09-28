@@ -17,7 +17,7 @@ import numpy as np
 
 import detect_shot_cuts as dsc  # cut rules, unchanged
 
-BLOCK, MIN_SHOT, CHUNK, TAIL = 6, 30, 32, 8  # E9: sharpest of each 6-frame block; shots under 1 s get no geometry
+BLOCK, MIN_SHOT, CHUNK, TAIL = 6, 30, 16, 8  # E9: sharpest of each 6-frame block; shots under 1 s get no geometry
 DA3_HW = (280, 504)
 CAMERA_HEIGHT_M = 1.6  # the reference's own assumption: every metre here is 'estimated'
 LICENSE = "DA3-GIANT-1.1 (CC BY-NC 4.0): research licence, not for commercial use"
@@ -390,34 +390,14 @@ def analyse(m, mp4, opts, clock, writer, log):
         floor = union_by_frame(person["frame"][~is_person], person["mask"][~is_person], len(keys))
 
     cam_rows, room_rows, room_blobs, people_rows, people_blobs, geo = [], [], {}, [], {}, []
-    for si, (pos, g) in enumerate(zip(shot_pos, shots_gpu)):
+    lab = [SCALE_LABEL, LICENSE]
+    for si, (pos, g) in enumerate(zip(shot_pos, shots_gpu)):  # scale first: the cameras layer needs nothing else
         p = torch.tensor(pos, device=dev_geo)
         with torch.inference_mode(), clock.stage(f"scale.shot{si}", gpu=dev_geo):
             plane = floor_plane(g["depth"], g["K"], g["c2w"], floor[p])
             mpu = CAMERA_HEIGHT_M / plane["camera_height_units"] if plane else 1.
             depth_m, c2w_m = g["depth"] * mpu, g["c2w"].clone()
             c2w_m[:, :3, 3] *= mpu
-        with torch.inference_mode(), clock.stage(f"tsdf.shot{si}", gpu=dev_geo, n={"views": len(pos)}):
-            import m3_exp_geometry as geo_e7
-            d = depth_m.clone()
-            d[dyn[p]] = 0
-            geo_e7.edge_filter(d)
-            tsdf = geo_e7.fuse(d, g["K"].cpu().numpy(), c2w_m.cpu().numpy().astype(np.float64), g["colors"])
-        with clock.stage(f"people.shot{si}", n={"keyframes": len(pos)}):
-            local = {q: j for j, q in enumerate(pos)}
-            pm = person_masks(person, local)
-            tracks, rows, findings, up = people_shot(si, [keys[q] for q in pos], fps, g, depth_m, c2w_m, pm, plane, mpu)
-        with clock.stage(f"pack.room.shot{si}", gpu=dev_geo):
-            mesh = tsdf["mesh"]
-            raw, meta = pack_mesh(np.asarray(mesh.vertices), np.asarray(mesh.triangles), np.asarray(mesh.vertex_colors), dev_geo)
-            room_blobs[f"mesh-{si}"] = (raw, {**meta, "frame": f"shot-{si}"})
-            raw, meta = points_glb(tsdf["points"], tsdf["colors"], .03)
-            room_blobs[f"points-{si}"] = (raw, {**meta, "frame": f"shot-{si}"})
-            for tid, pts in tracks.items():
-                rb = ribbon([q["xyz"] for q in pts], up)
-                if rb is not None:
-                    raw, meta = pack_mesh(*rb, dev_geo)
-                    people_blobs[f"track-{si}-{tid}"] = (raw, {**meta, "frame": f"shot-{si}"})
         floor_rec = {k: v for k, v in (plane or {}).items() if k not in ("normal", "point")}
         if plane:
             floor_rec.update(normal=plane["normal"].tolist(), point_m=(plane["point"] * mpu).tolist())
@@ -427,23 +407,54 @@ def analyse(m, mp4, opts, clock, writer, log):
                          "scale": {"metres_per_unit": mpu, "status": "estimated" if plane else "uncalibrated",
                                    "source": "floor plane (SAM 3 'floor') + assumed camera height 1.6 m" if plane else "none: unit scale",
                                    "floor": floor_rec}})
+        geo.append({"depth_m": depth_m, "c2w_m": c2w_m, "K": g["K"], "mpu": mpu, "pos": pos, "plane": plane})
+    writer.put("cameras", {"shots": cam_rows, "fps": fps, "keyframe_rule": "sharpest of each 6-frame block (5 fps)"}, None, "estimated", lab)
+    clock.mark("cameras_put")
+    for si, (gg, g) in enumerate(zip(geo, shots_gpu)):
+        pos, plane, mpu, depth_m, c2w_m = gg["pos"], gg["plane"], gg["mpu"], gg["depth_m"], gg["c2w_m"]
+        p = torch.tensor(pos, device=dev_geo)
+        with torch.inference_mode(), clock.stage(f"tsdf.shot{si}", gpu=dev_geo, n={"views": len(pos)}):
+            import m3_exp_geometry as geo_e7
+            d = depth_m.clone()
+            d[dyn[p]] = 0
+            geo_e7.edge_filter(d)
+            tsdf = geo_e7.fuse(d, g["K"].cpu().numpy(), c2w_m.cpu().numpy().astype(np.float64), g["colors"])
+        with clock.stage(f"pack.room.shot{si}", gpu=dev_geo):
+            mesh = tsdf["mesh"]
+            raw, meta = pack_mesh(np.asarray(mesh.vertices), np.asarray(mesh.triangles), np.asarray(mesh.vertex_colors), dev_geo)
+            room_blobs[f"mesh-{si}"] = (raw, {**meta, "frame": f"shot-{si}"})
+            raw, meta = points_glb(tsdf["points"], tsdf["colors"], .03)
+            room_blobs[f"points-{si}"] = (raw, {**meta, "frame": f"shot-{si}"})
         room_rows.append({"frame_id": f"shot-{si}", "triangles": tsdf["n_triangles"], "points": tsdf["n_points"], "tsdf_voxel_m": .03,
                           "mesh": f"mesh-{si}", "points_blob": f"points-{si}"})
-        people_rows.append({"frame_id": f"shot-{si}", "tracks": [{"id": f"{si}-{t}", "points": pts, "detections": len(pts), "ribbon": f"track-{si}-{t}"}
-                                                                  for t, pts in tracks.items()],
-                            "rules": findings, "detections": len(rows)})
-        geo.append({"depth_m": depth_m, "c2w_m": c2w_m, "K": g["K"], "mpu": mpu, "pos": pos, "plane": plane})
-    lab = [SCALE_LABEL, LICENSE]
-    writer.put("cameras", {"shots": cam_rows, "fps": fps, "keyframe_rule": "sharpest of each 6-frame block (5 fps)"}, None, "estimated", lab)
     writer.put("room", {"shots": room_rows}, room_blobs, "estimated", lab)
-    writer.put("people", {"shots": people_rows, "note": "the fast path tracks people only: no non-person movers"}, people_blobs,
-               "observed+estimated", [*lab, "rules that need metres say NEEDS_REVIEW: the scale is not measured"])
-    clock.mark("geometry_layers_put")
+    clock.mark("room_put")
+    def people_layer():  # CPU work: runs beside GPU 0's share of the SAM 3 queue
+        for si, (gg, g) in enumerate(zip(geo, shots_gpu)):
+            pos = gg["pos"]
+            with clock.stage(f"people.shot{si}", n={"keyframes": len(pos)}):
+                local = {q: j for j, q in enumerate(pos)}
+                pm = person_masks(person, local)
+                tracks, rows, findings, up = people_shot(si, [keys[q] for q in pos], fps, g, gg["depth_m"], gg["c2w_m"], pm, gg["plane"], gg["mpu"])
+                for tid, pts in tracks.items():
+                    rb = ribbon([q["xyz"] for q in pts], up)
+                    if rb is not None:
+                        raw, meta = pack_mesh(*rb, dev_geo)
+                        people_blobs[f"track-{si}-{tid}"] = (raw, {**meta, "frame": f"shot-{si}"})
+            people_rows.append({"frame_id": f"shot-{si}", "tracks": [{"id": f"{si}-{t}", "points": pts, "detections": len(pts), "ribbon": f"track-{si}-{t}"}
+                                                                      for t, pts in tracks.items()],
+                                "rules": findings, "detections": len(rows)})
+        writer.put("people", {"shots": people_rows, "note": "the fast path tracks people only: no non-person movers"}, people_blobs,
+                   "observed+estimated", [*lab, "rules that need metres say NEEDS_REVIEW: the scale is not measured"])
+        clock.mark("geometry_layers_put")
+
+    people_future = m.cpu_pool.submit(people_layer)
 
     if dev_geo != dev_seg:
         work.worker(dev_geo, "geo")
     work.wait(work.all_ready)
     seg_future.result()
+    people_future.result()
     clock.mark("sam3_done")
     words = work.words
     work.cache.clear()
