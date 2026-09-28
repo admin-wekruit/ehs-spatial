@@ -50,8 +50,8 @@ QWEN3VL_NAMING_GATE = {"status": "not-run", "set": "150 named crops over the thr
 # = decide.VERSIONS (tests keep them equal; not imported: name_video_entities reads this module, and decide.py would join its
 # deps); stages adds each rule's code sha (stages.rule_code) to the key
 M2_RULES = {name: f"{name}@1" for name in ("shots", "other_shot", "lens", "voxel", "overlay", "lingbot_stride", "lingbot_conf", "dense_gate",
-                                             "inferred_floor", "track_windows", "splat_pick", "sam2_frames", "generator_plan", "static_filter")} | {
-    "floor_frames": "floor_frames@2"}
+                                             "track_windows", "splat_pick", "sam2_frames", "generator_plan", "static_filter")} | {
+    "floor_frames": "floor_frames@2", "inferred_floor": "inferred_floor@2"}
 
 
 def row(role, hf_id):

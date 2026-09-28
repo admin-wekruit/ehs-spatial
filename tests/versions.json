@@ -44,8 +44,8 @@
   "version": 1
  },
  "floor_infer": {
-  "depsSha256": "b8c08ae6649e8669e46df06e5ea8dbb98200a42a63ac413aa3633822f6233ed8",
-  "version": 1
+  "depsSha256": "273b2a8c26de8fa2e3dfff9d6e93dc9372295c3884e222a57271bc645e79b140",
+  "version": 2
  },
  "floor_masks": {
   "depsSha256": "693f688617771173f1a936e1652ee8a976e4aa1ddf7a2ddddd8e37c9ba6c37e8",
@@ -100,7 +100,7 @@
   "version": 1
  },
  "names": {
-  "depsSha256": "06b09a7128b5ea3763bed27c1a6c7c559dbeb65809ec2423f65ab61a818121df",
+  "depsSha256": "e064b43bdb424eec033fb57edc8b6b4f8aba6f7ccd5ab9346b4f60ba13f9587b",
   "version": 1
  },
  "oanalysis": {
@@ -144,8 +144,8 @@
   "version": 1
  },
  "rule:inferred_floor": {
-  "depsSha256": "e392d901cd9e3f3049897e898841b2709081e1bb3b9c3d934148602dbf2d0645",
-  "version": 1
+  "depsSha256": "5f0d260060bf6c66d2d08448794106d236235fa375b44040af7e4ef5fabba91d",
+  "version": 2
  },
  "rule:lens": {
   "depsSha256": "ed4d21a29dc534373d0510f320ca63665a593acb9182658fb5850435349d8905",

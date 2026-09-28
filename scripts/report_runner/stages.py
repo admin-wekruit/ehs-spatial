@@ -67,7 +67,11 @@ SCRIPT = {"source": "scripts/prepare_video_clip.py", "cuts": "scripts/detect_sho
 # names not bumped at the M2 review: its deps changed only through profiles.M2_RULES (floor_frames@2), which
 # name_video_entities never reads (it reads QWEN3VL_NAMING_GATE); nor for U6 (commercial names with Gemini: profiles.CLOUD,
 # Profile.cloud, the commercial rows), which only the runner reads; a commercial names key changes through its model pins.
-VERSIONS = {kind: 2 if kind in ("source", "moge", "depth", "sam2", "floor_masks", "import") else 1 for kind in SCRIPT}
+# The delivered profile only serves the adopted runs, which no code of today made: its keys keep the versions they were adopted
+# under (ADOPTED), whatever VERSIONS says later.
+ADOPTED = {kind: 2 if kind in ("source", "moge", "depth", "sam2", "floor_masks", "import") else 1 for kind in SCRIPT}
+# 2 at the Lightning fixes: floor_infer withholds the untested convex outline (no --dense)
+VERSIONS = ADOPTED | {"floor_infer": 2}
 DECIDE = "scripts/report_runner/decide.py"  # decision stages: versioned by their rule (decide.VERSIONS, rule_code), not here
 
 # every option's default, as each script's argparse declares it (tests/test_report_runner_stages.py re-reads them by AST)
@@ -92,7 +96,7 @@ DEFAULTS = {
     "modal_apps/lingbot_room.py": {'--output': None, '--manifest': None, '--sample': None, '--stride': 3, '--run-id': None, '--video': None, '--frames': None},
     "scripts/lingbot_dense_map.py": {'--run-id': None, '--droid-run': None, '--clip': None, '--masks': None, '--output': None, '--mesh': None, '--surface': None, '--points': None, '--depth-run': None, '--conf': 1.06, '--fill-conf': 1.0, '--sample': 3, '--cell': 0.0075, '--tolerance': 0.04, '--tolerance-floor': 0.015, '--max-points': 4000000, '--exclude-frames': [], '--overlay-rows': (646, 706)},
     "scripts/lingbot_icp_refine.py": {},
-    "scripts/infer_room_floor.py": {'--self-check': False, '--fused': None, '--dense': None, '--droid-run': None, '--skip-frames': [], '--output': None},
+    "scripts/infer_room_floor.py": {'--self-check': False, '--fused': None, '--dense': None, '--droid-run': None, '--skip-frames': [], '--legacy-convex': False, '--output': None},
     "modal_apps/splat_train.py": {'--self-check': False, '--clip': '$ART/data/clips/me340-165', '--droid-run': '$ART/runs/droid-me340-165-171', '--masks': '$ART/runs/me340-dynamic-masks-188/masks', '--mesh': '$ART/runs/da3-posed-me340-189-fused-dynamic/mono-anchored-mesh.ply', '--fill': '$ART/runs/me340-filled-213/textured-scene.glb', '--scale': '$ART/runs/da3-posed-me340-189-fused-dynamic/metric-scale.json', '--captions': (648, 704, 160, 1120), '--steps': 30000, '--cap': 1500000, '--pose': False, '--exposure': False, '--ablation': False, '--max-elongation': None, '--depth-weight': 0, '--lingbot': None, '--seed-voxel': 0.005, '--seed-scale': 0.5, '--compare': None, '--max-minutes': 40, '--resume': None, '--clean': None, '--pick': None, '--skip': [], '--output': None},
     "scripts/register_cut_shot.py": {'--self-check': False, '--droid-run': None, '--depth-run': None, '--clip': None, '--output': None, '--mesh': None, '--registration': None, '--scene': None, '--analysis': None, '--merge': [], '--person-tracks': [], '--shot': '14:226', '--cut-frames': [], '--walk-count': 14, '--model': 'depth-anything/DA3-GIANT-1.1', '--invoke': False},
     "scripts/complete_video_objects.py": {'--self-check': False, '--droid-run': None, '--depth-run': None, '--object-map': None, '--masks': None, '--dynamic-masks': None, '--clip': None, '--output': None, '--entities': [], '--exclude': [], '--count': 10, '--all': False, '--generator': 'recgen', '--reassess': False, '--invoke': False, '--function-id': 'fu-Hh2leT3x1kprDaWpWsZ09l', '--max-usd': 30.0, '--skip-frames': [], '--voxel-native': 0.014, '--no-captions': False, '--workers': 1},
@@ -454,7 +458,7 @@ class _Graph:
         kind = kind_of(name)
         rate = rate or gpu  # USD_PER_S key of what the stage pays for: its GPU, or a Modal CPU container
         paid = rate is not None or compute == "cloud"
-        spec = StageSpec(name=name, site=self.ctx.site, version=VERSIONS.get(kind, 1),
+        spec = StageSpec(name=name, site=self.ctx.site, version=(ADOPTED if delivered(self.ctx) else VERSIONS).get(kind, 1),
                          deps=deps if deps is not None else deps_of(SCRIPT[kind]) if SCRIPT.get(kind) else (),
                          commands=tuple(tuple(c) for c in commands), inputs=inputs, consumes=consumes,
                          leaves={k: Path(v) for k, v in (leaves or {}).items()}, outputs=dict(outputs),
@@ -778,7 +782,7 @@ def graph(ctx):
         dense_dir = {"raw": "@lingbot_build:out", "icp": "@dense_gate/icp"}.get(use)
     g.add("floor_infer", [[PY, S("infer_room_floor.py"), "--fused", "@fuse:out", *(["--dense", dense_dir, "--droid-run", "@camera:out"] if dense_dir else []),
                            *(["--skip-frames", *skip] if skip else []), "--output", "@new/out"]], {"out": "out", "floor": "out/inferred-floor.json"}, est_s=300)
-    g.decide("inferred_floor", "inferred_floor", floor="@floor_infer:floor")
+    g.decide("inferred_floor", "inferred_floor", floor="@floor_infer:floor", lens=None if "lens_gate" in omit else "@lens_gate:decision")
     if objects and box_excludes is None and "generator_plan-box" in g.by:
         after = g.need("generator_plan-box", absent=None)
         box_excludes, unplanned = (after or plan)["box_excludes"], unplanned | ({"recgen"} if after is None else set())

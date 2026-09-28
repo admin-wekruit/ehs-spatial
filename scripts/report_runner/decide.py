@@ -41,8 +41,9 @@ PERSON = ("man", "woman", "person", "people", "worker", "human")  # the person w
 UNNAMED = "unnamed surface"
 # bump a rule's version when its code changes (tests/versions.json 'rule:NAME' guards it; stages.rule_code is what counts)
 # floor_frames 2: the operator list applies only to the clip it names (source video sha256 and window)
+# inferred_floor 2: only a dense-validated floor on a plane the lens gate passed
 VERSIONS = {name: 1 for name in ("shots", "other_shot", "lens", "voxel", "overlay", "lingbot_stride", "lingbot_conf", "dense_gate",
-                                 "inferred_floor", "track_windows", "splat_pick", "sam2_frames", "generator_plan", "static_filter")} | {"floor_frames": 2}
+                                 "track_windows", "splat_pick", "sam2_frames", "generator_plan", "static_filter")} | {"floor_frames": 2, "inferred_floor": 2}
 
 
 def _file(path, name):
@@ -319,10 +320,16 @@ def dense_gate(map, fused, out):
                     "floorBandM": FLOOR_BAND_M, "floorCellM": FLOOR_CELL_M}})
 
 
-def inferred_floor(floor):
-    """D9. Import the inferred floor only if its own tests did not withhold it."""
-    kind = _json(floor, "inferred-floor.json")["kind"]
-    return _result("inferred_floor", kind != "inferred_floor_withheld", {"kind": kind})
+def inferred_floor(floor, lens=None):
+    """D9. Import the inferred floor only if its own tests kept it: a model tested against a dense map (dense.validation), on a
+    floor plane the lens gate passed (lens: the lens_gate decision). The convex outline (no dense map) was never tested, and
+    an intrinsics_uncertain plane is no verified floor: both withheld (a wrong floor is worse than none)."""
+    record = _json(floor, "inferred-floor.json")
+    status = _value(lens, "lens")["scale_status"] if lens else None
+    why = (record.get("reason") or "withheld by its own tests" if record["kind"] == "inferred_floor_withheld" else
+           "no dense-map validation: the convex outline was never tested against the video" if not (record.get("dense") or {}).get("validation") else
+           "the floor plane failed the lens gate (intrinsics_uncertain): no verified plane to extend" if status == "intrinsics_uncertain" else None)
+    return _result("inferred_floor", why is None, {"kind": record["kind"], "lensScaleStatus": status, **({"withheld": why} if why else {})})
 
 
 # ---------------------------------------------------------------- D10, D11, D12: windows, splat cleanup, SAM 2.1 frames
