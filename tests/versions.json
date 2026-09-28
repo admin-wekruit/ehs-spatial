@@ -100,7 +100,7 @@
   "version": 1
  },
  "names": {
-  "depsSha256": "e064b43bdb424eec033fb57edc8b6b4f8aba6f7ccd5ab9346b4f60ba13f9587b",
+  "depsSha256": "8ff7ae82023c3aa2522de4df87198f7a38bfed194e01c38b639dd3700ae7fbea",
   "version": 1
  },
  "oanalysis": {
@@ -152,8 +152,8 @@
   "version": 1
  },
  "rule:lingbot_conf": {
-  "depsSha256": "0ad160c0a2f56895eeb8c59eb078784d35672232fb1e492206ca499f7a41c044",
-  "version": 1
+  "depsSha256": "fb386a720e0b645567ad16515b514102be7adfba35d018050f1a7ec4fafa0102",
+  "version": 2
  },
  "rule:lingbot_stride": {
   "depsSha256": "c4cd1ce3666ccdd58143a0ac1149434f9db3126df615256b7fbc549336c4cca7",

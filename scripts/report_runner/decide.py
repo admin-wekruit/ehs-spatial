@@ -41,9 +41,9 @@ PERSON = ("man", "woman", "person", "people", "worker", "human")  # the person w
 UNNAMED = "unnamed surface"
 # bump a rule's version when its code changes (tests/versions.json 'rule:NAME' guards it; stages.rule_code is what counts)
 # floor_frames 2: the operator list applies only to the clip it names (source video sha256 and window)
-# inferred_floor 2: only a dense-validated floor on a plane the lens gate passed
-VERSIONS = {name: 1 for name in ("shots", "other_shot", "lens", "voxel", "overlay", "lingbot_stride", "lingbot_conf", "dense_gate",
-                                 "track_windows", "splat_pick", "sam2_frames", "generator_plan", "static_filter")} | {"floor_frames": 2, "inferred_floor": 2}
+# inferred_floor 2: only a dense-validated floor on a plane the lens gate passed; lingbot_conf 2: no threshold when no decile agrees
+VERSIONS = {name: 1 for name in ("shots", "other_shot", "lens", "voxel", "overlay", "lingbot_stride", "dense_gate",
+                                 "track_windows", "splat_pick", "sam2_frames", "generator_plan", "static_filter")} | {"floor_frames": 2, "inferred_floor": 2, "lingbot_conf": 2}
 
 
 def _file(path, name):
@@ -232,20 +232,24 @@ def lingbot_stride(shots):
 
 
 def conf_from_deciles(deciles):
-    """The upper edge of the last decile in the leading run whose share within 4% is < 0.90 (none: keep everything)."""
+    """The upper edge of the last decile in the leading run whose share within 4% is < 0.90 (none: keep everything). None when
+    no decile reaches 0.90: no confidence makes neighbouring views agree, so no threshold is chosen (the dense map is withheld)."""
     last = None
     for row in deciles:
         if row["share_within_4pct"] >= LINGBOT_SHARE_4PCT:
             break
         last = row
+    else:
+        return None
     return round(last["conf_to"] if last else deciles[0]["conf_from"], 2)
 
 
 def lingbot_conf(diagnose):
-    """D7. The confidence threshold from lingbot_dense_map diagnose's by_conf_decile."""
+    """D7. The confidence threshold from lingbot_dense_map diagnose's by_conf_decile; None (no dense map) when no decile agrees."""
     deciles = _json(diagnose, "diagnose.json")["by_conf_decile"]
-    return _result("lingbot_conf", conf_from_deciles(deciles), {"shareWithin4pct": [round(d["share_within_4pct"], 4) for d in deciles],
-                                                                 "confTo": [d["conf_to"] for d in deciles], "rule": LINGBOT_SHARE_4PCT})
+    conf = conf_from_deciles(deciles)
+    return _result("lingbot_conf", conf, {"shareWithin4pct": [round(d["share_within_4pct"], 4) for d in deciles], "confTo": [d["conf_to"] for d in deciles],
+                                          "rule": LINGBOT_SHARE_4PCT, **({} if conf is not None else {"withheld": f"no decile reaches {LINGBOT_SHARE_4PCT:.0%} within 4%"})})
 
 
 def plane_frame(scale):
@@ -503,6 +507,7 @@ def self_check():
                {"conf_from": 1.737, "conf_to": 2., "share_within_4pct": .92}, {"conf_from": 2., "conf_to": 3., "share_within_4pct": .8}]
     assert conf_from_deciles(deciles) == 1.74, "only the leading run counts, a later dip does not"
     assert conf_from_deciles(deciles[2:]) == 1.74 and conf_from_deciles([{"conf_from": 1., "conf_to": 2., "share_within_4pct": .95}]) == 1.
+    assert conf_from_deciles([d for d in deciles if d["share_within_4pct"] < .9]) is None, "no decile agrees: no threshold, no dense map"
     held = lambda psnr, kept: {"kept": kept, "held_out": {"psnr": psnr}}
     assert pick_cleanup({"none": held(30, 100), "a": held(29.85, 60), "b": held(29.7, 40)}) == "a"
     crop = [160, 0, 960, 720]

@@ -726,7 +726,7 @@ def graph(ctx):
               est_s=120)
     if dense_map:
         conf = g.need("lingbot_conf", absent=None)
-        dense_map = conf is not None  # no confidence (the LingBot run or its diagnosis failed): no dense points
+        dense_map = conf is not None  # no confidence (the LingBot run or its diagnosis failed, or no decile agreed): no dense points
     if dense_map:
         g.add("lingbot_build", [[PY, S("lingbot_dense_map.py"), "build", *dense, "--mesh", "@fuse:mesh", "--conf", _num(conf),
                                  "--overlay-rows", overlay["lingbot_rows"], *exclude, "--output", "@new/out"]],

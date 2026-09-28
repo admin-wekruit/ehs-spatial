@@ -159,3 +159,17 @@ def test_the_dense_map_follows_a_640x480_source(tmp_path):
     assert mask.shape == (480, 640) and mask[230, 130] and not mask[230, 300] and not mask[100, 130], "the mask lands where the person is"
     k = ldm.full_k([500., 500., 319.5, 239.5], geometry)
     assert np.allclose(k, [[500, 0, 319.5], [0, 500, 239.5], [0, 0, 1]])
+
+
+# ---------------------------------------------------------------- 5. runner rules
+def test_no_agreeing_decile_withholds_the_dense_map(tmp_path):
+    """Lightning's diagnose: no confidence decile reached 90% of neighbouring views within 4%; the rule returned the top edge
+    (3.41), which drops nearly every point, instead of refusing."""
+    deciles = [{"conf_from": c, "conf_to": c + .5, "share_within_4pct": s} for c, s in ((1., .54), (1.5, .49), (2., .36), (2.5, .21))]
+    result = decide.lingbot_conf(write(tmp_path / "diagnose.json", {"by_conf_decile": deciles}))
+    assert result["value"] is None and "no decile" in result["evidence"]["withheld"]
+    cached = RUNS / "lightning-lingbot_diagnose-b358395994/diagnose.json"
+    if cached.is_file():
+        assert decide.lingbot_conf(cached)["value"] is None
+    by = build("walmart", decisions={**SITES["walmart"][2], "lingbot_conf": None})
+    assert "lingbot_build" not in by and "dense_gate" not in by and flag(by["import"], "--dense-points") is None
