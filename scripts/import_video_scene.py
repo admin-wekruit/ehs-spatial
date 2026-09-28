@@ -156,6 +156,34 @@ def png(image):
     return cv2.imencode(".png", image)[1].tobytes()
 
 
+def lens_scale(scale, lens=None):
+    """metric-scale.json as the import reads it. lens: report_runner.decide lens.json of the mapped shot; a lens that failed its
+    floor-plane gate makes the scale intrinsics_uncertain, which claims no metres (the geometry is unchanged)."""
+    if not lens:
+        return scale
+    decided = json.loads(Path(lens).read_text())["value"]
+    assert decided["plane_inlier_fraction"] == scale.get("plane_inlier_fraction"), "--lens was decided on another metric-scale.json"
+    return {**scale, "scale_status": "intrinsics_uncertain"} if decided["scale_status"] == "intrinsics_uncertain" else scale
+
+
+def scale_limitation(scale, device):
+    """The report's sentence on where its metres come from: only what this clip's metric-scale.json records."""
+    if device:
+        return "Metres come from the capture device's poses; depth comes from a pretrained model conditioned on them."
+    status = scale.get("scale_status")
+    if status == "intrinsics_uncertain":
+        return (f"The lens estimate for this shot failed its floor-plane check ({scale['plane_inlier_fraction']:.1%} of floor points on one "
+                "plane, under 90%): sizes and distances are in native units, not metres.")
+    if contract_scale(scale)["status"] == "uncalibrated":
+        return "Monocular video without a scale anchor: sizes and distances are in native units, not metres."
+    if "camera_height_native_median" not in scale:
+        return "Monocular video; metres come from a model's own metric depth, not from a measurement."
+    stated = f"Monocular video; metres come from a stated {scale['metres_per_native_unit'] * scale['camera_height_native_median']:.1f} m carry height"
+    if scale.get("model_estimated_metres_per_native_unit") is None:  # nothing to disagree with: say only that it was not measured
+        return stated + ", not measured."
+    return stated + f" that disagrees with the model scale estimate by about {abs(scale['height_anchor_vs_model_estimate']):.0%} on this clip."
+
+
 def build_document(args, put_asset, calibration, dataset):
     ident = lambda *parts: str(uuid5(NAMESPACE_URL, "video-import:" + ":".join(map(str, parts))))
     object_map = json.loads((args.object_map / "object-map.json").read_text())
@@ -186,11 +214,11 @@ def build_document(args, put_asset, calibration, dataset):
             e["walkCells"] = cells[np.isin(pack(cells), pack(data["cells"]))]
         elif not len(points):
             no_walk_3d += [e["entityId"]] if e.pop("cells", None) else []
-    scale = json.loads((args.depth_run / "metric-scale.json").read_text())
+    scale = lens_scale(json.loads((args.depth_run / "metric-scale.json").read_text()), getattr(args, "lens", None))
     manifest = json.loads((args.droid_run / "input-manifest.json").read_text())
     import mono_room
     device = mono_room.METRIC_CAMERAS  # set by use_clip in run(): metric poses from the capture device, no assumed scale
-    uncalibrated = scale.get("scale_status") == "uncalibrated"  # no device metres, no floor mask, no stated height: native units, no metres claimed
+    uncalibrated = contract_scale(scale)["status"] == "uncalibrated"  # no device metres, no floor mask, no stated height, or a lens in doubt: native units, no metres claimed
     prediction = np.load(args.droid_run / "prediction.npz")
     keyframes = {int(i): c for i, c in zip(prediction["keyframe_source_indices"], prediction["keyframe_c2w"])}
     document = empty_document()
@@ -491,9 +519,7 @@ def build_document(args, put_asset, calibration, dataset):
             "videoAssetId": include(args.comparison_video.read_bytes(), "video/mp4", {"kind": "static_dynamic_comparison_video", "sourceRecordId": "static-dynamic"}),
             "panels": rendered["panels"], "frames": rendered["frames"],
             "note": "静态层＝融合前剔除运动像素的地图；动态层＝运动对象在每个采样视图的可见表面（运动线索种子＋SAM 3.1 跟踪，未用文字提示）。从原相机视角渲染，不可旋转。"})
-    limitations = [("Metres come from the capture device's poses; depth comes from a pretrained model conditioned on them." if device else
-                    "Monocular video without a scale anchor: sizes and distances are in native units, not metres." if uncalibrated else
-                    "Monocular video; metres come from a stated 1.6 m carry height that disagrees with the model scale estimate by about 20% on this clip."),
+    limitations = [scale_limitation(scale, device),
                    "Only what the camera saw is present; the room surface is source context and has not been accepted.",
                    "Entities are grouped by 3D point overlap of text-prompted masks; identities were not reviewed by a person."] + object_map["limitations"]
     document["annotations"].append({"id": ident("annotation", "provenance"), "kind": "import_provenance", "sourceAssetId": source, "limitations": limitations,
@@ -570,6 +596,7 @@ if __name__ == "__main__":
     parser.add_argument("--video-events", type=Path, help="video_events.py events.json: window captions and events as the report's video memory")
     parser.add_argument("--skeleton-scene", type=Path, help="a replay scene.json whose moving objects carry keypoints3d/bones (same cameras): skeletons as a timed layer")
     parser.add_argument("--dynamic-analysis", type=Path, help="motion_tracks_to_analysis.py output of the same tracks: their masks become pickable outlines in the video")
+    parser.add_argument("--lens", type=Path, help="report_runner.decide lens.json of the mapped shot: a failed floor-plane gate makes the scale intrinsics_uncertain (no metres)")
     parser.add_argument("--title", default="Video workcell (imported, not accepted)")
     parser.add_argument("--output-dir", type=Path, default=Path(".platform/imports"))
     parser.add_argument("--request-suffix", default="1", help="change to import the same inputs again as a new project")
