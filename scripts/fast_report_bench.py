@@ -2,8 +2,9 @@
 video one first call and two warm calls; the last call of the last video runs the background layers (background_s).
 
 Each call streams its patches into one local mirror (layers.mirror); with --serve a poller plays the viewer against
-layers.serve (500 ms, like live-report.ts) and records when each patch is first served. After each call the quality table
-runs (scripts/fast_report_eval.py; its GPU rows once per video, on the first warm call). summary.json: analysis time to
+layers.serve (500 ms, like live-report.ts) and records when each patch is first served. After each call the quality table's
+CPU rows run (seconds: the container's 60 s scale-down window must not close between calls); its GPU rows run once per video
+on the first warm call, after the container is released. summary.json: analysis time to
 each layer (written, from the MP4 bytes in the container), sent / received / served, boot, upload, per-stage per-GPU
 peaks and >90% flags, quality, acceptance against section 13, and the Modal list-price estimate.
 
@@ -124,6 +125,17 @@ def summarize(out, records, boot, meta):
                           "clock minus the container's t0_unix (two clocks); cold start only in boot"}
 
 
+def quality(rec, mirror_root, out, gpu):
+    report = rec["run"]["report"]
+    try:
+        q = ev.evaluate(ev.load_layers(mirror_root, report), rec["site"], gpu=gpu)
+        (out / f"eval-{report}.json").write_text(json.dumps(q, indent=1))
+        rec["quality"] = {"verdict": q["verdict"], "rows": q["rows"], "not_scored": q["not_scored"]}
+    except Exception as error:  # a quality failure must not lose the timing
+        rec["quality"] = {"error": repr(error)[:600]}
+    (out / f"call-{report}.json").write_text(json.dumps(rec, indent=1, default=str))
+
+
 def bench(a):
     import modal
     from fast_report import layers as fl  # C: mirror, serve
@@ -154,17 +166,14 @@ def bench(a):
                            "eval_holdout": ev.holdout_frames(site)}
                 rec = call(fr, fl.mirror, mirror_root, mp4, site, report, options, Poller(report) if a.serve else None)
                 rec.update(site=site, call=i, options=options)
-                try:
-                    q = ev.evaluate(ev.load_layers(mirror_root, report), site, gpu=a.gpu_eval and i == 1)
-                    (out / f"eval-{report}.json").write_text(json.dumps(q, indent=1))
-                    rec["quality"] = {"verdict": q["verdict"], "rows": q["rows"], "not_scored": q["not_scored"]}
-                except Exception as error:  # a quality failure must not lose the timing
-                    rec["quality"] = {"error": repr(error)[:600]}
-                (out / f"call-{report}.json").write_text(json.dumps(rec, indent=1, default=str))
+                quality(rec, mirror_root, out, gpu=False)
                 records.append(rec)
                 print(site, i, json.dumps({k: v["first"]["written_s"] for k, v in layer_times(rec).items()}), flush=True)
     meta["finished_unix"] = time.time()
     meta["usd_estimate_upper"] = round((meta["finished_unix"] - submitted) * usd_per_s(), 2)  # the container's whole life, list prices
+    for rec in records:
+        if a.gpu_eval and rec["call"] == 1:
+            quality(rec, mirror_root, out, gpu=True)
     summary = summarize(out, records, boot, meta)
     (out / "summary.json").write_text(json.dumps(summary, indent=1, default=str))
     print(json.dumps({"acceptance_warm": summary["acceptance_warm"], "flags": summary["flags"], "quality": summary["quality_verdicts"],
