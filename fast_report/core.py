@@ -17,7 +17,7 @@ import numpy as np
 
 import detect_shot_cuts as dsc  # cut rules, unchanged
 
-BLOCK, MIN_SHOT, CHUNK = 6, 30, 32  # E9: sharpest of each 6-frame block; shots under 1 s get no geometry
+BLOCK, MIN_SHOT, CHUNK, TAIL = 6, 30, 32, 8  # E9: sharpest of each 6-frame block; shots under 1 s get no geometry
 DA3_HW = (280, 504)
 CAMERA_HEIGHT_M = 1.6  # the reference's own assumption: every metre here is 'estimated'
 LICENSE = "DA3-GIANT-1.1 (CC BY-NC 4.0): research licence, not for commercial use"
@@ -277,7 +277,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     W, H = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     writer.put("video", {"fps": fps, "frames": n_total, "wh": [W, H], "sha256": video_sha, "window_s": opts.get("window_s")},
                {"mp4": (mp4, {"mediaType": "video/mp4"})}, "observed", ["the uploaded video"])
-    work = segment.SamWork(m.sams, dev_geo, clock, wave1)
+    work = segment.SamWork(m.sams, dev_geo, clock, wave1, hold_dev=dev_seg)  # vLLM serves from dev_seg
     for words in (("person", "floor"), tuple(wave1)):
         for s in m.sams.values():
             s.text(words)
@@ -294,10 +294,13 @@ def analyse(m, mp4, opts, clock, writer, log):
         try:
             with clock.stage("vlm.vocab", n={"frames": len(vlm_frames)}):
                 pngs = [cv2.imencode(".png", raster_rgb(frames[f]))[1].tobytes() for f in vlm_frames]
+                work.hold.set()  # GPU 1's SAM 3 waits: the vocabulary gates wave 2 and decodes 3-5x faster alone
                 words, rec = vlm.vocab(pngs)
             results["vocab"] = {**rec, "words": words, "frames": vlm_frames}
         except Exception as error:  # noqa: BLE001  no vocabulary: wave 1 alone, recorded
             words, results["vocab"] = [], {"error": repr(error)[:500]}
+        finally:
+            work.hold.clear()
         decoded_all.wait()
         results["wave2_words"] = work.set_wave2(words, len(keys))
         clock.mark("vocab_known")
@@ -355,9 +358,12 @@ def analyse(m, mp4, opts, clock, writer, log):
         decoded_all.set()
         if vocab_future is None:
             vocab_future = m.vlm_pool.submit(vocab_then_events)
-        futures.append(m.proc_pool.submit(measure_chunk, [g.result()[0] for g in grays[max(0, a - 2):]], a, n, max(0, a - 2), n))
-        chunk_at.append(clock.now())
-        futures[-1].add_done_callback(lambda f, i=len(futures) - 1: chunk_done.__setitem__(i, clock.now()))
+        gray_all = [g.result()[0] for g in grays]
+        for a1 in range(a, n, TAIL):  # the tail in small pieces: after decoding it is on the critical path
+            b1, lo = min(a1 + TAIL, n), max(0, a1 - 2)
+            futures.append(m.proc_pool.submit(measure_chunk, gray_all[lo:min(n, b1 + dsc.SPAN + 1)], a1, b1, lo, min(n, b1 + dsc.SPAN + 1)))
+            chunk_at.append(clock.now())
+            futures[-1].add_done_callback(lambda f, i=len(futures) - 1: chunk_done.__setitem__(i, clock.now()))
     with clock.stage("cuts"):
         parts = [f.result() for f in futures]
         cuts = cuts_from(stitch(parts), n)
@@ -584,14 +590,14 @@ def analyse(m, mp4, opts, clock, writer, log):
 
     # ---------- outlines: object keyframes 'segmented' (SAM 3 logits), other 5 fps keyframes 'projected' (E6b pair) ----------
     with torch.inference_mode(), clock.stage("outlines", gpu=dev_geo):
-        jobs = []  # (entry, [(object, mask numpy, sx, sy, source)]): contours on the CPU pool (OpenCV releases the GIL)
+        maps = []  # (entry, label map int16 numpy (0 = nothing, i + 1 = object i), sx, sy): polygons in the process pool
         oh, ow = H // 2, W // 2
         for q, objs in sorted(by_frame.items()):
             ids = list(objs)
             lg = torch.stack([voc["logits"][torch.tensor(objs[o], device=dev_geo)].float().amax(0) for o in ids])
-            mk = (F.interpolate(lg[None], size=(oh, ow), mode="bilinear", align_corners=False)[0] > 0).cpu().numpy()
-            jobs.append(({"timeSec": round(keys[q] / fps, 4), "sourceFrame": int(keys[q]), "source": "segmented"},
-                         [(o, mm, W / ow, H / oh, "segmented") for o, mm in zip(ids, mk)]))
+            lab = segment.paint(F.interpolate(lg[None], size=(oh, ow), mode="bilinear", align_corners=False)[0] > 0)
+            lab = torch.cat([torch.zeros(1, dtype=torch.long, device=dev_geo), torch.tensor(ids, device=dev_geo) + 1])[lab]
+            maps.append(({"timeSec": round(keys[q] / fps, 4), "sourceFrame": int(keys[q]), "source": "segmented"}, lab.short().cpu().numpy(), W / ow, H / oh))
         for si, gg in enumerate(geo):
             pos = gg["pos"]
             obj_local = [j for j, q in enumerate(pos) if q in by_frame]
@@ -604,18 +610,17 @@ def analyse(m, mp4, opts, clock, writer, log):
             for j, q in enumerate(pos):
                 if q in by_frame:
                     continue
-                lab_ = segment.project_pair(idm, gg["depth_m"], gg["K"], gg["c2w_m"], obj_local, j)
-                lab_[people_local[j]] = -1  # people are not projected (E6b caveat): cut out with this frame's SAM 3 person mask
-                lab_np = lab_.cpu().numpy()
-                jobs.append(({"timeSec": round(keys[q] / fps, 4), "sourceFrame": int(keys[q]), "source": "projected"},
-                             [(o - 1, lab_np == o, W / DA3_HW[1], H / DA3_HW[0], "projected") for o in np.unique(lab_np) if o > 0]))
-
-        def draw(job):
-            entry, parts = job
-            entry["objects"] = [{"entityId": objects[o]["id"], "label": objects[o]["label"], "polygons": poly, "source": src}
-                                for o, mm, sx, sy, src in parts for poly in [segment.polygons(mm, sx, sy)] if poly]
-            return entry
-        frames_out = sorted(m.cpu_pool.map(draw, jobs), key=lambda e: e["timeSec"])
+                lab = segment.project_pair(idm, gg["depth_m"], gg["K"], gg["c2w_m"], obj_local, j)
+                lab[people_local[j]] = -1  # people are not projected (E6b caveat): cut out with this frame's SAM 3 person mask
+                maps.append(({"timeSec": round(keys[q] / fps, 4), "sourceFrame": int(keys[q]), "source": "projected"},
+                             lab.clamp(min=0).short().cpu().numpy(), W / DA3_HW[1], H / DA3_HW[0]))
+        polys = list(m.proc_pool.map(segment.label_polygons, [x[1] for x in maps], [x[2] for x in maps], [x[3] for x in maps]))
+        frames_out = []
+        for (entry, _, _, _), found in zip(maps, polys):
+            entry["objects"] = [{"entityId": objects[v - 1]["id"], "label": objects[v - 1]["label"], "polygons": poly, "source": entry["source"]}
+                                for v, poly in sorted(found.items())]
+            frames_out.append(entry)
+        frames_out.sort(key=lambda e: e["timeSec"])
         for e, nxt in zip(frames_out, frames_out[1:] + [None]):
             e["endTimeSec"] = nxt["timeSec"] if nxt else round(e["timeSec"] + BLOCK / fps, 4)
         analysis = json.dumps({"width": W, "height": H, "frames": frames_out}, separators=(",", ":")).encode()
@@ -636,6 +641,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         esc.result()
     summary.update(frames=n, fps=fps, wh=[W, H], cuts=cuts, keyframes=len(keys), object_keyframes=len(range(0, len(keys), segment.OBJECT_EVERY)),
                    words=len(words), wave2_words=len(work.wave2 or []), vocab=results.get("vocab"), sam3_tasks_by_worker=work.by_worker,
+                   sam3_gpu1_held_for_vocab_s=round(work.held_s, 3),
                    detections={"person": int(is_person.sum()), "floor": int((~is_person).sum()), "vocabulary_masks": int(len(voc["frame"])) if voc else 0,
                                "vocabulary_masks_kept": int(len(kept))},
                    objects=len(objects), cascade=casc, events_windows=len(ev), vllm_engine_stats=vlm.throughput(),

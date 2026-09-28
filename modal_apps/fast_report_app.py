@@ -413,6 +413,32 @@ def evaluate(run_dir):
                     if iou > best.get(ent, (0, None))[0]:
                         best[ent] = (iou, oid)
         matched = {e: oid for e, (iou, oid) in best.items() if iou >= .5 and oid in objs}
+        # what the namer saw: each object's best view (the VLM crop's frame), matched there to one delivered object
+        seen_pairs = {}
+        seg_frames = {fr["sourceFrame"]: fr for fr in analysis["frames"] if fr["source"] == "segmented"}
+        for oid, o in objs.items():
+            fr = seg_frames.get(o["best_key"])
+            g = min(have, key=lambda x: abs(x - o["best_key"]))
+            if fr is None or abs(g - o["best_key"]) > 1 or g not in obs_by_frame:
+                continue
+            m = np.zeros((480, 640), np.uint8)
+            for x in fr["objects"]:
+                if x["entityId"] == oid:
+                    for poly in x["polygons"]:
+                        pp = np.array(poly, np.float64)
+                        cv2.fillPoly(m, [np.round(np.stack([(pp[:, 0] - 160) * 640 / 960, pp[:, 1] * 480 / 720], 1)).astype(np.int32)], 1)
+            m = m.astype(bool)
+            if not m.any():
+                continue
+            top = (0, None)
+            for ent, inst in obs_by_frame[g]:
+                path = masks_dir / f"frame-{g:05d}" / f"instance-{inst}-mask.png"
+                if path.exists():
+                    theirs = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE) > 0
+                    iou = (m & theirs).sum() / max((m | theirs).sum(), 1)
+                    top = max(top, (iou, ent), key=lambda x: x[0])
+            if top[0] >= .5:
+                seen_pairs[oid] = top[1]
         tally = {"sam3_word": [], "zero_shot_top1": [], "cascade_v1": [], "cascade_final": []}
         by_source = {}
         detail = []
@@ -427,6 +453,22 @@ def evaluate(run_dir):
             by_source.setdefault(src, []).append(ok["cascade_final"])
             detail.append({"entity": ent, "delivered": theirs, "object": oid, "word": o["word"], "zero_shot": zs, "label": o.get("label"),
                            "source": o.get("label_source"), "iou": round(best[ent][0], 3), **ok})
+        bv = {"sam3_word": [], "zero_shot_top1": [], "zero_shot_context_top1": [], "cascade_v1": [], "cascade_final": []}
+        bv_source = {}
+        for oid, ent in seen_pairs.items():
+            o, theirs = objs[oid], names[ent]["category"]
+            c = o.get("cascade", {})
+            ok = {"sam3_word": name_match(o["word"], theirs), "zero_shot_top1": name_match((c.get("zero_shot_top3") or [[None]])[0][0], theirs),
+                  "zero_shot_context_top1": name_match((c.get("zero_shot_context_top3") or [[None]])[0][0], theirs),
+                  "cascade_v1": name_match(first.get(oid, o).get("label"), theirs), "cascade_final": name_match(o.get("label"), theirs)}
+            for k, v in ok.items():
+                bv[k].append(v)
+            bv_source.setdefault(o.get("label_source", "?").split(" ")[0], []).append(ok["cascade_final"])
+        row["naming_best_view"] = {"pairs": len(seen_pairs), "rule": "each object's best view (the VLM crop's frame), IoU >= 0.5 with one delivered object there",
+                                   "accuracy": {k: {"correct": int(sum(v)), "of": len(v), "share": round(sum(v) / max(len(v), 1), 3)} for k, v in bv.items()},
+                                   "final_by_source": {k: {"correct": int(sum(v)), "of": len(v)} for k, v in bv_source.items()},
+                                   "pairs_detail": [{"object": oid, "delivered": names[e]["category"], "label": objs[oid].get("label"), "word": objs[oid]["word"],
+                                                     "source": objs[oid].get("label_source")} for oid, e in seen_pairs.items()]}
         row["naming"] = {"delivered_named_on_our_frames": len({e for e in best}), "matched_iou_0.5": len(matched), "observation_pairs": pairs,
                          "accuracy": {k: {"correct": int(sum(v)), "of": len(v), "share": round(sum(v) / max(len(v), 1), 3)} for k, v in tally.items()},
                          "final_by_source": {k: {"correct": int(sum(v)), "of": len(v)} for k, v in by_source.items()},
@@ -455,7 +497,8 @@ def evaluate(run_dir):
         row["detail"] = detail
         report[rdir.name] = row
     (Path(run_dir) / "evaluation.json").write_text(json.dumps(report, indent=1))
-    print(json.dumps({k: {kk: vv for kk, vv in v.items() if kk not in ("detail", "zero_shot_sweep")} for k, v in report.items()}, indent=1))
+    print(json.dumps({k: {kk: (vv if kk != "naming_best_view" else {a: b for a, b in vv.items() if a != "pairs_detail"})
+                          for kk, vv in v.items() if kk not in ("detail", "zero_shot_sweep")} for k, v in report.items()}, indent=1))
 
 
 def self_check():

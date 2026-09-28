@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 QWEN, VLLM_SHARE, VLLM_PORT = "Qwen/Qwen3-VL-8B-Instruct", .35, 8000
+MAX_SEQS = 8  # E9 ran 4; naming sends up to 8 requests at once (the KV cache at 0.35 holds ~8 of ~3k tokens)
 CORE = ["fire extinguisher", "exit sign", "forklift", "ladder", "spill", "cable", "hose", "guard"]  # E2b's EHS core list
 MAX_TYPES, VOCAB_FRAMES, SITE_WORDS = 50, 5, 50
 # E2b's v1 prompt, verbatim (vocab_probe.PROMPT with LENGTH v1): 89% recall on ME340 with Qwen, 5 frames, first 50 + core
@@ -45,7 +46,7 @@ def start(gpu):
     env = {k: v for k, v in os.environ.items() if k != "PYTORCH_CUDA_ALLOC_CONF"}
     env.update(CUDA_VISIBLE_DEVICES=str(gpu), HF_HOME="/v/vlm/huggingface", HF_HUB_OFFLINE="1")
     cmd = ["/opt/vllm/bin/vllm", "serve", QWEN, "--host", "127.0.0.1", "--port", str(VLLM_PORT), "--served-model-name", "qwen",
-           "--max-model-len", "16384", "--gpu-memory-utilization", str(VLLM_SHARE), "--max-num-seqs", "4",
+           "--max-model-len", "16384", "--gpu-memory-utilization", str(VLLM_SHARE), "--max-num-seqs", str(MAX_SEQS),
            "--limit-mm-per-prompt", json.dumps({"image": 40, "video": 0}), "--enforce-eager", "--seed", "0"]
     return subprocess.Popen(cmd, env=env, stdout=open("/tmp/vllm.log", "w"), stderr=subprocess.STDOUT)
 
@@ -212,10 +213,10 @@ def parse_names(text, n):
     return out
 
 
-def name_crops(items, per_request=16, parallel=4):
+def name_crops(items, per_request=16, parallel=MAX_SEQS):
     """items: [jpeg of the outlined crop] -> ([name or None ('none' = not one object)], record). No candidate words: in
     run 001 the detector's words in the prompt pulled the answers towards them. per_request crops in one request,
-    `parallel` requests at once (vLLM --max-num-seqs 4)."""
+    `parallel` requests at once."""
     t = time.perf_counter()
     groups = [items[i:i + per_request] for i in range(0, len(items), per_request)]
 

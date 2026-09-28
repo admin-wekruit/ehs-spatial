@@ -7,6 +7,7 @@ in-between 5 fps keyframes 'projected' with E6b's 'pair' rule, people cut out).
 import itertools
 import queue
 import threading
+import time
 
 import numpy as np
 
@@ -99,17 +100,23 @@ class Sam3:
 
 
 class SamWork:
-    """The SAM 3 task queue of one run. Tasks: ('person', chunk start) = {person, floor} on PERSON_FRAMES keyframes plus
-    wave 1 on the object keyframes among them (their vision features are kept for wave 2); ('wave2', keyframe) = the
-    VLM's new words on one object keyframe. Person tasks first; any GPU takes any task."""
+    """The SAM 3 task queue of one run, any GPU takes any task, in this order:
+      0 ('person', chunk start): {person, floor} on PERSON_FRAMES keyframes; keeps the vision features of the object
+        keyframes among them and queues their wave 1 (run 002: wave 1 inside this task held the people, and so the
+        geometry layers, back by 8-10 s once the site cache made wave 1 58 words long);
+      1 ('wave1', chunk start): wave 1 on those object keyframes, on the kept features;
+      2 ('wave2', keyframe): the VLM's new words on one object keyframe, on the kept features.
+    hold: while set, the GPU that serves vLLM takes no task (run 002: vLLM decoded at 2-30 per s beside SAM 3 on the
+    same GPU, 70-100 alone, and the vocabulary gates wave 2)."""
 
-    def __init__(self, sams, dev_out, clock, wave1):
+    def __init__(self, sams, dev_out, clock, wave1, hold_dev=None):
         self.sams, self.dev_out, self.clock, self.wave1, self.wave2 = sams, dev_out, clock, list(wave1), None
         self.tasks, self.order, self.lock = queue.PriorityQueue(), itertools.count(), threading.Lock()
         self.chunks = {d: [] for d in sams}
         self.cache, self.person, self.vocab = {}, [], []
-        self.total, self.done = {"person": None, "wave2": None}, {"person": 0, "wave2": 0}
+        self.total, self.done = {"person": None, "wave1": None, "wave2": None}, {"person": 0, "wave1": 0, "wave2": 0}
         self.decoded, self.vocab_known, self.person_ready, self.all_ready = (threading.Event() for _ in range(4))
+        self.hold, self.hold_dev, self.held_s = threading.Event(), hold_dev, 0.
         self.by_worker, self.error = {}, None
 
     @property
@@ -127,7 +134,10 @@ class SamWork:
 
     def seal_decode(self):
         with self.lock:
-            self.total["person"] = len(self.chunks[self.dev_out])
+            self.total["person"] = n = len(self.chunks[self.dev_out])
+            n_keys = sum(len(c) for c in self.chunks[self.dev_out])
+            self.total["wave1"] = sum(any((x + j) % OBJECT_EVERY == 0 for j in range(min(PERSON_FRAMES, n_keys - x)))
+                                      for x in range(0, n * PERSON_FRAMES, PERSON_FRAMES))
             self.decoded.set()
             self._check()
 
@@ -139,9 +149,7 @@ class SamWork:
             xs = [x for x in range(0, n_keys, OBJECT_EVERY)] if new else []
             self.total["wave2"] = len(xs)
             for x in xs:
-                self.tasks.put((1, next(self.order), "wave2", x))
-            if not new:
-                self.cache.clear()
+                self.tasks.put((2, next(self.order), "wave2", x))
             self.vocab_known.set()
             self._check()
         return new
@@ -149,7 +157,7 @@ class SamWork:
     def _check(self):  # under lock
         if self.decoded.is_set() and self.done["person"] == self.total["person"]:
             self.person_ready.set()
-            if self.vocab_known.is_set() and self.done["wave2"] == self.total["wave2"]:
+            if self.vocab_known.is_set() and self.done["wave1"] == self.total["wave1"] and self.done["wave2"] == self.total["wave2"]:
                 self.all_ready.set()
 
     def fail(self, error):
@@ -169,16 +177,26 @@ class SamWork:
             self.fail(error)
             raise
 
+    def _features(self, x, dev):
+        """Kept vision features of object keyframe x, on dev (copied across GPUs when the other one kept them)."""
+        with self.lock:
+            v = self.cache.get(x)
+        return None if v is None else type(v)(**{k: tuple(t.to(dev) for t in val) for k, val in v.items()})
+
     def _worker(self, dev, role, until):
         import torch
-        sam, got, gpu = self.sams[dev], {"person": 0, "wave2": 0}, dev.index
+        sam, got, gpu = self.sams[dev], {"person": 0, "wave1": 0, "wave2": 0}, dev.index
         with torch.cuda.device(dev), torch.inference_mode():
-            while not (until is not None and until.is_set()) and self.error is None:
+            while not (until is not None and until.is_set()) and self.error is None and not self.all_ready.is_set():
+                if dev == self.hold_dev and self.hold.is_set():
+                    t = time.perf_counter()
+                    while self.hold.is_set() and self.error is None and not self.all_ready.is_set() and not (until is not None and until.is_set()):
+                        time.sleep(.005)
+                    self.held_s += time.perf_counter() - t
+                    continue
                 try:
                     _, _, kind, x = self.tasks.get(timeout=.01)
                 except queue.Empty:
-                    if self.decoded.is_set() and self.vocab_known.is_set():
-                        break
                     continue
                 if kind == "person":
                     chunk = self.chunks[dev][x // PERSON_FRAMES]
@@ -191,39 +209,39 @@ class SamWork:
                         r = {k: v[r["frame"] < real] for k, v in r.items()}
                         r["frame"] = r["frame"] + x
                         self.person.append({k: v.to(self.dev_out) for k, v in r.items()})
-                    objs = [j for j in range(real) if (x + j) % OBJECT_EVERY == 0]
+                        objs = [j for j in range(real) if (x + j) % OBJECT_EVERY == 0]
+                        with self.lock:
+                            for j in objs:
+                                self.cache[x + j] = sam.pick(vision, [j], clone=True)
                     if objs:
-                        with self.clock.stage(f"sam3.vocab.wave1@gpu{gpu}", gpu=dev, n={"frames": len(objs), "words": len(self.wave1)}):
-                            v = sam.pick(vision, objs)
-                            r = sam.detect(v, len(objs), self.wave1, VOCAB_SCORE, logits=True)
-                            r["frame"] = torch.tensor([x + j for j in objs], device=dev)[r["frame"]]
-                            self.vocab.append({k: t.to(self.dev_out) for k, t in r.items()})
-                            with self.lock:
-                                if self.wave2 != []:  # wave 2 may still come: keep these frames' features
-                                    for j in objs:
-                                        self.cache[x + j] = sam.pick(vision, [j], clone=True)
+                        self.tasks.put((1, next(self.order), "wave1", x))
+                elif kind == "wave1":
+                    objs = [x + j for j in range(PERSON_FRAMES) if (x + j) % OBJECT_EVERY == 0 and x + j in self.cache]
+                    with self.clock.stage(f"sam3.vocab.wave1@gpu{gpu}", gpu=dev, n={"frames": len(objs), "words": len(self.wave1)}):
+                        fs = [self._features(q, dev) for q in objs]
+                        v = type(fs[0])(**{k: tuple(torch.cat([f[k][i] for f in fs]) for i in range(len(fs[0][k]))) for k in fs[0]})
+                        r = sam.detect(v, len(objs), self.wave1, VOCAB_SCORE, logits=True)
+                        r["frame"] = torch.tensor(objs, device=dev)[r["frame"]]
+                        self.vocab.append({k: t.to(self.dev_out) for k, t in r.items()})
                 else:
-                    with self.lock:
-                        v = self.cache.pop(x, None)
+                    v = self._features(x, dev)
                     with self.clock.stage(f"sam3.vocab.wave2@gpu{gpu}", gpu=dev, n={"frames": 1, "words": len(self.wave2), "cached_features": v is not None}):
                         if v is None:
                             chunk = self.chunks[dev][x // PERSON_FRAMES]
                             v = sam.vision(chunk[x % PERSON_FRAMES:x % PERSON_FRAMES + 1])
-                        else:
-                            v = type(v)(**{k: tuple(t.to(dev) for t in val) for k, val in v.items()})
                         r = sam.detect(v, 1, self.wave2, VOCAB_SCORE, logits=True)
                         r["frame"] = r["frame"] + x
                         r["word"] = r["word"] + len(self.wave1)
                         self.vocab.append({k: t.to(self.dev_out) for k, t in r.items()})
                 torch.cuda.current_stream(dev).synchronize()  # results visible before anyone is told
-                got["person" if kind == "person" else "wave2"] += 1
+                got[kind] += 1
                 with self.lock:
-                    self.done["person" if kind == "person" else "wave2"] += 1
+                    self.done[kind] += 1
                     self._check()
         with self.lock:
-            w = self.by_worker.setdefault(f"{role} gpu{gpu}", {"person_chunks": 0, "wave2_frames": 0})
-            w["person_chunks"] += got["person"]
-            w["wave2_frames"] += got["wave2"]
+            w = self.by_worker.setdefault(f"{role} gpu{gpu}", {"person_chunks": 0, "wave1_chunks": 0, "wave2_frames": 0})
+            for k, n in (("person_chunks", got["person"]), ("wave1_chunks", got["wave1"]), ("wave2_frames", got["wave2"])):
+                w[k] += n
 
     def gathered(self, kind):
         import torch
@@ -350,6 +368,23 @@ def polygons(mask, sx, sy, min_area=4.):
         c = cv2.approxPolyDP(c, .75, True)[:, 0].astype(np.float64)
         out.append(np.round(np.stack([(c[:, 0] + .5) * sx - .5, (c[:, 1] + .5) * sy - .5], 1), 1).tolist())
     return out
+
+
+def label_polygons(lab, sx, sy):
+    """int label map (0 = nothing) -> {label: polygons}. A top-level function: the outlines run it in worker processes."""
+    return {int(v): poly for v in np.unique(lab) if v > 0 for poly in [polygons(lab == v, sx, sy)] if poly}
+
+
+def paint(masks):
+    """(n,H,W) bool -> (H,W) label map, 0 = nothing, i + 1 = masks[i]; where masks overlap, the smaller one wins."""
+    import torch
+    order = torch.argsort(masks.flatten(1).sum(1), descending=True)
+    rank = torch.empty_like(order)
+    rank[order] = torch.arange(1, len(order) + 1, device=masks.device)
+    top = (masks * rank[:, None, None]).amax(0)
+    inv = torch.zeros(len(order) + 1, dtype=torch.long, device=masks.device)
+    inv[1:] = order + 1
+    return inv[top]
 
 
 def splat(world, ids, K, w2c, hw):
