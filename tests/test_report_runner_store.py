@@ -235,6 +235,33 @@ def test_failure_renames_dir_blocks_dependents_and_optional_inputs_drop(tmp_path
     assert {e["stage"] for e in entries(art)} == {"H", "I"}
 
 
+def test_a_stage_that_failed_is_not_run_again_by_the_same_process(tmp_path, art, monkeypatch):
+    """A failed key is remembered for the rest of the command (a paid failure is paid once); a new process tries again."""
+    counter = tmp_path / "tries"
+    fail = spec("F", f"open({str(counter)!r}, 'a').write('x'); raise SystemExit(3)")
+    s = st.Store(art)
+    assert s.execute([fail], st.Ledger())["F"] == s.execute([fail], st.Ledger())["F"] == "failed" and counter.read_text() == "x"
+    monkeypatch.setattr(st.time, "strftime", lambda *a: "20260928T000000")  # two commands failing it within one second
+    assert st.Store(art).execute([fail], st.Ledger())["F"] == st.Store(art).execute([fail], st.Ledger())["F"] == "failed"
+    assert counter.read_text() == "xxx" and len(list((art / "runs").glob("toy-F-*-failed-20260928T000000*"))) == 2
+
+
+def test_main_leaves_an_unresolved_decision_to_the_graph(tmp_path, art, monkeypatch, capsys):
+    """A decision whose producer failed does not stop the command: the graph gets {'absent': status} and decides."""
+    seen = []
+
+    def graph(ctx):
+        fail = spec("A", "raise SystemExit(3)")
+        dec = spec("D", TOUCH, inputs={"a": ("A", ())}, outputs={"decision": "out.txt"})
+        if "D" not in ctx.decisions:
+            raise Pending("D", [fail, dec])
+        seen.append(ctx.decisions["D"])
+        return [spec("Z", TOUCH)]
+    fake_modules(monkeypatch, art, graph)
+    assert run_video_report.main(CLI) == 0 and seen == [{"value": None, "absent": "blocked"}]
+    assert "decision D did not resolve (blocked)" in capsys.readouterr().out and (art / "runs").glob("toy-Z-*")
+
+
 def test_timeout_kills_the_subprocess(art):
     result = st.Store(art).execute([spec("T", "import time; time.sleep(60)", timeout_s=-299)], st.Ledger())
     assert result["T"] == "failed"

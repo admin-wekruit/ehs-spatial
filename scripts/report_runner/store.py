@@ -218,6 +218,7 @@ class Store:
         self.state = self.art / "runs/report-runner"
         self.index = self.state / "keys.jsonl"
         self._resolved = {}  # (site, stage) -> (Hit, index entry)
+        self._failed = set()  # keys that failed in this process: not run again by it (a paid failure is paid once)
         self._lock = threading.Lock()
 
     # ---- index -------------------------------------------------------------------------------------------------
@@ -502,8 +503,10 @@ class Store:
             self._record(spec, key, digests, d, "ran", [self.scope or "research"], lock)
             return self._resolved[(spec.site, spec.name)]
         except Exception as exc:
-            failed = d.with_name(f"{d.name}-failed-{time.strftime('%Y%m%dT%H%M%S')}") if d else None
-            if d:
+            self._failed.add(key)
+            failed, stamp = None, time.strftime('%Y%m%dT%H%M%S')
+            if d:  # a unique name: the same stage may fail twice within a second (two commands)
+                failed = next(f for n in itertools.count(1) if not (f := d.with_name(f"{d.name}-failed-{stamp}" + (f"-{n}" if n > 1 else ""))).exists())
                 d.rename(failed)
             say(f"{spec.name}: failed ({exc}); {failed}")
             return "failed"
@@ -524,6 +527,8 @@ class Store:
         found = self._find(spec, key, self.verify)
         if found:
             return found
+        if key in self._failed:
+            return "failed"
         git = self._git(spec)
         if git is None:
             say(f"{spec.name}: refused, a dependency is untracked or differs from HEAD")
@@ -649,6 +654,9 @@ def main(args):
         try:
             specs = stages.graph(ctx)
             break
+        except RuntimeError as error:  # a decision the report needs could not be made (or no mapped shot)
+            say(f"stops: {error}")
+            return 1
         except Pending as p:
             chosen = next((s for s in p.specs if s.name == p.decision), None)
             if chosen is None or p.decision in ctx.decisions:
@@ -659,9 +667,11 @@ def main(args):
                     print_plan(rows)
                     say(f"stops here: decision {p.decision} is not in the cache" + ("" if args.dry_run else "; the profile is cache-only"))
                     return 0 if args.dry_run else 2
-                if not isinstance(store.execute(p.specs, ledger).get(p.decision), Hit):
-                    say(f"decision {p.decision} did not resolve")
-                    return 1
+                done = store.execute(p.specs, ledger).get(p.decision)
+                if not isinstance(done, Hit):  # the graph leaves the layers that need it blank, or stops when the report needs it
+                    say(f"decision {p.decision} did not resolve ({done}); the layers that need it are left blank")
+                    ctx.decisions[p.decision] = {"value": None, "absent": done or "missing"}
+                    continue
             ctx.decisions[p.decision] = _decision(store.lookup(chosen))
     rows = store.plan(specs, ledger)
     if args.dry_run or (cache_only and any(r["status"] != "hit" for r in rows)):

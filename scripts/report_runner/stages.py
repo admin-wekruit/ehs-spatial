@@ -405,14 +405,23 @@ def previous_import(ctx):
     return next((r for r in reversed(rows) if r.get("site") == ctx.site and r.get("importRecordPath")), {})
 
 
+REQUIRED = object()
+
+
 class _Graph:
     def __init__(self, ctx, profile):
         self.ctx, self.profile, self.specs, self.by, self.decisions = ctx, profile, [], {}, set()
 
-    def need(self, name):
+    def need(self, name, absent=REQUIRED):
+        """A decision's value. The runner marks a decision {'absent': why} when its stage failed, was blocked or refused:
+        an optional layer then gets `absent` (and is left blank); a decision without one stops the graph."""
         found = self.ctx.decisions.get(name)
         if found is None:
             raise Pending(name, self.specs)
+        if found.get("absent"):
+            if absent is REQUIRED:
+                raise RuntimeError(f"{self.ctx.site}: decision {name} could not be made ({found['absent']}), and the report needs it")
+            return absent
         return found["value"]
 
     def add(self, name, commands, outputs, *, link=None, copy=None, optional=(), droid_frames=None, lingbot_source=None,
@@ -699,13 +708,18 @@ def graph(ctx):
 
     # second round: splat pick (D11), LingBot build, dense gate (D8), other-shot movers (D3b), RecGen (D17)
     if splat:
-        rule = g.need("splat_pick")
+        rule = g.need("splat_pick", absent=None)
+        splat = rule is not None  # no pick (the splat failed or was blocked): no splat layer
+    if splat:
         g.add("splat_final", [[PY, M("splat_train.py"), "--clean", "@new/out", "--pick", rule, *inputs]],
               {"out": "out", "splats": "out/splats-clean.splat", "json": "out/splats-clean.json", "cameras": "out/refined-cameras.json"},
               link={f"out/{n}": f"@splat_clean:out/{n}" for n in ("splats.splat", "splats.json", "train.json", "launch.json", "refined-cameras.npz", "clean")},
               est_s=120)
     if dense_map:
-        g.add("lingbot_build", [[PY, S("lingbot_dense_map.py"), "build", *dense, "--mesh", "@fuse:mesh", "--conf", _num(g.need("lingbot_conf")),
+        conf = g.need("lingbot_conf", absent=None)
+        dense_map = conf is not None  # no confidence (the LingBot run or its diagnosis failed): no dense points
+    if dense_map:
+        g.add("lingbot_build", [[PY, S("lingbot_dense_map.py"), "build", *dense, "--mesh", "@fuse:mesh", "--conf", _num(conf),
                                  "--overlay-rows", overlay["lingbot_rows"], *exclude, "--output", "@new/out"]],
               {"out": "out", "points": "out/dense-points.glb", "info": "out/points.json", "attributes": "out/point-attributes.npz", "remote": "out/remote.json"},
               copy={"out/plan.json": "@lingbot:plan", "out/diagnose.json": "@lingbot_diagnose:diagnose"}, rate="cpu24", compute="modal",
@@ -713,7 +727,7 @@ def graph(ctx):
         g.decide("dense_gate", "dense_gate", map="@lingbot_build:out", fused="@fuse:out")
     moved, scene = [], "@dynamic:out"
     for i, (s, e) in enumerate(others):
-        if (s, e) not in registered or not g.need(f"other_shot-{s}-{e}")["accepted"] or e > n_cam:  # refused, or outside the camera clip: blank
+        if (s, e) not in registered or not g.need(f"other_shot-{s}-{e}", absent={"accepted": False})["accepted"] or e > n_cam:  # refused, or outside the camera clip: blank
             continue
         wins = windows["others"][i] if i < len(windows["others"]) else []
         if not wins and not delivered(ctx):  # never the mapped shot's people in another shot: blank
@@ -739,8 +753,10 @@ def graph(ctx):
         moved.append(f"movers-{s}-{e}")
     box_excludes = None
     if objects and "sam3d" in generators:
-        plan = g.need("generator_plan")
-        if "recgen" in generators and plan["recgen_entities"]:
+        plan = g.need("generator_plan", absent=None)
+        if plan is None:  # SAM 3D failed or was blocked: the box stage keeps the review excludes (merge needs SAM 3D, so no models)
+            box_excludes = dict(sorted(review_json.get("entitiesExcluded", {}).items()))
+        elif "recgen" in generators and plan["recgen_entities"]:
             ids = plan["recgen_entities"]
             generator("recgen", ["--entities", *ids, "--count", str(len(ids)),
                                  *(["--exclude", *[f"{k}={v}" for k, v in plan["excluded_all"].items()]] if plan["excluded_all"] else [])],
@@ -755,13 +771,13 @@ def graph(ctx):
     # third round: inferred floor (D9), box (D17), box test, merge (D13); then the import (D14)
     dense_dir = None
     if dense_map:
-        use = g.need("dense_gate")["use"]
+        use = g.need("dense_gate", absent={"use": None})["use"]
         dense_dir = {"raw": "@lingbot_build:out", "icp": "@dense_gate/icp"}.get(use)
     g.add("floor_infer", [[PY, S("infer_room_floor.py"), "--fused", "@fuse:out", *(["--dense", dense_dir, "--droid-run", "@camera:out"] if dense_dir else []),
                            *(["--skip-frames", *skip] if skip else []), "--output", "@new/out"]], {"out": "out", "floor": "out/inferred-floor.json"}, est_s=300)
     g.decide("inferred_floor", "inferred_floor", floor="@floor_infer:floor")
     if objects and box_excludes is None and "generator_plan-box" in g.by:
-        box_excludes = g.need("generator_plan-box")["box_excludes"]
+        box_excludes = g.need("generator_plan-box", absent=plan)["box_excludes"]
     if objects and "box" in generators:
         generator("box", ["--all", *(["--exclude", *[f"{k}={v}" for k, v in box_excludes.items()]] if box_excludes else [])], None, 0.)
         g.add("box_test", [[PY, S("box_free_space.py"), "--box", "@box:out", "--output", "@new/out"]], {"out": "out", "box_test": "out/box-test.json"}, est_s=300)
@@ -770,7 +786,7 @@ def graph(ctx):
         g.add("merge", [[PY, S("merge_object_models.py"), *[w for flag in runs for w in (flag, f"@{flag[2:]}:out")],
                          *(["--box-test", "@box_test:box_test"] if "box" in g.by else []), *(["--review", str(review)] if review else []),
                          "--output", "@new/out"]], {"out": "out", "merge": "out/merge.json", "models": "out/models"}, leaves=review_leaf, est_s=120)
-    floor_kept = g.need("inferred_floor")
+    floor_kept = g.need("inferred_floor", absent=False)
     last = moved[-1] if moved else None
     previous = previous_import(ctx)
     title = previous.get("title") or f"{site} {_mmss(ctx.start)}–{_mmss(ctx.end)} (imported, not accepted)"

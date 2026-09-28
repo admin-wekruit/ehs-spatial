@@ -318,6 +318,26 @@ def test_part_c_profiles_when_present():
         assert names.compute == "cloud" and profiles.refuse(name, names) is None and profiles.hosting(names.models[0][1]) == "cloud"
 
 
+def test_a_failed_optional_decision_leaves_its_layer_blank():
+    """The runner marks a decision {'absent': why} when its stage failed, was blocked or refused (the Lightning splat failed,
+    so splat_pick was blocked): the layers that need it are left out and the import still runs; a decision the report
+    needs stops the graph."""
+    def with_absent(site, *names):
+        c = ctx(site)
+        c.decisions.update({n: {"value": None, "absent": "blocked"} for n in names})
+        return {s.name: s for s in stages.graph(c)}
+    by = with_absent("me340", "splat_pick", "lingbot_conf", "inferred_floor", "other_shot-14-226")
+    assert not {"splat_final", "lingbot_build", "dense_gate", "movers-14-226"} & set(by) and {"splat", "floor_infer"} <= set(by)
+    assert all(flag(by["import"], f) is None for f in ("--splats", "--dense-points", "--inferred-floor")) and flag(by["import"], "--shell-glb")
+    by = with_absent("walmart", "dense_gate", "generator_plan")
+    assert flag(by["import"], "--dense-points") is None and "recgen" not in by and "box" in by and flag(by["box"], "--exclude") is None, \
+        "no SAM 3D plan: the box stage keeps only the review's excludes (none for Walmart)"
+    by = with_absent("walmart", "generator_plan-box")
+    assert flag(by["box"], "--exclude") == ["object-003=accepted by SAM 3D"], "RecGen made no plan: the SAM 3D plan's box excludes"
+    with pytest.raises(RuntimeError, match="decision voxel could not be made"):
+        with_absent("walmart", "voxel")
+
+
 def test_no_mapped_shot_stops():
     with pytest.raises(RuntimeError, match="no shot"):
         stages.graph(ctx("walmart", decisions={"shots": {"primary": [0, 40], "others": [], "mapped": False}}))
