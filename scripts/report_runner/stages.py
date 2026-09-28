@@ -58,7 +58,10 @@ SCRIPT = {"source": "scripts/prepare_video_clip.py", "cuts": "scripts/detect_sho
           "sam3d": "scripts/complete_video_objects.py", "recgen": "scripts/complete_video_objects.py", "box": "scripts/complete_video_objects.py",
           "box_test": "scripts/box_free_space.py", "merge": "scripts/merge_object_models.py", "import": "scripts/import_video_scene.py"}
 # bump a kind's version when its code (tests/versions.json depsSha256) changes; the guard test fails until you do
-VERSIONS = {kind: 1 for kind in SCRIPT}
+# 2 at M2 integration: Part C pinned the HF revisions these tools load (MoGe-3: source and moge; DA3: depth; SAM 2.1; SAM 3: floor
+# masks) and gave the import --lens and the corrected scale limitation. The other kinds only saw a new contract_scale branch that
+# only the import reaches, or pins in code paths they do not run.
+VERSIONS = {kind: 2 if kind in ("source", "moge", "depth", "sam2", "floor_masks", "import") else 1 for kind in SCRIPT}
 DECIDE = "scripts/report_runner/decide.py"  # decision stages: versioned by their rule (profile.rules), not here
 
 # every option's default, as each script's argparse declares it (tests/test_report_runner_stages.py re-reads them by AST)
@@ -77,7 +80,7 @@ DEFAULTS = {
     "scripts/texture_fused_mesh.py": {'--self-check': False, '--droid-run': None, '--fused': None, '--output': None, '--scene': None, '--texture-width': 1280, '--texture-megapixels': 60, '--video': None, '--dynamic-masks': None, '--overlay-rows': None, '--min-facing': 0.2, '--nearly': 0.3, '--jpeg-quality': 90, '--heldout': None, '--every': 8},
     "scripts/fill_scene_holes.py": {'--self-check': False, '--droid-run': None, '--depth-run': None, '--shell': None, '--dynamic-masks': None, '--every': 2, '--step': 4, '--carve': False, '--carve-tolerance': 0.08, '--video': None, '--overlay-rows': None, '--texture-megapixels': 30, '--jpeg-quality': 90, '--output': None},
     "scripts/build_video_object_map.py": {'--self-check': False, '--droid-run': None, '--depth-run': None, '--support': None, '--masks': None, '--floor': None, '--dynamic-masks': None, '--method': 'overlap', '--output': None},
-    "scripts/name_video_entities.py": {'--object-map': None, '--masks': None, '--output': None, '--per-request': 10, '--names': None},
+    "scripts/name_video_entities.py": {'--object-map': None, '--masks': None, '--output': None, '--per-request': 10, '--names': None, '--namer': 'gemini'},
     "scripts/project_entities_to_frames.py": {'--self-check': False, '--droid-run': None, '--scene': None, '--object-map': None, '--mesh': None, '--output': None, '--merge-analysis': None},
     "modal_apps/video_events.py": {'--self-check': False, '--video': None, '--marks': None, '--names': None, '--window': 12.0, '--fps': 2.0, '--width': 640, '--model': 'Qwen/Qwen3-VL-8B-Instruct', '--seed': 0, '--temperature': 0.0, '--max-new-tokens': 900, '--output': None},
     "modal_apps/lingbot_room.py": {'--output': None, '--manifest': None, '--sample': None, '--stride': 3, '--run-id': None, '--video': None, '--frames': None},
@@ -89,9 +92,9 @@ DEFAULTS = {
     "scripts/complete_video_objects.py": {'--self-check': False, '--droid-run': None, '--depth-run': None, '--object-map': None, '--masks': None, '--dynamic-masks': None, '--clip': None, '--output': None, '--entities': [], '--exclude': [], '--count': 10, '--all': False, '--generator': 'recgen', '--reassess': False, '--invoke': False, '--function-id': 'fu-Hh2leT3x1kprDaWpWsZ09l', '--max-usd': 30.0, '--skip-frames': [], '--voxel-native': 0.014, '--no-captions': False, '--workers': 1},
     "scripts/box_free_space.py": {'--box': None, '--study': None, '--output': None, '--self-check': False},
     "scripts/merge_object_models.py": {'--recgen': None, '--sam3d': None, '--box': None, '--box-test': None, '--review': None, '--output': None, '--against': None, '--self-check': False},
-    "scripts/import_video_scene.py": {'--droid-run': None, '--depth-run': None, '--object-map': None, '--masks': None, '--policy': None, '--models': None, '--video': None, '--exclude-frames': None, '--dense-points': None, '--splats': None, '--full-video': None, '--analysis': None, '--inferred-floor': None, '--shell-glb': None, '--comparison-video': None, '--republish': None, '--dynamic-scene': None, '--video-events': None, '--skeleton-scene': None, '--dynamic-analysis': None, '--title': 'Video workcell (imported, not accepted)', '--output-dir': '.platform/imports', '--request-suffix': '1'},
+    "scripts/import_video_scene.py": {'--droid-run': None, '--depth-run': None, '--object-map': None, '--masks': None, '--policy': None, '--models': None, '--video': None, '--exclude-frames': None, '--dense-points': None, '--splats': None, '--full-video': None, '--analysis': None, '--inferred-floor': None, '--shell-glb': None, '--comparison-video': None, '--republish': None, '--dynamic-scene': None, '--video-events': None, '--skeleton-scene': None, '--dynamic-analysis': None, '--title': 'Video workcell (imported, not accepted)', '--output-dir': '.platform/imports', '--request-suffix': '1', '--lens': None},
 }
-PENDING_FLAGS = {"scripts/import_video_scene.py": {"--lens": None}}  # added by Part C (lens gate); the AST test accepts either state
+PENDING_FLAGS = {}  # flags another part adds later (the AST test accepts either state); Part C's --lens and --namer have landed
 
 # span flags and their syntax: colon START:END and pair "START END" are end-exclusive, dash A-B inclusive
 SPANS = {("scripts/prepare_video_clip.py", "--frames"): "colon", ("modal_apps/droid_room.py", "--frames"): "colon",
@@ -107,6 +110,15 @@ SPANS = {("scripts/prepare_video_clip.py", "--frames"): "colon", ("modal_apps/dr
 KEY_DROPPED = {"--output", "--invoke", "--run-id", "--reuse-build-from", "--max-usd", "--max-minutes", "--republish", "--request-suffix",
                "--workers", "--name", "--output-dir", "--self-check"}
 NOTE_FLAGS = {"--entities", "--exclude"}
+CLIP_NAMED = {("modal_apps/droid_room.py", "--clip")}  # the tool reads a clip folder as its clip.json name (so do we)
+# a mode (a flag, or a positional subcommand) that reads only some flags: the others are not compared. splat_train --pick reads
+# the run, the rule and the clip's fps; --clean also the masks, the clip video and the report surfaces; lingbot_dense_map build
+# and diagnose never read --mesh/--surface/--points (evaluate does)
+_LINGBOT_BUILD = {"--run-id", "--droid-run", "--clip", "--masks", "--output", "--depth-run", "--conf", "--fill-conf", "--sample", "--cell",
+                  "--tolerance", "--tolerance-floor", "--max-points", "--exclude-frames", "--overlay-rows"}
+MODE_READS = {("modal_apps/splat_train.py", "--pick"): {"--clean", "--pick", "--clip"},
+              ("modal_apps/splat_train.py", "--clean"): {"--clean", "--clip", "--masks", "--mesh", "--fill"},
+              ("scripts/lingbot_dense_map.py", "build"): _LINGBOT_BUILD, ("scripts/lingbot_dense_map.py", "diagnose"): _LINGBOT_BUILD}
 
 
 # ---------------------------------------------------------------- spans and normalize()
@@ -204,7 +216,8 @@ def normalize(script, argv, owner_of):
         elif flag is None:
             positional.append(_canon(word, owner_of))
         else:
-            given[flag].append(word)
+            named = Path(word.replace("$ART", str(art()))) / "clip.json" if (script, flag) in CLIP_NAMED else None
+            given[flag].append(json.loads(named.read_text())["name"] if named and named.is_file() else word)
     flags = {}
     for name, default in defaults.items():
         if name in KEY_DROPPED:
@@ -231,6 +244,9 @@ def normalize(script, argv, owner_of):
         else:
             values = [_canon(default, owner_of)]
         flags[name] = values
+    mode = next((reads for (tool, flag), reads in MODE_READS.items() if tool == script and (flag in given or flag in positional)), None)
+    if mode:
+        flags = {k: v for k, v in flags.items() if k in mode}
     return {"script": script, "args": positional, "flags": dict(sorted(flags.items()))}
 
 
@@ -335,10 +351,12 @@ def model_id(profile, role):
 
 
 def previous_import(ctx):
-    """The site's last import record path (imports.jsonl, path only; the record holds a capability and is never opened)."""
-    index = Path(ctx.art) / "runs/report-runner/imports.jsonl"
-    rows = [json.loads(line) for line in index.read_text().splitlines() if line.strip()] if index.exists() else []
-    return next((r["importRecordPath"] for r in reversed(rows) if r.get("site") == ctx.site and r.get("importRecordPath")), None)
+    """The site's last imports.jsonl row: its record path (path only; the record holds a capability and is never opened) and
+    the published title, which a republish keeps (O1: titles are operator data)."""
+    state = getattr(ctx.store, "state", None)  # the store's state folder ($ART/runs/report-runner); no store, no history
+    index = Path(state) / "imports.jsonl" if state else None
+    rows = [json.loads(line) for line in index.read_text().splitlines() if line.strip()] if index and index.exists() else []
+    return next((r for r in reversed(rows) if r.get("site") == ctx.site and r.get("importRecordPath")), {})
 
 
 class _Graph:
@@ -439,10 +457,11 @@ def graph(ctx):
     """The M2 stage graph for one clip (runner design section 4). The last stage is the import."""
     profile = profile_of(ctx)
     g = _Graph(ctx, profile)
-    site, generators = ctx.site, tuple(_field(profile, "generators", ()))
+    site, generators, omit = ctx.site, tuple(_field(profile, "generators", ())), set(_field(profile, "omit", ()))
     caps = {**CAPS, **dict(_field(profile, "caps", {}))}
     depth_model, register_model = model_id(profile, "depth"), model_id(profile, "register")
     review = Path(ctx.review) / f"{site}.json" if ctx.review else None
+    review = review if review and review.is_file() else None  # no review of this site: no box is approved (blank, never guessed)
     review_json = json.loads(review.read_text()) if review else {}
     review_leaf = {"review": review} if review else None
 
@@ -460,6 +479,7 @@ def graph(ctx):
     if not shots["mapped"]:
         raise RuntimeError(f"{site}: no shot has >= 60 frames and >= 8 census keyframes; import_video_scene needs a mapped shot")
     (a, b), others = shots["primary"], [tuple(s) for s in shots["others"]]
+    registered = {tuple(s) for s in shots.get("registered", others)}  # adopted values name the shots the delivered report registered (D5)
     n_clip = max(e for _, e in [(a, b), *others])
 
     # cheap decisions on the clip and the shots (one batch): overlay band (D6), lens (D4), frame lists (D12, D18), windows (D10), stride (D7)
@@ -524,7 +544,8 @@ def graph(ctx):
     voxel = _num(g.need("voxel"))
 
     # R17b fuse, R18 moving layer, R21-R22b object map, names, static filter (D20); the lens gate on the mapped shot (D4)
-    g.decide("lens_gate", "lens", shots="@shots:decision", clip="@source:out", moge="@moge:fov", metric="@metric:metric_scale")
+    if "lens_gate" not in omit:
+        g.decide("lens_gate", "lens", shots="@shots:decision", clip="@source:out", moge="@moge:fov", metric="@metric:metric_scale")
     g.add("fuse", [[*mono, "fuse", "--droid-run", "@camera:out", "--output", "@new/out", "--voxel-length-native", voxel, "--support-relative", "0.02",
                     "--support-all-views", "--edge-jump", "0.03", "--carve", "--dynamic-masks", "@dynamic_masks:masks", "--video", f"@{cam}:source_rgb",
                     "--floor-plane", "@metric:metric_scale"]],
@@ -544,9 +565,12 @@ def graph(ctx):
                          "--output", "@new/out"]], {"out": "out", "object_map": "out/object-map.json", "names": "out/names.json", "surfaces": "out/surfaces"},
               compute="cloud", timeout_s=1800, worst_usd=.5, est_usd=.05, est_s=180, models=pins(profile, "names"))
     mapped = "names" if named else "object_map"
-    g.decide("static_filter", "static_filter", extra={"object_map": "object-map.json", "surfaces": "surfaces"}, link={"surfaces": f"@{mapped}:surfaces"},
-             object_map=f"@{mapped}:out", masks="@mask_root:out", dynamic_masks="@dynamic_masks:masks", droid="@camera:out")
-    g.need("static_filter")  # resolved first so the generator stages below can seed their journals (D17) from runs with the same inputs
+    filtered = f"@{mapped}:out"  # the object map every later stage reads
+    if "static_filter" not in omit:
+        g.decide("static_filter", "static_filter", extra={"object_map": "object-map.json", "surfaces": "surfaces"}, link={"surfaces": f"@{mapped}:surfaces"},
+                 object_map=f"@{mapped}:out", masks="@mask_root:out", dynamic_masks="@dynamic_masks:masks", droid="@camera:out")
+        g.need("static_filter")  # resolved first so the generator stages below can seed their journals (D17) from runs with the same inputs
+        filtered = "@static_filter"
 
     # R19-R20 room shell, R23 outlines (D16), R24 events (D15), R30-R31a splat, R25-R26 LingBot, R32 registrations (D3), R34s SAM 3D
     if "texture" not in refused:
@@ -559,7 +583,7 @@ def graph(ctx):
                         "--dynamic-masks", "@dynamic_masks:masks", "--step", "2", "--carve", "--video", f"@{cam}:source_full",
                         *(["--overlay-rows", overlay["fill_rows"]] if overlay["fill_rows"] else []), "--output", "@new/out"]],
               {"out": "out", "shell": "out/textured-scene.glb", "fill": "out/fill.json"}, est_s=1800)
-    g.add("outlines", [[PY, S("project_entities_to_frames.py"), "--droid-run", "@camera:out", "--scene", "@fuse:scene", "--object-map", "@static_filter",
+    g.add("outlines", [[PY, S("project_entities_to_frames.py"), "--droid-run", "@camera:out", "--scene", "@fuse:scene", "--object-map", filtered,
                         "--mesh", "@fill:shell" if fill else "@fuse:predicted", "--output", "@new/out"]], {"out": "out", "analysis": "out/analysis.json"}, est_s=300)
     g.add("events", [[PY, M("video_events.py"), "--video", "@source:source_rgb", "--marks", "@analysis:analysis", "--output", "@new/out"]],
           {"out": "out", "events": "out/events.json"}, gpu="A100-40GB", compute="modal", timeout_s=1200, est_usd=.1, est_s=300, models=pins(profile, "events"))
@@ -591,18 +615,18 @@ def graph(ctx):
         g.add("lingbot_diagnose", [[PY, S("lingbot_dense_map.py"), "diagnose", *dense, "--overlay-rows", overlay["lingbot_rows"], "--output", "@new"]],
               {"diagnose": "diagnose.json"}, rate="cpu16", compute="modal", timeout_s=1800, est_usd=.02, est_s=300)
         g.decide("lingbot_conf", "lingbot_conf", diagnose="@lingbot_diagnose:diagnose")
-    for s, e in others:
+    for s, e in (o for o in others if o in registered):
         g.add(f"register-{s}-{e}", [[PY, S("register_cut_shot.py"), "--droid-run", "@camera:out", "--depth-run", "@fuse:out", "--clip", "@source:out",
                                      "--shot", fmt_span((s, e), "colon"), "--mesh", "@fuse:mesh", "--model", register_model, "--output", "@new/out", "--invoke"]],
               {"out": "out", "registration": "out/registration.json"}, gpu="A100-80GB", compute="modal", timeout_s=1200, est_usd=.05, est_s=240,
               models=pins(profile, "register"))
         g.decide(f"other_shot-{s}-{e}", "other_shot", registration=f"@register-{s}-{e}:registration")
     objects = named and "objects" not in refused and generators
-    common = ["--droid-run", "@camera:out", "--depth-run", "@fuse:out", "--object-map", "@static_filter", "--masks", "@mask_root:out",
+    common = ["--droid-run", "@camera:out", "--depth-run", "@fuse:out", "--object-map", filtered, "--masks", "@mask_root:out",
               "--dynamic-masks", "@dynamic_masks:masks", "--clip", f"@{cam}:out", "--voxel-native", voxel, *(["--skip-frames", *skip] if skip else []),
               *(["--no-captions"] if overlay["objects_no_captions"] else [])]
     excluded = [f"{k}={v}" for k, v in sorted(review_json.get("entitiesExcluded", {}).items())]  # review excludes apply to every generator (D17)
-    match = ("fuse", "static_filter", "mask_root")  # D17: the depth, object-map and masks this generator consumed
+    match = ("fuse", filtered[1:].split(":")[0], "mask_root")  # D17: the depth, object-map and masks this generator consumed
     learned = []
 
     def generator(name, flags, usd, est):
@@ -636,10 +660,10 @@ def graph(ctx):
         g.decide("dense_gate", "dense_gate", map="@lingbot_build:out", fused="@fuse:out")
     moved, scene = [], "@dynamic:out"
     for i, (s, e) in enumerate(others):
-        if not g.need(f"other_shot-{s}-{e}")["accepted"] or e > n_cam:  # refused, or outside the camera clip's frames: the shot stays blank
+        if (s, e) not in registered or not g.need(f"other_shot-{s}-{e}")["accepted"] or e > n_cam:  # refused, or outside the camera clip: blank
             continue
-        wins = windows["others"][i]
-        otracks = []
+        wins = windows["others"][i] if i < len(windows["others"]) else []
+        otracks, movers_analysis = [], "@analysis:analysis"  # ponytail: no other-shot windows only in delivered ME340 (X6): the mapped analysis
         for ws, we in wins:
             g.add(f"otracks-{ws}-{we}", [[PY, M("sam3_motion_tracks.py"), "--droid-run", "@camera:out", "--frames", str(ws), str(we), "--text-only",
                                           "--output", "@new/out"]], TRACKS_OUT, gpu="A100-40GB", compute="modal", timeout_s=900, est_usd=.18, est_s=400,
@@ -647,10 +671,12 @@ def graph(ctx):
             otracks.append(f"@otracks-{ws}-{we}:out")
         if len(otracks) > 1:
             g.add(f"ostitch-{s}-{e}", [[PY, S("stitch_track_windows.py"), "--tracks", *otracks, "--output", "@new/out"]], {"out": "out", "stitched": "out/stitched.json"})
-        g.add(f"oanalysis-{s}-{e}", [[PY, S("motion_tracks_to_analysis.py"), "--droid-run", "@camera:out", "--tracks", *otracks,
-                                      *(["--stitched", f"@ostitch-{s}-{e}:out"] if len(otracks) > 1 else []), "--output", "@new/out"]], ANALYSIS_OUT)
+        if otracks:
+            g.add(f"oanalysis-{s}-{e}", [[PY, S("motion_tracks_to_analysis.py"), "--droid-run", "@camera:out", "--tracks", *otracks,
+                                          *(["--stitched", f"@ostitch-{s}-{e}:out"] if len(otracks) > 1 else []), "--output", "@new/out"]], ANALYSIS_OUT)
+            movers_analysis = f"@oanalysis-{s}-{e}:analysis"
         g.add(f"movers-{s}-{e}", [[PY, S("register_cut_shot.py"), "--registration", f"@register-{s}-{e}:out", "--scene", scene,
-                                   "--analysis", f"@oanalysis-{s}-{e}:analysis", "--mesh", "@fuse:mesh", "--droid-run", "@camera:out", "--depth-run", "@fuse:out",
+                                   "--analysis", movers_analysis, "--mesh", "@fuse:mesh", "--droid-run", "@camera:out", "--depth-run", "@fuse:out",
                                    "--clip", "@source:out", "--model", register_model, "--output", "@new/out", "--invoke"]],
               {"out": "out", "scene": "out/scene/scene.json", "scene_dir": "out/scene", "analysis": "out/analysis/analysis.json"},
               gpu="A100-80GB", compute="modal", timeout_s=1200, est_usd=.05, est_s=300, models=pins(profile, "register"))
@@ -692,16 +718,17 @@ def graph(ctx):
     floor_kept = g.need("inferred_floor")
     last = moved[-1] if moved else None
     previous = previous_import(ctx)
-    title = f"{site} {_mmss(ctx.start)}–{_mmss(ctx.end)} (imported, not accepted)"
-    layers = [("--shell-glb", "@fill:out/textured-scene.glb", fill), ("--splats", "@splat_final:out/splats-clean.splat", splat),
+    title = previous.get("title") or f"{site} {_mmss(ctx.start)}–{_mmss(ctx.end)} (imported, not accepted)"
+    layers = [("--shell-glb", "@fill:out/textured-scene.glb", fill), ("--splats", "@splat_final:splats", splat),
               ("--dense-points", dense_dir, dense_dir), ("--inferred-floor", "@floor_infer:out", floor_kept), ("--models", "@merge:models", objects)]
-    g.add("import", [[PY, S("import_video_scene.py"), "--droid-run", "@camera:out", "--depth-run", "@fuse:out", "--object-map", "@static_filter",
+    g.add("import", [[PY, S("import_video_scene.py"), "--droid-run", "@camera:out", "--depth-run", "@fuse:out", "--object-map", filtered,
                       "--masks", "@mask_root:out", "--video", "@source:source_rgb", "--full-video", "@source:out/source-full.json",
                       "--analysis", "@outlines:analysis", "--dynamic-scene", f"@{last}:scene" if last else "@dynamic:scene",
                       "--dynamic-analysis", f"@{last}:analysis" if last else "@analysis:analysis", "--video-events", "@events:events",
                       *[w for flag, token, on in layers if on for w in (flag, token)],
                       *(["--exclude-frames", *[fmt_span(o, "colon") for o in others]] if others else []), "--title", title,
-                      *(["--republish", previous] if previous else []), "--request-suffix", "@key", "--lens", "@lens_gate:decision"]],
+                      *(["--republish", previous["importRecordPath"]] if previous else []), "--request-suffix", "@key",
+                      *(["--lens", "@lens_gate:decision"] if "lens_gate" not in omit else [])]],
           {"log": "runner.log"}, optional={"fill", "splat_final", "lingbot_build", "dense_gate", "floor_infer", "merge", "events", *moved},
           cwd="$ART", timeout_s=2 * 3600, est_s=3600)
     return g.specs

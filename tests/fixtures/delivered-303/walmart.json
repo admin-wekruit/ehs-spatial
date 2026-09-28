@@ -80,7 +80,30 @@
     ]
    },
    "note": "--fov-deg omitted: K from MoGe-3 on 5 frames (clip.json intrinsics). content check: re-decode sampled frames, max abs diff <= 1 (Part B)",
-   "side": false
+   "side": false,
+   "graph": {
+    "source": {
+     "outputs": {
+      "out": "data/clips/walmart-190",
+      "clip_json": "data/clips/walmart-190/clip.json",
+      "rgb_txt": "data/clips/walmart-190/rgb.txt",
+      "rgb": "data/clips/walmart-190/rgb",
+      "source_rgb": "data/clips/walmart-190/source-rgb.mp4",
+      "source_full": "data/clips/walmart-190/source-full.mp4",
+      "source_full_json": "data/clips/walmart-190/source-full.json"
+     },
+     "commands": [
+      [
+       "S01",
+       0
+      ],
+      [
+       "S01",
+       1
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S03",
@@ -137,7 +160,20 @@
     }
    },
    "note": "the delivered cut was found by eye; m0-integrate-cuts is the codified rule's output (M0) and equals it",
-   "side": false
+   "side": false,
+   "graph": {
+    "cuts": {
+     "outputs": {
+      "segments": "runs/m0-integrate-cuts/walmart-190/segments.json"
+     },
+     "commands": [
+      [
+       "S03",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S04",
@@ -179,7 +215,23 @@
     "file": "runs/droid-walmart-190-168/run.json"
    },
    "note": "the whole-clip DROID run: build reuse for 250 and the SAM 2.1 frame list",
-   "side": false
+   "side": false,
+   "graph": {
+    "census": {
+     "outputs": {
+      "out": "runs/droid-walmart-190-168",
+      "prediction": "runs/droid-walmart-190-168/prediction.npz",
+      "manifest": "runs/droid-walmart-190-168/input-manifest.json",
+      "run": "runs/droid-walmart-190-168/run.json"
+     },
+     "commands": [
+      [
+       "S04",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S06",
@@ -230,7 +282,16 @@
     "S03"
    ],
    "note": "ad hoc MoGe-3 script (not in the repo) on round(linspace(383,749,15)); median within 3° of the clip K -> keep. Written inside the DROID run dir",
-   "side": false
+   "side": false,
+   "graph": {
+    "moge": {
+     "outputs": {
+      "out": "runs/droid-walmart-190-shot383-250",
+      "fov": "runs/droid-walmart-190-shot383-250/fov-check.json"
+     },
+     "commands": []
+    }
+   }
   },
   {
    "id": "S05",
@@ -301,7 +362,26 @@
     "script": "modal_apps/droid_room.py",
     "file": "runs/droid-walmart-190-shot383-250/run.json"
    },
-   "side": false
+   "side": false,
+   "graph": {
+    "camera": {
+     "outputs": {
+      "out": "runs/droid-walmart-190-shot383-250",
+      "prediction": "runs/droid-walmart-190-shot383-250/prediction.npz",
+      "manifest": "runs/droid-walmart-190-shot383-250/input-manifest.json",
+      "run": "runs/droid-walmart-190-shot383-250/run.json"
+     },
+     "commands": [
+      [
+       "S05",
+       0
+      ]
+     ],
+     "ignore": {
+      "1": "droid_room execute collects; the recorded collect repeated that step"
+     }
+    }
+   }
   },
   {
    "id": "S07",
@@ -353,7 +433,20 @@
     "S01"
    ],
    "note": "frame list is operator data (O1); recorded in manifest.json",
-   "side": false
+   "side": false,
+   "graph": {
+    "floor_masks": {
+     "outputs": {
+      "out": "runs/sam3-walmart-floor-170"
+     },
+     "commands": [
+      [
+       "S07",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S08",
@@ -695,7 +788,22 @@
     "S04"
    ],
    "note": "frames = census keyframes ∪ range(0, N, 3) (rule D12, checked)",
-   "side": false
+   "side": false,
+   "graph": {
+    "sam2": {
+     "outputs": {
+      "out": "runs/sam2-walmart-everything-181",
+      "object_a": "runs/sam2-walmart-everything-181/object-a",
+      "segment": "runs/sam2-walmart-everything-181/segment.json"
+     },
+     "commands": [
+      [
+       "S08",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S09",
@@ -721,7 +829,17 @@
     "runs/walmart-masks-182/floor-a": "runs/sam3-walmart-floor-170",
     "runs/walmart-masks-182/object-a": "runs/sam2-walmart-everything-181/object-a"
    },
-   "side": false
+   "side": false,
+   "graph": {
+    "mask_root": {
+     "outputs": {
+      "out": "runs/walmart-masks-182",
+      "floor_a": "runs/walmart-masks-182/floor-a",
+      "object_a": "runs/walmart-masks-182/object-a"
+     },
+     "commands": []
+    }
+   }
   },
   {
    "id": "S10",
@@ -755,7 +873,21 @@
    "inputs": [
     "S05"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "motion": {
+     "outputs": {
+      "out": "runs/walmart-motion-masks-252",
+      "motion": "runs/walmart-motion-masks-252/motion.json"
+     },
+     "commands": [
+      [
+       "S10",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S11",
@@ -795,7 +927,22 @@
     "S10"
    ],
    "side": false,
-   "instance": 0
+   "instance": 0,
+   "graph": {
+    "tracks-383-750": {
+     "outputs": {
+      "out": "runs/walmart-sam31-tracks-253",
+      "tracks": "runs/walmart-sam31-tracks-253/tracks.json",
+      "npz": "runs/walmart-sam31-tracks-253/tracks.npz"
+     },
+     "commands": [
+      [
+       "S11",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S12",
@@ -838,7 +985,22 @@
     "S05",
     "S11"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "analysis": {
+     "outputs": {
+      "out": "runs/walmart-motion-analysis-254",
+      "analysis": "runs/walmart-motion-analysis-254/analysis.json",
+      "masks": "runs/walmart-motion-analysis-254/masks"
+     },
+     "commands": [
+      [
+       "S12",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S13",
@@ -881,7 +1043,21 @@
     "S05",
     "S12"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "dynamic_masks": {
+     "outputs": {
+      "out": "runs/walmart-dynamic-masks-255",
+      "masks": "runs/walmart-dynamic-masks-255/masks"
+     },
+     "commands": [
+      [
+       "S13",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S14",
@@ -942,7 +1118,22 @@
     "script": "modal_apps/mono_room.py",
     "file": "runs/da3-posed-walmart-251-shot383/infer.json"
    },
-   "side": false
+   "side": false,
+   "graph": {
+    "depth": {
+     "outputs": {
+      "out": "runs/da3-posed-walmart-251-shot383",
+      "mono": "runs/da3-posed-walmart-251-shot383/mono",
+      "infer": "runs/da3-posed-walmart-251-shot383/infer.json"
+     },
+     "commands": [
+      [
+       "S14",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S16",
@@ -1061,7 +1252,39 @@
     "S13"
    ],
    "note": "carry-height median over shot frames 0.47430 (all frames would give 0.45448); floor-a of 182 holds the same files",
-   "side": false
+   "side": false,
+   "graph": {
+    "metric": {
+     "outputs": {
+      "out": "runs/da3-posed-walmart-251-shot383",
+      "metric_scale": "runs/da3-posed-walmart-251-shot383/metric-scale.json"
+     },
+     "commands": [
+      [
+       "S16",
+       0
+      ]
+     ]
+    },
+    "fuse": {
+     "outputs": {
+      "out": "runs/da3-posed-walmart-251-shot383",
+      "mesh": "runs/da3-posed-walmart-251-shot383/mono-anchored-mesh.ply",
+      "predicted": "runs/da3-posed-walmart-251-shot383/predicted-scene.glb",
+      "points": "runs/da3-posed-walmart-251-shot383/supported-keyframe-points.glb",
+      "scene": "runs/da3-posed-walmart-251-shot383/scene.json",
+      "metrics": "runs/da3-posed-walmart-251-shot383/fuse-metrics.json",
+      "metric_scale": "runs/da3-posed-walmart-251-shot383/metric-scale.json",
+      "support": "runs/da3-posed-walmart-251-shot383/droid-support.npz"
+     },
+     "commands": [
+      [
+       "S16",
+       1
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S17",
@@ -1106,7 +1329,22 @@
     "runs/walmart-dynamic-262/infer.json": "runs/da3-posed-walmart-251-shot383/infer.json",
     "runs/walmart-dynamic-262/metric-scale.json": "runs/da3-posed-walmart-251-shot383/metric-scale.json"
    },
-   "side": false
+   "side": false,
+   "graph": {
+    "dynamic": {
+     "outputs": {
+      "out": "runs/walmart-dynamic-262",
+      "scene": "runs/walmart-dynamic-262/scene.json",
+      "surfaces": "runs/walmart-dynamic-262/dynamic"
+     },
+     "commands": [
+      [
+       "S17",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S18",
@@ -1149,7 +1387,22 @@
     "S13",
     "S01"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "texture": {
+     "outputs": {
+      "out": "runs/walmart-textured-256",
+      "shell": "runs/walmart-textured-256/textured-scene.glb",
+      "report": "runs/walmart-textured-256/texture-report.json"
+     },
+     "commands": [
+      [
+       "S18",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S19",
@@ -1200,7 +1453,22 @@
     "S18",
     "S13"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "fill": {
+     "outputs": {
+      "out": "runs/walmart-filled-257",
+      "shell": "runs/walmart-filled-257/textured-scene.glb",
+      "fill": "runs/walmart-filled-257/fill.json"
+     },
+     "commands": [
+      [
+       "S19",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S20",
@@ -1253,7 +1521,22 @@
     "S09",
     "S13"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "object_map": {
+     "outputs": {
+      "out": "runs/walmart-object-map-259",
+      "object_map": "runs/walmart-object-map-259/object-map.json",
+      "surfaces": "runs/walmart-object-map-259/surfaces"
+     },
+     "commands": [
+      [
+       "S20",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S21",
@@ -1289,7 +1572,23 @@
     "S20",
     "S09"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "names": {
+     "outputs": {
+      "out": "runs/walmart-entity-names-261",
+      "object_map": "runs/walmart-entity-names-261/object-map.json",
+      "names": "runs/walmart-entity-names-261/names.json",
+      "surfaces": "runs/walmart-entity-names-261/surfaces"
+     },
+     "commands": [
+      [
+       "S21",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S22",
@@ -1362,7 +1661,21 @@
      }
     }
    },
-   "side": false
+   "side": false,
+   "graph": {
+    "outlines": {
+     "outputs": {
+      "out": "runs/walmart-frame-selection-263",
+      "analysis": "runs/walmart-frame-selection-263/analysis.json"
+     },
+     "commands": [
+      [
+       "S22",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S23",
@@ -1395,7 +1708,21 @@
     "S01"
    ],
    "note": "predates the shot split: window 0 is the cut-away, window 1 straddles the cut",
-   "side": false
+   "side": false,
+   "graph": {
+    "events": {
+     "outputs": {
+      "out": "runs/walmart-events-199",
+      "events": "runs/walmart-events-199/events.json"
+     },
+     "commands": [
+      [
+       "S23",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S24",
@@ -1462,7 +1789,26 @@
     "script": "modal_apps/lingbot_room.py",
     "file": "runs/walmart-lingbot-map-258/plan.json"
    },
-   "side": false
+   "side": false,
+   "graph": {
+    "lingbot": {
+     "outputs": {
+      "out": "runs/walmart-lingbot-map-258",
+      "plan": "runs/walmart-lingbot-map-258/plan.json",
+      "submission": "runs/walmart-lingbot-map-258/submission.json"
+     },
+     "commands": [
+      [
+       "S24",
+       0
+      ],
+      [
+       "S24",
+       1
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S25",
@@ -1522,7 +1868,20 @@
     "S13",
     "S16"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "lingbot_diagnose": {
+     "outputs": {
+      "diagnose": "runs/walmart-lingbot-map-258/diagnose.json"
+     },
+     "commands": [
+      [
+       "S25",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S26",
@@ -1590,7 +1949,24 @@
     "S25"
    ],
    "note": "conf 1.06 is the script default (ME340's threshold kept); D7 gives 1.01 (D4)",
-   "side": false
+   "side": false,
+   "graph": {
+    "lingbot_build": {
+     "outputs": {
+      "out": "runs/walmart-lingbot-map-258",
+      "points": "runs/walmart-lingbot-map-258/dense-points.glb",
+      "info": "runs/walmart-lingbot-map-258/points.json",
+      "attributes": "runs/walmart-lingbot-map-258/point-attributes.npz",
+      "remote": "runs/walmart-lingbot-map-258/remote.json"
+     },
+     "commands": [
+      [
+       "S26",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S28",
@@ -1680,7 +2056,15 @@
     }
    },
    "note": "evaluate wrote into 258 (70.2% within 25 cm, floor -8.7 cm); ICP accepted by hand (74% / 0.9 cm, ARCHITECTURE §7 prose only)",
-   "side": false
+   "side": false,
+   "graph": {
+    "dense_gate": {
+     "outputs": {
+      "icp": "runs/walmart-lingbot-map-268-icp"
+     },
+     "commands": []
+    }
+   }
   },
   {
    "id": "S29",
@@ -1767,7 +2151,21 @@
     }
    },
    "note": "inputs not recorded; written 16:58 on 09-25, after 258 (16:56) and before 268-icp (22:20), so --dense 258 (I; the replay settles it). Withheld by its own gate (raised-plane control 46.3% < 50%); not an import input",
-   "side": false
+   "side": false,
+   "graph": {
+    "floor_infer": {
+     "outputs": {
+      "out": "runs/walmart-inferred-floor-265",
+      "floor": "runs/walmart-inferred-floor-265/inferred-floor.json"
+     },
+     "commands": [
+      [
+       "S29",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S30",
@@ -1853,7 +2251,37 @@
     "S19"
    ],
    "note": "--scale path not recorded, only its value 3.3734 (launch.json)",
-   "side": false
+   "side": false,
+   "graph": {
+    "splat": {
+     "outputs": {
+      "out": "runs/walmart-splat-260",
+      "splats": "runs/walmart-splat-260/splats.splat",
+      "json": "runs/walmart-splat-260/splats.json",
+      "train": "runs/walmart-splat-260/train.json",
+      "launch": "runs/walmart-splat-260/launch.json",
+      "cameras": "runs/walmart-splat-260/refined-cameras.npz"
+     },
+     "commands": [
+      [
+       "S30",
+       0
+      ]
+     ]
+    },
+    "splat_clean": {
+     "outputs": {
+      "out": "runs/walmart-splat-260",
+      "clean": "runs/walmart-splat-260/clean/clean.json"
+     },
+     "commands": [
+      [
+       "S32",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S32",
@@ -1872,18 +2300,89 @@
     [
      "modal_apps/splat_train.py",
      "--clean",
-     "$ART/runs/walmart-splat-260"
+     "$ART/runs/walmart-splat-260",
+     "--clip",
+     "$ART/data/clips/walmart-190",
+     "--droid-run",
+     "$ART/runs/droid-walmart-190-shot383-250",
+     "--masks",
+     "$ART/runs/walmart-dynamic-masks-255/masks",
+     "--mesh",
+     "$ART/runs/da3-posed-walmart-251-shot383/mono-anchored-mesh.ply",
+     "--fill",
+     "$ART/runs/walmart-filled-257/textured-scene.glb",
+     "--scale",
+     "$ART/runs/da3-posed-walmart-251-shot383/metric-scale.json",
+     "--captions",
+     "0",
+     "0",
+     "0",
+     "0"
     ],
     [
      "modal_apps/splat_train.py",
      "--clean",
      "$ART/runs/walmart-splat-260",
      "--pick",
-     "negligible_1"
+     "negligible_1",
+     "--clip",
+     "$ART/data/clips/walmart-190"
     ]
    ],
-   "basis": {},
-   "evidence": [],
+   "basis": {
+    "--clean": "M",
+    "--pick": "M",
+    "--clip": "I",
+    "--droid-run": "I",
+    "--masks": "I",
+    "--mesh": "I",
+    "--fill": "I",
+    "--scale": "I",
+    "--captions": "I"
+   },
+   "evidence": [
+    {
+     "kind": "json_value",
+     "file": "runs/walmart-splat-266/refined-cameras.json",
+     "path": "fps",
+     "value": 25.0
+    },
+    {
+     "kind": "json_value",
+     "file": "runs/walmart-splat-260/launch.json",
+     "path": "clip",
+     "value": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/data/clips/walmart-190"
+    },
+    {
+     "kind": "json_value",
+     "file": "runs/walmart-splat-260/launch.json",
+     "path": "masks",
+     "value": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/walmart-dynamic-masks-255/masks"
+    },
+    {
+     "kind": "json_value",
+     "file": "runs/walmart-splat-260/launch.json",
+     "path": "mesh",
+     "value": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/da3-posed-walmart-251-shot383/mono-anchored-mesh.ply"
+    },
+    {
+     "kind": "json_value",
+     "file": "runs/walmart-splat-260/launch.json",
+     "path": "fill",
+     "value": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/walmart-filled-257/textured-scene.glb"
+    },
+    {
+     "kind": "json_value",
+     "file": "runs/walmart-splat-260/launch.json",
+     "path": "caption_band_y0_y1_x0_x1",
+     "value": [
+      0,
+      0,
+      0,
+      0
+     ]
+    }
+   ],
    "patch": null,
    "staging": true,
    "inputs": [
@@ -1895,7 +2394,24 @@
     "runs/walmart-splat-266/refined-cameras.json": "runs/walmart-splat-260/refined-cameras.json",
     "runs/walmart-splat-266/refined-cameras.npz": "runs/walmart-splat-260/refined-cameras.npz"
    },
-   "side": false
+   "side": false,
+   "graph": {
+    "splat_final": {
+     "outputs": {
+      "out": "runs/walmart-splat-260",
+      "splats": "runs/walmart-splat-266/splats.splat",
+      "json": "runs/walmart-splat-266/splats.json",
+      "cameras": "runs/walmart-splat-266/refined-cameras.json"
+     },
+     "commands": [
+      [
+       "S32",
+       1
+      ]
+     ]
+    }
+   },
+   "note": "the clean and pick inputs are inferred (I): the record kept only --clean/--pick, but with splat_train's ME340 defaults the pick would have written fps 29.97 (it wrote 25) and the held-out renders in 260/clean are Walmart frames; the run's own inputs are its launch.json"
   },
   {
    "id": "S34",
@@ -1977,7 +2493,22 @@
     "S13",
     "S01"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "sam3d": {
+     "outputs": {
+      "out": "runs/walmart-object-models-267-sam3d",
+      "manifest": "runs/walmart-object-models-267-sam3d/manifest.json",
+      "models": "runs/walmart-object-models-267-sam3d/models"
+     },
+     "commands": [
+      [
+       "S34",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S33",
@@ -2058,7 +2589,22 @@
    "inputs": [
     "S34"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "recgen": {
+     "outputs": {
+      "out": "runs/walmart-object-models-264",
+      "manifest": "runs/walmart-object-models-264/manifest.json",
+      "models": "runs/walmart-object-models-264/models"
+     },
+     "commands": [
+      [
+       "S33",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S35",
@@ -2180,7 +2726,22 @@
     "S35"
    ],
    "note": "code a006cb1; review excludes of 264/267 (object-156) not carried over",
-   "side": false
+   "side": false,
+   "graph": {
+    "box": {
+     "outputs": {
+      "out": "runs/walmart-object-models-300-box",
+      "manifest": "runs/walmart-object-models-300-box/manifest.json",
+      "models": "runs/walmart-object-models-300-box/models"
+     },
+     "commands": [
+      [
+       "S36",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S37",
@@ -2211,7 +2772,21 @@
    "inputs": [
     "S36"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "box_test": {
+     "outputs": {
+      "out": "runs/m0-box-test-walmart",
+      "box_test": "runs/m0-box-test-walmart/box-test.json"
+     },
+     "commands": [
+      [
+       "S37",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S38",
@@ -2283,7 +2858,22 @@
     }
    },
    "note": "40 = 14 RecGen / 17 SAM 3D / 9 box; replay at b56d5c4 exits 0",
-   "side": false
+   "side": false,
+   "graph": {
+    "merge": {
+     "outputs": {
+      "out": "runs/walmart-object-models-303-merged",
+      "merge": "runs/walmart-object-models-303-merged/merge.json",
+      "models": "runs/walmart-object-models-303-merged/models"
+     },
+     "commands": [
+      [
+       "S38",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S39",
@@ -2381,7 +2971,18 @@
     "S38"
    ],
    "note": "cwd $ART; env PANOPTES_DATABASE_URL, PANOPTES_BLOB_ROOT=$ART/.platform/blobs. --title read from the publications row (SELECT); --republish/--request-suffix live only in .platform/imports (never opened). Outputs are the DB rows, checked by fingerprint (P5)",
-   "side": false
+   "side": false,
+   "graph": {
+    "import": {
+     "outputs": {},
+     "commands": [
+      [
+       "S39",
+       0
+      ]
+     ]
+    }
+   }
   }
  ],
  "deviations": [
@@ -2396,7 +2997,8 @@
    "m2": "review excludes apply to all generators -> 39",
    "reason": "wrong worse than blank",
    "decisions": [
-    "generator_plan"
+    "generator_plan",
+    "generator_plan-box"
    ]
   },
   {
@@ -2469,7 +3071,8 @@
    "m2": "learned-accepted ∪ review excludes (D17)",
    "reason": "the box excludes came from a merge that is not the delivered one",
    "decisions": [
-    "generator_plan"
+    "generator_plan",
+    "generator_plan-box"
    ]
   },
   {
@@ -2479,7 +3082,8 @@
     "S07",
     "S34",
     "S33",
-    "S39"
+    "S39",
+    "S06"
    ],
    "delivered": "operator data: floor-mask frame lists, entity notes and their order, review excludes, budgets, titles, hand-written clip scripts",
    "m2": "adopted for these clips (kept in research); default rules only for new clips",
@@ -2487,6 +3091,17 @@
    "decisions": [
     "floor_frames"
    ]
+  },
+  {
+   "id": "X15",
+   "class": "X",
+   "nodes": [
+    "S29"
+   ],
+   "delivered": "inferred floor 265 fused the un-refined LingBot map 258 (--dense 258; its floor sits 8.7 cm below the plane) although the ICP-refined 268-icp was the displayed map",
+   "m2": "--dense is the map the dense gate accepts (D8 then D9): 268-icp",
+   "reason": "found at M2 integration: the floor must be inferred from the map the report shows; the delivered floor was withheld by its own tests either way",
+   "decisions": []
   }
  ],
  "decisions": {
@@ -2501,7 +3116,8 @@
      383
     ]
    ],
-   "mapped": true
+   "mapped": true,
+   "registered": []
   },
   "lens": {
    "frames": [
@@ -2862,6 +3478,84 @@
    748
   ],
   "generator_plan": {
+   "recgen_entities": [
+    "object-009",
+    "object-050",
+    "object-189",
+    "object-120",
+    "object-126",
+    "object-205",
+    "object-203",
+    "object-115",
+    "object-125",
+    "object-077",
+    "object-062",
+    "object-083",
+    "object-169",
+    "object-099",
+    "object-172",
+    "object-003",
+    "object-167",
+    "object-101",
+    "object-179",
+    "object-170",
+    "object-031",
+    "object-054",
+    "object-180",
+    "object-040",
+    "object-159",
+    "object-017",
+    "object-108",
+    "object-048",
+    "object-124",
+    "object-109",
+    "object-097",
+    "object-090",
+    "object-116",
+    "object-076",
+    "object-081",
+    "object-044",
+    "object-165",
+    "object-197",
+    "object-027",
+    "object-064",
+    "object-122",
+    "object-095",
+    "object-102",
+    "object-129",
+    "object-016",
+    "object-210",
+    "object-085",
+    "object-033",
+    "object-209",
+    "object-206",
+    "object-036",
+    "object-028",
+    "object-184",
+    "object-012",
+    "object-067",
+    "object-072",
+    "object-051",
+    "object-177",
+    "object-032",
+    "object-200",
+    "object-163",
+    "object-049",
+    "object-007",
+    "object-069",
+    "object-063",
+    "object-079",
+    "object-127"
+   ],
+   "excluded_all": {
+    "object-158": "moving shopping cart pushed past the camera (frames 650-690), merged with later views; not a static object",
+    "object-156": "display on the moving shopping cart's handle",
+    "object-080": "ceiling skylight, not an object",
+    "object-045": "accepted by SAM 3D (walmart-object-models-267-sam3d)",
+    "object-089": "accepted by SAM 3D (walmart-object-models-267-sam3d)",
+    "object-186": "accepted by SAM 3D (walmart-object-models-267-sam3d)",
+    "object-091": "accepted by SAM 3D (walmart-object-models-267-sam3d)"
+   },
    "box_excludes": {
     "object-017": "modelled_in_walmart-object-models-268-merged",
     "object-027": "modelled_in_walmart-object-models-268-merged",
@@ -2909,7 +3603,120 @@
    606,
    675,
    747
-  ]
+  ],
+  "generator_plan-box": {
+   "recgen_entities": [
+    "object-009",
+    "object-050",
+    "object-189",
+    "object-120",
+    "object-126",
+    "object-205",
+    "object-203",
+    "object-115",
+    "object-125",
+    "object-077",
+    "object-062",
+    "object-083",
+    "object-169",
+    "object-099",
+    "object-172",
+    "object-003",
+    "object-167",
+    "object-101",
+    "object-179",
+    "object-170",
+    "object-031",
+    "object-054",
+    "object-180",
+    "object-040",
+    "object-159",
+    "object-017",
+    "object-108",
+    "object-048",
+    "object-124",
+    "object-109",
+    "object-097",
+    "object-090",
+    "object-116",
+    "object-076",
+    "object-081",
+    "object-044",
+    "object-165",
+    "object-197",
+    "object-027",
+    "object-064",
+    "object-122",
+    "object-095",
+    "object-102",
+    "object-129",
+    "object-016",
+    "object-210",
+    "object-085",
+    "object-033",
+    "object-209",
+    "object-206",
+    "object-036",
+    "object-028",
+    "object-184",
+    "object-012",
+    "object-067",
+    "object-072",
+    "object-051",
+    "object-177",
+    "object-032",
+    "object-200",
+    "object-163",
+    "object-049",
+    "object-007",
+    "object-069",
+    "object-063",
+    "object-079",
+    "object-127"
+   ],
+   "excluded_all": {
+    "object-158": "moving shopping cart pushed past the camera (frames 650-690), merged with later views; not a static object",
+    "object-156": "display on the moving shopping cart's handle",
+    "object-080": "ceiling skylight, not an object",
+    "object-045": "accepted by SAM 3D (walmart-object-models-267-sam3d)",
+    "object-089": "accepted by SAM 3D (walmart-object-models-267-sam3d)",
+    "object-186": "accepted by SAM 3D (walmart-object-models-267-sam3d)",
+    "object-091": "accepted by SAM 3D (walmart-object-models-267-sam3d)"
+   },
+   "box_excludes": {
+    "object-017": "modelled_in_walmart-object-models-268-merged",
+    "object-027": "modelled_in_walmart-object-models-268-merged",
+    "object-040": "modelled_in_walmart-object-models-268-merged",
+    "object-044": "modelled_in_walmart-object-models-268-merged",
+    "object-045": "modelled_in_walmart-object-models-268-merged",
+    "object-048": "modelled_in_walmart-object-models-268-merged",
+    "object-054": "modelled_in_walmart-object-models-268-merged",
+    "object-064": "modelled_in_walmart-object-models-268-merged",
+    "object-077": "modelled_in_walmart-object-models-268-merged",
+    "object-081": "modelled_in_walmart-object-models-268-merged",
+    "object-085": "modelled_in_walmart-object-models-268-merged",
+    "object-089": "modelled_in_walmart-object-models-268-merged",
+    "object-091": "modelled_in_walmart-object-models-268-merged",
+    "object-099": "modelled_in_walmart-object-models-268-merged",
+    "object-102": "modelled_in_walmart-object-models-268-merged",
+    "object-109": "modelled_in_walmart-object-models-268-merged",
+    "object-115": "modelled_in_walmart-object-models-268-merged",
+    "object-124": "modelled_in_walmart-object-models-268-merged",
+    "object-159": "modelled_in_walmart-object-models-268-merged",
+    "object-164": "modelled_in_walmart-object-models-268-merged",
+    "object-165": "modelled_in_walmart-object-models-268-merged",
+    "object-169": "modelled_in_walmart-object-models-268-merged",
+    "object-170": "modelled_in_walmart-object-models-268-merged",
+    "object-172": "modelled_in_walmart-object-models-268-merged",
+    "object-176": "modelled_in_walmart-object-models-268-merged",
+    "object-179": "modelled_in_walmart-object-models-268-merged",
+    "object-186": "modelled_in_walmart-object-models-268-merged",
+    "object-189": "modelled_in_walmart-object-models-268-merged",
+    "object-197": "modelled_in_walmart-object-models-268-merged",
+    "object-206": "modelled_in_walmart-object-models-268-merged",
+    "object-209": "modelled_in_walmart-object-models-268-merged"
+   }
+  }
  },
  "decision_inputs": {
   "shots": {
@@ -2951,14 +3758,18 @@
    "census": "runs/droid-walmart-190-168",
    "segments": "runs/m0-integrate-cuts/walmart-190/segments.json"
   },
-  "generator_plan": {
+  "floor_frames": {
+   "shots": "@decision:shots",
+   "operator": "@value:floor_frames"
+  },
+  "generator_plan-box": {
    "sam3d": "runs/walmart-object-models-267-sam3d",
    "recgen": "runs/walmart-object-models-264",
    "review": "$REPO/docs/phase2/box-review-303/walmart.json"
   },
-  "floor_frames": {
-   "shots": "@decision:shots",
-   "operator": "@value:floor_frames"
+  "generator_plan": {
+   "sam3d": "runs/walmart-object-models-267-sam3d",
+   "review": "$REPO/docs/phase2/box-review-303/walmart.json"
   }
  },
  "decision_compare": {
@@ -2967,13 +3778,23 @@
     "use"
    ]
   },
-  "generator_plan": {
-   "keys": "box_excludes"
-  },
   "track_windows": {
    "fields": [
     "shot",
     "stitch"
+   ]
+  },
+  "generator_plan-box": {
+   "keys": "box_excludes"
+  },
+  "generator_plan": {
+   "keys": "recgen_entities"
+  },
+  "shots": {
+   "fields": [
+    "primary",
+    "others",
+    "mapped"
    ]
   }
  },

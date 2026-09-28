@@ -90,7 +90,30 @@
     ]
    },
    "note": "--fov-deg omitted: K from MoGe-3 on 5 frames (clip.json intrinsics). content check: re-decode sampled frames, max abs diff <= 1 (Part B)",
-   "side": false
+   "side": false,
+   "graph": {
+    "source": {
+     "outputs": {
+      "out": "data/clips/me340-165",
+      "clip_json": "data/clips/me340-165/clip.json",
+      "rgb_txt": "data/clips/me340-165/rgb.txt",
+      "rgb": "data/clips/me340-165/rgb",
+      "source_rgb": "data/clips/me340-165/source-rgb.mp4",
+      "source_full": "data/clips/me340-165/source-full.mp4",
+      "source_full_json": "data/clips/me340-165/source-full.json"
+     },
+     "commands": [
+      [
+       "S01",
+       0
+      ],
+      [
+       "S01",
+       1
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S01c",
@@ -147,7 +170,20 @@
     }
    },
    "note": "the delivered cut was found by eye; m0-integrate-cuts is the codified rule's output (M0) and equals it",
-   "side": false
+   "side": false,
+   "graph": {
+    "cuts": {
+     "outputs": {
+      "segments": "runs/m0-integrate-cuts/me340-165/segments.json"
+     },
+     "commands": [
+      [
+       "S01c",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S03",
@@ -192,7 +228,23 @@
     "file": "runs/droid-me340-165-171/run.json"
    },
    "note": "the whole-clip DROID run is the census (keyframes only are used)",
-   "side": false
+   "side": false,
+   "graph": {
+    "census": {
+     "outputs": {
+      "out": "runs/droid-me340-165-171",
+      "prediction": "runs/droid-me340-165-171/prediction.npz",
+      "manifest": "runs/droid-me340-165-171/input-manifest.json",
+      "run": "runs/droid-me340-165-171/run.json"
+     },
+     "commands": [
+      [
+       "S03",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S01L",
@@ -213,7 +265,16 @@
     "S01"
    ],
    "note": "no lens stage: K from 5 clip frames, one of them (clip frame 224) in the cut-away (80.57°)",
-   "side": false
+   "side": false,
+   "graph": {
+    "moge": {
+     "outputs": {
+      "out": "data/clips/me340-165",
+      "fov": "data/clips/me340-165/clip.json"
+     },
+     "commands": []
+    }
+   }
   },
   {
    "id": "S03K",
@@ -255,7 +316,23 @@
     "S01L"
    ],
    "note": "--frames omitted: bundle adjustment over both shots; keyframes 14 and 226 sit on the cuts",
-   "side": false
+   "side": false,
+   "graph": {
+    "camera": {
+     "outputs": {
+      "out": "runs/droid-me340-165-171",
+      "prediction": "runs/droid-me340-165-171/prediction.npz",
+      "manifest": "runs/droid-me340-165-171/input-manifest.json",
+      "run": "runs/droid-me340-165-171/run.json"
+     },
+     "commands": [
+      [
+       "S03K",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S04",
@@ -307,7 +384,20 @@
     "S01"
    ],
    "note": "frame list is operator data (O1); recorded in manifest.json",
-   "side": false
+   "side": false,
+   "graph": {
+    "floor_masks": {
+     "outputs": {
+      "out": "runs/sam3-me340-floor-174"
+     },
+     "commands": [
+      [
+       "S04",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S14",
@@ -663,7 +753,22 @@
     "S03"
    ],
    "note": "frames = census keyframes ∪ range(0, N, 3) (rule D12, checked)",
-   "side": false
+   "side": false,
+   "graph": {
+    "sam2": {
+     "outputs": {
+      "out": "runs/sam2-me340-everything-184",
+      "object_a": "runs/sam2-me340-everything-184/object-a",
+      "segment": "runs/sam2-me340-everything-184/segment.json"
+     },
+     "commands": [
+      [
+       "S14",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S15",
@@ -689,7 +794,17 @@
     "runs/me340-masks-194/floor-a": "runs/sam3-me340-floor-174",
     "runs/me340-masks-194/object-a": "runs/sam2-me340-everything-184/object-a"
    },
-   "side": false
+   "side": false,
+   "graph": {
+    "mask_root": {
+     "outputs": {
+      "out": "runs/me340-masks-194",
+      "floor_a": "runs/me340-masks-194/floor-a",
+      "object_a": "runs/me340-masks-194/object-a"
+     },
+     "commands": []
+    }
+   }
   },
   {
    "id": "S07",
@@ -721,7 +836,21 @@
     "S03K"
    ],
    "note": "--every 10 --gap 8 defaults; no --exclude-frames, flow pairs straddle the cuts",
-   "side": false
+   "side": false,
+   "graph": {
+    "motion": {
+     "outputs": {
+      "out": "runs/me340-motion-masks-177",
+      "motion": "runs/me340-motion-masks-177/motion.json"
+     },
+     "commands": [
+      [
+       "S07",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S08a",
@@ -762,7 +891,22 @@
    ],
    "note": "--text person, --stride 1 defaults (tracks.json); window 0 spans the cut at 14",
    "side": false,
-   "instance": 0
+   "instance": 0,
+   "graph": {
+    "tracks-0-300": {
+     "outputs": {
+      "out": "runs/me340-sam31-tracks-178",
+      "tracks": "runs/me340-sam31-tracks-178/tracks.json",
+      "npz": "runs/me340-sam31-tracks-178/tracks.npz"
+     },
+     "commands": [
+      [
+       "S08a",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S08b",
@@ -803,7 +947,22 @@
    ],
    "note": "--text person, --stride 1 defaults (tracks.json); window 0 spans the cut at 14",
    "side": false,
-   "instance": 1
+   "instance": 1,
+   "graph": {
+    "tracks-260-560": {
+     "outputs": {
+      "out": "runs/me340-sam31-tracks-179",
+      "tracks": "runs/me340-sam31-tracks-179/tracks.json",
+      "npz": "runs/me340-sam31-tracks-179/tracks.npz"
+     },
+     "commands": [
+      [
+       "S08b",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S08c",
@@ -844,7 +1003,22 @@
    ],
    "note": "--text person, --stride 1 defaults (tracks.json); window 0 spans the cut at 14",
    "side": false,
-   "instance": 2
+   "instance": 2,
+   "graph": {
+    "tracks-520-899": {
+     "outputs": {
+      "out": "runs/me340-sam31-tracks-180",
+      "tracks": "runs/me340-sam31-tracks-180/tracks.json",
+      "npz": "runs/me340-sam31-tracks-180/tracks.npz"
+     },
+     "commands": [
+      [
+       "S08c",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S09",
@@ -879,7 +1053,21 @@
     "S08b",
     "S08c"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "stitch": {
+     "outputs": {
+      "out": "runs/me340-stitched-186",
+      "stitched": "runs/me340-stitched-186/stitched.json"
+     },
+     "commands": [
+      [
+       "S09",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S10",
@@ -902,7 +1090,7 @@
      "$ART/runs/me340-sam31-tracks-179",
      "$ART/runs/me340-sam31-tracks-180",
      "--stitched",
-     "$ART/runs/me340-stitched-186/stitched.json",
+     "$ART/runs/me340-stitched-186",
      "--output",
      "$ART/runs/me340-motion-analysis-187"
     ]
@@ -920,7 +1108,23 @@
     "S03K",
     "S09"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "analysis": {
+     "outputs": {
+      "out": "runs/me340-motion-analysis-187",
+      "analysis": "runs/me340-motion-analysis-187/analysis.json",
+      "masks": "runs/me340-motion-analysis-187/masks"
+     },
+     "commands": [
+      [
+       "S10",
+       0
+      ]
+     ]
+    }
+   },
+   "note": "--stitched is the stitch folder: the script reads DIR/stitched.json (a file path would have failed); the fixture first had the file"
   },
   {
    "id": "S11",
@@ -956,7 +1160,21 @@
     "S03K",
     "S10"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "dynamic_masks": {
+     "outputs": {
+      "out": "runs/me340-dynamic-masks-188",
+      "masks": "runs/me340-dynamic-masks-188/masks"
+     },
+     "commands": [
+      [
+       "S11",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S05",
@@ -1009,7 +1227,22 @@
     "file": "runs/da3-posed-me340-173/infer.json"
    },
    "note": "one joint DA3 pass over 312 views, cut-away included",
-   "side": false
+   "side": false,
+   "graph": {
+    "depth": {
+     "outputs": {
+      "out": "runs/da3-posed-me340-173",
+      "mono": "runs/da3-posed-me340-173/mono",
+      "infer": "runs/da3-posed-me340-173/infer.json"
+     },
+     "commands": [
+      [
+       "S05",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S06",
@@ -1059,7 +1292,21 @@
     "S04"
    ],
    "note": "carry-height median over all 899 cameras (recomputed); walk-only would give 2.7946 m/unit",
-   "side": true
+   "side": false,
+   "graph": {
+    "metric": {
+     "outputs": {
+      "out": "runs/da3-posed-me340-173",
+      "metric_scale": "runs/da3-posed-me340-173/metric-scale.json"
+     },
+     "commands": [
+      [
+       "S06",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S12",
@@ -1198,7 +1445,22 @@
     "runs/me340-dynamic-190/metric-scale.json": "runs/da3-posed-me340-173/metric-scale.json"
    },
    "note": "staged from the all-view 189 (its scene.json copied, then rewritten): not the walk-only R17",
-   "side": false
+   "side": false,
+   "graph": {
+    "dynamic": {
+     "outputs": {
+      "out": "runs/me340-dynamic-190",
+      "scene": "runs/me340-dynamic-190/scene.json",
+      "surfaces": "runs/me340-dynamic-190/dynamic"
+     },
+     "commands": [
+      [
+       "S13",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S16",
@@ -1244,7 +1506,22 @@
     "S15",
     "S11"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "object_map": {
+     "outputs": {
+      "out": "runs/me340-object-map-195",
+      "object_map": "runs/me340-object-map-195/object-map.json",
+      "surfaces": "runs/me340-object-map-195/surfaces"
+     },
+     "commands": [
+      [
+       "S16",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S17",
@@ -1281,7 +1558,23 @@
     "S15"
    ],
    "note": "cloud Gemini (17 requests); replay with --names names.json makes no request",
-   "side": false
+   "side": false,
+   "graph": {
+    "names": {
+     "outputs": {
+      "out": "runs/me340-entity-names-200",
+      "object_map": "runs/me340-entity-names-200/object-map.json",
+      "names": "runs/me340-entity-names-200/names.json",
+      "surfaces": "runs/me340-entity-names-200/surfaces"
+     },
+     "commands": [
+      [
+       "S17",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S18",
@@ -1362,7 +1655,21 @@
     "S18"
    ],
    "note": "occludes against 196 (texture of the all-view 189); --scene not recorded (196 and 189 scene frames are equal)",
-   "side": false
+   "side": false,
+   "graph": {
+    "outlines": {
+     "outputs": {
+      "out": "runs/me340-frame-selection-201",
+      "analysis": "runs/me340-frame-selection-201/analysis.json"
+     },
+     "commands": [
+      [
+       "S19",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S20",
@@ -1396,7 +1703,21 @@
     "S10"
    ],
    "note": "window 12, fps 2, T 0, seed 0 recorded; --marks (likely 187/analysis.json) not recorded",
-   "side": false
+   "side": false,
+   "graph": {
+    "events": {
+     "outputs": {
+      "out": "runs/me340-events-197",
+      "events": "runs/me340-events-197/events.json"
+     },
+     "commands": [
+      [
+       "S20",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S21",
@@ -1518,7 +1839,37 @@
     "S21"
    ],
    "note": "paths are the script's hard-coded ME340 defaults (launch.json records them); seeds 189 + 213",
-   "side": false
+   "side": false,
+   "graph": {
+    "splat": {
+     "outputs": {
+      "out": "runs/me340-splat-217/skip-2.5m-60k-elong4",
+      "splats": null,
+      "json": "runs/me340-splat-217/skip-2.5m-60k-elong4/splats.json",
+      "train": "runs/me340-splat-217/skip-2.5m-60k-elong4/train.json",
+      "launch": "runs/me340-splat-217/skip-2.5m-60k-elong4/launch.json",
+      "cameras": "runs/me340-splat-217/skip-2.5m-60k-elong4/refined-cameras.npz"
+     },
+     "commands": [
+      [
+       "S22",
+       0
+      ]
+     ]
+    },
+    "splat_clean": {
+     "outputs": {
+      "out": "runs/me340-splat-217/skip-2.5m-60k-elong4",
+      "clean": "runs/me340-splat-217/skip-2.5m-60k-elong4/clean/clean.json"
+     },
+     "commands": [
+      [
+       "S23",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S23",
@@ -1558,7 +1909,23 @@
     "runs/me340-splat-232/refined-cameras.npz": "runs/me340-splat-217/skip-2.5m-60k-elong4/refined-cameras.npz"
    },
    "note": "hand copy out of 217/skip-2.5m-60k-elong4 (its splats-clean.splat is no longer there; 232/splats.splat 3592e27a is the import asset)",
-   "side": false
+   "side": false,
+   "graph": {
+    "splat_final": {
+     "outputs": {
+      "out": "runs/me340-splat-217/skip-2.5m-60k-elong4",
+      "splats": "runs/me340-splat-232/splats.splat",
+      "json": "runs/me340-splat-232/splats.json",
+      "cameras": "runs/me340-splat-232/refined-cameras.json"
+     },
+     "commands": [
+      [
+       "S23",
+       1
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S24",
@@ -1612,7 +1979,26 @@
     "file": "runs/me340-lingbot-map-222/plan.json"
    },
    "note": "whole video, stride 2, no --frames",
-   "side": false
+   "side": false,
+   "graph": {
+    "lingbot": {
+     "outputs": {
+      "out": "runs/me340-lingbot-map-222",
+      "plan": "runs/me340-lingbot-map-222/plan.json",
+      "submission": "runs/me340-lingbot-map-222/submission.json"
+     },
+     "commands": [
+      [
+       "S24",
+       0
+      ],
+      [
+       "S24",
+       1
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S25a",
@@ -1659,7 +2045,20 @@
     "S11",
     "S12"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "lingbot_diagnose": {
+     "outputs": {
+      "diagnose": "runs/me340-lingbot-map-222/diagnose.json"
+     },
+     "commands": [
+      [
+       "S25a",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S25b",
@@ -1710,7 +2109,24 @@
     "S25a"
    ],
    "note": "pre-flag code: remote.json config has no exclude/overlay_rows; captions cut by the hard-coded rows 646:706",
-   "side": false
+   "side": false,
+   "graph": {
+    "lingbot_build": {
+     "outputs": {
+      "out": "runs/me340-lingbot-map-222",
+      "points": "runs/me340-lingbot-map-222/dense-points.glb",
+      "info": "runs/me340-lingbot-map-222/points.json",
+      "attributes": "runs/me340-lingbot-map-222/point-attributes.npz",
+      "remote": "runs/me340-lingbot-map-222/remote.json"
+     },
+     "commands": [
+      [
+       "S25b",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S26",
@@ -1774,7 +2190,13 @@
     "S21"
    ],
    "note": "no ICP; 48.3% within 25 cm against 189 (must be re-evaluated against 223 under D8)",
-   "side": false
+   "side": false,
+   "graph": {
+    "dense_gate": {
+     "outputs": {},
+     "commands": []
+    }
+   }
   },
   {
    "id": "S28",
@@ -1867,7 +2289,27 @@
     "runs/da3-posed-me340-223-shotc/metric-scale.json": "runs/da3-posed-me340-173/metric-scale.json"
    },
    "note": "240 absolute symlinks into 173/mono outside [14,226): a served subset of a joint pass; scale still all-camera (X2)",
-   "side": false
+   "side": false,
+   "graph": {
+    "fuse": {
+     "outputs": {
+      "out": "runs/da3-posed-me340-223-shotc",
+      "mesh": "runs/da3-posed-me340-223-shotc/mono-anchored-mesh.ply",
+      "predicted": "runs/da3-posed-me340-223-shotc/predicted-scene.glb",
+      "points": "runs/da3-posed-me340-223-shotc/supported-keyframe-points.glb",
+      "scene": "runs/da3-posed-me340-223-shotc/scene.json",
+      "metrics": "runs/da3-posed-me340-223-shotc/fuse-metrics.json",
+      "metric_scale": "runs/da3-posed-me340-223-shotc/metric-scale.json",
+      "support": "runs/da3-posed-me340-223-shotc/droid-support.npz"
+     },
+     "commands": [
+      [
+       "S28",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S29",
@@ -1923,7 +2365,22 @@
     "S11",
     "S01"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "texture": {
+     "outputs": {
+      "out": "runs/me340-textured-224",
+      "shell": "runs/me340-textured-224/textured-scene.glb",
+      "report": "runs/me340-textured-224/texture-report.json"
+     },
+     "commands": [
+      [
+       "S29",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S30",
@@ -1985,7 +2442,22 @@
     "S11"
    ],
    "note": "--shell: the only 240-view texture run",
-   "side": false
+   "side": false,
+   "graph": {
+    "fill": {
+     "outputs": {
+      "out": "runs/me340-filled-225",
+      "shell": "runs/me340-filled-225/textured-scene.glb",
+      "fill": "runs/me340-filled-225/fill.json"
+     },
+     "commands": [
+      [
+       "S30",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S31",
@@ -2067,7 +2539,21 @@
     }
    },
    "note": "--skip-frames 14-225 not recorded; no effect (223 has no cut-away views)",
-   "side": false
+   "side": false,
+   "graph": {
+    "floor_infer": {
+     "outputs": {
+      "out": "runs/me340-inferred-floor-244",
+      "floor": "runs/me340-inferred-floor-244/inferred-floor.json"
+     },
+     "commands": [
+      [
+       "S31",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S32",
@@ -2240,7 +2726,22 @@
     "S32"
    ],
    "note": "cp -c clone of 220, +66 calls, then gate change and --reassess (22 -> 15)",
-   "side": false
+   "side": false,
+   "graph": {
+    "recgen": {
+     "outputs": {
+      "out": "runs/me340-object-models-231",
+      "manifest": "runs/me340-object-models-231/manifest.json",
+      "models": "runs/me340-object-models-231/models"
+     },
+     "commands": [
+      [
+       "S33",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S34",
@@ -2314,7 +2815,22 @@
     "S11"
    ],
    "note": "depth run 189; --voxel-native default .014 (X5)",
-   "side": false
+   "side": false,
+   "graph": {
+    "sam3d": {
+     "outputs": {
+      "out": "runs/me340-object-models-241-sam3d",
+      "manifest": "runs/me340-object-models-241-sam3d/manifest.json",
+      "models": "runs/me340-object-models-241-sam3d/models"
+     },
+     "commands": [
+      [
+       "S34",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S35",
@@ -2427,7 +2943,22 @@
    "inputs": [
     "S35"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "box": {
+     "outputs": {
+      "out": "runs/me340-object-models-302-box",
+      "manifest": "runs/me340-object-models-302-box/manifest.json",
+      "models": "runs/me340-object-models-302-box/models"
+     },
+     "commands": [
+      [
+       "S36",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S36t",
@@ -2458,7 +2989,21 @@
    "inputs": [
     "S36"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "box_test": {
+     "outputs": {
+      "out": "runs/m0-box-test-me340",
+      "box_test": "runs/m0-box-test-me340/box-test.json"
+     },
+     "commands": [
+      [
+       "S36t",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S37",
@@ -2530,7 +3075,22 @@
     }
    },
    "note": "22 = 9 SAM 3D + 11 RecGen + 2 box; replay --against exits 0 (m0-integrate-merge-replays.json)",
-   "side": false
+   "side": false,
+   "graph": {
+    "merge": {
+     "outputs": {
+      "out": "runs/me340-object-models-303-merged",
+      "merge": "runs/me340-object-models-303-merged/merge.json",
+      "models": "runs/me340-object-models-303-merged/models"
+     },
+     "commands": [
+      [
+       "S37",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S38",
@@ -2637,7 +3197,21 @@
     }
    },
    "note": "--mesh verified by recomputing depthRatioMedian (the 189 mesh gives 0.9494/0.9617/0.9585); replay reuses the journal, no call",
-   "side": false
+   "side": false,
+   "graph": {
+    "register-14-226": {
+     "outputs": {
+      "out": "runs/me340-cutaway-register-304",
+      "registration": "runs/me340-cutaway-register-304/registration.json"
+     },
+     "commands": [
+      [
+       "S38",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "S39",
@@ -2700,7 +3274,23 @@
     "S28"
    ],
    "note": "hand --merge/--person-tracks; scene/mono and scene/droid-support.npz are dangling relative symlinks (cp -c -R of 190)",
-   "side": false
+   "side": false,
+   "graph": {
+    "movers-14-226": {
+     "outputs": {
+      "out": "runs/me340-cutaway-dynamic-305",
+      "scene": "runs/me340-cutaway-dynamic-305/scene/scene.json",
+      "scene_dir": "runs/me340-cutaway-dynamic-305/scene",
+      "analysis": "runs/me340-cutaway-dynamic-305/analysis/analysis.json"
+     },
+     "commands": [
+      [
+       "S39",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "IMPORT",
@@ -2808,7 +3398,18 @@
     "S37"
    ],
    "note": "cwd $ART; env PANOPTES_DATABASE_URL, PANOPTES_BLOB_ROOT=$ART/.platform/blobs. --title read from the publications row (SELECT); --republish/--request-suffix live only in .platform/imports (never opened). Outputs are the DB rows, checked by fingerprint (P5)",
-   "side": false
+   "side": false,
+   "graph": {
+    "import": {
+     "outputs": {},
+     "commands": [
+      [
+       "IMPORT",
+       0
+      ]
+     ]
+    }
+   }
   }
  ],
  "deviations": [
@@ -2862,7 +3463,8 @@
     "S26",
     "S32",
     "S33",
-    "S34"
+    "S34",
+    "S23"
    ],
    "delivered": "object map, names, models, splat seeds and LingBot evaluate on the all-view 189",
    "m2": "per-shot R17",
@@ -2963,7 +3565,8 @@
    "m2": "learned-accepted ∪ review excludes (D17)",
    "reason": "the box excludes came from a merge that is not the delivered one",
    "decisions": [
-    "generator_plan"
+    "generator_plan",
+    "generator_plan-box"
    ]
   },
   {
@@ -2982,6 +3585,17 @@
    "decisions": [
     "floor_frames"
    ]
+  },
+  {
+   "id": "X14",
+   "class": "X",
+   "nodes": [
+    "S31"
+   ],
+   "delivered": "inferred floor 244 without --skip-frames: the cut-away cameras [14,226) vote on the floor that is published",
+   "m2": "--skip-frames 14-225, as every other consumer of the camera run",
+   "reason": "found at M2 integration: the cut-away shot is never evidence (as X2 for the metric scale)",
+   "decisions": []
   }
  ],
  "decisions": {
@@ -2990,17 +3604,19 @@
     0,
     899
    ],
-   "others": [],
-   "mapped": true
-  },
-  "other_shot": {
-   "shot": [
-    14,
-    226
+   "others": [
+    [
+     14,
+     226
+    ]
    ],
-   "accepted": true,
-   "centreResidualShare": 0.009207155330046853,
-   "rotationResidualDeg": 2.3754875808692573
+   "registered": [
+    [
+     14,
+     226
+    ]
+   ],
+   "mapped": true
   },
   "lens": {
    "frames": null,
@@ -3372,6 +3988,64 @@
    897
   ],
   "generator_plan": {
+   "recgen_entities": [
+    "object-019",
+    "object-035",
+    "object-001",
+    "object-017",
+    "object-106",
+    "object-012",
+    "object-022",
+    "object-120",
+    "object-073",
+    "object-018",
+    "object-131",
+    "object-009",
+    "object-148",
+    "object-130",
+    "object-105",
+    "object-039",
+    "object-127",
+    "object-007",
+    "object-087",
+    "object-043",
+    "object-099",
+    "object-109",
+    "object-189",
+    "object-094",
+    "object-182",
+    "object-104",
+    "object-034",
+    "object-033",
+    "object-023",
+    "object-026",
+    "object-036",
+    "object-002",
+    "object-108",
+    "object-016",
+    "object-085",
+    "object-125",
+    "object-145",
+    "object-071",
+    "object-103",
+    "object-136",
+    "object-122",
+    "object-098",
+    "object-118",
+    "object-110",
+    "object-144",
+    "object-052",
+    "object-186",
+    "object-137",
+    "object-150",
+    "object-126",
+    "object-115",
+    "object-149",
+    "object-116",
+    "object-123",
+    "object-163"
+   ],
+   "excluded_all": {},
    "box_excludes": {
     "object-001": "modelled_in_me340-object-models-242-merged",
     "object-012": "modelled_in_me340-object-models-242-merged",
@@ -3408,15 +4082,103 @@
    675,
    750,
    825
-  ]
+  ],
+  "other_shot-14-226": {
+   "shot": [
+    14,
+    226
+   ],
+   "accepted": true,
+   "centreResidualShare": 0.009207155330046853,
+   "rotationResidualDeg": 2.3754875808692573
+  },
+  "generator_plan-box": {
+   "recgen_entities": [
+    "object-019",
+    "object-035",
+    "object-001",
+    "object-017",
+    "object-106",
+    "object-012",
+    "object-022",
+    "object-120",
+    "object-073",
+    "object-018",
+    "object-131",
+    "object-009",
+    "object-148",
+    "object-130",
+    "object-105",
+    "object-039",
+    "object-127",
+    "object-007",
+    "object-087",
+    "object-043",
+    "object-099",
+    "object-109",
+    "object-189",
+    "object-094",
+    "object-182",
+    "object-104",
+    "object-034",
+    "object-033",
+    "object-023",
+    "object-026",
+    "object-036",
+    "object-002",
+    "object-108",
+    "object-016",
+    "object-085",
+    "object-125",
+    "object-145",
+    "object-071",
+    "object-103",
+    "object-136",
+    "object-122",
+    "object-098",
+    "object-118",
+    "object-110",
+    "object-144",
+    "object-052",
+    "object-186",
+    "object-137",
+    "object-150",
+    "object-126",
+    "object-115",
+    "object-149",
+    "object-116",
+    "object-123",
+    "object-163"
+   ],
+   "excluded_all": {},
+   "box_excludes": {
+    "object-001": "modelled_in_me340-object-models-242-merged",
+    "object-012": "modelled_in_me340-object-models-242-merged",
+    "object-017": "modelled_in_me340-object-models-242-merged",
+    "object-019": "modelled_in_me340-object-models-242-merged",
+    "object-033": "modelled_in_me340-object-models-242-merged",
+    "object-035": "modelled_in_me340-object-models-242-merged",
+    "object-073": "modelled_in_me340-object-models-242-merged",
+    "object-085": "modelled_in_me340-object-models-242-merged",
+    "object-094": "modelled_in_me340-object-models-242-merged",
+    "object-099": "modelled_in_me340-object-models-242-merged",
+    "object-109": "modelled_in_me340-object-models-242-merged",
+    "object-110": "modelled_in_me340-object-models-242-merged",
+    "object-127": "modelled_in_me340-object-models-242-merged",
+    "object-130": "modelled_in_me340-object-models-242-merged",
+    "object-136": "modelled_in_me340-object-models-242-merged",
+    "object-137": "modelled_in_me340-object-models-242-merged",
+    "object-148": "modelled_in_me340-object-models-242-merged",
+    "object-150": "modelled_in_me340-object-models-242-merged",
+    "object-186": "modelled_in_me340-object-models-242-merged",
+    "object-189": "modelled_in_me340-object-models-242-merged"
+   }
+  }
  },
  "decision_inputs": {
   "shots": {
    "segments": "runs/m0-integrate-cuts/me340-165/segments.json",
    "census": "runs/droid-me340-165-171"
-  },
-  "other_shot": {
-   "registration": "runs/me340-cutaway-register-304/registration.json"
   },
   "lens": {
    "shots": "@decision:shots",
@@ -3452,14 +4214,21 @@
    "census": "runs/droid-me340-165-171",
    "segments": "runs/m0-integrate-cuts/me340-165/segments.json"
   },
-  "generator_plan": {
+  "floor_frames": {
+   "shots": "@decision:shots",
+   "operator": "@value:floor_frames"
+  },
+  "other_shot-14-226": {
+   "registration": "runs/me340-cutaway-register-304/registration.json"
+  },
+  "generator_plan-box": {
    "sam3d": "runs/me340-object-models-241-sam3d",
    "recgen": "runs/me340-object-models-231",
    "review": "$REPO/docs/phase2/box-review-303/me340.json"
   },
-  "floor_frames": {
-   "shots": "@decision:shots",
-   "operator": "@value:floor_frames"
+  "generator_plan": {
+   "sam3d": "runs/me340-object-models-241-sam3d",
+   "review": "$REPO/docs/phase2/box-review-303/me340.json"
   }
  },
  "decision_compare": {
@@ -3480,13 +4249,23 @@
     "use"
    ]
   },
-  "generator_plan": {
-   "keys": "box_excludes"
-  },
   "track_windows": {
    "fields": [
     "shot",
     "stitch"
+   ]
+  },
+  "generator_plan-box": {
+   "keys": "box_excludes"
+  },
+  "generator_plan": {
+   "keys": "recgen_entities"
+  },
+  "shots": {
+   "fields": [
+    "primary",
+    "others",
+    "mapped"
    ]
   }
  },

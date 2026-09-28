@@ -341,6 +341,18 @@ def test_generators_seed_from_the_store():
     assert ("sam3d", ["fuse", "mask_root", "static_filter"]) in seen and {s for s, _ in seen} == {"sam3d", "recgen", "box"}
 
 
+def test_a_republish_keeps_the_published_title(tmp_path):
+    """D14: --republish is the site's last imports.jsonl record path (path only) and a republish keeps the published title
+    (O1); a first import gets the rule title."""
+    c = ctx("walmart")
+    first = {s.name: s for s in stages.graph(c)}["import"]
+    assert flag(first, "--title") == ["walmart 03:10–03:40 (imported, not accepted)"] and flag(first, "--republish") is None
+    (tmp_path / "imports.jsonl").write_text(json.dumps({"site": "walmart", "importRecordPath": "/art/.platform/imports/video-import-p.json", "title": "Walmart aisle"}) + "\n")
+    c = Ctx(*[getattr(c, f) for f in ("site", "video", "start", "end", "profile", "review", "art")], types.SimpleNamespace(state=tmp_path), c.decisions)
+    again = {s.name: s for s in stages.graph(c)}["import"]
+    assert flag(again, "--title") == ["Walmart aisle"] and flag(again, "--republish") == ["/art/.platform/imports/video-import-p.json"]
+
+
 # ---------------------------------------------------------------- templates against the delivered runs (read-only)
 DELIVERED = {
     "me340": {"source": "../data/clips/me340-165", "cuts": "m0-integrate-cuts/me340-165", "census": "droid-me340-165-171", "camera": "droid-me340-165-171",

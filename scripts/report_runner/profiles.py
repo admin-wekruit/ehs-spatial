@@ -56,6 +56,7 @@ class Profile:
     cache_only: bool
     rules: object  # {decision: 'name@v'} or 'adopted'
     caps: dict = field(default_factory=dict)  # splat_minutes, generator_usd: per stage, never more than the run's budget
+    omit: tuple = ()  # M2 stages this profile leaves out of the graph (delivered: the stages the delivered reports never had)
 
 
 RESEARCH_MODELS = dict([row("camera", "princeton-vl/DROID-SLAM"), row("depth", "depth-anything/DA3-GIANT-1.1"), row("register", "depth-anything/DA3-GIANT-1.1"),
@@ -70,7 +71,8 @@ CAPS = {"splat_minutes": 58, "generator_usd": 10.}
 PROFILES = {
     "research": Profile("research", RESEARCH_MODELS, ("sam3d", "recgen", "box"), True, "gemini", False, M2_RULES, CAPS),
     "commercial": Profile("commercial", COMMERCIAL_MODELS, ("sam3d", "box"), False, "qwen3vl", False, M2_RULES, CAPS),
-    "delivered": Profile("delivered", {}, (), True, "gemini", True, "adopted", {}),
+    # the delivered reports ran all three generators and neither the static filter (D20) nor the lens gate on the import (D4)
+    "delivered": Profile("delivered", {}, ("sam3d", "recgen", "box"), True, "gemini", True, "adopted", {}, ("static_filter", "lens_gate")),
 }
 
 

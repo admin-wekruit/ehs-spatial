@@ -208,8 +208,9 @@ def test_record_scope_lock_path_disjoint_roles_and_latest(tmp_path, art):
     k = s.record(infer, d, "delivered-only", ["delivered"], {"stage": "R16"}, adopted_from="runs/adopted-281")
     assert json.loads((art / f"runs/report-runner/adopted/locks/{k}.json").read_text())["key"] == k
     s.record(fuse, d, "delivered-only", ["delivered"], {}, adopted_from="runs/adopted-281")  # disjoint roles share the dir
-    with pytest.raises(ValueError):
-        s.record(spec("X", TOUCH, outputs={"mesh": "mesh.ply"}), d, "content", ["delivered"], {}, adopted_from="x")
+    # one delivered run may stand for two stages (ME340 171 is census and camera): adopted records may share its files
+    s.record(spec("X", TOUCH, outputs={"mesh": "mesh.ply"}), d, "content", ["delivered"], {}, adopted_from="x")
+    assert st.Store(art, scope="delivered").lookup(spec("X", TOUCH, outputs={"mesh": "mesh.ply"})).outputs["mesh"] == d / "mesh.ply"
     assert st.Store(art, scope="research").lookup(infer) is None
     assert st.Store(art, scope="delivered").lookup(infer).dir == d
     digest = entries(art)[1]["inputs"]["depth"]
@@ -311,3 +312,39 @@ def test_cli_help_and_unknown_flags():
     for bad in (["--bogus"], ["--dry"]):
         run = subprocess.run([PY, script, *CLI, *bad], capture_output=True, text=True)
         assert run.returncode == 2 and "unrecognized" in run.stderr
+
+
+def test_profile_refusals_are_planned_and_never_run(tmp_path, art, capsys):
+    """A profile's refusal (profiles.refuse) shows in the plan with its reason and stops the stage before any lookup or run."""
+    marker = tmp_path / "ran"
+    a, b, c = toy(tmp_path)
+    b = spec("B", f"import sys; open({str(marker)!r}, 'w').write('x')", "@A:out", inputs={"a": ("A", ("out",))})
+    no_b = lambda s: "licence not verified" if s.name == "B" else None
+    rows = {r["stage"]: r for r in st.Store(art, refuse=no_b).plan([a, b, c])}
+    assert rows["B"]["status"] == "refused" and rows["B"]["why"] == "licence not verified" and rows["C"]["status"] == "unresolved"
+    st.print_plan(list(rows.values()))
+    assert "refused B: licence not verified" in capsys.readouterr().out
+    result = st.Store(art, scope="commercial", refuse=no_b).execute([a, b, c], st.Ledger())
+    assert isinstance(result["A"], Hit) and result["B"] == "refused" and result["C"] == "blocked" and not marker.exists()
+
+
+def test_adopted_runs_may_hold_dangling_links_and_absent_outputs(art):
+    """ME340 305/scene/mono dangles and 217's trained splats.splat is gone: hashing skips the dangling link, an adopted role
+    recorded as absent is never served, and resolve() substitutes a served stage's command from the hits."""
+    d = art / "runs/adopted"
+    (d / "scene").mkdir(parents=True)
+    (d / "scene/scene.json").write_text("{}")
+    (d / "scene/mono").symlink_to("../nowhere")
+    s = st.Store(art)
+    first = spec("A", TOUCH, outputs={"scene": "scene", "splats": None})
+    s.record(first, d, "delivered-only", ["delivered"], {}, adopted_from="S39")
+    hit = st.Store(art, scope="delivered").lookup(first)
+    assert hit.outputs == {"scene": d / "scene"}
+    use = spec("B", TOUCH, "@A:scene", inputs={"a": ("A", ("scene",))})
+    s.record(dataclass_replace(use, outputs={"out": "scene/scene.json"}), d, "delivered-only", ["delivered"], {}, adopted_from="x")
+    assert s.resolve(use) == [[PY, "-c", TOUCH, str(d), str(d / "scene")]]
+
+
+def dataclass_replace(spec_, **kw):
+    import dataclasses
+    return dataclasses.replace(spec_, **kw)

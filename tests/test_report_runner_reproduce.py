@@ -13,7 +13,6 @@ import importlib
 import json
 import os
 from pathlib import Path
-import stat
 import subprocess
 import sys
 
@@ -58,11 +57,9 @@ def test_fixture_schema(site):
     assert set(fx["patches_73"]) <= {n["id"] for n in fx["nodes"] if n["patch"]}, "every §7.3 patch is a patch node"
     assert len(fx["patches_73"]) == REGISTER_73[site]
     assert all(n["patch"] in {d["id"] for d in fx["deviations"]} for n in fx["nodes"] if n["patch"]), "every patch carries a listed deviation"
-    per_stage = {}
-    for n in fx["nodes"]:
-        if not n.get("side"):
-            per_stage.setdefault((n["stage"], n.get("instance")), []).append(n["id"])
-    assert all(len(ids) == 1 for ids in per_stage.values()), f"one occupant per M2 stage: {[ids for ids in per_stage.values() if len(ids) > 1]}"
+    # every run that is not a side run stands for graph stages (node.graph); validate_fixture checks one occupant per stage
+    assert [n["id"] for n in fx["nodes"] if not n.get("side") and not n.get("graph")] == []
+    assert all(not n.get("graph") for n in fx["nodes"] if n.get("side"))
     assert [n for n in fx["nodes"] if n["stage"] == "R37"] and fx["expect"]["fingerprint"]
     assert set(fx["decision_inputs"]) <= set(fx["decisions"])
     for d in fx["deviations"]:
@@ -239,23 +236,29 @@ def make_toy(tmp):
         {"id": "T01", "stage": "R01", "name": "clip", "dirs": ["data/clips/toy"], "outputs": {"clip": "data/clips/toy/clip.json"},
          "commands": [["scripts/prepare_video_clip.py", "--video", "$VIDEO", "--start", "1", "--end", "2", "--name", "toy", "--output", "$ART/data/clips/toy"]],
          "basis": {}, "evidence": [], "patch": None, "staging": False, "inputs": [],
-         "verify": {"kind": "content", "checks": [{"kind": "json_value", "file": "data/clips/toy/clip.json", "path": "source.frames", "value": 10}]}},
+         "verify": {"kind": "content", "checks": [{"kind": "json_value", "file": "data/clips/toy/clip.json", "path": "source.frames", "value": 10}]},
+         "graph": {"R01": {"outputs": {"clip": "data/clips/toy/clip.json"}, "commands": [["T01", 0]]}}},
         {"id": "T02", "stage": "R02", "name": "cuts", "dirs": ["runs/toy-cuts"], "outputs": {"segments": "runs/toy-cuts/segments.json"},
          "commands": [["scripts/detect_shot_cuts.py", "--clip", "$ART/data/clips/toy", "--output", "$ART/runs/toy-cuts/segments.json"]],
-         "basis": {}, "evidence": [], "patch": None, "staging": False, "inputs": ["T01"]},
+         "basis": {}, "evidence": [], "patch": None, "staging": False, "inputs": ["T01"],
+         "graph": {"R02": {"outputs": {"segments": "runs/toy-cuts/segments.json"}, "commands": [["T02", 0]]}}},
         {"id": "T07", "stage": "R07", "name": "camera", "dirs": ["runs/toy-cam"], "outputs": {"prediction": "runs/toy-cam/prediction.npz"},
          "commands": [["modal_apps/droid_room.py", "execute", "--clip", "$ART/data/clips/toy", "--frames", "0:10", "--output", "$ART/runs/toy-cam"]],
          "basis": {"--frames": "D"}, "evidence": [{"kind": "json_value", "file": "runs/toy-cam/run.json", "path": "shot_frames", "value": [0, 10]}],
-         "patch": None, "staging": False, "inputs": ["T01", "T02"], "verify": {"kind": "recorded-rev", "file": "runs/toy-cam/run.json", "field": "script_sha256", "script": SCRIPT}},
+         "patch": None, "staging": False, "inputs": ["T01", "T02"], "verify": {"kind": "recorded-rev", "file": "runs/toy-cam/run.json", "field": "script_sha256", "script": SCRIPT},
+         "graph": {"R07": {"outputs": {"prediction": "runs/toy-cam/prediction.npz"}, "commands": [["T07", 0]]}}},
         {"id": "T10", "stage": "R10", "name": "mask root", "dirs": ["runs/toy-masks"], "outputs": {"floor_a": "runs/toy-masks/floor-a"}, "commands": [],
-         "basis": {}, "evidence": [], "patch": None, "staging": True, "inputs": ["T07"], "links": {"runs/toy-masks/floor-a": "runs/toy-cam"}},
+         "basis": {}, "evidence": [], "patch": None, "staging": True, "inputs": ["T07"], "links": {"runs/toy-masks/floor-a": "runs/toy-cam"},
+         "graph": {"R10": {"outputs": {"floor_a": "runs/toy-masks/floor-a"}, "commands": []}}},
         {"id": "T11", "stage": "R07", "name": "old camera", "dirs": ["runs/toy-old"], "outputs": {"prediction": "runs/toy-old/prediction.npz"},
          "commands": [["modal_apps/droid_room.py", "execute", "--clip", "old"]], "basis": {}, "evidence": [], "patch": "X1", "staging": False, "inputs": ["T01"], "side": True},
         {"id": "T12", "stage": "R12", "name": "tracks", "dirs": ["runs/toy-tracks"], "outputs": {"tracks": "runs/toy-tracks/tracks.json"},
          "commands": [["modal_apps/sam3_motion_tracks.py", "--droid-run", "$ART/runs/toy-old", "--output", "$ART/runs/toy-tracks"]],
-         "basis": {}, "evidence": [], "patch": "X1", "staging": False, "inputs": ["T11"]},
+         "basis": {}, "evidence": [], "patch": "X1", "staging": False, "inputs": ["T11"],
+         "graph": {"R12": {"outputs": {"tracks": "runs/toy-tracks/tracks.json"}, "commands": [["T12", 0]]}}},
         {"id": "IMPORT", "stage": "R37", "name": "import", "dirs": [], "outputs": {}, "commands": [["scripts/import_video_scene.py", "--droid-run", "$ART/runs/toy-cam", "--title", "Toy"]],
-         "basis": {"--title": "M"}, "evidence": [], "patch": None, "staging": False, "inputs": ["T07"]}]
+         "basis": {"--title": "M"}, "evidence": [], "patch": None, "staging": False, "inputs": ["T07"],
+         "graph": {"R37": {"outputs": {}, "commands": [["IMPORT", 0]]}}}]
     fx = {"site": "me340", "clip": "toy", "video_sha256": A.sha256_file(video), "start": 1, "end": 2, "publication": "pub-toy",
           "expect": {"fingerprint": A.fingerprint(DOC, "Toy")}, "nodes": nodes,
           "decisions": {"shots": {"primary": [0, 10], "others": [], "mapped": True}}, "decision_inputs": {"shots": {"segments": "runs/toy-cuts/segments.json"}},
@@ -277,17 +280,18 @@ def run_toy(tmp, change=None, rules=None):
 def test_adopt_toy_happy_path(tmp_path):
     report, store, art = run_toy(tmp_path)
     assert report.unlisted_diffs == []
-    assert set(report.delivered_keys) == {"T01", "T02", "shots", "T07", "T10", "T11", "T12", "IMPORT"}
-    assert set(report.research_keys) == {"T01", "T07"} and report.research_keys["T07"][1] == "recorded-rev" and report.research_keys["T01"][1] == "content"
+    assert set(report.delivered_keys) == {"R01", "R02", "shots", "R07", "R10", "T11", "R12", "R37"}, "keys by graph stage; a side run by its node"
+    assert set(report.research_keys) == {"R01", "R07", "shots"} and report.research_keys["R07"][1] == "recorded-rev" and report.research_keys["R01"][1] == "content"
     assert report.deviations_seen == ["X1"] and report.decisions == {"shots": "equal"}
     assert report.counts == {"template": 3, "patch": 1, "staging": 1, "side": 1, "U": 0}
+    assert report.listed["R12"][:2] == ["T12", ["X1"]] and report.refused == {}, "the patch's argv differs as listed; nothing refused"
     by = {}
     for e in store.entries:  # the delivered entry first; a research entry for the same node follows it
         by.setdefault(e["adoptedFrom"], e)
     assert [e["scope"] for e in store.entries if e["adoptedFrom"] == "T07"] == [["delivered"], ["delivered", "research"]]
     assert by["T12"]["stage"] == "R12" and by["T11"]["stage"] == "R07~T11", "patch occupants keep the graph's stage; side runs a name of their own"
     assert by["T07"]["verification"] == "delivered-only" and all(e["scope"] == ["delivered"] for e in store.entries if e["verification"] == "delivered-only")
-    assert json.loads((store.state / "adopted/decisions/me340/shots.json").read_text())["value"] == {"primary": [0, 10], "others": [], "mapped": True}
+    assert json.loads((store.state / "adopted/decisions/me340/shots/shots.json").read_text())["value"] == {"primary": [0, 10], "others": [], "mapped": True}
     row = json.loads((store.state / "imports.jsonl").read_text().splitlines()[-1])
     assert row["fingerprint"] == A.fingerprint(DOC, "Toy") and row["importRecordPath"].endswith("video-import-pub-toy.json")
     assert row["republishNext"].endswith("video-import-pub-toy.json"), "the newest publication with a record on disk (pub-new has none)"
@@ -308,7 +312,8 @@ def test_adopt_argv_differences(tmp_path):
     def m_flag(fx, art):  # the recorded --frames is not what the graph resolves: unlisted
         fx["nodes"][2]["commands"][0][5] = "0:9"
     report, _, _ = run_toy(tmp_path / "a", m_flag)
-    assert any(d.startswith("T07: --frames (D): different") for d in report.unlisted_diffs)
+    assert any(d.startswith("T07: R07: --frames (D): different: runner [\"0:10\"] vs delivered [\"0:9\"]") for d in report.unlisted_diffs), report.unlisted_diffs
+    assert "R07" in report.refused and "R07" not in report.delivered_keys, "an unlisted difference is refused, not recorded"
 
     def listed(fx, art):  # the same difference, listed in the register: seen, not unlisted
         m_flag(fx, art)
@@ -319,7 +324,7 @@ def test_adopt_argv_differences(tmp_path):
     def evidence(fx, art):  # equal argv, but the D flag's evidence check fails
         (art / "runs/toy-cam/run.json").write_text(json.dumps({"shot_frames": [0, 9]}))
     report, _, _ = run_toy(tmp_path / "c", evidence)
-    assert any("T07: --frames (D): evidence-failed" in d for d in report.unlisted_diffs)
+    assert any("T07: R07: --frames (D): evidence-failed" in d for d in report.unlisted_diffs)
 
 
 def test_adopt_staging_and_decisions(tmp_path):
@@ -418,7 +423,7 @@ def served(store, site, fx, profile):
             hit = store.lookup(spec)
             if hit is None:
                 return rows, ctx
-            ctx.decisions[p.decision] = json.loads(next(iter(hit.outputs.values())).read_text())
+            ctx.decisions[p.decision] = json.loads((hit.outputs.get("decision") or next(iter(hit.outputs.values()))).read_text())
 
 
 def adopted(site):
@@ -561,13 +566,80 @@ def closure(specs, seeds):
 @pytest.mark.parametrize("site", A.SITES)
 def test_p7_research_misses_are_the_register(site):
     """P7: --profile research --dry-run misses exactly the closure of the site's deviations over the graph."""
-    adopted(site)
-    from report_runner.store import Store
-    fx = fixture(site)
-    rows, ctx = served(Store(ART, scope="research"), site, fx, "research")
+    pytest.skip("not provable in the M2 CPU workflow: the research graph stops at decisions no cached run can feed (static_filter, "
+                "other_shot of Sam's Club/Walmart, the ME340 lens without a MoGe-3 run) and most research keys need a CPU replay "
+                "(adopt --replay) or a GPU call (U5); adopt records research keys only up to there")
+
+
+def delivered_ctx(site, fx, store, review=REPO / "docs/phase2/box-review-303", end=None, profile="delivered", extra=None):
+    """The delivered graph fed the adopted decision values directly (no decision stage is looked up), so a plan covers every
+    stage even when a changed input makes a decision stage miss."""
+    values = {**fx["decisions"], **(extra or {})}
+    ctx = Ctx(site, video_of(fx), fx["start"], fx["end"] if end is None else end, profile, review, ART, store)
+    while True:
+        try:
+            return stages_graph(ctx)
+        except Pending as p:
+            ctx.decisions[p.decision] = {"value": values[p.decision], "evidence": {}, "rule": "adopted@1"}
+
+
+def stages_graph(ctx):
     from report_runner import stages
-    specs = stages.graph(ctx)
-    nodes = {n["id"]: n for n in fx["nodes"]}
-    seeds = {s.name for s in specs for d in fx["deviations"] for i in d["nodes"] if i in nodes and not nodes[i].get("side") and A.matches(s, nodes[i])}
-    seeds |= {d for dev in fx["deviations"] for d in dev.get("decisions", [])}
-    assert {r["stage"] for r in rows if r["status"] != "hit"} == closure(specs, seeds)
+    return stages.graph(ctx)
+
+
+@needs_merge
+def test_p8_one_changed_input_misses_exactly_its_dependents(tmp_path):
+    """Change one input of the adopted Walmart graph: the review file (one approved box sha) or the window's end. The stages
+    that are not hits are exactly the changed input's consumers and everything downstream of them; the misses are the
+    consumers whose producers are all hits, and the plan prices them."""
+    adopted("walmart")
+    from report_runner.store import Store
+    fx = fixture("walmart")
+    store = Store(ART, scope="delivered")
+    specs = delivered_ctx("walmart", fx, store)
+    rows = {r["stage"]: r for r in store.plan(specs)}
+    assert {n for n, r in rows.items() if r["status"] != "hit"} == set(), "the unchanged graph is all hits"
+
+    review = tmp_path / "review"
+    review.mkdir()
+    for f in (REPO / "docs/phase2/box-review-303").glob("*.json"):
+        (review / f.name).write_bytes(f.read_bytes())
+    doc = json.loads((review / "walmart.json").read_text())
+    doc["boxesApproved"][sorted(doc["boxesApproved"])[0]] = "0" * 64
+    (review / "walmart.json").write_text(json.dumps(doc))
+    specs = delivered_ctx("walmart", fx, Store(ART, scope="delivered"), review=review)
+    readers = {s.name for s in specs if "review" in s.leaves}
+    assert readers == {"generator_plan", "generator_plan-box", "merge"}
+    rows = {r["stage"]: r for r in Store(ART, scope="delivered").plan(specs)}
+    missed = {n for n, r in rows.items() if r["status"] != "hit"}
+    assert missed == closure(specs, readers) == readers | {"import"}
+    assert {n for n, r in rows.items() if r["status"] == "miss"} == readers and rows["import"]["status"] == "unresolved"
+    assert sum(r["usd"] for r in rows.values() if r["status"] != "hit") == 0 and rows["merge"]["s"] > 0, "CPU stages: $0, seconds estimated"
+
+    specs = delivered_ctx("walmart", fx, Store(ART, scope="delivered"), end=fx["end"] - 1)
+    rows = {r["stage"]: r for r in Store(ART, scope="delivered").plan(specs)}
+    assert {n for n, r in rows.items() if r["status"] == "miss"} == {"source"}, "a new window changes the clip, and so every key after it"
+    assert {n for n, r in rows.items() if r["status"] != "hit"} == closure(specs, {"source"}) == {s.name for s in specs}
+    assert rows["source"]["usd"] > 0
+
+
+@needs_merge
+def test_p9_commercial_refuses_the_non_commercial_stages():
+    """--profile commercial: every stage whose model licence is not verified for commercial use (or not pinned) is refused
+    with its reason, before any lookup; the others are misses (no commercial entry exists)."""
+    from report_runner import profiles
+    from report_runner.store import Store
+    fx = fixture("walmart")
+    extra = {"static_filter": {"moved": [], "cleared": []}, "lens_gate": fx["decisions"]["lens"], "other_shot-0-383": {"accepted": False},
+             "shots": {k: v for k, v in fx["decisions"]["shots"].items() if k != "registered"}}  # M2: every other shot is registered (D3)
+    store = Store(ART, scope="commercial", refuse=lambda spec: profiles.refuse("commercial", spec))
+    specs = delivered_ctx("walmart", fx, store, profile="commercial", extra=extra)
+    rows = {r["stage"]: r for r in store.plan(specs)}
+    refused = {n: r["why"] for n, r in rows.items() if r["status"] == "refused"}
+    assert {"source", "census", "moge", "camera", "register-0-383"} <= set(refused)
+    assert "lingbot" not in rows and "recgen" not in rows and "names" not in rows, "commercial: no LingBot, no RecGen, names blank until Qwen3-VL passes"
+    for name, why in refused.items():
+        spec = next(s for s in specs if s.name == name)
+        assert spec.models and ("commercial use" in why or "pinned" in why), (name, why)
+    assert not [n for n, r in rows.items() if r["status"] == "hit"], "no stage is served to commercial from research or delivered entries"

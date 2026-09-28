@@ -4,14 +4,18 @@
   python -m report_runner.adopt --fingerprint PUBLICATION_ID     # read-only SELECT, prints fingerprint + counts
   python -m report_runner.adopt --self-check
 
-Per site, in the fixture's topological order: hash the named --video (the file only, never its folder) against
-clip.json; resolve each node's delivered argv, normalise it and compare it with the fixture (M equal; D/I equal and
-their evidence check passes; U only where allowed); check staging by link targets and byte-equal copies; hash the
-outputs, write adopted/locks/<key>.json and record the delivered key; record a research key when the M2 argv is the
-same and the code is verified (recorded-rev, replayed, content); run the decision rules and diff them against the
-fixture; read the published document (read-only SELECT) and append imports.jsonl with its fingerprint.
+Per site: hash the named --video (the file only, never its folder) against clip.json; append the published report's
+imports.jsonl row (read-only SELECT: fingerprint, title, record path) so the import keeps its title and republishes its
+record; resolve the delivered graph (profile delivered, decisions served from the fixture as the graph asks). Every graph
+stage names its delivered run in the fixture (node.graph: outputs by role, the recorded commands); the runner's resolved
+argv is compared with the recorded one flag by flag (paths as real paths, defaults filled, key-free flags and the flags a
+mode never reads dropped; D/I flags must also pass their evidence) and its staged inputs with the run's folder. No
+difference: the delivered key is recorded. Differences at a node the register (section 9) lists: recorded too, delivered
+scope only, with the differences in its lock and in the report. Any other difference: refused, reported exactly, not
+recorded. Then the decision rules run on the adopted inputs and are diffed against the fixture, and research keys are
+recorded where the M2 argv is the delivered one and the code is verified (recorded-rev, content, or --replay).
 
-Never opens .platform/imports/* (the records hold project capabilities): they are found by file name only.
+Never opens .platform/imports/* (the records hold project capabilities): a record is found by a stat of its name only.
 """
 import argparse
 import dataclasses
@@ -34,7 +38,8 @@ REDACT = re.compile(r"capabilit|token|secret", re.I)
 FIXTURE_KEYS = {"site", "video_sha256", "start", "end", "publication", "nodes", "decisions", "deviations"}
 NODE_KEYS = {"id", "stage", "dirs", "outputs", "commands", "basis", "evidence", "patch", "staging"}
 DEVIATION_KEYS = {"id", "class", "nodes", "delivered", "m2", "reason"}
-REGISTER = {"X1", "X2", "X3", "X4", "X5", "X6", "X7", "X8", "X9", "X10", "X11", "X12", "X13", "D1", "D2", "D3", "D4", "D5", "D6", "O1"}
+REGISTER = {"X1", "X2", "X3", "X4", "X5", "X6", "X7", "X8", "X9", "X10", "X11", "X12", "X13", "D1", "D2", "D3", "D4", "D5", "D6", "O1",
+            "X14", "X15"}  # X14, X15: found when the runner resolved the delivered graph (M2 integration); not in design section 9
 U_ALLOWED = {("R37", "--title"), ("R37", "--republish"), ("R37", "--request-suffix"), ("R24", "--marks")}  # R24 only on me340
 
 
@@ -152,10 +157,9 @@ class Database:
 
 
 def import_record(art, publication_id):
-    """The import record's path, found by name in a listing of names only; the file itself is never opened."""
-    folder = Path(art) / ".platform/imports"
-    name = f"video-import-{publication_id}.json"
-    return str(folder / name) if folder.is_dir() and name in os.listdir(folder) else None
+    """The import record's path when it exists: a stat of the name, never an open (the record holds a capability)."""
+    path = Path(art) / ".platform/imports" / f"video-import-{publication_id}.json"
+    return str(path) if path.exists() else None
 
 
 def import_row(site, key, publication_id, art, db):
@@ -197,6 +201,14 @@ def validate_fixture(fx):
         p += [f"{n['id']}: D/I flag {k} without evidence" for k, v in n["basis"].items() if v in "DI" and not n["patch"] and not n["evidence"]]
         p += [f"{n['id']}: U flag {k} not allowed" for k, v in n["basis"].items() if v == "U" and not u_allowed(fx["site"], n["stage"], k)]
         p += [f"{n['id']}: outputs must be ART-relative" for rel in n["outputs"].values() if rel.startswith("/") or rel.startswith("$")]
+    ids, occupied = {n.get("id"): n for n in fx["nodes"]}, {}
+    for n in fx["nodes"]:  # node.graph: the graph stages this delivered run stands for, their outputs and recorded commands
+        for stage, entry in n.get("graph", {}).items():
+            p += [f"{n['id']}: stage {stage} is also {occupied[stage]}'s"] if stage in occupied else []
+            occupied[stage] = n["id"]
+            p += [f"{n['id']}: {stage} outputs must be ART-relative" for rel in entry.get("outputs", {}).values() if rel is not None and rel.startswith(("/", "$"))]
+            p += [f"{n['id']}: {stage} names command {c}, which is not recorded" for c in entry.get("commands", [])
+                  if not (c[0] in ids and 0 <= c[1] < len(ids[c[0]].get("commands", [])))]
     for d in fx["deviations"]:
         p += [f"deviation {d.get('id')}: missing {k}" for k in DEVIATION_KEYS - set(d)]
         p += [f"deviation {d.get('id')}: not in the register" for _ in [0] if d.get("id") not in REGISTER]
@@ -352,15 +364,18 @@ def run_replay(spec, art, python=sys.executable, out=None, root=None):
     spec: {name, argv:[script, ...] with $ART/$REPO/$OUT, seed:{"out-rel": "ART-rel"} copied in first (journals),
            compare:{"exit0": bool, "sha": {"out-rel": "ART-rel"}, "json": {"out-rel": ["ART-rel", [dotted fields], tol]}}}"""
     import shutil
-    out = Path(out or Path(root or Path(art) / "runs/report-runner") / "replays" / f"{spec['name']}-{time.strftime('%Y%m%d-%H%M%S')}")
-    out.mkdir(parents=True, exist_ok=False)
+    folder = Path(out or Path(root or Path(art) / "runs/report-runner") / "replays" / f"{spec['name']}-{time.strftime('%Y%m%d-%H%M%S')}")
+    folder.mkdir(parents=True, exist_ok=False)
+    out = folder / "out"  # $OUT: most tools refuse an output folder that exists, so it is made here only when the replay needs it
+    if spec.get("seed") or any(str(w).startswith("$OUT/") for w in spec["argv"]):
+        out.mkdir()
     for rel, src in spec.get("seed", {}).items():
         (out / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(Path(art) / src, out / rel)
     argv = [python] + [expand(w, art).replace("$OUT", str(out)) for w in spec["argv"]]
     argv[1] = str(REPO / argv[1]) if not Path(argv[1]).is_absolute() else argv[1]
     done = subprocess.run(argv, cwd=REPO, capture_output=True, text=True)
-    (out / "replay.log").write_text("\n".join(l for l in (done.stdout + done.stderr).splitlines() if not REDACT.search(l)))
+    (folder / "replay.log").write_text("\n".join(l for l in (done.stdout + done.stderr).splitlines() if not REDACT.search(l)))
     compare, bad = spec.get("compare", {}), []
     if compare.get("exit0", True) and done.returncode:
         bad.append(f"exit {done.returncode}")
@@ -378,6 +393,9 @@ def run_replay(spec, art, python=sys.executable, out=None, root=None):
 
 # ------------------------------------------------------------------------------------------- argv and staging checks
 
+TOKEN = re.compile(r"(?<![\w.])@([A-Za-z][\w-]*)(?::([\w.-]+))?")  # spec.py's token grammar
+
+
 def flag_map(norm):
     """B's normalised argv as {flag: value}; accepts a dict, a list of (flag, value) pairs or a flat word list."""
     if isinstance(norm, dict):
@@ -394,16 +412,24 @@ def flag_map(norm):
     return out
 
 
+def _shown(value, limit=400):
+    text = json.dumps(value, ensure_ascii=False, default=str)
+    return text if len(text) <= limit else text[:limit] + f"... ({len(text)} chars)"
+
+
 def compare_argv(site, node, mine, theirs, art):
-    """[(flag, basis, status)] where status is 'equal', 'evidence-failed: …' or 'different'. mine/theirs normalised."""
+    """[(flag, basis, status)] where status is 'equal', 'unrecorded', 'evidence-failed: …' or 'different: runner … vs
+    delivered …'. mine/theirs normalised (paths as real paths)."""
     a, b = flag_map(mine), flag_map(theirs)
+    if isinstance(mine, dict) and isinstance(theirs, dict):
+        a[""], b[""] = [mine.get("script"), *mine.get("args", [])], [theirs.get("script"), *theirs.get("args", [])]
     out = []
     for flag in sorted(set(a) | set(b)):
         basis = node["basis"].get(flag, "M")
         if basis == "U" and u_allowed(site, node["stage"], flag):
             out.append((flag, "U", "unrecorded"))
         elif a.get(flag) != b.get(flag):
-            out.append((flag, basis, "different"))
+            out.append((flag or "<script and positionals>", basis, f"different: runner {_shown(a.get(flag))} vs delivered {_shown(b.get(flag))}"))
         elif basis in "DI":
             failed = [d for ok, d in (run_check(art, c) for c in node["evidence"]) if not ok]
             out.append((flag, basis, "evidence-failed: " + "; ".join(failed) if failed else "equal"))
@@ -449,40 +475,131 @@ def verify_code(node, art, repo=REPO):
 
 # -------------------------------------------------------------------------------------------------------- adopt
 
+class MissingDecision(LookupError):
+    """The graph asks for a decision the fixture has no delivered value for."""
+
+
 @dataclass
 class AdoptReport:
     site: str
-    delivered_keys: dict = field(default_factory=dict)   # node id or decision name -> key
-    research_keys: dict = field(default_factory=dict)    # node id -> [key, verification]
+    delivered_keys: dict = field(default_factory=dict)   # graph stage (or side node id) -> key
+    research_keys: dict = field(default_factory=dict)    # graph stage -> [key, verification]
     deviations_seen: list = field(default_factory=list)  # register ids whose difference showed up
     unlisted_diffs: list = field(default_factory=list)   # anything else: the proof fails
     import_row: dict = None
     counts: dict = field(default_factory=dict)           # template / patch / staging / side / U
-    decisions: dict = field(default_factory=dict)        # rule name -> "equal" | "listed X.." | "not run: ..."
+    decisions: dict = field(default_factory=dict)        # decision -> "equal" | "listed X.." | "differs" | "not run: ..."
+    listed: dict = field(default_factory=dict)           # graph stage -> [node, register ids, [differences]]: adopted, delivered-only
+    refused: dict = field(default_factory=dict)          # graph stage -> [node, [differences]]: not adopted
 
 
-def rel_outputs(node, art):
-    """Fixture outputs (ART-relative) as paths relative to the node's directory, as StageSpec.outputs holds them."""
-    d = Path(art) / node["dirs"][0]
-    return {role: os.path.relpath(Path(art) / rel, d) for role, rel in node["outputs"].items()}
+def occupants(fx):
+    """{graph stage: node}: the delivered run standing for each stage of the delivered graph (fixture node.graph)."""
+    out = {}
+    for node in fx["nodes"]:
+        for stage in node.get("graph", {}):
+            out[stage] = node
+    return out
+
+
+def stage_outputs(node, stage, art):
+    """{role: absolute path | None} of the delivered run for this graph stage (None: recorded as absent)."""
+    return {role: None if rel is None else Path(art) / rel for role, rel in node["graph"][stage]["outputs"].items()}
+
+
+def recorded_commands(fx, node, stage):
+    """[(node that ran it, recorded argv)] of this stage: its basis and evidence are that node's."""
+    by_id = {n["id"]: n for n in fx["nodes"]}
+    return [(by_id[i], by_id[i]["commands"][k]) for i, k in node["graph"][stage]["commands"]]
+
+
+def unassigned_commands(fx, node):
+    """Recorded commands of this node that no graph stage stands for and no note explains: the runner would not run them."""
+    used = {(i, k) for n in fx["nodes"] for entry in n.get("graph", {}).values() for i, k in entry["commands"]}
+    ignored = {int(k) for entry in node.get("graph", {}).values() for k in entry.get("ignore", {})}
+    return [c for k, c in enumerate(node["commands"]) if (node["id"], k) not in used and k not in ignored]
+
+
+def split_command(cmd):
+    """(script, argv) of a runner command ('python SCRIPT ...' or 'python -m MODULE ...') or of a recorded one ('SCRIPT ...')."""
+    words = list(cmd)
+    if Path(str(words[0])).name.startswith("python"):
+        words = words[1:]
+    if words and words[0] == "-m":
+        return words[1], words[2:]
+    return str(words[0]).replace("$REPO/", "").replace(str(REPO) + "/", ""), words[1:]
+
+
+def substitute(word, own_dir, own_out, adopted, art, video=None):
+    """A runner word with its tokens replaced by the adopted runs' paths (@new/out and @clip: the stage's own 'out')."""
+    def one(m):
+        name, role = m.groups()
+        if not role and name in ("new", "clip", "key"):
+            return {"new": str(own_dir), "clip": str(own_out), "key": "KEY"}[name]
+        found = adopted[name]
+        return str(found["outputs"][role] if role else found["dir"])
+    return TOKEN.sub(one, expand(str(word).replace("@new/out", str(own_out)), art, video=video))
+
+
+def argv_differences(fx, node, stage, spec, adopted, normalize, art, video):
+    """The resolved runner argv of `stage` against the delivered run's recorded argv, flag by flag (paths compared as real
+    paths, defaults filled, key-free flags and note text dropped): [(flag, basis, status)] that are not equal."""
+    own = stage_outputs(node, stage, art)
+    own_dir = Path(art) / node["dirs"][0] if node["dirs"] else Path(art)  # the import has no run folder of its own
+    own_out = own.get("out") or own_dir
+    real = lambda path: ("path", os.path.realpath(str(path)))
+    mine = [c for c in spec.commands if c and c[0] != "ln"]  # 'ln -s @clip @new/out' places the clip; it runs no tool
+    theirs = recorded_commands(fx, node, stage)
+    rows = [("<commands>", "M", f"different: runner runs {len(mine)} tool commands, delivered {len(theirs)}")] if len(mine) != len(theirs) else []
+    for m, (owner, t) in zip(mine, theirs):
+        try:
+            script, argv = split_command([substitute(w, own_dir, own_out, adopted, art, video) for w in m])
+            ours = normalize(script, argv, real)
+        except KeyError as error:
+            rows.append(("<inputs>", "M", f"different: a producer is not adopted ({error})"))
+            continue
+        tscript, targv = split_command([expand(w, art, video=video) for w in t])
+        try:
+            recorded = normalize(tscript, targv, real)
+        except (KeyError, ValueError) as error:  # a hand-written script, or a flag the runner does not know
+            rows.append(("<script and positionals>", "M", f"different: runner {script} vs delivered {tscript} ({type(error).__name__}: {error})"))
+            continue
+        rows += [r for r in compare_argv(fx["site"], owner, ours, recorded, art) if r[2] != "equal"]
+    return rows
+
+
+def staging_differences(spec, node, stage, adopted, art):
+    """The graph stages a stage's inputs (stage_from): each link must resolve to, and each copy hold, what the delivered run's
+    folder has at that place (same real path, or the same bytes). A copy the tool rewrites (one of its outputs) is not compared."""
+    own = stage_outputs(node, stage, art)
+    own_dir = Path(art) / node["dirs"][0]
+    rows, produced = [], set(spec.outputs.values())
+    for kind, refs in spec.stage_from.items():
+        for rel, ref in sorted(refs.items()):
+            if kind == "copy" and rel in produced:
+                continue
+            place = (own.get("out") or own_dir) / rel[4:] if rel.startswith("out/") else own_dir / rel
+            try:
+                source = Path(substitute(ref, own_dir, own.get("out") or own_dir, adopted, art))
+            except KeyError as error:
+                rows.append((f"<staged {rel}>", "M", f"different: its source {ref} is not adopted ({error})"))
+                continue
+            if not place.exists():
+                rows.append((f"<staged {rel}>", "M", f"different: the delivered run has no {rel} ({kind} of {ref})"))
+            elif os.path.realpath(place) != os.path.realpath(source) and digest_path(place)[2] != digest_path(source)[2]:
+                rows.append((f"<staged {rel}>", "M", f"different: runner {kind}s {ref} = {os.path.relpath(source, art)}, delivered "
+                                                      f"{os.path.relpath(os.path.realpath(place), art)} (other bytes)"))
+    return rows
 
 
 def side_spec(site, node, art):
     """A delivered-only StageSpec for a run no M2 stage stands for (an intermediate merge, the old-K camera...): its
     argv is the recorded one, its name unique, nothing consumes it. Kept for provenance, never looked up."""
     from report_runner.spec import StageSpec
+    outputs = {role: os.path.relpath(Path(art) / rel, Path(art) / node["dirs"][0]) for role, rel in node["outputs"].items()}
     return StageSpec(name=f"{node['stage']}~{node['id']}", site=site, version=0, deps=(), commands=tuple(tuple(expand(w, art) for w in c) for c in node["commands"]),
-                     inputs={}, consumes={}, leaves={}, outputs=rel_outputs(node, art), stage_from={}, compute="adopted", gpu=None, timeout_s=0,
+                     inputs={}, consumes={}, leaves={}, outputs=outputs, stage_from={}, compute="adopted", gpu=None, timeout_s=0,
                      worst_usd=0.0, est_usd=0.0, est_s=0.0, budget_flags={}, models=tuple(tuple(m) for m in node.get("models", [])), rules={}, env={})
-
-
-def matches(spec, node):
-    """A graph StageSpec stands for a fixture node: same R-id or stage name (instances: NAME-0, NAME-1, ... in order)."""
-    name = getattr(spec, "name", "")
-    keys = {node["stage"], node.get("name")} - {None}
-    if "instance" in node:
-        return any(name in (f"{k}-{node['instance']}", f"{k}{node['instance']}") for k in keys)
-    return name in keys
 
 
 def resolve(graph, ctx, on_pending):
@@ -516,10 +633,15 @@ def decision_payload(value, source):
     return {"value": value, "evidence": {"adoptedFrom": source}, "rule": "adopted@1"}
 
 
+def rule_of(decision):
+    """The rule behind a graph decision: other_shot-14-226 and generator_plan-box are other_shot and generator_plan."""
+    return decision.split("-")[0]
+
+
 def run_rules(fx, art, root, rules, only=None):
-    """Every rule with inputs in the fixture, fed the adopted (delivered) values of earlier decisions. Returns
-    {name: (value | None, error | None)}. Writes only under ROOT/adopted/rule-inputs/<site>/ (never over the recorded
-    decision files, whose size and mtime are their cache signature) and a fresh replays/ folder."""
+    """Every rule with inputs in the fixture (keyed by graph decision), fed the adopted (delivered) values of earlier
+    decisions. Returns {decision: (result | None, error | None)}. Writes only under ROOT/adopted/rule-inputs/<site>/
+    (never over the recorded decision files, whose size and mtime are their cache signature) and a fresh replays/ folder."""
     folder = root / "adopted/rule-inputs" / fx["site"]
     folder.mkdir(parents=True, exist_ok=True)
     for name, value in fx["decisions"].items():
@@ -527,7 +649,8 @@ def run_rules(fx, art, root, rules, only=None):
         (folder / f"{name}.operator.json").write_text(json.dumps({"frames": value} if isinstance(value, list) else value))
     out = {}
     for name, inputs in fx.get("decision_inputs", {}).items():
-        if name not in rules or (only is not None and name not in only):
+        rule = rules.get(rule_of(name))
+        if rule is None or (only is not None and name not in only and rule_of(name) not in only):
             continue
         paths = {}
         for role, ref in inputs.items():
@@ -537,18 +660,32 @@ def run_rules(fx, art, root, rules, only=None):
                 paths[role] = folder / f"{ref.split(':', 1)[1]}.operator.json"
             else:
                 paths[role] = Path(expand(ref, art)) if ref.startswith("$") else Path(art) / ref
-        if "out" in inspect.signature(rules[name]).parameters:
+        if "out" in inspect.signature(rule).parameters:
             paths["out"] = root / "replays" / f"decision-{fx['site']}-{name}-{time.strftime('%Y%m%d-%H%M%S')}"
         try:
-            out[name] = (rules[name](**paths)["value"], None)
+            result = rule(**paths)
+            if "out" in paths:  # the rule wrote files there (dense_gate: icp/): its decision file goes beside them
+                paths["out"].mkdir(parents=True, exist_ok=True)
+                write_if_changed(paths["out"] / f"{rule_of(name)}.json", json.dumps(result, allow_nan=False))
+                result = {**result, "folder": str(paths["out"])}
+            out[name] = (result, None)
         except Exception as error:  # a rule that cannot run on cached data (e.g. ME340 lens needs a MoGe call) is reported, not fatal
             out[name] = (None, f"{type(error).__name__}: {error}")
     return out
 
 
+def write_if_changed(path, text):
+    """Keep a recorded file's mtime (its cache signature) when a re-run of adopt writes the same bytes."""
+    path = Path(path)
+    if not path.exists() or path.read_text() != text:
+        path.write_text(text)
+
+
 def adopt(fixture: Path, video: Path, store, *, art=None, graph=None, normalize=None, rules=None, db=None, replay=False, only_rules=None) -> AdoptReport:
     """store: Part A's Store; graph/normalize: Part B's report_runner.stages; rules: Part C's decide.RULES. Unit tests pass
-    fakes for all of them. The proof fails when unlisted_diffs is not empty."""
+    fakes for all of them. A stage is adopted (delivered scope) when its resolved argv equals the delivered run's, or when
+    every difference is at a node the register lists; any other difference refuses it (reported exactly, not recorded).
+    The proof fails when unlisted_diffs is not empty."""
     from report_runner.spec import Ctx
     fx = load_fixture(fixture)
     art = Path(art or getattr(store, "art", None) or DEFAULT_ART)
@@ -561,162 +698,199 @@ def adopt(fixture: Path, video: Path, store, *, art=None, graph=None, normalize=
             from report_runner.decide import RULES as rules  # Part C
         except ImportError:
             rules = {}
-    site, report = fx["site"], AdoptReport(site=fx["site"], counts={"template": 0, "patch": 0, "staging": 0, "side": 0, "U": 0})
+    site = fx["site"]
+    report = AdoptReport(site=site, counts={"template": 0, "patch": 0, "staging": 0, "side": 0, "U": 0})
     listed = {}
     for d in fx["deviations"]:
         for i in d["nodes"]:
             listed.setdefault(i, []).append(d["id"])
-
-    def differ(node_id, text):
-        if node_id in listed:
-            report.deviations_seen.extend(listed[node_id])
-        else:
-            report.unlisted_diffs.append(f"{node_id}: {text}")
+    for n in fx["nodes"]:
+        if n["patch"] and n["patch"] not in listed.get(n["id"], []):
+            listed.setdefault(n["id"], []).append(n["patch"])
 
     # 1. the video: its bytes only, never its folder
     if sha256_file(video) != fx["video_sha256"]:
         report.unlisted_diffs.append(f"--video sha256 is not clip.json source.video_sha256 {fx['video_sha256'][:12]}")
         return report
-    owners, done, specs_by_node = {}, set(), {}
-    owner = lambda path: owners.get(os.path.realpath(expand(path, art)))
-    occupants = [n for n in fx["nodes"] if not n.get("side")]
+    # 6a. the published report first: the import stage keeps its title and republishes its record (imports.jsonl)
+    row = None
+    if db is not False:
+        row = import_row(site, None, fx["publication"], art, db or Database())
+        if row["fingerprint"] != fx.get("expect", {}).get("fingerprint"):
+            report.unlisted_diffs.append(f"published fingerprint {row['fingerprint'][:12]} is not the fixture's {fx.get('expect', {}).get('fingerprint', '')[:12]}")
+        root.mkdir(parents=True, exist_ok=True)
+        with open(root / "imports.jsonl", "a") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    occupant, adopted, specs_by_stage = occupants(fx), {}, {}
 
-    def adopt_node(node, spec):
-        """Steps 2-3 for one node: compare, check, hash, record the delivered key (under the graph's key, patches included)."""
-        if node["staging"]:
-            report.counts["staging"] += 1
-            for problem in check_staging(node, art):
-                differ(node["id"], problem)
-        if node.get("side"):
-            report.counts["side"] += 1
-            spec = side_spec(site, node, art)
-        elif node["patch"]:
-            report.counts["patch"] += 1
-            report.deviations_seen.append(node["patch"])
+    def refuse(stage, node, rows):
+        report.refused[stage] = [node["id"] if node else None, [f"{f} ({b}): {s}" for f, b, s in rows]]
+        report.unlisted_diffs += [f"{node['id'] if node else stage}: {stage}: {f} ({b}): {s}" for f, b, s in rows]
+
+    def adopt_stage(spec, decision=None, is_import=False):
+        """Steps 2-3 for one graph stage: compare, check, hash, record the delivered key (under the graph's key)."""
+        if spec.name in report.delivered_keys or spec.name in report.refused:
+            return
+        node = occupant.get(spec.name)
+        if node is None and decision is None:
+            return refuse(spec.name, None, [("<stage>", "M", "different: no delivered run stands for this stage")])
+        rows = []
+        if decision is not None:  # a decision stage: the fixture's value, plus the refined map it names (dense gate)
+            folder = root / "adopted/decisions" / site / spec.name
+            folder.mkdir(parents=True, exist_ok=True)
+            write_if_changed(folder / spec.outputs["decision"], json.dumps(decision_payload(decision, f"{site} fixture")))
+            outputs = {"decision": spec.outputs["decision"]}
+            for role, target in (node["graph"][spec.name]["outputs"] if node else {}).items():
+                link = folder / role
+                if not link.is_symlink():
+                    link.symlink_to(os.path.relpath(Path(art) / target, folder))
+                outputs[role] = role
+            where, lock = folder, {"stage": spec.name, "value": "adopted from the fixture", "occupant": node["id"] if node else None}
+        elif is_import:  # the graph's last stage; its outputs are the published document (P5), its record the imports.jsonl row
+            folder = root / "adopted/imports"
+            folder.mkdir(parents=True, exist_ok=True)
+            write_if_changed(folder / f"{site}.json", json.dumps(dict(row or {}, key=None), indent=1, ensure_ascii=False))
+            rows = argv_differences(fx, node, spec.name, spec, adopted, normalize, art, video)
+            outputs, where = {role: f"{site}.json" for role in spec.outputs}, folder
+            lock = {"stage": spec.name, "publicationId": fx["publication"]}
         else:
-            report.counts["template"] += not node["staging"]
-            if len(spec.commands) != len(node["commands"]):
-                differ(node["id"], f"{len(spec.commands)} commands in the graph, {len(node['commands'])} delivered")
-            for mine, theirs in zip(spec.commands, node["commands"]):
-                rows = compare_argv(site, node, normalize(mine[0], list(mine[1:]), owner), normalize(theirs[0], [expand(w, art, video=video) for w in theirs[1:]], owner), art)
-                report.counts["U"] += sum(b == "U" for _, b, _ in rows)
-                for flag, basis, status in rows:
-                    if status not in ("equal", "unrecorded"):
-                        differ(node["id"], f"{flag} ({basis}): {status}")
-        outputs = rel_outputs(node, art) if node["dirs"] else {}
-        missing = set(spec.outputs) - set(outputs)
-        if missing:
-            differ(node["id"], f"graph roles {sorted(missing)} not in the fixture's outputs")
-        spec = dataclasses.replace(spec, outputs=outputs)
-        lock = {"stage": spec.name, "version": spec.version, "argv": [[expand(w, art) for w in c] for c in node["commands"]], "argvSource": "recorded",
-                "models": node.get("models", []), "git": {"commit": None, "dirty": False}, "patch": node["patch"], "adoptedFrom": node["dirs"],
-                "note": "adopted: a recorded run, not re-executed" + (f"; patch {node['patch']}: argv is the record's (tautological)" if node["patch"] else "")}
-        key = store.record(spec, Path(art) / node["dirs"][0], "delivered-only", ["delivered"], lock, adopted_from=node["id"])
-        report.delivered_keys[node["id"]] = key
-        specs_by_node[node["id"]] = spec
-        for role, rel in node["outputs"].items():
-            owners[os.path.realpath(Path(art) / rel)] = (spec.name, role)
-        if node["dirs"]:  # a run folder passed whole (--droid-run DIR) is its stage's; shared folders: the latest stage
-            owners.setdefault(os.path.realpath(Path(art) / node["dirs"][0]), (spec.name, ""))
-        done.add(node["id"])
-
-    def adopt_specs(specs):
-        for spec in specs:
-            for node in occupants:
-                if node["id"] not in done and node["stage"] != "R37" and matches(spec, node):
-                    adopt_node(node, spec)
+            own = stage_outputs(node, spec.name, art)
+            where = Path(art) / node["dirs"][0]
+            missing = [r for r in spec.outputs if r not in own] + [r for r, p in own.items() if p is not None and not p.exists()]
+            if missing:
+                return refuse(spec.name, node, [("<outputs>", "M", f"different: graph roles {sorted(missing)} are not in the delivered run")])
+            outputs = {r: None if p is None else os.path.relpath(p, where) for r, p in own.items() if r in spec.outputs}
+            if node["staging"]:
+                report.counts["staging"] += 1
+                rows += [("<staging>", "M", f"different: {p}") for p in check_staging(node, art)]
+            rows += argv_differences(fx, node, spec.name, spec, adopted, normalize, art, video)
+            rows += staging_differences(spec, node, spec.name, adopted, art)
+            rows += [("<commands>", "M", f"different: delivered also ran {' '.join(map(str, c))[:300]}") for c in unassigned_commands(fx, node)
+                     if spec.name == next(s for s in node["graph"])]
+            lock = {"stage": spec.name, "version": spec.version, "argv": [[expand(w, art) for w in c] for _, c in recorded_commands(fx, node, spec.name)],
+                    "argvSource": "recorded", "models": node.get("models", []), "git": {"commit": None, "dirty": False}, "patch": node["patch"]}
+        if node and not node["staging"] and decision is None and not is_import:
+            report.counts["patch" if node["patch"] else "template"] += 1
+        report.counts["U"] += sum(r[2] == "unrecorded" for r in rows)
+        rows = [r for r in rows if r[2] != "unrecorded"]
+        if rows and not (node and node["id"] in listed):
+            return refuse(spec.name, node, rows)
+        if rows:
+            report.listed[spec.name] = [node["id"], listed[node["id"]], [f"{f} ({b}): {s}" for f, b, s in rows]]
+            report.deviations_seen += listed[node["id"]]
+        lock.update(adoptedFrom=node["dirs"] if node else None, differences=report.listed.get(spec.name, [None, [], []])[2],
+                    note="adopted: a recorded run, not re-executed" + (f"; listed {listed[node['id']]}: the runner's argv differs as recorded" if rows else ""))
+        try:
+            key = store.record(dataclasses.replace(spec, outputs=outputs), where, "delivered-only", ["delivered"], lock,
+                               adopted_from=node["id"] if node else f"decision:{spec.name}")
+        except Exception as error:  # a producer was refused: this stage's key cannot be computed
+            report.refused[spec.name] = [node["id"] if node else None, [f"not recorded: {type(error).__name__}: {error}"]]
+            report.unlisted_diffs.append(f"{spec.name}: not recorded ({type(error).__name__}: {error})")
+            return
+        report.delivered_keys[spec.name] = key
+        specs_by_stage[spec.name] = spec
+        adopted[spec.name] = {"dir": where, "outputs": {r: where / rel for r, rel in outputs.items() if rel is not None}}
 
     def on_pending(p):
-        adopt_specs([s for s in p.specs if s.name != p.decision])
+        for spec in p.specs:
+            if "decision" not in spec.outputs:  # a decision stage is adopted when the graph asks for its value
+                adopt_stage(spec)
         if p.decision not in fx["decisions"]:
-            raise LookupError(f"the graph needs decision {p.decision!r}; the fixture has no delivered value for it")
-        payload = decision_payload(fx["decisions"][p.decision], f"{site} fixture")
-        folder = root / "adopted/decisions" / site
-        folder.mkdir(parents=True, exist_ok=True)
-        (folder / f"{p.decision}.json").write_text(json.dumps(payload))
-        spec = next(s for s in p.specs if s.name == p.decision)
-        role = next(iter(spec.outputs), "decision")
-        report.delivered_keys[p.decision] = store.record(dataclasses.replace(spec, outputs={role: f"{p.decision}.json"}), folder, "delivered-only", ["delivered"],
-                                                         {"stage": p.decision, "value": "adopted from the fixture"}, adopted_from=f"decision:{p.decision}")
-        ctx.decisions[p.decision] = payload
+            raise MissingDecision(f"the graph needs decision {p.decision!r}; the fixture has no delivered value for it")
+        adopt_stage(next(s for s in p.specs if s.name == p.decision), decision=fx["decisions"][p.decision])
+        ctx.decisions[p.decision] = decision_payload(fx["decisions"][p.decision], f"{site} fixture")
 
     # 2-3. the delivered graph, decisions served from the fixture as the graph asks for them
     ctx = Ctx(site, Path(video), fx["start"], fx["end"], "delivered", REPO / "docs/phase2/box-review-303", art, store)
     try:
         final = resolve(graph, ctx, on_pending)
-        adopt_specs(final)
-    except LookupError as error:
+        for spec in final[:-1]:
+            adopt_stage(spec)
+        adopt_stage(final[-1], is_import=True)
+    except MissingDecision as error:
         report.unlisted_diffs.append(str(error))
         final = []
-    for node in fx["nodes"]:
-        if node.get("side") and node["id"] not in done:
-            adopt_node(node, None)
-        elif node["id"] not in done and node["stage"] != "R37":
-            report.unlisted_diffs.append(f"{node['id']}: no {node['stage']} ({node.get('name')}) stage in the delivered graph")
+    for node in fx["nodes"]:  # side runs: provenance only, never looked up
+        if node.get("side") and not node.get("graph"):
+            report.counts["side"] += 1
+            spec = side_spec(site, node, art)
+            report.delivered_keys[node["id"]] = store.record(spec, Path(art) / node["dirs"][0], "delivered-only", ["delivered"],
+                                                             {"stage": spec.name, "argvSource": "recorded", "patch": node["patch"], "side": True},
+                                                             adopted_from=node["id"])
+        elif node.get("graph") and not set(node["graph"]) & {s.name for s in final}:
+            report.unlisted_diffs.append(f"{node['id']}: its stages {sorted(node['graph'])} are not in the delivered graph")
+    if row is not None and final and final[-1].name in report.delivered_keys:
+        row = dict(row, key=report.delivered_keys[final[-1].name])
+        with open(root / "imports.jsonl", "a") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    report.import_row = row
 
     # 5. decisions: every rule whose inputs are adopted, against the delivered value
     computed = run_rules(fx, art, root, rules, only_rules)
-    for name, (value, error) in computed.items():
+    for name, (result, error) in computed.items():
         ids = [d["id"] for d in fx["deviations"] if name in d.get("decisions", [])]
         if error:
             report.decisions[name] = f"not run: {error}"
-        elif compare_decision(value, fx["decisions"].get(name), fx.get("decision_compare", {}).get(name)):
+        elif compare_decision(result["value"], fx["decisions"].get(name), fx.get("decision_compare", {}).get(name)):
             report.decisions[name] = "equal"
         elif ids:
             report.decisions[name] = "listed " + " ".join(ids)
             report.deviations_seen += ids
         else:
             report.decisions[name] = "differs"
-            report.unlisted_diffs.append(f"decision {name}: rule {value!r} vs delivered {fx['decisions'].get(name)!r}")
+            report.unlisted_diffs.append(f"decision {name}: rule {result['value']!r} vs delivered {fx['decisions'].get(name)!r}")
 
-    # 4. research keys: the M2 argv is the delivered one and the code is known current
+    # 4. research keys: stages whose M2 argv is the delivered one (no difference at all) and whose code is known current,
+    # and the research decisions the rules computed, as far as the research graph resolves on them
     research_ctx = Ctx(site, Path(video), fx["start"], fx["end"], "research", REPO / "docs/phase2/box-review-303", art, store)
 
-    def research_pending(p):
-        value, error = computed.get(p.decision, (None, "no rule output"))
-        if error:
-            raise LookupError(f"research decision {p.decision}: {error}")
-        research_ctx.decisions[p.decision] = {"value": value, "evidence": {}, "rule": f"{p.decision}@research"}
-    try:
-        research_specs = resolve(graph, research_ctx, research_pending)
-    except LookupError as error:
-        report.decisions["research-graph"] = f"stopped: {error}"
-        research_specs = []
-    for node in occupants:
-        if node["id"] not in done or node["patch"] or node["stage"] == "R37":
-            continue
-        research = next((s for s in research_specs if matches(s, node)), None)
-        delivered = specs_by_node[node["id"]]
-        if research is None or any(normalize(m[0], list(m[1:]), owner) != normalize(t[0], list(t[1:]), owner) for m, t in zip(research.commands, delivered.commands)):
-            continue
+    def research_stage(spec):
+        node, delivered = occupant.get(spec.name), specs_by_stage.get(spec.name)
+        if (spec.name in report.research_keys or node is None or delivered is None or spec.name in report.listed
+                or node["patch"] or tuple(spec.commands) != tuple(delivered.commands)):
+            return
         verified = verify_code(node, art)
         if not verified and replay and (node.get("verify") or {}).get("kind") == "replayed":
             verified = "replayed" if run_replay(node["verify"]["replay"], art, root=root)[0] else None
         if verified:
-            key = store.record(dataclasses.replace(research, outputs=delivered.outputs), Path(art) / node["dirs"][0], verified, ["delivered", "research"],
-                               {"stage": research.name, "verification": verified}, adopted_from=node["id"])
-            report.research_keys[node["id"]] = [key, verified]
+            try:
+                key = store.record(dataclasses.replace(spec, outputs={r: os.path.relpath(p, adopted[spec.name]["dir"]) for r, p in adopted[spec.name]["outputs"].items()}),
+                                   adopted[spec.name]["dir"], verified, ["delivered", "research"], {"stage": spec.name, "verification": verified},
+                                   adopted_from=node["id"])
+            except Exception:  # a producer has no research key
+                return
+            report.research_keys[spec.name] = [key, verified]
 
-    # 6. the published report (read-only SQL), its fingerprint, and the import stage's delivered key
-    if db is not False:
-        imp = next(n for n in fx["nodes"] if n["stage"] == "R37")
-        row = import_row(site, None, fx["publication"], art, db or Database())
-        if row["fingerprint"] != fx.get("expect", {}).get("fingerprint"):
-            report.unlisted_diffs.append(f"published fingerprint {row['fingerprint'][:12]} is not the fixture's {fx.get('expect', {}).get('fingerprint', '')[:12]}")
-        folder = root / "adopted/imports"
+    def research_pending(p):
+        for spec in p.specs:
+            if "decision" not in spec.outputs:
+                research_stage(spec)
+        result, error = computed.get(p.decision, (None, "no rule output"))
+        result = {"evidence": {}, "rule": f"{rule_of(p.decision)}@unversioned", **(result or {})}
+        spec = next(s for s in p.specs if s.name == p.decision)
+        wants = {w.split("=", 1)[0] for c in spec.commands for w in c[1:] if "=" in w and not w.startswith("-")}
+        missing = wants - set(fx.get("decision_inputs", {}).get(p.decision, {}))
+        if not error and missing:  # e.g. ME340 lens: no MoGe-3 run exists, the rule saw only the metric scale
+            error = f"the rule ran without {sorted(missing)}"
+        if error:
+            raise MissingDecision(f"research decision {p.decision}: {error}")
+        folder = Path(result.pop("folder", None) or root / "adopted/research-decisions" / site / p.decision)
         folder.mkdir(parents=True, exist_ok=True)
-        (folder / f"{site}.json").write_text(json.dumps(row, indent=1, ensure_ascii=False))
-        spec = next((s for s in final if matches(s, imp)), None)
-        if spec is not None:
-            role = next(iter(spec.outputs), "import")
-            row["key"] = store.record(dataclasses.replace(spec, outputs={role: f"{site}.json"}), folder, "delivered-only", ["delivered"],
-                                      {"stage": spec.name, "publicationId": fx["publication"]}, adopted_from=imp["id"])
-            report.delivered_keys[imp["id"]] = row["key"]
-        else:
-            report.unlisted_diffs.append(f"{imp['id']}: no import stage in the delivered graph")
-        with open(root / "imports.jsonl", "a") as f:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
-        report.import_row = row
+        write_if_changed(folder / spec.outputs["decision"], json.dumps(result, allow_nan=False))
+        try:
+            key = store.record(dataclasses.replace(spec, outputs={"decision": spec.outputs["decision"]}), folder, "replayed", ["research"],
+                               {"stage": p.decision, "rule": result.get("rule")}, adopted_from=f"rule:{p.decision}")
+            report.research_keys[p.decision] = [key, "replayed"]
+        except Exception:
+            pass
+        research_ctx.decisions[p.decision] = result
+    try:
+        for spec in resolve(graph, research_ctx, research_pending):
+            research_stage(spec)
+    except MissingDecision as error:
+        report.decisions["research-graph"] = f"stopped: {error}"
+    except Exception as error:  # the delivered keys are recorded; a research graph that cannot resolve only has fewer keys
+        report.decisions["research-graph"] = f"stopped: {type(error).__name__}: {error}"
     report.deviations_seen = sorted(set(report.deviations_seen))
     (root / "adopted").mkdir(parents=True, exist_ok=True)
     (root / "adopted" / f"{site}.json").write_text(json.dumps(asdict(report), indent=1, default=str, ensure_ascii=False))

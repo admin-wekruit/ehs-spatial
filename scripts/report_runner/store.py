@@ -3,7 +3,7 @@
 A stage's key hashes its name, version, key-normalised argv, the digests of what it consumes, its leaves, stage_from,
 model pins and decision-rule versions. Consumers hash their producers' output bytes, never their keys, so a rebuilt
 stage with byte-identical outputs leaves everything downstream a hit (early cutoff). Excluded from the key: --output,
---invoke, --run-id, --reuse-build-from, --republish, --request-suffix, budgets (--max-usd, --max-minutes, worst/est
+--invoke, --run-id, --reuse-build-from, --republish, --request-suffix, --workers, budgets (--max-usd, --max-minutes, worst/est
 USD) and the free text after 'id=' in --entities / --exclude.
 
 State: $ART/runs/report-runner/keys.jsonl (append-only; adopted locks in adopted/locks/). A run gets a fresh
@@ -37,7 +37,7 @@ PRICES = {"H100": .001097, "A100-80GB": .000694, "A100-40GB": .000583, "cpu_core
 REDACT = re.compile(r"capabilit|token|secret", re.I)
 TOKEN = re.compile(r"(?<![\w.])@([A-Za-z][\w-]*)(?::([\w.-]+))?")
 RESERVED = {"new", "key", "clip"}
-KEY_DROP_VALUE = {"--output", "--run-id", "--reuse-build-from", "--max-usd", "--max-minutes", "--republish", "--request-suffix"}
+KEY_DROP_VALUE = {"--output", "--run-id", "--reuse-build-from", "--max-usd", "--max-minutes", "--republish", "--request-suffix", "--workers"}
 KEY_DROP_FLAG = {"--invoke"}
 NOTE_FLAGS = {"--entities", "--exclude"}  # 'id=free text': the ids and their order stay in the key, the text does not
 ABSENT = ("failed", "blocked", "refused")
@@ -77,7 +77,8 @@ def file_sha(path, fresh=False):
 
 
 def _files(root):
-    return sorted(Path(r, f) for r, _, fs in os.walk(root, followlinks=True) for f in fs)
+    """Files under root, links followed; a dangling link has no content and is left out."""
+    return sorted(p for r, _, fs in os.walk(root, followlinks=True) for f in fs if (p := Path(r, f)).exists())
 
 
 def content_sha(path, fresh=False):
@@ -98,7 +99,10 @@ def stat_sig(path):
     for root, _, files in os.walk(p, followlinks=True):
         mtime = max(mtime, os.stat(root).st_mtime_ns)
         for f in files:
-            st = os.stat(os.path.join(root, f))
+            try:
+                st = os.stat(os.path.join(root, f))
+            except FileNotFoundError:  # a dangling link (e.g. ME340 305/scene/mono)
+                continue
             size, mtime = size + st.st_size, max(mtime, st.st_mtime_ns)
     return size, mtime
 
@@ -144,6 +148,12 @@ def _symbolic(spec, status):
     return commands, stage_from
 
 
+def _over_budget(spec, ledger):
+    if ledger.cap is None:
+        return f"a paid stage (worst case ${spec.worst_usd:.2f}) and PANOPTES_PAID_BUDGET_USD is unset: no paid call"
+    return f"worst case ${spec.worst_usd:.2f} does not fit the paid budget (${ledger.cap:.2f})"
+
+
 class Ledger:
     """The run's paid budget (PANOPTES_PAID_BUDGET_USD). None: no paid call at all. A paid stage reserves its worst case
     before it starts; one with budget flags may instead be capped to what is left."""
@@ -182,8 +192,9 @@ class Ledger:
 
 
 class Store:
-    def __init__(self, art, scope=None, verify=False, repo=REPO):
-        self.art, self.scope, self.verify, self.repo = Path(art), scope, verify, Path(repo)
+    def __init__(self, art, scope=None, verify=False, repo=REPO, refuse=None):
+        """refuse(spec) -> reason | None: the profile's refusals (profiles.refuse), checked before any lookup or run."""
+        self.art, self.scope, self.verify, self.repo, self.refuse = Path(art), scope, verify, Path(repo), refuse
         self.state = self.art / "runs/report-runner"
         self.index = self.state / "keys.jsonl"
         self._resolved = {}  # (site, stage) -> (Hit, index entry)
@@ -205,6 +216,8 @@ class Store:
     def _valid(self, entry, verify):
         d, outputs = self.art / entry["dir"], {}
         for role, (rel, size, mtime, digest) in entry["outputs"].items():
+            if rel is None:  # an adopted run's output that is no longer on disk (recorded as absent, never served)
+                continue
             try:
                 ok = content_sha(d / rel, fresh=True) == digest if verify else stat_sig(d / rel) == (size, mtime)
             except OSError:
@@ -306,13 +319,13 @@ class Store:
     def _record(self, spec, key, digests, d, verification, scope, lock, adopted_from=None):
         outputs = {}
         for role, rel in spec.outputs.items():
+            if rel is None and adopted_from:  # e.g. ME340 217's trained splats.splat: gone, its cleaned pick is kept
+                outputs[role] = [None, 0, 0, "absent"]
+                continue
             if not (d / rel).exists():
                 raise FileNotFoundError(f"{spec.name}: output {role} is missing: {d / rel}")
             outputs[role] = [rel, *stat_sig(d / rel), content_sha(d / rel)]
-        rel_dir = self._rel(d)
-        for e in self._entries():
-            if e["dir"] == rel_dir and e["stage"] != spec.name and set(e["outputs"]) & set(outputs):
-                raise ValueError(f"{spec.name}: {rel_dir} already holds roles {sorted(set(e['outputs']) & set(outputs))} of {e['stage']}")
+        rel_dir = self._rel(d)  # several stages may share an adopted run's files (171 is census and camera); a run's own dir is fresh
         lock_path = self.state / "adopted/locks" / f"{key}.json" if adopted_from else d / "lock.json"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         lock_path.write_text(json.dumps(dict(lock, key=key), indent=1, default=str))
@@ -323,7 +336,7 @@ class Store:
             self.index.parent.mkdir(parents=True, exist_ok=True)
             with self.index.open("a") as f:
                 f.write(json.dumps(entry, sort_keys=True) + "\n")
-        self._resolved[(spec.site, spec.name)] = (Hit(d, {r: d / o[0] for r, o in outputs.items()}, verification), entry)
+        self._resolved[(spec.site, spec.name)] = (Hit(d, {r: d / o[0] for r, o in outputs.items() if o[0] is not None}, verification), entry)
         return key
 
     # ---- running -----------------------------------------------------------------------------------------------
@@ -479,6 +492,10 @@ class Store:
         mine = {p: status[p] for p, _ in spec.inputs.values()}
         if any(mine[p] in ABSENT for role, (p, _) in spec.inputs.items() if not role.endswith("?")):
             return "blocked"
+        why = self.refuse(spec) if self.refuse else None
+        if why:
+            say(f"{spec.name}: refused by the {self.scope} profile: {why}")
+            return "refused"
         key, digests = self._key(spec, mine)
         found = self._find(spec, key, self.verify)
         if found:
@@ -488,7 +505,7 @@ class Store:
             say(f"{spec.name}: refused, a dependency is untracked or differs from HEAD")
             return "refused"
         if not ledger.reserve(spec):
-            say(f"{spec.name}: refused, worst case ${spec.worst_usd:.2f} does not fit the paid budget ({ledger.cap})")
+            say(f"{spec.name}: refused, {_over_budget(spec, ledger)}")
             return "refused"
         return functools.partial(self._run, spec, key, digests, mine, git, ledger)
 
@@ -523,6 +540,13 @@ class Store:
                 self._resolved.pop((by_name[name].site, name), None)
         return {name: st[0] if isinstance(st, tuple) else st for name, st in status.items()}
 
+    def resolve(self, spec):
+        """A resolved stage's commands as they run or ran: tokens substituted from this Store's hits (its own dir for @new)."""
+        hit, entry = self._resolved[(spec.site, spec.name)]
+        status = {p: self._resolved.get((spec.site, p), "failed") for p, _ in spec.inputs.values()}
+        commands, _ = _symbolic(spec, status)
+        return [[self._sub(t, spec, status, hit.dir, entry["key"]) for t in c] for c in commands]
+
     def plan(self, specs, ledger=None):
         """Dry run: no subprocess, no network, no writes. Rows: stage, status (hit|miss|unresolved|refused), key, dir, usd, s.
         ponytail: the dirty-dependency refusal needs git, so it shows up only when the stage runs."""
@@ -533,14 +557,19 @@ class Store:
             spec = by_name[name]
             mine = {p: status[p] for p, _ in spec.inputs.values()}
             row = {"stage": name, "status": "unresolved", "key": None, "dir": None, "usd": spec.est_usd, "s": spec.est_s}
-            if all(isinstance(v, tuple) for v in mine.values()):
+            why = self.refuse(spec) if self.refuse else None
+            if why:
+                row.update(status="refused", why=why)
+                status[name] = "refused"
+            elif all(isinstance(v, tuple) for v in mine.values()):
                 key, _ = self._key(spec, mine)
                 found = self._find(spec, key, self.verify)
                 if found:
                     row.update(status="hit", key=key, dir=self._rel(found[0].dir), usd=0.0, s=0.0)
                 else:
-                    row.update(status="miss" if sim is None or sim.reserve(spec) else "refused", key=key,
-                               dir=f"runs/{spec.site}-{name}-{key[:10]}")
+                    fits = sim is None or sim.reserve(spec)
+                    row.update(status="miss" if fits else "refused", key=key, dir=f"runs/{spec.site}-{name}-{key[:10]}",
+                               **({} if fits else {"why": _over_budget(spec, sim)}))
                 status[name] = found or row["status"]
             else:
                 status[name] = "unresolved"
@@ -549,9 +578,12 @@ class Store:
 
 
 def print_plan(rows):
-    say(f"{'stage':<16} {'status':<10} {'key':<12} {'usd':>7} {'s':>7}  dir")
+    say(f"{'stage':<22} {'status':<10} {'key':<12} {'usd':>7} {'s':>7}  dir")
     for r in rows:
-        say(f"{r['stage']:<16} {r['status']:<10} {(r['key'] or '-')[:12]:<12} {r['usd']:>7.2f} {r['s']:>7.0f}  {r['dir'] or '-'}")
+        say(f"{r['stage']:<22} {r['status']:<10} {(r['key'] or '-')[:12]:<12} {r['usd']:>7.2f} {r['s']:>7.0f}  {r['dir'] or '-'}")
+    for r in rows:
+        if r.get("why"):
+            say(f"refused {r['stage']}: {r['why']}")
     n, todo = Counter(r["status"] for r in rows), [r for r in rows if r["status"] != "hit"]
     say(f"total: {n['hit']} hit, {n['miss']} miss, {n['unresolved']} unresolved, {n['refused']} refused; "
         f"est ${sum(r['usd'] for r in todo):.2f}, {sum(r['s'] for r in todo):.0f} s")
@@ -570,11 +602,14 @@ def main(args):
     """The loop behind scripts/run_video_report.py. graph(ctx) raises Pending(decision, specs) until ctx.decisions holds
     what it needs; the decision stage is served or run, and graph is called again. The graph's last stage is the import."""
     stages = importlib.import_module("report_runner.stages")
-    profile = importlib.import_module("report_runner.profiles").PROFILES[args.profile]
+    profiles = importlib.import_module("report_runner.profiles")
+    profile = profiles.PROFILES[args.profile]
     cache_only = getattr(profile, "cache_only", False)
     art = art_root()
-    store, ledger = Store(art, scope=args.profile, verify=args.verify), Ledger.from_env()
-    ctx = Ctx(args.site, Path(args.video), args.start, args.end, args.profile, Path(args.review) if args.review else None, art, store)
+    refuse = functools.partial(profiles.refuse, args.profile) if hasattr(profiles, "refuse") else None
+    store, ledger = Store(art, scope=args.profile, verify=args.verify, refuse=refuse), Ledger.from_env()
+    # absolute paths: a key names the review file by its path ($REPO/...) as well as by its bytes
+    ctx = Ctx(args.site, Path(args.video).resolve(), args.start, args.end, args.profile, Path(args.review).resolve() if args.review else None, art, store)
     while True:
         try:
             specs = stages.graph(ctx)
@@ -603,10 +638,15 @@ def main(args):
     if not isinstance(final, Hit):
         say(f"{specs[-1].name}: {final}")
         return 1
+    if final.verification != "ran":  # served from the cache: nothing was imported again; show what the import was given
+        say(f"{specs[-1].name}: served from the cache ({final.verification}); no new import. Resolved command:")
+        for cmd in store.resolve(specs[-1]):
+            say("  " + " ".join(cmd))
     if args.publish:
-        found = re.search(r'"publicationId":\s*"([^"]+)"', (final.dir / "runner.log").read_text())
+        log = final.dir / "runner.log"
+        found = re.search(r'"publicationId":\s*"([^"]+)"', log.read_text()) if log.is_file() else None
         if not found:
             say("no publicationId in the import's output; not publishing")
             return 1
-        importlib.import_module("report_runner.publish").publish(found.group(1))
+        importlib.import_module("report_runner.publish").publish(found.group(1), dry_run=False)
     return 0

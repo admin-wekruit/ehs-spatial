@@ -92,7 +92,30 @@
     ]
    },
    "note": "--fov-deg omitted: K from MoGe-3 on 5 frames (clip.json intrinsics). content check: re-decode sampled frames, max abs diff <= 1 (Part B)",
-   "side": false
+   "side": false,
+   "graph": {
+    "source": {
+     "outputs": {
+      "out": "data/clips/samsclub-337",
+      "clip_json": "data/clips/samsclub-337/clip.json",
+      "rgb_txt": "data/clips/samsclub-337/rgb.txt",
+      "rgb": "data/clips/samsclub-337/rgb",
+      "source_rgb": "data/clips/samsclub-337/source-rgb.mp4",
+      "source_full": "data/clips/samsclub-337/source-full.mp4",
+      "source_full_json": "data/clips/samsclub-337/source-full.json"
+     },
+     "commands": [
+      [
+       "N01",
+       0
+      ],
+      [
+       "N01",
+       1
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N02",
@@ -149,7 +172,20 @@
     }
    },
    "note": "the delivered cut was found by eye; m0-integrate-cuts is the codified rule's output (M0) and equals it",
-   "side": false
+   "side": false,
+   "graph": {
+    "cuts": {
+     "outputs": {
+      "segments": "runs/m0-integrate-cuts/samsclub-337/segments.json"
+     },
+     "commands": [
+      [
+       "N02",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N03c",
@@ -191,7 +227,23 @@
     "file": "runs/droid-samsclub-337-157/run.json"
    },
    "note": "the superseded whole-clip DROID run: its keyframes set the SAM 2.1 frame list",
-   "side": false
+   "side": false,
+   "graph": {
+    "census": {
+     "outputs": {
+      "out": "runs/droid-samsclub-337-157",
+      "prediction": "runs/droid-samsclub-337-157/prediction.npz",
+      "manifest": "runs/droid-samsclub-337-157/input-manifest.json",
+      "run": "runs/droid-samsclub-337-157/run.json"
+     },
+     "commands": [
+      [
+       "N03c",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N03",
@@ -275,7 +327,38 @@
     "data/clips/samsclub-337-a2/source-full.mp4": "data/clips/samsclub-337-a/source-full.mp4"
    },
    "note": "MoGe-3 on round(linspace(0,419,15)): median 55.3194° (rule D4 reproduces frames and value); hand-written derivation (made-by.py) of the rule's derived clip; Part B's --derive must rebuild it byte-equal (9ffd4381 / 8a5faee4)",
-   "side": false
+   "side": false,
+   "graph": {
+    "moge": {
+     "outputs": {
+      "out": "data/clips/samsclub-337-a2",
+      "fov": "data/clips/samsclub-337-a2/shot-fov.json"
+     },
+     "commands": [
+      [
+       "N05",
+       0
+      ]
+     ]
+    },
+    "lens_clip": {
+     "outputs": {
+      "out": "data/clips/samsclub-337-a2",
+      "clip_json": "data/clips/samsclub-337-a2/clip.json",
+      "rgb_txt": "data/clips/samsclub-337-a2/rgb.txt",
+      "rgb": "data/clips/samsclub-337-a2/rgb",
+      "source_rgb": "data/clips/samsclub-337-a2/source-rgb.mp4",
+      "source_full": "data/clips/samsclub-337-a2/source-full.mp4",
+      "source_full_json": "data/clips/samsclub-337-a2/source-full.json"
+     },
+     "commands": [
+      [
+       "N05",
+       1
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N10",
@@ -327,7 +410,20 @@
     "N01"
    ],
    "note": "frame list is operator data (O1); recorded in manifest.json",
-   "side": false
+   "side": false,
+   "graph": {
+    "floor_masks": {
+     "outputs": {
+      "out": "runs/sam3-samsclub-floor-159"
+     },
+     "commands": [
+      [
+       "N10",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N11",
@@ -638,7 +734,22 @@
     "N03c"
    ],
    "note": "frames = census keyframes ∪ range(0, N, 3) (rule D12, checked)",
-   "side": false
+   "side": false,
+   "graph": {
+    "sam2": {
+     "outputs": {
+      "out": "runs/sam2-samsclub-everything-160",
+      "object_a": "runs/sam2-samsclub-everything-160/object-a",
+      "segment": "runs/sam2-samsclub-everything-160/segment.json"
+     },
+     "commands": [
+      [
+       "N11",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N12",
@@ -664,7 +775,17 @@
     "runs/samsclub-masks-162/floor-a": "runs/sam3-samsclub-floor-159",
     "runs/samsclub-masks-162/object-a": "runs/sam2-samsclub-everything-160/object-a"
    },
-   "side": false
+   "side": false,
+   "graph": {
+    "mask_root": {
+     "outputs": {
+      "out": "runs/samsclub-masks-162",
+      "floor_a": "runs/samsclub-masks-162/floor-a",
+      "object_a": "runs/samsclub-masks-162/object-a"
+     },
+     "commands": []
+    }
+   }
   },
   {
    "id": "N13",
@@ -715,7 +836,21 @@
     "N01"
    ],
    "note": "no --marks, no --names (events-1790262338.json)",
-   "side": false
+   "side": false,
+   "graph": {
+    "events": {
+     "outputs": {
+      "out": "runs/samsclub-events-198",
+      "events": "runs/samsclub-events-198/events.json"
+     },
+     "commands": [
+      [
+       "N13",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N20",
@@ -796,7 +931,21 @@
    "inputs": [
     "N20"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "motion": {
+     "outputs": {
+      "out": "runs/samsclub-a-motion-masks-262",
+      "motion": "runs/samsclub-a-motion-masks-262/motion.json"
+     },
+     "commands": [
+      [
+       "N21",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N22",
@@ -842,7 +991,22 @@
     "N21"
    ],
    "side": false,
-   "instance": 0
+   "instance": 0,
+   "graph": {
+    "tracks-0-300": {
+     "outputs": {
+      "out": "runs/samsclub-a-sam31-tracks-263",
+      "tracks": "runs/samsclub-a-sam31-tracks-263/tracks.json",
+      "npz": "runs/samsclub-a-sam31-tracks-263/tracks.npz"
+     },
+     "commands": [
+      [
+       "N22",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N23",
@@ -888,7 +1052,22 @@
     "N21"
    ],
    "side": false,
-   "instance": 1
+   "instance": 1,
+   "graph": {
+    "tracks-260-420": {
+     "outputs": {
+      "out": "runs/samsclub-a-sam31-tracks-265",
+      "tracks": "runs/samsclub-a-sam31-tracks-265/tracks.json",
+      "npz": "runs/samsclub-a-sam31-tracks-265/tracks.npz"
+     },
+     "commands": [
+      [
+       "N23",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N24",
@@ -921,7 +1100,21 @@
     "N22",
     "N23"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "stitch": {
+     "outputs": {
+      "out": "runs/samsclub-a-stitched-266",
+      "stitched": "runs/samsclub-a-stitched-266/stitched.json"
+     },
+     "commands": [
+      [
+       "N24",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N25",
@@ -943,7 +1136,7 @@
      "$ART/runs/samsclub-a-sam31-tracks-263",
      "$ART/runs/samsclub-a-sam31-tracks-265",
      "--stitched",
-     "$ART/runs/samsclub-a-stitched-266/stitched.json",
+     "$ART/runs/samsclub-a-stitched-266",
      "--output",
      "$ART/runs/samsclub-a-motion-analysis-267"
     ]
@@ -961,7 +1154,23 @@
     "N20",
     "N24"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "analysis": {
+     "outputs": {
+      "out": "runs/samsclub-a-motion-analysis-267",
+      "analysis": "runs/samsclub-a-motion-analysis-267/analysis.json",
+      "masks": "runs/samsclub-a-motion-analysis-267/masks"
+     },
+     "commands": [
+      [
+       "N25",
+       0
+      ]
+     ]
+    }
+   },
+   "note": "--stitched is the stitch folder: the script reads DIR/stitched.json (a file path would have failed); the fixture first had the file"
   },
   {
    "id": "N26",
@@ -997,7 +1206,21 @@
     "N20",
     "N25"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "dynamic_masks": {
+     "outputs": {
+      "out": "runs/samsclub-a-dynamic-masks-268",
+      "masks": "runs/samsclub-a-dynamic-masks-268/masks"
+     },
+     "commands": [
+      [
+       "N26",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N20d",
@@ -1091,7 +1314,26 @@
     "file": "runs/samsclub-a-lingbot-map-264/plan.json"
    },
    "note": "prepared from the re-encoded CLIP_A video; predictions on the Modal volume",
-   "side": false
+   "side": false,
+   "graph": {
+    "lingbot": {
+     "outputs": {
+      "out": "runs/samsclub-a-lingbot-map-264",
+      "plan": "runs/samsclub-a-lingbot-map-264/plan.json",
+      "submission": "runs/samsclub-a-lingbot-map-264/submission.json"
+     },
+     "commands": [
+      [
+       "N27",
+       0
+      ],
+      [
+       "N27",
+       1
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N28",
@@ -1142,7 +1384,20 @@
     "N26"
    ],
    "note": "diagnose.json records no inputs; uploads dynamic-masks.tar under the run id, reused by every later build of that id",
-   "side": false
+   "side": false,
+   "graph": {
+    "lingbot_diagnose": {
+     "outputs": {
+      "diagnose": "runs/samsclub-a-lingbot-map-264/diagnose.json"
+     },
+     "commands": [
+      [
+       "N28",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N30",
@@ -1189,7 +1444,23 @@
     "file": "runs/droid-samsclub-a2-280/run.json"
    },
    "note": "no --frames: the derived clip is the shot",
-   "side": false
+   "side": false,
+   "graph": {
+    "camera": {
+     "outputs": {
+      "out": "runs/droid-samsclub-a2-280",
+      "prediction": "runs/droid-samsclub-a2-280/prediction.npz",
+      "manifest": "runs/droid-samsclub-a2-280/input-manifest.json",
+      "run": "runs/droid-samsclub-a2-280/run.json"
+     },
+     "commands": [
+      [
+       "N30",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N31",
@@ -1241,7 +1512,22 @@
     "script": "modal_apps/mono_room.py",
     "file": "runs/da3-posed-samsclub-a2-281/infer.json"
    },
-   "side": false
+   "side": false,
+   "graph": {
+    "depth": {
+     "outputs": {
+      "out": "runs/da3-posed-samsclub-a2-281",
+      "mono": "runs/da3-posed-samsclub-a2-281/mono",
+      "infer": "runs/da3-posed-samsclub-a2-281/infer.json"
+     },
+     "commands": [
+      [
+       "N31",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N33",
@@ -1353,7 +1639,39 @@
     "N26"
    ],
    "note": "",
-   "side": false
+   "side": false,
+   "graph": {
+    "metric": {
+     "outputs": {
+      "out": "runs/da3-posed-samsclub-a2-281",
+      "metric_scale": "runs/da3-posed-samsclub-a2-281/metric-scale.json"
+     },
+     "commands": [
+      [
+       "N33",
+       0
+      ]
+     ]
+    },
+    "fuse": {
+     "outputs": {
+      "out": "runs/da3-posed-samsclub-a2-281",
+      "mesh": "runs/da3-posed-samsclub-a2-281/mono-anchored-mesh.ply",
+      "predicted": "runs/da3-posed-samsclub-a2-281/predicted-scene.glb",
+      "points": "runs/da3-posed-samsclub-a2-281/supported-keyframe-points.glb",
+      "scene": "runs/da3-posed-samsclub-a2-281/scene.json",
+      "metrics": "runs/da3-posed-samsclub-a2-281/fuse-metrics.json",
+      "metric_scale": "runs/da3-posed-samsclub-a2-281/metric-scale.json",
+      "support": "runs/da3-posed-samsclub-a2-281/droid-support.npz"
+     },
+     "commands": [
+      [
+       "N33",
+       1
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N34",
@@ -1403,7 +1721,22 @@
     "N26",
     "N05"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "texture": {
+     "outputs": {
+      "out": "runs/samsclub-a2-textured-282",
+      "shell": "runs/samsclub-a2-textured-282/textured-scene.glb",
+      "report": "runs/samsclub-a2-textured-282/texture-report.json"
+     },
+     "commands": [
+      [
+       "N34",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N35",
@@ -1457,7 +1790,22 @@
     "N34",
     "N26"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "fill": {
+     "outputs": {
+      "out": "runs/samsclub-a2-filled-283",
+      "shell": "runs/samsclub-a2-filled-283/textured-scene.glb",
+      "fill": "runs/samsclub-a2-filled-283/fill.json"
+     },
+     "commands": [
+      [
+       "N35",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N36",
@@ -1513,7 +1861,22 @@
     "N12",
     "N26"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "object_map": {
+     "outputs": {
+      "out": "runs/samsclub-a2-object-map-284",
+      "object_map": "runs/samsclub-a2-object-map-284/object-map.json",
+      "surfaces": "runs/samsclub-a2-object-map-284/surfaces"
+     },
+     "commands": [
+      [
+       "N36",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N37",
@@ -1552,7 +1915,23 @@
     "N36",
     "N12"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "names": {
+     "outputs": {
+      "out": "runs/samsclub-a2-entity-names-288",
+      "object_map": "runs/samsclub-a2-entity-names-288/object-map.json",
+      "names": "runs/samsclub-a2-entity-names-288/names.json",
+      "surfaces": "runs/samsclub-a2-entity-names-288/surfaces"
+     },
+     "commands": [
+      [
+       "N37",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N38",
@@ -1625,7 +2004,21 @@
      }
     }
    },
-   "side": false
+   "side": false,
+   "graph": {
+    "outlines": {
+     "outputs": {
+      "out": "runs/samsclub-a2-frame-selection-289",
+      "analysis": "runs/samsclub-a2-frame-selection-289/analysis.json"
+     },
+     "commands": [
+      [
+       "N38",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N39",
@@ -1670,7 +2063,22 @@
     "runs/samsclub-a2-dynamic-285/infer.json": "runs/da3-posed-samsclub-a2-281/infer.json",
     "runs/samsclub-a2-dynamic-285/metric-scale.json": "runs/da3-posed-samsclub-a2-281/metric-scale.json"
    },
-   "side": false
+   "side": false,
+   "graph": {
+    "dynamic": {
+     "outputs": {
+      "out": "runs/samsclub-a2-dynamic-285",
+      "scene": "runs/samsclub-a2-dynamic-285/scene.json",
+      "surfaces": "runs/samsclub-a2-dynamic-285/dynamic"
+     },
+     "commands": [
+      [
+       "N39",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N40",
@@ -1739,7 +2147,24 @@
     "runs/samsclub-a2-lingbot-map-286/diagnose.json": "runs/samsclub-a-lingbot-map-264/diagnose.json"
    },
    "note": "--masks has no effect: the tar uploaded by the 264 diagnose is reused (cache hazard)",
-   "side": false
+   "side": false,
+   "graph": {
+    "lingbot_build": {
+     "outputs": {
+      "out": "runs/samsclub-a2-lingbot-map-286",
+      "points": "runs/samsclub-a2-lingbot-map-286/dense-points.glb",
+      "info": "runs/samsclub-a2-lingbot-map-286/points.json",
+      "attributes": "runs/samsclub-a2-lingbot-map-286/point-attributes.npz",
+      "remote": "runs/samsclub-a2-lingbot-map-286/remote.json"
+     },
+     "commands": [
+      [
+       "N40",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N41",
@@ -1829,7 +2254,15 @@
     }
    },
    "note": "ICP accepted by hand: 61.6% within 25 cm, floor ~0 cm; replay at HEAD is byte-identical",
-   "side": false
+   "side": false,
+   "graph": {
+    "dense_gate": {
+     "outputs": {
+      "icp": "runs/samsclub-a2-lingbot-map-295-icp"
+     },
+     "commands": []
+    }
+   }
   },
   {
    "id": "N42",
@@ -1903,7 +2336,21 @@
     }
    },
    "note": "withheld by its own gate; not an import input",
-   "side": false
+   "side": false,
+   "graph": {
+    "floor_infer": {
+     "outputs": {
+      "out": "runs/samsclub-a2-inferred-floor-296-icp",
+      "floor": "runs/samsclub-a2-inferred-floor-296-icp/inferred-floor.json"
+     },
+     "commands": [
+      [
+       "N42",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N43",
@@ -1978,7 +2425,37 @@
     "N33",
     "N35"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "splat": {
+     "outputs": {
+      "out": "runs/samsclub-a2-splat-287",
+      "splats": "runs/samsclub-a2-splat-287/splats.splat",
+      "json": "runs/samsclub-a2-splat-287/splats.json",
+      "train": "runs/samsclub-a2-splat-287/train.json",
+      "launch": "runs/samsclub-a2-splat-287/launch.json",
+      "cameras": "runs/samsclub-a2-splat-287/refined-cameras.npz"
+     },
+     "commands": [
+      [
+       "N43",
+       0
+      ]
+     ]
+    },
+    "splat_clean": {
+     "outputs": {
+      "out": "runs/samsclub-a2-splat-287",
+      "clean": "runs/samsclub-a2-splat-287/clean/clean.json"
+     },
+     "commands": [
+      [
+       "N44",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N44",
@@ -2021,11 +2498,22 @@
      "--clean",
      "$ART/runs/samsclub-a2-splat-287",
      "--pick",
-     "negligible_1"
+     "negligible_1",
+     "--clip",
+     "$ART/data/clips/samsclub-337-a2"
     ]
    ],
-   "basis": {},
-   "evidence": [],
+   "basis": {
+    "--clip": "I"
+   },
+   "evidence": [
+    {
+     "kind": "json_value",
+     "file": "runs/samsclub-a2-splat-294/refined-cameras.json",
+     "path": "fps",
+     "value": 25.0
+    }
+   ],
    "patch": null,
    "staging": true,
    "inputs": [
@@ -2037,7 +2525,24 @@
     "runs/samsclub-a2-splat-294/refined-cameras.json": "runs/samsclub-a2-splat-287/refined-cameras.json",
     "runs/samsclub-a2-splat-294/refined-cameras.npz": "runs/samsclub-a2-splat-287/refined-cameras.npz"
    },
-   "side": false
+   "side": false,
+   "graph": {
+    "splat_final": {
+     "outputs": {
+      "out": "runs/samsclub-a2-splat-287",
+      "splats": "runs/samsclub-a2-splat-294/splats.splat",
+      "json": "runs/samsclub-a2-splat-294/splats.json",
+      "cameras": "runs/samsclub-a2-splat-294/refined-cameras.json"
+     },
+     "commands": [
+      [
+       "N44",
+       1
+      ]
+     ]
+    }
+   },
+   "note": "the pick's --clip is inferred (I): with the ME340 default the pick would have written fps 29.97 (it wrote 25)"
   },
   {
    "id": "N45",
@@ -2130,7 +2635,22 @@
     "N26",
     "N05"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "sam3d": {
+     "outputs": {
+      "out": "runs/samsclub-a2-object-models-291-sam3d",
+      "manifest": "runs/samsclub-a2-object-models-291-sam3d/manifest.json",
+      "models": "runs/samsclub-a2-object-models-291-sam3d/models"
+     },
+     "commands": [
+      [
+       "N45",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N46",
@@ -2241,7 +2761,22 @@
    "inputs": [
     "N45"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "recgen": {
+     "outputs": {
+      "out": "runs/samsclub-a2-object-models-292",
+      "manifest": "runs/samsclub-a2-object-models-292/manifest.json",
+      "models": "runs/samsclub-a2-object-models-292/models"
+     },
+     "commands": [
+      [
+       "N46",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N47",
@@ -2387,7 +2922,22 @@
     "N47"
    ],
    "note": "the 3 review excludes of N45/N46 were not passed; manifest inputs.clip holds a Python repr",
-   "side": false
+   "side": false,
+   "graph": {
+    "box": {
+     "outputs": {
+      "out": "runs/samsclub-a2-object-models-301-box",
+      "manifest": "runs/samsclub-a2-object-models-301-box/manifest.json",
+      "models": "runs/samsclub-a2-object-models-301-box/models"
+     },
+     "commands": [
+      [
+       "N48",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N48t",
@@ -2418,7 +2968,21 @@
    "inputs": [
     "N48"
    ],
-   "side": false
+   "side": false,
+   "graph": {
+    "box_test": {
+     "outputs": {
+      "out": "runs/m0-box-test-samsclub-a2",
+      "box_test": "runs/m0-box-test-samsclub-a2/box-test.json"
+     },
+     "commands": [
+      [
+       "N48t",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N49",
@@ -2490,7 +3054,22 @@
     }
    },
    "note": "original not recorded; the codified merge reproduces 67 = 41/5/21",
-   "side": false
+   "side": false,
+   "graph": {
+    "merge": {
+     "outputs": {
+      "out": "runs/samsclub-a2-object-models-303-merged",
+      "merge": "runs/samsclub-a2-object-models-303-merged/merge.json",
+      "models": "runs/samsclub-a2-object-models-303-merged/models"
+     },
+     "commands": [
+      [
+       "N49",
+       0
+      ]
+     ]
+    }
+   }
   },
   {
    "id": "N51",
@@ -2588,7 +3167,18 @@
     "N49"
    ],
    "note": "cwd $ART; env PANOPTES_DATABASE_URL, PANOPTES_BLOB_ROOT=$ART/.platform/blobs. --title read from the publications row (SELECT); --republish/--request-suffix live only in .platform/imports (never opened). Outputs are the DB rows, checked by fingerprint (P5)",
-   "side": false
+   "side": false,
+   "graph": {
+    "import": {
+     "outputs": {},
+     "commands": [
+      [
+       "N51",
+       0
+      ]
+     ]
+    }
+   }
   }
  ],
  "deviations": [
@@ -2678,7 +3268,8 @@
    "m2": "learned-accepted ∪ review excludes (D17)",
    "reason": "the box excludes came from a merge that is not the delivered one",
    "decisions": [
-    "generator_plan"
+    "generator_plan",
+    "generator_plan-box"
    ]
   },
   {
@@ -2711,7 +3302,8 @@
      750
     ]
    ],
-   "mapped": true
+   "mapped": true,
+   "registered": []
   },
   "lens": {
    "frames": [
@@ -3045,6 +3637,91 @@
    747
   ],
   "generator_plan": {
+   "recgen_entities": [
+    "object-132",
+    "object-020",
+    "object-030",
+    "object-083",
+    "object-093",
+    "object-149",
+    "object-008",
+    "object-038",
+    "object-116",
+    "object-113",
+    "object-121",
+    "object-045",
+    "object-050",
+    "object-052",
+    "object-078",
+    "object-098",
+    "object-051",
+    "object-108",
+    "object-105",
+    "object-089",
+    "object-154",
+    "object-186",
+    "object-070",
+    "object-145",
+    "object-179",
+    "object-141",
+    "object-171",
+    "object-170",
+    "object-152",
+    "object-041",
+    "object-053",
+    "object-035",
+    "object-001",
+    "object-180",
+    "object-181",
+    "object-134",
+    "object-010",
+    "object-049",
+    "object-027",
+    "object-018",
+    "object-003",
+    "object-043",
+    "object-004",
+    "object-110",
+    "object-042",
+    "object-015",
+    "object-012",
+    "object-017",
+    "object-011",
+    "object-019",
+    "object-007",
+    "object-061",
+    "object-014",
+    "object-046",
+    "object-039",
+    "object-047",
+    "object-016",
+    "object-006",
+    "object-068",
+    "object-063",
+    "object-074",
+    "object-028",
+    "object-062",
+    "object-036",
+    "object-013",
+    "object-100",
+    "object-071",
+    "object-163",
+    "object-072",
+    "object-090",
+    "object-184",
+    "object-165",
+    "object-109",
+    "object-099",
+    "object-107",
+    "object-073",
+    "object-095",
+    "object-094"
+   ],
+   "excluded_all": {
+    "object-009": "a rack upright: part of the shelving, not a free-standing object",
+    "object-130": "the walk-in room box: a building structure, not an object",
+    "object-024": "misnamed 'mesh guard': the freezer door frame"
+   },
    "box_excludes": {
     "object-003": "modelled_in_samsclub-a2-object-models-293-merged",
     "object-004": "modelled_in_samsclub-a2-object-models-293-merged",
@@ -3107,7 +3784,142 @@
    606,
    675,
    747
-  ]
+  ],
+  "generator_plan-box": {
+   "recgen_entities": [
+    "object-132",
+    "object-020",
+    "object-030",
+    "object-083",
+    "object-093",
+    "object-149",
+    "object-008",
+    "object-038",
+    "object-116",
+    "object-113",
+    "object-121",
+    "object-045",
+    "object-050",
+    "object-052",
+    "object-078",
+    "object-098",
+    "object-051",
+    "object-108",
+    "object-105",
+    "object-089",
+    "object-154",
+    "object-186",
+    "object-070",
+    "object-145",
+    "object-179",
+    "object-141",
+    "object-171",
+    "object-170",
+    "object-152",
+    "object-041",
+    "object-053",
+    "object-035",
+    "object-001",
+    "object-180",
+    "object-181",
+    "object-134",
+    "object-010",
+    "object-049",
+    "object-027",
+    "object-018",
+    "object-003",
+    "object-043",
+    "object-004",
+    "object-110",
+    "object-042",
+    "object-015",
+    "object-012",
+    "object-017",
+    "object-011",
+    "object-019",
+    "object-007",
+    "object-061",
+    "object-014",
+    "object-046",
+    "object-039",
+    "object-047",
+    "object-016",
+    "object-006",
+    "object-068",
+    "object-063",
+    "object-074",
+    "object-028",
+    "object-062",
+    "object-036",
+    "object-013",
+    "object-100",
+    "object-071",
+    "object-163",
+    "object-072",
+    "object-090",
+    "object-184",
+    "object-165",
+    "object-109",
+    "object-099",
+    "object-107",
+    "object-073",
+    "object-095",
+    "object-094"
+   ],
+   "excluded_all": {
+    "object-009": "a rack upright: part of the shelving, not a free-standing object",
+    "object-130": "the walk-in room box: a building structure, not an object",
+    "object-024": "misnamed 'mesh guard': the freezer door frame"
+   },
+   "box_excludes": {
+    "object-003": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-004": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-006": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-007": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-010": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-011": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-012": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-013": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-014": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-015": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-016": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-017": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-018": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-019": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-020": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-027": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-028": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-030": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-039": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-041": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-042": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-043": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-046": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-047": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-049": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-050": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-053": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-061": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-062": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-063": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-068": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-071": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-072": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-073": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-074": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-078": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-090": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-099": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-100": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-107": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-109": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-110": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-132": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-134": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-163": "modelled_in_samsclub-a2-object-models-293-merged",
+    "object-165": "modelled_in_samsclub-a2-object-models-293-merged"
+   }
+  }
  },
  "decision_inputs": {
   "shots": {
@@ -3149,14 +3961,18 @@
    "census": "runs/droid-samsclub-337-157",
    "segments": "runs/m0-integrate-cuts/samsclub-337/segments.json"
   },
-  "generator_plan": {
+  "floor_frames": {
+   "shots": "@decision:shots",
+   "operator": "@value:floor_frames"
+  },
+  "generator_plan-box": {
    "sam3d": "runs/samsclub-a2-object-models-291-sam3d",
    "recgen": "runs/samsclub-a2-object-models-292",
    "review": "$REPO/docs/phase2/box-review-303/samsclub-a2.json"
   },
-  "floor_frames": {
-   "shots": "@decision:shots",
-   "operator": "@value:floor_frames"
+  "generator_plan": {
+   "sam3d": "runs/samsclub-a2-object-models-291-sam3d",
+   "review": "$REPO/docs/phase2/box-review-303/samsclub-a2.json"
   }
  },
  "decision_compare": {
@@ -3165,13 +3981,23 @@
     "use"
    ]
   },
-  "generator_plan": {
-   "keys": "box_excludes"
-  },
   "track_windows": {
    "fields": [
     "shot",
     "stitch"
+   ]
+  },
+  "generator_plan-box": {
+   "keys": "box_excludes"
+  },
+  "generator_plan": {
+   "keys": "recgen_entities"
+  },
+  "shots": {
+   "fields": [
+    "primary",
+    "others",
+    "mapped"
    ]
   }
  },
