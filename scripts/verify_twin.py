@@ -71,7 +71,11 @@ LABEL = "Digital twin: inferred stand-ins, not measurements"
 WALK = (226, 898)            # the walk shot; 0..13 and 14..225 are other shots
 GATES = {"parametric": {"minViews": 3, "iou": .60, "depthMedian": .05, "depthP95": .15},
          "model": {"minViews": 3, "iou": .65, "depthMedian": .04, "depthP95": .10}}  # + box_free_space.THRESHOLDS overhang, foreign
-CONTROL = {"shiftM": .15, "grow": 1.25, "mustFail": .8}
+# test the test: wrong copies moved shiftM along each horizontal box axis, and grown x1.25, must fail >= mustFail of the
+# time. The spec's 0.15 m is at the depth gate's own resolution beyond ~3 m (5 % of the range), so like the shell builder
+# (--max-resolved-m) the shift escalates and each object records the smallest one its gate resolves; the export takes
+# objects resolved within --max-resolved-m (spec 0.15)
+CONTROL = {"shiftM": (.15, .30, .50), "grow": 1.25, "mustFail": .8}
 MAX_OBJECT_VIEWS, METRIC_VIEWS, SHEET_VIEWS, SCENE_PAIRS, PER_REQUEST = 8, 48, 12, 4, 5  # PER_REQUEST x 2 images stays under 16,384 input
 FLOOR_MAX, WALL_MAX, WALL_RANGE_M, EXPLAINED_REL, HEAT_MAX = .03, .05, 8., .08, .2
 PENETRATION_M, OVERLAP_SHARE, YAW_MAX_DEG = .02, .05, 3.
@@ -373,7 +377,7 @@ def box_frame(obj, vertices, plan):
     return axes, (local.min(0) + local.max(0)) / 2 @ axes, local.min(0), local.max(0)
 
 
-def check_object(obj, twin, views, plan, limit):
+def check_object(obj, twin, views, plan, limit, max_resolved=CONTROL["shiftM"][0]):
     """Held-out metrics, gate and control of one twin object."""
     parts = twin.parts(obj["node"])
     frames = held_out(obj, views, limit)
@@ -384,12 +388,9 @@ def check_object(obj, twin, views, plan, limit):
     vertices = np.concatenate([twin.meshes[i].vertices for i in parts])
     faces = np.concatenate([twin.meshes[i].faces + o for i, o in zip(parts, offsets)])
     axes, centre, _, _ = box_frame(obj, vertices, plan)
-    shift = CONTROL["shiftM"] / plan["s"]
-    variants = {"model": vertices, "+x": vertices + shift * axes[0], "-x": vertices - shift * axes[0], "+y": vertices + shift * axes[1],
-                "-y": vertices - shift * axes[1], f"x{CONTROL['grow']}": centre + (vertices - centre) * CONTROL["grow"]}
-    results = {}
-    for name, moved in variants.items():  # one scene at a time: an existing model can hold 0.6 M triangles
-        scene, results[name] = cvo.ray_scene(moved, faces), []
+
+    def judge(moved):  # one scene at a time: an existing model can hold 0.6 M triangles
+        scene, rows = cvo.ray_scene(moved, faces), []
         for f in frames:
             d = views.frame(f)
             mine = member_observations(obj, views, f)
@@ -398,13 +399,29 @@ def check_object(obj, twin, views, plan, limit):
                 continue
             others = np.any([m for o, m in d["instances"].items() if o not in mine] or [np.zeros((480, 640), bool)], 0)
             near, far = bfs.box_depths(scene, views.k, views.c2w[f])
-            results[name].append({"frame": f, **object_view(near, far, d["depth"], d["excluded"], own, others)})
-    summary, reasons = gate(results["model"], obj["representation"])
-    control = {name: gate(rows, obj["representation"])[1] for name, rows in results.items() if name != "model"}
-    failed = float(np.mean([bool(r) for r in control.values()]))
-    status = "fail" if reasons else "pass" if failed >= CONTROL["mustFail"] else "unverifiable"
-    return {"status": status, "reasons": reasons or ([] if status == "pass" else [f"control: the gate fails only {failed:.0%} of the wrong copies < {CONTROL['mustFail']:.0%}"]),
-            "summary": summary, "views": results["model"], "control": {"failedShare": failed, "reasons": control}, "parts": parts, "frames": frames}
+            rows.append({"frame": f, **object_view(near, far, d["depth"], d["excluded"], own, others)})
+        return rows
+
+    model = judge(vertices)
+    summary, reasons = gate(model, obj["representation"])
+    control = None
+    if not reasons:  # ponytail: a failing stand-in is excluded anyway; its control is not computed
+        grown = gate(judge(centre + (vertices - centre) * CONTROL["grow"]), obj["representation"])[1]
+        control = {"levels": [], "resolvedAtM": None, "maxResolvedM": max_resolved}
+        for shift_m in [m for m in CONTROL["shiftM"] if m <= max_resolved + 1e-9]:
+            shift = shift_m / plan["s"]
+            copies = {f"x{CONTROL['grow']}": grown} | {name: gate(judge(vertices + sign * shift * axes[a]), obj["representation"])[1]
+                                                       for name, sign, a in (("+x", 1, 0), ("-x", -1, 0), ("+y", 1, 1), ("-y", -1, 1))}
+            failed = float(np.mean([bool(r) for r in copies.values()]))
+            control["levels"].append({"shiftM": shift_m, "failedShare": failed, "reasons": copies})
+            control["failedShare"] = failed
+            if failed >= CONTROL["mustFail"]:
+                control["resolvedAtM"] = shift_m
+                break
+    status = "fail" if reasons else "pass" if control["resolvedAtM"] is not None else "unverifiable"
+    why = [] if status != "unverifiable" else [f"control: the gate fails only {control['failedShare']:.0%} of the copies moved "
+                                                 f"{control['levels'][-1]['shiftM']} m or grown < {CONTROL['mustFail']:.0%}"]
+    return {"status": status, "reasons": reasons or why, "summary": summary, "views": model, "control": control, "parts": parts, "frames": frames}
 
 
 def consistency(twin, shell_doc, objects_doc, plan):
@@ -532,7 +549,7 @@ def verify(twin, shell_doc, objects_doc, views, plan, args):
     (out / "compare").mkdir()
     objects, status = {}, {}
     for obj in sorted(objects_doc["objects"], key=lambda o: (o.get("priority", 9), o["twinId"])):
-        objects[obj["twinId"]] = r = check_object(obj, twin, views, plan, args.max_object_views)
+        objects[obj["twinId"]] = r = check_object(obj, twin, views, plan, args.max_object_views, args.max_resolved_m)
         print(json.dumps({"twinId": obj["twinId"], "status": r["status"], **(r["summary"] or {}), "reasons": r["reasons"]}), flush=True)
         for i in r["parts"]:
             status[i] = r["status"]
@@ -553,10 +570,15 @@ def verify(twin, shell_doc, objects_doc, views, plan, args):
         explained["observedShell"][f] = float((judged & (np.abs(seen / np.where(observed > 0, observed, 1) - 1) <= EXPLAINED_REL)).sum() / max(judged.sum(), 1))
         floor = np.any([m for o, m in d["instances"].items() if o.startswith("floor:")] or [np.zeros((480, 640), bool)], 0)
         things = np.any([m for o, m in d["instances"].items() if not o.startswith("floor:")] or [np.zeros((480, 640), bool)], 0)
+        # walls and the ceiling have no mask: as for an object outside its mask, a pixel the video saw nearer than the
+        # element by SLACK is something unmodelled in front of it (occluded, not judged); seeing through it is an error
+        in_front = observed < depth_t * (1 - bfs.SLACK)
         for n, e in shell_nodes.items():
-            at = judged & (node == n) & (floor if e["kind"] == "floor" else ~things & (observed < WALL_RANGE_M / s))
+            region = judged & (node == n) & (floor if e["kind"] == "floor" else ~things & (observed < WALL_RANGE_M / s))
+            at = region if e["kind"] == "floor" else region & ~in_front
             if at.sum() >= bfs.MIN_JUDGED:
-                per_element[n].append({"frame": f, "pixels": int(at.sum()), "depthRelMedian": float(np.median(rel[at]))})
+                per_element[n].append({"frame": f, "pixels": int(at.sum()), "occludedShare": float(1 - at.sum() / max(region.sum(), 1)),
+                                       "depthRelMedian": float(np.median(rel[at]))})
         if f in pictured:
             lines = d["real"].copy()
             for obj in objects_doc["objects"]:
@@ -588,7 +610,7 @@ def verify(twin, shell_doc, objects_doc, views, plan, args):
             sheet(out / "sheets" / f"object-{obj['twinId']}.jpg", rows,
                   [f"{obj['twinId']} {obj.get('category')} {obj['representation']}: {r['status']}  (stand-in, not a measurement)",
                    f"IoU {sm['iou'] or 0:.2f}  depth {sm['depthRelMedian'] or 0:.3f}/{sm['depthRelP95'] or 0:.3f}  overhang {sm['overhang'] or 0:.2f}"
-                   f"  foreign {sm['foreign'] or 0:.2f}  control fails {r['control']['failedShare']:.0%}  views {sm['judgedViews']}",
+                   f"  foreign {sm['foreign'] or 0:.2f}  control {'resolves ' + str(r['control']['resolvedAtM']) + ' m' if (r['control'] or {}).get('resolvedAtM') else 'not run' if r['control'] is None else 'unresolved'}  views {sm['judgedViews']}",
                    "; ".join(r["reasons"])[:150]])
     orphans = [n for i, n in enumerate(twin.names) if i not in status]
     for i, n in enumerate(twin.names):
@@ -953,13 +975,17 @@ def usd_check(output, ledger):
                 points = numpy.array(UsdGeom.Mesh(prim).GetPointsAttr().Get(), float)
                 world = numpy.c_[points, numpy.ones(len(points))] @ matrix
                 low, high = numpy.minimum(low, world[:, :3].min(0)), numpy.maximum(high, world[:, :3].max(0))
+        stage.GetRootLayer().Export("/tmp/twin.usdc")
+        with open("/tmp/twin.usdc", "rb") as crate:
+            data = crate.read()
         return {"upAxis": UsdGeom.GetStageUpAxis(stage), "metersPerUnit": UsdGeom.GetStageMetersPerUnit(stage), "meshPrims": meshes,
-                "bounds": [low.tolist(), high.tolist()], "usdCore": ".".join(map(str, Usd.GetVersion()))}
+                "bounds": [low.tolist(), high.tolist()], "usdCore": ".".join(map(str, Usd.GetVersion())), "crate": data}
 
     started = time.time()
     with app.run():
         result = check.remote((output / "twin.usda").read_text())
     record(ledger, "modal_cpu", "usd-check " + output.name, (time.time() - started) * MODAL_CPU_USD_PER_SECOND, worst)
+    (output / "twin.usd").write_bytes(result.pop("crate"))  # the same stage, binary crate, for Isaac Sim
     gap = float(np.abs(np.asarray(result["bounds"]) - expected).max())
     return {**result, "pin": USD_CORE, "expectedBounds": expected, "boundsGapM": gap, "glbMeshNodes": len(glb.graph.nodes_geometry),
             "pass": result["upAxis"] == "Z" and result["metersPerUnit"] == 1 and result["meshPrims"] == len(glb.graph.nodes_geometry) and gap <= 1e-3}
@@ -979,55 +1005,59 @@ def finish(report, twin, shell_doc, objects_doc, views, plan, args):
                                                        "status": "model_interpretation_not_ground_truth", "requests": requests}, indent=1, default=str))
         (out / "fixes.json").write_text(json.dumps(to_fixes(requests, objects_doc, out.name), indent=1))
     meta, transform = node_meta(twin, shell_doc, objects_doc), native_to_twin(plan)
-    keep = [i for i in range(len(twin.names)) if report["status"][i] == "pass"]
+    names = lambda idx: [twin.names[i] for i in idx]
+    objects = {tid: {**r, "parts": names(r["parts"])} for tid, r in report["objects"].items()}
+    verification = {**{n: {"status": r["status"], "depthRelMedian": r["depthRelMedian"], "judgedViews": r["judgedViews"], "support": r["support"]}
+                       for n, r in report["shell"].items()},
+                    **{p: {"status": r["status"], "summary": r["summary"], "controlFailedShare": (r["control"] or {}).get("failedShare"),
+                           "resolvedAtM": (r["control"] or {}).get("resolvedAtM")}
+                       for r in objects.values() for p in r["parts"]}}
     (out / "textures").mkdir()
-    items, textures = [], {}
-    for i in keep:
-        name = twin.names[i]
-        extras, key = meta[name]
+    everything, textures = [], {}
+    for i, name in enumerate(twin.names):
+        extras, key = meta.get(name, ({"layer": "twin_inferred", "notForMeasurement": True, "node": name}, None))
+        extras = {**extras, "status": report["status"][i], "verification": verification.get(name)}
         mesh = dress(twin.meshes[i].copy(), key)
         mesh.apply_transform(transform)
         image = look(mesh)[1]
-        if image is not None:
+        if image is not None and report["status"][i] == "pass":
             textures[name] = f"textures/{name.replace('/', '__')}.png"
             cv2.imwrite(str(out / textures[name]), image[..., ::-1])
-        items.append((name, mesh, extras, key))
+        everything.append((name, mesh, extras, key))
+    items = [item for i, item in enumerate(everything) if report["status"][i] == "pass"]
     export_glb(items, out / "twin.glb")
+    export_glb(everything, out / "twin-all.glb")  # not the default scene: failed and unverifiable stand-ins, each labelled
     (out / "twin.usda").write_text(usda(items, textures))
     reloaded = sorted(trimesh.load(out / "twin.glb", force="scene").graph.nodes_geometry)
     assert reloaded == sorted(n for n, *_ in items), "twin.glb node names do not match what was verified"
     usd = usd_check(out, args.ledger) if args.usd_check else None
-    names = lambda idx: [twin.names[i] for i in idx]
-    objects = {tid: {**r, "parts": names(r["parts"])} for tid, r in report["objects"].items()}
     excluded = ([{"node": o["node"], "twinId": o["twinId"], "status": objects[o["twinId"]]["status"], "reasons": objects[o["twinId"]]["reasons"],
                   "numbers": objects[o["twinId"]]["summary"], "control": objects[o["twinId"]]["control"]}
                  for o in objects_doc["objects"] if objects[o["twinId"]]["status"] != "pass"]
                 + [{"node": n, "status": r["status"], "reasons": r["reasons"], "numbers": {"depthRelMedian": r["depthRelMedian"], "judgedViews": r["judgedViews"]}}
                    for n, r in report["shell"].items() if r["status"] != "pass"]
                 + [{"node": n, "status": "fail", "reasons": ["in the GLB but not listed in shell.json or objects.json"]} for n in report["orphans"]])
-    verification = {**{n: {"status": r["status"], "depthRelMedian": r["depthRelMedian"], "judgedViews": r["judgedViews"], "support": r["support"]}
-                       for n, r in report["shell"].items()},
-                    **{p: {"status": r["status"], "summary": r["summary"], "controlFailedShare": (r["control"] or {}).get("failedShare")}
-                       for r in objects.values() for p in r["parts"]}}
     files = {f"{stem}.{ext}": folder / f"{stem}.{ext}" for folder, stem in ((args.shell, "shell"), (args.objects, "objects")) if folder for ext in ("glb", "json")}
     if getattr(args, "depth_run", None):
         files["metric-scale.json"] = args.depth_run / "metric-scale.json"
     spend = {"thisRunUsd": sum(r.get("usd", 0.) for r in asked) + 0., "ledger": str(args.ledger), "ledgerTotalUsd": ledger_total(args.ledger),
              "capUsd": CAP_USD, "geminiCapUsd": GEMINI_CAP_USD}
     twin_doc = {"schema": "m4-twin-v1", "layer": "twin_inferred", "notForMeasurement": True, "label": LABEL, "coordinateFrame": "me340_twin_m",
-                "glb": "twin.glb: metres, +Y up, origin on the floor plane", "usd": "twin.usda: Z up, metersPerUnit 1, /World/me340_twin rotateX 90",
+                "glb": "twin.glb: metres, +Y up, origin on the floor plane; twin-all.glb adds the excluded stand-ins, each with extras.panoptes.status",
+                "usd": "twin.usda (and twin.usd, its binary crate, after --usd-check): Z up, metersPerUnit 1, /World/me340_twin rotateX 90",
                 "transform": {"from": "droid_final_native_world", "nativeToTwin": transform.tolist(), "metresPerNativeUnit": plan["s"],
                               "scaleStatus": plan["scaleStatus"], "assumption": plan.get("assumption"),
                               "cameraHeightNativeP10P90": plan.get("cameraHeightNativeP10P90"), "metresPerNativeUnitRange": plan.get("metresPerNativeUnitRange")},
                 "inputs": {k: {"path": str(p), "sha256": sha(p)} for k, p in files.items()}
                           | {k: {"path": str(getattr(args, k))} for k in INPUTS if getattr(args, k, None)},
-                "nodes": [{**e, "verification": verification.get(n)} for n, _, e, _ in items], "excluded": excluded,
+                "nodes": [e for _, _, e, _ in items], "excluded": excluded,
                 "skipped": objects_doc.get("skipped", []), "absent": shell_doc.get("absent", []),
                 "explainedShare": {k: report["explained"][k]["median"] for k in ("twin", "observedShell")}, "spend": spend}
     (out / "twin.json").write_text(json.dumps(twin_doc, indent=1, default=float))
     rule = {"views": f"walk shot {WALK[0]}..{WALK[1]} with posed depth and a mask frame; objects on their held-out views only",
             "gates": GATES, "freeSpace": {k: bfs.THRESHOLDS[k] for k in ("overhang", "foreign")}, "slack": bfs.SLACK, "erodePx": bfs.ERODE,
-            "minJudged": bfs.MIN_JUDGED, "control": CONTROL, "shell": {"floorMax": FLOOR_MAX, "wallMax": WALL_MAX, "wallRangeM": WALL_RANGE_M},
+            "minJudged": bfs.MIN_JUDGED, "control": {**CONTROL, "maxResolvedM": args.max_resolved_m}, "shell": {"floorMax": FLOOR_MAX, "wallMax": WALL_MAX, "wallRangeM": WALL_RANGE_M,
+                                                                            "wallOcclusion": "wall/ceiling pixels observed nearer by SLACK are occluded, not judged"},
             "explainedRel": EXPLAINED_REL, "consistency": {"penetrationM": PENETRATION_M, "overlapShare": OVERLAP_SHARE, "yawMaxDeg": YAW_MAX_DEG},
             "openingWallCoordinates": "assumed: along cross(up, normal) from planeNative.point, height above the floor, native units"}
     passed = [o for o in objects.values() if o["status"] == "pass"]
@@ -1125,7 +1155,8 @@ def self_check():
         docs = {}
         for key, (shell, objects) in runs.items():
             args = SimpleNamespace(output=tmp / f"verify-{key}", shell=shell, objects=objects, max_object_views=8, metric_views=16, sheet_views=4,
-                                   critique=False, vlm_answers=None, usd_check=False, ledger=ledger, operation="video.twin_critique", per_request=5)
+                                   critique=False, vlm_answers=None, usd_check=False, ledger=ledger, operation="video.twin_critique", per_request=5,
+                                   max_resolved_m=CONTROL["shiftM"][0])
             args.output.mkdir()
             twin, shell_doc, objects_doc = load_twin(shell, objects)
             docs[key] = finish(verify(twin, shell_doc, objects_doc, views, plan, args), twin, shell_doc, objects_doc, views, plan, args)
@@ -1135,6 +1166,9 @@ def self_check():
         assert a["control"]["failedShare"] >= CONTROL["mustFail"], a["control"]
         b = good["objects"]["bx_02"]  # 0.6 m wide at ~3 m: a copy 0.15 m to either side still passes its gate, so it cannot be verified
         assert b["status"] == "unverifiable" and b["summary"]["iou"] > .97 and b["control"]["failedShare"] == .4, b["control"]
+        twin_good, _, objects_good = load_twin(*runs[0., True])
+        coarse = check_object(objects_good["objects"][1], twin_good, views, plan, 8, max_resolved=.5)  # a 0.30 m shift is resolved
+        assert coarse["status"] == "pass" and coarse["control"]["resolvedAtM"] in (.3, .5), coarse["control"]["levels"]
         assert all(r["status"] == "pass" for r in good["shell"].values()), good["shell"]
         assert good["explained"]["twin"]["median"] > .99 and good["explained"]["observedShell"]["median"] > .99, good["explained"]
         assert good["counts"]["exported"] == 3 and not good["consistency"]["overlap"] and not good["consistency"]["floorPenetration"]
@@ -1144,6 +1178,9 @@ def self_check():
         out = tmp / "verify-(0.0, True)"
         glb = trimesh.load(out / "twin.glb", force="scene")
         assert sorted(glb.graph.nodes_geometry) == ["objects/bx_01/body", "shell/floor", "shell/wall_00"]
+        data = (out / "twin-all.glb").read_bytes()
+        every = {n["name"]: n["extras"]["panoptes"]["status"] for n in json.loads(data[20:20 + struct.unpack_from("<I", data, 12)[0]])["nodes"] if "mesh" in n}
+        assert every == {"objects/bx_01/body": "pass", "objects/bx_02/body": "unverifiable", "shell/floor": "pass", "shell/wall_00": "pass"}, every
         assert abs(glb.bounds[0][1]) < 1e-6 and abs(glb.bounds[1][1] - 1.5 * s) < 1e-6, glb.bounds  # floor at y = 0, the 3 m wall on top, metres
         data = (out / "twin.glb").read_bytes()
         spec = json.loads(data[20:20 + struct.unpack_from("<I", data, 12)[0]])
@@ -1212,6 +1249,8 @@ def main():
     p.add_argument("--usd-check", action="store_true", help="open twin.usda with a pinned usd-core in one ephemeral Modal CPU run")
     p.add_argument("--operation", default="video.twin_critique", help="the bounded Gemini operation name (fallback: video.entity_naming)")
     p.add_argument("--ledger", type=Path, default=LEDGER)
+    p.add_argument("--max-resolved-m", type=float, default=CONTROL["shiftM"][0], choices=CONTROL["shiftM"],
+                   help="export objects whose control resolves a shift this small (spec 0.15 m; the shell builder's run used 0.5)")
     p.add_argument("--max-object-views", type=int, default=MAX_OBJECT_VIEWS)
     p.add_argument("--metric-views", type=int, default=METRIC_VIEWS, help="walk views for the shell checks and the explained share")
     p.add_argument("--sheet-views", type=int, default=SHEET_VIEWS)

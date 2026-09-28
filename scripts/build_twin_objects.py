@@ -1128,12 +1128,17 @@ def run(args):
             obj["answer"]["category"] = value
         elif fix["kind"] == "wrong_representation" and value in ("parametric", "box", "existing", "skip"):
             obj["answer"]["representation"] = value
+        elif fix["kind"] == "wrong_representation" and value in CATEGORIES + ["box"]:  # verify names a generator
+            obj["answer"]["generator"] = generator_of(value)
+            obj["answer"]["representation"] = "box" if obj["answer"]["generator"] == "box" else "parametric"
         elif fix["kind"] == "wrong_part_count" and value and re.fullmatch(r"(drawers|doors|levels)=\d+", value):
             name, count = value.split("=")
             obj["answer"].setdefault("params", {})[name] = int(count)
         elif fix["kind"] == "wrong_material" and value in PALETTE and fix.get("part"):
-            obj["answer"]["parts"] = [p for p in obj["answer"].get("parts", []) if p["part"] != fix["part"]] + [
-                {"part": re.sub(r"_\d+$", "", fix["part"]), "material": value, "colourCluster": 0}]
+            family = re.sub(r"_\d+$", "", fix["part"])
+            kept = next((p for p in obj["answer"].get("parts", []) if p["part"] == family), {})  # a material fix keeps the colour
+            obj["answer"]["parts"] = [p for p in obj["answer"].get("parts", []) if p["part"] != family] + [
+                {"part": family, "material": value, "colourCluster": kept.get("colourCluster", 0)}]
         elif fix["kind"] in ("should_extend_to_floor", "should_not_extend_to_floor"):
             obj["floorFix"] = fix["kind"] == "should_extend_to_floor"
         elif fix["kind"] == "merge_with" and f"objects/{value}" in by_node and by_node[f"objects/{value}"] is not obj:
@@ -1237,7 +1242,7 @@ def run(args):
             parts.append(("mesh", existing_mesh(o["model"], scene), dict(meta_base, representation=representation, part="mesh")))
             part_records["mesh"] = {"material": None, "colourRgb": None, "texture": None, "chosenBy": "accepted model's vertex colours (alpha 255)"}
         else:
-            generator = "box" if answer["representation"] == "box" else generator_of(category)
+            generator = "box" if answer["representation"] == "box" else answer.get("generator") or generator_of(category)
             representation = f"parametric:{generator}"
             params = dict(answer.get("params") or {})
             local_parts = GENERATORS[generator](*[max(float(x), .01) for x in size], params)
