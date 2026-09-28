@@ -27,8 +27,9 @@ import time
 import modal
 import numpy as np
 
-if modal.is_local():  # in the container both modules sit next to this file
-    sys.path[:0] = [str(Path(__file__).resolve().parent.parent), str(Path(__file__).resolve().parents[2] / "scripts")]
+HERE = Path(__file__).resolve()
+if (HERE.parent.parent / "splat_train.py").exists():  # the repo; in the container (and its spawned workers) both modules sit next to this file
+    sys.path[:0] = [str(HERE.parent.parent), str(HERE.parents[2] / "scripts")]
 import splat_train as st  # noqa: E402
 
 RUNS = st.ART / "runs"
@@ -37,6 +38,7 @@ DA3_VOXEL_M = .03
 LINGBOT = RUNS / "me340-lingbot-map-222"
 CACHE = RUNS / "m3-fu-e5b-splat-inputs/inputs.pkl"
 SKIP = range(14, 226)  # ME340's cut-away shot, as runs/me340-splat-232
+SYNC_EVERY = 50  # steps between two-GPU state syncs
 TICK = 25  # steps between clock checks (and, on two GPUs, one broadcast of rank 0's clock)
 SNAPSHOTS = (30, 60, 90, 120, 150, 180, 240, 300, 420, 600, 900, 1200, 1500, 1800, 2400)
 USD_PER_S = {"H100": .001097, "A100-80GB": .000694, "cpu_core": .0000131, "memory_gib": .00000222}  # modal.com/pricing
@@ -209,9 +211,13 @@ def fit(cfg, data, rank=0, world=1):
                 ordered, axes = params["scales"].sort(1)
                 params["scales"].scatter_(1, axes[:, 2:], torch.minimum(ordered[:, 2:], ordered[:, 1:2] + np.log(cfg["max_elongation"])))
         strategy.step_post_backward(params, optimizers, state, step, info, lr=lr["means"] * decay)
+        if world > 1 and step % SYNC_EVERY == 0:  # after any densification (every 100 views): the ranks restart from rank 0's exact state
+            sync(params, optimizers, knots, refine, step)
         losses.append(loss.detach())
         per_scale[small] = per_scale.get(small, 0) + 1
         step += 1
+        if step % 2000 == 0:
+            print(f"rank {rank}: step {step}, {len(params['means'])} Gaussians, {time.time() - started:.0f} s", flush=True)
     torch.cuda.synchronize()
     ended = time.time()
     stats = {"steps_done": step, "views_rendered": step * per_step, "train_seconds": round(ended - started, 2), "init_seconds": round(init_seconds, 2),
@@ -219,37 +225,77 @@ def fit(cfg, data, rank=0, world=1):
              "loss_per_500_steps": [round(float(torch.stack(losses[k:k + 500]).mean()), 4) for k in range(0, len(losses), 500)]}
     if timed is not None:
         stats["ms_per_step_after_warmup"] = round(1000 * (ended - timed) / (step - cfg["time_from"]), 2)
-    if world > 1:  # the ranks must hold the same model: largest difference of any Gaussian position across ranks
+    if world > 1:  # how far the ranks drift apart between syncs: Gaussian positions across ranks, since the last sync
         gathered = [torch.empty_like(params["means"]) for _ in range(world)]
         dist.all_gather(gathered, params["means"].detach().contiguous())
-        stats["rank_max_abs_diff_means"] = float(max((g - gathered[0]).abs().max() for g in gathered))
+        diff = torch.stack([(g - gathered[0]).abs().max(1).values for g in gathered[1:]]).max(0).values
+        stats["rank_drift_since_last_sync"] = {"steps": (step - 1) % SYNC_EVERY, "max_abs_native": float(diff.max()), "median_abs_native": float(diff.median()),
+                                               "share_over_1e-4": float((diff > 1e-4).float().mean())}
+        sync(params, optimizers, knots, refine, step)
     return params, {"pose": knots.detach(), "used": used}, stats, snaps
 
 
-def to_gpu(shared):
+def sync(params, optimizers, knots, refine, step):
+    """Rank 0's Gaussians, Adam moments and pose knots to every rank, and a common random stream from here on. The all-reduced
+    gradients alone did not keep two GPUs identical (a first 2xH100 run drifted to 48 native units on some Gaussians in 3000 steps)."""
     import torch
-    cuda = lambda a: torch.tensor(np.asarray(a), dtype=torch.float32, device="cuda")
-    return {"frames": shared["frames"].cuda(), "excluded": shared["excluded"].cuda(), "K": cuda(shared["K"]), "c2w": cuda(shared["c2w"]),
-            "xyz": shared["xyz"], "rgb": shared["rgb"], "scale": shared["scale"], "train": shared["train"], "held": shared["held"], "depth": None}
+    import torch.distributed as dist
+    with torch.no_grad():
+        for p, optimizer in [(p, optimizers[k]) for k, p in params.items()] + [(knots, refine)]:
+            dist.broadcast(p.data, 0)
+            moments = optimizer.state.get(p, {}) if optimizer else {}
+            for name in ("exp_avg", "exp_avg_sq"):
+                if name in moments:
+                    dist.broadcast(moments[name], 0)
+    torch.cuda.manual_seed(step)
 
 
-def worker(rank, world, shared, cfg):
-    """One GPU's process; rank 0 scores and writes /tmp/result.pkl."""
+def decode(inputs, rank):
+    """Video frames and the pixels left out of the loss, on the CPU, as splat_train.load builds them."""
+    import cv2
+    import torch
+    video = Path(f"/tmp/video-{rank}.mp4")
+    video.write_bytes(inputs["video"])
+    n, capture = len(inputs["c2w"]), cv2.VideoCapture(str(video))
+    frames, excluded = torch.empty((n, st.H, st.W, 3), dtype=torch.uint8), torch.empty((n, st.H, st.W), dtype=torch.bool)
+    masks = np.unpackbits(inputs["masks"], axis=1)[:, :480 * 640].reshape(n, 480, 640).astype(bool)
+    for i in range(n):
+        ok, bgr = capture.read()
+        assert ok and bgr.shape == (st.H, st.W, 3), f"video frame {i} missing or not {st.W}x{st.H}"
+        frames[i] = torch.from_numpy(np.ascontiguousarray(bgr[..., ::-1]))
+        excluded[i] = torch.from_numpy(st.excluded_full(masks[i], inputs["captions"][i]))
+    return frames, excluded
+
+
+def worker(rank, world, inputs, cfg):
+    """One GPU's process (each decodes the video itself: no shared memory needed); rank 0 scores and writes /tmp/result.pkl."""
     import lpips
     import torch
     import torch.distributed as dist
+    say = lambda text: print(f"rank {rank}: {text}", flush=True)
+    st.use_frame(inputs["frame"])
     torch.cuda.set_device(rank)
+    t = time.time()
+    frames, excluded = decode(inputs, rank)
+    decode_seconds = time.time() - t
+    say(f"decoded in {decode_seconds:.1f} s")
     if world > 1:
         dist.init_process_group("nccl", init_method="tcp://127.0.0.1:29533", rank=rank, world_size=world)
+        say("process group ready")
     t = time.time()
-    data = to_gpu(shared)
-    check_equivalence(data["c2w"][shared["train"][0]])
-    out = {"to_gpu_seconds": round(time.time() - t, 2), "gpu": torch.cuda.get_device_name(), "gpus": world, "runs": {}}
+    cuda = lambda a: torch.tensor(np.asarray(a), dtype=torch.float32, device="cuda")
+    data = {"frames": frames.cuda(), "excluded": excluded.cuda(), "c2w": cuda(inputs["c2w"]), "train": inputs["train"], "held": inputs["held"],
+            "K": cuda(np.asarray(inputs["K"]) + [[0, 0, .5], [0, 0, .5], [0, 0, 0]]),  # gsplat's pixel centres, as splat_train.load
+            "xyz": inputs["xyz"], "rgb": inputs["rgb"], "scale": inputs["scale"], "depth": None}
+    del frames, excluded
+    check_equivalence(data["c2w"][inputs["train"][0]])
+    out = {"decode_seconds": round(decode_seconds, 1), "to_gpu_seconds": round(time.time() - t, 2), "gpu": torch.cuda.get_device_name(), "gpus": world, "runs": {}}
     if world > 1:
         out["peer_access"] = torch.cuda.can_device_access_peer(0, 1)
     for name, variant in (cfg["bench"].items() if cfg.get("bench") else [("final", {})]):
         c = {**cfg, **variant}
         params, knots, stats, snaps = fit(c, data, rank, world)
+        say(f"{name}: {stats['steps_done']} steps in {stats['train_seconds']} s, {stats['gaussians']} Gaussians")
         if rank == 0 and not cfg.get("bench"):
             t = time.time()
             net = lpips.LPIPS(net="alex", spatial=True, verbose=False).cuda().eval()
@@ -277,32 +323,15 @@ def worker(rank, world, shared, cfg):
 @app.function(image=image, gpu="H100", cpu=CPU_PER_GPU, memory=MEMORY_MIB, timeout=3600, retries=0, max_containers=6, scaledown_window=2,
               volumes={"/ckpt": st.volume})  # /ckpt/torch: the LPIPS backbone splat_train cached
 def train_remote(inputs, cfg):
-    """Decode once on the CPU (the parent never touches CUDA), then one forked process per GPU."""
-    import torch
+    """One process per GPU (spawned: CUDA and NCCL start clean in each)."""
     import torch.multiprocessing as mp
     started = time.time()
-    st.use_frame(inputs["frame"])
-    Path("/tmp/video.mp4").write_bytes(inputs["video"])
-    import cv2
-    n, capture = len(inputs["c2w"]), cv2.VideoCapture("/tmp/video.mp4")
-    frames, excluded = torch.empty((n, st.H, st.W, 3), dtype=torch.uint8), torch.empty((n, st.H, st.W), dtype=torch.bool)
-    masks = np.unpackbits(inputs["masks"], axis=1)[:, :480 * 640].reshape(n, 480, 640).astype(bool)
-    for i in range(n):
-        ok, bgr = capture.read()
-        assert ok and bgr.shape == (st.H, st.W, 3), f"video frame {i} missing or not {st.W}x{st.H}"
-        frames[i] = torch.from_numpy(np.ascontiguousarray(bgr[..., ::-1]))
-        excluded[i] = torch.from_numpy(st.excluded_full(masks[i], inputs["captions"][i]))
-    shared = {k: inputs[k] for k in ("K", "c2w", "xyz", "rgb", "scale", "train", "held")} | {"frames": frames, "excluded": excluded}
-    shared["K"] = np.asarray(inputs["K"]) + [[0, 0, .5], [0, 0, .5], [0, 0, 0]]  # gsplat's pixel centres, as splat_train.load
-    decode_seconds = time.time() - started
     world = cfg["gpus"]
     if world == 1:
-        worker(0, 1, shared, cfg)
+        worker(0, 1, inputs, cfg)
     else:
-        mp.start_processes(worker, args=(world, shared, cfg), nprocs=world, start_method="fork", join=True)
-    out = pickle.loads(Path("/tmp/result.pkl").read_bytes())
-    out |= {"decode_seconds": round(decode_seconds, 1), "container_seconds": round(time.time() - started, 1)}
-    return out
+        mp.start_processes(worker, args=(world, inputs, cfg), nprocs=world, start_method="spawn", join=True)
+    return pickle.loads(Path("/tmp/result.pkl").read_bytes()) | {"container_seconds": round(time.time() - started, 1)}
 
 
 # ---------------------------------------------------------------- local side
@@ -398,7 +427,7 @@ def run(args):
     result |= {"call_seconds": round(call_seconds, 1), "cold_start_and_transfer_s": round(call_seconds - result["container_seconds"], 1),
                "usd_estimate": round(usd(kind, args.gpus, result["container_seconds"] + 60), 3)}
     (args.output / "result.json").write_text(json.dumps(launch | {"result": result}, indent=1, default=str))
-    brief = {n: {k: r.get(k) for k in ("train_seconds", "steps_done", "gaussians", "ms_per_step_after_warmup", "rank_max_abs_diff_means")} |
+    brief = {n: {k: r.get(k) for k in ("train_seconds", "steps_done", "gaussians", "ms_per_step_after_warmup", "rank_drift_since_last_sync")} |
              {"psnr": (r.get("exported_file") or {}).get("corrected_pose", {}).get("psnr") if not args.no_pose else (r.get("exported_file") or {}).get("report_pose", {}).get("psnr"),
               "snapshots": [(s["at_s"], s["held_out"].get("corrected_pose", s["held_out"].get("report_pose"))["psnr"]) for s in r.get("snapshots", [])]}
              for n, r in result["runs"].items()}
