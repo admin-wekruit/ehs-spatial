@@ -668,7 +668,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     import torch
     import torch.nn.functional as F
     import video_events
-    from fast_report import cards, cascade, layers, segment, vlm
+    from fast_report import cards, cascade, coverage, layers, segment, vlm
     dev_geo, dev_seg = m.dev_geo, m.dev_seg
     t_call = time.perf_counter()  # this call's decider questions (vlm.log_stats)
     video_sha = sha256(mp4)
@@ -689,6 +689,9 @@ def analyse(m, mp4, opts, clock, writer, log):
     writer.put("video", {"fps": fps, "frames": n_total, "width": W, "height": H, "sha256": video_sha, "window_s": opts.get("window_s")},
                {"video": (mp4, {"mediaType": "video/mp4"})}, "observed", ["the uploaded video"])
     work = segment.SamWork(m.sams, dev_geo, clock, wave1)
+    cov_on = bool(opts.get("coverage")) and getattr(m, "cov", None) is not None  # r4/coverage: box masks in densify
+    work.keep_hidden = cov_on
+    summary["coverage"] = {"on": cov_on}
     for words in (("person", "floor"), tuple(wave1)):
         for s in m.sams.values():
             s.text(words)
@@ -1422,6 +1425,29 @@ def analyse(m, mp4, opts, clock, writer, log):
         start_display()
     v1_labels = {o["id"]: o["label"] for o in objects}
     gpu0_free, cascade_done = threading.Event(), threading.Event()
+    claimed_o = {}  # r4/coverage: object keyframe -> the union of its kept SAM 3 masks (DA3 grid), while densify runs
+    key_of = {int(f): q for q, f in enumerate(keys)}
+    cov_debug = {}  # r4 dev: keyframe -> [(point id, x, y)] (opts['coverage_debug']: points on keyframes, source px)
+    for d_ in opts.get("coverage_debug") or []:
+        if int(d_["frame"]) in key_of:
+            cov_debug.setdefault(key_of[int(d_["frame"])], []).append((d_["id"], d_["x"], d_["y"]))
+
+    def debug_fates(dbg, ent, n_old, new_objs, maps):
+        """r4 dev: each debug point's box masks -> what became of them, and what the final pick map holds at the point."""
+        lab_at = {e[4]: e[1] for e in maps}
+        ids = [o["id"] for o in objects[:n_old]] + [o["id"] for o in new_objs]
+        out = {}
+        for pid, recs in dbg.items():
+            for r in recs:
+                e = int(ent[r["pool"]]) if r["pool"] is not None else 0
+                r["fate"] = "not kept" if r["pool"] is None else "no object" if not e else "joined " + ids[e - 1] if e <= n_old else "new " + ids[e - 1]
+            out[pid] = recs
+        for pid, x, y in [t for v in cov_debug.values() for t in v]:
+            q = next(q_ for q_, v in cov_debug.items() if any(t[0] == pid for t in v))
+            lab = lab_at.get(q)
+            v = int(lab[min(int(y * lab.shape[0] / H), lab.shape[0] - 1), min(int(x * lab.shape[1] / W), lab.shape[1] - 1)]) if lab is not None else 0
+            out.setdefault(pid, []).append({"final_pick": ids[v - 1] if v else None})
+        return out
 
     def densify_sam3(dev, batches, dens, lock):
         """Section 7: SAM 3 with every word on the 5 fps keyframes the objects skipped, from one queue both GPUs take from;
@@ -1432,13 +1458,23 @@ def analyse(m, mp4, opts, clock, writer, log):
         with torch.cuda.device(dev), torch.inference_mode():
             while True:
                 try:
-                    batch = batches.get_nowait()
+                    kind, batch = batches.get_nowait()
                 except queue.Empty:
                     return
-                print(f"densify gpu{dev.index} frames {batch} t={clock.now():.2f}", flush=True)  # a breadcrumb in the container log
+                print(f"densify gpu{dev.index} {kind} frames {batch} t={clock.now():.2f}", flush=True)  # a breadcrumb in the container log
+                if kind == "b":  # r4/coverage: object keyframes, boxes only, on the main pass's kept backbone output
+                    hid = [work.hidden.get(q) for q in batch]
+                    if any(h is None for h in hid):
+                        x = torch.stack([work.chunks[dev][q // segment.PERSON_FRAMES][q % segment.PERSON_FRAMES] for q in batch])
+                        hid = sam.vision(x).last_hidden_state
+                    else:
+                        hid = torch.stack([h.to(dev) for h in hid])
+                    boxes_into(dev, batch, hid, [claimed_o[q].to(dev) for q in batch], dens, lock)
+                    continue
                 with clock.stage(f"densify.sam3@gpu{dev.index}", gpu=dev, n={"frames": len(batch), "words": len(words_t)}):
                     x = torch.stack([work.chunks[dev][q // segment.PERSON_FRAMES][q % segment.PERSON_FRAMES] for q in batch])
-                    r = sam.detect(sam.vision(x), len(batch), words_t, segment.VOCAB_SCORE, logits=True)
+                    v = sam.vision(x)
+                    r = sam.detect(v, len(batch), words_t, segment.VOCAB_SCORE, logits=True)
                     r["frame"], r["word"] = torch.tensor(batch, device=dev)[r["frame"]], widx[r["word"]]
                     kd, vd = segment.dedupe(r["frame"], r["word"], r["score"], r["mask"]) if len(r["frame"]) else (np.zeros(0, int), [])
                     kt = torch.from_numpy(kd).to(dev)
@@ -1463,6 +1499,76 @@ def analyse(m, mp4, opts, clock, writer, log):
                     dens["votes"] += [(base + at[int(a)], int(w_), float(s_)) for a, w_, s_ in vd]
                     for q, (lab, sel) in maps_d.items():
                         dens["maps"][q] = (lab, base + sel)
+                if cov_on:
+                    none = torch.zeros(DA3_HW, dtype=torch.bool, device=dev)
+                    boxes_into(dev, batch, v.last_hidden_state, [r["mask"][kt[fk == q]].any(0) if bool((fk == q).any()) else none for q in batch],
+                               dens, lock)
+                del v
+
+    def boxes_into(dev, batch, hidden, claimed, dens, lock):
+        """r4/coverage: the box sources on these keyframes -> SAM 3 tracker masks on the same backbone output -> the gates
+        (coverage.keep_box, coverage.keep_mask against the keyframe's kept SAM 3 masks, SAM 3's floor and the people) -> densify's
+        pool, where they join an object or are lifted like its own masks; dens['box'] marks them for the gap-fill paint."""
+        cv, oh, ow = m.cov[dev], H // 2, W // 2
+        with clock.stage(f"coverage.detect@gpu{dev.index}", gpu=dev, n={"frames": len(batch)}):
+            imgs = [frames[keys[q]] for q in batch]
+            found = [(det.src, det.detect(imgs, coverage.SCORE[det.src])) for det in cv["dets"]]
+        rows, why = [], {}
+        with clock.stage(f"coverage.masks@gpu{dev.index}", gpu=dev, n={"frames": len(batch)}):
+            emb = cv["boxer"].embed(hidden)
+            for j, q in enumerate(batch):
+                bx, meta = [], []
+                for src, per in found:
+                    xyxy, sc, wd = per[j]
+                    for i in range(len(sc)):
+                        if coverage.keep_box(xyxy[i], (H, W), wd[i], agnostic=src == "owlv2"):
+                            bx.append(xyxy[i])
+                            meta.append((src, round(float(sc[i]), 3), wd[i] if wd[i] and sc[i] >= coverage.NAME_MIN[src] else None))
+                why["boxes"] = why.get("boxes", 0) + len(bx)
+                if not bx:
+                    continue
+                lg, _ = cv["boxer"].decode(emb, j, coverage.to_1008(np.asarray(bx), (H, W)))
+                mk = F.interpolate(lg[None], size=DA3_HW, mode="bilinear", align_corners=False)[0] > 0
+                cnt = torch.stack([mk.flatten(1).sum(1), (mk & claimed[j]).flatten(1).sum(1), (mk & floor[q].to(dev)).flatten(1).sum(1),
+                                   (mk & dyn[q].to(dev)).flatten(1).sum(1)], 1).cpu().numpy()
+                keep, reasons = [], []
+                for i, (a, c, f_, p_) in enumerate(cnt):
+                    ok, reason = coverage.keep_mask(int(a), int(c), int(f_), int(p_), meta[i][2], DA3_HW[0] * DA3_HW[1])
+                    why[reason] = why.get(reason, 0) + 1
+                    reasons.append(reason)
+                    if ok:
+                        keep.append(i)
+                dbg = []  # r4 dev: every mask under a debug point, with its gate shares and (when kept) its place in the pool
+                for pid, x, y in cov_debug.get(q, []):
+                    yy, xx = min(int(y * DA3_HW[0] / H), DA3_HW[0] - 1), min(int(x * DA3_HW[1] / W), DA3_HW[1] - 1)
+                    for i in torch.nonzero(mk[:, yy, xx]).squeeze(1).tolist():
+                        a = max(int(cnt[i][0]), 1)
+                        dbg.append((pid, {"score": meta[i][1], "word": meta[i][2], "area": int(cnt[i][0]), "on_sam3": round(cnt[i][1] / a, 3),
+                                          "on_floor": round(cnt[i][2] / a, 3), "on_people": round(cnt[i][3] / a, 3), "gate": reasons[i],
+                                          "sam3_mask_at_point": bool(claimed[j][yy, xx])}, keep.index(i) if i in keep else None))
+                if keep:
+                    kk = torch.tensor(keep, device=dev)
+                    up = F.interpolate(lg[kk][None], size=(oh, ow), mode="bilinear", align_corners=False)[0] > 0
+                    rows.append((q, [meta[i] for i in keep], segment.pack(mk[kk]), segment.pack(up), dbg))
+                elif dbg:
+                    rows.append((q, [], np.zeros((0, DA3_HW[0], DA3_HW[1] // 8), np.uint8), np.zeros((0, oh, ow // 8), np.uint8), dbg))
+        with lock:
+            for k, n in why.items():
+                dens["box_stats"][k] = dens["box_stats"].get(k, 0) + n
+            for q, meta, packed, packed_up, dbg in rows:
+                base = len(dens["q"])
+                for pid, rec, kpos in dbg:
+                    dens["debug"].setdefault(pid, []).append({**rec, "pool": None if kpos is None else base + kpos})
+                dens["q"] += [q] * len(meta)
+                dens["word"] += [-1] * len(meta)
+                dens["score"] += [s_ for _, s_, _ in meta]
+                dens["packed"].append(packed)
+                for i, ((src, s_, w_), up) in enumerate(zip(meta, packed_up)):
+                    dens["box"][base + i] = (src, w_, up)
+                    if w_:
+                        if w_ not in dens["words"]:
+                            dens["words"].append(w_)
+                        dens["votes"].append((base + i, dens["words"].index(w_), s_))
 
     dens_words = list(words)  # densify's words (densify_words), set when it starts
 
@@ -1482,16 +1588,27 @@ def analyse(m, mp4, opts, clock, writer, log):
         >= 2 keyframes); existing ids never change. Then outlines v2, pick v2, objects v3 and cards v3; SAM 3D and the splat
         start after its GPU part."""
         frames_d = [q for gg in geo for q in gg["pos"] if q not in by_frame]
+        frames_o = [q for gg in geo for q in gg["pos"] if q in by_frame] if cov_on else []  # r4/coverage: boxes on these too
         dens_words[:], skipped = densify_words(words, [o.get("votes") or {} for o in objects], vlm.CORE)
         batches = queue.Queue()
         for b in range(0, len(frames_d), DENSIFY_BATCH):
-            batches.put(frames_d[b:b + DENSIFY_BATCH])
-        dens, lock = {"q": [], "packed": [], "word": [], "score": [], "votes": [], "maps": {}}, threading.Lock()
+            batches.put(("d", frames_d[b:b + DENSIFY_BATCH]))
+        for b in range(0, len(frames_o), 2 * DENSIFY_BATCH):
+            batches.put(("b", frames_o[b:b + 2 * DENSIFY_BATCH]))
+        if frames_o:  # what the main pass's kept masks hold on each object keyframe (the 'SAM 3 has it' gate)
+            kq = vf[kept]
+            with torch.inference_mode():
+                claimed_o.update({q: voc["mask"][torch.from_numpy(kept[kq == q]).to(voc["mask"].device)].any(0) for q in frames_o})
+        dens, lock = {"q": [], "packed": [], "word": [], "score": [], "votes": [], "maps": {}, "box": {}, "box_stats": {}, "words": list(words),
+                      "debug": {}}, \
+            threading.Lock()
         g1 = m.cpu_pool.submit(densify_sam3, dev_seg, batches, dens, lock) if dev_seg != dev_geo else None
         gpu0_free.wait(300)  # ponytail: a failed cascade never holds densify forever
         densify_sam3(dev_geo, batches, dens, lock)
         if g1 is not None:
             g1.result()
+        work.hidden.clear()
+        claimed_o.clear()
         clock.mark("densify_sam3_done")
         n_d = len(dens["q"])
         qs = np.asarray(dens["q"], np.int64)
@@ -1503,7 +1620,9 @@ def analyse(m, mp4, opts, clock, writer, log):
         n_old = len(members)
         added, new_objs, new_points, st = {}, [], [], {"frames": len(frames_d), "masks_kept": n_d, "joined": 0, "new_objects": 0,
                                                         "words": len(dens_words), "words_not_run": skipped, "words_rule": DENSIFY_WORDS_RULE}
-        with torch.inference_mode(), clock.stage("densify.lift", gpu=dev_geo, n={"masks": n_d}):
+        is_box = np.zeros(n_d, bool)
+        is_box[list(dens["box"])] = True
+        with torch.inference_mode(), clock.stage("densify.lift", gpu=dev_geo, n={"masks": n_d, "box_masks": int(is_box.sum())}):
             for si, gg in enumerate(geo):
                 pos = gg["pos"]
                 idx = np.flatnonzero(np.isin(qs, pos))
@@ -1514,8 +1633,9 @@ def analyse(m, mp4, opts, clock, writer, log):
                 dyn_s = dyn[torch.tensor(pos, device=dev_geo)]
                 codes, owner = shot_voxels.get(si, (None, None))
                 unmatched = []
-                for b0 in range(0, len(idx), 4096):
-                    b = idx[b0:b0 + 4096]
+                # r4/coverage: box masks after SAM 3's own, in their own batches: one that joins an object fills its pick pixels
+                # but adds no points (an existing object's measurements stay SAM 3's)
+                for b in [x for part in (idx[~is_box[idx]], idx[is_box[idx]]) if len(part) for x in np.array_split(part, -(-len(part) // 4096))]:
                     p, _ = segment.mask_points(segment.unpack(packed[b], dev_geo), local[torch.from_numpy(qs[b]).to(dev_geo)], gg["depth_m"], gg["K"],
                                                gg["c2w_m"], dyn_s)
                     if p is None:
@@ -1526,6 +1646,8 @@ def analyse(m, mp4, opts, clock, writer, log):
                     ent[b[lifted[w_np >= 0]]] = w_np[w_np >= 0] + 1
                     unmatched += b[lifted[w_np < 0]].tolist()
                     got = np.unique(w_np[w_np >= 0])
+                    if is_box[b].any():
+                        continue
                     lab = torch.where(who >= 0, who, torch.full_like(who, int(max(got.max(initial=0), 0)) + 1))
                     for oi, d in zip(got, object_points({**p, "label": lab}, p["fr"], got)):
                         added.setdefault(int(oi), []).append(d)
@@ -1541,12 +1663,18 @@ def analyse(m, mp4, opts, clock, writer, log):
                             vv = {}
                             for g_ in um[mem]:
                                 for w_, s_ in vote_d.get(int(g_), []):
-                                    vv[words[w_]] = vv.get(words[w_], 0.) + s_
+                                    vv[dens["words"][w_]] = vv.get(dens["words"][w_], 0.) + s_
                             oi = n_old + len(new_objs)
                             best = um[mem][np.argmax(np.asarray(dens["score"])[um[mem]])]
                             box, lo, hi = cards.v1_box(pp["world"], floor)
-                            word = segment.name(vv, words)
-                            new_objs.append({"id": f"obj-{si}-{oi}", "shot": si, "word": word, "label": word, "label_source": "sam3 word vote",
+                            word = segment.name(vv, dens["words"])
+                            nb = int(is_box[um[mem]].sum())  # r4/coverage: the object's box masks; no word at all: 'unidentified object'
+                            srcs = sorted({dens["box"][int(g_)][0] for g_ in um[mem] if int(g_) in dens["box"]})
+                            by_word = "sam3 word vote" if not nb else "detector word vote (" + ", ".join(srcs) + ")" if nb == len(mem) else \
+                                "sam3 and detector word votes (" + ", ".join(srcs) + ")"
+                            if word is None:
+                                word, by_word = cards.UNIDENTIFIED, "no word the detectors were sure of"
+                            new_objs.append({"id": f"obj-{si}-{oi}", "shot": si, "word": word, "label": word, "label_source": by_word,
                                              "votes": {w: round(v, 3) for w, v in sorted(vv.items(), key=lambda x: -x[1])[:5]},
                                              "frames": int(arr["frames"][c]), "masks": int(len(mem)), "voxels": int(arr["voxels"][c]),
                                              "centroid_m": arr["centroid"][c].round(3).tolist(), "best_key": int(keys[qs[best]]),
@@ -1554,7 +1682,8 @@ def analyse(m, mp4, opts, clock, writer, log):
                                                              (arr["hi"][c] + segment.LIFT_VOXEL / 2).round(3).tolist()],
                                              "box": box, "box_min_m": np.round(lo, 3).tolist(), "box_max_m": np.round(hi, 3).tolist(),
                                              "box_rule": "robust: p2/p98 height x min-area p2-p98 footprint of the cleaned points (click MVP 4.2)",
-                                             "source": "densify", "status": "estimated box; name is a detected word, unverified"})
+                                             "source": "densify" if not nb else "boxes" if nb == len(mem) else "densify+boxes",
+                                             "box_masks": nb, "status": "estimated box; name is a detected word, unverified"})
                             new_points.append(pp)
                             ent[um[mem]] = oi + 1
             maps_v2 = [e for e in results.get("maps_v1", []) if e[0]["source"] == "segmented"]
@@ -1562,8 +1691,19 @@ def analyse(m, mp4, opts, clock, writer, log):
                 lut = np.r_[0, ent[gidx]].astype(np.int16)
                 maps_v2.append(({"timeSec": round(keys[q] / fps, 4), "sourceFrame": int(keys[q]), "source": "segmented"}, lut[lab], W / (W // 2),
                                 H / (H // 2), q))
+            filled = coverage.fill_maps(maps_v2, dens["box"], ent, qs, dev_geo) if dens["box"] else 0
         st.update(joined=int((ent[:] > 0).sum() - sum(new_o["masks"] for new_o in new_objs)), new_objects=len(new_objs),
                   objects_gaining_views=len(added))
+        if cov_on:
+            bx = np.flatnonzero(is_box)
+            st["coverage"] = {"sources": [d.src for d in m.cov[dev_geo]["dets"]], "box_frames": len(frames_d) + len(frames_o), **dens["box_stats"],
+                              "box_masks_in_pool": int(len(bx)), "box_masks_joined": int(((ent[bx] > 0) & (ent[bx] <= n_old)).sum()),
+                              "box_masks_in_new_objects": int((ent[bx] > n_old).sum()),
+                              "new_objects_boxes_only": sum(o["source"] == "boxes" for o in new_objs),
+                              "new_objects_with_boxes": sum(o["source"] == "densify+boxes" for o in new_objs),
+                              "new_objects_unidentified": sum(o["word"] == cards.UNIDENTIFIED for o in new_objs),
+                              "pick_pixels_filled_640x360": int(filled), "rule": coverage.RULE, "debug": debug_fates(dens["debug"], ent, n_old, new_objs, maps_v2),
+                              "licences": {k: coverage.LICENCES[k] for k in [d.src for d in m.cov[dev_geo]["dets"]] + ["sam3 tracker"]}}
         splat_after_facts()  # densify's GPU 1 share is done: the splat trains after the decider (or at SPLAT_LATEST_S); SAM 3D after cards v3
         points_v3 = list(obj_points)
         for oi, ds in added.items():

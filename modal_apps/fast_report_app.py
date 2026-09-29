@@ -39,6 +39,7 @@ PHASE2 = Path("/Users/adam/Desktop/panoptes-public/research-notes/phase2")
 DA3_CODE = "3d835ec1a5802d64a8b8b15f817a1ab54809bfe4"
 DA3_MODEL, DA3_REV = "depth-anything/DA3-GIANT-1.1", "72ee9f89ce4e50d704e9d55ee9c646ec8dc25a19"
 PROCS, CPU, MEMORY_GIB, GPU, GATE_PROCS = 24, 32, 160, "A100-80GB:2", 16
+COVERAGE_SRCS = ("owlv2",)  # r4/coverage: box sources resident on both GPUs (fast_report.coverage; the r4 probe chose them)
 VLLM_MPS = False  # vLLM outside MPS; this process, SAM 3D (E4) and the splat inside
 
 app = modal.App("panoptes-fast-report")
@@ -161,6 +162,11 @@ class FastReport:
         self.point = ondemand.Point(self.dev_seg, sam3_app.MODEL_ID, sam3_app.REVISION, "/v/sam3/huggingface/hub")
         self.run_lock = threading.Lock()
         lap("sam3_tracker_gpu1_s")
+        if COVERAGE_SRCS:  # r4/coverage: the box sources and SAM 3's tracker head (no backbone) on each GPU; a call uses them with options['coverage']
+            from fast_report import coverage
+            self.cov = {d: {"boxer": coverage.Boxer(d, sam3_app.MODEL_ID, sam3_app.REVISION, "/v/sam3/huggingface/hub"),
+                            "dets": [coverage.Detector(s, d) for s in COVERAGE_SRCS]} for d in (self.dev_geo, self.dev_seg)}
+            lap("coverage_models_s")
         self.cpu_pool, self.vlm_pool, self.run_pool = ThreadPoolExecutor(CPU), ThreadPoolExecutor(4), ThreadPoolExecutor(1)
         vllm_warm = self.cpu_pool.submit(self.warm_vllm)
         with torch.inference_mode():  # kernels, allocator, cuBLAS handles at the shapes the runs use
@@ -176,6 +182,13 @@ class FastReport:
                     s.detect(s.pick(v, [0, 3, 6]), 3, vlm.CORE, segment.VOCAB_SCORE, logits=True)
                     s.detect(s.pick(v, [0]), 1, filler, segment.VOCAB_SCORE, logits=True)
                     torch.cuda.synchronize(d)
+                    if getattr(self, "cov", None):  # r4/coverage: detector kernels and the tracker head at the run's shapes
+                        imgs = list(noise[:4].cpu().numpy())
+                        for det in self.cov[d]["dets"]:
+                            det.detect(imgs, .05)
+                        emb = self.cov[d]["boxer"].embed(v.last_hidden_state[:2])
+                        self.cov[d]["boxer"].decode(emb, 0, np.array([[100., 100., 400., 500.]] * 40))
+                        torch.cuda.synchronize(d)
             lap("warm_sam3_s")
             self.point.masks(np.random.default_rng(0).integers(0, 255, (720, 1280, 3), np.uint8), points=[(640, 360)])
             lap("warm_sam3_tracker_s")
