@@ -326,6 +326,7 @@ def bench(a):
                 fl.put_blob(mirror_root, mp4)  # the client's own MP4 is never sent back
                 options = {"vocab": a.vocab, "discover": a.discover, "client_has": [sha], "background_s": a.background_s if last else 0, "window_s": span,
                            "eval_holdout": [f - offset for f in ev.holdout_frames(site) if f - offset >= 0], **({"namer": namer_q} if relay else {})}
+                options.update({k: False for k in ("judge", "identity", "display") if k in a.off} | ({"dump": True} if a.dump else {}))
                 if queues is not None:
                     hazard.workspace_container()  # awake before the call (the report service is up in production): off the analysis clock
                     options["hazard_queues"] = queues
@@ -459,6 +460,8 @@ if __name__ == "__main__":
     p.add_argument("--namer", default="gemini", choices=("gemini", "none"), help="mvp2/identity: object names from Gemini through the relay, or the Qwen decider only")
     p.add_argument("--discover", action="store_true", help="X10's catch-all and label words in SAM 3's wave 1 (vlm.DISCOVER)")
     p.add_argument("--serve", action="store_true")
+    p.add_argument("--off", default="", help="r4: comma list of judge,identity,display to switch off (judgement paused; no VLM identity)")
+    p.add_argument("--dump", action="store_true", help="r4/instances: the instance layer's inputs to the layers Volume (reports/<id>/r4-instances-dump.pkl.gz)")
     p.add_argument("--no-gpu-eval", dest="gpu_eval", action="store_false")
     p.add_argument("--billing", type=Path)
     p.add_argument("--self-check", action="store_true")

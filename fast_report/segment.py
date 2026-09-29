@@ -7,6 +7,7 @@ in-between 5 fps keyframes 'projected' with E6b's 'pair' rule, people cut out).
 import itertools
 import queue
 import threading
+import time
 
 import numpy as np
 
@@ -414,6 +415,8 @@ def edges(mk, mid, vy, vx, z, fr, K, c2w, stride=2, batch=2048):
 
 
 VB, VOFF = 1 << 21, 1 << 20
+R4 = {"seam": True, "reproject": True, "join_guard": True}  # r4/instances switches (fast_report.instances); the offline replay turns them off
+BRIDGE_SHARE = .25  # r4: a densify mask with this share of its voxels in a second object is over two things
 
 
 def voxel_codes(world):
@@ -446,8 +449,30 @@ def lift(masks, frame_of, depth_m, K, c2w_m, dyn, stride=2):
     inter = torch.sparse.mm(A, A.t()).coalesce()
     (a, b), c = inter.indices(), inter.values()
     edge = (a < b) & (fr[a] != fr[b]) & (c >= MATCH_MIN * torch.minimum(size[a], size[b])) & (c >= MATCH_MAX * torch.maximum(size[a], size[b]))
-    a, b = a[edge].cpu().numpy(), b[edge].cpu().numpy()
-    ncomp, label = connected_components(coo_matrix((np.ones(len(a)), (a, b)), shape=(len(idx), len(idx))), directed=False)
+    if R4["reproject"]:  # r4/instances: small things whose 5 cm voxels miss each other (depth noise > their size) link by projection
+        t_ = time.perf_counter()
+        ra, rb, rw = reproject_links(masks[idx][:, ::stride, ::stride], p["world"], mid, fr, depth_m, K, c2w_m, stride)
+        stats.update(reproject_links=int(len(ra)), reproject_s=round(time.perf_counter() - t_, 3))
+        if len(ra):
+            a, b, c = torch.cat([a, ra]), torch.cat([b, rb]), torch.cat([c, torch.zeros_like(ra, dtype=c.dtype)])
+            edge = torch.cat([edge, torch.ones_like(ra, dtype=torch.bool)])
+            link_w = torch.cat([torch.zeros(int(edge.sum()) - len(ra), device=dev), rw])  # voxel links keep their IoU below
+    if R4["seam"]:  # r4/instances: groups SAM 3 keeps as separate masks on >= SEAM_MIN keyframes stay apart, a mask over both is left out
+        from fast_report import instances
+        keep = (a < b) & ((fr[a] == fr[b]) | edge)
+        w = c[edge] / (size[a[edge]] + size[b[edge]] - c[edge]).clamp(min=1)
+        if R4["reproject"] and stats.get("reproject_links"):
+            w = torch.where(c[edge] > 0, w, link_w)
+        w = w.cpu().numpy()
+        t_ = time.perf_counter()
+        label, seam_rec = instances.seam_labels(len(idx), fr.cpu().numpy(), size.cpu().numpy(), (a[keep].cpu().numpy(), b[keep].cpu().numpy(),
+                                                c[keep].cpu().numpy()), (a[edge].cpu().numpy(), b[edge].cpu().numpy(), w))
+        ncomp = int(label.max()) + 1 if len(label) else 0
+        stats["seams"] = {**seam_rec, "s": round(time.perf_counter() - t_, 3)}
+        a = a[edge].cpu().numpy()
+    else:
+        a, b = a[edge].cpu().numpy(), b[edge].cpu().numpy()
+        ncomp, label = connected_components(coo_matrix((np.ones(len(a)), (a, b)), shape=(len(idx), len(idx))), directed=False)
     lab = torch.from_numpy(label.astype(np.int64)).to(dev)  # scipy gives int32: lab * voxels overflows (X1, fx/x1-fps lift_big)
     ov = torch.unique(lab[pm] * len(vox) + pv)
     oc, ovid = ov // len(vox), ov % len(vox)
@@ -461,6 +486,61 @@ def lift(masks, frame_of, depth_m, K, c2w_m, dyn, stride=2):
     arrays = {k: x.cpu().numpy() for k, x in (("frames", nframes), ("voxels", nvox), ("centroid", cent), ("lo", lo), ("hi", hi))}
     stats.update(points=int(len(mid)), voxels=int(len(vox)), edges=int(len(a)), components=int(ncomp))
     return comp, arrays, stats, {**p, "label": lab, "obj_voxel": (oc, vox[ovid])}
+
+
+REPROJ_HOPS, REPROJ_IN, REPROJ_COVER, REPROJ_DEPTH = 2, .5, .3, .1  # r4: next keyframes looked at, shares, depth agreement (DA3 ~5 %, x 2)
+
+
+def reproject_links(m2, world, mid, fr, depth_m, K, c2w, stride=2):
+    """r4/instances: links between masks of nearby keyframes by projection, not voxels: a mask's cleaned points projected into
+    each of the next REPROJ_HOPS keyframes of this lift (points the depth there does not see, within REPROJ_DEPTH x the depth,
+    left out) land >= REPROJ_IN on one mask there and cover >= REPROJ_COVER of its points, both ways (mutual). The projection
+    of a nearby view barely moves with a depth error, so a 5 cm tool 4 m away (depth noise 20 cm, its voxels never meet)
+    still links. m2: (L, H/stride, W/stride) raw masks; world/mid: the cleaned points; fr: local keyframe per mask.
+    -> (a, b, weight) tensors, a < b, weight = the weaker of the four shares / 2 (below a voxel link's IoU)."""
+    import torch
+    dev = world.device
+    L, h, w = m2.shape
+    n_pts = torch.bincount(mid, minlength=L).float()
+    frames = torch.unique(fr).tolist()
+    lab = {}  # keyframe -> (h, w) lifted-mask index, -1 = none; the smaller mask wins
+    for f in frames:
+        sel = torch.nonzero(fr == f).squeeze(1)
+        pm = paint(m2[sel])
+        lab[f] = torch.where(pm > 0, sel[(pm - 1).clamp(min=0)], torch.full_like(pm, -1))
+    pt_fr = fr[mid]
+    fwd = {}  # (src, dst) -> points of src landing on dst
+    for i, f in enumerate(frames):
+        src = torch.nonzero(pt_fr == f).squeeze(1)
+        if not len(src):
+            continue
+        for g in frames[max(0, i - REPROJ_HOPS):i] + frames[i + 1:i + 1 + REPROJ_HOPS]:
+            w2c = torch.linalg.inv(c2w[g])
+            cam = world[src] @ w2c[:3, :3].T + w2c[:3, 3]
+            z = cam[:, 2]
+            u = (K[g, 0, 0] * cam[:, 0] / z.clamp(min=1e-6) + K[g, 0, 2]) / stride
+            v = (K[g, 1, 1] * cam[:, 1] / z.clamp(min=1e-6) + K[g, 1, 2]) / stride
+            ui, vi = u.floor().long(), v.floor().long()
+            ok = (z > 0) & (ui >= 0) & (ui < w) & (vi >= 0) & (vi < h)
+            d = depth_m[g, (vi.clamp(0, h - 1) * stride), (ui.clamp(0, w - 1) * stride)]
+            ok &= (d > 0) & ((z - d).abs() <= REPROJ_DEPTH * d)
+            hit = torch.where(ok, lab[g][vi.clamp(0, h - 1), ui.clamp(0, w - 1)], torch.full_like(ui, -1))
+            key = mid[src[ok]] * L + hit[ok]
+            key = key[hit[ok] >= 0]
+            k, cnt = torch.unique(key, return_counts=True)
+            seen = torch.bincount(mid[src[ok]], minlength=L).float()
+            for kk, cc in zip((k // L).tolist(), zip((k % L).tolist(), cnt.tolist())):
+                if seen[kk] > 0:
+                    fwd[(kk, cc[0])] = (cc[1] / float(seen[kk]), cc[1] / max(float(n_pts[cc[0]]), 1.))
+    a, b, wt = [], [], []
+    for (x, y), (in_xy, cov_xy) in fwd.items():
+        if x < y and (y, x) in fwd:
+            in_yx, cov_yx = fwd[(y, x)]
+            m = min(in_xy, cov_xy, in_yx, cov_yx)
+            if in_xy >= REPROJ_IN and in_yx >= REPROJ_IN and cov_xy >= REPROJ_COVER and cov_yx >= REPROJ_COVER:
+                a.append(x), b.append(y), wt.append(m / 2)
+    t = lambda x, dt=torch.long: torch.tensor(x, dtype=dt, device=dev)  # noqa: E731
+    return t(a), t(b), t(wt, torch.float32)
 
 
 def join(p, codes, owner):
@@ -486,7 +566,11 @@ def join(p, codes, owner):
     top = cnt.float() == best[km]
     who[km[top]] = ko[top]
     share = best / size.clamp(min=1)
-    return torch.where(share >= MATCH_MIN, who, torch.full_like(who, -1)), share
+    ok = share >= MATCH_MIN
+    if R4["join_guard"]:  # r4/instances: a mask over two objects (its second object holds >= BRIDGE_SHARE of it) joins neither
+        second = torch.zeros(L, device=vox.device).scatter_reduce(0, km[~top], cnt[~top].float(), "amax")
+        ok &= second / size.clamp(min=1) < BRIDGE_SHARE
+    return torch.where(ok, who, torch.full_like(who, -1)), share
 
 
 def pack(m):

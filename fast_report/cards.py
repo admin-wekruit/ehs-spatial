@@ -22,6 +22,8 @@ import sys
 
 import numpy as np
 
+from fast_report import instances
+
 SCALE_REL, POSE_MIN, DEPTH_REL = .25, .04, .05  # section 4.4: scale term (mvp2 accuracy: 1.6 m assumed for a camera held at 1.2-1.8 m reads up to 25 % large; ARKit 1.23 m: 23 %), pose floor (ME340 ATE ~4 cm), DA3 depth ~5 %
 EPS_MIN, MIN_POINTS, MAIN_SHARE = .10, 10, .5    # section 4.2 step 3
 K_SIGMA, IOU_MIN = 3., .2                        # X6 association (timeline.sigma: sqrt(0.04^2 + (0.05 z)^2))
@@ -37,6 +39,7 @@ MIN_PX, GAP_S, AFTER_KEYS, PLACE_POINTS = 25, .5, 24, 400  # section 4.6
 LOOK_MARGIN_M, EDGE_MIN = .3, 5
 LONG_MIN_M, LONG_RATIO, LONG_AGREE, SHORT_AGREE = 1., 2., .25, .5  # mvp2 (R5): long objects seen in parts (long_object)
 STRIDE = 2  # the lift's pixel grid over DA3's 504 x 280
+R4 = {"merge": True, "merge_v2": True, "parts": True}  # r4/instances switches (the offline replay turns them off to measure them)
 SCALE = "estimated (floor plane + assumed 1.6 m camera height)"
 SCALE_FREE = "scale-free (angle)"
 CATEGORY = {"A": "A sensing", "B": "B control", "C": "C guards", "D": "D impeding", "E": "E information", "F": "F payload"}  # panoptes-serving taxonomy.CATEGORIES
@@ -624,6 +627,142 @@ def merge(objs, shot_boxes):
     return groups
 
 
+OVERLAP_TAU_MIN, OVERLAP_MERGE, OVERLAP_GATE, INSIDE_SHARE, SAME_SHARE = .1, .3, .1, .8, .5  # r4/instances (merge2), set before fitting
+OVERLAP_TAU_REL = .025  # r4: pieces of one thing from two views of a shot agree to ~2.5 % of the range (X1's view-centroid spread 2.5-5.6 cm)
+HOLDERS = ("shelf", "rack", "shelving", "display rack", "gondola", "table", "desk", "workbench", "bench", "pallet", "cart", "trolley",
+           "shopping cart", "bin", "tote", "tray", "box", "carton", "crate", "cabinet", "container", "plastic container", "tool box",
+           "stacked boxes", "pallet of goods", "counter", "checkout counter", "refrigerator", "freezer", "floor", "tool holder")
+
+
+def voxel_code(world, size=.05):
+    """segment.voxel_codes' 5 cm cells as one int64 per point (numpy)."""
+    ijk = np.floor(np.asarray(world, float) / size).astype(np.int64) + (1 << 20)
+    return (ijk[:, 0] << 42) + (ijk[:, 1] << 21) + ijk[:, 2]
+
+
+def same_keyframes(va, vb):
+    """r4: how two objects relate on the keyframes both are on, from their masks' 5 cm voxels there (the same depth map: shared
+    pixels give the same voxels). -> {'separate', 'same', 'a_in_b', 'b_in_a', 'partial': keyframe counts}."""
+    out = {"separate": 0, "same": 0, "a_in_b": 0, "b_in_a": 0, "partial": 0}
+    for v in va.keys() & vb.keys():
+        x, y = va[v], vb[v]
+        if not len(x) or not len(y):
+            continue
+        n = np.intersect1d(x, y, assume_unique=True).size
+        ab, ba = n / len(x), n / len(y)
+        if n < instances.SEP_MAX * min(len(x), len(y)):
+            out["separate"] += 1
+        elif ab >= SAME_SHARE and ba >= SAME_SHARE:
+            out["same"] += 1
+        elif ab >= INSIDE_SHARE:
+            out["a_in_b"] += 1
+        elif ba >= INSIDE_SHARE:
+            out["b_in_a"] += 1
+        else:
+            out["partial"] += 1
+    return out
+
+
+def near_share(A, B, tau):
+    """Share of A's points with a B point within tau (3D points overlap)."""
+    from scipy.spatial import cKDTree
+    if not len(A) or not len(B):
+        return 0.
+    return float(np.isfinite(cKDTree(B).query(A, distance_upper_bound=tau)[0]).mean())
+
+
+def merge2(objs, shot_boxes):
+    """r4/instances (section 4.2 step 4, one real object = one card), largest first; the SAM 3 word plays no part:
+      same keyframes: objects on shared keyframes are compared there (same_keyframes): mostly separate masks -> never one
+        object (SAM 3 saw two things); mostly one inside the other -> a part or contents (relate(), not merged); mostly the
+        same pixels (a double under another word) -> merged;
+      else (pieces from different views): merged when their 3D points overlap (>= OVERLAP_MERGE of the smaller one's points
+        within tau of the other's; tau = max(OVERLAP_TAU_MIN, OVERLAP_TAU_REL x their range)), or when X6's rule holds
+        (centroids within 3 sigma_pair or robust boxes IoU >= 0.2) and they are not apart (>= OVERLAP_GATE within tau):
+        look-alikes side by side stay apart by position;
+      the union passes the size check for the kept object's word. -> {kept: [absorbed]}."""
+    n = len(objs)
+    if not n:
+        return {}
+    C = np.stack([o["centroid"] for o in objs])
+    sg = sigma([o["z_med"] for o in objs])
+    lo = np.stack([shot_boxes[i][0] for i in range(n)])
+    hi = np.stack([shot_boxes[i][1] for i in range(n)])
+    close = np.linalg.norm(C[:, None] - C[None], axis=2) <= K_SIGMA * np.hypot(sg[:, None], sg[None])
+    ilo, ihi = np.maximum(lo[:, None], lo[None]), np.minimum(hi[:, None], hi[None])
+    inter = np.prod(np.clip(ihi - ilo, 0, None), axis=2)
+    vol = np.prod(hi - lo, axis=1)
+    iou = inter / np.maximum(vol[:, None] + vol[None] - inter, 1e-12)
+    tau = np.maximum(OVERLAP_TAU_MIN, OVERLAP_TAU_REL * np.array([o["z_med"] for o in objs]))
+    # boxes that touch (grown by tau) are the only pairs whose points can overlap
+    touch = np.all((lo[:, None] - tau[:, None, None] <= hi[None]) & (lo[None] <= hi[:, None] + tau[:, None, None]), axis=2)
+    cand = touch | close | (iou >= IOU_MIN)
+    np.fill_diagonal(cand, False)
+    order = sorted(range(n), key=lambda i: -objs[i]["n"])
+    rank = np.empty(n, int)
+    rank[order] = np.arange(n)
+    taken, groups = set(), {}
+    for a in order:
+        if a in taken:
+            continue
+        taken.add(a)
+        groups[a] = []
+        box_lo, box_hi = lo[a].copy(), hi[a].copy()
+        vox_a = dict(objs[a].get("vox") or {})
+        k = CLASS_SIZE.get(head_match(objs[a]["word"], CLASS_SIZE), (0., OTHER_MAX, {}))
+        for b in sorted(np.flatnonzero(cand[a]), key=lambda i: rank[i]):
+            if b in taken:
+                continue
+            rel = same_keyframes(vox_a, objs[b].get("vox") or {})
+            if rel["separate"] and rel["separate"] >= rel["same"]:
+                continue  # separate masks on a shared keyframe: two things
+            if rel["a_in_b"] + rel["b_in_a"] > rel["same"]:
+                continue  # one inside the other on their keyframes: a part or contents, related afterwards
+            small, large = (objs[b]["P"], objs[a]["P"]) if objs[b]["n"] <= objs[a]["n"] else (objs[a]["P"], objs[b]["P"])
+            t = max(tau[a], tau[b])
+            ov = near_share(small, large, t) if touch[a, b] else 0.
+            if not (rel["same"] or ov >= OVERLAP_MERGE or ((close[a, b] or iou[a, b] >= IOU_MIN) and ov >= OVERLAP_GATE)):
+                continue
+            ulo, uhi = np.minimum(box_lo, lo[b]), np.maximum(box_hi, hi[b])
+            if np.linalg.norm((uhi - ulo)[:2]) > k[1] or (uhi - ulo)[2] > k[1]:
+                P = np.concatenate([objs[a]["P"]] + [objs[x]["P"] for x in groups[a]] + [objs[b]["P"]])
+                box, _ = robust_box(P)
+                if size_check(objs[a]["word"], max(box["sides"].max(), box["top"] - box["base"]), box["sides"].max(), box["top"] - box["base"],
+                              box["base"], False)["status"] == "implausible":
+                    continue
+            groups[a].append(b)
+            taken.add(b)
+            box_lo, box_hi = ulo, uhi
+            for v, c in (objs[b].get("vox") or {}).items():
+                vox_a[v] = np.union1d(vox_a[v], c) if v in vox_a else c
+        objs[a]["vox_group"] = vox_a
+    return groups
+
+
+def relate(groups_vox, words, ids, min_views=1):
+    """r4: part / whole between the merged objects of one shot: a is inside b (its voxels >= INSIDE_SHARE inside b's on the
+    keyframes both are on, on most of them and >= min_views) -> a's card is a part of b's ('contents' when b is a holder:
+    a shelf, a table, a pallet ...); the smallest such b is the parent. groups_vox: [{keyframe: voxel codes}].
+    -> {child index: (parent index, kind, keyframes inside, keyframes shared)}."""
+    n = len(groups_vox)
+    size = [sum(len(c) for c in g.values()) for g in groups_vox]
+    frames = [set(g) for g in groups_vox]
+    out = {}
+    for a in range(n):
+        best = None
+        for b in range(n):
+            if a == b or size[b] <= size[a] or not (frames[a] & frames[b]):
+                continue
+            rel = same_keyframes(groups_vox[a], groups_vox[b])
+            shared = sum(rel.values())
+            if rel["a_in_b"] >= min_views and rel["a_in_b"] > shared / 2 and (best is None or size[b] < size[best[0]]):
+                best = (b, rel["a_in_b"], shared)
+        if best:
+            b, k_in, shared = best
+            out[a] = (b, "contents" if head_match(words[b], HOLDERS) else "part", k_in, shared)
+    return out
+
+
 def light_chunk(jobs):
     """Worker: per object a 1500-point floor-frame sample, views, centroid, camera range, its view-centroid spread."""
     rng = np.random.default_rng(0)
@@ -640,8 +779,15 @@ def light_chunk(jobs):
             if len(c) >= 2:
                 c = np.stack(c)
                 spread_ = float(np.median(np.linalg.norm(c - np.median(c, 0), axis=1)))
-        out.append((i, {"P": P, "frame": f, "views": views, "n": n, "centroid": np.median(P, 0) if n else np.zeros(3),
-                        "z_med": float(np.median(p["z"])) if n else 4., "spread": spread_}))
+        rec = {"P": P, "frame": f, "views": views, "n": n, "centroid": np.median(P, 0) if n else np.zeros(3),
+               "z_med": float(np.median(p["z"])) if n else 4., "spread": spread_}
+        if R4["merge_v2"]:  # r4: per keyframe, the 5 cm voxels its mask(s) cover (all points): same-keyframe relations
+            fr_all = np.asarray(p["frame"])
+            code = voxel_code(np.asarray(p["world"]))
+            o = np.argsort(fr_all, kind="stable")
+            vv, st = np.unique(fr_all[o], return_index=True)
+            rec["vox"] = {int(v): np.unique(c) for v, c in zip(vv, np.split(code[o], st[1:]))}
+        out.append((i, rec))
     return out
 
 
@@ -713,14 +859,22 @@ def build(inp, pool=None, chunks=12, shm_dir=None):
             light[i] = x
     for o, x in zip(objects, light):
         x["word"] = o.get("word") or ""
-    aliases, members = {}, {}
+    aliases, members, part_of = {}, {}, {}
     for si in shots:
         idx = [i for i, o in enumerate(objects) if o["shot"] == si and light[i]["n"] >= 3]
-        g = merge([light[i] for i in idx], {j: (np.percentile(light[i]["P"], 2, 0), np.percentile(light[i]["P"], 98, 0)) for j, i in enumerate(idx)})
+        boxes = {j: (np.percentile(light[i]["P"], 2, 0), np.percentile(light[i]["P"], 98, 0)) for j, i in enumerate(idx)}
+        objs_s = [light[i] for i in idx]
+        g = ({j: [] for j in range(len(idx))} if not R4["merge"] else merge2(objs_s, boxes) if R4["merge_v2"] else merge(objs_s, boxes))
         for a, bs in g.items():
             members[idx[a]] = [idx[b] for b in bs]
             for b in bs:
                 aliases[objects[idx[b]]["id"]] = objects[idx[a]]["id"]
+        if R4["merge_v2"] and R4["parts"]:
+            keep = list(g)
+            rel = relate([objs_s[a].get("vox_group") or objs_s[a].get("vox") or {} for a in keep], [objs_s[a]["word"] for a in keep], None)
+            for c_, (p_, kind, k_in, shared) in rel.items():
+                part_of[objects[idx[keep[c_]]]["id"]] = {"id": objects[idx[keep[p_]]]["id"], "kind": kind, "keyframes_inside": k_in, "keyframes_shared": shared,
+                                                       "rule": "inside the parent's outline (its 5 cm voxels there) on most keyframes both are on"}
         for i, o in enumerate(objects):  # objects without points still get a card ('2d only')
             if o["shot"] == si and light[i]["n"] < 3:
                 members[i] = []
@@ -775,6 +929,12 @@ def build(inp, pool=None, chunks=12, shm_dir=None):
             os.unlink(path)
     t_cards = time.perf_counter()
     rims = {c["id"]: c.pop("_diag") for c in cards if "_diag" in c}
+    if part_of:  # r4: a part stays a part of its parent card (the child keeps its own card and physical values)
+        by_id = {c["id"]: c for c in cards}
+        for cid, rec in part_of.items():
+            if cid in by_id and rec["id"] in by_id:
+                by_id[cid]["part_of"] = rec
+                by_id[rec["id"]].setdefault("parts", []).append({"id": cid, "kind": rec["kind"]})
     cards += people_cards(inp.get("people"), shots, cards, k)
     shot_rows = [{"index": si, "floor_frame": {"origin_m": np.round(s["frame"]["origin"], 3).tolist(), "x": np.round(s["frame"]["R"][0], 5).tolist(),
                                                "z": np.round(s["frame"]["R"][2], 5).tolist()},
@@ -789,6 +949,7 @@ def build(inp, pool=None, chunks=12, shm_dir=None):
                  for si, s in shots.items()]
     shown = [c for c in cards if c["kind"] == "object"]
     stats = {"objects_in": len(objects), "cards": len(shown), "people_cards": len(cards) - len(shown), "merged_away": len(aliases),
+             "parts": sum(r["kind"] == "part" for r in part_of.values()), "contents": sum(r["kind"] == "contents" for r in part_of.values()),
              "implausible": sum(c["physical"]["size_check"].get("status") == "implausible" for c in shown),
              "s": {"merge": round(t_merge - t0, 3), "shots": round(t_shots - t_merge, 3), "wait_counts": round(t_counts - t_shots, 3),
                    "cards": round(t_cards - t_counts, 3),
@@ -2131,6 +2292,38 @@ def self_check():
     assert pc3[0]["identity"]["name"].startswith("person? (small") and "lowest point" in pc3[0]["identity"]["note"], pc3[0]["identity"]
     print(f"cards self-check ok: robust extents within 5 % with flying pixels, fragment merge + cannot-link, depth not observed from one side, "
           f"subset u > 0, size plausibility, angle gates, grid DBSCAN, plumb, floor frame ({out['stats']['s']})")
+    self_check_r4()
+
+
+def self_check_r4():
+    """r4/instances: merge2 and relate on boxes of points 8 m away (3 sigma_pair = 1.7 m there)."""
+    rng = np.random.default_rng(3)
+
+    def box(x0, x1, views, word="equipment", n=600):
+        P = np.c_[rng.uniform(x0, x1, n), rng.uniform(0, .3, n), rng.uniform(0, .3, n)] + [0, 8., 0]
+        f = np.resize(np.array(views), n)
+        o = {"P": P, "frame": f, "views": sorted(views), "n": n, "centroid": np.median(P, 0), "z_med": 8., "word": word}
+        code = voxel_code(P)
+        o["vox"] = {int(v): np.unique(code[f == v]) for v in views}
+        return o
+
+    A = box(0., .6, [0, 1])
+    B = box(.2, .6, [2, 3])            # a piece of A seen from other keyframes: its points lie on A's
+    C = box(1.3, 1.6, [4])             # a look-alike 0.4 m beyond D, never on their keyframes: apart by position
+    D = box(.62, .9, [0, 1])           # touching A, separate masks on A's keyframes: two things
+    objs = [A, B, C, D]
+    g = merge2(objs, {i: (np.percentile(o["P"], 2, 0), np.percentile(o["P"], 98, 0)) for i, o in enumerate(objs)})
+    assert g[0] == [1] and 2 in g and 3 in g, g
+    old = merge(objs, {i: (np.percentile(o["P"], 2, 0), np.percentile(o["P"], 98, 0)) for i, o in enumerate(objs)})
+    assert 2 in old.get(0, []), old  # the old rule (centroids within 3 sigma) joins the look-alike
+    # a part: E's voxels inside M's on both keyframes they share -> a part of the machine, contents of a shelf
+    M = box(0., 1., [5, 6], "machine", 2000)
+    E = {k: v[:: 7] for k, v in M["vox"].items()}
+    assert relate([E, M["vox"]], ["control panel", "machine"], None) == {0: (1, "part", 2, 2)}
+    assert relate([E, M["vox"]], ["box", "shelf"], None)[0][1] == "contents"
+    assert relate([C["vox"], M["vox"]], ["box", "machine"], None) == {}  # no shared keyframe: no relation
+    print("cards r4 self-check ok: pieces from other views merge, a look-alike beside stays apart (the old rule joined it), "
+          "separate masks on shared keyframes stay two, part vs contents")
 
 
 def summarize_run(run_dir):
