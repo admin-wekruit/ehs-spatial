@@ -22,7 +22,7 @@ import json
 import math
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, Future
 from pathlib import Path
 
 import numpy as np
@@ -803,9 +803,11 @@ def layer(rows, cal, extra=None):
             **(extra or {})}
 
 
-def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None):
+def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, carried=None):
     """Judgements v1 (geometry) at once, then every question on every view set through vlm.options (priority 'judgement', J0
-    'screen'), then v2. ask: a stand-in for vlm.submit, cal: for fast_report/calibration.json (tests). pool: a process pool for
+    'screen'), then v2. ask: a stand-in for vlm.submit, cal: for fast_report/calibration.json (tests). carried: a dict shared by
+    the runs of one analysis, (row id, question, keyframes) -> answer: a later cards version asks only what is new (on Sam's
+    Club the v3 run re-asked every question beside the identity pass and slowed it 1.3x). pool: a process pool for
     the rules (in the core's main process they took 0.5-10.9 s for the same 0.2 s of work, by what else held the GIL).
     Returns counts and times."""
     cal = load_calibration() if cal is None else cal
@@ -859,11 +861,19 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None):
                 n = len(QUESTIONS[q][1])
                 decides = ((cal.get("questions") or {}).get(q) or {}).get("status") == "calibrated"
                 for keys, marked, plain in vs if decides else vs[:1]:  # an advisory question never decides: one view set shows it
-                    jobs.append((row, q, keys, ask([marked, plain], p, n, "screen" if q == "J0" else "judgement")))
+                    key = (row["id"], q, tuple(keys))
+                    if carried is not None and key in carried:
+                        fut = Future()
+                        fut.set_result({**carried[key], "carried": True})
+                    else:
+                        fut = ask([marked, plain], p, n, "screen" if q == "J0" else "judgement")
+                    jobs.append((row, q, keys, fut))
         answers = {}
         for row, q, keys, fut in jobs:
             try:
                 a = {**fut.result(), "keys": keys}
+                if carried is not None:
+                    carried[(row["id"], q, tuple(keys))] = {k: v for k, v in a.items() if k not in ("keys", "carried")}
             except Exception as error:  # noqa: BLE001  unanswered: the row stays 'unsure'
                 a = {"keys": keys, "probs": None, "mass": 0., "error": repr(error)[:200]}
             answers.setdefault(row["id"], {}).setdefault(q, []).append(a)
@@ -898,7 +908,7 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None):
         row["reasons"] = row["geometry"]["reasons"] + [f"picture: {vlm_ans} ({'; '.join(raw)})"] + (
             [f"geometry {before} and picture {vlm_ans} disagree"] if row["verdict"] == REVIEW and before in (PASS, FAIL) else [])
     rows = [r for r in rows if r["check"] != "J0" or r["verdict"] == REVIEW]
-    stats = {"questions": len(jobs), "ask_s": ask_s, "unanswered": sum(1 for r in answers.values() for a in r.values() for v in a if v.get("probs") is None),
+    stats = {"questions": len(jobs), "carried": sum(1 for *_, f in jobs if (f.result() if f.done() and not f.exception() else {}).get("carried")), "ask_s": ask_s, "unanswered": sum(1 for r in answers.values() for a in r.values() for v in a if v.get("probs") is None),
              "prompt_tokens": sum(v.get("prompt_tokens") or 0 for r in answers.values() for a in r.values() for v in a),
              "evidence_images": len(blobs), "screened": len(screen)}
     writer.put("judgements", layer(rows, cal, {"version_of": ctx.get("version_of"), "vlm_answers": True, "vlm": stats}), blobs,
@@ -1191,6 +1201,12 @@ def self_check():
     run([cable], ctx, w, _Clock(), ask=fake, cal={"questions": {"q1": {"status": "calibrated", "a": 1., "b": 0.}}})
     row = next(r for r in w.puts[1][1]["rows"] if r["check"] == "J4")
     assert len(calls) == 2 and row["vlm"]["answer"] == "hazard" and row["verdict"] == FAIL, row
+    calls.clear()  # answers carried between the runs of one analysis: the second run asks nothing new, same verdict
+    carried = {}
+    run([cable], ctx, _Writer(), _Clock(), ask=fake, cal={"questions": {}}, carried=carried)
+    w = _Writer()
+    out = run([cable], ctx, w, _Clock(), ask=fake, cal={"questions": {}}, carried=carried)
+    assert len(calls) == 1 and out["carried"] == 1 and next(r for r in w.puts[1][1]["rows"] if r["check"] == "J4")["verdict"] == FAIL, out
     jpg = som(frame_img, {1: poly, 2: [[[710, 300], [800, 300], [800, 400]]]})
     import cv2
     img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)

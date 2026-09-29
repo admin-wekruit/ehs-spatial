@@ -798,6 +798,7 @@ def analyse(m, mp4, opts, clock, writer, log):
 
     # ---------- click MVP: object cards (section 4) and the judgement hook (B's fast_report.judge, when present) ----------
     cards_out, cards_ready, pick_ready, judge_futures, cards_lock = {}, threading.Event(), threading.Event(), [], threading.Lock()
+    carried = {}  # the judge's VLM answers by (row, question, keyframes), shared by its runs on cards v1 and v3
     card_labels = ["physical values are estimated (floor plane + assumed 1.6 m camera height) with +-u from view-subset disagreement plus depth, "
                    "pose, floor, resolution and scale terms; 'not observed' / 'not measurable' carry their reason",
                    "identity and class are inferred: a detected word until a calibrated decider answers",
@@ -861,7 +862,7 @@ def analyse(m, mp4, opts, clock, writer, log):
             if prev is not None:
                 prev.result()
             try:
-                return judge.run(out["cards"], ctx, writer, clock, vlm_on=opts.get("judge_vlm", True), pool=m.proc_pool)
+                return judge.run(out["cards"], ctx, writer, clock, vlm_on=opts.get("judge_vlm", True), pool=m.proc_pool, carried=carried)
             except Exception:  # noqa: BLE001  the judgements are one layer: their failure is recorded, the others stand
                 import traceback
                 return {"error": traceback.format_exc()[-3000:]}
@@ -907,18 +908,19 @@ def analyse(m, mp4, opts, clock, writer, log):
         by = {o["id"]: o for o in objects}
         new = [{**c, "identity": cards.identity_v2(c["identity"], by[c["id"]], c["physical"].get("size_check") or {})} if c["kind"] == "object" else c
                for c in cards_out["v1"]["cards"]]
-        ask_identity(new)
-        idents = {c["id"]: c["identity"] for c in new if c["kind"] == "object"}
-        with cards_lock:
-            cards_out["identities"] = idents
-            if "v3" in cards_out:
-                cards_out["v4"] = with_identity(cards_out["v3"], idents)
-                cards_put(4, cards_out["v4"])
-            else:
-                cards_out["v2"] = {**cards_out["v1"], "cards": new}
-                cards_put(2, cards_out["v2"])
+        for which in ("ehs", "other"):  # the EHS classes' names first (the checks read them), then every other object's
+            ask_identity(new, which)
+            idents = {c["id"]: c["identity"] for c in new if c["kind"] == "object"}
+            with cards_lock:
+                cards_out["identities"] = idents
+                if "v3" in cards_out:
+                    cards_out["v4"] = with_identity(cards_out["v3"], idents)
+                    cards_put(4, cards_out["v4"])
+                else:
+                    cards_out["v2"] = {**cards_out["v1"], "cards": copy.deepcopy(new)}
+                    cards_put(2, cards_out["v2"])
 
-    def ask_identity(card_list):
+    def ask_identity(card_list, which="ehs"):
         """Section 4.7 step 3 through B's decider (vlm.options + judge.som, when both exist): the best view with the outlines
         as numbered white-over-black marks, the subject [1]; EHS-relevant classes only (ponytail: the rest wait for B's queue)."""
         try:
@@ -953,12 +955,13 @@ def analyse(m, mp4, opts, clock, writer, log):
             opts = cards.identity_options(c["identity"])
             # integration fix: the options go into the prompt as letters (vlm.qwen_prompt); A's bare question listed none
             p = vlm.qwen_prompt(" ".join([judge.SCENE, judge.MARKS]), "What is the object marked [1]?", opts)
-            return opts, [som(frames[best], marks, subject=1), som(frames[best], marks, subject=1, marks=False)], p
+            # 336 px crops: ~144 image tokens each instead of 256 (the identity pass is prefill-bound: Sam's Club 413 questions, 87 s)
+            return opts, [som(frames[best], marks, subject=1, side=336), som(frames[best], marks, subject=1, marks=False, side=336)], p
         ehs = lambda c: c["class"]["category"] != "other" or cards.head_match(c["identity"]["name"], cards.CLASS_SIZE) is not None  # noqa: E731
         # integration: every object seen on >= 3 views is asked (spec 5.3's 'identity for the other objects', after the
         # judgement questions): the SAM 3 word alone named a floor drain 'metal part' and a flammables cabinet 'machine'
-        todo = [c for c in card_list if c["kind"] == "object" and (ehs(c) or (c.get("views") or {}).get("n", 0) >= 3)]
-        with clock.stage("vlm.identity", n={"objects": len(todo), "ehs": sum(map(ehs, todo))}):
+        todo = [c for c in card_list if c["kind"] == "object" and (ehs(c) if which == "ehs" else not ehs(c) and (c.get("views") or {}).get("n", 0) >= 3)]
+        with clock.stage(f"vlm.identity.{which}", n={"objects": len(todo)}):
             with ThreadPoolExecutor(8) as pool:  # never the core's cpu_pool: its threads would wait on vLLM (the judge's queue)
                 built = list(pool.map(build, todo))
             asked = [(c, b[0], vlm.submit(b[1], b[2], len(b[0]), "identity" if ehs(c) else "identity_other")) for c, b in zip(todo, built) if b is not None]
