@@ -38,7 +38,11 @@ K, TAU = 10, .05                                    # bank k-NN (x13: set before
 YOLO_IMGSZ, YOLO_CONF, MATCH_IOU = 960, .05, .5
 RULES = ("sam3+bank", "sam3+zero-shot/yolo")
 MAX_OPTIONS = 8
-CLASSES = [c for fam in cards.TAXONOMY.values() for c in fam]  # the text embeddings' and YOLOE's class order
+# ponytail: pinned to the 102 classes YOLOE and the bank's text embeddings were baked with (r4/naming, on mvp2's taxonomy);
+# round 3 added these to cards.TAXONOMY later. Their SAM 3 words still name cards; they get no YOLOE or zero-shot vote, so
+# they go to the VLM step. Upgrade path: re-bake both with the new classes (modal_apps/r4_naming.py) and drop this list.
+BAKED_WITHOUT = ("wrap", "curtain")
+CLASSES = [c for fam in cards.TAXONOMY.values() for c in fam if c not in BAKED_WITHOUT]  # the text embeddings' and YOLOE's class order
 FAMILIES = list(cards.TAXONOMY)
 FAMILY_OF = np.array([FAMILIES.index(cards.FAMILY[c]) for c in CLASSES])  # class index -> family index (zero-shot summed per family)
 VLM_SOURCE = "qwen3-vl-8b decider (cluster medoid)"
@@ -455,6 +459,7 @@ def self_check():
     """The rules end to end on a toy video: tier 1 needs a second vote, one question per cluster, copies only to members
     whose SAM 3 word agrees, the rest stay unidentified, the bank never feeds a video its own rows and grows by VLM answers
     only; the view pick and the calibration lookup."""
+    assert len(CLASSES) == 102 and not set(BAKED_WITHOUT) & set(CLASSES), "the class list YOLOE and the text embeddings were baked with"
     import tempfile
     rng = np.random.default_rng(0)
     d = 16
