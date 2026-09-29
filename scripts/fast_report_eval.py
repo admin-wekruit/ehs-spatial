@@ -1343,7 +1343,12 @@ def latency_row(run, patches, fb_run, click_latency=None):
     return {"layers": rows, "gpu_peak_gib": [g["peak_gb"] for g in run.get("gpu_peak", [])], "flags": run.get("flags") or [],
             "over_90": [f"{s['stage']}: {s['peak_gb']}" for s in run.get("stages", []) if any(s.get("over_90") or [])],
             "click_latency": click_latency or "not measured here (C's headless check writes it)",
-            "click_ok": None if not click_latency else click_latency.get("p95_ms", 1e9) < 100}
+            "click_ok": None if not click_latency else click_p95(click_latency) < 100}
+
+
+def click_p95(c):
+    """p95 click -> card latency in ms from {'p95_ms'} or C's click-check.json ({'videos': [{'latencyMs': {'p95'}}]}; the worst video)."""
+    return c["p95_ms"] if "p95_ms" in c else max(v["latencyMs"]["p95"] for v in c["videos"])
 
 
 # ---------- one video, one call: every MVP row ----------
@@ -1502,7 +1507,7 @@ CARD_META = {"box", "dropped_share", "merged_from", "size_check", "footprint_xy"
 def card_check(cards):
     """Spec 10 'Cards': every physical field has value +- u, a level and a scale label, or a not-observed / not-measurable
     reason; an implausible size never shows a number (L1). -> {cards, fields, violations: [id.field: why]}."""
-    bad, n = [], 0
+    bad, n, loud = [], 0, set()
     for c in (cards or {}).get("cards", []):
         if c.get("kind", "object") != "object":
             continue
@@ -1518,11 +1523,12 @@ def card_check(cards):
                 miss = [x for x in ("u", "level", "scale") if v.get(x) is None and not (x == "scale" and k.endswith("_deg"))]
                 if miss:
                     bad.append(f"{c['id']}.{k}: no {', '.join(miss)}")
-                if implausible and k not in ("position_xy",):
-                    bad.append(f"{c['id']}.{k}: a number on an implausible size")
+                if implausible and k not in ("position_xy",) and "needs review" not in str(v.get("status", "")):
+                    loud.add(c["id"])  # spec 4.2: the field should read 'implausible for a <class> ...: needs review'
             elif not v.get("reason"):
                 bad.append(f"{c['id']}.{k}: no value and no reason")
-    return {"cards": len((cards or {}).get("cards", [])), "fields": n, "violations": len(bad), "examples": bad[:20]}
+    return {"cards": len((cards or {}).get("cards", [])), "fields": n, "violations": len(bad), "examples": bad[:20],
+            "implausible_cards_with_numbers": len(loud), "implausible_examples": sorted(loud)[:10]}
 
 
 def acceptance(summary):
@@ -1548,7 +1554,12 @@ def acceptance(summary):
              "clicks_background_false_hits": {"pass": None if not clicks else all(c["background"]["false_hit_rate"] <= .1 for c in clicks.values()),
                                               "rates": {n: c["background"]["false_hit_rate"] for n, c in clicks.items()}},
              "known_verticals_within_u": {"pass": r["physical"]["known_verticals"]["pass"], "misses": len(r["physical"]["known_verticals"]["misses"])},
-             "cards_complete": {"pass": None if "card_check" not in r else r["card_check"]["violations"] == 0, **(r.get("card_check") or {})}}
+             "cards_complete": {"pass": None if "card_check" not in r else r["card_check"]["violations"] == 0,
+                                **{k: v for k, v in (r.get("card_check") or {}).items() if not k.startswith("implausible")}},
+             "L1_no_implausible_number": {"pass": None if "card_check" not in r else r["card_check"]["implausible_cards_with_numbers"] == 0,
+                                          "cards": (r.get("card_check") or {}).get("implausible_cards_with_numbers"),
+                                          "note": "numbers kept on an implausible card count unless the field says 'needs review' (spec 4.2); "
+                                                  "a viewer that greys them (spec 6) is checked on C's screenshots"}}
         out[site] = a
     k = summary.get("k_family") or {}
     out["all"] = {"repeat_coverage_k_le_2": {"pass": None if not k else all(v["k"] <= 2 and (v["coverage_after"] or 0) >= .9 for v in k.values() if v["n"]),
@@ -1766,6 +1777,7 @@ def mvp_self_check():
            "stages": [{"stage": "lift", "s": 1.1}, {"stage": "sam3.vocab.wave2@gpu0", "end_s": 27.}], "gpu_peak": [{"peak_gb": 60.}, {"peak_gb": 50.}]}
     fbr = {"layers": [{"layer": "objects", "version": 1, "seq": 1, "written_s": 35.}, {"layer": "cameras", "version": 1, "seq": 0, "written_s": 18.5}],
            "stages": [{"stage": "lift", "s": .5}, {"stage": "sam3.vocab.wave1@gpu0", "end_s": 32.}]}
+    assert click_p95({"videos": [{"latencyMs": {"p95": 33.9}}, {"latencyMs": {"p95": 120.}}]}) == 120.
     lat = latency_row(run, [], fbr, {"p50_ms": 12, "p95_ms": 40})["layers"]
     assert lat["pick v1"]["ok"] and lat["cards v1"]["ok"] is False and lat["objects v1"]["ok"] is False and lat["cameras"]["ok"] is False
     assert lat["judgements v1"]["ok"] is None and lat["pick v1"]["target_s"] == 34.
@@ -1775,7 +1787,7 @@ def mvp_self_check():
                                {"id": "b", "physical": {"height": {"value": 9., "u": 1., "level": "coarse", "scale": "estimated"},
                                                         "width": {"value": 1.}, "depth": {"status": "not observed"},
                                                         "size_check": {"status": "implausible"}}}]})
-    assert cc["fields"] == 6 and cc["violations"] == 4, cc  # b: a number on an implausible size, width without u/level/scale, depth without reason
+    assert cc["fields"] == 6 and cc["violations"] == 2 and cc["implausible_cards_with_numbers"] == 1, cc  # b: width without u/level/scale, depth without reason; numbers on an implausible size
     assert size_class("tool box")[0] == "box" and size_class("exit sign")[0] == "exit sign" and size_class("shelf label")[0] == "sign"
     assert size_class("pallet of goods")[0] == "stacked boxes" and size_class("control panel")[0] == "other" and size_class("shelves")[3]
 
