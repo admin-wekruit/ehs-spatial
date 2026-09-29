@@ -60,6 +60,7 @@ def measure_chunk(gray, a, b, a0, b1):
 
 def warm_worker(_):
     import cv2
+    from fast_report import cards_stub, judge  # noqa: F401  the judge's rules run in these processes (MVP B)
     cv2.setNumThreads(1)
     time.sleep(.2)
     return __import__("os").getpid()
@@ -777,8 +778,9 @@ def analyse(m, mp4, opts, clock, writer, log):
             with clock.stage("cards.stub", n={"objects": len(objs)}):
                 ctx = judge.context(cam_rows, results.get("outline_frames") or [], results.get("people"), frames,
                                     {gg["index"]: gg["seeds"]["xyz"] for gg in geo if "seeds" in gg}, fps, (W, H), version_of={"objects": 1, "cards": "stub"})
-                cards = cards_stub.cards(objs, cam_rows, results.get("outline_frames") or [], results.get("people"), ctx)
-            return judge.run(cards, ctx, writer, clock, vlm_on=opts.get("judge_vlm", True))
+                lite = {k: v for k, v in ctx.items() if k not in ("frames", "outlines")}
+                cards = m.proc_pool.submit(cards_stub.cards, objs, cam_rows, results.get("outline_frames") or [], results.get("people"), lite).result()
+            return judge.run(cards, ctx, writer, clock, vlm_on=opts.get("judge_vlm", True), pool=m.proc_pool)
         except Exception:  # noqa: BLE001  the judgements are one layer: their failure is recorded, the report's other layers stand
             return {"error": traceback.format_exc()[-3000:]}
     judge_future = m.cpu_pool.submit(judge_job, copy.deepcopy(objects)) if opts.get("judge", True) else None

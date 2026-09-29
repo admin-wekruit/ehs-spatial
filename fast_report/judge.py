@@ -787,15 +787,18 @@ def layer(rows, cal, extra=None):
             **(extra or {})}
 
 
-def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None):
+def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None):
     """Judgements v1 (geometry) at once, then every question on every view set through vlm.options (priority 'judgement', J0
-    'screen'), then v2. ask: a stand-in for vlm.submit, cal: for fast_report/calibration.json (tests). Returns counts and times."""
+    'screen'), then v2. ask: a stand-in for vlm.submit, cal: for fast_report/calibration.json (tests). pool: a process pool for
+    the rules (in the core's main process they took 0.5-10.9 s for the same 0.2 s of work, by what else held the GIL).
+    Returns counts and times."""
     cal = load_calibration() if cal is None else cal
     outl = ctx.get("outlines") or []
     outl = outl.get("frames", []) if isinstance(outl, dict) else outl  # A passes the outlines analysis, the stub its frames
     ctx = {**ctx, "outlines_by_frame": ctx.get("outlines_by_frame") or {f["sourceFrame"]: f["objects"] for f in outl}}
-    with clock.stage("judge.rules", n={"cards": len(cards)}):
-        rows = evaluate(cards, ctx)
+    with clock.stage("judge.rules", n={"cards": len(cards), "process": pool is not None}):
+        lite = {k: v for k, v in ctx.items() if k not in ("frames", "outlines", "outlines_by_frame")}  # what the rules read
+        rows = pool.submit(evaluate, cards, lite).result() if pool is not None else evaluate(cards, ctx)
     writer.put("judgements", layer(rows, cal, {"version_of": ctx.get("version_of"), "vlm_answers": False}), None, "estimated+inferred", LABELS)
     clock.mark("judgements_v1_put")
     rec = {"rows": len(rows), "counts_v1": layer(rows, cal)["counts"]}
