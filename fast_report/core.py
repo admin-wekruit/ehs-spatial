@@ -689,7 +689,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     writer.put("video", {"fps": fps, "frames": n_total, "width": W, "height": H, "sha256": video_sha, "window_s": opts.get("window_s")},
                {"video": (mp4, {"mediaType": "video/mp4"})}, "observed", ["the uploaded video"])
     work = segment.SamWork(m.sams, dev_geo, clock, wave1)
-    cov_on = bool(opts.get("coverage")) and getattr(m, "cov", None) is not None  # r4/coverage: box masks in densify
+    cov_on = bool(opts.get("coverage", True)) and getattr(m, "cov", None) is not None  # r4/coverage: box masks in densify (r4b: on unless options say no)
     work.keep_hidden = cov_on
     summary["coverage"] = {"on": cov_on}
     for words in (("person", "floor"), tuple(wave1)):
