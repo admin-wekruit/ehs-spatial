@@ -4,6 +4,7 @@ delivered report with fb/d-harness's rules. Local output stays small: JSON and c
 
     python scripts/x2_discover.py --out RUNS/fx-x2-discover-NNN [--sites me340,samsclub-a2,walmart] [--designs sam3-generic,amg,vlm-ground]
     python scripts/x2_discover.py --score RUNS/fx-x2-discover-NNN    # rescore saved records (no GPU)
+    python scripts/x2_discover.py --harness-2d RUNS/fx-x2-discover-NNN   # the harness's objects-2D row, vocabulary vs + new words
 """
 import argparse
 import hashlib
@@ -47,6 +48,7 @@ def recall(rows, obs):
         new_hits = [(s, n) for s, n, _ in r["hits"] if s != "vocab"]
         if new_hits and r["sets"].get("vocab", 0) < ev.IOU_FOUND:
             only.setdefault(ent, {"delivered": cat, "ours": sorted({f"{s}:{n}" for s, n in new_hits})})
+    only = {e: v for e, v in only.items() if e not in pos["vocab"]}  # entities the vocabulary never found on any paired frame
     n = max(len(pool), 1)
     out = {"pool": len(pool)}
     for k in ("vocab", "with_discovery"):
@@ -88,6 +90,28 @@ def score(out):
             table.setdefault(site, {})[d] = row
     (out / "scores.json").write_text(json.dumps(table, indent=1))
     return table
+
+
+def harness_2d(out):
+    """fast_report_eval's objects-2D row (its GPU job, its frames, its rules) for the run's vocabulary and for the
+    vocabulary + each design's new words: what the expansion words alone add on the delivered mask frames."""
+    import modal
+    rows, calls = {}, {}
+    with modal.enable_output(), ev.app.run():
+        for site_dir in sorted(p for p in out.iterdir() if (p / "discover.json").exists()):
+            site = json.loads((site_dir / "site.json").read_text())["site"]
+            words = json.loads((site_dir / "core-layers.json").read_text())["objects"]["words"]
+            rec = json.loads((site_dir / "discover.json").read_text())
+            sets = {"run": words, **{f"run+{d}": list(dict.fromkeys(words + r["new_words"])) for d, r in rec["designs"].items()
+                                     if "error" not in r and r["new_words"]}}
+            frames, pngs, labels, obs = ev.recall_inputs(ev.reference(site))
+            calls[site] = (ev.sam3_eval.spawn({"recall": {"frames": pngs, "labels": labels, "obs": [(o[1], o[2]) for o in obs], "sets": sets}}), obs, len(frames))
+        for site, (call, obs, n) in calls.items():
+            result = json.loads(call.get())
+            rows[site] = {"frames": n, "gpu": result["gpu"], "function_wall_s": result["function_wall_s"],
+                          **{k: ev.recall_row(v, obs) for k, v in result["recall"].items()}}
+    (out / "harness-2d.json").write_text(json.dumps(rows, indent=1))
+    return rows
 
 
 def run(out, sites, designs):
@@ -147,10 +171,13 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--out", type=Path)
     p.add_argument("--sites", default="me340,samsclub-a2,walmart")
-    p.add_argument("--designs", default="sam3-generic,amg,vlm-ground")
+    p.add_argument("--designs", default="sam3-generic,amg,amg:part,amg16,vlm-ground")
     p.add_argument("--score", type=Path)
+    p.add_argument("--harness-2d", type=Path)
     a = p.parse_args()
-    if a.score:
+    if a.harness_2d:
+        print(json.dumps(harness_2d(a.harness_2d), indent=1))
+    elif a.score:
         print(json.dumps(score(a.score), indent=1))
     else:
         run(a.out, a.sites.split(","), a.designs.split(","))
