@@ -21,6 +21,7 @@ import io
 import json
 import math
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, Future
 from pathlib import Path
@@ -864,7 +865,7 @@ def combine(geo_result, vlm, visual_ok=False, hazard_side=False, clear_needed=Fa
 
 # ---------- set-of-marks ----------
 
-def som(frame, polygons_by_mark, subject=1, marks=True, side=448, scale=1.6):
+def som(frame, polygons_by_mark, subject=1, marks=True, side=448, scale=1.6, encode=True):
     """BGR frame + {mark: [polygon (source px)]} -> JPEG of 1.6 x the subject's box, long side `side` px; with marks, every
     polygon as a 2 px white-over-black stroke and its number in a black tag (never red: X2's red outlines read as 'fire
     extinguisher')."""
@@ -893,7 +894,7 @@ def som(frame, polygons_by_mark, subject=1, marks=True, side=448, scale=1.6):
             tx, ty = int(min(max(tx, 0), img.shape[1] - tw - 4)), int(min(max(ty, th + 4), img.shape[0] - 1))
             cv2.rectangle(img, (tx, ty - th - 4), (tx + tw + 4, ty), (0, 0, 0), -1)
             cv2.putText(img, label, (tx + 2, ty - 2), cv2.FONT_HERSHEY_SIMPLEX, fs, (255, 255, 255), 1 + me, cv2.LINE_AA)
-    return cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 90])[1].tobytes()
+    return cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 90])[1].tobytes() if encode else img
 
 
 def thumb(jpeg, side=320, max_bytes=30000):
@@ -1065,14 +1066,29 @@ def wanted(rows, by_id):
 
 
 def ahead(cards, ctx, clock, carried, hazard_ask, pool=None):
-    """The hazard judge's send half, run as soon as a cards version exists (not after the previous judge run's wait): the rules,
-    then evidence (hazard.evidence, cached per object) and one Gemini wave for every (object, question) no run of this analysis
-    has asked yet; each left in `carried` as ('pending', object, question) -> (future, request ids, perf time sent). -> rows."""
-    from fast_report import hazard
+    """The hazard judge's send half, started as soon as a cards version exists (not after the previous judge run's wait): the
+    rules now, then in a thread evidence (hazard.evidence, cached per object) and one Gemini wave for every (object, question) no
+    run of this analysis has asked yet, each left in `carried` as ('pending', object, question) -> (future, request ids, perf
+    time sent). -> (rows, Future of the send): the geometry can be put while the evidence is drawn (Sam's Club: 11 s beside the
+    identity pass, bench-003)."""
     ctx = with_marks(ctx)
     rows = rules(cards, ctx, clock, pool)
+    sent = Future()
     if hazard_ask is None:
-        return rows
+        sent.set_result(None)
+        return rows, sent
+
+    def go():
+        try:
+            send(cards, rows, ctx, clock, carried, hazard_ask)
+        finally:
+            sent.set_result(None)
+    threading.Thread(target=go, daemon=True).start()
+    return rows, sent
+
+
+def send(cards, rows, ctx, clock, carried, hazard_ask):
+    from fast_report import hazard
     by_id = {c["id"]: c for c in (follow_name(c) for c in cards)}
     todo = {oid: [q for q in qs if ("gemini", oid, q) not in carried and ("pending", oid, q) not in carried]
             for oid, qs in wanted(rows, by_id).items()}
@@ -1085,7 +1101,7 @@ def ahead(cards, ctx, clock, carried, hazard_ask, pool=None):
         with ThreadPoolExecutor(8) as tp:
             ev = {oid: x for oid, x in tp.map(build, list(todo)) if x[0] is not None}
     if not ev:
-        return rows
+        return
     with clock.stage("judge.gemini_send", n={"objects": len(ev)}):
         items = [{"id": oid, "name": name_of(by_id[oid]) or "object", "questions": todo[oid], "jpeg": ev[oid][0]} for oid in ev]
         reqs = hazard.batches(items)
@@ -1098,7 +1114,6 @@ def ahead(cards, ctx, clock, carried, hazard_ask, pool=None):
         for r in reqs:
             for oid, q in r["ids"]:
                 carried[("pending", oid, q)] = (futs.get(r["key"]), r["ids"], sent)
-    return rows
 
 
 def gather(want, carried, stats):
@@ -1137,19 +1152,23 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, c
     did not answer within HAZARD_WAIT_S and for people; each answer read at calibration.json's hazard cuts and joined to the
     geometry by combine(); then v2. ask: a stand-in for vlm.submit; hazard_ask: reqs -> {key: Future of the provider output}
     (hazard.Asker.ask), None = no Gemini (Qwen alone); cal: for fast_report/calibration.json (tests); carried: a dict shared by
-    the runs of one analysis (answers, pending questions, evidence): a later cards version asks only what is new; rows: ahead()'s.
+    the runs of one analysis (answers, pending questions, evidence): a later cards version asks only what is new; rows: ahead()'s
+    (rows, send future).
     pool: a process pool for the rules. Returns counts and times."""
     cal = load_calibration() if cal is None else cal
     carried = {} if carried is None else carried
     ctx = with_marks(ctx)
     t0 = time.perf_counter()
     if rows is None:
-        rows = ahead(cards, ctx, clock, carried, hazard_ask, pool) if vlm_on else rules(cards, ctx, clock, pool)
+        rows = ahead(cards, ctx, clock, carried, hazard_ask, pool) if vlm_on else (rules(cards, ctx, clock, pool), None)
+    rows, sent = rows
     writer.put("judgements", layer(rows, cal, {"version_of": ctx.get("version_of"), "vlm_answers": False}), None, "estimated+inferred", LABELS)
     clock.mark("judgements_v1_put")
     rec = {"rows": len(rows), "counts_v1": layer(rows, cal)["counts"]}
     if not vlm_on:
         return rec
+    if sent is not None:
+        sent.result()  # the evidence is drawn and this version's new questions are out
     from fast_report import hazard, vlm
     ask = ask or vlm.submit
     by_id = {c["id"]: c for c in (follow_name(c) for c in cards)}

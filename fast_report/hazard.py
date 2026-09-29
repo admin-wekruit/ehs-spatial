@@ -19,7 +19,7 @@ import base64
 import json
 import threading
 import time
-from concurrent.futures import Future
+from concurrent.futures import Future, ThreadPoolExecutor
 
 import numpy as np
 
@@ -157,9 +157,11 @@ def views_of(card, ctx, n=3):
     return have[:n]
 
 
-def tile(jpeg, side=TILE):
+def tile(img, side=TILE):
+    """An image (array, or JPEG bytes) fitted into a black side x side square."""
     import cv2
-    img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+    if isinstance(img, (bytes, bytearray)):
+        img = cv2.imdecode(np.frombuffer(img, np.uint8), cv2.IMREAD_COLOR)
     out = np.zeros((side, side, 3), np.uint8)
     s = side / max(img.shape[:2])
     img = cv2.resize(img, (max(1, round(img.shape[1] * s)), max(1, round(img.shape[0] * s))), interpolation=cv2.INTER_AREA)
@@ -169,21 +171,23 @@ def tile(jpeg, side=TILE):
 
 
 def context_tile(frame, polygons, side=TILE):
-    """The whole keyframe with only the subject outlined and tagged [1] (the aisle, floor or stack around it; v2)."""
+    """The whole keyframe with only the subject outlined and tagged [1] (the aisle, floor or stack around it; v2). Drawn on a copy
+    scaled to 2 x the tile (the same strokes as drawn at full size, then scaled: bench-003 spent 14 s on 123 objects' evidence)."""
     import cv2
-    img = frame.copy()
-    polys = [np.round(np.asarray(p, float).reshape(-1, 2)).astype(np.int32) for p in polygons]
-    t = max(2, round(img.shape[1] / 400))
+    k = 2 * side / max(frame.shape[:2])
+    img = cv2.resize(frame, (round(frame.shape[1] * k), round(frame.shape[0] * k)), interpolation=cv2.INTER_AREA)
+    polys = [np.round(np.asarray(p, float).reshape(-1, 2) * k).astype(np.int32) for p in polygons]
+    t = max(2, round(frame.shape[1] / 400 * k))
     cv2.polylines(img, polys, True, (0, 0, 0), 2 * t + 2, cv2.LINE_AA)
     cv2.polylines(img, polys, True, (255, 255, 255), 2 * t, cv2.LINE_AA)
     allp = np.concatenate(polys)
     x, y = allp[np.argmin(allp[:, 1])]
-    fs = img.shape[1] / 700
+    fs = frame.shape[1] / 700 * k
     (tw, th), _ = cv2.getTextSize("1", cv2.FONT_HERSHEY_SIMPLEX, fs, t)
     x, y = int(min(max(x, 0), img.shape[1] - tw - 8)), int(min(max(y, th + 8), img.shape[0] - 1))
     cv2.rectangle(img, (x, y - th - 8), (x + tw + 8, y), (0, 0, 0), -1)
     cv2.putText(img, "1", (x + 4, y - 4), cv2.FONT_HERSHEY_SIMPLEX, fs, (255, 255, 255), t, cv2.LINE_AA)
-    return tile(cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 90])[1].tobytes(), side)
+    return tile(img, side)
 
 
 def evidence(card, ctx, frame_at, marks_on, som, version=2):
@@ -197,10 +201,10 @@ def evidence(card, ctx, frame_at, marks_on, som, version=2):
         if marks is None or frame is None:
             continue
         if not tiles:
-            tiles += [tile(som(frame, marks, side=TILE)), tile(som(frame, marks, marks=False, side=TILE))]
+            tiles += [tile(som(frame, marks, side=TILE, encode=False)), tile(som(frame, marks, marks=False, side=TILE, encode=False))]
             first = (frame, marks[1])
         else:
-            tiles.append(tile(som(frame, marks, side=TILE)))
+            tiles.append(tile(som(frame, marks, side=TILE, encode=False)))
         keys.append(int(k))
     if not tiles:
         return None, []
@@ -394,8 +398,8 @@ class Asker:
             tag = f"a{len(self.sent_unix)}-"
             futs = {r["key"]: self.futures.setdefault(tag + r["key"], Future()) for r in reqs}
             self.sent_unix.append(time.time())
-        for item in chunks(tag, [{**r, "key": tag + r["key"]} for r in reqs]):
-            self.rq.put(item)
+        with ThreadPoolExecutor(8) as tp:  # one put is ~0.2 s per MB item: 26 in a row took 3-6 s (bench-003)
+            list(tp.map(self.rq.put, chunks(tag, [{**r, "key": tag + r["key"]} for r in reqs])))
         return futs
 
     def close(self):

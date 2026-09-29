@@ -321,6 +321,7 @@ function Judgements({ info, patch, tr }: { info: Info; patch?: Patch; tr: Tr }) 
           {(qq.per_view || []).map((v: any, i: number) => <div key={i}><small>{tr("关键帧", "keyframe")} {v.keys?.join(", ")}: {v.probs ? (qq.options || r.vlm.options).map((o: string, k: number) => `${o} ${fmt(v.probs[k], 2)}`).join(" · ") : tr("未回答", "unanswered")}
             {" "}· {tr("字母概率和", "letter mass")} {fmt(v.mass, 2)}{v.p_hazard_raw != null && ` · p(hazard) ${fmt(v.p_hazard_raw, 2)}`}
             {typeof v.calibrated === "number" ? ` → ${tr("校准后", "calibrated")} ${fmt(v.calibrated, 2)}` : ` (${tr("未校准", "uncalibrated")})`}</small></div>)}</div>)}
+        {r.vlm.p_yes != null && <div><small>p(yes) {fmt(r.vlm.p_yes, 2)}{r.vlm.cut ? ` · ${tr("阈值", "cuts")} hazard ${r.vlm.cut.hazard ?? "—"} / clear ${r.vlm.cut.clear ?? "—"} / veto ${r.vlm.cut.veto ?? "—"}${r.vlm.calibrated ? "" : ` (${tr("未校准", "uncalibrated")})`}` : ""}{r.vlm.why ? ` · "${r.vlm.why}"` : ""}</small></div>}
         <small>{tr("回答", "Answer")}: <strong>{r.vlm.answer}</strong></small></div>}
       {!!r.reasons?.length && <ul className="mvp-reasons">{r.reasons.map((x: string, i: number) => <li key={i}>{x}</li>)}</ul>}
       {!!r.evidence?.length && <div className="mvp-evidence">{r.evidence.map((e: any, i: number) => <button key={i} className="mvp-thumb" onClick={() => seek(e.t)} title={tr("跳到这个关键帧", "seek to this keyframe")}>
