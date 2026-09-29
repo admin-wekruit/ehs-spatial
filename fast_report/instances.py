@@ -37,11 +37,12 @@ class _Sets:
         return a
 
 
-def seam_labels(n, fr, size, pairs, edges, seam_min=SEAM_MIN, sep_max=SEP_MAX):
+def seam_labels(n, fr, size, pairs, edges, seam_min=None, sep_max=None):
     """n masks (keyframe fr, voxel count size). pairs: (a, b, c) arrays, voxels shared by masks a < b (any keyframes, c > 0);
     edges: (a, b, w) the lift's links between keyframes. -> (label per mask 0..k-1, record)."""
     from scipy.sparse import coo_matrix
     from scipy.sparse.csgraph import connected_components
+    seam_min, sep_max = SEAM_MIN if seam_min is None else seam_min, SEP_MAX if sep_max is None else sep_max  # read at call time (sweeps)
     fr, size = np.asarray(fr), np.asarray(size, float)
     ea, eb, ew = (np.asarray(x) for x in edges)
     ncomp, comp = connected_components(coo_matrix((np.ones(len(ea)), (ea, eb)), shape=(n, n)), directed=False)

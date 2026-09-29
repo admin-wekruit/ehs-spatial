@@ -415,7 +415,10 @@ def edges(mk, mid, vy, vx, z, fr, K, c2w, stride=2, batch=2048):
 
 
 VB, VOFF = 1 << 21, 1 << 20
-R4 = {"seam": True, "reproject": True, "join_guard": True}  # r4/instances switches (fast_report.instances); the offline replay turns them off
+# r4/instances switches (fast_report.instances). seam is off: held out by video (runs/r4-instances-results), splitting at SAM 3's
+# seams (SEAM_MIN 2 / 3 / 4) cut more single things into pieces than it took wrong merges apart on all three videos (ME340: 21 vs 9
+# delivered objects in pieces for 8 vs 10 wrong merges); the rule stays for a better seam test (depth steps along the seam)
+R4 = {"seam": False, "reproject": True, "join_guard": True}
 BRIDGE_SHARE = .25  # r4: a densify mask with this share of its voxels in a second object is over two things
 
 
@@ -497,6 +500,7 @@ def reproject_links(m2, world, mid, fr, depth_m, K, c2w, stride=2):
     left out) land >= REPROJ_IN on one mask there and cover >= REPROJ_COVER of its points, both ways (mutual). The projection
     of a nearby view barely moves with a depth error, so a 5 cm tool 4 m away (depth noise 20 cm, its voxels never meet)
     still links. m2: (L, H/stride, W/stride) raw masks; world/mid: the cleaned points; fr: local keyframe per mask.
+    All on the device, one host sync at the end (a per-pair loop synced thousands of times: 4.3 s on ME340's GPU).
     -> (a, b, weight) tensors, a < b, weight = the weaker of the four shares / 2 (below a voxel link's IoU)."""
     import torch
     dev = world.device
@@ -509,7 +513,7 @@ def reproject_links(m2, world, mid, fr, depth_m, K, c2w, stride=2):
         pm = paint(m2[sel])
         lab[f] = torch.where(pm > 0, sel[(pm - 1).clamp(min=0)], torch.full_like(pm, -1))
     pt_fr = fr[mid]
-    fwd = {}  # (src, dst) -> points of src landing on dst
+    keys, ins, covs = [], [], []
     for i, f in enumerate(frames):
         src = torch.nonzero(pt_fr == f).squeeze(1)
         if not len(src):
@@ -520,27 +524,33 @@ def reproject_links(m2, world, mid, fr, depth_m, K, c2w, stride=2):
             z = cam[:, 2]
             u = (K[g, 0, 0] * cam[:, 0] / z.clamp(min=1e-6) + K[g, 0, 2]) / stride
             v = (K[g, 1, 1] * cam[:, 1] / z.clamp(min=1e-6) + K[g, 1, 2]) / stride
-            ui, vi = u.floor().long(), v.floor().long()
-            ok = (z > 0) & (ui >= 0) & (ui < w) & (vi >= 0) & (vi < h)
-            d = depth_m[g, (vi.clamp(0, h - 1) * stride), (ui.clamp(0, w - 1) * stride)]
+            ui, vi = u.floor().long().clamp(0, w - 1), v.floor().long().clamp(0, h - 1)
+            ok = (z > 0) & (u >= 0) & (u < w) & (v >= 0) & (v < h)
+            d = depth_m[g, vi * stride, ui * stride]
             ok &= (d > 0) & ((z - d).abs() <= REPROJ_DEPTH * d)
-            hit = torch.where(ok, lab[g][vi.clamp(0, h - 1), ui.clamp(0, w - 1)], torch.full_like(ui, -1))
-            key = mid[src[ok]] * L + hit[ok]
-            key = key[hit[ok] >= 0]
-            k, cnt = torch.unique(key, return_counts=True)
-            seen = torch.bincount(mid[src[ok]], minlength=L).float()
-            for kk, cc in zip((k // L).tolist(), zip((k % L).tolist(), cnt.tolist())):
-                if seen[kk] > 0:
-                    fwd[(kk, cc[0])] = (cc[1] / float(seen[kk]), cc[1] / max(float(n_pts[cc[0]]), 1.))
-    a, b, wt = [], [], []
-    for (x, y), (in_xy, cov_xy) in fwd.items():
-        if x < y and (y, x) in fwd:
-            in_yx, cov_yx = fwd[(y, x)]
-            m = min(in_xy, cov_xy, in_yx, cov_yx)
-            if in_xy >= REPROJ_IN and in_yx >= REPROJ_IN and cov_xy >= REPROJ_COVER and cov_yx >= REPROJ_COVER:
-                a.append(x), b.append(y), wt.append(m / 2)
-    t = lambda x, dt=torch.long: torch.tensor(x, dtype=dt, device=dev)  # noqa: E731
-    return t(a), t(b), t(wt, torch.float32)
+            hit = torch.where(ok, lab[g][vi, ui], torch.full_like(ui, -1))
+            m_ok = mid[src][ok]
+            seen = torch.bincount(m_ok, minlength=L).float()
+            keep = hit[ok] >= 0
+            k, cnt = torch.unique(m_ok[keep] * L + hit[ok][keep], return_counts=True)
+            keys.append(k)
+            ins.append(cnt / seen[k // L].clamp(min=1))
+            covs.append(cnt / n_pts[k % L].clamp(min=1))
+    empty = torch.zeros(0, dtype=torch.long, device=dev)
+    if not keys:
+        return empty, empty, torch.zeros(0, device=dev)
+    k, i_s, c_s = torch.cat(keys), torch.cat(ins), torch.cat(covs)
+    good = (i_s >= REPROJ_IN) & (c_s >= REPROJ_COVER)
+    k, i_s, c_s = k[good], i_s[good], c_s[good]
+    x, y = k // L, k % L
+    rev = y * L + x
+    order = torch.argsort(k)
+    ks = k[order]
+    pos = torch.searchsorted(ks, rev).clamp(max=max(len(ks) - 1, 0))
+    mutual = (ks[pos] == rev) & (x < y) if len(ks) else torch.zeros(0, dtype=torch.bool, device=dev)
+    r = order[pos]
+    wt = torch.minimum(torch.minimum(i_s, c_s), torch.minimum(i_s[r], c_s[r])) / 2
+    return x[mutual], y[mutual], wt[mutual]
 
 
 def join(p, codes, owner):

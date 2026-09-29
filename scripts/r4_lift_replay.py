@@ -216,9 +216,15 @@ def main():
     p.add_argument("out", type=Path)
     p.add_argument("--words", type=Path, required=True, help="the vocabulary (JSON list): the dump's words")
     p.add_argument("--off", default="", help="comma list of segment.R4 switches to turn off (the baseline: seam)")
+    p.add_argument("--set", default="", help="comma list of MODULE.NAME=value for fast_report.instances / segment constants (sweeps)")
     a = p.parse_args()
     for k in filter(None, a.off.split(",")):
         segment.R4[k] = False
+    from fast_report import instances
+    for kv in filter(None, a.set.split(",")):
+        k, v = kv.split("=")
+        mod, name = k.split(".")
+        setattr({"instances": instances, "segment": segment}[mod], name, json.loads(v))
     torch.set_num_threads(8)
     Z = np.load(a.dump)
     words = json.loads(a.words.read_text())

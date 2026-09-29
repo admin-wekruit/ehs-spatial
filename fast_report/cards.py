@@ -663,16 +663,24 @@ def same_keyframes(va, vb):
     return out
 
 
-def near_share(A, B, tau):
-    """Share of A's points with a B point within tau (3D points overlap)."""
+def near_share(A, B, tau, tree=None):
+    """Share of A's points with a B point within tau (3D points overlap); tree: B's cKDTree when the caller keeps one."""
     from scipy.spatial import cKDTree
     if not len(A) or not len(B):
         return 0.
-    return float(np.isfinite(cKDTree(B).query(A, distance_upper_bound=tau)[0]).mean())
+    return float(np.isfinite((tree or cKDTree(B)).query(A, distance_upper_bound=tau)[0]).mean())
+
+
+def _tree(o):
+    from scipy.spatial import cKDTree
+    if "_tree" not in o:
+        o["_tree"] = cKDTree(o["P"])
+    return o["_tree"]
 
 
 GRID = (140, 252)  # the lift's stride-2 grid over DA3's 280 x 504
 PROJ_MERGE, PROJ_MIN_POINTS, PROJ_VIEWS = .5, 10, 4  # r4: masks that coincide when projected into each other's keyframes
+VIEW_CAP = 5000  # r4: points a keyframe for an object's voxel and pixel sets (a sampled set biases shared keyframes to "separate": 400 halved the parts found)
 
 
 def project(world, c2w, K):
@@ -702,7 +710,7 @@ def pixel_cells(world, frame, c2w, K):
 def _dilate(cells):
     """Cell codes -> (140, 252) bool grid, one cell of slack around each."""
     g = np.zeros(GRID, bool)
-    g.flat[cells] = True
+    g.flat[np.asarray(cells, np.int64)] = True
     out = g.copy()
     out[1:] |= g[:-1]
     out[:-1] |= g[1:]
@@ -792,19 +800,24 @@ def merge2(objs, shot_boxes, fr=None, shot=None, why=None):
             if rel["separate"] and rel["separate"] >= rel["same"]:
                 note(f"separate {rel}")
                 continue  # separate masks on a shared keyframe: two things
-            mutual = None
-            if shot is not None and R4["project"]:
+            def mutual_():
+                if shot is None or not R4["project"]:
+                    return False
                 ab = proj_share(objs[a], objs[b], fr, shot)
-                ba = proj_share(objs[b], objs[a], fr, shot) if ab is not None and ab >= PROJ_MERGE else None
-                mutual = ab is not None and ba is not None and ba >= PROJ_MERGE
-            if rel["a_in_b"] + rel["b_in_a"] > rel["same"] and not mutual:
+                return ab is not None and ab >= PROJ_MERGE and (proj_share(objs[b], objs[a], fr, shot) or 0.) >= PROJ_MERGE
+            inside = rel["a_in_b"] + rel["b_in_a"] > rel["same"]
+            mutual = mutual_() if inside else None
+            if inside and not mutual:
                 note(f"inside {rel}")
                 continue  # one inside the other on their keyframes: a part or contents, related afterwards (a double of the same
                 # thing, one mask a little smaller, lands on the other both ways when projected: merged)
-            small, large = (objs[b]["P"], objs[a]["P"]) if objs[b]["n"] <= objs[a]["n"] else (objs[a]["P"], objs[b]["P"])
+            sm, lg = (b, a) if objs[b]["n"] <= objs[a]["n"] else (a, b)
             t = max(tau[a], tau[b])
-            ov = near_share(small, large, t) if touch[a, b] else 0.
-            strong = bool(rel["same"] or ov >= OVERLAP_MERGE or mutual)
+            ov = near_share(objs[sm]["P"], objs[lg]["P"], t, _tree(objs[lg])) if touch[a, b] else 0.
+            strong = bool(rel["same"] or ov >= OVERLAP_MERGE)
+            if not strong and mutual is None:
+                mutual = mutual_()
+            strong = strong or bool(mutual)
             if not (strong or ((close[a, b] or iou[a, b] >= IOU_MIN) and ov >= OVERLAP_GATE)):
                 note(f"no evidence near={ov:.2f}")
                 continue
@@ -876,15 +889,19 @@ def light_chunk(jobs):
                 spread_ = float(np.median(np.linalg.norm(c - np.median(c, 0), axis=1)))
         rec = {"P": P, "frame": f, "views": views, "n": n, "centroid": np.median(P, 0) if n else np.zeros(3),
                "z_med": float(np.median(p["z"])) if n else 4., "spread": spread_}
-        if R4["merge_v2"]:  # r4: per keyframe, the 5 cm voxels its mask(s) cover (all points): same-keyframe relations
+        if R4["merge_v2"]:  # r4: per keyframe, the 5 cm voxels its mask(s) cover: same-keyframe relations (<= VIEW_CAP points a keyframe)
             fr_all = np.asarray(p["frame"])
-            code = voxel_code(np.asarray(p["world"]))
             o = np.argsort(fr_all, kind="stable")
-            vv, st = np.unique(fr_all[o], return_index=True)
-            rec["vox"] = {int(v): np.unique(c) for v, c in zip(vv, np.split(code[o], st[1:]))}
+            vv, st, cnt = np.unique(fr_all[o], return_index=True, return_counts=True)
+            if cnt.max(initial=0) > VIEW_CAP:  # a seeded draw of VIEW_CAP points on the busy keyframes (the parent gets less to unpickle)
+                o = np.concatenate([g if len(g) <= VIEW_CAP else np.sort(rng.choice(g, VIEW_CAP, replace=False)) for g in np.split(o, st[1:])])
+                vv, st = np.unique(fr_all[o], return_index=True)
+            W_ = np.asarray(p["world"])[o]
+            code = voxel_code(W_)
+            rec["vox"] = {int(v): np.unique(c) for v, c in zip(vv, np.split(code, st[1:]))}
             if cam is not None:  # and the stride-2 pixel cells its points cover there (their own keyframe's camera)
-                cell = pixel_cells(np.asarray(p["world"])[o], fr_all[o], *cam)
-                rec["cells"] = {int(v): np.unique(c[c >= 0]) for v, c in zip(vv, np.split(cell, st[1:]))}
+                cell = pixel_cells(W_, fr_all[o], *cam)
+                rec["cells"] = {int(v): np.unique(c[c >= 0]).astype(np.uint16) for v, c in zip(vv, np.split(cell, st[1:]))}
         out.append((i, rec))
     return out
 
