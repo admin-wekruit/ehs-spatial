@@ -253,7 +253,7 @@ def name_open(jpegs, max_tokens=16):
 # The request goes out on the run's event stream (layers.Writer.send), the bench relays it into the deployed report
 # container's GeminiAdapter (scripts/name_video_entities.py's path; no key leaves that container) and puts the answer on a
 # modal.Queue. Dev study (runs/mvp2-identity-study-001, 181 agent-labelled items): two items an image (the thing in its
-# surroundings | a close crop), 28 a request: right 0.83, right or close 0.87 (the lettered Qwen decider 0.63 / 0.80; four
+# surroundings | a close crop), 28 a request: right 0.83, right or close 0.87 (14 a request: 0.87 / 0.92 after the dev mapping fixes) (the lettered Qwen decider 0.63 / 0.80; four
 # context tiles an image 0.75 / 0.80; sixteen 0.74 / 0.78 and 'spill' on floor patterns; Qwen3-VL open naming 0.36 / 0.54).
 NAMER_INTRO = ("Each image is a sheet of numbered tiles (the number is in the black tag at each tile's top left). Each tile shows one "
                "thing detected in a video of a workplace (a machine shop, warehouse, store, lab or office), outlined in yellow in its "
@@ -267,7 +267,8 @@ NAMER_SCHEMA = {"type": "object", "properties": {"objects": {"type": "array", "i
     "id": {"type": "string"}, "name": {"type": "string"}, "status": {"type": "string", "enum": ["object", "part", "surface", "several", "unclear"]},
     "p": {"type": "number"}}, "required": ["id", "name", "status", "p"], "additionalProperties": False}}},
     "required": ["objects"], "additionalProperties": False}
-NAMER_PER_IMAGE, NAMER_PER_REQUEST, NAMER_SIDE = 2, 28, 384  # 14 images at ~1.1k tokens: under the adapter's 16384-token input cap
+# 14 a request (7 images at ~1.1k tokens, under the adapter's 16384-token cap): 39 at once answered in 12-31 s (28 a request: 21-41 s)
+NAMER_PER_IMAGE, NAMER_PER_REQUEST, NAMER_SIDE = 2, 14, 384
 
 
 def _fit(img, side, h=None):
@@ -449,10 +450,10 @@ def self_check():
     tile = namer_tile(frame, [[[600, 300], [700, 300], [700, 380], [600, 380]]])
     assert tile.shape == (NAMER_SIDE, 2 * NAMER_SIDE, 3) and ((tile[:, :NAMER_SIDE] == (0, 230, 255)).all(2)).any()
     reqs = namer_requests([f"obj-{i}" for i in range(60)], [tile] * 60)
-    assert [len(r["ids"]) for r in reqs] == [28, 28, 4] and reqs[1]["ids"]["1"] == "obj-28" and len(reqs[0]["blocks"]) == 1 + 2 * 14
-    got = namer_answers(reqs[2], {"status": "completed", "output_text": json.dumps({"objects": [
+    assert [len(r["ids"]) for r in reqs] == [14, 14, 14, 14, 4] and reqs[2]["ids"]["1"] == "obj-28" and len(reqs[0]["blocks"]) == 1 + 2 * 7
+    got = namer_answers(reqs[4], {"status": "completed", "output_text": json.dumps({"objects": [
         {"id": "2", "name": "Drill Press", "status": "object", "p": .8}, {"id": "9", "name": "x", "status": "object", "p": 1}]})})
-    assert got == {"obj-57": {"name": "Drill Press", "status": "object", "p": .8}} and namer_answers(reqs[2], {"status": "incomplete"}) == {}
+    assert got == {"obj-57": {"name": "Drill Press", "status": "object", "p": .8}} and namer_answers(reqs[4], {"status": "incomplete"}) == {}
     import tempfile
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / "sites/x/vocab.json"

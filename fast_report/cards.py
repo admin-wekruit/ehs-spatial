@@ -145,15 +145,17 @@ def kind_of(name):
 # above are keyed by the canonical classes; a free name that maps to none keeps its words with no class prior. Written
 # from general EHS/object knowledge and X8 set b's names (the dev set), before the held-out items were labelled.
 TAXONOMY = {
-    "storage": {"shelf": ("shelving", "shelving unit", "shelf unit", "gondola", "gondola shelf", "bookshelf", "bookcase", "store shelf", "shelf edge"),
+    "storage": {"shelf": ("shelving", "shelving unit", "shelf unit", "gondola", "gondola shelf", "bookshelf", "bookcase", "store shelf", "shelf edge",
+                          "kick plate"),
                 "rack": ("pallet rack", "storage rack", "metal rack", "wire rack", "rack upright", "racking", "rack beam"),
                 "display rack": ("display", "display stand", "display unit", "endcap", "end cap", "product display", "merchandise display",
                                  "clothing rack", "display case", "showcase", "display shelf", "display table", "shoe rack"),
                 "cabinet": ("tool cabinet", "flammables cabinet", "flammable cabinet", "safety cabinet", "storage cabinet", "filing cabinet",
                             "cupboard", "tool chest", "drawer unit", "drawer", "roll cabinet", "chest of drawers"),
-                "locker": (), "tool holder": ("tool rack", "pegboard", "tool board", "tool organizer", "tool wall", "tool stand", "holder"),
+                "locker": (), "tool holder": ("tool rack", "pegboard", "tool board", "tool organizer", "tool wall", "tool stand", "holder",
+                                                "organizer"),
                 "refrigerator": ("fridge", "freezer", "cooler", "display freezer", "refrigerated case")},
-    "goods": {"box": ("cardboard box", "carton", "case", "package", "parcel", "shoe box", "cereal box", "packaging", "pack"),
+    "goods": {"box": ("cardboard box", "carton", "case", "package", "parcel", "shoe box", "shoebox", "cereal box", "packaging", "pack"),
               "stacked boxes": ("stack of boxes", "stacked cartons", "pallet of goods", "loaded pallet", "stacked goods", "stack", "pallet load"),
               "pallet": ("wooden pallet", "plastic pallet", "skid"), "crate": ("plastic crate", "milk crate"),
               "bin": ("tote", "storage bin", "parts bin", "tub", "basket", "shopping basket"),
@@ -163,20 +165,25 @@ TAXONOMY = {
               "bottle": ("spray bottle", "water bottle"), "can": ("aerosol can", "tin"),
               "merchandise": ("product", "goods", "item", "toilet paper", "paper towel", "tissue", "diaper", "wipe", "snack", "chip",
                               "dog food", "cereal", "shoe", "boot", "sandal", "sneaker", "toy", "stuffed animal", "clothing", "garment",
-                              "towel package", "bed pad", "soda", "drink", "beverage", "water", "food", "detergent", "paper product")},
+                              "towel package", "bed pad", "soda", "drink", "beverage", "water", "food", "detergent", "paper product",
+                              # dev study (runs/mvp2-identity-study-001): the namers' footwear and pet-aisle words
+                              "slipper", "clog", "moccasin", "loafer", "rainboot", "heel", "flip flop", "sock", "hat", "pillow", "plush",
+                              "litter", "paper towel roll", "toilet paper roll")},
     "furniture": {"workbench": ("work bench", "work table", "workstation", "welding table", "bench"), "table": (), "desk": (),
                   "chair": ("office chair",), "stool": ()},
-    "machine": {"machine": ("equipment", "machinery", "industrial machine", "machine tool", "machine enclosure", "enclosure"),
+    "machine": {"machine": ("equipment", "machinery", "industrial machine", "machine tool", "machine enclosure", "enclosure", "spindle",
+                            "machine head", "milling head", "motor"),
                 "lathe": ("cnc lathe",), "milling machine": ("mill", "cnc mill", "milling"), "cnc machine": ("machining center", "cnc"),
                 "drill press": (), "grinder": ("bench grinder", "grinding machine", "belt sander", "sander"),
                 "saw": ("band saw", "bandsaw", "table saw", "chop saw", "miter saw"), "welder": ("welding machine",),
                 "compressor": ("air compressor",), "press": ("hydraulic press", "arbor press"), "vise": ("bench vise", "vice", "machine vise"),
                 "3d printer": ()},
     "tool": {"hand tool": ("tool", "wrench", "spanner", "hammer", "mallet", "screwdriver", "pliers", "file", "chisel", "clamp", "caliper",
-                           "hex key", "allen key", "hex key set", "drill bit", "tape measure", "measuring tape"),
+                           "hex key", "allen key", "hex key set", "drill bit", "tape measure", "measuring tape", "gauge", "gage", "tap",
+                           "collet", "chuck", "level", "cutter", "wrench set", "broom"),
              "power tool": ("drill", "power drill", "cordless drill", "angle grinder", "impact driver", "heat gun", "jigsaw", "circular saw",
                             "nail gun"),
-             "tool box": ("toolbox", "tool kit", "tool case"), "tool tray": ()},
+             "tool box": ("toolbox", "tool kit", "tool case"), "tool tray": ("tray",)},
     "handling": {"forklift": ("fork lift", "lift truck", "reach truck"), "pallet jack": ("pallet truck", "hand pallet truck", "pump truck"),
                  "hand truck": ("dolly", "sack truck"),
                  "cart": ("trolley", "shopping cart", "utility cart", "rolling cart", "platform cart", "flatbed cart", "stocking cart",
@@ -189,7 +196,7 @@ TAXONOMY = {
     "signage": {"exit sign": ("emergency exit sign",),
                 "safety sign": ("warning sign", "caution sign", "danger sign", "hazard sign", "flammable warning sign", "safety label", "warning label"),
                 "sign": ("price sign", "banner", "poster", "placard", "notice", "signage", "aisle sign"),
-                "label": ("price tag", "price label", "shelf label", "shelf label holder", "price tag holder", "tag", "sticker"),
+                "label": ("price tag", "price label", "shelf label", "shelf label holder", "price tag holder", "tag", "sticker", "decal"),
                 "floor marking": ("floor tape", "hazard tape", "line marking", "walkway line", "painted line", "floor line", "walkway")},
     "guarding": {"guard": ("machine guard", "safety guard", "blade guard", "chuck guard", "shield", "splash guard"),
                  "fence": ("safety fence", "wire mesh fence", "mesh fence", "cage", "wire mesh partition"),
@@ -200,7 +207,8 @@ TAXONOMY = {
                "pipe": ("piping", "conduit", "tube", "tubing", "pipework"), "duct": ("ventilation duct", "air duct", "exhaust duct", "vent duct", "ductwork"),
                "cable tray": ("wire tray", "cable ladder", "cable trunking")},
     "electrical": {"control panel": ("electrical panel", "breaker panel", "electrical box", "junction box", "switch box", "fuse box", "control box",
-                                     "disconnect switch", "controller panel", "controller", "control station", "panel", "control console"),
+                                     "disconnect switch", "controller panel", "controller", "control station", "panel", "control console",
+                                     "digital readout", "readout", "control terminal"),
                    "electrical outlet": ("outlet", "power outlet", "socket", "power strip", "receptacle"), "switch": ("light switch",),
                    "light fixture": ("ceiling light", "lamp", "fluorescent light", "fluorescent lamp", "light", "work light", "lighting"),
                    "fan": ("ceiling fan", "exhaust fan", "floor fan")},
@@ -212,7 +220,7 @@ TAXONOMY = {
     "material": {"wooden board": ("board", "plank", "lumber", "plywood", "wood", "wooden block", "block of wood"),
                  "metal sheet": ("sheet metal", "metal plate", "plate"),
                  "metal part": ("part", "machine part", "metal piece", "workpiece", "fitting", "bracket", "metal block", "block", "gear",
-                                "bolt", "nut", "fixture", "metal bar", "bar stock", "rod"),
+                                "bolt", "nut", "fixture", "metal bar", "bar stock", "rod", "stud", "handle", "round stock", "jaw"),
                  "whiteboard": ("bulletin board", "notice board", "dry erase board")},
     "ppe": {"glove": ("work glove",), "safety glasses": ("goggles", "glasses", "face shield"), "hard hat": ("helmet",)},
     "misc": {"rag": ("cloth", "towel", "shop towel"), "paper": ("paper sheet", "document"), "clipboard": (), "book": ("binder", "manual"),
@@ -221,7 +229,7 @@ TAXONOMY = {
 }
 NOT_OBJECT = "not an object"
 NOT_OBJECT_WORDS = ("floor", "wall", "ceiling", "shadow", "reflection", "text overlay", "subtitle", "caption", "watermark", "surface",
-                    "background", "none", "person", "hand", "arm", "several things", "part of")
+                    "background", "none", "person", "hand", "arm", "several things", "part of", "crack", "scratch", "stain", "text")
 # names whose showing is itself an EHS claim (a check reads them, or they say safety equipment is there): shown only after a
 # second check (the detector's word, the class's size and placement, and a VLM all agree), R2
 HAZARD = ("spill", "ladder", "guard", "fence", "barrier", "railing", "fire extinguisher", "cable", "hose", "forklift", "pallet jack",
@@ -1122,6 +1130,10 @@ def apply_name(card):
         ident["hazard_check"] = hz
     else:
         ident.pop("hazard_check", None)
+    ident["status"] = NAMER_STATUS.get((ident.get("namer") or {}).get("status"))
+    if hz and not hz["confirmed"]:
+        ident["status"] = f"'{hz['proposed']}' held back: a hazard name ({hz['class']}) is shown only when the detector's word, the size and " \
+                          f"placement and a VLM agree; failed: {'; '.join(hz['failed'])}"
     cls = canonical(shown)
     ident["canonical"] = cls
     key = None if cls == NOT_OBJECT else cls or shown  # the tables are keyed by canonical classes; an unmapped name matches on its own head
@@ -1179,7 +1191,7 @@ def open_identity(ident, ans, source="gemini open name"):
     p = ans.get("p")
     p = None if p is None else round(min(max(float(p), 0.), 1.), 3)
     return {**ident, "proposed": NOT_OBJECT if not_obj else name, "decided_by": source, "confidence": p, "calibrated": False,
-            "status": NAMER_STATUS.get(status), "covers": name if not_obj else None, "namer": {"name": name, "status": status, "p": p},
+            "covers": name if not_obj else None, "namer": {"name": name, "status": status, "p": p},
             "note": f"open name from {source.split()[0]}, stated probability (uncalibrated)", "alternatives": ident.get("alternatives"),
             "alternatives_measure": ident.get("alternatives_measure")}
 

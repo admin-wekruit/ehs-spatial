@@ -35,7 +35,7 @@ STAGES = {"decode", "cuts", "sam3.person", "vlm.vocab", "sam3.vocab.wave1", "sam
           "vlm.name", "frames.shared", "sam3d.inputs", "splat.setup", "splat.score", "da3.restore",
           # click MVP (mvp/a-cards): pick layer, cards, densify, identity
           "objects.boxes", "pick.maps", "pick.encode", "cards.inputs", "cards.v1", "cards.v3", "densify.sam3", "densify.lift",
-          "outlines.polygons.v2", "vlm.identity", "vlm.identity.ehs", "vlm.identity.other",
+          "outlines.polygons.v2", "vlm.identity", "vlm.identity.ehs", "vlm.identity.other", "identity.gemini", "identity.gemini.sheets",
           # the judgement engine (mvp/b-judge)
           "judge.rules", "judge.som", "judge.vlm"}  # plus write.<layer>
 PRICE = {"A100-80GB": .000694, "cpu_core": .0000131, "gib": .00000222}  # Modal list prices, $/s

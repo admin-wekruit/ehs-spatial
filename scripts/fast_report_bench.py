@@ -66,7 +66,7 @@ class NamerRelay:
     no key leaves that container), every request at once; each answer back on the modal.Queue partition named by the report.
     Provider outputs (no images) are kept under OUT/namer/<report>/."""
 
-    def __init__(self, queue, out, workers=24):
+    def __init__(self, queue, out, workers=64):
         from concurrent.futures import ThreadPoolExecutor
         from review_video_object_semantics import REMOTE
         self.queue, self.out, self.pool, self.lock, self.container = queue, out, ThreadPoolExecutor(workers), threading.Lock(), None
@@ -134,12 +134,12 @@ class NamerRelay:
             provider = self.run_program(payload)
         except Exception as e:  # noqa: BLE001  one failed request: its objects go to the Qwen decider in the container
             error = repr(e)[:300]
-        rec = {"report": event["report"], "request": event["request"], "n": event.get("n"), "s": round(time.time() - t, 2),
+        rec = {"report": event["report"], "request": event["request"], "attempt": event.get("attempt", 1), "n": event.get("n"), "s": round(time.time() - t, 2),
                "status": (provider or {}).get("status"), "usage": (provider or {}).get("usage"), "error": error}
         self.queue.put({**rec, "provider": provider}, partition=event["report"])
         d = self.out / "namer" / event["report"]
         d.mkdir(parents=True, exist_ok=True)
-        (d / f"request-{event['request']:02d}.json").write_text(json.dumps({**rec, "provider": provider}, indent=1))
+        (d / f"request-{event['request']:02d}-a{event.get('attempt', 1)}.json").write_text(json.dumps({**rec, "provider": provider}, indent=1))
 
 
 def vlm_schema():
