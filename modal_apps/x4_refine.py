@@ -1218,6 +1218,9 @@ def lingbot_points(c, sp, views, res, frames):
         icp = {"fitness": round(float(r.fitness), 4), "rmse_m": round(float(r.inlier_rmse), 4),
                "correction_m": round(float(np.linalg.norm(T[:3, 3])), 4),
                "correction_deg": round(float(np.degrees(np.arccos(np.clip((np.trace(T[:3, :3]) - 1) / 2, -1, 1)))), 3)}
+        icp["applied"] = icp["correction_m"] <= .10 and icp["correction_deg"] <= 3  # runs 005/006 applied any correction (up to 2.8 m)
+        if not icp["applied"]:
+            T = np.eye(4)
     P = P @ T[:3, :3].T + T[:3, 3]
     region = P[in_box(P, sp["box"], .5)]
     d = nn(region, target)
@@ -1675,7 +1678,10 @@ def summarise(run_dir, extra=None):
             pl, th = v0.get("plane") or {}, v0.get("thin") or {}
             peaks = [x["peak_gb"][0] for x in stages if (x["stage"].endswith("." + s["id"]) or f".{s['id']}." in x["stage"])
                      and x["peak_gb"] and x["peak_gb"][0] is not None]
-            lb = s.get("lingbot") or {}
+            lb = dict(s.get("lingbot") or {})
+            ic = lb.get("icp") or {}
+            if ic:  # runs 005/006 applied every ICP correction; past 10 cm / 3 deg the alignment is not trusted
+                lb["alignment_reliable"] = ic.get("correction_m", 0) <= .10 and ic.get("correction_deg", 0) <= 3
             spots.append({
                 "id": s["id"], "group": s["group"], "word": s["word"], "triggers": s["triggers"], "centre_m_estimated": s["centre_m"],
                 "extent_m_estimated": s["extent_m"], "keyframes_detected": s["n_keyframes"],
@@ -1737,8 +1743,8 @@ def summarise(run_dir, extra=None):
 
 
 if __name__ == "__main__":
-    if sys.argv[1:2] == ["--summarise"]:
-        summarise(sys.argv[2])
+    if sys.argv[1:2] == ["--summarise"]:  # --summarise RUN_DIR [EXTRA.json merged at the top level]
+        summarise(sys.argv[2], json.loads(Path(sys.argv[3]).read_text()) if len(sys.argv) > 3 else None)
     else:
         assert sys.argv[1:] == ["--self-check"], __doc__
         self_check()
