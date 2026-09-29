@@ -91,9 +91,10 @@ def sheet(mirror, report, mp4, out_dir, n=30, seed=4, per=10):
         lines = [f"#{k} {c['id']} [{state}]", f"{(c.get('identity') or {}).get('name')}"[:48],
                  "  ".join(f"{lab} {short(ph.get(fld))}" for fld, lab in SHOW[:4]),
                  "  ".join(f"{lab} {short(ph.get(fld))}" for fld, lab in SHOW[4:]) + f"  @{(c.get('views') or {}).get('distance_m', ['?'])[0]} m"]
-        img[:6 + 20 * len(lines)] = (img[:6 + 20 * len(lines)] * .35).astype(np.uint8)  # a dark band under the text
+        band = np.zeros((6 + 20 * len(lines), 640, 3), np.uint8)  # the text above the frame: it never hides a region
         for j, t in enumerate(lines):
-            cv2.putText(img, t, (6, 18 + 20 * j), cv2.FONT_HERSHEY_SIMPLEX, .48, (255, 255, 255), 1, cv2.LINE_AA)
+            cv2.putText(band, t, (6, 18 + 20 * j), cv2.FONT_HERSHEY_SIMPLEX, .48, (255, 255, 255), 1, cv2.LINE_AA)
+        img = np.vstack([band, img])
         tiles.append(img)
         rows.append({"k": k, "card": c["id"], "kind": c["kind"], "state": state, "name": (c.get("identity") or {}).get("name"), "frame": f["frame"],
                      "physical": {fld: ph.get(fld) for fld, _ in SHOW}, "size_check": (ph.get("size_check") or {}).get("status"),
