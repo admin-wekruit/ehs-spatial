@@ -326,7 +326,8 @@ def bench(a):
                 fl.put_blob(mirror_root, mp4)  # the client's own MP4 is never sent back
                 options = {"vocab": a.vocab, "discover": a.discover, "client_has": [sha], "background_s": a.background_s if last else 0, "window_s": span,
                            "eval_holdout": [f - offset for f in ev.holdout_frames(site) if f - offset >= 0], **({"namer": namer_q} if relay else {}),
-                           **({} if a.judge == "on" else {"judge": False})}
+                           **({} if a.judge == "on" else {"judge": False}), **({} if a.display == "on" else {"display": False}),
+                           "judge_vlm": a.hazard != "off", "identity_vlm": a.identity_vlm}  # r4: the VLMs only when asked
                 if queues is not None:
                     hazard.workspace_container()  # awake before the call (the report service is up in production): off the analysis clock
                     options["hazard_queues"] = queues
@@ -456,9 +457,12 @@ if __name__ == "__main__":
     p.add_argument("--background-s", type=int, default=0)
     p.add_argument("--mirror-max-mb", type=float, default=0., help="larger blobs stay on the Modal Volume (a nearly full disk)")
     p.add_argument("--vocab", default="qwen", choices=("qwen", "gemini"))
-    p.add_argument("--hazard", default="gemini", choices=("qwen", "gemini"), help="the hazard judge's decider (gemini: relayed by this CLI)")
-    p.add_argument("--namer", default="gemini", choices=("gemini", "none"), help="mvp2/identity: object names from Gemini through the relay, or the Qwen decider only")
+    p.add_argument("--hazard", default="off", choices=("off", "qwen", "gemini"),
+                   help="the hazard judge's VLM (r4: off by default, the rules alone; gemini: relayed by this CLI)")
+    p.add_argument("--namer", default="none", choices=("gemini", "none"), help="mvp2/identity: object names from Gemini through the relay, or none (r4 default)")
+    p.add_argument("--identity-vlm", action="store_true", help="r4: the Qwen decider names what the namer did not (off: the SAM 3 word stays)")
     p.add_argument("--judge", default="on", choices=("on", "off"), help="r4: off = no judgements at all (no rules, no hazard VLM questions)")
+    p.add_argument("--display", default="on", choices=("on", "off"), help="r4: off = no SAM 3D models and no splat (the facts only)")
     p.add_argument("--discover", action="store_true", help="X10's catch-all and label words in SAM 3's wave 1 (vlm.DISCOVER)")
     p.add_argument("--serve", action="store_true")
     p.add_argument("--no-gpu-eval", dest="gpu_eval", action="store_false")

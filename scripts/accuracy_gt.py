@@ -420,6 +420,8 @@ def score_report(run_dir, report, inputs):
             x = ph.get(f) or {}
             if f == "visible_length" and x.get("value") is not None:  # r4: always a lower bound ('needs review' overwrites its status)
                 got, x = None, {**x, "status": "at least"}
+            if f == "depth" and isinstance(x.get("visible"), dict):  # r4: a one-side depth's visible part, a lower bound
+                got, x = None, {**x["visible"], "status": "at least"}
             if got is None and x.get("status") in ("at least", "at most") and x.get("value") is not None and fam in ("height", "extent"):
                 lo = x["status"] == "at least"
                 u_ns = float(np.sqrt(max(x["u"] ** 2 - float((x.get("parts") or {}).get("scale", 0.)) ** 2, 0.)))  # (b): without the scale term
