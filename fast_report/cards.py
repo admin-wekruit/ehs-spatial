@@ -1219,7 +1219,7 @@ def identity_v1(o, sc=None):
     return {"proposed": o.get("word"), "name": o.get("word"), "confidence": None, "calibrated": False, "decided_by": "sam3 vote",
             "note": "detected word, unverified", "alternatives": [[w, round(v / total, 3)] for w, v in votes.items() if w != o.get("word")][:3],
             "alternatives_measure": "SAM 3 vote share", "candidates": cands, "candidates_struck": strike(cands, (sc or {}).get("measured_m")),
-            "detector_words": list(votes) or ([o["word"]] if o.get("word") else []), "label": "inferred"}
+            "detector_words": list(votes) or ([o["word"]] if o.get("word") and o["word"] != UNIDENTIFIED else []), "label": "inferred"}
 
 
 ANGLES = ("principal_axis_tilt_deg", "planar_slope_deg")

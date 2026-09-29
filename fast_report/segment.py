@@ -118,6 +118,7 @@ class SamWork:
         self.tasks, self.order, self.lock = queue.PriorityQueue(), itertools.count(), threading.Lock()
         self.chunks = {d: [] for d in sams}
         self.cache, self.person, self.vocab = {}, [], []
+        self.hidden, self.keep_hidden = {}, False  # r4/coverage: the object keyframes' backbone output, for densify's box masks
         self.total, self.done = {"person": None, "wave1": None, "wave2": None}, {"person": 0, "wave1": 0, "wave2": 0}
         self.decoded, self.vocab_known, self.person_ready, self.all_ready = (threading.Event() for _ in range(4))
         self.by_worker, self.error = {}, None
@@ -210,6 +211,8 @@ class SamWork:
                         with self.lock:
                             for j in objs:
                                 self.cache[x + j] = sam.pick(vision, [j], clone=True)
+                                if self.keep_hidden:  # 10.6 MB a keyframe (72 x 72 x 1024 bf16)
+                                    self.hidden[x + j] = vision.last_hidden_state[j].clone()
                     if objs:
                         self.tasks.put((1, next(self.order), "wave1", x))
                 elif kind == "wave1":

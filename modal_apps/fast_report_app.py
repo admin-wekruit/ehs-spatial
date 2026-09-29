@@ -38,6 +38,7 @@ PHASE2 = Path("/Users/adam/Desktop/panoptes-public/research-notes/phase2")
 DA3_CODE = "3d835ec1a5802d64a8b8b15f817a1ab54809bfe4"
 DA3_MODEL, DA3_REV = "depth-anything/DA3-GIANT-1.1", "72ee9f89ce4e50d704e9d55ee9c646ec8dc25a19"
 PROCS, CPU, MEMORY_GIB, GPU, GATE_PROCS = 24, 32, 160, "A100-80GB:2", 16
+COVERAGE_SRCS = ("owlv2",)  # r4/coverage: box sources resident on both GPUs (fast_report.coverage; the r4 probe chose them)
 VLLM_MPS = False  # vLLM outside MPS; this process, SAM 3D (E4) and the splat inside
 
 app = modal.App("panoptes-fast-report")
@@ -61,6 +62,10 @@ def build_image():
                          f"git+https://github.com/ByteDance-Seed/Depth-Anything-3.git@{DA3_CODE}")
             .run_commands("python -m venv /opt/vllm && PIP_EXTRA_INDEX_URL= /opt/vllm/bin/pip install -q vllm==0.11.0 transformers==4.57.1 pillow"))
     out = splat.with_envs(sam3d.with_envs(base)).env({"HF_HUB_OFFLINE": "1", "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
+    # r4/coverage: ultralytics (AGPL-3.0: YOLOE / YOLO11 / YOLO26 box sources; the user accepts it for now) as the last layer, no
+    # deps (its opencv-python would shadow the headless one; torch stays E9's)
+    out = out.pip_install("polars==1.44.2", "psutil", "pyyaml", "requests", "matplotlib", "nvidia-ml-py", "cloudpickle", "filelock") \
+        .run_commands("pip install --no-deps ultralytics==8.4.165 ultralytics-thop==2.2.1")
     for d in ("fast_report", "scripts", "modal_apps", "ehs_spatial"):
         out = out.add_local_dir(REPO / d, f"/repo/{d}", ignore=["**/__pycache__/**", "**/*.pyc"])
     return out
@@ -155,6 +160,11 @@ class FastReport:
         b["sam3d"] = self.sam3d.ready()  # before this process warms up on GPU 0: SAM 3D's warm-up holds ~20 GB a process until it is done
         lap("sam3d_ready_s")
         self.sams = {self.dev_geo: segment.Sam3(sam0, proc, self.dev_geo), self.dev_seg: segment.Sam3(sam.to(self.dev_seg), proc, self.dev_seg)}
+        if COVERAGE_SRCS:  # r4/coverage: the box sources and SAM 3's tracker head (no backbone) on each GPU; a call uses them with options['coverage']
+            from fast_report import coverage
+            self.cov = {d: {"boxer": coverage.Boxer(d, sam3_app.MODEL_ID, sam3_app.REVISION, "/v/sam3/huggingface/hub"),
+                            "dets": [coverage.Detector(s, d) for s in COVERAGE_SRCS]} for d in (self.dev_geo, self.dev_seg)}
+            lap("coverage_models_s")
         self.cpu_pool, self.vlm_pool, self.run_pool = ThreadPoolExecutor(CPU), ThreadPoolExecutor(4), ThreadPoolExecutor(1)
         vllm_warm = self.cpu_pool.submit(self.warm_vllm)
         with torch.inference_mode():  # kernels, allocator, cuBLAS handles at the shapes the runs use
@@ -170,6 +180,13 @@ class FastReport:
                     s.detect(s.pick(v, [0, 3, 6]), 3, vlm.CORE, segment.VOCAB_SCORE, logits=True)
                     s.detect(s.pick(v, [0]), 1, filler, segment.VOCAB_SCORE, logits=True)
                     torch.cuda.synchronize(d)
+                    if getattr(self, "cov", None):  # r4/coverage: detector kernels and the tracker head at the run's shapes
+                        imgs = list(noise[:4].cpu().numpy())
+                        for det in self.cov[d]["dets"]:
+                            det.detect(imgs, .05)
+                        emb = self.cov[d]["boxer"].embed(v.last_hidden_state[:2])
+                        self.cov[d]["boxer"].decode(emb, 0, np.array([[100., 100., 400., 500.]] * 40))
+                        torch.cuda.synchronize(d)
             lap("warm_sam3_s")
             frames = torch.randint(0, 255, (4, 720, 1280, 3), dtype=torch.uint8, device=self.dev_geo)
             masks = torch.zeros((600, 280, 504), dtype=torch.bool, device=self.dev_geo)

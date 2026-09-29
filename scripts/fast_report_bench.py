@@ -325,6 +325,7 @@ def bench(a):
                 report = f"mvp-{site}-{sha[:8]}-{int(time.time())}"
                 fl.put_blob(mirror_root, mp4)  # the client's own MP4 is never sent back
                 options = {"vocab": a.vocab, "discover": a.discover, "client_has": [sha], "background_s": a.background_s if last else 0, "window_s": span,
+                           "coverage": a.coverage and kind != "warm-off", "judge_vlm": a.hazard != "off",
                            "eval_holdout": [f - offset for f in ev.holdout_frames(site) if f - offset >= 0], **({"namer": namer_q} if relay else {})}
                 if queues is not None:
                     hazard.workspace_container()  # awake before the call (the report service is up in production): off the analysis clock
@@ -449,13 +450,15 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--out", type=Path)
     p.add_argument("--sites", default="me340,samsclub-a2,walmart")
-    p.add_argument("--plan", default="first,warm,warm,shifted", help="calls per video: first | warm | shifted")
+    p.add_argument("--plan", default="first,warm,warm,shifted", help="calls per video: first | warm | shifted | warm-off (r4: warm, --coverage off)")
     p.add_argument("--shift-s", type=float, default=5.)
     p.add_argument("--click-latency", type=Path, help="C's headless click check result {p50_ms, p95_ms, n}")
     p.add_argument("--background-s", type=int, default=0)
     p.add_argument("--mirror-max-mb", type=float, default=0., help="larger blobs stay on the Modal Volume (a nearly full disk)")
     p.add_argument("--vocab", default="qwen", choices=("qwen", "gemini"))
-    p.add_argument("--hazard", default="gemini", choices=("qwen", "gemini"), help="the hazard judge's decider (gemini: relayed by this CLI)")
+    p.add_argument("--hazard", default="gemini", choices=("qwen", "gemini", "off"),
+                   help="the hazard judge's decider (gemini: relayed by this CLI; off: no hazard VLM question at all, r4)")
+    p.add_argument("--coverage", action="store_true", help="r4/coverage: detector boxes -> SAM 3 tracker masks in densify ('warm-off' calls leave it off)")
     p.add_argument("--namer", default="gemini", choices=("gemini", "none"), help="mvp2/identity: object names from Gemini through the relay, or the Qwen decider only")
     p.add_argument("--discover", action="store_true", help="X10's catch-all and label words in SAM 3's wave 1 (vlm.DISCOVER)")
     p.add_argument("--serve", action="store_true")
