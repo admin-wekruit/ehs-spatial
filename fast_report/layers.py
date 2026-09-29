@@ -227,8 +227,10 @@ def _poll(folder, after, lock):
     return {"patches": out, "written": _read_json(folder / "written.json", {}), "served": served, "run": _read_json(folder / "run.json", None)}
 
 
-def serve(root, port=8793):
-    """Loopback only, no key: GET /fast/reports/<id>/patches?after=<seq>, GET /fast/blobs/<hex> (immutable). Returns the running server."""
+def serve(root, port=8793, click=None, alive=None):
+    """Loopback only, no key: GET /fast/reports/<id>/patches?after=<seq>, GET /fast/blobs/<hex> (immutable). Returns the running server.
+    mvp3 (D4 b), with a report container attached: GET /fast/reports/<id>/click?i=<pick frame>&x=&y= -> click(id, i, x, y), its
+    on-demand card; GET /fast/alive -> alive() (the viewer's heartbeat keeps the container up). Without one: 404."""
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     root, lock = Path(root), threading.Lock()
 
@@ -238,6 +240,15 @@ def serve(root, port=8793):
             if m := re.fullmatch(r"/fast/reports/([\w.-]+)/patches", url.path):
                 after = int(parse_qs(url.query).get("after", ["0"])[0])
                 return self._send(json.dumps(_poll(root / "reports" / m[1], after, lock)).encode(), "application/json", "no-store")
+            if (m := re.fullmatch(r"/fast/reports/([\w.-]+)/click", url.path)) and click:
+                q = parse_qs(url.query)
+                try:
+                    body, status = click(m[1], int(q["i"][0]), float(q["x"][0]), float(q["y"][0])), 200
+                except Exception as error:  # noqa: BLE001  the viewer says why (the container is gone, the report is not on the Volume)
+                    body, status = {"status": "unavailable", "reason": repr(error)[:300]}, 503
+                return self._send(json.dumps(body, default=str).encode(), "application/json", "no-store", status)
+            if url.path == "/fast/alive" and alive:
+                return self._send(json.dumps({"alive": alive()}).encode(), "application/json", "no-store")
             if (m := re.fullmatch(r"/fast/blobs/([0-9a-f]{64})", url.path)) and (path := root / "blobs" / "sha256" / m[1]).exists():
                 data = path.read_bytes()
                 return self._send(data, _sniff(data), "public, max-age=31536000, immutable")
@@ -576,6 +587,7 @@ def modal_check(src, report, out, port=None, speed=1.0, as_report=None):
 # ---------------------------------------------------------------- self-check
 
 def self_check():
+    import urllib.error
     import tempfile
     import urllib.request
     with tempfile.TemporaryDirectory() as volume, tempfile.TemporaryDirectory() as local:
@@ -618,6 +630,17 @@ def self_check():
         ref = next(p for p in first["patches"] if p["layer"] == "room")["blobs"]["mesh-0"]
         assert hashlib.sha256(get(f"/fast/blobs/{ref['sha256']}")).hexdigest() == ref["sha256"]
         assert ref["byteLayout"]["vertexCount"] == 3 and ref["byteLayout"]["indexCount"] == 3
+        try:  # no report container attached: no on-demand route
+            get("/fast/reports/r1/click?i=0&x=1&y=2")
+            raise AssertionError("the click route needs a container")
+        except urllib.error.HTTPError as e:
+            assert e.code == 404
+        server.shutdown()
+        calls = []
+        server = serve(local, 0, click=lambda r, i, x, y: calls.append((r, i, x, y)) or {"status": "card"}, alive=lambda: 1.)
+        port = server.server_address[1]
+        assert json.loads(get("/fast/reports/r1/click?i=3&x=10.5&y=20")) == {"status": "card"} and calls == [("r1", 3, 10.5, 20.)]
+        assert json.loads(get("/fast/alive")) == {"alive": 1.}
         server.shutdown()
         replayed = replay(local, "r1", local, as_report="r2", speed=100)
         assert len(list((Path(local) / "reports" / replayed / "patches").glob("*.json"))) == len(patches)

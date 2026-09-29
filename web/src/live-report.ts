@@ -335,3 +335,22 @@ export function entityInfo(cardsLayer: any, judgements: any): Map<string, Info> 
   for (const [id, i] of out) if (id === i.card?.id || !i.card) i.verdict = judgements?.by_object?.[id] ?? worstVerdict(i.rows.map(r => r.verdict));
   return out;
 }
+
+// ---------------------------------------------------------------- mvp3 D4 (b): on demand
+/** A click on no entity asks the report container (FastReport.click through the local server): SAM 3's tracker segments the point on
+ *  that pick frame, the keyframe's depth lifts it, Qwen names it. -> {status: card | surface | entity, ...}; throws when no report
+ *  container is attached (404) or it failed (503, with its reason). */
+export async function onDemand(report: string, index: number, x: number, y: number) {
+  const r = await fetch(`/fast/reports/${encodeURIComponent(report)}/click?i=${index}&x=${Math.round(x)}&y=${Math.round(y)}`, { cache: "no-store" });
+  if (r.status === 404) throw Error("no report container is running");
+  const body = await r.json();
+  if (!r.ok) throw Error(body.reason || `status ${r.status}`);
+  return body;
+}
+
+/** An on-demand card's mask {w, h, runs} (alternating run lengths, the first of 0s) -> a highlight. */
+export function runsMask(m: { w: number; h: number; runs: number[] }) {
+  const mask = new Uint8Array(m.w * m.h);
+  for (let i = 0, at = 0; i < m.runs.length; at += m.runs[i], i++) if (i % 2) mask.fill(1, at, at + m.runs[i]);
+  return { w: m.w, h: m.h, mask };
+}

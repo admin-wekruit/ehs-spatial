@@ -4,8 +4,8 @@ import { mountSceneViewer, type SceneViewer } from "./viewer/native-viewer";
 import { splatAnnotation } from "./viewer/splat-layer";
 import { VideoMemory, VideoView, videoClock, type VideoPick } from "./VideoView";
 import { cameraPath, cameraView, currentCameras } from "./core";
-import { assetURL, chunkOrder, clickClock, emptyPick, entityInfo, fillChunk, gunzip, latest, liveDocument, pickAt, pickChunks, pickIndexAt, pickMask, poll, readPick,
-  SEVERITY, unknownRegion, worstVerdict, type PickChunk,
+import { assetURL, chunkOrder, clickClock, emptyPick, entityInfo, fillChunk, gunzip, latest, liveDocument, onDemand, pickAt, pickChunks, pickIndexAt, pickMask, poll, readPick,
+  runsMask, SEVERITY, unknownRegion, worstVerdict, type PickChunk,
   type Info, type Patch, type Pick, type Poll } from "./live-report";
 import "./report-scene.css";
 
@@ -104,23 +104,39 @@ export default function LiveReport({ reportId }: { reportId: string }) {
   const host = useRef<HTMLDivElement>(null), viewer = useRef<SceneViewer | undefined>(undefined), opened = useRef(false), follow = useRef(false);
   const [selected, setSelected] = useState<string | null>(null), [frame, setFrame] = useState<string | null>(null), [following, setFollowing] = useState(false);
   const [clicked, setClicked] = useState<Clicked | null>(null), [tab, setTab] = useState<"card" | "objects" | "memory">("card");
-  const choose = (id: string | null) => { setSelected(id); setClicked(null); if (id) setTab("card"); };  // from 3D, the list, a card link
+  const [od, setOd] = useState<any>(null), odKey = useRef(0);  // mvp3: the on-demand card of the last click on no entity
+  const choose = (id: string | null) => { odKey.current++; setOd(null); setSelected(id); setClicked(null); if (id) setTab("card"); };  // from 3D, the list, a card link
   const onPick = (p: VideoPick) => {  // a video click: the pick layer decides; before it lands, the smallest outline under the point
     let use = pick, hit = pick ? pickAt(pick, p.t, p.x, p.y) : null;
     if (hit?.pending && older.current) { use = older.current; hit = pickAt(use, p.t, p.x, p.y); }  // its chunk is on the way
     const id = hit && !hit.pending ? hit.id : p.under[0] ?? null;
     const miss = !id && use && !hit?.pending ? unknownRegion(use, layers.cameras?.data, cardsLayer, p.t, p.x, p.y) : null;
     setSelected(id); setClicked({ ...p, id, miss, under: p.under.filter(u => u !== id) }); setTab("card");
+    const k = ++odKey.current, index = miss && use ? pickIndexAt(use.data.frames, p.t) : -1, t0 = performance.now();
+    setOd(index >= 0 ? { pending: true } : null);
+    if (index >= 0) onDemand(reportId, index, p.x, p.y).then(card => {  // mvp3 D4 (b): the report container segments, lifts and names it
+      if (odKey.current !== k) return;
+      setOd({ ...card, ms: performance.now() - t0 });
+      if (card.status === "entity") { setSelected(card.entity); setClicked(c => c && { ...c, id: card.entity, miss: null }); }  // the point was at its edge
+    }).catch((e: Error) => { if (odKey.current === k) setOd({ error: e.message }); });
   };
+  useEffect(() => {  // mvp3: the report container stays up while this viewer is open (FastReport.alive; it scales down 60 s after the last)
+    const beat = () => { if (window.document.visibilityState === "visible") fetch("/fast/alive", { cache: "no-store" }).catch(() => undefined); };
+    beat();
+    const timer = window.setInterval(beat, 30000);
+    return () => clearInterval(timer);
+  }, []);
   useLayoutEffect(() => {  // the card is in the DOM now: pointer-down -> here is the click latency
     if (!clickClock.t0) return;
     stats.clicks.push(performance.now() - clickClock.t0); clickClock.t0 = 0;
   }, [clicked]);
   useEffect(() => { if (stats.clicks.length !== clickMs.length) setClickMs([...stats.clicks]); }, [clicked]);
-  const highlight = useMemo(() => pick && selected ? (t: number) => {
+  const odMask = useMemo(() => od?.status === "card" && od.mask ? runsMask(od.mask) : null, [od]);
+  const highlight = useMemo(() => pick && (selected || odMask) ? (t: number) => {
     const i = pickIndexAt(pick.data.frames, t), o = older.current;
+    if (!selected) return i === od.pick_index ? odMask : null;  // the on-demand mask, on its own keyframe
     return pickMask(pick, i, selected) ?? (o && i >= 0 && !pick.ready[i] ? pickMask(o, pickIndexAt(o.data.frames, t), selected) : null);
-  } : undefined, [pick, selected]);
+  } : undefined, [pick, selected, odMask]);
   const [view, setView] = useState({ observed_surface: true, point_cloud: false, splats: true, labels: true, primitive: true });
   const [load, setLoad] = useState({ loaded: 0, total: 0 });
   useEffect(() => {
@@ -214,7 +230,7 @@ export default function LiveReport({ reportId }: { reportId: string }) {
             <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{label}</button>)}
         </nav>
         <div className="mvp-panel">
-          {tab === "card" && (clicked?.miss ? <UnknownCard r={clicked.miss} under={clicked.under} names={names} onSelect={choose} tr={tr} />
+          {tab === "card" && (clicked?.miss ? <UnknownCard r={clicked.miss} od={od} under={clicked.under} names={names} onSelect={choose} tr={tr} />
             : <Card id={selected} info={infos.get(selected || "")} entity={entity} under={clicked?.id === selected ? clicked?.under || [] : []} names={names}
                 judgementsPatch={layers.judgements} cardsPatch={layers.object_cards} duration={duration} onSelect={choose} tr={tr} />)}
           {tab === "objects" && <ObjectList cards={cardsLayer?.cards || []} infos={infos} selected={selected} onSelect={choose} tr={tr} />}
@@ -371,9 +387,32 @@ function Under({ under, names, onSelect, tr }: { under: string[]; names: (id: st
     <p>{under.map(id => <button key={id} className="mvp-link" onClick={() => onSelect(id)}>{names(id)}</button>)}</p></section> : null;
 }
 
-function UnknownCard({ r, under, names, onSelect, tr }: { r: NonNullable<Clicked["miss"]>; under: string[]; names: (id: string) => string; onSelect: (id: string) => void; tr: Tr }) {
+/** mvp3 D4 (b): what the report container made of a click on no entity: an ad-hoc card (one view, no checks), a surface, or why none. */
+function OnDemand({ od, tr }: { od: any; tr: Tr }) {
+  if (!od) return null;
+  if (od.pending) return <section className="mvp-block"><p><small>{tr("按需：正在分割并命名这个点…", "On demand: segmenting and naming this point…")}</small></p></section>;
+  if (od.error) return <section className="mvp-block"><p><small>{tr("按需不可用", "On demand unavailable")}: {od.error}</small></p></section>;
+  const idn = od.identity || {}, ph = od.physical || {}, took = <small>{tr("点击到卡片", "click → card")} {fmt(od.ms, 0)} ms · {tr("关键帧", "keyframe")} {od.frame}</small>;
+  if (od.status !== "card") return <section className="mvp-block"><p>{tr("按需", "On demand")} <Tag>{tr("按需", "on demand")}</Tag>: {idn.covers || idn.namer?.name || "—"} · {tr("一个表面，不是对象", "a surface, not an object")}</p><p>{took}</p></section>;
+  return <section className="mvp-block mvp-ondemand">
+    <h3>{idn.name} <Tag>{tr("按需", "on demand")}</Tag> <Chip v={null} tr={tr} /></h3>
+    <p>{idn.confidence == null ? tr("没有置信度", "no confidence") : `${Math.round(idn.confidence * 100)}%`} <Tag>{tr("未校准", "uncalibrated")}</Tag> · {tr("由", "decided by")} {idn.decided_by}{idn.status ? ` · ${idn.status}` : ""}</p>
+    <p>{od.class?.category || "other"} · {od.class?.mobility || "—"}</p>
+    <table className="mvp-physical"><tbody>
+      {[...PHYSICAL, ["distance_from_camera", "离相机", "distance from the camera"] as [string, string, string]].filter(([k]) => ph[k]).map(([k, zh, en]) =>
+        <tr key={k}><th>{tr(zh, en)}</th><td><Quantity q={ph[k]} tr={tr} /></td></tr>)}
+      {ph.size_check && <tr><th>{tr("尺寸检查", "size check")}</th><td>{ph.size_check.status}{ph.size_check.reason ? <small> ({ph.size_check.reason})</small> : null}</td></tr>}
+    </tbody></table>
+    <p><small>{od.note}</small></p>
+    <p>{took}</p>
+  </section>;
+}
+
+function UnknownCard({ r, od, under, names, onSelect, tr }: { r: NonNullable<Clicked["miss"]>; od: any; under: string[]; names: (id: string) => string; onSelect: (id: string) => void; tr: Tr }) {
   return <article className="mvp-card mvp-unknown">
-    <header className="mvp-block"><h3>{tr("未知区域", "Unknown region")}</h3><p><small>{tr("不是检测到的对象：不对它是什么做任何断言", "Not a detected object: nothing is claimed about what it is")}</small></p></header>
+    {od?.status === "card" ? <OnDemand od={od} tr={tr} /> : <>
+      <header className="mvp-block"><h3>{tr("未知区域", "Unknown region")}</h3><p><small>{tr("不是检测到的对象：不对它是什么做任何断言", "Not a detected object: nothing is claimed about what it is")}</small></p></header>
+      <OnDemand od={od} tr={tr} /></>}
     {r.status !== "depth" ? <section className="mvp-block"><p>{tr("这里没有三维点", "No 3D point here")}</p></section> : <section className="mvp-block">
       <table className="mvp-physical"><tbody>
         <tr><th>{tr("离相机", "distance from the camera")}</th><td><Quantity q={{ ...r.distance, unit: "m", scale: "estimated" }} tr={tr} /></td></tr>
