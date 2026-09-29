@@ -1842,7 +1842,7 @@ def self_check():
     Rq = cv2.Rodrigues(np.array([.3, -.2, .5]))[0]
     s_, R_, t_ = umeyama(A, 2.5 * A @ Rq.T + [1., 2, 3])
     assert abs(s_ - 2.5) < 1e-9 and np.allclose(R_, Rq) and np.allclose(t_, [1, 2, 3])
-    assert not hedge_due(14.9, 1, 20) and not hedge_due(16., 6, 20) and hedge_due(16., 5, 20) and hedge_due(24., 20, 20)  # tail or 24 s
+    assert not hedge_due(14.9, 1, 20) and not hedge_due(16., 6, 20) and hedge_due(16., 5, 20) and hedge_due(24., 19, 20)  # tail or 24 s
     assert hedge_due(15., 2, 4) and not hedge_due(14., 2, 4)  # a small pass: every request still out at 15 s
     assert not hedge_due(25., 39, 39) and hedge_due(24., 38, 39)  # nothing back: slow, no copies; a pass under way copies at 24 s
     assert not still_waiting(30., 10, 39) and still_waiting(30., 39, 39) and not still_waiting(60., 39, 39)  # stragglers vs a slow service
