@@ -1172,13 +1172,18 @@ def physical_row(ours, ref, align, boxes=None, wh=(1280, 720)):
     same, n_ref, n_iou = match_same_object(ours, ref, boxes or {}, wh)
     centroid_pairs, _ = match_delivered(ours, ref, align)
     pairs = [(o, e, None) for o, e, _, _ in same]
-    got = {q: [] for q in ("top", "base", "long_side", "short_side")}
-    signed = {"top": [], "base": []}
+    got = {q: [] for q in ("top", "base", "long_side", "short_side", "top_raw", "base_raw")}
+    signed = {"top": [], "base": [], "top_raw": [], "base_raw": []}
     for o, e, _ in pairs:
         dv = delivered_values(e, ref["mpn"])
         for q in ("top", "base"):
             if o[q]:
                 signed[q].append(s * o[q][0] - dv[q])
+                # mvp2: heights above the floor also raw: both reports put the floor 1.6 m under the camera, so the camera-path Sim3
+                # scale (Sam's Club 0.89) is not the heights' scale (it moved Sam's tops by -0.19 m on same-object pairs)
+                signed[q + "_raw"].append(o[q][0] - dv[q])
+                if o[q][2] is not None:
+                    got[q + "_raw"].append((abs(o[q][0] - dv[q]), o[q][2]))
     cen = {"top": [s * o["top"][0] - delivered_values(e, ref["mpn"])["top"] for o, e, _ in centroid_pairs if o["top"]]}
     not_compared = {"top": 0, "sides": 0}
     for o, e, _ in pairs:
