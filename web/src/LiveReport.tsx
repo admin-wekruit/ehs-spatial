@@ -235,7 +235,8 @@ function Quantity({ q, tr }: { q: any; tr: Tr }) {
   if (!q || q.value === undefined || q.value === null) return <span className="mvp-status">{q?.status || tr("没有值", "no value")}{q?.reason ? ` (${q.reason})` : ""}</span>;
   const digits = q.unit === "deg" || q.unit === "°" ? 1 : 2, v = Array.isArray(q.value) ? `(${q.value.map((x: number) => fmt(x, digits)).join(", ")})` : fmt(q.value, digits);
   const st = q.bound || q.status, scale = String(q.scale || "");  // A: status "at least" | "at most" | "needs review" with a value
-  return <span>{st === "at least" ? "≥ " : st === "at most" ? "≤ " : ""}{v} ± {fmt(q.u, digits)} {q.unit === "deg" ? "°" : q.unit}
+  // mvp2/integrate: a bound whose u is 0 (an unresolved size: the end of its interval) shows no '± 0.00'
+  return <span>{st === "at least" ? "≥ " : st === "at most" ? "≤ " : ""}{v}{q.bound && !q.u ? "" : <> ± {fmt(q.u, digits)}</>} {q.unit === "deg" ? "°" : q.unit}
     {scale.startsWith("estimated") ? <Tag>{tr("估计尺度", "estimated")}</Tag> : scale ? <Tag>{tr("与尺度无关", "scale-free")}</Tag> : null}
     {st === "needs review" && <Tag>{tr("待复核", "needs review")}</Tag>}
     {q.path && <small> · {tr("路径", "path")}: {q.path}</small>}

@@ -844,15 +844,22 @@ UNRESOLVED = ("height", "width", "depth", "visible_length", "footprint_m2")
 
 
 def unresolved(phys):
-    """A size whose +-u reaches zero says nothing about the size: 'not measurable' with the reason (the policy: a number is shown
-    only when it is accurate at its u). mvp2/integrate: under the ground-truth u rule (extents k 2.39 on the geometry parts)
-    small tools and goods 2-5 m away (2-5 cm of resolution against sizes of 4-30 cm) read e.g. 'width 0.04 +- 0.07 m' on
-    51-70 % of the retail and workshop cards' widths. Heights above the floor and positions are not sizes (zero is a value)."""
+    """A size whose +-u reaches zero is not resolved (the policy: a number is shown only when it is accurate at its u): only its
+    upper end is known, so it becomes the bound 'at most value + u' (u 0: the bound is the interval's end; bound 'at most' keeps
+    the sign through a later 'needs review'), or 'not measurable' when it was already a lower bound ('at least': both ends
+    unknown). A check with a maximum can still PASS on the bound, never FAIL. mvp2/integrate: under the ground-truth u rule
+    (extents k 2.39 on the geometry parts) small tools and goods 2-5 m away read e.g. 'width 0.04 +- 0.07 m' on 51-70 % of the
+    retail and workshop cards' widths. Heights above the floor and positions are not sizes (zero is a value)."""
     for n in UNRESOLVED:
         f = phys.get(n)
-        if isinstance(f, dict) and "value" in f and f["u"] >= abs(f["value"]):
-            phys[n] = {"status": "not measurable", "reason": "its uncertainty is as large as the size itself: too small for the "
-                                                              "resolution and depth at this distance (seen from further than it is big)"}
+        if not (isinstance(f, dict) and "value" in f and f["u"] >= abs(f["value"])):
+            continue
+        if f.get("status") == "at least":
+            phys[n] = {"status": "not measurable", "reason": "only a lower bound, and its uncertainty is as large as it"}
+        else:
+            phys[n] = {**{k: f[k] for k in ("unit", "level", "scale", "parts", "n_subsets") if k in f}, "value": round(f["value"] + f["u"], 3),
+                       "u": 0., "status": "at most", "bound": "at most", "measured": {"value": f["value"], "u": f["u"]},
+                       "reason": "not resolved (its +-u reached zero at this distance and resolution): only an upper bound"}
 
 
 def unresolved_distance(f, floor_m=1.):
@@ -1995,7 +2002,11 @@ def self_check():
     ph = {"width": value(.04, {"resolution": .03}, "extent", {"extent": {"sets": 2.4, "one_set": 4.5}}), "height": value(.3, {"views": .02}, "extent", {}),
           "top_above_floor": value(.02, {"floor": .05}, "height", {})}  # mvp2/integrate: 0.04 +- 0.14 m is no size; 0.02 +- 0.05 m up is a value
     unresolved(ph)
-    assert ph["width"]["status"] == "not measurable" and "value" in ph["height"] and "value" in ph["top_above_floor"], ph
+    assert ph["width"]["status"] == "at most" and ph["width"]["value"] == round(.04 + ph["width"]["measured"]["u"], 3) and ph["width"]["u"] == 0.
+    assert "status" not in ph["height"] and "status" not in ph["top_above_floor"], ph
+    ph = {"height": value(.1, {"resolution": .2}, "extent", {}, status="at least")}  # a cut lower bound that is not resolved: nothing known
+    unresolved(ph)
+    assert ph["height"]["status"] == "not measurable", ph
     assert unresolved_distance(value(0., {"person": 5.}, "position", {}))["status"] == "not measurable"  # 0 +- 5 m
     assert "value" in unresolved_distance(value(0., {"person": .4}, "position", {})) and "value" in unresolved_distance(value(12., {"person": 1.5}, "position", {}))
     kg = {"height": {"sets": 2., "one_set": 3.}}  # the ground-truth u rule: geometry parts x k_geo[view-set state], scale apart
