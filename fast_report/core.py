@@ -22,17 +22,20 @@ import detect_shot_cuts as dsc  # cut rules, unchanged
 
 BLOCK, MIN_SHOT, CHUNK, TAIL = 6, 30, 16, 8  # E9: sharpest of each 6-frame block; shots under 1 s get no geometry
 DENSIFY_BATCH = 4  # click MVP section 7: keyframes per densify SAM 3 task
-NAMER_WAIT_S, NAMER_HEDGE_S = 36., 15.  # mvp2/identity: Gemini answers awaited this long after the requests went out (then the Qwen
-# decider names what is left); a request answered with an error is sent once more at once, one still out is copied by hedge_due
-NAMER_HEDGE_MAX_S, NAMER_TAIL = 24., .25
+NAMER_WAIT_S, NAMER_HEDGE_S = 30., 15.  # mvp2/identity: Gemini answers awaited this long after the requests went out (then the Qwen
+# decider names what is left, or the leftover pass beside densify's); a request answered with an error is sent once more at once,
+# one still out is copied by hedge_due. mvp2/integrate: 36 -> 30 s: 1-2 of 20-48 requests never return (ME340 005: two), and
+# their objects wait for this deadline before the leftover pass asks again
+NAMER_HEDGE_MAX_S, NAMER_TAIL, NAMER_SMALL = 24., .25, 8
 
 
 def hedge_due(elapsed, n_pending, n_reqs):
-    """A second copy of a naming request still out: once the pass is in its tail (<= NAMER_TAIL of its requests unanswered) after
-    NAMER_HEDGE_S, or at NAMER_HEDGE_MAX_S whatever the rest do. mvp2/integrate: copying every request at 15 s re-sent 42 of 44
-    on Sam's Club; the doubled load slowed the report container's requests to 16-24 s (ME340's 19: 11-13 s) and queued copies
-    in the relay's workers, where two copies of one request were never answered."""
-    return elapsed >= NAMER_HEDGE_MAX_S or elapsed >= NAMER_HEDGE_S and n_pending <= NAMER_TAIL * n_reqs
+    """A second copy of a naming request still out: after NAMER_HEDGE_S once the pass is in its tail (<= NAMER_TAIL of its
+    requests unanswered) or is small (<= NAMER_SMALL requests: the copies add little load), else at NAMER_HEDGE_MAX_S.
+    mvp2/integrate: copying every request at 15 s re-sent 42 of 44 on Sam's Club; the doubled load slowed the report container's
+    requests to 16-24 s (ME340's 19: 11-13 s) and queued copies in the relay's workers, where two copies of one request were
+    never answered. A 4-request densify pass with one lost request waited for the tail rule until 15.2 s, its copy until 33 s."""
+    return elapsed >= NAMER_HEDGE_MAX_S or elapsed >= NAMER_HEDGE_S and (n_pending <= NAMER_TAIL * n_reqs or n_reqs <= NAMER_SMALL)
 DA3_HW = (280, 504)
 CAMERA_HEIGHT_M = 1.6  # the reference's own assumption: every metre here is 'estimated'
 LICENSE = "DA3-GIANT-1.1 (CC BY-NC 4.0): research licence, not for commercial use"
@@ -1829,6 +1832,7 @@ def self_check():
     s_, R_, t_ = umeyama(A, 2.5 * A @ Rq.T + [1., 2, 3])
     assert abs(s_ - 2.5) < 1e-9 and np.allclose(R_, Rq) and np.allclose(t_, [1, 2, 3])
     assert not hedge_due(14.9, 1, 20) and not hedge_due(16., 6, 20) and hedge_due(16., 5, 20) and hedge_due(24., 20, 20)  # tail or 24 s
+    assert hedge_due(15., 2, 4) and not hedge_due(14., 2, 4)  # a small pass: every request still out at 15 s
     assert densify_words(["box", "spill", "lamp", "shelf"], [{"box": .5}, {"shelf": .4, "box": .3}], ["spill", "ladder"]) == (["box", "spill", "shelf"], ["lamp"])
     import gzip  # pick chunks: 23 frames -> 10 + 10 + 3, each blob inflates to its frames' bytes, depth alike
     meta, blobs = pick_chunks([bytes([i]) * 4 for i in range(23)], [bytes([i]) * 2 for i in range(23)])

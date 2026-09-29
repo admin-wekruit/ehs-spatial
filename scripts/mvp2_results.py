@@ -161,6 +161,82 @@ def md_times(res):
     return L
 
 
+def md_tables(res):
+    """The measured tables of summary.md (the narrative around them is written by hand)."""
+    L = ["## Analysis time (s from the MP4 bytes in the container to the Volume commit)", ""] + md_times(res)
+    for name, vt in (res.get("variant_times") or {}).items():
+        L += ["", f"Variant '{name}' (same code, one flag), warm (first call):", "",
+              "| | " + " | ".join(NAME[s] for s in SITES) + " |", "|---|---|---|---|"]
+        for row in ("objects v1", "cards v1", "identity complete", "densify names", "final judgements", "pick v2", "cards v3"):
+            L.append(f"| {row} | " + " | ".join(pair(vt.get(s, {}), row) for s in SITES) + " |")
+    ck = res.get("checks") or {}
+    L += ["", "## Card checks (every cards version of every call)", "", "| | " + " | ".join(NAME[s] for s in SITES) + " |", "|---|---|---|---|"]
+    for key, label in (("final_rows_on_a_check_the_final_class_does_not_apply", "final judgement rows on a check the card's final class does not apply (R1), warm (first)"),
+                       ("final_cards_not_derived_from_their_name", "final cards apply_name would change (R1), warm (first)"),
+                       ("contract_violations", "card contract violations over every cards version, warm (first)"),
+                       ("cards_checked", "cards checked (all versions), warm (first)")):
+        L.append(f"| {label} | " + " | ".join(f"{cell((ck.get(s) or {}).get('warm', {}).get(key), '{}')} ({cell((ck.get(s) or {}).get('first', {}).get(key), '{}')})"
+                                               for s in SITES) + " |")
+    idn = res.get("identity") or {}
+    if idn:
+        L += ["", "## Identity on the held-out items (runs/mvp2-identity-final-001, agent-labelled blind before this branch)", "",
+              "| call | " + " | ".join(NAME[s] for s in SITES) + " | all |", "|---|---|---|---|---|"]
+        for kind in ("warm", "first"):
+            b, sh = idn[kind]["by_site"], idn[kind]["shares"]
+            tot = {k: sum(b.get(s, {}).get(k, 0) for s in SITES) for k in ("n", "right", "close", "wrong")}
+            L.append(f"| {kind}: right / close / wrong (n) | " + " | ".join(
+                f"{b[s]['right']} / {b[s]['close']} / {b[s]['wrong']} ({b[s]['n']})" if s in b else "—" for s in SITES)
+                + f" | {tot['right']} / {tot['close']} / {tot['wrong']} ({tot['n']}) |")
+            L.append(f"| {kind}: right, right or close | " + " | ".join(
+                f"{sh[s]['right']:.2f}, {sh[s]['right_or_close']:.2f}" if s in sh else "—" for s in SITES)
+                + f" | {sh['all']['right']:.2f}, {sh['all']['right_or_close']:.2f} |")
+        r1 = idn["warm"]["round1_same_objects"]
+        L.append("| round 1 on the same objects: right, right or close | " + " | ".join(
+            f"{r1[s]['right']:.2f}, {r1[s]['right_or_close']:.2f} (n {r1[s]['n']})" if s in r1 else "—" for s in SITES)
+            + f" | {r1['all']['right']:.2f}, {r1['all']['right_or_close']:.2f} (n {r1['all']['n']}) |")
+        hz = idn["warm"]["hazard_names"]
+        L += ["", f"Hazard-class names on these items (warm): {hz['shown']} shown, {hz['shown_right']} right or same family, "
+                  f"{hz['shown_unclear_truth']} on items labelled unclear; {hz['held_back']} held back, {hz['held_back_but_true']} of them true."]
+    gt = res.get("physical_gt")
+    if gt:
+        L += ["", "## Physical values against metric ground truth (runs/mvp2-integrate-gt-*, 3 indoor scenes)", "",
+              "Median |error| (a) as delivered (assumed 1.6 m camera height) -> (b) at the true camera height; n = shown values with GT depth "
+              "on >= 50 % of their mask; cov = share within +-u (as delivered).", "",
+              "| field | " + " | ".join(("ARKit 47333932", "ARKit 42445448", "TUM fr1 room (held out)")) + " |", "|---|---|---|---|"]
+        tab = {(r["seq"], r["field"]): r for r in gt["table"]}
+        for f in ("top_above_floor", "base_above_floor", "height", "width", "depth", "position_xy", "planar_slope_deg", "principal_axis_tilt_deg"):
+            unit, k = ("deg", 1) if f.endswith("_deg") else ("cm", 100)
+            L.append(f"| {f} | " + " | ".join(
+                (lambda r: f"{r['a_med'] * k:.1f} -> {r['b_med'] * k:.1f} {unit} (n {r['n']}, cov {r['a_cov']:.2f})" if r else "—")(tab.get((q, f)))
+                for q in ("arkit47", "arkit42", "tum")) + " |")
+        L += ["", "u coverage by family and view-set state (k_geo fitted on ARKit only; TUM held out), as delivered:", "",
+              "| family / view sets | ARKit 47333932 | ARKit 42445448 | TUM (held out) |", "|---|---|---|---|"]
+        e2e = {(r["family"], r["view_sets"], r["seq"]): r for r in gt["end_to_end"]}
+        for fam in ("height", "extent", "position", "angle"):
+            for st in ("sets", "one_set"):
+                cells = [e2e.get((fam, st, q)) for q in ("arkit47", "arkit42", "tum")]
+                if any(cells):
+                    L.append(f"| {fam} / {st} | " + " | ".join(f"{c['coverage']:.2f} (n {c['n']})" if c else "—" for c in cells) + " |")
+        L.append(f"\nBounds ('at least' / 'at most') holding: {gt['bounds_hold'][0]} of {gt['bounds_hold'][1]}.")
+    pdv = res.get("physical_delivered") or {}
+    if pdv:
+        L += ["", "## Physical values against the delivered reports (same-object pairs; agreement, not truth), warm call", "",
+              "| | " + " | ".join(NAME[s] for s in SITES) + " |", "|---|---|---|---|"]
+        def vd(s, q):
+            x = ((pdv.get(s) or {}).get("vs_delivered") or {}).get(q) or {}
+            return f"{x.get('signed_median')} / {x.get('median')} / {x.get('p90')} (cov {x.get('coverage')}, n {x.get('n')})" if x else "—"
+        L.append("| same-object pairs | " + " | ".join(str(((pdv.get(s) or {}).get("vs_delivered") or {}).get("pairs")) for s in SITES) + " |")
+        L.append("| top m: signed median / median / p90 abs | " + " | ".join(vd(s, "top_card") for s in SITES) + " |")
+        L.append("| base m: signed median / median / p90 abs | " + " | ".join(vd(s, "base_card") for s in SITES) + " |")
+        L.append("| people: feet read (n), median signed m, share within u of 0 | " + " | ".join(
+            (lambda p: f"{(p.get('feet_rays_m') or {}).get('n')}, {p.get('feet_rays_signed_median')}, {p.get('feet_within_u_of_0')}")((pdv.get(s) or {}).get("people") or {})
+            for s in SITES) + " |")
+        L.append("| person masks measured as pictures | " + " | ".join(str(((pdv.get(s) or {}).get("people") or {}).get("rejected_masks")) for s in SITES) + " |")
+        L.append("| long objects: visible length shown / short side not measurable | " + " | ".join(
+            (lambda x: f"{x.get('visible_length')} / {x.get('short_side_not_measurable')}")((pdv.get(s) or {}).get("long_objects") or {}) for s in SITES) + " |")
+    return L
+
+
 def self_check():
     t = {"warm": {"cards v1": 41.24, "gpu_peak_gib": [61.3, 52.7], "over_72": []}, "first": {"cards v1": 46.0, "gpu_peak_gib": [66.0, 55.0], "over_72": ["x"]}}
     assert pair(t, "cards v1") == "41.2 (46.0)" and pair(t, "identity complete") == "— (—)"
@@ -184,6 +260,7 @@ def main(a):
     for key, path, name in (("click_audit", a.clicks, "score.json"), ("judgements", a.judge, "judge.json"), ("viewer", a.viewer, "viewer.json")):
         res[key] = json.loads((Path(path) / name).read_text()) if path and (Path(path) / name).exists() else None
     (out / "summary.json").write_text(json.dumps(res, indent=1, default=str))
+    (out / "tables.md").write_text("\n".join(md_tables(res)) + "\n")
     print("\n".join(md_times(res)))
     return res
 
