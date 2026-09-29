@@ -140,6 +140,76 @@ def one_call(run_dir, report, site, shifted=None):
     return row
 
 
+def sheet(tiles, path, cols=8, h=220, w=160):
+    """Contact sheet: tiles [(bgr crop, caption lines)] -> one JPEG."""
+    import cv2
+    cells = []
+    for img, cap in tiles:
+        c = np.full((h + 16 * len(cap), w, 3), 255, np.uint8)
+        k = min(w / img.shape[1], h / img.shape[0])
+        im = cv2.resize(img, (max(1, int(img.shape[1] * k)), max(1, int(img.shape[0] * k))))
+        c[:im.shape[0], :im.shape[1]] = im
+        for i, line in enumerate(cap):
+            cv2.putText(c, line, (2, h + 12 + 16 * i), cv2.FONT_HERSHEY_SIMPLEX, .38, (0, 0, 0), 1, cv2.LINE_AA)
+        cells.append(c)
+    hh = max(c.shape[0] for c in cells)
+    cells = [np.pad(c, ((0, hh - c.shape[0]), (0, 4), (0, 0)), constant_values=255) for c in cells]
+    rows = [np.concatenate(cells[i:i + cols] + [np.full_like(cells[0], 255)] * (cols - len(cells[i:i + cols])), 1) for i in range(0, len(cells), cols)]
+    cv2.imwrite(str(path), np.concatenate(rows, 0), [cv2.IMWRITE_JPEG_QUALITY, 85])
+
+
+def people_sheets(out, site, run_dir, report, n=40, seed=0):
+    """Agent-label sheets for people: (a) detections whose true bottom is in view (feet on the floor? the new and old feet
+    heights under each crop, a red line at the mask's bottom), (b) masks measured as pictures. Frames from the clip's
+    source-full.mp4 (the warm call's window). Writes people-<site>.jpg / rejected-<site>.jpg and their tile lists."""
+    import cv2
+    vs = ev.patch_versions(run_dir, report, "people")
+    ppl = ev.patch_data(run_dir, vs[-1])
+    cap = cv2.VideoCapture(str(ev.PHASE2 / "data/clips" / ev.CLIPS[site] / "source-full.mp4"))
+    W, H = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    def crop(frame, bbox):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame)
+        ok, img = cap.read()
+        if not ok:
+            return None
+        x0, y0, x1, y1 = bbox[0] * W, bbox[1] * H, bbox[2] * W, bbox[3] * H
+        mx, my = max(.3 * (x1 - x0), 24), max(.15 * (y1 - y0), 24)
+        a, b, c, d = int(max(0, x0 - mx)), int(max(0, y0 - my)), int(min(W, x1 + mx)), int(min(H, y1 + my))
+        img = img.copy()
+        cv2.line(img, (int(x0), int(y1)), (int(x1), int(y1)), (0, 0, 255), 1)
+        return img[b:d, a:c]
+    rng = np.random.default_rng(seed)
+    dets = [(t["id"], q) for t in ppl["tracks"] for q in t["points"] if (q.get("foot_surface") or {}).get("contact")
+            and not ((q["foot_surface"].get("cut") or {}).get("bottom"))]
+    pick = [dets[i] for i in sorted(rng.choice(len(dets), min(n, len(dets)), replace=False))] if dets else []
+    tiles, rows = [], []
+    for i, (tid, q) in enumerate(pick):
+        g = q["foot_surface"]
+        img = crop(q["frame"], g["bbox"])
+        if img is None:
+            continue
+        tiles.append((img, [f"#{i} {tid} t{q['t']:.1f}", f"feet {g['foot_h_m']:+.2f}+-{g['u_m']:.2f}", f"old {g.get('h_pixels_m')}", f"h {g['stature_m']:.2f}"]))
+        rows.append({"tile": i, "track": tid, "t": q["t"], "frame": q["frame"], "foot_h_m": g["foot_h_m"], "u_m": g["u_m"], "h_pixels_m": g.get("h_pixels_m"),
+                     "feet_visible": g.get("feet_visible"), "stature_m": g.get("stature_m"), "label": None})
+    if tiles:
+        sheet(tiles, Path(out) / f"people-{site}.jpg")
+    (Path(out) / f"people-{site}.json").write_text(json.dumps({"labels": "on floor | raised | feet hidden | not a person | unclear", "tiles": rows}, indent=1))
+    rej = ppl.get("rejected") or []
+    tiles, rows = [], []
+    for i, r in enumerate(rej[:n]):
+        g = r["geometry"]
+        img = crop(r["frame"], g["bbox"])
+        if img is None:
+            continue
+        tiles.append((img, [f"#{i} t{r['t']:.1f} s{r['score']:.2f}", f"h {g['stature_m']:.2f}+-{g['u_stature_m']:.2f}", f"foot {g['foot_h_m']:+.2f}"]))
+        rows.append({"tile": i, "t": r["t"], "frame": r["frame"], "reason": r["reason"], "label": None})
+    if tiles:
+        sheet(tiles, Path(out) / f"rejected-{site}.jpg")
+    (Path(out) / f"rejected-{site}.json").write_text(json.dumps({"labels": "picture | real person | unclear", "tiles": rows}, indent=1))
+    return len(pick), len(rej)
+
+
 def main(argv):
     out = Path(argv[0])
     out.mkdir(parents=True, exist_ok=True)
@@ -166,5 +236,9 @@ def self_check():
 if __name__ == "__main__":
     if sys.argv[1:] == ["--self-check"]:
         self_check()
+    elif sys.argv[1:2] == ["--sheets"]:
+        for a in sys.argv[3:]:
+            site_, rest = a.split("=", 1)
+            print(site_, people_sheets(sys.argv[2], site_, *rest.split(":")[:2]))
     else:
         main(sys.argv[1:])

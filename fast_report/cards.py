@@ -1162,8 +1162,8 @@ def person_geometry(mask, depth, K, c2w, up, p0, u_floor=.02, up_deg=1.):
     bbox = [round(xs.min() / W, 4), round(ys.min() / H, 4), round((xs.max() + 1) / W, 4), round((ys.max() + 1) / H, 4)]
     zm = depth[ys, xs]
     ok = zm > 0
-    if ok.sum() < 10:
-        return {"h_m": None, "reason": "no depth on the body", "bbox": bbox}
+    if ok.sum() < 10:  # nothing to measure: kept as a person (never dropped for want of depth)
+        return {"h_m": None, "reason": "no depth on the body", "bbox": bbox, "plausible": True, "feet_visible": False, "contact": False}
     zmed = float(np.median(zm[ok]))
     body = ok & (np.abs(zm - zmed) <= max(.5, .15 * zmed))
     up = np.asarray(up, float) / np.linalg.norm(up)
@@ -1540,6 +1540,7 @@ def self_check():
     d2, m2 = floor_d.copy(), np.zeros((200, 200), bool)
     d2[140:, 30:80] = 3.
     m2[150:160, 50:55] = True
+    assert person_geometry(m2, np.zeros_like(d2), Kp, np.eye(4), up_, p0_)["plausible"], "no depth: kept as a person"
     g2 = person_geometry(m2, d2, Kp, np.eye(4), up_, p0_)
     assert not g2["plausible"] and "picture" in g2["reason"] and g2["h_m"] is None, g2
     d3, m3 = floor_d.copy(), np.zeros((200, 200), bool)

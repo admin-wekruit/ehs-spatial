@@ -262,7 +262,7 @@ def people_shot(si, keys, fps, g, depth_m, c2w_m, masks, plane, mpu):
     body = {i: cards.person_geometry(mk, depth[j], K[j], c2w[j], up, p0, u_floor, PEOPLE_UP_DEG) if plane else None
             for j, kept in masks.items() for mk, _, i in kept}
     rejected = [{"t": round(keys[j] / fps, 4), "frame": int(keys[j]), "source": f"sam3-person-{i}", "score": round(sc, 3), "reason": body[i]["reason"],
-                 "geometry": body[i]} for j, kept in masks.items() for _, sc, i in kept if body[i] and not body[i]["plausible"]]
+                 "geometry": body[i]} for j, kept in masks.items() for _, sc, i in kept if body[i] and body[i].get("plausible") is False]
     out_ = {r["source"] for r in rejected}
 
     def detector(frame):
