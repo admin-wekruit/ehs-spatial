@@ -256,7 +256,7 @@ export default function LiveReport({ reportId }: { reportId: string }) {
           {tab === "card" && (clicked?.miss ? <UnknownCard r={clicked.miss} od={od} under={clicked.under} names={names} onSelect={choose} tr={tr} />
             : <Card id={selected} info={infos.get(selected || "")} entity={entity} under={clicked?.id === selected ? clicked?.under || [] : []} names={names}
                 judgementsPatch={layers.judgements} cardsPatch={layers.object_cards} duration={duration} onSelect={choose} tr={tr}
-                sam={samFor(layers.models, cardsLayer?.aliases, selected)} />)}
+                sam={samFor(layers.models, cardsLayer?.aliases, selected)} surface={(layers.surfaces?.data.surfaces || []).find((r: any) => r.object === selected)} />)}
           {tab === "objects" && <ObjectList cards={cardsLayer?.cards || []} infos={infos} selected={selected} onSelect={choose} tr={tr} />}
           {tab === "memory" && <VideoMemory document={document} onSelect={choose} />}
         </div>
@@ -299,7 +299,7 @@ function samFor(models: Patch | undefined, aliases: Record<string, string> | und
 }
 
 /** r4 (models): the card's display model in one line: its kind, where it comes from, how it was chosen, what SAM 3D did. */
-function ModelLine({ model, sam, tr }: { model: any; sam?: any; tr: Tr }) {
+function ModelLine({ model, sam, surface, tr }: { model: any; sam?: any; surface?: any; tr: Tr }) {
   if (!model) return null;
   const pct = (v: number) => `${Math.round(v * 100)}%`;
   const s3 = !sam ? tr("未尝试（报告没有 SAM 3D 层）", "not tried (no SAM 3D layer in this report)")
@@ -310,6 +310,8 @@ function ModelLine({ model, sam, tr }: { model: any; sam?: any; tr: Tr }) {
     : tr("进行中", "pending");
   return <section className="mvp-block mvp-model"><h4>{tr("模型", "Model")} <Tag>{tr("生成的，仅供显示", "generated, display only")}</Tag></h4>
     {sam?.accepted && <p>{tr("SAM 3D 网格", "SAM 3D mesh")} · {tr("来源", "source")}: SAM 3D s1cfg12 · {tr("它替换了下面的基本形状", "it replaces the primitive below")}</p>}
+    {surface && !sam?.accepted && <p>{tr("观测到的表面", "observed surface")} · {surface.observed_triangles} {tr("个三角形", "triangles")} · {tr("视频看到的部分（不透明，按视频着色），没看到的部分由下面的基本形状（半透明）表示", "what the video saw (opaque, the video's colours); the unseen bulk is the primitive below (translucent)")}
+      {surface.voxel_m && <small> · {fmt(surface.voxel_m * 100, 1)} cm {tr("体素", "voxels")} · {surface.views} {tr("个视角", "views")}</small>}</p>}
     {model.kind ? <p>{sam?.accepted ? tr("基本形状（已被替换）", "primitive (replaced)") + ": " : ""}{({ box: tr("长方体", "box"), cylinder: tr("圆柱", "cylinder"), plane: tr("平板", "plane"), "open frame": tr("开放框架", "open frame") } as any)[model.kind] || model.kind}
       {" · "}{tr("来源", "source")}: {tr("拟合观测点的基本形状", "primitive fitted to the observed points")}
       {" · "}{tr("选择", "chosen by")} {model.chosen_by} · {tr("残差", "residual")} {fmt(model.residual_m * 100, 1)} cm
@@ -319,9 +321,19 @@ function ModelLine({ model, sam, tr }: { model: any; sam?: any; tr: Tr }) {
     <p><small>SAM 3D: {s3}</small></p></section>;
 }
 
-function Card({ id, info, entity, under, names, judgementsPatch, cardsPatch, duration, onSelect, tr, sam }: {
+/** r5 (models): the observed points' planar parts (fast_report.surface.planar_parts): each part's angle to the floor and the angle
+ *  between touching parts, measured on what the video saw (never on a generated model). */
+function SurfaceParts({ sp, tr }: { sp: any; tr: Tr }) {
+  if (!sp.parts) return <tr><th>{tr("表面角度", "surface angles")}</th><td><span className="mvp-status">{sp.status}</span> <small>{sp.reason}</small></td></tr>;
+  return <>{sp.parts.map((p: any, i: number) => <tr key={"p" + i}><th>{tr(`平面 ${i + 1} 对地面`, `part ${i + 1} to the floor`)}</th>
+    <td><Quantity q={p.tilt_deg} tr={tr} /> <small>· {fmt(p.area_m2, 2)} m² · {Math.round(p.share * 100)}% {tr("的点", "of the points")}</small></td></tr>)}
+    {sp.bends.map((b: any, i: number) => <tr key={"b" + i}><th>{tr(`平面 ${b.parts[0] + 1}–${b.parts[1] + 1} 夹角`, `parts ${b.parts[0] + 1}–${b.parts[1] + 1} angle`)}</th>
+      <td><Quantity q={b.angle_deg} tr={tr} /></td></tr>)}</>;
+}
+
+function Card({ id, info, entity, under, names, judgementsPatch, cardsPatch, duration, onSelect, tr, sam, surface }: {
   id: string | null; info?: Info; entity: any; under: string[]; names: (id: string) => string; judgementsPatch?: Patch; cardsPatch?: Patch;
-  duration: number; onSelect: (id: string) => void; tr: Tr; sam?: any;
+  duration: number; onSelect: (id: string) => void; tr: Tr; sam?: any; surface?: any;
 }) {
   if (!id) return <p className="mvp-empty">{tr("点视频里的任何东西：它是什么、它的物理信息、它的安全判断。", "Click anything in the video: what it is, its physical info, its safety judgement.")}</p>;
   const card = info?.card;
@@ -349,6 +361,7 @@ function Card({ id, info, entity, under, names, judgementsPatch, cardsPatch, dur
         {PHYSICAL.filter(([k]) => ph[k]).map(([k, zh, en]) => <tr key={k} data-implausible={(bad || ph.fragmented_support) && SIZE_FIELDS.has(k) || undefined}><th>{tr(zh, en)}</th><td><Quantity q={ph[k]} tr={tr} /></td></tr>)}
         {ph.primitive && <tr><th>{tr("参数化形状", "primitive")}</th><td>{ph.primitive.kind}: {ph.primitive.accepted ? tr("通过留出检验（显示用，不替代观测值）", "passed the held-out gate (beside the observed values, never replacing them)") : tr("未采用", "not accepted")}
           {ph.primitive.reason && <small> ({ph.primitive.reason})</small>}</td></tr>}
+        {ph.surface_parts && <SurfaceParts sp={ph.surface_parts} tr={tr} />}
         {ph.walkway && <tr><th>{tr("通道", "walkway")}</th><td><span className="mvp-status">{ph.walkway.status}</span></td></tr>}
         {ph.size_check && <tr><th>{tr("尺寸检查", "size check")}</th><td>{ph.size_check.status}{ph.size_check.class_range_m && <small> ({ph.size_check.class || tr("其他词", "other word")}: {ph.size_check.class_range_m.join("–")} m{tr("（先验）", " (a prior)")}{ph.size_check.measured_m != null ? `, measured ${fmt(ph.size_check.measured_m, 2)}${ph.size_check.measured_u_m != null ? ` ± ${fmt(ph.size_check.measured_u_m, 2)}` : ""} m` : ""})</small>}</td></tr>}
       </tbody></table>
@@ -358,7 +371,7 @@ function Card({ id, info, entity, under, names, judgementsPatch, cardsPatch, dur
         <p><small>{tr("u = √(各项平方和) × k；k 由验证校准，未校准时为 1", "u = k × √(sum of squared parts); k comes from D's calibration, 1 until then")}</small></p>
       </details>
     </section>}
-    {card.kind === "object" && <ModelLine model={card.model} sam={sam} tr={tr} />}
+    {card.kind === "object" && <ModelLine model={card.model} sam={sam} surface={surface} tr={tr} />}
     <Time card={card} duration={duration} patch={cardsPatch} tr={tr} />
     <Judgements info={info!} patch={judgementsPatch} tr={tr} />
     <Under under={under} names={names} onSelect={onSelect} tr={tr} />

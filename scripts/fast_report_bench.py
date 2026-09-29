@@ -329,7 +329,8 @@ def bench(a):
                 options = {"vocab": a.vocab, "discover": a.discover, "client_has": [sha], "background_s": a.background_s if last else 0, "window_s": span,
                            "eval_holdout": [f - offset for f in ev.holdout_frames(site) if f - offset >= 0], **({"namer": namer_q} if relay else {}),
                            **({} if a.judge == "on" else {"judge": False}), **({} if a.display == "on" else {"display": False}),
-                           "judge_vlm": a.hazard != "off", "identity_vlm": a.identity_vlm}  # r4: the VLMs only when asked
+                           "judge_vlm": a.hazard != "off", "identity_vlm": a.identity_vlm,  # r4: the VLMs only when asked
+                           **({"surface": True} if a.surface else {})}  # r5: tier 0 (observed surfaces, planar-part angles)
                 if queues is not None:
                     hazard.workspace_container()  # awake before the call (the report service is up in production): off the analysis clock
                     options["hazard_queues"] = queues
@@ -466,6 +467,7 @@ if __name__ == "__main__":
     p.add_argument("--judge", default="on", choices=("on", "off"), help="r4: off = no judgements at all (no rules, no hazard VLM questions)")
     p.add_argument("--display", default="on", choices=("on", "off"), help="r4: off = no SAM 3D models and no splat (the facts only)")
     p.add_argument("--discover", action="store_true", help="X10's catch-all and label words in SAM 3's wave 1 (vlm.DISCOVER)")
+    p.add_argument("--surface", action="store_true", help="r5 (models): every card's planar-part angles and observed-surface display model")
     p.add_argument("--serve", action="store_true")
     p.add_argument("--no-gpu-eval", dest="gpu_eval", action="store_false")
     p.add_argument("--billing", type=Path)

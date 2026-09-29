@@ -49,7 +49,7 @@ export function liveDocument(report: string, layers: Record<string, Patch>, card
         pointSizeNative: ref.pointSizeNative, metadata: { format: ref.format, byteLayout: ref.byteLayout, pointSizeNative: ref.pointSizeNative } });
     return id;
   };
-  const { cameras, room, people, objects, models, splat, video, outlines, events } = layers;
+  const { cameras, room, people, objects, models, surfaces, splat, video, outlines, events } = layers;
   // The longest shot first: the viewer opens on the first camera's frame.
   for (const s of [...(cameras?.data.shots || [])].sort((a: any, b: any) => b.keys.length - a.keys.length)) {
     const frame = frameOf(s.index), n = s.floor?.normal, offset = n ? -dot(n, s.floor.point_m) : undefined;
@@ -72,9 +72,11 @@ export function liveDocument(report: string, layers: Record<string, Patch>, card
   }
   const accepted = new Map<string, any>((models?.data.models || []).map((m: any) => [m.object, m]));
   const drawn = new Map<string, any>((cards || []).filter((c: any) => c.kind === "object" && c.model?.kind).map((c: any) => [c.id, c.model]));
+  const seen = new Map<string, any>((surfaces?.data.surfaces || []).map((r: any) => [r.object, r]));  // r5: the observed surface + primitive (one GLB)
   for (const o of objects?.data.objects || []) {
     const frame = frameOf(o.shot), min = o.box_min_m, max = o.box_max_m, model = accepted.get(o.id), glb = model && models.blobs["model-" + o.id];
     const dm = drawn.get(o.id);  // r4: the card's display model; SAM 3D's mesh replaces it when its gate accepted one
+    const sf = seen.get(o.id), sglb = sf && surfaces.blobs["surface-" + o.id];  // r5: what the video saw, drawn over the primitive
     // Detected words are names to check, never verified: a see-through box, the model when SAM 3D's gate took one.
     const box = { id: "box:" + o.id, kind: "primitive", primitive: { kind: "box", dimensions: [0, 1, 2].map(k => Math.max(max[k] - min[k], .01)) },
       coordinateFrameId: frame, transform: { ...identity(frame), position: [0, 1, 2].map(k => (min[k] + max[k]) / 2) }, placementState: "confirmed",
@@ -86,12 +88,14 @@ export function liveDocument(report: string, layers: Record<string, Patch>, card
     const local = glb && model.bounds?.min && [model.bounds.min, model.bounds.max].map((b: number[]) => b.map((v, k) => v - model.transform.position[k]));
     const rep: any = glb ? { id: "model:" + o.id, kind: "generated_mesh", assetId: asset(glb), coordinateFrameId: frame,
       transform: { ...identity(frame), ...model.transform }, placementState: "confirmed", bounds: local ? { min: local[0], max: local[1] } : undefined }
+      : sglb && sf.position ? { id: "surface:" + o.id, kind: "generated_mesh", sourceKind: "observed_surface_model", assetId: asset(sglb), coordinateFrameId: frame,
+        transform: { ...identity(frame), position: sf.position }, placementState: "confirmed", bounds: sf.bounds }
       : dm ? { id: "prim:" + o.id, kind: "primitive", primitive: modelPrimitive(dm), coordinateFrameId: frame,
         transform: { ...identity(frame), position: dm.position, quaternion: dm.quaternion }, placementState: "confirmed",
         bounds: { min: half.map((v: number) => -Math.max(v, .0025)), max: half.map((v: number) => Math.max(v, .0025)) },
         material: { alphaMode: "BLEND", baseColorFactor: [1, 1, 1, .1], selectedFactor: [1, 1, 1, 1], color: [1, .72, .3] } } : box;
     doc.entities.push({ id: o.id, label: o.label || o.word, associationState: "association_pending", visible: true, observationRefs: [],
-      activeModelRepresentationId: rep.id, representations: [rep], fast: { kind: "object", ...o, model: model || null, display_model: dm || null } });
+      activeModelRepresentationId: rep.id, representations: [rep], fast: { kind: "object", ...o, model: model || null, display_model: dm || null, surface: sf || null } });
   }
   for (const t of people?.data.tracks || []) {
     const ref = people.blobs["track-" + t.id];
