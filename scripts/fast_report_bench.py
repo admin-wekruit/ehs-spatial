@@ -330,6 +330,7 @@ def bench(a):
                            "eval_holdout": [f - offset for f in ev.holdout_frames(site) if f - offset >= 0], **({"namer": namer_q} if relay else {}),
                            **({} if a.judge == "on" else {"judge": False}), **({} if a.display == "on" else {"display": False}),
                            "judge_vlm": a.hazard != "off", "identity_vlm": a.identity_vlm}  # r4: the VLMs only when asked
+                options.update({k: False for k in ("judge", "identity", "display") if k in a.off} | ({"dump": True} if a.dump else {}))
                 if queues is not None:
                     hazard.workspace_container()  # awake before the call (the report service is up in production): off the analysis clock
                     options["hazard_queues"] = queues
@@ -467,6 +468,8 @@ if __name__ == "__main__":
     p.add_argument("--display", default="on", choices=("on", "off"), help="r4: off = no SAM 3D models and no splat (the facts only)")
     p.add_argument("--discover", action="store_true", help="X10's catch-all and label words in SAM 3's wave 1 (vlm.DISCOVER)")
     p.add_argument("--serve", action="store_true")
+    p.add_argument("--off", default="", help="r4: comma list of judge,identity,display to switch off (judgement paused; no VLM identity)")
+    p.add_argument("--dump", action="store_true", help="r4/instances: the instance layer's inputs to the layers Volume (reports/<id>/r4-instances-dump.pkl.gz)")
     p.add_argument("--no-gpu-eval", dest="gpu_eval", action="store_false")
     p.add_argument("--billing", type=Path)
     p.add_argument("--self-check", action="store_true")

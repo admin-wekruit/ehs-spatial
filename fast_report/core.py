@@ -509,6 +509,22 @@ def merge_points(parts, cap=20000):
     return {"world": world, "frame": frame, "z": z, "sample_ratio": ratio, "views": views, **edge}
 
 
+def write_dump(path, first, dens, packed, ent, dens_words, objects, points, counts, people, shots_in, out):
+    """r4/instances (opts['dump'], evaluation runs only): everything the instance layer is built from, gzip pickle on the layers
+    Volume (the run's final commit takes it): first-pass kept masks and members, densify's masks and their objects (ent), the
+    objects, their points, the shots (depth float16, people bit-packed), pick counts, people, and cards v3's aliases and stats."""
+    import gzip
+    import pickle
+    shots = [{**s, "depth": None if s.get("depth") is None else s["depth"].astype(np.float16),
+              "person": None if s.get("person") is None else np.packbits(s["person"], axis=-1)} for s in shots_in]
+    rec = {**first, "dens": {k: dens[k] for k in ("q", "word", "score", "votes")}, "dens_packed": packed, "ent": ent, "dens_words": list(dens_words),
+           "objects": copy.deepcopy(objects), "points": points, "counts": counts, "people": people, "shots": shots,
+           "aliases": out["aliases"], "stats": out["stats"], "calibration": cards_calibration()}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with gzip.open(path, "wb", compresslevel=1) as f:
+        pickle.dump(rec, f, protocol=4)
+
+
 def cards_calibration():
     """fast_report/calibration.json (D writes it): k per family and k_pose; defaults 1 without it (spec section 4.4)."""
     path = Path(__file__).with_name("calibration.json")
@@ -928,6 +944,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         kept, votes = segment.dedupe(voc["frame"], voc["word"], voc["score"], voc["mask"]) if voc is not None else (np.zeros(0, int), [])
         vf = voc["frame"].cpu().numpy() if voc is not None else np.zeros(0, int)
     objects, members, obj_masks_on, obj_points, shot_voxels = [], [], [], [], {}
+    dump = {} if opts.get("dump") else None  # r4/instances: the instance layer's inputs, for an offline replay (evaluation runs only)
     with torch.inference_mode(), clock.stage("lift", gpu=dev_geo, n={"masks_kept": int(len(kept)), "masks_in": int(len(voc["frame"])) if voc else 0}):
         vote_of = {}
         for a_, w_, s_ in votes:
@@ -966,6 +983,10 @@ def analyse(m, mp4, opts, clock, writer, log):
                 members.append(sel_np[mem])
                 obj_masks_on.append((si, int(sel_np[best])))
         summary["lift"] = lift_stats
+        if dump is not None:  # the kept masks (bit-packed, DA3 size) and who got them, before release_voc drops them
+            dump.update(keys=list(keys), words=list(words), kept=kept, vf=vf, votes=votes, members=[np.searchsorted(kept, mem) for mem in members],
+                        word=voc["word"][kept_t].cpu().numpy(), score=voc["score"][kept_t].float().cpu().numpy(), shot_pos=[list(gg["pos"]) for gg in geo],
+                        packed=np.concatenate([segment.pack(voc["mask"][kept_t[b_:b_ + 256]]) for b_ in range(0, len(kept_t), 256)]) if len(kept_t) else None)
     with clock.stage("objects.boxes", n={"objects": len(objects)}):  # section 4.2 step 5 on the cleaned points (L1)
         floors = [cards.floor_frame(gg["c2w_m"][0].cpu().numpy(), *shot_floor(gg)) for gg in geo]
         ws = [np.asarray(x["world"])[:: max(1, len(x["world"]) // 4000)] for x in obj_points]  # v1_box's own stride, here: less to pickle
@@ -1585,6 +1606,10 @@ def analyse(m, mp4, opts, clock, writer, log):
             out = with_identity(out, prev)
             cards_out["v3"] = out
             cards_put(3, out)
+        if dump is not None:
+            ready_v2.wait(60)
+            write_dump(Path("/v/layers/reports") / writer.report_id / "r4-instances-dump.pkl.gz", dump, dens, packed, ent, dens_words, objects,
+                       points_v3, counts_v2, results.get("people"), cards_out["shots_in"], out)
         v3["by"] = {c["id"]: c for c in out["cards"] if c["kind"] == "object"}  # densify's objects that are cards (the rest merged away)
         v3["done"].set()
         if facts_done["densify_names"].is_set():  # facts before display (section 7): the gate's CPU processes slowed cards v3 by 2-3x
@@ -1851,7 +1876,10 @@ def analyse(m, mp4, opts, clock, writer, log):
         sync_objects()
         writer.put("objects", copy.deepcopy({"objects": objects, "cascade": casc, "vocabulary": words}), blobs_obj, "estimated+inferred", obj_labels)
         clock.mark("objects_v2_put")
-    esc = m.vlm_pool.submit(cards_v2) if objects else None
+    identity_on = opts.get("identity", True)  # r4: False = no identity pass at all (names stay SAM 3's detected words; no VLM)
+    esc = m.vlm_pool.submit(cards_v2) if objects and identity_on else None
+    if not identity_on:
+        facts_done["identity"].set()
     release_voc()
 
     outlines_future.result()
