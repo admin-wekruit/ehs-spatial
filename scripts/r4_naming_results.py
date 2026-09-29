@@ -113,6 +113,8 @@ def heldout(runs, work, kind):
     for f in ("items.json", "labels-final.json"):
         shutil.copy(HELDOUT / f, work / f)
     now = {s: (str(Path(d).relative_to(PHASE2 / "runs")), calls(d)[kind]["run"]["report"]) for s, d in runs.items() if kind in calls(d)}
+    if not now:  # score_final would grade the items' own round-2 runs instead
+        return {}, [], []
     r = ids.score_final(work, now)
     lab = json.loads((HELDOUT / "labels-final.json").read_text())
     out = {}
@@ -292,6 +294,67 @@ def vector_check(runs, npz_dir, x13_dir):
     return out
 
 
+NAME = {"me340": "ME340", "samsclub-a2": "Sam's Club", "walmart": "Walmart"}
+
+
+def md(res):
+    """tables.md: types first (the user's acceptance), then VLM calls, specific names, time."""
+    sh = lambda a, b: "—" if not b else f"{a / b:.2f}"  # noqa: E731
+    V, L = res["videos"], []
+    sites = [s for s in NAME if s in V]
+    head = "| | " + " | ".join(NAME[s] for s in sites) + " |"
+    sep = "|---|" + "---|" * len(sites)
+
+    def row(label, f):
+        cells = []
+        for s in sites:
+            w, fi = V[s].get("warm"), V[s].get("first")
+            cells.append(f"{f(w) if w else '—'} ({f(fi) if fi else '—'})")
+        return f"| {label} | " + " | ".join(cells) + " |"
+    L += ["## Every object's card, warm call (first call)", "", head, sep,
+          row("object cards", lambda x: x["cards"]),
+          row("share with a type (a family)", lambda x: x["typed_share (a family)"]),
+          row("share with a specific name", lambda x: x["named_share (a specific name)"]),
+          row("VLM questions (Qwen3-VL-8B, group medoids)", lambda x: x["vlm_questions"]),
+          row("names (first pass) written, s", lambda x: x["times"]["names (first pass)"]),
+          row("names (densify pass) written, s", lambda x: x["times"]["names (densify pass)"]),
+          row("GPU peaks gpu0/gpu1 GiB", lambda x: "/".join(f"{g:.1f}" for g in x["times"]["gpu_peak_gib"])),
+          row("stages over 72 GiB", lambda x: ", ".join(x["times"]["over_72_gib"]) or "none")]
+    r2 = res["round2"]
+    L += ["", "Round 2 (mvp2-integrate-*-007) sent every named object to Gemini: " + "; ".join(
+        f"{NAME[s]} {r2[s]['warm']['objects_sent_to_gemini']} objects in {r2[s]['warm']['gemini_requests']} requests (warm)" for s in sites if s in r2) + "."]
+    L += ["", "Routes (warm): " + "; ".join(f"{NAME[s]} {V[s]['warm']['routes']}" for s in sites if V[s].get("warm")),
+          "", "Type sources (warm): " + "; ".join(f"{NAME[s]} {V[s]['warm']['type_sources']}" for s in sites if V[s].get("warm"))]
+    for kind in ("warm", "first"):
+        h = (res.get("heldout") or {}).get(kind, {}).get("by_site", {})
+        if not h:
+            continue
+        L += ["", f"## Held-out audited items (runs/mvp2-results/identity-heldout, agent-labelled blind before round 4), {kind} call", "",
+              "| | n | typed | family right | specific right | right or close | cards without a specific name | named: right / right or close |",
+              "|---|---|---|---|---|---|---|---|"]
+        for s in sites:
+            if s in h:
+                x = h[s]
+                L.append(f"| {NAME[s]} | {x['n']} | {sh(x['typed'], x['n'])} | {sh(x['family_right'], x['n'])} | {sh(x['right'], x['n'])} | "
+                         f"{sh(x['right'] + x['close'], x['n'])} | {x['unidentified']} | {sh(x['named_right'], x['named_n'])} / "
+                         f"{sh(x['named_right'] + x['named_close'], x['named_n'])} (n {x['named_n']}) |")
+    fa = res.get("fresh_audit_warm")
+    if fa:
+        L += ["", "## Fresh audit: 30 random object cards a video, warm call (agent-labelled blind from contact sheets)", "",
+              "| | labelled (unclear) | typed | family right | specific right | right or close |", "|---|---|---|---|---|---|"]
+        for s in sites:
+            if s in fa:
+                x = fa[s]
+                L.append(f"| {NAME[s]} | {x['n']} ({x['unclear']}) | {sh(x['typed'], x['n'])} | {sh(x['family_right'], x['n'])} | {sh(x['right'], x['n'])} | "
+                         f"{sh(x['right'] + x['close'], x['n'])} |")
+        L += ["", "By route: " + "; ".join(f"{NAME[s]} {fa[s]['by_route']}" for s in sites if s in fa)]
+    vc = res.get("vector_check")
+    if vc:
+        L += ["", "Pipeline vectors vs the bank's (same object in round 2, box centres within 0.3 m): " + "; ".join(
+            f"{NAME[s]} {x}" for s, x in vc.items())]
+    return "\n".join(L) + "\n"
+
+
 def self_check():
     c = lambda name, r=None: {"identity": {"name": name, "naming": {"route": r} if r else None, "decided_by": "x"}}  # noqa: E731
     assert route(c("machine (type only)", "unidentified")) == "type only (family)" and route(c("flat panel (type only)")) == "type only (shape)"
@@ -312,6 +375,8 @@ if __name__ == "__main__":
     ap.add_argument("cmd", choices=["sheets", "score"], nargs="?")
     ap.add_argument("--runs", default="")
     ap.add_argument("--out", type=Path)
+    ap.add_argument("--npz", help="folder with <report>/naming-first.npz (from the layers volume): the vector check")
+    ap.add_argument("--x13", default="/private/tmp/claude-501/-Users-adam-Desktop-panoptes-public/1fd9a1db-e580-4bfc-8110-119a1cc38a99/scratchpad/x13")
     ap.add_argument("--self-check", action="store_true")
     a = ap.parse_args()
     if a.self_check:
@@ -319,4 +384,12 @@ if __name__ == "__main__":
     else:
         runs = dict(x.split("=") for x in a.runs.split(",") if x)
         a.out.mkdir(parents=True, exist_ok=True)
-        sheets(runs, a.out) if a.cmd == "sheets" else print(json.dumps(score(runs, a.out), indent=1, default=str)[:6000])
+        if a.cmd == "sheets":
+            sheets(runs, a.out)
+        else:
+            res = score(runs, a.out)
+            if a.npz:
+                res["vector_check"] = vector_check(runs, a.npz, a.x13)
+            (a.out / "summary.json").write_text(json.dumps(res, indent=1, default=str))
+            (a.out / "tables.md").write_text(md(res))
+            print(md(res))
