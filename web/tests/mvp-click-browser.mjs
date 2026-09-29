@@ -88,7 +88,9 @@ async function video(name){
   const persons=layers.cards.filter(c=>c.kind==='person'&&c.rules?.length).map(c=>c.id);
   const picks=[];  // one subject per check (most severe verdict first), then the next biggest judged subjects
   for(const check of [...new Set(judged.map(r=>r.check))]){if(picks.length>=nJudged)break;
-    const id=await biggest(judged.filter(r=>r.check===check&&!picks.includes(r.subject)).map(r=>r.subject));if(id)picks.push(id);}
+    // mvp2/integrate: the biggest subject among that check's most severe verdict (not the biggest of any verdict)
+    const rows=judged.filter(r=>r.check===check&&!picks.includes(r.subject)),worst=Math.min(...rows.map(r=>rank[r.verdict]));
+    const id=await biggest(rows.filter(r=>rank[r.verdict]===worst).map(r=>r.subject));if(id)picks.push(id);}
   while(picks.length<nJudged){const id=await biggest(judged.map(r=>r.subject).filter(s=>!picks.includes(s)));if(!id)break;picks.push(id);}
   const targets=[...picks,await biggest(plain),null,await biggest(persons)]
     .map((id,k)=>({id,k})).filter(({id,k})=>id||k===picks.length+1);

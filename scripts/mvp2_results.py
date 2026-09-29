@@ -79,14 +79,21 @@ def checks(benches):
     return out
 
 
-def identity(benches):
+def identity(benches, work):
     """The fresh held-out items (runs/mvp2-identity-final-001, agent-labelled blind before this branch existed) graded on the
-    warm and first calls' final names."""
+    warm and first calls' final names. identity_study.score_final writes its metrics beside the items: it runs on copies in
+    `work` (the identity branch's folder is never written)."""
+    import shutil
     import identity_study as ids
+    src = PHASE2 / "runs/mvp2-identity-final-001"
+    work.mkdir(parents=True, exist_ok=True)
+    for f in ("items.json", "labels-final.json"):
+        shutil.copy(src / f, work / f)
     out = {}
     for kind in ("warm", "first"):
         now = {s: (Path(d).name, dict(calls(d))[kind]["run"]["report"]) for s, d in benches.items() if kind in dict(calls(d))}
-        r = ids.score_final(PHASE2 / "runs/mvp2-identity-final-001", now)
+        r = ids.score_final(work, now)
+        (work / f"metrics-{kind}.json").write_text((work / "metrics-final.json").read_text())
         grades = {}
         for x in r["per_item"]:
             if x["grade"] is not None:  # an item labelled 'unclear' is not graded
@@ -276,7 +283,7 @@ def md_tables(res):
               "| report | click -> card p50 / p95 ms | pick decode ms | aimed clicks (screenshot: what the card says) |", "|---|---|---|---|"]
         for v in vw:
             shots = "; ".join(f"{Path(x['file']).name}: aimed {x['aimed']} -> '{x['title']}' [{', '.join(x['chips'])}]" for x in v["shots"])
-            L.append(f"| {v['report']} | {v['latencyMs']['p50']:.1f} / {v['latencyMs']['p95']:.1f} | {v['pickDecodeMs']} | {shots} |")
+            L.append(f"| {v['report']} | {v['latencyMs']['p50']:.1f} / {v['latencyMs']['p95']:.1f} | {v['pickDecodeMs']:.0f} | {shots} |")
     return L
 
 
@@ -297,7 +304,7 @@ def main(a):
         name, rest = v.split("=", 1)
         variants[name] = dict(x.split("=", 1) for x in rest.split(","))
     res = {"schema": "mvp2-integrate-results-v1", "bench": bench, "gt": a.gt, "variants": variants,
-           "times": times(bench), "checks": checks(bench), "identity": identity(bench), "physical_gt": physical_gt(a.gt) if a.gt else None,
+           "times": times(bench), "checks": checks(bench), "identity": identity(bench, out / "identity-heldout"), "physical_gt": physical_gt(a.gt) if a.gt else None,
            "physical_delivered": physical_delivered(bench), "spend": spend(bench, a.gt, variants),
            "variant_times": {k: times(v) for k, v in variants.items()}}
     res["click_audit"] = json.loads((Path(a.clicks) / "score.json").read_text()) if a.clicks else None
