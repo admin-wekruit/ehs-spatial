@@ -171,18 +171,85 @@ class Da3:
             t.data = h.to(self.dev, non_blocking=True)
         torch.cuda.synchronize(self.dev)
 
-    def shot(self, kf):
-        """(k,720,1280,3) uint8 BGR on this GPU -> colors (k,H,W,3) [0,1], depth (k,H,W), c2w (k,4,4), K (k,3,3); DA3 units."""
+    def shot(self, kf, c2w=None, K=None):
+        """(k,720,1280,3) uint8 BGR on this GPU -> colors (k,H,W,3) [0,1], depth (k,H,W), c2w (k,4,4), K (k,3,3); DA3 units.
+        With c2w (k,4,4) and K (k,3,3 at 504x280) given (mvp2 accuracy lane: DROID poses), the cameras condition the
+        forward and the depth is carried into their scale by the Sim3 of DA3's cameras onto the given ones (the API's
+        align_to_input_ext_scale does the same with its own Umeyama)."""
         import torch
         import torch.nn.functional as F
         with torch.inference_mode():
             x = F.interpolate(kf.permute(0, 3, 1, 2).flip(1).float() / 255, size=DA3_HW, mode="area")
-            raw = self.model.forward(((x - self.mean) / self.std)[None], None, None, [], False, False, "saddle_balanced")
+            ext = None if c2w is None else torch.linalg.inv(c2w.double()).float()[None]
+            raw = self.model.forward(((x - self.mean) / self.std)[None], ext, None if K is None else K.float()[None], [], False, False,
+                                     "saddle_balanced")
             k = len(kf)
             w2c = torch.eye(4, device=self.dev, dtype=torch.float64).repeat(k, 1, 1)
             w2c[:, :3] = raw["extrinsics"].reshape(k, -1, 4)[:, :3].double()
-            return {"colors": x.permute(0, 2, 3, 1).contiguous(), "depth": raw["depth"].reshape(k, *DA3_HW).float(),
-                    "c2w": torch.linalg.inv(w2c).float(), "K": raw["intrinsics"].reshape(k, 3, 3).float()}
+            out = {"colors": x.permute(0, 2, 3, 1).contiguous(), "depth": raw["depth"].reshape(k, *DA3_HW).float(),
+                   "c2w": torch.linalg.inv(w2c).float(), "K": raw["intrinsics"].reshape(k, 3, 3).float()}
+            if c2w is not None:
+                s = umeyama(out["c2w"][:, :3, 3].double().cpu().numpy(), c2w[:, :3, 3].double().cpu().numpy())[0]
+                out.update(depth=out["depth"] * float(s), c2w=c2w.float(), K=K.float())
+            return out
+
+
+def umeyama(A, B):
+    """Sim3 (s, R, t) minimising sum |B - (s R A + t)|^2 over point pairs (Umeyama 1991)."""
+    A, B = np.asarray(A, float), np.asarray(B, float)
+    ma, mb = A.mean(0), B.mean(0)
+    a, b = A - ma, B - mb
+    U, S, Vt = np.linalg.svd(b.T @ a / len(A))
+    D = np.diag([1., 1., np.sign(np.linalg.det(U @ Vt))])
+    R = U @ D @ Vt
+    s = float(np.trace(np.diag(S) @ D) / max((a ** 2).sum() / len(A), 1e-12))
+    return s, R, mb - s * R @ ma
+
+
+def windows_geometry(da3, kf, grays, threshold=.40):
+    """X6 option (b) in the shot's place (mvp2 accuracy lane): content windows by fast_report.windows' rule (threshold 0.40,
+    X6's recommendation), DA3 any-view per window, each window carried into window 0's frame by a Sim3 on the keyframes it
+    shares with the ones before (rotation from the cameras, scale from the depth ratio, translation from the centres: X6's
+    stitch). A window the rule opened without a carry (a collapse) gets the previous window's last keyframes anyway (a
+    shot has one frame). -> the shot dict (window 0's DA3 units) and a record per window with the stitch residuals."""
+    import torch
+    from fast_report import windows as win
+    ws = win.run(list(range(len(kf))), [win.features(g) for g in grays], threshold=threshold)
+    for a, b in zip(ws, ws[1:]):
+        if not b["carried"]:
+            b.update(keys=a["keys"][-win.CARRY:] + b["keys"], carried=win.CARRY, forced_carry=True)
+    out, rec = None, []
+    with torch.inference_mode():  # the shot dict's tensors are inference tensors, as da3.shot's are
+        for w in ws:
+            g = da3.shot(kf[w["keys"]])
+            if out is None:
+                out = {k: torch.zeros((len(kf), *v.shape[1:]), dtype=v.dtype, device=v.device) for k, v in g.items()}
+            c = w["carried"]
+            r = {"keys": len(w["keys"]), "carried": c, "reason": w["reason"], "forced_carry": bool(w.get("forced_carry"))}
+            s, R, t = 1., np.eye(3), np.zeros(3)
+            if c:
+                sh = w["keys"][:c]
+                Rp, Rc = out["c2w"][sh, :3, :3].double().cpu().numpy(), g["c2w"][:c, :3, :3].double().cpu().numpy()
+                u_, _, vt = np.linalg.svd(sum(p @ q.T for p, q in zip(Rp, Rc)))
+                R = u_ @ np.diag([1, 1, np.sign(np.linalg.det(u_ @ vt))]) @ vt
+                dp, dc = out["depth"][sh], g["depth"][:c]
+                ok = (dp > 0) & (dc > 0)
+                s = float((dp[ok] / dc[ok]).median()) if ok.sum() > 500 else 1.
+                cp, cc = out["c2w"][sh, :3, 3].double().cpu().numpy(), g["c2w"][:c, :3, 3].double().cpu().numpy()
+                t = (cp - s * cc @ R.T).mean(0)
+                r.update(scale=round(s, 4), centre_residual=float(np.median(np.linalg.norm(cp - (s * cc @ R.T + t), axis=1))),
+                         rotation_residual_deg=float(np.median([np.degrees(np.arccos(np.clip((np.trace(p.T @ R @ q) - 1) / 2, -1, 1)))
+                                                                for p, q in zip(Rp, Rc)])))
+            new = w["keys"][c:]
+            Rt = torch.tensor(R, dtype=torch.float32, device=g["c2w"].device)
+            for k in ("colors", "K"):
+                out[k][new] = g[k][c:]
+            out["depth"][new] = g["depth"][c:] * s
+            out["c2w"][new] = g["c2w"][c:]
+            out["c2w"][new, :3, :3] = Rt @ g["c2w"][c:, :3, :3]
+            out["c2w"][new, :3, 3] = s * g["c2w"][c:, :3, 3] @ Rt.T + torch.tensor(t, dtype=torch.float32, device=Rt.device)
+            rec.append(r)
+    return out, rec
 
 
 def floor_plane(depth, K, c2w, floor, stride=4):
@@ -348,6 +415,9 @@ def cards_calibration():
         d = json.loads(raw)
         ks = {f: float(v["k"] if isinstance(v, dict) else v) for f, v in (d.get("k") or {}).items()}  # D writes {family: {k, n, coverage}}
         out.update(file_sha256=sha256(raw), k={**out["k"], **ks}, k_pose=float(d.get("k_pose", 1.)))
+        if d.get("u_rule"):  # mvp2 accuracy: k_geo per family and view-set state against metric ground truth, over D's k
+            out["k"].update({f: dict(v) for f, v in d["u_rule"]["k_geo"].items()})
+            out["u_rule"] = {x: d["u_rule"].get(x) for x in ("source", "scale_rel", "coverage_held_out")}
     return out
 
 
@@ -590,6 +660,8 @@ def analyse(m, mp4, opts, clock, writer, log):
     with clock.stage("cuts"):
         parts = [f.result() for f in futures]
         cuts = cuts_from(stitch(parts), n)
+        if opts.get("cuts") == "none":  # mvp2 accuracy: an unedited capture held 6 frames a keyframe (each hold reads as a cut)
+            cuts = {**cuts, "measured_segments": cuts["segments"], "segments": [(0, n - 1)]}
         shots = [(a, b) for a, b in cuts["segments"] if b - a + 1 >= MIN_SHOT]
         shot_pos = [[i for i, f in enumerate(keys) if a <= f <= b] for a, b in shots]
         kf = torch.cat(work.chunks[dev_geo])
@@ -598,10 +670,22 @@ def analyse(m, mp4, opts, clock, writer, log):
     if early is not None:
         early.result()
 
-    shots_gpu = []
+    shots_gpu, geometry = [], opts.get("geometry", "shot")
+    summary["geometry"] = {"option": geometry, "windows": []}
     for si, pos in enumerate(shot_pos):
         with clock.stage(f"da3.shot{si}", gpu=dev_geo, n={"views": len(pos)}):
-            shots_gpu.append(m.da3.shot(kf[pos]))
+            if geometry == "windows":  # mvp2 accuracy lane: X6's per-window DA3 + Sim3
+                g, rec = windows_geometry(m.da3, kf[pos], [gray_all[keys[q]] for q in pos])
+                summary["geometry"]["windows"].append(rec)
+            elif geometry == "posed":  # mvp2 accuracy lane: given cameras (DROID on the keyframes) condition DA3
+                at = {int(f): i for i, f in enumerate(opts["poses"]["keys"])}
+                ix = [at[keys[q]] for q in pos]
+                c2w = torch.tensor(np.asarray(opts["poses"]["c2w"], float)[ix], dtype=torch.float32, device=dev_geo)
+                Kp = torch.tensor(np.asarray(opts["poses"]["K"], float), dtype=torch.float32, device=dev_geo).expand(len(pos), 3, 3).contiguous()
+                g = m.da3.shot(kf[pos], c2w, Kp)
+            else:
+                g = m.da3.shot(kf[pos])
+            shots_gpu.append(g)
     clock.mark("da3_done")
     m.da3.offload()  # spec section 5 lever 3: ~5 GB of GPU 0 for SAM 3D (a pointer swap); run() puts it back
     if dev_geo != dev_seg:
@@ -668,8 +752,9 @@ def analyse(m, mp4, opts, clock, writer, log):
     # the splat (GPU 1): set up now, while SAM 3 still runs there; trains once the SAM 3 queue is empty (released below)
     longest = max(range(len(geo)), key=lambda i: len(geo[i]["pos"])) if geo else None
     release = m.release = threading.Event()  # run() sets it too if this run fails before the SAM 3 queue empties
+    display_on = opts.get("display", True)  # mvp2 accuracy runs: no SAM 3D and no splat (display layers measure nothing)
     splat_future = m.cpu_pool.submit(splat_job, m, geo[longest], shots[longest], shared, opts, clock, writer, release) \
-        if longest is not None else None
+        if longest is not None and display_on else None
 
     def people_layer():  # CPU work: runs beside GPU 0's share of the SAM 3 queue
         try:
@@ -1017,7 +1102,7 @@ def analyse(m, mp4, opts, clock, writer, log):
 
     def start_display():
         release_splat()
-        if display:
+        if display or not display_on:
             return
         display["models"] = m.cpu_pool.submit(models_job, m, sam3d_objs.result, geo, shared, words, clock, writer, dev_geo)
         clock.mark("display_started")
@@ -1412,7 +1497,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     summary["judge"] = [f.result() for f in judge_futures]  # after densify: it adds the v3 judgements' future
     summary["cards"] = {"v1": summary["cards"], "v3": cards_out.get("v3", {}).get("stats")}
     summary["boxes_v3"] = box_stats(objects, cards_out.get("v3"))
-    summary["sam3d"] = display["models"].result()
+    summary["sam3d"] = display["models"].result() if "models" in display else None
     summary["splat"] = splat_future.result() if splat_future is not None else None
     Path(shared.result()).unlink(missing_ok=True)
     summary.update(frames=n, fps=fps, wh=[W, H], cuts=cuts, keyframes=len(keys), object_keyframes=len(range(0, len(keys), segment.OBJECT_EVERY)),
@@ -1446,6 +1531,10 @@ def self_check():
     assert v.shape == (6, 3) and f.shape == (4, 3) and np.allclose(v[:, 1], .01)
     raw, meta = points_glb(np.zeros((3, 3)), np.zeros((3, 3), np.uint8), .03)
     assert raw[:4] == b"glTF" and len(raw) % 4 == 0 and meta["pointSizeNative"] == .03
+    A = rng.normal(size=(20, 3))
+    Rq = cv2.Rodrigues(np.array([.3, -.2, .5]))[0]
+    s_, R_, t_ = umeyama(A, 2.5 * A @ Rq.T + [1., 2, 3])
+    assert abs(s_ - 2.5) < 1e-9 and np.allclose(R_, Rq) and np.allclose(t_, [1, 2, 3])
     try:
         import torch
     except ImportError:
@@ -1460,4 +1549,4 @@ def self_check():
     assert u.tolist() == [10, 11, 30, 31] and owner.tolist() == [7, 7, 8, 8]  # component 1 is not an object
     mp = merge_points(out, cap=4)
     assert len(mp["world"]) == 4 and mp["views"][1][0] == 7 and mp["views"][0][1] is True
-    print(f"core self-check ok: chunked cut measure == sequential (chunks 8/{CHUNK}/64), ribbon, GLB points, object points, voxel owners")
+    print(f"core self-check ok: chunked cut measure == sequential (chunks 8/{CHUNK}/64), ribbon, GLB points, object points, voxel owners, umeyama")

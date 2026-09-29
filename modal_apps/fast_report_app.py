@@ -430,6 +430,47 @@ def main(video: str, start: float = 0., end: float = 0., site: str = "site", out
     (out / "summary.json").write_text(json.dumps({"boot": boot, "runs": rows}, indent=1, default=plain))
 
 
+@app.local_entrypoint()
+def accuracy(plan: str, out: str, mirror_max_mb: float = 8.):
+    """mvp2 accuracy (scripts/accuracy_gt.py): ground-truth sequence windows through one container, in the order of `plan`
+    (a JSON list of {"mp4": path, "site": name, "window_s": [a, b], "options": {...}}); the first call is the first call
+    after boot. Options add cuts / geometry / poses / display to the core's; no label cache between videos."""
+    import hashlib
+    from fast_report import layers
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=False)
+    calls = json.loads(Path(plan).read_text())
+    fr = FastReport()
+    submitted = time.time()
+    boot = fr.boot_info.remote()
+    boot.update(client_submitted_unix=submitted, submit_to_ready_s_two_clocks=round(boot["ready_unix"] - submitted, 1))
+    (out / "boot.json").write_text(json.dumps(boot, indent=1, default=plain))
+    rows = []
+    for i, c in enumerate(calls):
+        mp4 = Path(c["mp4"]).read_bytes()
+        digest = hashlib.sha256(mp4).hexdigest()
+        report_id = f"acc-{c['site']}-{c['options'].get('label', c['options'].get('geometry', 'shot'))}-{digest[:8]}-{int(time.time())}"
+        layers.put_blob(out, mp4)
+        options = {"cache": False, "window_s": c["window_s"], "client_has": [digest], "display": False, **c["options"]}
+        run = None
+        for e in fr.run.remote_gen(mp4, c["site"], report_id, options):
+            if e["type"] in ("patch", "written", "run"):
+                layers.mirror(e, out, int(mirror_max_mb * 1e6) if mirror_max_mb else None)
+            if e["type"] == "run":
+                run = e["run"]
+            elif e["type"] == "error":
+                print("  writer error:", json.dumps(e)[:1500], flush=True)
+        run.update(first_call=i == 0, call=c, milestones=milestones(out, report_id, run["t0_unix"]))
+        layers._write_json(out / "reports" / report_id / "run.json", run)
+        rows.append({"report": report_id, "site": c["site"], "geometry": options.get("label", options.get("geometry", "shot")), "first_call": i == 0, "error": run["error"],
+                     "milestones": {k: v["written_s"] for k, v in run["milestones"].items()}, "flags": run["flags"],
+                     "gpu_peak_gib": [g["peak_gb"] for g in run["gpu_peak"]], "usd_estimate": run["usd_estimate"]})
+        print(json.dumps(rows[-1], default=plain)[:2000], flush=True)
+        if run["error"]:
+            print(run["error"][-3000:], flush=True)
+        (out / "summary.json").write_text(json.dumps({"boot": boot, "runs": rows}, indent=1, default=plain))
+
+
 # ---------- evaluation (local numpy) ----------
 
 def patches(report_dir):
