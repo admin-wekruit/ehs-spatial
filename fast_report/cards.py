@@ -292,6 +292,84 @@ def canonical(name):
     return None
 
 
+# r4/naming (the user, 2026-09-29): every object card carries a TYPE, the canonical family, when no specific name is accepted;
+# the family comes from the cheap votes (SAM 3 word, YOLOE class, PE-Core zero-shot summed per family, the bank's neighbours),
+# and only when they give none, a shape from the measured extents. A type is shown as '<label> (type only)': a name no table
+# matches (no class prior, no size rule, no hazard claim)
+TYPE_LABEL = {"storage": "shelf / rack / storage", "goods": "container / box / goods", "furniture": "furniture", "machine": "machine",
+              "tool": "tool", "handling": "vehicle / handling equipment", "access": "ladder / stairs / platform", "safety": "safety equipment",
+              "signage": "sign / label", "guarding": "guard / barrier", "linear": "cable / hose / pipe", "electrical": "electrical equipment",
+              "building": "building element", "electronics": "electronics", "material": "material / part", "ppe": "protective equipment",
+              "misc": "other item", "hazard": "spill"}
+TYPE_ONLY = " (type only)"
+ZS_FAMILY_MIN = .5  # a priori: zero-shot alone gives a family only when its summed family probability is at least this
+SHAPES = ("long thin object", "flat panel", "box-shaped object", "compact object", "object (shape not measured)")
+
+
+def family_of(name):
+    """A free name (or a canonical class) -> its family, or None ('~x' bank labels and non-objects have none)."""
+    if not name or str(name).startswith("~"):
+        return None
+    return FAMILY.get(canonical(name))
+
+
+def family_vote(sam3=None, yolo=None, zero_shot_family=None, bank=None, vlm_named=False):
+    """The cheap votes at family level -> (family, source) or (None, None). sam3 / yolo / bank: a class or a name; zero_shot_family:
+    (family, summed p). The SAM 3 word's family with any other vote agreeing; else two of the other three agreeing; else the
+    SAM 3 word's family alone (its detector saw that kind of thing); else zero-shot alone at p >= ZS_FAMILY_MIN. 'hazard'
+    (spill) is never a type without a VLM (a spill is an EHS claim)."""
+    ok = lambda f: f is not None and (f != "hazard" or vlm_named)  # noqa: E731
+    zf, zp = (zero_shot_family or (None, 0.))
+    f = {"sam3": family_of(sam3), "yolo": family_of(yolo), "zero-shot": zf, "bank": family_of(bank)}
+    f = {k: v if ok(v) else None for k, v in f.items()}
+    agree = [k for k in ("yolo", "zero-shot", "bank") if f["sam3"] and f[k] == f["sam3"]]
+    if agree:
+        return f["sam3"], "sam3 word + " + " + ".join(agree) + " (family)"
+    other = [f[k] for k in ("yolo", "zero-shot", "bank") if f[k]]
+    two = next((x for x in other if other.count(x) >= 2), None)
+    if two:
+        return two, " + ".join(k for k in ("yolo", "zero-shot", "bank") if f[k] == two) + " (family)"
+    if f["sam3"]:
+        return f["sam3"], "sam3 word alone (family)"
+    if zf and ok(zf) and zp >= ZS_FAMILY_MIN:
+        return zf, "zero-shot alone (family)"
+    return None, None
+
+
+def shape_type(phys):
+    """The measured extents -> a shape type (SHAPES): a long object seen in parts or longest >= 3x the next side: long thin;
+    three sides with the smallest <= 0.25x the middle: flat panel; three sides: box-shaped; two: compact."""
+    if isinstance(phys.get("visible_length"), dict) and "value" in phys["visible_length"]:
+        return SHAPES[0]
+    dims = sorted(float(phys[n]["value"]) for n in ("height", "width", "depth") if isinstance(phys.get(n), dict) and phys[n].get("value") is not None)
+    if len(dims) < 2:
+        return SHAPES[4]
+    if dims[-1] >= 3 * max(dims[-2], 1e-3):
+        return SHAPES[0]
+    if len(dims) == 3:
+        return SHAPES[1] if dims[0] <= .25 * dims[1] else SHAPES[2]
+    return SHAPES[3]
+
+
+def type_of(ident, phys, cls):
+    """The card's type from its shown class (a name in the taxonomy), else the cheap votes at family level (the cascade's record in
+    ident['naming'], or the detector words), else its shape. -> {family, label, source}."""
+    if FAMILY.get(cls) and (FAMILY[cls] != "hazard" or ident.get("decided_by") in VLM_ROUTES):
+        return {"family": FAMILY[cls], "label": TYPE_LABEL[FAMILY[cls]], "source": "the name"}
+    if cls == NOT_OBJECT:
+        return {"family": NOT_OBJECT, "label": NOT_OBJECT, "source": "the name"}
+    n = ident.get("naming") or {}
+    if n:
+        fam, src = family_vote(sam3=(n.get("sam3") or [None])[0], yolo=(n.get("yolo") or [None])[0], zero_shot_family=n.get("zero_shot_family"),
+                               bank=(n.get("bank") or [None])[0])
+    else:
+        fam, src = next(((family_of(w), "detected word alone (family)") for w in ident.get("detector_words") or [] if family_of(w) not in (None, "hazard")),
+                        (None, None))
+    if fam:
+        return {"family": fam, "label": TYPE_LABEL[fam], "source": src}
+    return {"family": None, "label": shape_type(phys), "source": "shape (the measured extents)"}
+
+
 def hazard_of(name):
     """The hazard class a name claims (HAZARD), or None."""
     c = canonical(name)
@@ -1590,6 +1668,8 @@ ANGLES = ("principal_axis_tilt_deg", "planar_slope_deg")
 REVIEWED = ("top_above_floor", "base_above_floor", "height", "width", "depth", "visible_length", "footprint_m2", "position_xy", "nearest_walked_path", *ANGLES)
 TIME_RAW = ("state", "evidence", "last_seen_reason", "after_last_detection", "note")
 UNIDENTIFIED = "unidentified object"
+COPIED = "vlm copy (cluster medoid, SAM 3 word agrees)"  # r4/naming: a VLM answer on a look-alike, confirmed by this object's own word
+VLM_ROUTES = ("gemini open name", "vlm options", COPIED)  # the routes where a VLM named the object (the hazard gate's third check)
 NAMER_STATUS = {"object": None, "part": "a part of a bigger thing (named as the namer saw it)", "several": "several things under one outline",
                 "surface": "a surface", "unclear": "the namer could not tell"}
 
@@ -1611,7 +1691,7 @@ def hazard_gate(ident, raw):
     det = [w for w in words if canonical(w) is not None and (canonical(w) == H or FAMILY.get(canonical(w)) == FAMILY.get(H))]
     size = (raw or {}).get("size")
     sc = size_check(H, **size) if size else None
-    vlm = ident.get("decided_by") not in (None, "sam3 vote") and (ident.get("namer") or {}).get("status") != "unclear" \
+    vlm = ident.get("decided_by") in VLM_ROUTES and (ident.get("namer") or {}).get("status") != "unclear" \
         and (ident.get("confidence") is None or ident["confidence"] >= .5)
     failed = [why for ok, why in ((vlm, "no VLM named it (or it was unsure)"), (bool(det), "the detector's words do not include it"),
                                   (sc is not None and sc["status"] == "plausible", (sc or {}).get("reason") or "no measured size")) if not ok]
@@ -1620,7 +1700,8 @@ def hazard_gate(ident, raw):
            "rule": "shown only when the detector's word, the class's size and placement, and a VLM agree"}
     if not failed:
         return prop, rec
-    alt = next((w for w in words if hazard_of(w) is None and canonical(w) != NOT_OBJECT), None)
+    # r4/naming: a cascade identity never falls back to an unverified word (it is an object, unidentified)
+    alt = None if ident.get("naming") else next((w for w in words if hazard_of(w) is None and canonical(w) != NOT_OBJECT), None)
     return alt or UNIDENTIFIED, rec
 
 
@@ -1642,6 +1723,13 @@ def apply_name(card):
         ident["status"] = f"'{hz['proposed']}' held back: a hazard name ({hz['class']}) is shown only when the detector's word, the size and " \
                           f"placement and a VLM agree; failed: {'; '.join(hz['failed'])}"
     cls = canonical(shown)
+    if shown == UNIDENTIFIED or cls is None:  # r4/naming: every object card carries a type; an unnamed one shows it
+        ident["type"] = type_of(ident, phys, cls)
+        if shown == UNIDENTIFIED:
+            shown = ident["name"] = ident["type"]["label"] + TYPE_ONLY
+            cls = None
+    else:
+        ident["type"] = type_of(ident, phys, cls)
     ident["canonical"] = cls
     key = None if cls == NOT_OBJECT else cls or shown  # the tables are keyed by canonical classes; an unmapped name matches on its own head
     kind = kind_of(key) if key else {"category": "other", "mobility": "unknown", "mobility_source": "not an object", "class_word": None}
@@ -2363,7 +2451,8 @@ def self_check():
     assert by["obj-0-0"]["class"]["category"] == "F payload"
     # mvp2/identity R2: the SAM 3 word 'cable' alone is a hazard name no VLM has checked: not shown, no class prior
     c2 = by["obj-0-2"]
-    assert c2["identity"]["name"] == UNIDENTIFIED and not c2["identity"]["hazard_check"]["confirmed"] and c2["class"]["mobility"] == "unknown", c2["identity"]
+    assert c2["identity"]["name"] == "cable / hose / pipe" + TYPE_ONLY and not c2["identity"]["hazard_check"]["confirmed"] \
+        and c2["class"]["mobility"] == "unknown", c2["identity"]  # r4: held back, the name falls back to its family type (no class prior)
     # a VLM names it 'extension cord': detector word + 2.5 m within a cable's 0.1-30 m + the VLM -> shown, deformable, no angle claim, J4 applies
     import copy
     from fast_report import judge
@@ -2621,6 +2710,30 @@ def self_check():
                                     "points": [{"t": i * .4, "frame": 6 * i, "xyz": [.2 + 2 * i, 1.6, 3.6], "foot_surface": dict(tiny, contact=False)} for i in range(2)]}]},
                        {0: dict(shot, frame=fr, cam_floor=to_floor(cams[:, :3, 3], fr), u_pose_m=.04)}, [])
     assert pc3[0]["identity"]["name"].startswith("person? (small") and "lowest point" in pc3[0]["identity"]["note"], pc3[0]["identity"]
+    # r4/naming: types. The family votes; the shape fallback; an unnamed card shows its type, idempotently, with no class prior
+    assert family_vote("cardboard box", None, ("storage", .9), None) == ("goods", "sam3 word alone (family)")
+    assert family_vote("carton", "crate", ("storage", .9), None) == ("goods", "sam3 word + yolo (family)")
+    assert family_vote(None, "lathe", ("machine", .3), "~motor") == ("machine", "yolo + zero-shot (family)")
+    assert family_vote(None, None, ("machine", .4), None) == (None, None) and family_vote(None, None, ("machine", .6), None)[0] == "machine"
+    assert family_vote("puddle", None, ("hazard", .9), None) == (None, None), "a spill is never a type without a VLM"
+    v = lambda x: {"value": x, "u": .01}  # noqa: E731
+    assert shape_type({"height": v(.1), "width": v(2.), "depth": v(.2)}) == "long thin object"
+    assert shape_type({"height": v(1.), "width": v(1.2), "depth": v(.05)}) == "flat panel"
+    assert shape_type({"height": v(.5), "width": v(.6), "depth": v(.4)}) == "box-shaped object"
+    assert shape_type({"height": v(.5), "width": v(.6)}) == "compact object" and shape_type({}) == "object (shape not measured)"
+    card = {"identity": {"proposed": UNIDENTIFIED, "name": UNIDENTIFIED, "decided_by": "cascade: unsettled",
+                         "naming": {"route": "unidentified", "sam3": ["metal part", .6, "metal block"], "yolo": [None, 0.], "zero_shot_family": ["machine", .3]}},
+            "physical": {"height": v(.3), "width": v(.3), "depth": v(.3)}}
+    apply_name(card)
+    assert card["identity"]["name"] == "material / part (type only)" and card["identity"]["type"]["family"] == "material", card["identity"]
+    assert card["class"]["category"] == "other" and card["identity"]["canonical"] is None
+    import json as _json
+    before = _json.dumps(card, sort_keys=True)
+    assert _json.dumps(apply_name(card), sort_keys=True) == before, "apply_name is idempotent with a type"
+    card["identity"]["naming"] = {"route": "unidentified"}
+    assert apply_name(card)["identity"]["name"] == "box-shaped object (type only)" and card["identity"]["type"]["family"] is None
+    named = {"identity": {"proposed": "drill press", "decided_by": "vlm options", "naming": {"route": "vlm"}}, "physical": {}}
+    assert apply_name(named)["identity"]["type"] == {"family": "machine", "label": "machine", "source": "the name"}
     print(f"cards self-check ok: robust extents within 5 % with flying pixels, fragment merge + cannot-link, depth not observed from one side, "
           f"subset u > 0, size plausibility, angle gates, grid DBSCAN, plumb, floor frame ({out['stats']['s']})")
     self_check_r4()
