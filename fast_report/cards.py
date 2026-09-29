@@ -1809,11 +1809,11 @@ def contract(card):
         for n in (*METRIC, "visible_length"):
             if n in ph or n in METRIC:
                 need(n, ph.get(n))
-        b = ph.get("box") or {}
-        if not (b.get("size_m") and len(b.get("u_m") or []) == 3 and b.get("center_u_m") is not None and b.get("scale")):
+        b, fp = ph.get("box") or {}, ph.get("footprint_xy") or {}
+        # mvp3: an on-demand card (fast_report.ondemand, one view) draws no box and has no footprint: none is required
+        if not card.get("on_demand") and not (b.get("size_m") and len(b.get("u_m") or []) == 3 and b.get("center_u_m") is not None and b.get("scale")):
             bad.append(f"{cid}.box: size or centre without u / scale")
-        fp = ph.get("footprint_xy") or {}
-        if not (fp.get("value") and fp.get("u") is not None and fp.get("scale")):
+        if not card.get("on_demand") and not (fp.get("value") and fp.get("u") is not None and fp.get("scale")):
             bad.append(f"{cid}.footprint_xy: corners without u / scale")
         sc = ph.get("size_check") or {}
         if sc.get("measured_m") is not None and (sc.get("measured_u_m") is None or not sc.get("scale")):

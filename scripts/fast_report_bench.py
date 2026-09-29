@@ -291,8 +291,10 @@ def bench(a):
     out.mkdir(parents=True, exist_ok=False)  # never reuse a run folder
     mirror_root = out / "mirror"
     mirror_root.mkdir()
+    holder = {}  # mvp3: the viewer's on-demand clicks go to this bench's report container once it exists
     if a.serve:
-        threading.Thread(target=fl.serve, args=(mirror_root, PORT), daemon=True).start()
+        threading.Thread(target=fl.serve, args=(mirror_root, PORT), kwargs={"click": lambda r, i, x, y: holder["fr"].click.remote(r, i, x, y),
+                                                                          "alive": lambda: holder["fr"].alive.remote()}, daemon=True).start()
     sites, plan = a.sites.split(","), a.plan.split(",")
     click_latency = json.loads(a.click_latency.read_text()) if a.click_latency else None
     records, meta = [], {"sites": sites, "plan": plan, "shift_s": a.shift_s, "background_s": a.background_s, "started_unix": time.time(),
@@ -312,7 +314,7 @@ def bench(a):
     with hazard_ctx, modal.enable_output(), app.run(), modal.Queue.ephemeral() as namer_q:
         meta["app_id"] = app.app_id
         relay = NamerRelay(namer_q, out) if a.namer == "gemini" else None
-        fr = FastReport()
+        fr = holder["fr"] = FastReport()
         submitted = time.time()
         boot = fr.boot_info.remote()  # waits for the container: cold start, recorded, never counted as analysis
         boot = {**boot, "client_submitted_unix": submitted, "client_ready_unix": time.time(), "submit_to_ready_s_two_clocks": round(time.time() - submitted, 1)}

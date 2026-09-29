@@ -21,6 +21,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
@@ -106,6 +107,7 @@ from fast_report.layers import Writer  # noqa: E402  C
 
 @app.cls(image=image, gpu=GPU, cpu=CPU, memory=MEMORY_GIB * 1024, volumes=VOLUMES, timeout=3600, retries=0, max_containers=1,
          scaledown_window=60)
+@modal.concurrent(max_inputs=4)  # mvp3: an on-demand click is answered beside a running analysis (run() itself stays one at a time)
 class FastReport:
     @modal.enter()
     def boot(self):
@@ -155,6 +157,10 @@ class FastReport:
         b["sam3d"] = self.sam3d.ready()  # before this process warms up on GPU 0: SAM 3D's warm-up holds ~20 GB a process until it is done
         lap("sam3d_ready_s")
         self.sams = {self.dev_geo: segment.Sam3(sam0, proc, self.dev_geo), self.dev_seg: segment.Sam3(sam.to(self.dev_seg), proc, self.dev_seg)}
+        from fast_report import ondemand  # mvp3 D4 (b): SAM 3's tracker for on-demand clicks, GPU 1 (+0.9 GB), warmed below
+        self.point = ondemand.Point(self.dev_seg, sam3_app.MODEL_ID, sam3_app.REVISION, "/v/sam3/huggingface/hub")
+        self.run_lock = threading.Lock()
+        lap("sam3_tracker_gpu1_s")
         self.cpu_pool, self.vlm_pool, self.run_pool = ThreadPoolExecutor(CPU), ThreadPoolExecutor(4), ThreadPoolExecutor(1)
         vllm_warm = self.cpu_pool.submit(self.warm_vllm)
         with torch.inference_mode():  # kernels, allocator, cuBLAS handles at the shapes the runs use
@@ -171,6 +177,8 @@ class FastReport:
                     s.detect(s.pick(v, [0]), 1, filler, segment.VOCAB_SCORE, logits=True)
                     torch.cuda.synchronize(d)
             lap("warm_sam3_s")
+            self.point.masks(np.random.default_rng(0).integers(0, 255, (720, 1280, 3), np.uint8), points=[(640, 360)])
+            lap("warm_sam3_tracker_s")
             frames = torch.randint(0, 255, (4, 720, 1280, 3), dtype=torch.uint8, device=self.dev_geo)
             masks = torch.zeros((600, 280, 504), dtype=torch.bool, device=self.dev_geo)
             masks[:, 50:150, 100:300] = True
@@ -232,8 +240,39 @@ class FastReport:
         return self.boot_record
 
     @modal.method()
+    def click(self, report_id: str, i: int, x: float, y: float, style: str = "outline"):
+        """mvp3 D4 (b): the on-demand card for a click on no entity (fast_report.ondemand): pick frame i, source pixel (x, y).
+        Not analysis time: nothing is written to the report."""
+        from fast_report import ondemand
+        t = time.perf_counter()
+        try:
+            st = ondemand.state("/v/layers", report_id)
+        except (LookupError, FileNotFoundError):
+            VOLUMES["/v/layers"].reload()  # a report another container wrote
+            st = ondemand.state("/v/layers", report_id)
+        out = ondemand.card(st, self.point, int(i), float(x), float(y), style=style)
+        out["timing"]["container_s"] = round(time.perf_counter() - t, 3)
+        return out
+
+    @staticmethod
+    def _try(fn, *a):
+        try:
+            return fn(*a)
+        except Exception:  # noqa: BLE001  a click loads it again and reports why
+            return None
+
+    @modal.method()
+    def alive(self):
+        """The viewer's heartbeat while its session is open: the container stays up, and scales down 60 s after the last one."""
+        return time.time()
+
+    @modal.method()
     def run(self, mp4: bytes, site: str, report_id: str, options: dict):
-        """MP4 bytes in -> every writer event as it happens -> run.json last."""
+        """MP4 bytes in -> every writer event as it happens -> run.json last. One analysis at a time (clicks run beside it)."""
+        with self.run_lock:
+            yield from self._run(mp4, site, report_id, options)
+
+    def _run(self, mp4, site, report_id, options):
         import torch
         from fast_report import core
         clock = Clock()  # t0: the bytes are in the container
@@ -280,6 +319,9 @@ class FastReport:
         path = Path("/v/layers/reports") / report_id / "run.json"
         path.write_text(json.dumps(run, indent=1, default=plain))
         VOLUMES["/v/layers"].commit()
+        if error is None:  # mvp3: the report's state and keyframes ready for the viewer's first on-demand click (after the commit)
+            from fast_report import ondemand
+            threading.Thread(target=lambda: self._try(ondemand.state, "/v/layers", report_id), daemon=True).start()
         try:
             for d in (self.dev_geo, self.dev_seg):
                 with torch.cuda.device(d):

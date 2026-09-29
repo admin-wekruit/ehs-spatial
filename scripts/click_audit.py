@@ -79,10 +79,12 @@ def resolve(pick, cards, clicks, fps, rule="nearest"):
     return clicks
 
 
-def random_clicks(pick, fps, n, seed):
-    """Uniform over video frames that have a pick map (inside [t, t_end) of some pick frame) and over 1280 x 720 pixels."""
+def random_clicks(pick, fps, n, seed, n_frames=None):
+    """Uniform over video frames that have a pick map (inside [t, t_end) of some pick frame) and over 1280 x 720 pixels;
+    n_frames: the video's frame count (a last t_end rounded up read one frame past the end: ME340 frame 899 of 899)."""
     rng = np.random.default_rng(seed)
-    covered = sorted({q for f in pick.frames for q in range(int(round(f["t"] * fps)), int(np.ceil((f.get("t_end") or f["t"] + .2) * fps - 1e-6)))})
+    covered = sorted({q for f in pick.frames for q in range(int(round(f["t"] * fps)), int(np.ceil((f.get("t_end") or f["t"] + .2) * fps - 1e-6)))
+                      if n_frames is None or q < n_frames})
     frames = rng.choice(covered, n, replace=len(covered) < n)
     W, H = pick.sw, pick.sh
     return [{"k": k, "frame": int(q), "x": int(rng.integers(0, W)), "y": int(rng.integers(0, H)), "sample": "random"} for k, q in enumerate(frames)]
@@ -221,6 +223,7 @@ def self_check():
     assert [c["entity"] for c in resolve(pk, cards, [{"k": 0, "frame": 4, "x": 5, "y": 5}], 25.)] == ["person:x"]  # 0.16 s: nearer frame 1
     assert [c["entity"] for c in resolve(pk, cards, [{"k": 0, "frame": 4, "x": 5, "y": 5}], 25., "last")] == ["obj-a"]  # round 1: frame 0
     rc = random_clicks(pk, 25., 50, 0)
+    assert max(c["frame"] for c in random_clicks(pk, 25., 50, 0, n_frames=9)) <= 8
     assert all(0 <= c["frame"] < 10 and 0 <= c["x"] < 1280 and 0 <= c["y"] < 720 for c in rc), rc[:3]
     with tempfile.TemporaryDirectory() as d:
         save(Path(d), cl, {"report": "r", "site": "s", "sample": "random"}, "clicks-x")
@@ -258,7 +261,8 @@ def main():
         src = json.loads(a.clicks.read_text())
         clicks, stem = [{k: c[k] for k in ("k", "frame", "x", "y", "sample", "ref", "ref_px") if k in c} for c in src["clicks"]], a.clicks.stem
     else:
-        clicks = person_clicks(a.site, a.seed) if a.persons else random_clicks(pick, fps, a.n, a.seed)
+        clicks = person_clicks(a.site, a.seed) if a.persons else random_clicks(pick, fps, a.n, a.seed,
+                                                                                         ev.patch_versions(a.mirror, a.report, "video")[0]["data"]["frames"])
         stem = f"clicks-{a.site}-{'persons' if a.persons else 'random'}-s{a.seed}"
     clicks = resolve(pick, cards, clicks, fps, a.rule)
     meta = {"report": a.report, "mirror": str(a.mirror), "site": a.site, "pick_version": patch["version"], "fps": fps, "rule": a.rule,

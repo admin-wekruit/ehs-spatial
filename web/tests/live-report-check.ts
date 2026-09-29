@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import {latest,liveDocument,frameOf,type Patch} from '../src/live-report.ts';
-import {readPick,gunzip,pickAt,pickMask,frameIndexAt,pickIndexAt,pickChunks,emptyPick,fillChunk,chunkOrder,unknownRegion,entityInfo,worstVerdict,pointInPolygon} from '../src/live-report.ts';
+import {readPick,gunzip,pickAt,pickMask,frameIndexAt,pickIndexAt,pickChunks,emptyPick,fillChunk,chunkOrder,unknownRegion,entityInfo,worstVerdict,pointInPolygon,runsMask} from '../src/live-report.ts';
 
 // ---------------- click MVP: a synthetic pick layer (CLICK-MVP-SPEC 3.3)
 const rle=(m:Uint16Array)=>{const o:number[]=[];let v=m[0],n=0;for(const x of m){if(x===v&&n<65535){n++;continue;}o.push(v,n);v=x;n=1;}o.push(v,n);return o;};
@@ -30,6 +30,7 @@ assert.equal(at(0,50,5),null,'a miss');assert.equal(at(.49,5,5),'obj-0-big');ass
 assert.equal(at(-3,5,5),null,'long before the first keyframe: no map');assert.equal(at(.51,55,55,640),null,'past half the gap: the next keyframe (frame 1 has only its last pixel)');
 assert.equal(at(1,0,0,640),null);assert.equal(at(1.5,639,359,640),'obj-0-big','the last pixel after split runs');
 assert.equal(pickMask(pick,0,'obj-0-small')!.mask.reduce((a,b)=>a+b,0),50,'mask: 10x10 minus the person over it');
+assert.deepEqual([...runsMask({w:4,h:2,runs:[1,2,3,2]}).mask],[0,1,1,0,0,0,1,1],'on-demand mask: runs alternate from 0s');
 assert.deepEqual([-1,.99,1,5].map(t=>frameIndexAt(frames,t)),[0,0,1,1]);
 // the nearest keyframe within a shot, never across a cut (shot 0: t 0 and .4, map until .6; cut; shot 1 starts at .8, next map 1.0)
 const fr2:any=[{t:0,t_end:.4,shot:0},{t:.4,t_end:.6,shot:0},{t:.8,t_end:1,shot:1},{t:1,t_end:1.2,shot:1}];
@@ -58,6 +59,8 @@ assert.equal(floor.surface.kind,'floor');assert.ok(Math.abs(floor.height.value)<
 assert.ok(floor.height.u>=.02&&floor.distance.u>=.2*floor.distance.value,'u carries floor residual and scale');
 assert.equal(floor.nearest.id,'obj-0-big');assert.ok(Math.abs(floor.nearest.d-.5)<.03,'nearest footprint 0.5 m ahead');
 assert.ok(floor.nearest.distance.u>=.2*floor.nearest.d&&floor.surface.angle_deg===undefined,'mvp2: the nearest distance carries u; one view gives no angle');
+const c0:any=cardsLayer.cards[0],far={...cardsLayer,cards:[{...c0,physical:{...c0.physical,footprint_xy:{value:c0.physical.footprint_xy,u:5}}}]};
+assert.equal((unknownRegion(pick,cameras,far,0,640,60.5*720/70) as any).nearest.distance.status,'not measurable','mvp3: u >= max(d, 1 m) says nothing');
 const wall=unknownRegion(pick,cameras,cardsLayer,0,640,10.5*720/70) as any;
 assert.equal(wall.surface.kind,'vertical surface');assert.ok(Math.abs(wall.height.value-(1.6+98/252*5))<.02,String(wall.height.value));
 assert.equal((unknownRegion({...pick,depth:new Uint16Array(depth.length)},cameras,cardsLayer,0,640,300) as any).status,'no 3D point here');
