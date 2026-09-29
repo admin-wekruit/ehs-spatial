@@ -321,50 +321,71 @@ def sweep_table(sweep_dir, runs_dir):
 
 # ---------- planted changes (recall) ----------
 
-def planted(run, run_dir):
-    """Our change claims next to the planted boxes (scripts/x6_plant.py truth, DROID metres): a claim matches an event
-    when its kind agrees, its place is within 0.6 m of the box (centre 0.3 m above the floor) after the Sim3, and the
-    event time lies between its before and after keyframes (+- 1 s)."""
-    site = run["opts"]["site"]
-    truth = json.loads((Path(run_dir) / f"planted-{site}.json").read_text())
-    ref = fe.reference(site)
-    a = align(run, ref)
-    if a is None:
-        return {"error": "no alignment"}
-    s, R, t = a.pop("sim3")
-    up = json.loads((PHASE2 / "runs" / __import__("x6_plant").SCALE[site] / "metric-scale.json").read_text())["up_native"]
-    up = np.asarray(up, float) / np.linalg.norm(up)
-    mv = lambda p: s * (R @ np.asarray(p, float)) + t  # noqa: E731
+def hull_mask(xy):
+    m = np.zeros((720, 1280), np.uint8)
+    xy = np.asarray(xy)
+    xy = xy[np.isfinite(xy).all(1) & (np.abs(xy) < 5000).all(1)]
+    if len(xy) >= 3:
+        cv2.fillConvexPoly(m, cv2.convexHull(xy.astype(np.int32)), 1)
+    return m > 0
+
+
+def ours_xy(pts, cam):
+    """Our object's points (map frame) on the 1280 x 720 source through our keyframe camera (the contact sheet's rule)."""
+    if cam is None or pts is None:
+        return np.zeros((0, 2))
+    c2w, K = np.array(cam["c2w"]), np.array(cam["K_grid_stride2"])
+    c = (np.asarray(pts) - c2w[:3, 3]) @ c2w[:3, :3]
+    c = c[c[:, 2] > .05]
+    return np.stack([(K[0, 0] * c[:, 0] / c[:, 2] + K[0, 2] + .5) * 1280 / GRID[0] - .5, (K[1, 1] * c[:, 1] / c[:, 2] + K[1, 2] + .5) * 720 / GRID[1] - .5], 1)
+
+
+def planted_match(changes, cameras, truth, site, iou_min=.25):
+    """Planted events vs change claims, in the image: at the claim's before (after, for 'appeared') keyframe the box
+    drawn with the delivered camera and our object's points drawn with ours overlap by IoU >= iou_min, the kinds agree,
+    and the event time lies between the claim's before and after keyframes (+- 1 s). Image space, so the map-to-map
+    alignment (ATE 4-22 cm, 11-17 % scale) does not decide it."""
+    import x6_plant as xp
+    ref, d, clip, up, p0 = xp.load(site)
+    poses, mpn = d["poses_c2w"].astype(np.float64), ref["mpn"]
+    Kr = 2 * d["keyframe_final_fullres_intrinsics"][0].astype(float)
+
+    def box_xy(e, pos, f):
+        xy, z = xp.project(xp.cube(np.array(e["centre_native"][pos]), up, np.array(e["side_dir"]), xp.SIDE / mpn), poses[f], Kr)
+        return xp.to_source(xy) if (z > 0).all() else np.zeros((0, 2))
     rows, used = [], set()
     for e in truth["events"]:
         if not e["placed"]:
             rows.append({"kind": e["kind"], "placed": False})
             continue
-        box = [np.asarray(c) + .3 * up for c in e["centre_m"]]
-        hit, near_obj = None, None
-        for i, c in enumerate(run["changes"]):
-            if c["kind"] != e["kind"] or run["cameras"].get(str(c["after_key"]), {}).get("frame", a["frame"]) != a["frame"]:
+        best = None
+        for i, c in enumerate(changes):
+            if c["kind"] != e["kind"] or not (c["t_before"] - 1 <= e["change_s"] <= c["t_after"] + 1):
                 continue
-            where = c.get("from_centroid") if e["kind"] in ("disappeared", "moved") else c.get("to_centroid")
-            if where is None or np.linalg.norm(mv(where) - box[0 if e["kind"] != "appeared" else 0]) > .6:
+            if e["kind"] == "appeared":
+                f, ours, box = c["after_key"], c.get("points_after"), box_xy(e, 0, c["after_key"])
+            else:
+                f, ours, box = c["before_key"], c.get("points_before"), box_xy(e, 0, c["before_key"])
+            if f is None or f not in ref["segment"]:
                 continue
-            if not (c["t_before"] - 1 <= e["change_s"] <= c["t_after"] + 1):
-                continue
-            if e["kind"] == "moved" and np.linalg.norm(mv(c["to_centroid"]) - box[1]) > .6:
-                continue
-            hit = i
-            used.add(i)
-            break
-        for o in run["objects"]:  # was the box an object at all? (any position within 0.6 m)
-            if o["frame"] == a["frame"] and any(np.linalg.norm(mv(p["centroid"]) - b) <= .6 for p in o["positions"] for b in box):
-                near_obj = {"id": o["id"], "label": o["label"], "intervals": [(iv["state"], iv["t0"], iv["t1"]) for iv in o["intervals"]]}
-                break
-        rows.append({"kind": e["kind"], "placed": True, "change_s": e["change_s"], "found": hit is not None, "claim": run["changes"][hit]["object"] if hit is not None else None,
-                     "box_as_object": near_obj})
-    other = [c for i, c in enumerate(run["changes"]) if i not in used]
+            a, b = hull_mask(ours_xy(ours, cameras.get(str(f)))), hull_mask(box)
+            iou = (a & b).sum() / max((a | b).sum(), 1)
+            if iou >= iou_min and (best is None or iou > best[1]):
+                best = (i, round(float(iou), 3))
+        if best:
+            used.add(best[0])
+        rows.append({"kind": e["kind"], "placed": True, "change_s": e["change_s"], "found": best is not None,
+                     "claim": changes[best[0]]["object"] if best else None, "iou": best[1] if best else None,
+                     "claim_t": [changes[best[0]]["t_before"], changes[best[0]]["t_after"]] if best else None})
+    other = [c for i, c in enumerate(changes) if i not in used]
     return {"events": rows, "placed": sum(r["placed"] for r in rows), "found": sum(bool(r.get("found")) for r in rows),
-            "claims_not_planted": len(other), "claims_not_planted_detail": [(c["object"], c["label"], c["kind"], c["t_after"]) for c in other],
-            "ate_m": a["ate_m"]}
+            "claims_not_planted": len(other), "claims_not_planted_detail": [(c["object"], c.get("label"), c["kind"], c["t_after"]) for c in other]}
+
+
+def planted(run, run_dir):
+    site = run["opts"]["site"]
+    truth = json.loads((Path(run_dir) / f"planted-{site}.json").read_text())
+    return planted_match(run["changes"], run["cameras"], truth, site)
 
 
 # ---------- window rule: ORB co-visibility next to DA3's geometric overlap ----------

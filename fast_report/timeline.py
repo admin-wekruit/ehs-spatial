@@ -38,6 +38,7 @@ K_SIGMA, IOU_MIN = 3., .2
 FREE_SHARE, MIN_VIEWS, MIN_JUDGED, SEEN_SHARE, MIN_EXTENT = .6, 2, 30, .5, .1
 BORDER, MAX_RANGE, NEIGH, MIN_PIX, MIN_OBS_KEYS = .05, 5., 2, 25, 3  # run fx-x6-windows-time-002: 10 of 10 ME340 claims false without them
 REL_MARGIN, PERSON_GROW = .2, 2  # run 003: 5 of 5 claims left were far/edge places seen < 20 % past the object, or a person's rim
+MIN_OBS_WINDOWS = 1  # windows an object must be seen in before its place is judged (2: one window's depth fluke is not a place)
 CHAIN_MAX = .1  # stitched windows: sum of |log Sim3 scale| between the two windows compared (runs 003/004: Walmart's 0.87 link)
 SIZE_RATIO = 2.  # a moved object keeps its size within this factor (robust box diagonal)
 LOOKBACK = 6     # windows an 'appeared' test looks back (the ones that could have seen the place)
@@ -167,7 +168,7 @@ class Tracker:
             if diag(last) < MIN_EXTENT:
                 o["states"][w["index"]] = {"state": "not-observed", "reason": "too small to judge"}
                 continue
-            if len({k for _, x in o["obs"] for k in x["keys"]}) < MIN_OBS_KEYS:
+            if len({k for _, x in o["obs"] for k in x["keys"]}) < MIN_OBS_KEYS or len({wi for wi, _ in o["obs"]}) < MIN_OBS_WINDOWS:
                 o["states"][w["index"]] = {"state": "not-observed", "reason": "too few observations to judge"}
                 continue
             if abs(w.get("chain", 0.) - self.windows_by(o["obs"][-1][0]).get("chain", 0.)) > CHAIN_MAX:
@@ -203,24 +204,34 @@ class Tracker:
                 change.update(kind="disappeared")
                 o["gone"] = change
                 o["states"][w["index"]] = {"state": "disappeared", "change": change}
-        # new instances: appeared (an earlier window saw the place free) or first seen
+        # new instances: appeared (an earlier window saw the place free) or first seen; an object with too few keyframes
+        # for the test when first seen is tested once it has them (its first window is still the one that counts)
         for i in new:
-            a = insts[i]
-            how = {"state": "first-seen"}
-            if diag(a) >= MIN_EXTENT and len(a["keys"]) >= MIN_OBS_KEYS:
-                for prev in [x for x in self.windows[:-1] if x["frame"] == w["frame"] and abs(x.get("chain", 0.) - w.get("chain", 0.)) <= CHAIN_MAX][::-1][:LOOKBACK]:
-                    p = place(a["points"], prev)
-                    if p["state"] == "free":
-                        how = {"state": "appeared", "change": {"kind": "appeared", "window": w["index"], "t_before": prev["t"][1], "t_after": w["t"][0],
-                                                               "before_key": p["best_key"], "after_key": a["best_key"], "place": p,
-                                                               "to_centroid": a["centroid"].tolist()}}
-                        break
-                    if p["state"] in ("occupied", "occluded"):
-                        how = {"state": "first-seen", "reason": f"place {p['state']} in window {prev['index']}"}
-                        break
-            o = self._new(w, a, how)
-            if how["state"] == "appeared":
-                how["change"]["object"] = o["id"]
+            o = self._new(w, insts[i], {"state": "first-seen", "pending": True})
+        for o in self.objects:
+            first = o["states"][o["obs"][0][0]]
+            if first.get("pending") and o["frame"] == w["frame"] and o["obs"][-1][0] == w["index"]:
+                self._appeared(o)
+
+    def _appeared(self, o):
+        wi0, a = o["obs"][0]
+        pts = np.concatenate([x["points"] for _, x in o["obs"]])
+        keys = {k for _, x in o["obs"] for k in x["keys"]}
+        first = o["states"][wi0]
+        if diag(a) < MIN_EXTENT or len(keys) < MIN_OBS_KEYS:
+            return
+        first.pop("pending")
+        w0 = self.windows_by(wi0)
+        for prev in [x for x in self.windows if x["frame"] == o["frame"] and x["index"] < wi0 and abs(x.get("chain", 0.) - w0.get("chain", 0.)) <= CHAIN_MAX][::-1][:LOOKBACK]:
+            p = place(pts[::max(1, len(pts) // 400)], prev)
+            if p["state"] == "free":
+                o["states"][wi0] = {"state": "appeared", "change": {"kind": "appeared", "window": wi0, "t_before": prev["t"][1], "t_after": w0["t"][0],
+                                                                    "before_key": p["best_key"], "after_key": a["best_key"], "place": p, "object": o["id"],
+                                                                    "to_centroid": a["centroid"].tolist(), "decided_in_window": o["obs"][-1][0]}}
+                return
+            if p["state"] in ("occupied", "occluded"):
+                first["reason"] = f"place {p['state']} in window {prev['index']}"
+                return
 
     def windows_by(self, index):
         return next(w for w in self.windows if w["index"] == index)
@@ -345,11 +356,19 @@ def self_check():
     t3.add(window(0, "P", "P", [0., .1, .2]))
     t3.add(window(1, "P", "", [0., .1, .2], pose_error=.045))
     assert t3.objects[0]["states"][1]["state"] == "not-observed" and not t3.changes(), t3.objects[0]["states"][1]
+    t5 = Tracker(tau_move=.9)  # D first seen on one keyframe: tested once it has three, and dated to its first window
+    t5.add(window(0, "A", "A", [0., .1, .2]))
+    w1 = window(1, "AD", "AD", [0., .1, .2])
+    w1["instances"][1]["keys"] = [10]
+    t5.add(w1)
+    assert t5.objects[1]["states"][1] == {"state": "first-seen", "pending": True}
+    t5.add(window(2, "AD", "AD", [0., .1, .2]))
+    assert t5.objects[1]["states"][1]["state"] == "appeared" and t5.objects[1]["states"][1]["change"]["decided_in_window"] == 2
     tl = {r["label"]: r for r in t.timelines()}
     assert [iv["state"] for iv in tl["C"]["intervals"]] == ["first-seen", "disappeared", "static"]
     assert tl["B"]["positions"][1]["centroid"][0] > 1.5 and tl["B"]["moves"] == 1
     print("timeline self-check ok: static, moved (one identity), disappeared (withdrawn when seen again), appeared, occluded, "
-          "out of view, missed detection, a thin object under a 3 px pose error")
+          "out of view, missed detection, a thin object under a 3 px pose error, a deferred appearance")
 
 
 if __name__ == "__main__":
