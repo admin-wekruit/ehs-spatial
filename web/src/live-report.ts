@@ -97,8 +97,11 @@ export function liveDocument(report: string, layers: Record<string, Patch>): Sce
 // ---------------------------------------------------------------- click MVP (docs/phase2/CLICK-MVP-SPEC.md sections 3, 4.9, 5.6)
 // pick: which entity is under each pixel of each keyframe (uint16 (value, run) pairs, gzip) + nearest depth per 4x4 DA3 block.
 export type PickFrame = { t: number; t_end: number; frame: number; shot: number | null; key: number | null; w: number; h: number; source: string; offset: number; pairs: number };
-export type PickData = { format: string; source_wh: [number, number]; entities: (string | null)[]; frames: PickFrame[]; depth?: { w: number; h: number; unit: string; scale: string }; fixture?: string };
-export type Pick = { data: PickData; runs: Uint16Array; depth: Uint16Array | null; unit: number };
+export type PickData = { format: string; source_wh: [number, number]; entities: (string | null)[]; frames: PickFrame[]; depth?: { w: number; h: number; unit: string; scale: string }; fixture?: string;
+  chunks?: { frames: [number, number]; blob: string; depth_blob?: string | null }[] };
+/** ready[i] / depthReady[i]: frame i's runs / depth are in place (a chunked layer fills them chunk by chunk). */
+export type Pick = { data: PickData; runs: Uint16Array; depth: Uint16Array | null; unit: number; ready: Uint8Array; depthReady: Uint8Array };
+export type PickChunk = { lo: number; hi: number; pick: string; depth: string | null };
 export type Verdict = "FAIL" | "NEEDS_REVIEW" | "NO_DATA" | "PASS";
 /** Severity order; NO_DATA ranks above PASS (the worst_verdict fix: one PASS and 59 NO_DATA is not a PASS). */
 export const SEVERITY: Verdict[] = ["FAIL", "NEEDS_REVIEW", "NO_DATA", "PASS"];
@@ -124,7 +127,46 @@ export function readPick(data: PickData, runs: ArrayBuffer, depth?: ArrayBuffer 
   });
   const unit = [1, 2, 4].find(adds);
   if (!unit) throw Error("pick_layout");
-  return { data, runs: r, depth: depth ? new Uint16Array(depth) : null, unit };
+  const n = data.frames.length;
+  return { data, runs: r, depth: depth ? new Uint16Array(depth) : null, unit, ready: new Uint8Array(n).fill(1), depthReady: new Uint8Array(n).fill(depth ? 1 : 0) };
+}
+
+/** A layer's chunks: data.chunks (frame ranges [lo, hi), blobs pick-k / depth-k, so a click works once its own chunk is in:
+ *  mvp2) or the whole layer as one chunk (blobs pick / depth). */
+export function pickChunks(data: PickData, blobs: Record<string, unknown>): PickChunk[] {
+  if (data.chunks?.length) return data.chunks.map(c => ({ lo: c.frames[0], hi: c.frames[1], pick: c.blob, depth: c.depth_blob ?? null }));
+  return [{ lo: 0, hi: data.frames.length, pick: "pick", depth: blobs.depth ? "depth" : null }];
+}
+
+/** A chunked layer's pick before any chunk is in: every frame pending (offsets count pairs, the chunked writer's unit). */
+export function emptyPick(data: PickData): Pick {
+  const pairs = data.frames.reduce((m, f) => Math.max(m, f.offset + f.pairs), 0), g = data.depth, n = data.frames.length;
+  return { data, runs: new Uint16Array(2 * pairs), depth: g ? new Uint16Array(n * g.w * g.h) : null, unit: 1, ready: new Uint8Array(n), depthReady: new Uint8Array(n) };
+}
+
+/** One chunk's inflated blobs into its frames (each frame's runs must add up to w*h, else pick_layout). */
+export function fillChunk(pick: Pick, c: PickChunk, runs: ArrayBuffer | null, depth: ArrayBuffer | null) {
+  const fr = pick.data.frames, base = fr[c.lo].offset;
+  if (runs) {
+    const r = new Uint16Array(runs);
+    for (let i = c.lo; i < c.hi; i++) {
+      let n = 0;
+      for (let k = 0, o = fr[i].offset - base; k < fr[i].pairs; k++) n += r[2 * (o + k) + 1];
+      if (n !== fr[i].w * fr[i].h) throw Error("pick_layout");
+    }
+    pick.runs.set(r, 2 * base);
+    pick.ready.fill(1, c.lo, c.hi);
+  }
+  if (depth && pick.depth && pick.data.depth) {
+    pick.depth.set(new Uint16Array(depth), c.lo * pick.data.depth.w * pick.data.depth.h);
+    pick.depthReady.fill(1, c.lo, c.hi);
+  }
+}
+
+/** Chunk order for loading: the one holding video time `t` first, then outward by time. */
+export function chunkOrder(pick: Pick, chunks: PickChunk[], t: number) {
+  const fr = pick.data.frames, gap = (c: PickChunk) => Math.max(0, fr[c.lo].t - t, t - (fr[c.hi - 1].t_end ?? fr[c.hi - 1].t));
+  return [...chunks].sort((a, b) => gap(a) - gap(b));
 }
 
 /** The last frame with t <= time (the first one before it), as VideoView.frameAt. */
@@ -134,10 +176,25 @@ export function frameIndexAt(frames: { t: number }[], time: number) {
   return low;
 }
 
-/** Source pixel (x, y) at video time t -> the entity there. O(pairs of that frame); ponytail: no frame cache, a scan is < 0.1 ms. */
+export const PICK_LEAD_S = .25;  // before a shot's first map (or after a cut), the next map serves this far ahead
+/** The pick frame for video time t: the NEAREST keyframe in time, within the shot (mvp2 click audit: keyframes are the sharpest
+ *  of each 6-frame block, up to 0.44 s apart, and people walk out of a map that old; the nearest halves it); never across a
+ *  cut; -1 where no map covers t. fast_report_eval.Pick.frame_at is the same rule. */
+export function pickIndexAt(frames: PickFrame[], t: number) {
+  if (!frames.length) return -1;
+  const i = frameIndexAt(frames, t), f = frames[i], n = frames[i + 1];
+  if (t < f.t) return f.t - t <= PICK_LEAD_S ? i : -1;
+  const inside = f.t_end == null || t < f.t_end;
+  if (n && (inside ? n.shot === f.shot && n.t - t < t - f.t - 1e-6 : n.t - t <= PICK_LEAD_S)) return i + 1;
+  return inside ? i : -1;
+}
+
+/** Source pixel (x, y) at video time t -> the entity there. O(pairs of that frame); ponytail: no frame cache, a scan is < 0.1 ms.
+ *  pending: that frame's chunk is not in yet (the caller falls back to the previous version). */
 export function pickAt(pick: Pick, t: number, x: number, y: number) {
-  const index = frameIndexAt(pick.data.frames, t), f = pick.data.frames[index], [W, H] = pick.data.source_wh;
-  if (f.t_end != null && t >= f.t_end) return { index, frame: f, id: null as string | null, gap: true };  // past a cut: no map
+  const index = pickIndexAt(pick.data.frames, t), f = pick.data.frames[Math.max(index, 0)], [W, H] = pick.data.source_wh;
+  if (index < 0) return { index, frame: f, id: null as string | null, gap: true };  // before the first map or past a cut: no map
+  if (!pick.ready[index]) return { index, frame: f, id: null as string | null, pending: true };
   const col = Math.min(f.w - 1, Math.max(0, Math.floor(x * f.w / W))), row = Math.min(f.h - 1, Math.max(0, Math.floor(y * f.h / H)));
   let rest = row * f.w + col;
   const o = f.offset / pick.unit;
@@ -151,6 +208,7 @@ export function pickAt(pick: Pick, t: number, x: number, y: number) {
 
 /** One entity's pixels on one pick frame (w*h, 1 = the entity), for the highlight. */
 export function pickMask(pick: Pick, index: number, id: string) {
+  if (index < 0 || !pick.ready[index]) return null;
   const f = pick.data.frames[index], value = pick.data.entities.indexOf(id), mask = new Uint8Array(f.w * f.h), o = f.offset / pick.unit;
   if (value < 1) return null;
   for (let k = 0, at = 0; k < f.pairs; k++) {
@@ -197,7 +255,7 @@ export const toFloor = (F: ReturnType<typeof floorFrame>, P: number[]) => { cons
 /** Nearest valid depth (m) within `reach` cells of the click, and its cell. */
 export function depthAt(pick: Pick, index: number, x: number, y: number, reach = 2) {
   const g = pick.data.depth, d = pick.depth;
-  if (!g || !d) return null;
+  if (!g || !d || !pick.depthReady[index]) return null;
   const [W, H] = pick.data.source_wh, c = Math.floor(x * g.w / W), r = Math.floor(y * g.h / H), base = index * g.w * g.h;
   let best: { d2: number; v: number; row: number; col: number } | null = null;
   for (let dr = -reach; dr <= reach; dr++) for (let dc = -reach; dc <= reach; dc++) {
@@ -228,8 +286,8 @@ export const footprintDistance = (p: number[], poly: number[][]) =>
  *  nearest carded entity. u: depth 5% of distance (height: times the ray's vertical share) + floor residual, and the 20%
  *  scale term of spec 4.4 in quadrature (the scale is estimated). */
 export function unknownRegion(pick: Pick, cameras: any, cardsLayer: any, t: number, x: number, y: number) {
-  const index = frameIndexAt(pick.data.frames, t), frame = pick.data.frames[index];
-  if (frame.t_end != null && t >= frame.t_end) return { status: "no pick map at this moment (past a shot change)" as const, t: frame.t, x, y };
+  const index = pickIndexAt(pick.data.frames, t), frame = pick.data.frames[Math.max(index, 0)];
+  if (index < 0) return { status: "no pick map at this moment (before the first keyframe or past a shot change)" as const, t: frame.t, x, y };
   const cam = cameraOf(cameras, frame), hit = depthAt(pick, index, x, y);
   if (!cam || !hit) return { status: "no 3D point here" as const, t: frame.t, x, y };
   const camShot = cameras.shots.find((s: any) => s.keys.includes(frame.frame)), cardsShot = cardsLayer?.shots?.find((s: any) => s.index === camShot.index);

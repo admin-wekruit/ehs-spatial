@@ -775,6 +775,9 @@ def pick_encode(maps, frames, entities, depth=None):
     return data, gzip.compress(np.concatenate(pairs).tobytes() if pairs else b"", 6)
 
 
+PICK_LEAD_S = .25  # live-report.ts PICK_LEAD_S
+
+
 class Pick:
     """A decoded pick layer: frames by time, one id map decoded on demand (the last one cached, as the viewer does)."""
 
@@ -799,17 +802,36 @@ class Pick:
         return self._cache[1]
 
     def frame_at(self, t):
-        """The last pick frame with t_key <= t (VideoView.frameAt), or -1 before the first."""
-        return int(np.searchsorted(self.times, t + 1e-6, side="right")) - 1
+        """live-report.ts pickIndexAt (mvp2): the nearest keyframe in time within the shot, never across a cut; before the first
+        map or past a cut the next one serves PICK_LEAD_S ahead; -1 where no map covers t."""
+        fr = self.frames
+        if not fr:
+            return -1
+        i = max(0, int(np.searchsorted(self.times, t, side="right")) - 1)
+        f, n = fr[i], (fr[i + 1] if i + 1 < len(fr) else None)
+        if t < f["t"]:
+            return i if f["t"] - t <= PICK_LEAD_S else -1
+        inside = f.get("t_end") is None or t < f["t_end"]
+        if n is not None and ((n.get("shot") == f.get("shot") and n["t"] - t < t - f["t"] - 1e-6) if inside else n["t"] - t <= PICK_LEAD_S):
+            return i + 1
+        return i if inside else -1
 
     def at(self, t, x, y):
         """(entity id or None, frame index, code) for a click at video time t, source pixel (x, y)."""
         i = self.frame_at(t)
-        if i < 0 or (self.frames[i].get("t_end") is not None and t >= self.frames[i]["t_end"]):  # past a cut: no map (as pickAt)
+        if i < 0:  # before the first map or past a cut: no map (as pickAt)
             return None, -1, 0
         f = self.frames[i]
         code = int(self.map(i)[min(int(y * f["h"] / self.sh), f["h"] - 1), min(int(x * f["w"] / self.sw), f["w"] - 1)])
         return self.data["entities"][code] if code else None, i, code
+
+
+def pick_bytes(run_dir, patch, role="pick"):
+    """A pick patch's (value, run) pairs (role 'pick') or depth ('depth'): one blob, or its chunks' blobs in frame order (mvp2)."""
+    chunks = patch["data"].get("chunks")
+    if not chunks:
+        return blob_bytes(run_dir, patch["blobs"][role]["sha256"])
+    return b"".join(blob_bytes(run_dir, patch["blobs"][c["blob" if role == "pick" else "depth_blob"]]["sha256"]) for c in chunks)
 
 
 def pick_from_outlines(outlines, size=(360, 640)):
@@ -838,8 +860,7 @@ def pick_from_outlines(outlines, size=(360, 640)):
 
 def run_picks(run_dir, report, layers):
     """[(name, Pick)] for every pick version in the run, or today's outlines as 'pick v1 (from outlines)'."""
-    out = [(f"pick v{p['version']}", Pick(p["data"], blob_bytes(run_dir, p["blobs"]["pick"]["sha256"])))
-           for p in patch_versions(run_dir, report, "pick")]
+    out = [(f"pick v{p['version']}", Pick(p["data"], pick_bytes(run_dir, p))) for p in patch_versions(run_dir, report, "pick")]
     if not out and "outlines" in layers:
         data, blob = pick_from_outlines(layers["outlines"])
         out = [("pick v1 (from outlines)", Pick(data, gzip.decompress(blob)))]
@@ -1759,7 +1780,11 @@ def mvp_self_check():
     pk = Pick(data, gzip.decompress(blob))
     assert np.array_equal(pk.map(0), big) and np.array_equal(pk.map(1), small) and data["frames"][0]["pairs"] == 2
     assert pk.at(.1, 640, 360)[0] is None and pk.at(.25, 22.5 * 20, 12 * 20)[0] == "person:1-3" and pk.at(.25, 12 * 20, 6 * 20)[0] == "obj-1-0"
-    assert pk.at(-.1, 0, 0)[1] == -1 and pk.at(9., 12 * 20, 6 * 20)[1] == 1, "before the first frame: none; after the last: the last"
+    assert pk.at(-.3, 0, 0)[1] == -1 and pk.at(-.1, 0, 0)[1] == 0 and pk.at(9., 12 * 20, 6 * 20)[1] == 1, "long before the first frame: none; just before: the first; after the last: the last"
+    assert pk.at(.09, 0, 0)[1] == 0 and pk.at(.11, 0, 0)[1] == 1, "the nearest keyframe (live-report.ts pickIndexAt)"
+    cut = Pick({**data, "frames": [{**data["frames"][0], "t_end": .1, "shot": 0}, {**data["frames"][1], "shot": 1}]}, gzip.decompress(blob))
+    assert cut.at(.05, 0, 0)[1] == 0 and cut.at(.12, 0, 0)[1] == 1 and Pick({**data, "frames": [{**data["frames"][0], "shot": 0},
+        {**data["frames"][1], "shot": 1}]}, gzip.decompress(blob)).at(.15, 0, 0)[1] == 0, "never across a cut; past it the next map"
     sq = lambda x0, y0, x1, y1: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]  # noqa: E731
     d2, b2 = pick_from_outlines({"width": 1280, "frames": [{"timeSec": .5, "sourceFrame": 15, "source": "projected", "objects": [
         {"entityId": "shelf", "polygons": [sq(0, 0, 1000, 700)]}, {"entityId": "box", "polygons": [sq(100, 100, 300, 300)]}]}]})

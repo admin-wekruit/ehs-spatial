@@ -21,6 +21,7 @@ import io
 import json
 import math
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, Future
 from pathlib import Path
@@ -814,10 +815,20 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, c
     outl = ctx.get("outlines") or []
     outl = outl.get("frames", []) if isinstance(outl, dict) else outl  # A passes the outlines analysis, the stub its frames
     ctx = {**ctx, "outlines_by_frame": ctx.get("outlines_by_frame") or {f["sourceFrame"]: f["objects"] for f in outl}}
+    shared = carried if carried is not None else {}  # mvp2: '_img' rendered views, '_put' the newest cards version put
+    version = (ctx.get("version_of") or {}).get("object_cards") or 0
+
+    def put(data, blobs):
+        """Never over a newer cards version's judgements (the runs overlap: v3's no longer waits for v1's questions)."""
+        if shared.get("_put", -1) > version:
+            return False
+        shared["_put"] = version
+        writer.put("judgements", data, blobs, "estimated+inferred", LABELS)
+        return True
     with clock.stage("judge.rules", n={"cards": len(cards), "process": pool is not None}):
         lite = {k: v for k, v in ctx.items() if k not in ("frames", "outlines", "outlines_by_frame")}  # what the rules read
         rows = pool.submit(evaluate, cards, lite).result() if pool is not None else evaluate(cards, ctx)
-    writer.put("judgements", layer(rows, cal, {"version_of": ctx.get("version_of"), "vlm_answers": False}), None, "estimated+inferred", LABELS)
+    put(layer(rows, cal, {"version_of": ctx.get("version_of"), "vlm_answers": False}), None)
     clock.mark("judgements_v1_put")
     rec = {"rows": len(rows), "counts_v1": layer(rows, cal)["counts"]}
     if not vlm_on:
@@ -833,17 +844,32 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, c
                      "rule_source": CHECKS["J0"][3], "interval_s": [(c.get("time") or {}).get("first_seen_s"), (c.get("time") or {}).get("last_seen_s")]})
     blobs, jobs = {}, []
 
+    img, img_lock = shared.setdefault("_img", {}), threading.Lock()
+
     def images(row):
+        """The subject's view sets, rendered once per (subject, keyframe) for every row and run of the analysis (mvp2: J1/J2/J5 on
+        one object shared none, and the v3 run re-rendered what v1 had asked; Sam's Club 10.8 s + 17 s of GIL-bound rendering)."""
         card = by_id[row["subject"]]
         out = []
         for keys in view_sets(card, ctx):
             k = keys[0]
-            marks, frame = marks_on(ctx, k, card), frame_at(ctx, k)
-            if marks is None or frame is None:
-                continue
-            out.append((keys, som(frame, marks), som(frame, marks, marks=False)))
+            with img_lock:
+                got = img.get((card["id"], k))
+                if got is None:
+                    got = img[(card["id"], k)] = Future()
+                    mine = True
+                else:
+                    mine = False
+            if mine:
+                try:
+                    marks, frame = marks_on(ctx, k, card), frame_at(ctx, k)
+                    got.set_result(None if marks is None or frame is None else (som(frame, marks), som(frame, marks, marks=False)))
+                except Exception:  # noqa: BLE001  a view that cannot be drawn is a view not shown, never a stuck run
+                    got.set_result(None)
+            if got.result() is not None:
+                out.append((keys, *got.result()))
         return out
-    with clock.stage("judge.som", n={"rows": len(rows)}):
+    with clock.stage("judge.som", n={"rows": len(rows), "rendered_before": len(img)}):
         with ThreadPoolExecutor(8) as pool:
             views = list(pool.map(images, rows))
     t_ask = time.perf_counter()
@@ -862,18 +888,14 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, c
                 decides = ((cal.get("questions") or {}).get(q) or {}).get("status") == "calibrated"
                 for keys, marked, plain in vs if decides else vs[:1]:  # an advisory question never decides: one view set shows it
                     key = (row["id"], q, tuple(keys))
-                    if carried is not None and key in carried:
-                        fut = Future()
-                        fut.set_result({**carried[key], "carried": True})
-                    else:
-                        fut = ask([marked, plain], p, n, "screen" if q == "J0" else "judgement")
-                    jobs.append((row, q, keys, fut))
+                    fut, reused = shared.get(key), key in shared  # an earlier run's question, answered or still in flight (mvp2)
+                    if fut is None:
+                        fut = shared[key] = ask([marked, plain], p, n, "screen" if q == "J0" else "judgement")
+                    jobs.append((row, q, keys, fut, reused))
         answers = {}
-        for row, q, keys, fut in jobs:
+        for row, q, keys, fut, reused in jobs:
             try:
-                a = {**fut.result(), "keys": keys}
-                if carried is not None:
-                    carried[(row["id"], q, tuple(keys))] = {k: v for k, v in a.items() if k not in ("keys", "carried")}
+                a = {**fut.result(), "keys": keys, **({"carried": True} if reused else {})}
             except Exception as error:  # noqa: BLE001  unanswered: the row stays 'unsure'
                 a = {"keys": keys, "probs": None, "mass": 0., "error": repr(error)[:200]}
             answers.setdefault(row["id"], {}).setdefault(q, []).append(a)
@@ -908,12 +930,13 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, c
         row["reasons"] = row["geometry"]["reasons"] + [f"picture: {vlm_ans} ({'; '.join(raw)})"] + (
             [f"geometry {before} and picture {vlm_ans} disagree"] if row["verdict"] == REVIEW and before in (PASS, FAIL) else [])
     rows = [r for r in rows if r["check"] != "J0" or r["verdict"] == REVIEW]
-    stats = {"questions": len(jobs), "carried": sum(1 for *_, f in jobs if (f.result() if f.done() and not f.exception() else {}).get("carried")), "ask_s": ask_s, "unanswered": sum(1 for r in answers.values() for a in r.values() for v in a if v.get("probs") is None),
+    stats = {"questions": len(jobs), "carried": sum(1 for *_, reused in jobs if reused), "ask_s": ask_s, "unanswered": sum(1 for r in answers.values() for a in r.values() for v in a if v.get("probs") is None),
              "prompt_tokens": sum(v.get("prompt_tokens") or 0 for r in answers.values() for a in r.values() for v in a),
              "evidence_images": len(blobs), "screened": len(screen)}
-    writer.put("judgements", layer(rows, cal, {"version_of": ctx.get("version_of"), "vlm_answers": True, "vlm": stats}), blobs,
-               "estimated+inferred", LABELS)
-    clock.mark("judgements_v2_put")
+    if put(layer(rows, cal, {"version_of": ctx.get("version_of"), "vlm_answers": True, "vlm": stats}), blobs):
+        clock.mark("judgements_v2_put")
+    else:
+        stats["superseded"] = "a newer cards version's judgements were already put: this run's are not"
     return {**rec, **stats, "counts_v2": layer(rows, cal)["counts"], "by_check_v2": layer(rows, cal)["by_check"]}
 
 
@@ -1207,6 +1230,11 @@ def self_check():
     w = _Writer()
     out = run([cable], ctx, w, _Clock(), ask=fake, cal={"questions": {}}, carried=carried)
     assert len(calls) == 1 and out["carried"] == 1 and next(r for r in w.puts[1][1]["rows"] if r["check"] == "J4")["verdict"] == FAIL, out
+    assert len(carried["_img"]) == 2, "one render per (subject, keyframe) across the runs"
+    w = _Writer()  # a run on an older cards version after a newer one was put: nothing of it is put (mvp2: the runs overlap)
+    carried["_put"] = 3
+    out = run([cable], {**ctx, "version_of": {"object_cards": 1}}, w, _Clock(), ask=fake, cal={"questions": {}}, carried=carried)
+    assert w.puts == [] and out.get("superseded"), out
     jpg = som(frame_img, {1: poly, 2: [[[710, 300], [800, 300], [800, 400]]]})
     import cv2
     img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)

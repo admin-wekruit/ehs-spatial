@@ -135,7 +135,9 @@ for(const r of reports)results.videos.push(await video(r));
 fs.writeFileSync(path.join(out,'click-check.json'),JSON.stringify(results,null,1));
 await browser.close();vite.kill();
 for(const v of results.videos){
-  assert.ok(v.latencyMs.p95<100,`${v.report}: click p95 ${v.latencyMs.p95} ms`);assert.ok(v.pickDecodeMs<300,`${v.report}: pick decode ${v.pickDecodeMs} ms`);
+  assert.ok(v.latencyMs.p95<100,`${v.report}: click p95 ${v.latencyMs.p95} ms`);
+  // mvp2: every pick version serves clicks at the video's time < 300 ms after it lands (its first chunk); the rest follows
+  for(const d of v.pickDecodes||[])assert.ok(d.ms<300,`${v.report}: pick seq ${d.seq} first chunk ${d.ms} ms (all ${d.all_ms} ms)`);
   assert.deepEqual(v.errors,[],`${v.report}: console errors`);
 }
 console.log('mvp click browser check passed');

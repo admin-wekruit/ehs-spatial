@@ -4,11 +4,13 @@ import { mountSceneViewer, type SceneViewer } from "./viewer/native-viewer";
 import { splatAnnotation } from "./viewer/splat-layer";
 import { VideoMemory, VideoView, videoClock, type VideoPick } from "./VideoView";
 import { cameraPath, cameraView, currentCameras } from "./core";
-import { assetURL, clickClock, entityInfo, frameIndexAt, gunzip, latest, liveDocument, pickAt, pickMask, poll, readPick, SEVERITY, unknownRegion, worstVerdict,
+import { assetURL, chunkOrder, clickClock, emptyPick, entityInfo, fillChunk, gunzip, latest, liveDocument, pickAt, pickChunks, pickIndexAt, pickMask, poll, readPick,
+  SEVERITY, unknownRegion, worstVerdict, type PickChunk,
   type Info, type Patch, type Pick, type Poll } from "./live-report";
 import "./report-scene.css";
 
 const OVER = 72;  // GB: 90% of an A100-80GB
+const inflateCache = new Map<string, Promise<ArrayBuffer>>();  // pick / depth chunks by sha256, inflated once per page
 const fmt = (v: unknown, digits = 1) => typeof v === "number" && Number.isFinite(v) ? v.toFixed(digits) : "—";
 type Tr = (a: string, b: string) => string;
 const blobURL = (patch: Patch | undefined, role: string) => patch?.blobs?.[role] ? assetURL("sha256:" + patch.blobs[role].sha256) : null;
@@ -44,20 +46,41 @@ export default function LiveReport({ reportId }: { reportId: string }) {
   // from pointer-down to the card in the DOM; pickDecodeMs = pick + depth fetched, inflated and indexed.
   const stats = useRef({ uploads: {} as Record<string, number>, ready: {} as Record<string, number>, scenes: 0, errors: [] as string[],
     clicks: [] as number[], pickDecodeMs: null as number | null, pickSteps: null as Record<string, number> | null, pick: null as Pick | null,
-    pickDecodes: [] as { seq: number; ms: number; fetch: number }[] }).current;
+    pickDecodes: [] as { seq: number; ms: number; fetch: number; all_ms?: number; chunks?: number; reused?: number }[] }).current;
   const [pick, setPick] = useState<Pick | null>(null), [cardsLayer, setCardsLayer] = useState<any>(null), [clickMs, setClickMs] = useState<number[]>([]);
-  useEffect(() => {  // pick + depth: fetched and inflated once per version
+  const older = useRef<Pick | null>(null);  // the previous version, for frames whose chunk of the new one is not in yet
+  useEffect(() => {  // pick + depth per version, chunk by chunk (mvp2): the chunk at the video's time first, so a click works at once
     const p = layers.pick;
     if (!p) return;
-    let live = true;
-    (async () => {
-      const t0 = performance.now(), raw = await Promise.all(["pick", "depth"].map(role => p.blobs[role] ? fetch(blobURL(p, role)!, { priority: "high" } as RequestInit).then(r => r.arrayBuffer()) : null));
-      const t1 = performance.now(), [runs, depth] = await Promise.all(raw.map(b => b && gunzip(b))), t2 = performance.now();
+    let live = true, first = true, done = 0, reused = 0;
+    const t0 = performance.now(), chunks = pickChunks(p.data, p.blobs);
+    const legacy = !p.data.chunks?.length, next = legacy ? null : emptyPick(p.data);
+    const inflated = (role: string) => {  // by content: an unchanged chunk (depth, v1 -> v2) is fetched once per page
+      const sha = p.blobs[role].sha256;
+      if (inflateCache.has(sha)) reused++;
+      else inflateCache.set(sha, fetch(blobURL(p, role)!, { priority: "high" } as RequestInit).then(r => r.arrayBuffer()).then(gunzip)
+        .catch((e: Error) => { inflateCache.delete(sha); throw e; }));
+      return inflateCache.get(sha)!;
+    };
+    const one = async (c: PickChunk) => {
+      const tf = performance.now(), [runs, depth] = await Promise.all([inflated(c.pick), c.depth ? inflated(c.depth) : null]);
       if (!live) return;
-      stats.pick = readPick(p.data, runs!, depth);
-      const t3 = performance.now();
-      stats.pickDecodeMs = t3 - t0; stats.pickSteps = { fetch: t1 - t0, inflate: t2 - t1, index: t3 - t2 }; setPick(stats.pick);
-      stats.pickDecodes.push({ seq: p.seq, ms: t3 - t0, fetch: t1 - t0 });  // every version (v1 at load, v2 after densify)
+      const t2 = performance.now(), got = legacy ? readPick(p.data, runs, depth) : (fillChunk(next!, c, runs, depth), next!);
+      done++;
+      if (first) {  // this version serves clicks from here; frames still pending fall back to the older one
+        first = false;
+        const t3 = performance.now();
+        older.current = stats.pick; stats.pick = got; setPick(got);
+        stats.pickDecodeMs = t3 - t0; stats.pickSteps = { fetch: t2 - tf, wait: tf - t0, inflate_index: t3 - t2 };
+        stats.pickDecodes.push({ seq: p.seq, ms: t3 - t0, fetch: t2 - tf, chunks: chunks.length });
+      }
+      if (done === chunks.length) Object.assign(stats.pickDecodes[stats.pickDecodes.length - 1], { all_ms: performance.now() - t0, reused });
+    };
+    (async () => {
+      const queue = legacy ? chunks : chunkOrder(next!, chunks, videoClock.time);
+      await one(queue[0]);  // the chunk the viewer is looking at, alone
+      const rest = queue.slice(1);
+      await Promise.all([0, 1].map(async () => { for (let c = rest.shift(); c && live; c = rest.shift()) await one(c); }));
     })().catch((e: Error) => { if (live) setError("pick: " + e.message); });
     return () => { live = false; };
   }, [layers.pick?.seq]);
@@ -83,8 +106,10 @@ export default function LiveReport({ reportId }: { reportId: string }) {
   const [clicked, setClicked] = useState<Clicked | null>(null), [tab, setTab] = useState<"card" | "objects" | "memory">("card");
   const choose = (id: string | null) => { setSelected(id); setClicked(null); if (id) setTab("card"); };  // from 3D, the list, a card link
   const onPick = (p: VideoPick) => {  // a video click: the pick layer decides; before it lands, the smallest outline under the point
-    const hit = pick ? pickAt(pick, p.t, p.x, p.y) : null, id = hit ? hit.id : p.under[0] ?? null;
-    const miss = !id && pick ? unknownRegion(pick, layers.cameras?.data, cardsLayer, p.t, p.x, p.y) : null;
+    let use = pick, hit = pick ? pickAt(pick, p.t, p.x, p.y) : null;
+    if (hit?.pending && older.current) { use = older.current; hit = pickAt(use, p.t, p.x, p.y); }  // its chunk is on the way
+    const id = hit && !hit.pending ? hit.id : p.under[0] ?? null;
+    const miss = !id && use && !hit?.pending ? unknownRegion(use, layers.cameras?.data, cardsLayer, p.t, p.x, p.y) : null;
     setSelected(id); setClicked({ ...p, id, miss, under: p.under.filter(u => u !== id) }); setTab("card");
   };
   useLayoutEffect(() => {  // the card is in the DOM now: pointer-down -> here is the click latency
@@ -92,7 +117,10 @@ export default function LiveReport({ reportId }: { reportId: string }) {
     stats.clicks.push(performance.now() - clickClock.t0); clickClock.t0 = 0;
   }, [clicked]);
   useEffect(() => { if (stats.clicks.length !== clickMs.length) setClickMs([...stats.clicks]); }, [clicked]);
-  const highlight = useMemo(() => pick && selected ? (t: number) => pickMask(pick, frameIndexAt(pick.data.frames, t), selected) : undefined, [pick, selected]);
+  const highlight = useMemo(() => pick && selected ? (t: number) => {
+    const i = pickIndexAt(pick.data.frames, t), o = older.current;
+    return pickMask(pick, i, selected) ?? (o && i >= 0 && !pick.ready[i] ? pickMask(o, pickIndexAt(o.data.frames, t), selected) : null);
+  } : undefined, [pick, selected]);
   const [view, setView] = useState({ observed_surface: true, point_cloud: false, splats: true, labels: true, primitive: true });
   const [load, setLoad] = useState({ loaded: 0, total: 0 });
   useEffect(() => {
