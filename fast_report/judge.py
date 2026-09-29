@@ -60,6 +60,15 @@ LABELS = ["verdicts: PASS/FAIL only when value +- u clears the threshold; a VLM 
 
 # words (a name matches when it is the word or ends with ' ' + word: 'cardboard box' is a box)
 STACK = ("stacked boxes", "stack of boxes", "pallet of goods", "loaded pallet", "stacked pallets", "boxes", "pallet")
+# mvp3/judge (round-2 review D3): J1 on the load. Goods (cards.TAXONOMY 'goods' classes) standing on the floor or on a pallet
+# are a stack's base; goods resting on a member (footprints overlapping >= STACK_OVERLAP of the smaller, base within
+# STACK_GAP_M of its top) join upward; a pallet above ends the stack (the next rack level). A bare pallet (no goods on it,
+# at most PALLET_H_M + u tall) is no stack: round 2 PASSed J1 on 54 of them on Sam's Club.
+GOODS = ("box", "stacked boxes", "merchandise", "crate", "bin", "bag", "container", "drum", "bucket", "bottle", "can")
+STORAGE = ("shelf", "rack", "display rack", "cabinet", "refrigerator", "locker", "workbench", "table", "desk", "checkout counter",
+           "tool holder")  # fixtures goods stand in or on (cards.TAXONOMY classes)
+STACK_OVERLAP, STACK_GAP_M, PALLET_H_M = .3, .3, .3
+TRIP_TOP_M = .4  # J9: an object whose top + u is at most knee-low, lying on the floor where its distance -u reaches the walked lane
 CLIMBABLE = ("shelf", "shelving", "shelves", "rack", "pallet", "box", "boxes", "carton", "crate", "cart", "trolley", "machine",
              "lathe", "mill", "cnc machine", "table", "desk", "workbench", "bench")
 GUARD = ("guard", "machine guard", "fence", "safety fence", "barrier", "railing", "guard rail", "cage")
@@ -94,6 +103,8 @@ CHECKS = {  # id -> title, severity, questions, rule source
     "J6": ("clearance to guarding", "major", (), "rules._assess_clearance; starter s01 (0.6 m)"),
     "J7": ("ladder lean", "major", (), "policy MAX_TILT on the physical axis (10 deg)"),
     "J8": ("person rules", "major", (), "ehs_spatial.video R1-R3 (live_people), unchanged"),
+    "J9": ("low object on the floor at a walked path (trip)", "major", (), "mvp3/judge by placement; OSHA 1910.22(a) (trip hazards); "
+           "J4's geometry"),
 }
 
 
@@ -231,8 +242,8 @@ def forced(g, reasons):
 def numeric(card, key, threshold, direction, quantity, unit, bias=0.):
     """value +- u against the threshold (video.banded_verdict). bias: a one-sided allowance against a PASS on a maximum (a
     measurement known to read low: PASS needs v + u + bias < T). g['hazard_side']: the value itself is past the threshold,
-    from two or more view subsets on a plausible card, and not a bound that could put it back (combine() may then FAIL it
-    with a calibrated 'likely hazard' picture)."""
+    from two or more view subsets on a plausible card, and not a bound that could put it back (information only: mvp3/judge's
+    combine() never FAILs a straddling value)."""
     f = fact(card, key)
     if f is None:
         return geo(quantity, None, None, unit, threshold, direction, NO_DATA, [missing(card, key)])
@@ -335,6 +346,83 @@ def g_j4(card, ctx, cards):
     g["hazard_side"] = bool(not off and b <= ON_FLOOR_PASS_M and d < TRIP_PATH_M and not doubts(card) and not one_set(card)
                             and (base.get("n_subsets") or 0) >= 2)
     return forced(g, extra)
+
+
+def stacks(ctx, cards, shot):
+    """The shot's floor stacks, found once per run (GOODS / STACK above). A stack's root stands on the floor: a pallet, or
+    goods standing free (not inside a shelf, rack or other storage fixture's footprint: goods on a gondola's bottom shelf are
+    shelved, not stacked). Goods resting on a member join it, upward, when their footprint overlaps that member's (>=
+    STACK_OVERLAP of the smaller), lies within the root's footprint + 0.2 m (>= 80 %: a stack is no wider than its base; walmart
+    joined a gondola's 22 slippers without this), and they rest on no other pallet (a pallet is the next rack level: never
+    joined). A pallet with nothing on it and at most PALLET_H_M + u tall is bare: no stack. -> {card id: {members, top (card),
+    root (card), above}}: 'above' = goods over the stack, above its top, not joined and under no pallet (it may be taller)."""
+    from shapely import STRtree
+    key = ("_stacks", shot)
+    if key in ctx:
+        return ctx[key]
+    ok, fixtures = [], []  # ok: (card, base, top, footprint, is a pallet)
+    for c in cards:
+        if c.get("shot") != shot or c.get("kind") == "person":
+            continue
+        poly = footprint(c)
+        if poly is not None and poly.area > 0 and is_a(class_of(c), STORAGE) and usable(c):
+            fixtures.append(poly)
+        if is_a(class_of(c), GOODS) or is_a(class_of(c), STACK):
+            b, t = fact(c, "base_above_floor"), fact(c, "top_above_floor")
+            if b is not None and t is not None and poly is not None and poly.area > 0:
+                ok.append((c, float(b["value"]), float(t["value"]), poly, class_of(c) == "pallet"))
+    tree, ftree = STRtree([x[3] for x in ok]), STRtree(fixtures)
+    near = {i: [int(j) for j in tree.query(ok[i][3]) if j != i and ok[i][3].intersection(ok[int(j)][3]).area
+                >= STACK_OVERLAP * min(ok[i][3].area, ok[int(j)][3].area)] for i in range(len(ok))}
+    shelved = lambda poly: any(fixtures[int(k)].intersection(poly).area >= STACK_OVERLAP * poly.area for k in ftree.query(poly))  # noqa: E731
+    on_pallet = {j: {p for p in near[j] if ok[p][4] and abs(ok[j][1] - ok[p][2]) <= STACK_GAP_M} for j in range(len(ok))}
+    out = {}
+    for i, (c, b, t, poly, pal) in enumerate(ok):
+        if b - fact(c, "base_above_floor")["u"] > FLOOR_BASE_M or not pal and shelved(poly):
+            continue  # off the floor (a member of the stack below it, or shelved), or goods standing inside a storage fixture
+        wide, members, todo = poly.buffer(.2), [i], [i]
+        while todo:
+            m = todo.pop()
+            for j in near[m]:
+                if j not in members and not ok[j][4] and ok[m][2] - STACK_GAP_M <= ok[j][1] <= ok[m][2] + STACK_GAP_M \
+                        and ok[j][3].intersection(wide).area >= .8 * ok[j][3].area and on_pallet[j] <= set(members):
+                    members.append(j)
+                    todo.append(j)
+        h = fact(c, "height")
+        if members == [i] and pal and (h is None or h["value"] - h["u"] <= PALLET_H_M):
+            continue  # a bare pallet
+        top = max(members, key=lambda m: ok[m][2])
+        roof = min([ok[j][1] for m in members for j in near[m] if ok[j][4] and ok[j][1] >= ok[top][2] - STACK_GAP_M] + [np.inf])
+        above = sorted({ok[j][0]["id"] for m in members for j in near[m] if j not in members and not ok[j][4]
+                        and ok[top][2] + STACK_GAP_M < ok[j][1] < roof})
+        rec = {"members": [ok[m][0]["id"] for m in members], "top": ok[top][0], "root": c, "above": above}
+        for m in members:
+            old = out.get(ok[m][0]["id"])
+            if old is None or fact(old["top"], "top_above_floor")["value"] < ok[top][2]:
+                out[ok[m][0]["id"]] = rec
+    ctx[key] = out
+    return out
+
+
+def g_j1(card, ctx, cards):
+    """J1 on the load (mvp3/judge): the floor stack this card is in (stacks()), read at its top card's top above the floor.
+    None when the card is in no floor stack (shelved goods, loads on rack beams, a bare pallet); a 'stacked boxes' card in no
+    stack is read on its own as in round 2 (on a beam: its own height). PASS needs value + u + the 0.2 m tops-read-low
+    allowance below 2.5 m, and nothing unjoined above the stack."""
+    st = stacks(ctx, cards, card.get("shot")).get(card["id"])
+    if st is None:
+        if class_of(card) != "stacked boxes":
+            return None
+        base = fact(card, "base_above_floor")
+        if base is not None and base["value"] - base["u"] > FLOOR_BASE_M:  # on a rack beam or shelf: the stack's own height
+            return numeric(card, "height", STACK_MAX_M, "max", "stack height (off the floor: its own height)", "m", bias=TOP_BIAS_M)
+        return numeric(card, "top_above_floor", STACK_MAX_M, "max", "top above the floor", "m", bias=TOP_BIAS_M)
+    top, root = st["top"], st["root"]
+    g = numeric(top, "top_above_floor", STACK_MAX_M, "max", "stack top above the floor", "m", bias=TOP_BIAS_M)
+    g["reasons"].insert(0, f"stack of {len(st['members'])} card(s) from {root['id']} ({name_of(root)}) up to {top['id']} ({name_of(top)})")
+    g.update(stack=st["members"], stack_top=top["id"], stack_root=root["id"])
+    above = [f"goods above the stack not joined to it ({', '.join(st['above'][:3])}): it may be taller"] if st["above"] and g["result"] == PASS else []
+    return forced(g, above)
 
 
 def resample(xy, step=None):
@@ -759,14 +847,14 @@ def applicable(card):
     if card.get("kind") == "person":
         return ["J3a", "J8"]
     n, mob, out = class_of(card), mobility(card), []
-    if is_a(n, STACK):
-        out += ["J1", "J2"]
+    if is_a(n, STACK) or is_a(n, GOODS):  # J1 on the load: geometry() finds the stack (None when it is on a shelf, or a bare pallet)
+        out += ["J1"] + (["J2"] if is_a(n, STACK) else [])
     if is_a(n, CLIMBABLE):
         out.append("J3b")
     if mob == "deformable":
         out.append("J4")
-    if mob in ("movable rigid", "fixed"):
-        out.append("J5")
+    if mob not in ("deformable", "agent") and n != "not an object":  # mvp3/judge (D3): by placement, whatever the class (geometry()
+        out += ["J5", "J9"]                                             # decides: on the floor, at a walked path)
     if mob == "movable rigid":
         out.append("J6")
     if is_a(n, LADDER):
@@ -778,10 +866,20 @@ def geometry(check, card, ctx, cards):
     """-> the geometry record, or None when the check does not apply here (J3b without a finding, J5 far from any path, J6
     without a guard)."""
     if check == "J1":
-        base = fact(card, "base_above_floor")
-        if base is not None and base["value"] - base["u"] > FLOOR_BASE_M:  # on a rack beam or shelf: the stack's own height
-            return numeric(card, "height", STACK_MAX_M, "max", "stack height (off the floor: its own height)", "m", bias=TOP_BIAS_M)
-        return numeric(card, "top_above_floor", STACK_MAX_M, "max", "top above the floor", "m", bias=TOP_BIAS_M)
+        return g_j1(card, ctx, cards)
+    if check == "J2" and class_of(card) == "pallet" and card["id"] not in stacks(ctx, cards, card.get("shot")):
+        return None  # a bare pallet: no stack to be unstable (mvp3/judge; round 2's J2 rows on them were all NO_DATA)
+    if check == "J9":
+        pd, base, top = path_distance(card, ctx), fact(card, "base_above_floor"), fact(card, "top_above_floor")
+        if pd is None or pd[0] - pd[1] > TRIP_PATH_M or base is None or base["value"] - base["u"] > FLOOR_BASE_M or top is None \
+                or top["value"] + top["u"] > TRIP_TOP_M:
+            return None  # not a low object on the floor in a walked lane (a taller one is J5's: the aisle)
+        model, shot_cards = aisle_of(ctx, card, cards)
+        if model is not None and shot_cards.index(card) in model["cart"]:
+            return None  # moves with the camera: the operator's cart
+        g = g_j4(card, ctx, cards)
+        g["reasons"].insert(0, f"a low object (top {top['value']:.2f} +- {top['u']:.2f} m) on the floor at a walked path")
+        return g
     if check == "J7":
         return numeric(card, "principal_axis_tilt_deg", LADDER_TILT_DEG, "max", "principal-axis tilt from vertical", "deg")
     if check == "J5":
@@ -813,15 +911,15 @@ def platt(p, ab):
     return 1 / (1 + math.exp(-min(50., max(-50., ab[0] * math.log(p / (1 - p)) + ab[1]))))
 
 
-def combine(geo_result, vlm, visual_ok=False, hazard_side=False, clear_needed=False):
-    """Round-2 verdict table. vlm: 'hazard' (a calibrated 'likely hazard'), 'likely' (at the veto cut, not calibrated), 'clear'
-    (a calibrated 'very unlikely'), 'unsure' or None.
-      geometry FAIL:        clear -> NEEDS_REVIEW (they disagree); else FAIL
-      geometry PASS:        hazard / likely -> NEEDS_REVIEW; clear_needed (J2 on one face) without clear -> NEEDS_REVIEW; else PASS
-      geometry NEEDS_REVIEW: hazard + hazard_side (the measured value itself is past the threshold, two view subsets, plausible)
-                            -> FAIL; else NEEDS_REVIEW
-      no geometry / NO_DATA: hazard / likely -> NEEDS_REVIEW (a hint); else NO_DATA: a VLM answer alone never makes a FAIL or a
-                            PASS. visual_ok is kept for the call signature of round 1 and no longer decides."""
+def combine(geo_result, vlm, clear_needed=False):
+    """The verdict table (mvp3/judge, round-2 review D1: PASS / FAIL only when the value +- u clears the threshold; a picture
+    may hold a verdict back or raise a row's priority, never make one). vlm: 'hazard' (a calibrated 'likely hazard'), 'likely'
+    (at the veto cut, not calibrated), 'clear' (a calibrated 'very unlikely'), 'unsure' or None.
+      geometry FAIL:         clear -> NEEDS_REVIEW (they disagree); else FAIL
+      geometry PASS:         hazard / likely -> NEEDS_REVIEW; clear_needed (J2 on one face) without clear -> NEEDS_REVIEW; else PASS
+      geometry NEEDS_REVIEW: NEEDS_REVIEW (round 2 FAILed it on hazard + a value past the threshold: J4 0.04 +- 0.86 m and
+                             0.43 +- 0.52 m against 0.5 m, at Gemini's 0.61 in-sample precision); priority() marks the hazard
+      no geometry / NO_DATA: hazard / likely -> NEEDS_REVIEW (a hint); else NO_DATA"""
     if geo_result == FAIL:
         return REVIEW if vlm == "clear" else FAIL
     if geo_result == PASS:
@@ -829,8 +927,14 @@ def combine(geo_result, vlm, visual_ok=False, hazard_side=False, clear_needed=Fa
             return REVIEW
         return PASS
     if geo_result == REVIEW:
-        return FAIL if vlm == "hazard" and hazard_side else REVIEW
+        return REVIEW
     return REVIEW if vlm in ("hazard", "likely") else NO_DATA
+
+
+def priority(verdict, vlm):
+    """A NEEDS_REVIEW row the picture calls a likely hazard is reviewed first: 'likely hazard, needs review' (the only thing a
+    picture adds to an undecided row)."""
+    return "likely hazard, needs review" if verdict == REVIEW and vlm in ("hazard", "likely") else None
 
 
 # ---------- set-of-marks ----------
@@ -1247,8 +1351,8 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, c
             verdict = "likely"  # on 14 positives) put a hose hung on a bench (p 0.78) into a FAIL (eval-qwen-all, ME340 obj-1-95)
         g = row["geometry"] or {}
         before = row["verdict"]
-        row["verdict"] = combine(before, verdict, hazard_side=bool(g.get("hazard_side")) and row["check"] != "J3a",
-                                 clear_needed=bool(g.get("needs_clear_picture")))
+        row["verdict"] = combine(before, verdict, clear_needed=bool(g.get("needs_clear_picture")))
+        row["priority"] = priority(row["verdict"], verdict)
         text = hazard.QUESTIONS.get(q) if a["decider"] == "gemini" else QUESTIONS[q][0]
         row["vlm"] = {"question": q, "text": text, "decider": names[a["decider"]], "p_yes": a["p"], "why": a.get("why"), "answer": verdict,
                       "cut": {k: (cut.get(k) or {}).get("t") for k in ("hazard", "clear", "veto")}, "calibrated": bool(cut.get("hazard")),
@@ -1261,7 +1365,6 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, c
             row["reasons"].append(f"{g['needs_clear_picture']}: a PASS needs a calibrated 'clear' picture" if one_face else {
                                    (PASS, REVIEW): "the picture disagrees with the geometry's PASS",
                                    (FAIL, REVIEW): "the picture disagrees with the geometry's FAIL",
-                                   (REVIEW, FAIL): "measured value past the threshold and a calibrated 'likely hazard' picture",
                                    (NO_DATA, REVIEW): "not measured; the picture hints at a hazard"}.get((before, row["verdict"]), f"{before} -> {row['verdict']}"))
         name = f"ev-hz-{row['subject']}".replace(":", "_")
         if name in blobs and row["evidence"]:
@@ -1282,7 +1385,7 @@ def path_length(xy):
 def context(cam_rows, outline_frames, people, frames, room_points, fps, source_wh=(1280, 720), version_of=None):
     """The ctx contract (spec 9 A) from the core's own pieces: per shot the floor frame (origin = the first camera dropped onto
     the floor, +z = the floor normal, +x = the first camera's forward on the floor), u_pose, room points in that frame; the
-    walked paths (camera and every person track that moved at least WALKED_M) as floor xy."""
+    walked paths (the camera when it moved at least WALKED_M, and every person track that passes cards.walk_gate) as floor xy."""
     shots, walked = [], {}
     for s in cam_rows:
         fl = s.get("floor") or {}
@@ -1299,10 +1402,11 @@ def context(cam_rows, outline_frames, people, frames, room_points, fps, source_w
         cam = to_floor(frame, c2w[:, :3, 3])[:, :2]
         walked[s["index"]] = {"camera": cam} if path_length(cam) >= WALKED_M else {}
     frames_of = {s["index"]: s["floor_frame"] for s in shots}
-    for tr in (people or {}).get("tracks", []):
+    from fast_report.cards import walk_gate
+    for tr in (people or {}).get("tracks", []):  # mvp3/judge (D2): only person tracks that pass the walked-path gate (cards.walk_gate)
         if tr["shot"] in frames_of and tr["points"]:
             xy = to_floor(frames_of[tr["shot"]], [p["xyz"] for p in tr["points"]])[:, :2]
-            if path_length(xy) >= WALKED_M:
+            if not walk_gate(tr["points"], xy):
                 walked[tr["shot"]][f"person:{tr['id']}"] = xy
     return {"shots": shots, "frames": frames, "outlines": outline_frames, "people": people, "walked": walked, "fps": fps,
             "source_wh": tuple(source_wh), "version_of": version_of}
@@ -1424,14 +1528,20 @@ def _val(v, u, n=2, **kw):
 
 def self_check():
     from concurrent.futures import Future
-    # the round-2 verdict table, every cell (hazard_side / clear_needed where they matter)
-    for g, v, hs, cn, want in [(FAIL, "hazard", 0, 0, FAIL), (FAIL, "clear", 0, 0, REVIEW), (FAIL, "unsure", 0, 0, FAIL), (FAIL, "likely", 0, 0, FAIL),
-                               (PASS, "hazard", 0, 0, REVIEW), (PASS, "likely", 0, 0, REVIEW), (PASS, "clear", 0, 0, PASS), (PASS, "unsure", 0, 0, PASS),
-                               (PASS, "unsure", 0, 1, REVIEW), (PASS, "clear", 0, 1, PASS), (PASS, None, 0, 0, PASS),
-                               (REVIEW, "hazard", 1, 0, FAIL), (REVIEW, "hazard", 0, 0, REVIEW), (REVIEW, "likely", 1, 0, REVIEW),
-                               (REVIEW, "clear", 1, 0, REVIEW), (REVIEW, "unsure", 1, 0, REVIEW),
-                               (NO_DATA, "hazard", 1, 0, REVIEW), (NO_DATA, "likely", 0, 0, REVIEW), (NO_DATA, "clear", 0, 0, NO_DATA), (NO_DATA, "unsure", 0, 0, NO_DATA)]:
-        assert combine(g, v, hazard_side=bool(hs), clear_needed=bool(cn)) == want, (g, v, hs, cn)
+    # the verdict table, every cell (clear_needed where it matters): a picture never makes a PASS or a FAIL (mvp3/judge, D1)
+    for g, v, cn, want in [(FAIL, "hazard", 0, FAIL), (FAIL, "clear", 0, REVIEW), (FAIL, "unsure", 0, FAIL), (FAIL, "likely", 0, FAIL),
+                           (PASS, "hazard", 0, REVIEW), (PASS, "likely", 0, REVIEW), (PASS, "clear", 0, PASS), (PASS, "unsure", 0, PASS),
+                           (PASS, "unsure", 1, REVIEW), (PASS, "clear", 1, PASS), (PASS, None, 0, PASS),
+                           (REVIEW, "hazard", 0, REVIEW), (REVIEW, "likely", 0, REVIEW), (REVIEW, "clear", 0, REVIEW), (REVIEW, "unsure", 0, REVIEW),
+                           (NO_DATA, "hazard", 0, REVIEW), (NO_DATA, "likely", 0, REVIEW), (NO_DATA, "clear", 0, NO_DATA), (NO_DATA, "unsure", 0, NO_DATA)]:
+        assert combine(g, v, clear_needed=bool(cn)) == want, (g, v, cn)
+    # round 2's three J4 FAILs (ME340 run 007; distance to a walked path +- u against 0.5 m, Gemini's p(yes), the shipped q1 cut):
+    # each straddles 0.5 m, so each stays NEEDS_REVIEW, marked 'likely hazard'
+    from fast_report import hazard
+    cut = hazard_cut(load_calibration(), "gemini", "q1")
+    for rid, d, u, p_ in (("J4:obj-1-450 first", .043, .859, .95), ("J4:obj-1-452 warm", .043, .859, .90), ("J4:obj-1-482 warm", .426, .515, .90)):
+        g_, a_ = banded_verdict(d, TRIP_PATH_M, u, fail_low=True), hazard.verdict(p_, cut)
+        assert g_ == REVIEW and a_ == "hazard" and combine(g_, a_) == REVIEW and priority(combine(g_, a_), a_), rid
     # worst_verdict fixed: one PASS and 59 NO_DATA is NO_DATA, not PASS
     assert worst_verdict({0: PASS, **{i: NO_DATA for i in range(1, 60)}}) == NO_DATA
     assert worst_verdict({0: PASS, 1: REVIEW, 2: NO_DATA}) == REVIEW and worst_verdict({0: PASS, 1: PASS}) == PASS
@@ -1448,7 +1558,7 @@ def self_check():
     stack["physical"].update(top_above_floor=_val(1.2, .4), size_check={"status": "implausible"})
     assert numeric(stack, "top_above_floor", 2.5, "max", "top", "m")["result"] == REVIEW
     assert numeric({"physical": {"height": {"status": "not observed", "reason": "seen from one side"}}}, "height", 1, "max", "h", "m")["result"] == NO_DATA
-    assert applicable(stack) == ["J1", "J2", "J3b", "J5", "J6"] and applicable({"identity": {"name": "power cable"}}) == ["J4"]
+    assert applicable(stack) == ["J1", "J2", "J3b", "J5", "J9", "J6"] and applicable({"identity": {"name": "power cable"}}) == ["J4"]
     # u without its scale part keeps the calibration factor: parts views .6, scale .8 of u=1 -> .6
     assert abs(u_rel({"u": 1., "parts": {"views": .6, "scale": .8}}) - .6) < 1e-9
     # A's shapes: parts holding None, 'at least' (cut by the frame edge) cannot PASS a maximum but can FAIL it,
@@ -1547,6 +1657,26 @@ def self_check():
     assert g["result"] == REVIEW and g["hazard_side"], g
     cable["physical"]["base_above_floor"] = {"status": "not observed"}
     assert g_j4(cable, ctx, [cable])["result"] == NO_DATA
+    # mvp3/judge (D3) J1 on the load: a pallet on the floor with a box on it and a box on that box reaching 2.9 m -> every card
+    # of the stack FAILs at the top box; a bare pallet has no J1; goods standing inside a shelf's footprint have none; a load
+    # with goods above it not joined (0.6 m gap, no pallet between) cannot PASS. J9: a 0.15 m box 0.35 m from the camera's path
+
+    def thing(i, name, x0, x1, y0, y1, b, t, u=.05):
+        return {"id": f"obj-0-{i}", "kind": "object", "shot": 0, "identity": {"name": name, "canonical": name},
+                "physical": {"footprint_xy": [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], "position_xy": _val([(x0 + x1) / 2, (y0 + y1) / 2], .03),
+                             "base_above_floor": _val(b, u), "top_above_floor": _val(t, u), "height": _val(t - b, u)}}
+    pal, l1, l2 = thing(20, "pallet", 3, 4, -2.5, -1.5, 0., .15), thing(21, "box", 3, 4, -2.5, -1.5, .15, 1.), thing(22, "box", 3.1, 3.9, -2.4, -1.6, 1., 2.9, .1)
+    bare, shelf, shelved = thing(23, "pallet", 5, 6, -2.5, -1.5, 0., .15), thing(24, "shelf", 7, 9, -2.5, -1.5, 0., 2.), thing(25, "box", 7.5, 8, -2.3, -1.8, 0., .5)
+    q, m_, n_ = thing(26, "pallet", 10, 11, -2.5, -1.5, 0., .15), thing(27, "box", 10, 11, -2.5, -1.5, .15, 1.), thing(28, "box", 10, 11, -2.5, -1.5, 1.6, 2.)
+    low = thing(29, "box", 2, 2.4, -.45, -.35, 0., .15, .03)
+    things = [pal, l1, l2, bare, shelf, shelved, q, m_, n_, low]
+    ctx = shot_ctx()
+    got = {c["id"]: geometry("J1", c, ctx, things) for c in things}
+    assert all(got[c["id"]]["result"] == FAIL and got[c["id"]]["stack_top"] == "obj-0-22" for c in (pal, l1, l2)), got["obj-0-21"]
+    assert got["obj-0-23"] is None and got["obj-0-25"] is None and got["obj-0-24"] is None, (got["obj-0-23"], got["obj-0-25"])
+    assert got["obj-0-27"]["result"] == REVIEW and got["obj-0-27"]["before_forced"] == PASS and "obj-0-28" in got["obj-0-27"]["reasons"][-1], got["obj-0-27"]
+    assert "J1" in applicable(l1) and "J2" not in applicable(l1) and applicable(shelf) == ["J3b", "J5", "J9"] and geometry("J2", bare, ctx, things) is None
+    assert geometry("J9", low, ctx, things)["result"] == FAIL and geometry("J9", l1, ctx, things) is None  # l1: 1 m tall, 1.5 m away
     # J3a: feet 0.6 m up with contact over a box -> FAIL; on the floor -> PASS; feet hidden -> NEEDS_REVIEW
     person = {"id": "person:0-person-0", "kind": "person", "shot": 0, "points": [
         {"t": 1., "frame": 30, "xyz": [3.5, -.6, 0], "score": .9, "foot_surface": {"h_m": .6, "u_m": .08, "contact": True, "bbox": [.1, .1, .3, .9]}}]}
@@ -1613,8 +1743,8 @@ def self_check():
     assert [x[0] for x in w.puts] == ["judgements", "judgements"] and not w.puts[0][1]["vlm_answers"] and w.puts[1][1]["vlm_answers"]
     rows = {r["subject"]: r for r in w.puts[1][1]["rows"] if r["check"] == "J4"}
     assert not calls and out["requests"] == 1 and out["asked_gemini"] == 2  # Gemini answered: Qwen not asked
-    assert rows[cable["id"]]["verdict"] == FAIL and rows[hose["id"]]["verdict"] == FAIL, rows  # hose: REVIEW on the hazard side + hazard
-    assert "calibrated 'likely hazard'" in rows[hose["id"]]["reasons"][-1] and rows[hose["id"]]["vlm"]["p_yes"] == .9
+    assert rows[cable["id"]]["verdict"] == FAIL and rows[hose["id"]]["verdict"] == REVIEW, rows  # hose: straddles; the picture only
+    assert rows[hose["id"]]["priority"] == "likely hazard, needs review" and rows[hose["id"]]["vlm"]["p_yes"] == .9  # raises its priority
     assert rows[cable["id"]]["evidence"][0]["image"] in w.puts[1][2] and all(len(b) <= 30000 for b, _ in w.puts[1][2].values())
     gem.update(p=.05)  # a calibrated 'clear' picture: the geometry FAIL becomes NEEDS_REVIEW (they disagree), the REVIEW stays
     w = _Writer()

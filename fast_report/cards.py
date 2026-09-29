@@ -157,10 +157,12 @@ def kind_of(name):
 # from general EHS/object knowledge and X8 set b's names (the dev set), before the held-out items were labelled.
 TAXONOMY = {
     "storage": {"shelf": ("shelving", "shelving unit", "shelf unit", "gondola", "gondola shelf", "bookshelf", "bookcase", "store shelf", "shelf edge",
-                          "kick plate"),
-                "rack": ("pallet rack", "storage rack", "metal rack", "wire rack", "rack upright", "racking", "rack beam"),
+                          "kick plate", "divider", "shelf divider"),
+                "rack": ("pallet rack", "storage rack", "metal rack", "wire rack", "rack upright", "racking", "rack beam", "upright", "upright frame", "upright foot"),
                 "display rack": ("display", "display stand", "display unit", "endcap", "end cap", "product display", "merchandise display",
-                                 "clothing rack", "display case", "showcase", "display shelf", "display table", "shoe rack"),
+                                 "clothing rack", "display case", "showcase", "display shelf", "display table", "shoe rack",
+                                 # mvp3/judge: retail fixtures the namers named (round-2 review D3)
+                                 "clip strip", "merchandise strip", "hanging strip", "hanger", "shoe hanger"),
                 "cabinet": ("tool cabinet", "flammables cabinet", "flammable cabinet", "safety cabinet", "storage cabinet", "filing cabinet",
                             "cupboard", "tool chest", "drawer unit", "drawer", "roll cabinet", "chest of drawers"),
                 "locker": (), "tool holder": ("tool rack", "pegboard", "tool board", "tool organizer", "tool wall", "tool stand", "holder",
@@ -179,26 +181,34 @@ TAXONOMY = {
                               "towel package", "bed pad", "soda", "drink", "beverage", "water", "food", "detergent", "paper product",
                               # dev study (runs/mvp2-identity-study-001): the namers' footwear and pet-aisle words
                               "slipper", "clog", "moccasin", "loafer", "rainboot", "heel", "flip flop", "sock", "hat", "pillow", "plush",
-                              "litter", "paper towel roll", "toilet paper roll")},
-    "furniture": {"workbench": ("work bench", "work table", "workstation", "welding table", "bench"), "table": (), "desk": (),
+                              "litter", "paper towel roll", "toilet paper roll", "bootie", "training pad", "chew", "car seat")},
+    "furniture": {"workbench": ("work bench", "work table", "worktable", "workstation", "welding table", "bench"), "table": (), "desk": (),
                   "chair": ("office chair",), "stool": ()},
     "machine": {"machine": ("equipment", "machinery", "industrial machine", "machine tool", "machine enclosure", "enclosure", "spindle",
-                            "machine head", "milling head", "motor"),
-                "lathe": ("cnc lathe",), "milling machine": ("mill", "cnc mill", "milling"), "cnc machine": ("machining center", "cnc"),
+                            "machine head", "milling head", "motor",
+                            # mvp3/judge: parts of a machine named on their own (ME340, round-2 review D3)
+                            "machine component", "bellows cover", "way cover", "spindle cover", "machine leg", "machine bed",
+                            "machine stand", "machine base", "coolant tank", "chip conveyor", "cable carrier", "handwheel",
+                            "steady rest", "bandsaw head"),
+                "lathe": ("cnc lathe",), "milling machine": ("mill", "cnc mill", "milling"), "cnc machine": ("machining center", "cnc", "waterjet", "water jet", "waterjet cutter", "water jet cutter",
+                                                                        "plasma cutter", "laser cutter", "cnc router"),
                 "drill press": (), "grinder": ("bench grinder", "grinding machine", "belt sander", "sander"),
                 "saw": ("band saw", "bandsaw", "table saw", "chop saw", "miter saw"), "welder": ("welding machine",),
                 "compressor": ("air compressor",), "press": ("hydraulic press", "arbor press"), "vise": ("bench vise", "vice", "machine vise"),
                 "3d printer": ()},
     "tool": {"hand tool": ("tool", "wrench", "spanner", "hammer", "mallet", "screwdriver", "pliers", "file", "chisel", "clamp", "caliper",
                            "hex key", "allen key", "hex key set", "drill bit", "tape measure", "measuring tape", "gauge", "gage", "tap",
-                           "collet", "chuck", "level", "cutter", "wrench set", "broom"),
+                           "collet", "chuck", "level", "cutter", "wrench set", "broom",
+                           # mvp3/judge: cutting tools (a longer match than the machine word mill), gauges (round-2 review D3)
+                           "end mill", "face mill", "shell mill", "fly cutter", "milling cutter", "cutting tool", "parallel",
+                           "parallel set", "blow gun", "scale", "ruler", "square"),
              "power tool": ("drill", "power drill", "cordless drill", "angle grinder", "impact driver", "heat gun", "jigsaw", "circular saw",
                             "nail gun"),
              "tool box": ("toolbox", "tool kit", "tool case"), "tool tray": ("tray",)},
     "handling": {"forklift": ("fork lift", "lift truck", "reach truck"), "pallet jack": ("pallet truck", "hand pallet truck", "pump truck"),
                  "hand truck": ("dolly", "sack truck"),
                  "cart": ("trolley", "shopping cart", "utility cart", "rolling cart", "platform cart", "flatbed cart", "stocking cart",
-                          "u boat", "material cart", "wheeled cart")},
+                          "u boat", "material cart", "wheeled cart", "cart deck")},
     "access": {"ladder": ("step ladder", "stepladder", "rolling ladder", "platform ladder", "extension ladder"), "step stool": ("kick stool",),
                "work platform": ("platform", "mezzanine", "scaffold", "scaffolding"), "stairs": ("staircase", "stairway", "steps")},
     "safety": {"fire extinguisher": ("extinguisher",), "eyewash station": ("eye wash", "eyewash", "safety shower"),
@@ -206,8 +216,8 @@ TAXONOMY = {
                "fire alarm": ("fire alarm pull station", "pull station", "smoke detector")},
     "signage": {"exit sign": ("emergency exit sign",),
                 "safety sign": ("warning sign", "caution sign", "danger sign", "hazard sign", "flammable warning sign", "safety label", "warning label"),
-                "sign": ("price sign", "banner", "poster", "placard", "notice", "signage", "aisle sign"),
-                "label": ("price tag", "price label", "shelf label", "shelf label holder", "price tag holder", "tag", "sticker", "decal"),
+                "sign": ("price sign", "banner", "poster", "placard", "notice", "signage", "aisle sign", "shelf talker"),
+                "label": ("price tag", "price label", "shelf label", "shelf label holder", "price tag holder", "tag", "sticker", "decal", "hangtag", "hang tag"),
                 "floor marking": ("floor tape", "hazard tape", "line marking", "walkway line", "painted line", "floor line", "walkway")},
     "guarding": {"guard": ("machine guard", "safety guard", "blade guard", "chuck guard", "shield", "splash guard"),
                  "fence": ("safety fence", "wire mesh fence", "mesh fence", "cage", "wire mesh partition"),
@@ -219,7 +229,8 @@ TAXONOMY = {
                "cable tray": ("wire tray", "cable ladder", "cable trunking")},
     "electrical": {"control panel": ("electrical panel", "breaker panel", "electrical box", "junction box", "switch box", "fuse box", "control box",
                                      "disconnect switch", "controller panel", "controller", "control station", "panel", "control console",
-                                     "digital readout", "readout", "control terminal"),
+                                     "digital readout", "readout", "control terminal", "readout display", "digital display",
+                                     "dro", "dro display", "lcd display", "led display"),
                    "electrical outlet": ("outlet", "power outlet", "socket", "power strip", "receptacle"), "switch": ("light switch",),
                    "light fixture": ("ceiling light", "lamp", "fluorescent light", "fluorescent lamp", "light", "work light", "lighting"),
                    "fan": ("ceiling fan", "exhaust fan", "floor fan")},
@@ -231,11 +242,12 @@ TAXONOMY = {
     "material": {"wooden board": ("board", "plank", "lumber", "plywood", "wood", "wooden block", "block of wood"),
                  "metal sheet": ("sheet metal", "metal plate", "plate"),
                  "metal part": ("part", "machine part", "metal piece", "workpiece", "fitting", "bracket", "metal block", "block", "gear",
-                                "bolt", "nut", "fixture", "metal bar", "bar stock", "rod", "stud", "handle", "round stock", "jaw"),
+                                "bolt", "nut", "fixture", "metal bar", "bar stock", "rod", "stud", "handle", "round stock", "jaw", "dowel", "pin", "dowel pin", "collar", "shaft"),
                  "whiteboard": ("bulletin board", "notice board", "dry erase board")},
     "ppe": {"glove": ("work glove",), "safety glasses": ("goggles", "glasses", "face shield"), "hard hat": ("helmet",)},
     "misc": {"rag": ("cloth", "towel", "shop towel"), "paper": ("paper sheet", "document"), "clipboard": (), "book": ("binder", "manual"),
-             "cup": ("mug",), "checkout counter": ("counter", "register", "checkout"), "mannequin": ()},
+             "cup": ("mug",), "checkout counter": ("counter", "register", "checkout"), "mannequin": (),
+             "wrap": ("plastic wrap", "stretch wrap", "shrink wrap", "pallet wrap"), "curtain": ("plastic curtain", "strip curtain")},
     "hazard": {"spill": ("puddle", "liquid spill", "wet floor", "leak", "oil spill")},
 }
 NOT_OBJECT = "not an object"
@@ -254,8 +266,9 @@ def canonical(name):
     """A free name -> its canonical class (TAXONOMY), NOT_OBJECT, or None (no class: the free name keeps no prior).
     '<container> of <goods>' is its container ('box of snacks' -> box), 'pallet / stack / pile of <goods>' is stacked boxes."""
     n = norm(name)
-    if " with " in n:  # 'air hose with nozzle' is an air hose
-        n = norm(n.split(" with ")[0])
+    for w in (" with ", " and "):  # 'air hose with nozzle' is an air hose; mvp3: 'work table and tools' a work table, not a tool
+        if w in n:
+            n = norm(n.split(w)[0])
     if " of " in n:
         head = n.split(" of ")[0]
         if head_match(head, ("pallet", "stack", "pile", "load")):
@@ -798,11 +811,58 @@ def build(inp, pool=None, chunks=12, shm_dir=None):
 
 
 def walked_paths(s, people):
-    """Floor-frame xy paths in the shot: the camera's own and every person track's."""
+    """Floor-frame xy paths in the shot: the camera's own and every person track that passes walk_gate."""
     out = {"camera": s["cam_floor"][:, :2]}
     for t in (people or {}).get("tracks", []):
         if t["shot"] == s["index"] and t.get("points"):
-            out[f"person:{t['id']}"] = to_floor([q["xyz"] for q in t["points"]], s["frame"])[:, :2]
+            xy = to_floor([q["xyz"] for q in t["points"]], s["frame"])[:, :2]
+            if not walk_gate(t["points"], xy):
+                out[f"person:{t['id']}"] = xy
+    return out
+
+
+# mvp3/judge (round-2 review D2): a person track is a walked path only when it is someone walking on the floor near enough to
+# place: WALK_MIN_DET detections, a median range within WALK_MAX_RANGE_M (5 % depth: +-0.5 m a position), a standing stature
+# (PERSON_H_M + ARM_M within u), a true bottom seen resting within STAND_M + u of the floor, no step faster than WALK_MAX_MPS
+# beyond two positions' noise, and WALKED_M long. ME340 person:1-person-1 (6 detections 12-17 m away and a corner crop 0.8 m
+# away) 'walked 20.3 +- 10.3 m' and J4 rows were measured against it; Sam's Club's shoppers 35-63 m away jumped up to 29 m/s.
+# Calibration knobs, not measurements (a real walker: ME340 113 detections 2.5 m away, Sam's Club 15 at 7 m, Walmart 8 at 2.6 m).
+WALK_MIN_DET, WALK_MAX_RANGE_M, WALK_MAX_MPS, WALKED_M = 8, 10., 3., .5
+
+
+def walk_gate(points, xy):
+    """A person track's detections and their floor xy -> [why it is not a walked path] ([]: it is one)."""
+    geo = [q.get("foot_surface") or {} for q in points]
+    xy, out = np.asarray(xy, float).reshape(-1, 2), []
+    if len(points) < WALK_MIN_DET:
+        out.append(f"{len(points)} detections (a walked path needs {WALK_MIN_DET})")
+    rng = np.array([g.get("range_m") or 0. for g in geo], float)
+    if not (rng > 0).any() or np.median(rng[rng > 0]) > WALK_MAX_RANGE_M:
+        out.append("no range measured" if not (rng > 0).any() else
+                   f"{np.median(rng[rng > 0]):.1f} m away (median): its positions are +-{DEPTH_REL * np.median(rng[rng > 0]):.1f} m each")
+    st = [(g["stature_m"], g.get("u_stature_m") or 0.) for g in geo if g.get("stature_m") is not None]
+    if not st:
+        out.append("no stature measured")
+    else:
+        s_, u_ = float(np.median([a for a, _ in st])), float(np.median([b for _, b in st]))
+        if s_ + u_ < PERSON_H_M[0] or s_ - u_ > PERSON_H_M[1] + ARM_M:
+            out.append(f"it spans {s_:.2f} +- {u_:.2f} m: not a standing person (a picture, a part of someone, or too far to measure)")
+    low = [g for g in geo if g.get("contact") and g.get("foot_h_m") is not None and not (g.get("cut") or {}).get("bottom")]
+    if not low:
+        out.append("its lowest point was never seen resting on anything")
+    else:
+        h_, u_ = float(np.median([g["foot_h_m"] for g in low])), float(np.median([g.get("u_m") or 0. for g in low]))
+        if h_ - u_ > STAND_M:
+            out.append(f"its lowest point is {h_:.2f} +- {u_:.2f} m above the floor (a picture, or standing on something)")
+    if len(xy) > 1:
+        steps, dt = np.linalg.norm(np.diff(xy, axis=0), axis=1), np.maximum(np.diff([q["t"] for q in points]), 1e-3)
+        noise = DEPTH_REL * rng + POSE_MIN
+        jump = (steps > WALK_MAX_MPS * dt) & (steps > 2 * np.maximum(noise[1:], noise[:-1]))
+        if jump.any():
+            i = int(np.argmax(np.where(jump, steps, 0.)))
+            out.append(f"{int(jump.sum())} jump(s) faster than {WALK_MAX_MPS:g} m/s (up to {steps[i]:.1f} m in {dt[i]:.1f} s)")
+    if float(np.linalg.norm(np.diff(xy, axis=0), axis=1).sum()) < WALKED_M:
+        out.append(f"moved less than {WALKED_M:g} m along its path")
     return out
 
 
@@ -1296,11 +1356,15 @@ def apply_name(card):
         review = ([sc["reason"]] if sc["status"] == "implausible" else []) + ([raw["fragment_reason"]] if raw.get("fragmented") else [])
         for n in REVIEWED:
             f = phys.get(n)
+            if isinstance(f, dict) and "held" in f:  # an earlier name's review hid it (below): the name decides again
+                f = phys[n] = f["held"]
             if isinstance(f, dict) and "value" in f:
                 f.pop("status", None)
                 f.pop("reason", None)
                 f.update(raw["review_base"].get(n, {}))
-                if review:
+                if review and f.get("bound"):  # mvp3/judge (round-2 review D6): an unresolved size (only a bound, u 0) that also needs
+                    phys[n] = {"status": "not measurable", "reason": f"{f.get('reason')}; and {'; '.join(review)}", "held": f}  # review
+                elif review:  # says nothing ('needs review' showed it as 'value +- 0', 9-14 sizes a video)
                     f.update(status="needs review", reason="; ".join(review))
         if review:
             phys["fragmented_support"] = raw["fragmented"]
@@ -1597,6 +1661,7 @@ def people_cards(people, shots, object_cards, k=None):
                          zip(geo, xy, cams if cams is not None else np.zeros((len(xy), 3)))], float)
         noise = np.hypot(DEPTH_REL * rng_, s["u_pose_m"])  # one position's own error (depth along the ray, pose)
         u_xy = np.hypot(noise, SCALE_REL * np.linalg.norm(xy, axis=1))
+        gate = walk_gate(t["points"], xy)  # mvp3/judge: the same gate as walked_paths and judge.context
         steps = np.linalg.norm(np.diff(xy, axis=0), axis=1)
         length = float(steps.sum()) if len(xy) > 1 else 0.
         moved = float(np.linalg.norm(xy - np.median(xy, 0), axis=1).max()) if len(xy) else 0.
@@ -1606,10 +1671,10 @@ def people_cards(people, shots, object_cards, k=None):
                      "position", k, None, views_term=False) if len(steps) and np.median(steps) >= np.median(noise) else \
             {"status": "not measurable", "reason": f"its steps ({np.median(steps) if len(steps) else 0.:.2f} m typical) are shorter than one "
                                                    f"position's noise ({np.median(noise):.2f} m)" if len(steps) else "one detection"}
-        phys = {"path_length": path,
-                "moved": value(moved, {"depth": u_move, "scale": SCALE_REL * moved}, "position", k, None, views_term=False,
-                               note="the largest distance of a detection from the track's median place"),
-                "level": "coarse"}
+        mv = value(moved, {"depth": u_move, "scale": SCALE_REL * moved}, "position", k, None, views_term=False,
+                   note="the largest distance of a detection from the track's median place")
+        # mvp3/judge (round-2 review D6): 'moved 0.00 +- 3.30 m' says nothing: not measurable when u >= max(value, 1 m)
+        phys = {"path_length": unresolved_distance(path), "moved": unresolved_distance(mv), "level": "coarse"}
         whole = [g_ for g_ in geo if g_.get("feet_visible")]
         on_floor = sum(g_.get("support") == "the floor" for g_ in whole)
         for name, key, ukey in (("stature", "stature_m", "u_stature_m"), ("foot_height", "h_m", "u_m")):
@@ -1623,10 +1688,10 @@ def people_cards(people, shots, object_cards, k=None):
                                         "surface or hidden behind it in the rest" if name == "foot_height" else ""))
             else:
                 phys[name] = {"status": "not observed", "reason": "the whole body (feet to head) was never in view with its feet seen"}
-        moving = moved - phys["moved"]["u"] >= MOVED_M
+        moving = moved - mv["u"] >= MOVED_M
         ident = {"name": "person", "decided_by": "sam3 person + tracker", "label": "observed", "track": t["id"],
                  "confirmed_by": "motion" if moving else None,
-                 "note": None if moving else f"not confirmed by motion (moved {moved:.2f} +- {phys['moved']['u']:.2f} m, under {MOVED_M:g} m + u): "
+                 "note": None if moving else f"not confirmed by motion (moved {moved:.2f} +- {mv['u']:.2f} m, under {MOVED_M:g} m + u): "
                                              "a person standing still, or a life-size picture"}
         # across the track (every measured detection, feet seen or not): a figure smaller than a head and shoulders, or under a
         # standing height with its lowest point above the floor, is a picture or a part of someone (Walmart's figures printed on
@@ -1676,7 +1741,8 @@ def people_cards(people, shots, object_cards, k=None):
                                                                                                   "person": float(np.median(u_xy)), "scale": SCALE_REL * d},
                                                                                         "position", k, None, views_term=False,
                                                                                         note="footprint to the track's path on the floor"))} for c, d in near[:3]],
-                    "ppe": None, "observed": ["masks", "track"], "estimated": ["physical", "positions"], "inferred": [] if moving else ["unconfirmed"]})
+                    "ppe": None, "observed": ["masks", "track"], "estimated": ["physical", "positions"], "inferred": [] if moving else ["unconfirmed"],
+                    "walked_path": {"used": not gate, "why_not": gate, "rule": "a walked path for the checks only when walk_gate passes"}})
     out.append({"id": "person:untracked", "kind": "person", "identity": {"name": "person, not tracked", "label": "observed"},
                 "class": {"category": "other", "mobility": "agent", "mobility_source": "class prior"},
                 "note": "a SAM 3 person mask no track claimed (a short or far detection)", "observed": ["masks"], "estimated": [], "inferred": []})
@@ -1886,7 +1952,25 @@ def self_check():
     d0 = pc["nearest_objects"][0]["distance"]  # a number with u, or 'not measurable' when u >= max(value, 1 m)
     assert (d0.get("u", 0) > 0 or d0.get("status") == "not measurable") and all(q["u_m"] > 0 for q in pc["time"]["positions"])
     assert pc["physical"]["stature"]["status"] == "not observed" and pc["identity"]["confirmed_by"] is None  # 0.6 m walked: not confirmed
-    assert "person:untracked" in by and out["walked"][0]["person:0-1"]
+    # mvp3/judge (D2): 3 detections with no geometry are no walked path; the card says why
+    assert "person:untracked" in by and "person:0-1" not in out["walked"][0] and not pc["walked_path"]["used"] and pc["walked_path"]["why_not"]
+    # ME340 person:1-person-1 (run mvp2-integrate-me340-007): 6 detections of a blob 12-17 m away and a corner crop 0.8 m away,
+    # 'walked 20.3 +- 10.3 m' in round 2 (J4 rows measured against it): (t, xyz in the shot's floor frame, stature, u, range, foot h, u)
+    fake = [(11.478, 16.91, 3.31, .517, .172, 17.32, .698, .636), (11.945, 16.62, 3.24, .542, .175, 16.91, .718, .623),
+            (12.079, 16.66, 3.23, .653, .199, 17.11, .637, .625), (12.212, 16.32, 3.21, .61, .189, 16.87, .654, .618),
+            (13.947, 11.74, 4.48, .439, .136, 12.17, 1.22, .526), (16.016, 13.84, 5.36, .463, .147, 13.99, 1.306, .591),
+            (18.852, 2.15, .6, .109, .159, .77, 1.127, .325)]  # path length 20.3 m
+    pts = [{"t": t_, "foot_surface": {"stature_m": s_, "u_stature_m": u_, "range_m": r_, "contact": False, "foot_h_m": h_, "u_m": uh,
+                                      "cut": {"bottom": t_ > 18}}} for t_, _, _, s_, u_, r_, h_, uh in fake]
+    why = walk_gate(pts, [(x_, y_) for _, x_, y_, *_ in fake])
+    assert len(why) == 5 and why[0].startswith("7 detections") and "never seen resting" in why[3] and "jump" in why[4], why
+    walker = [{"t": .5 * i, "foot_surface": {"stature_m": 1.72, "u_stature_m": .3, "range_m": 3., "contact": True, "foot_h_m": .1, "u_m": .15,
+                                             "cut": {"bottom": False}}} for i in range(10)]  # 10 detections at 1 m/s, 3 m away
+    assert walk_gate(walker, [(.5 * i, 0.) for i in range(10)]) == []
+    assert "jump" in walk_gate(walker, [(.5 * i + 4. * (i == 5), 0.) for i in range(10)])[-1]  # 4 m and back in 0.5 s
+    far = people_cards({"tracks": [{"id": "0-9", "shot": 0, "t0": 0., "t1": 0., "detections": 1, "points": [
+        {"t": 0., "xyz": [.2, 1.6, 60.], "foot_surface": {"range_m": 60.}}]}]}, {0: dict(shot, frame=f0, cam_floor=to_floor(cams[:, :3, 3], f0), u_pose_m=.04)}, [])
+    assert far[0]["physical"]["moved"]["status"] == "not measurable", far[0]["physical"]["moved"]  # 'moved 0.00 +- 3 m' says nothing (D6)
     a = by["obj-0-0"]["physical"]
     assert out["aliases"] == {"obj-0-3": "obj-0-0"}, out["aliases"]  # the fragment joins box A
     assert "obj-0-4" in by, "a co-visible neighbour never merges"
@@ -1919,6 +2003,21 @@ def self_check():
     assert all(c2["physical"][n].get("status") == "needs review" for n in ("height", "width") if "value" in c2["physical"][n])
     c2["identity"] = open_identity(c2["identity"], {"name": "Extension cord", "status": "object", "p": .9})
     assert apply_name(c2) == cable and apply_name(apply_name(c2)) == cable
+    # mvp3/judge (D6): a size that is only a bound ('at most', u 0) and needs review for the name is 'not measurable', never
+    # 'value +- 0'; the name renamed back restores the bound
+    c4 = copy.deepcopy(cable)
+    c4["physical"]["width"] = {**c4["physical"]["width"], "value": .3, "u": 0., "status": "at most", "bound": "at most", "reason": "not resolved"}
+    c4["raw"]["review_base"]["width"] = {"status": "at most", "reason": "not resolved"}
+    before = copy.deepcopy(c4)
+    c4["identity"] = open_identity(c4["identity"], {"name": "power tool", "status": "object", "p": .9})
+    assert apply_name(c4)["physical"]["width"]["status"] == "not measurable" and "value" not in c4["physical"]["width"], c4["physical"]["width"]
+    c4["identity"] = open_identity(c4["identity"], {"name": "Extension cord", "status": "object", "p": .9})
+    assert apply_name(c4) == before
+    # mvp3/judge (D3): round 2's wrong map entries and a few names that mapped to no class
+    for n_, want in (("waterjet cutter", "cnc machine"), ("end mill", "hand tool"), ("face mill", "hand tool"), ("digital readout display", "control panel"),
+                     ("work table and tools", "workbench"), ("gantry cnc waterjet", "cnc machine"), ("bellows cover", "machine"), ("stretch wrap", "wrap"),
+                     ("pallet racking upright", "rack"), ("shelf talker", "sign"), ("product display", "display rack"), ("box cutter", "hand tool")):
+        assert canonical(n_) == want, (n_, canonical(n_))
     # the gate: 'spill' named by a VLM on a 0.6 m high box (a spill is flat, on the floor) with no detector word -> not shown
     a2 = copy.deepcopy(by["obj-0-0"])
     a2["identity"] = open_identity(a2["identity"], {"name": "spill", "status": "object", "p": .95})

@@ -46,7 +46,7 @@ QUESTIONS = {
     "q7": "Is ladder [1] leaning, damaged or used in an unsafe way?",
 }
 GEMINI = "gemini-3.5-flash"  # ehs_spatial.providers.gemini.GEMINI_MODEL_ID in the report-workspace container
-CHECK_Q = {"J1": "q2", "J2": "q2", "J4": "q1", "J5": "q4", "J6": "q6", "J7": "q7"}
+CHECK_Q = {"J2": "q2", "J4": "q1", "J5": "q4", "J6": "q6", "J7": "q7"}  # mvp3/judge: J1 (a height) asks no picture; q2 is J2's
 PER_REQUEST, TILE, MAX_INPUT, MAX_OUTPUT = 10, 384, 16384, 4096
 DEFAULT_T = {"hazard": .8, "clear": .1}  # used only until calibration.json's 'hazard' section exists (never decides then)
 PROMPT_V1 = ("These images come from a video of a workplace (a shop floor, warehouse, store, lab or office). Each image shows one "
