@@ -180,7 +180,8 @@ def aims(mirror, report, clicks_dir, base_mirror, base_report, cards_dir=None):
                     area[e] = max(area.get(e, 0), int(a))
     good = set()
     if cards_dir and (Path(cards_dir) / "labels.json").exists():  # prefer cards the audit found right (type and model)
-        good = {r["card"] for r in json.loads((Path(cards_dir) / "labels.json").read_text())["rows"] if r.get("type") == "right" and r.get("model") == "plausible"}
+        good = {r["card"] for r in json.loads((Path(cards_dir) / "labels.json").read_text())["rows"]
+                if r.get("type") == "right" and r.get("model") == "plausible" and r.get("physical") == "plausible"}
     sam = {k for k, v in rm.sam_by_card(L, models_patch).items() if v.get("accepted")}
     objs = [c for c in L["object_cards"]["cards"] if c.get("kind") == "object" and (c.get("model") or {}).get("kind") and c["id"] in area]
     rank = lambda c: (c["id"] in good, c["id"] in sam, area[c["id"]])  # noqa: E731
@@ -202,8 +203,8 @@ def aims(mirror, report, clicks_dir, base_mirror, base_report, cards_dir=None):
         p = max(people, key=lambda c: area[c["id"]])
         out.append({"label": "4-person", "id": p["id"], "name": p["identity"]["name"]})
     bg = [c for c in meta["clicks"] if lab[str(c["k"])]["label"] == "background"]
-    if bg:
-        c = bg[0]
+    if bg:  # away from the frame's edges (the viewer's video may be cropped by its fit)
+        c = min(bg, key=lambda c: max(abs(c["x"] / 1280 - .5), abs(c["y"] / 720 - .5)))
         out.append({"label": "5-background", "t": c["frame"] / fps, "x": c["x"], "y": c["y"], "note": lab[str(c["k"])].get("note")})
     if sam and named["id"] not in sam:
         m = max([c for c in objs if c["id"] in sam], key=lambda c: area[c["id"]])
