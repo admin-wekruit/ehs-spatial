@@ -41,11 +41,39 @@ def final_cards(bench, report):
     return [c for c in ev.load_layers(Path(bench), report)["object_cards"]["cards"] if c["kind"] == "object"]
 
 
+LABEL_FAMILY = {v: k for k, v in cards.TYPE_LABEL.items()}
+
+
+def type_family(name):
+    """A shown name -> the family it claims: a '<label> (type only)' name its label's family, a shape type None, a specific
+    name its class's family, 'not an object' itself."""
+    if not name:
+        return None
+    if name.endswith(cards.TYPE_ONLY):
+        return LABEL_FAMILY.get(name[:-len(cards.TYPE_ONLY)])
+    return cards.NOT_OBJECT if cards.canonical(name) == cards.NOT_OBJECT else cards.family_of(name)
+
+
+def is_named(name):
+    return bool(name) and not name.endswith(cards.TYPE_ONLY) and name != cards.UNIDENTIFIED
+
+
 def route(c):
     i = c["identity"]
-    if i.get("name") == cards.UNIDENTIFIED:
-        return "unidentified" if (i.get("naming") or {}).get("route") in (None, "unidentified") else "held back (hazard gate)"
-    return (i.get("naming") or {}).get("route") or i.get("decided_by")
+    n = (i.get("naming") or {}).get("route")
+    if not is_named(i.get("name")):
+        kind = "type only (family)" if type_family(i.get("name")) else "type only (shape)"
+        return kind if n in (None, "unidentified") else f"{kind}, name held back (hazard gate)"
+    return n or i.get("decided_by")
+
+
+def family_grade(name, label):
+    if label["canon"] == "unclear":
+        return None
+    f = type_family(name)
+    if label["canon"] == cards.NOT_OBJECT:
+        return f == cards.NOT_OBJECT
+    return f is not None and f in {cards.FAMILY.get(c) for c in [label["canon"], *label.get("also", [])] if cards.FAMILY.get(c)}
 
 
 def times(run):
@@ -84,16 +112,20 @@ def heldout(runs, work, kind):
     work.mkdir(parents=True, exist_ok=True)
     for f in ("items.json", "labels-final.json"):
         shutil.copy(HELDOUT / f, work / f)
-    now = {s: (Path(d).name, calls(d)[kind]["run"]["report"]) for s, d in runs.items() if kind in calls(d)}
+    now = {s: (str(Path(d).relative_to(PHASE2 / "runs")), calls(d)[kind]["run"]["report"]) for s, d in runs.items() if kind in calls(d)}
     r = ids.score_final(work, now)
+    lab = json.loads((HELDOUT / "labels-final.json").read_text())
     out = {}
     for x in r["per_item"]:
         if x["grade"] is None:
             continue
-        o = out.setdefault(x["id"].split(":")[0], {"n": 0, "right": 0, "close": 0, "wrong": 0, "unidentified": 0, "named_n": 0, "named_right": 0, "named_close": 0})
+        o = out.setdefault(x["id"].split(":")[0], {"n": 0, "typed": 0, "family_right": 0, "right": 0, "close": 0, "wrong": 0, "unidentified": 0,
+                                                   "named_n": 0, "named_right": 0, "named_close": 0})
         o["n"] += 1
         o[x["grade"]] += 1
-        if x["name"] == cards.UNIDENTIFIED:
+        o["typed"] += type_family(x["name"]) is not None
+        o["family_right"] += bool(family_grade(x["name"], lab[x["id"]]))
+        if not is_named(x["name"]):
             o["unidentified"] += 1
         else:
             o["named_n"] += 1
@@ -166,8 +198,8 @@ def fresh_audit(runs, out):
     res, rows = {}, []
     for it in items:
         L, c = lab[it["id"]], by[it["site"]].get(it["card"])
-        o = res.setdefault(it["site"], {"sampled": 0, "unclear": 0, "n": 0, "right": 0, "close": 0, "wrong": 0, "unidentified": 0, "named_n": 0,
-                                        "named_right": 0, "named_close": 0, "by_route": {}})
+        o = res.setdefault(it["site"], {"sampled": 0, "unclear": 0, "n": 0, "typed": 0, "family_right": 0, "right": 0, "close": 0, "wrong": 0,
+                                        "unidentified": 0, "named_n": 0, "named_right": 0, "named_close": 0, "by_route": {}})
         o["sampled"] += 1
         if L["canon"] == "unclear" or c is None:
             o["unclear"] += 1
@@ -176,17 +208,21 @@ def fresh_audit(runs, out):
         g = ids.grade(name, L, name == cards.NOT_OBJECT)
         o["n"] += 1
         o[g] += 1
+        fg = bool(family_grade(name, L))
+        o["typed"] += type_family(name) is not None
+        o["family_right"] += fg
         rt = route(c)
-        o["by_route"].setdefault(rt, {"n": 0, "right": 0, "close": 0})
+        o["by_route"].setdefault(rt, {"n": 0, "family_right": 0, "right": 0, "close": 0})
         o["by_route"][rt]["n"] += 1
+        o["by_route"][rt]["family_right"] += fg
         o["by_route"][rt][g] = o["by_route"][rt].get(g, 0) + 1
-        if name == cards.UNIDENTIFIED:
+        if not is_named(name):
             o["unidentified"] += 1
         else:
             o["named_n"] += 1
             o["named_right"] += g == "right"
             o["named_close"] += g == "close"
-        rows.append({**it, "name": name, "route": rt, "truth": L["name"], "canon": L["canon"], "grade": g})
+        rows.append({**it, "name": name, "route": rt, "truth": L["name"], "canon": L["canon"], "grade": g, "family_right": fg})
     (dest / "graded.json").write_text(json.dumps(rows, indent=1))
     return res
 
@@ -202,7 +238,9 @@ def score(runs, out):
             nm = s.get("naming") or {}
             res["videos"].setdefault(site, {})[kind] = {
                 "report": run["report"], "error": run.get("error"), "cards": len(cs), "routes": dict(rt), "cheap_rules": dict(rules),
-                "named_share": round(sum(x["identity"]["name"] != cards.UNIDENTIFIED for x in cs) / max(1, len(cs)), 3),
+                "typed_share (a family)": round(sum(type_family(x["identity"]["name"]) is not None for x in cs) / max(1, len(cs)), 3),
+                "type_sources": dict(collections.Counter((x["identity"].get("type") or {}).get("source") for x in cs)),
+                "named_share (a specific name)": round(sum(is_named(x["identity"]["name"]) for x in cs) / max(1, len(cs)), 3),
                 "vlm_questions": sum(p.get("vlm_questions", 0) for p in nm.get("passes", [])), "passes": nm.get("passes"),
                 "bank_rows_at_load": nm.get("bank_rows_at_load"), "bank_rows_now": nm.get("bank_rows_now"), "naming_error": nm.get("error"),
                 "times": times(run), "boot_ready_s": (run.get("boot") or {}).get("ready_s"),
@@ -217,10 +255,50 @@ def score(runs, out):
     return res
 
 
+def vector_check(runs, npz_dir, x13_dir):
+    """Do the pipeline's DINOv2-L card vectors meet the bank's (x13's crops of round 2's cards)? A card of this run and a
+    round-2 card with box centres within 0.3 m are the same object: their cosine against the cosine to every other bank card
+    of that video. npz_dir/<report>/naming-first.npz: the pass's vectors (fetched from the layers volume)."""
+    import x13_naming as X
+    D = X.Data(Path(x13_dir))
+    V = D.vec("dinov2-l", "plain+masked")
+    import fast_report_eval as ev
+    out = {}
+    for site, d in runs.items():
+        rep = calls(d)["warm"]["run"]["report"]
+        f = Path(npz_dir) / rep / "naming-first.npz"
+        if not f.exists():
+            continue
+        z = np.load(f)
+        vec = {i: v.astype(np.float32) for i, v in zip(z["ids"], z["dino"]) if np.any(v)}
+        ctr = lambda c: np.mean([c["physical"]["box_min_m"], c["physical"]["box_max_m"]], 0) if "box_min_m" in c["physical"] else None  # noqa: E731
+        now = {c["id"]: ctr(c) for c in final_cards(d, rep) if c["id"] in vec}
+        r2 = {c["id"]: ctr(c) for c in ev.load_layers(ROUND2[site], calls(ROUND2[site])["warm"]["run"]["report"])["object_cards"]["cards"] if c["kind"] == "object"}
+        at = {D.meta[i]["card"]: i for i in range(D.n) if D.site[i] == site}
+        same, other, top1 = [], [], []
+        for cid, c in now.items():
+            if c is None:
+                continue
+            best = min(((float(np.linalg.norm(c - x)), k) for k, x in r2.items() if x is not None and k in at), default=None)
+            if best and best[0] < .3:
+                sims = V[[at[k] for k in at]] @ vec[cid]
+                j = list(at).index(best[1])
+                same.append(float(sims[j]))
+                other.append(float(np.median(np.delete(sims, j))))
+                top1.append(int(np.argmax(sims)) == j)
+        out[site] = {"pairs": len(same), "cos_same_object_median": round(float(np.median(same)), 3) if same else None,
+                     "cos_other_cards_median": round(float(np.median(other)), 3) if other else None,
+                     "same_is_top1_share": round(float(np.mean(top1)), 3) if top1 else None}
+    return out
+
+
 def self_check():
     c = lambda name, r=None: {"identity": {"name": name, "naming": {"route": r} if r else None, "decided_by": "x"}}  # noqa: E731
-    assert route(c(cards.UNIDENTIFIED, "unidentified")) == "unidentified" and route(c(cards.UNIDENTIFIED, "cheap")) == "held back (hazard gate)"
+    assert route(c("machine (type only)", "unidentified")) == "type only (family)" and route(c("flat panel (type only)")) == "type only (shape)"
+    assert route(c("cable / hose / pipe (type only)", "vlm")) == "type only (family), name held back (hazard gate)"
     assert route(c("box", "copy")) == "copy" and route(c("box")) == "x"
+    assert type_family("container / box / goods (type only)") == "goods" and type_family("lathe") == "machine" and type_family("flat panel (type only)") is None
+    assert family_grade("tool (type only)", {"canon": "hand tool", "also": []}) and not family_grade("flat panel (type only)", {"canon": "sign"})
     run = {"layers": [{"layer": "objects", "version": 1, "written_s": 20., "queued_s": 19.}, {"layer": "object_cards", "version": 1, "written_s": 30., "queued_s": 29.},
                       {"layer": "object_cards", "version": 2, "written_s": 50., "queued_s": 49.5}],
            "marks": {"identity_cascade_put": 49.4}, "stages": [{"stage": "naming.signals", "s": 3., "peak_gb": [60., 75.]}]}

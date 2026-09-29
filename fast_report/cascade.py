@@ -39,6 +39,8 @@ YOLO_IMGSZ, YOLO_CONF, MATCH_IOU = 960, .05, .5
 RULES = ("sam3+bank", "sam3+zero-shot/yolo")
 MAX_OPTIONS = 8
 CLASSES = [c for fam in cards.TAXONOMY.values() for c in fam]  # the text embeddings' and YOLOE's class order
+FAMILIES = list(cards.TAXONOMY)
+FAMILY_OF = np.array([FAMILIES.index(cards.FAMILY[c]) for c in CLASSES])  # class index -> family index (zero-shot summed per family)
 VLM_SOURCE = "qwen3-vl-8b decider (cluster medoid)"
 
 
@@ -364,8 +366,10 @@ def settle(items, bank, th, video, family, in_video=()):
         v = vs[it["id"]] = {"sam3": sam3_vote(it["votes"]), "bank": knn(it["dino"], B, labels), "probs": probs, "yolo": yo, "yolo_all": it["yolo"],
                             "zero_shot": (CLASSES[int(np.argmax(probs))], float(np.max(probs))) if probs is not None else (None, 0.)}
         rule, lab = tier1(v, th)
+        fz = np.bincount(FAMILY_OF, probs, len(FAMILIES)) if probs is not None else None
         rec = recs[it["id"]] = {"sam3": [v["sam3"][0], round(v["sam3"][1], 3), v["sam3"][2]], "bank": [v["bank"]["label"], round(v["bank"]["share"], 3)],
-                                "zero_shot": [v["zero_shot"][0], round(v["zero_shot"][1], 3)], "yolo": [yo[0], round(float(yo[1]), 3)]}
+                                "zero_shot": [v["zero_shot"][0], round(v["zero_shot"][1], 3)], "yolo": [yo[0], round(float(yo[1]), 3)],
+                                "zero_shot_family": [FAMILIES[int(fz.argmax())], round(float(fz.max()), 3)] if fz is not None else [None, 0.]}
         if rule and lab not in cards.HAZARD:  # a hazard class is shown only once a VLM named it (cards.hazard_gate): to the groups
             rec.update(route="cheap", rule=rule, label=lab, name=v["sam3"][2])
         else:
@@ -426,7 +430,7 @@ def resolve(recs, qs, answers, items_by_id, video, site, family, own=None):
 def identity(base, rec, decided=None):
     """A card's identity from its cascade record (cards.apply_name derives the shown name, class and checks from it).
     decided: cards.decide_identity's output for a medoid (the VLM's own record: options, probabilities)."""
-    naming = {k: rec.get(k) for k in ("route", "rule", "label", "sam3", "bank", "zero_shot", "yolo", "cluster", "group", "group_size", "medoid",
+    naming = {k: rec.get(k) for k in ("route", "rule", "label", "sam3", "bank", "zero_shot", "zero_shot_family", "yolo", "cluster", "group", "group_size", "medoid",
                                       "escalated_from", "options", "struck")
               if rec.get(k) is not None}
     if rec["route"] == "vlm" and decided is not None:

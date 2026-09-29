@@ -29,6 +29,10 @@ import numpy as np
 REPO = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(REPO), str(REPO / "scripts")]
 import x13_naming as X  # noqa: E402
+from fast_report import cards  # noqa: E402
+
+FAMS = list(cards.TAXONOMY)
+FAM_OF = np.array([FAMS.index(cards.FAMILY[c]) for c in X.CLASSES])
 
 KNN_KEY, ZS_KEY = ("dinov2-l", "plain+masked"), ("pe-core-l", "masked")  # the memo's picks (the pipeline computes exactly these)
 RULES = ("sam3+bank", "sam3+zero-shot/yolo")
@@ -146,6 +150,29 @@ def fit_cut(S, rest, train, target, min_n=20):
     return best
 
 
+def family_votes(S, site, cross):
+    """{card i: the cheap votes at family level} (cards.family_vote's inputs), with the held-out bank."""
+    D, out = S.D, {}
+    for i, scs, kx in S.rows(site, cross):
+        fz = np.bincount(FAM_OF, S.P[i], len(FAMS))
+        out[i] = {"sam3": X.sam3_vote(D.meta[i])[0], "yolo": det_vote(D.meta[i], S.det)[0], "zero_shot_family": (FAMS[int(fz.argmax())], float(fz.max())),
+                  "bank": kx["label"]}
+    return out
+
+
+def with_types(S, site, cross, recs):
+    """Every card's type: the family of its accepted name, else cards.family_vote, else 'shape' (x13 keeps no geometry)."""
+    fv = family_votes(S, site, cross)
+    for i, r in recs.items():
+        f = X.family(r["label"]) if r.get("label") and not r["label"].startswith("~") else None
+        if f and f != "hazard":
+            r.update(type=f, type_source="the name")
+        else:
+            f, src = cards.family_vote(**fv[i])
+            r.update(type=f or "shape", type_source=src or "shape")
+    return recs
+
+
 def simulate(S, site, cross, th, ask_unverified=False):
     """One video: tier 1 at th -> the rest clustered, one VLM call per medoid, verified copies; unverified members stay
     'unidentified' (ask_unverified: each is its own VLM call, x13's route)."""
@@ -161,7 +188,7 @@ def simulate(S, site, cross, th, ask_unverified=False):
         for i, r in recs.items():
             if r["tier"] == "unidentified":
                 recs[i] = {"tier": "vlm", "rule": "vlm (unverified member)", "label": S.D.label[i], "name": S.D.meta[i]["name"]}
-    return recs
+    return with_types(S, site, cross, recs)
 
 
 def summarise(D, recs):
@@ -177,10 +204,22 @@ def summarise(D, recs):
         g = [X.grade_audit(recs[i]["name"], D.meta[i]["audit"]) for i in aud]
         gn = [X.grade_audit(recs[i]["name"], D.meta[i]["audit"]) for i in aud if recs[i]["name"]]
         g0 = [X.grade_audit(D.meta[i]["name"] or X.sam3_vote(D.meta[i])[2], D.meta[i]["audit"]) for i in aud]
+        lab = [i for i in ids if D.label[i]]
+        typed = [i for i in ids if recs[i]["type"] != "shape"]
+        fam_ok = lambda i: recs[i]["type"] == X.family(D.label[i])  # noqa: E731
+        ga = [family_grade(recs[i]["type"], D.meta[i]["audit"]) for i in aud]
+        g0a = [family_grade(X.family(X.label_of(D.meta[i]["name"])) if D.meta[i]["name"] else None, D.meta[i]["audit"]) for i in aud]
+        by_src = {}
+        for i in lab:
+            by_src.setdefault(recs[i]["type_source"], []).append(fam_ok(i))
+        types = {"typed_share (a family)": round(len(typed) / len(ids), 3), "shape_only_share": round(1 - len(typed) / len(ids), 3),
+                 "family_vs_gemini": {"n": len(lab), "agree": round(float(np.mean([fam_ok(i) for i in lab])), 3) if lab else None},
+                 "family_vs_gemini_by_source": {k: {"n": len(v), "agree": round(float(np.mean(v)), 3)} for k, v in sorted(by_src.items(), key=lambda x: -len(x[1]))},
+                 "audited_family_right": X._share(ga, (True,)), "gemini_audited_family_right": X._share(g0a, (True,)), "audited_n": len(aud)}
         by_rule = {}
         for i in cheap:
             by_rule.setdefault(recs[i]["rule"], []).append(recs[i]["label"] == D.label[i])
-        out[site] = {"cards": len(ids), "vlm_calls": sum(recs[i]["tier"] == "vlm" for i in ids),
+        out[site] = {"types": types, "cards": len(ids), "vlm_calls": sum(recs[i]["tier"] == "vlm" for i in ids),
                      "vlm_share": round(sum(recs[i]["tier"] == "vlm" for i in ids) / len(ids), 3),
                      "tier_share": {t: round(sum(recs[i]["tier"] == t for i in ids) / len(ids), 3) for t in ("tier1", "cluster", "vlm", "unidentified")},
                      "cheap_vs_gemini_class": {"n": len(cheap), "agree": X._share([recs[i]["label"] == D.label[i] for i in cheap], (True,))},
@@ -189,6 +228,17 @@ def summarise(D, recs):
                                  "named_n": len(gn), "named_right": X._share(gn, ("right",)), "named_right_or_close": X._share(gn, ("right", "close")),
                                  "gemini_right": X._share(g0, ("right",)), "gemini_right_or_close": X._share(g0, ("right", "close"))}}
     return out
+
+
+def family_grade(fam, audit):
+    """The type's family against the agent's label: right when it is the label's class's family (or an 'also' class's);
+    None for an unclear label; a shape type (no family) is not right."""
+    if not audit or audit["canon"] == "unclear":
+        return None
+    if audit["canon"] == cards.NOT_OBJECT:
+        return fam == cards.NOT_OBJECT
+    truth = {cards.FAMILY.get(c) for c in [audit["canon"], *audit.get("also", [])] if cards.FAMILY.get(c)}
+    return fam in truth
 
 
 def folds(S, target=TARGET):
@@ -230,8 +280,9 @@ def main(a):
     F = folds(S)
     res = {"schema": "r4-naming-fit-v1", "target": TARGET, "knn": KNN_KEY, "zero_shot": ZS_KEY, "rules": RULES, "folds": F,
            "yoloe_timing": det["timing"], "simulated_heldout": {}}
-    for name, s_, ask in (("yoloe, contradicted members asked on their own (pipeline)", S, True), ("yoloe, no escalation: contradicted members unidentified", S, False),
-                          ("owlv2 instead of yoloe (pipeline)", So, True)):
+    for name, s_, ask in (("pipeline: yoloe, VLM on group medoids only, the rest typed", S, False),
+                          ("variant: contradicted members also asked on their own (naming_escalate)", S, True),
+                          ("variant: owlv2 instead of yoloe", So, False)):
         recs = {}
         for test in X.SITES:
             f = folds(s_)[test] if s_ is not S else F[test]
@@ -239,7 +290,7 @@ def main(a):
             recs.update(simulate(s_, test, bank_rows(D, (test,), fam), th_of(f), ask))
         res["simulated_heldout"][name] = summarise(D, recs)
     for cut in (0., .1, .2):  # sensitivity only (never used to choose): the uncalibrated video at fixed cuts
-        recs = simulate(S, "me340", bank_rows(D, ("me340",), "shop floor"), {**th_of(F["me340"]), "cluster_cut": cut}, True)
+        recs = simulate(S, "me340", bank_rows(D, ("me340",), "shop floor"), {**th_of(F["me340"]), "cluster_cut": cut})
         res["simulated_heldout"][f"me340 at cut {cut} (sensitivity)"] = {"me340": summarise(D, recs)["me340"]}
     fam_fit = {}
     for fam in sorted(set(FAMILY_OF_SITE.values())):
@@ -268,6 +319,9 @@ def main(a):
         print("==", name)
         for v in [v for v in [*X.SITES, "all"] if v in s]:
             x = s[v]
+            t = x["types"]
+            print(f"  {v:12s} TYPED {t['typed_share (a family)']} family~gemini {t['family_vs_gemini']['agree']} audited family right {t['audited_family_right']} "
+                  f"(gemini {t['gemini_audited_family_right']}, n {t['audited_n']}) | sources {t['family_vs_gemini_by_source']}")
             print(f"  {v:12s} vlm {x['vlm_share']:.3f} ({x['vlm_calls']})  tiers {x['tier_share']}  cheap {x['cheap_vs_gemini_class']} {x['by_rule']}  "
                   f"aud {x['audited']['final_right']}/{x['audited']['final_right_or_close']} named {x['audited']['named_n']}: "
                   f"{x['audited']['named_right']}/{x['audited']['named_right_or_close']} (gemini {x['audited']['gemini_right']}/{x['audited']['gemini_right_or_close']})")
@@ -284,6 +338,8 @@ def self_check():
     assert tier1(sc, {"sam3+bank": .9, "sam3+zero-shot/yolo": .9}) == (None, None)
     assert rule_scores((None, 0., None), kx, ("box", 1.), ("box", 1.)) == {r: None for r in RULES}  # no SAM 3 word: nothing accepted
     assert th_of({"sam3+bank": None, "sam3+zero-shot/yolo": .3, "cluster_cut": .2})["sam3+bank"] == float("inf")
+    assert family_grade("machine", {"canon": "lathe", "also": []}) is True and family_grade("goods", {"canon": "shelf", "also": ["pallet"]}) is True
+    assert family_grade("shape", {"canon": "lathe"}) is False and family_grade("machine", {"canon": "unclear"}) is None
     print("r4_naming_fit self-check ok")
 
 

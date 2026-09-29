@@ -1237,8 +1237,10 @@ def analyse(m, mp4, opts, clock, writer, log):
         by_item = {it["id"]: it for it in items}
         with clock.stage(f"naming.vlm.{tag}", n={"questions": len(qs)}):
             answers, decided = ask_options([(cmap[med], o_) for med, _, o_ in qs], view)
-            recs, rows, esc = cascade.resolve(recs, qs, answers, by_item, video_sha, site, family, own)
-            answers2, decided2 = ask_options([(cmap[i], o_) for i, _, o_ in esc], view)  # members a group's answer contradicts: on their own
+            # the VLM asks cluster medoids only (the user, r4); opts['naming_escalate']: members a group's answer contradicts are asked
+            # on their own too (off: they keep their family type)
+            recs, rows, esc = cascade.resolve(recs, qs, answers, by_item, video_sha, site, family, own if opts.get("naming_escalate") else None)
+            answers2, decided2 = ask_options([(cmap[i], o_) for i, _, o_ in esc], view)
             recs, rows2, _ = cascade.resolve(recs, esc, answers2, by_item, video_sha, site, family)
         rows += rows2
         n_group_q = len(decided)
