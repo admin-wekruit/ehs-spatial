@@ -309,8 +309,9 @@ function ModelLine({ model, sam, tr }: { model: any; sam?: any; tr: Tr }) {
     : sam.final ? `${tr("未尝试", "not tried")}: ${model.sam3d_eligibility === "well observed" ? tr("首轮已满", "the first pass was full") : model.sam3d_eligibility || "—"}`
     : tr("进行中", "pending");
   return <section className="mvp-block mvp-model"><h4>{tr("模型", "Model")} <Tag>{tr("生成的，仅供显示", "generated, display only")}</Tag></h4>
-    {model.kind ? <p>{sam?.accepted ? tr("SAM 3D 网格", "SAM 3D mesh") : ({ box: tr("长方体", "box"), cylinder: tr("圆柱", "cylinder"), plane: tr("平板", "plane"), "open frame": tr("开放框架", "open frame") } as any)[model.kind] || model.kind}
-      {" · "}{tr("来源", "source")}: {sam?.accepted ? "SAM 3D s1cfg12" : tr("拟合观测点的基本形状", "primitive fitted to the observed points")}
+    {sam?.accepted && <p>{tr("SAM 3D 网格", "SAM 3D mesh")} · {tr("来源", "source")}: SAM 3D s1cfg12 · {tr("它替换了下面的基本形状", "it replaces the primitive below")}</p>}
+    {model.kind ? <p>{sam?.accepted ? tr("基本形状（已被替换）", "primitive (replaced)") + ": " : ""}{({ box: tr("长方体", "box"), cylinder: tr("圆柱", "cylinder"), plane: tr("平板", "plane"), "open frame": tr("开放框架", "open frame") } as any)[model.kind] || model.kind}
+      {" · "}{tr("来源", "source")}: {tr("拟合观测点的基本形状", "primitive fitted to the observed points")}
       {" · "}{tr("选择", "chosen by")} {model.chosen_by} · {tr("残差", "residual")} {fmt(model.residual_m * 100, 1)} cm
       {" · "}{tr("看到的面", "seen")} {pct(model.seen_share ?? 0)} <small>({tr("其余是猜的，画得淡", "the rest is guessed, drawn faint")})</small>
       {model.depth && <><br /><small>{model.depth}</small></>}</p>
@@ -500,7 +501,7 @@ function ObjectList({ cards, infos, selected, onSelect, tr }: { cards: any[]; in
       <input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder={tr("按名字找", "Search names")} aria-label={tr("按名字找", "Search names")} />
       <small>{shown.length}</small>
     </div>
-    <ol>{shown.map(c => <li key={c.id}><button aria-current={c.id === selected || undefined} onClick={() => { onSelect(c.id); if (c.kind === "person") seek(c.time?.first_seen_s); }}>
+    <ol>{shown.map(c => <li key={c.id}><button data-id={c.id} aria-current={c.id === selected || undefined} onClick={() => { onSelect(c.id); if (c.kind === "person") seek(c.time?.first_seen_s); }}>
       <Chip v={infos.get(c.id)?.verdict} tr={tr} /><strong>{c.kind === "person" ? `${tr("人", "person")} ${c.id.slice(7)}` : c.identity?.name}</strong>
       <small>{kindOf(c)} · {fmt(c.time?.first_seen_s)} s{c.physical?.size_check?.status === "implausible" ? ` · ${tr("尺寸不合理", "implausible size")}` : ""}</small></button></li>)}</ol>
   </div>;

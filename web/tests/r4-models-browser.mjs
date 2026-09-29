@@ -2,7 +2,7 @@
 // Objects list; each must show its model line (kind, source, how chosen, SAM 3D), and its model must draw in the 3D pane (the pane's
 // pixels change when the object is selected: the selected model shows in full, the others faint) and alone in the pane's corner
 // (the viewer's preview capture). Screenshots per object.
-// Run from web/: node tests/r4-models-browser.mjs MIRROR REPORT OUT [--n 4] [--ids a,b]
+// Run from web/: node tests/r4-models-browser.mjs MIRROR REPORT OUT [--n 4] [--ids card-id,card-id]
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -39,7 +39,7 @@ try{
   for(const [k,pick] of picks.entries()){
     await page.getByRole('tab',{name:/Objects/}).click();
     const before=await shot();
-    await page.locator('.mvp-list li button').nth(typeof pick==='number'?pick:names.indexOf(pick)).click();
+    await (typeof pick==='number'?page.locator('.mvp-list li button').nth(pick):page.locator(`.mvp-list li button[data-id="${pick}"]`)).click();
     await page.waitForSelector('.mvp-model',{timeout:10000});
     await sleep(800);
     const inset=await page.waitForSelector('.live-report-model-inset img',{timeout:15000}).then(()=>true,()=>false);
