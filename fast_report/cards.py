@@ -72,7 +72,8 @@ _SIZE = [  # (words, longest side lo, hi m, rules): a prior, not a measurement (
     (("milling machine", "drill press", "saw", "compressor", "press"), .3, 6., {}),
     (("tool holder", "tool tray", "safety sign", "eyewash station", "fan", "vent", "whiteboard", "rag", "paper", "mannequin"), .05, 3., {}),
     (("guard", "fence", "barrier", "railing", "cable tray", "column", "window", "wall panel", "stairs", "work platform",
-      "checkout counter", "refrigerator", "wooden board", "metal sheet", "metal part", "control panel"), .02, 30., {}),
+      "checkout counter", "refrigerator", "wooden board", "metal sheet", "metal part", "control panel", "electrical panel"), .02, 30., {}),
+    (("sprinkler",), .02, 1., {"min_base_m": 1.8}),
     (("floor drain",), .05, 1.5, {"on_floor": True, "max_height": .1}),
 ]
 OTHER_MAX = 6.
@@ -82,7 +83,7 @@ _KIND = {  # class word -> (category letter or None, mobility): section 4.8
               "ceiling light", "light fixture", "control panel", "workbench", "fence", "guard", "barrier", "railing", "electrical outlet",
               "switch", "bollard", "floor marking", "milling machine", "drill press", "saw", "press", "tool holder", "cable tray",
               "safety sign", "eyewash station", "fire alarm", "emergency stop button", "vent", "floor drain", "whiteboard", "stairs",
-              "work platform", "wall panel", "checkout counter", "refrigerator"),
+              "work platform", "wall panel", "checkout counter", "refrigerator", "electrical panel", "sprinkler"),
     "movable rigid": ("box", "carton", "crate", "package", "pallet", "stacked boxes", "pallet of goods", "cart", "trolley",
                       "shopping cart", "material cart", "ladder", "step ladder", "portable work platform", "chair", "stool", "table",
                       "desk", "bin", "tote", "bag", "container", "plastic container", "tool", "power tool", "hand tool", "wrench",
@@ -157,23 +158,24 @@ def kind_of(name):
 # from general EHS/object knowledge and X8 set b's names (the dev set), before the held-out items were labelled.
 TAXONOMY = {
     "storage": {"shelf": ("shelving", "shelving unit", "shelf unit", "gondola", "gondola shelf", "bookshelf", "bookcase", "store shelf", "shelf edge",
-                          "kick plate", "divider", "shelf divider"),
+                          "kick plate", "divider", "shelf divider", "divider bar"),
                 "rack": ("pallet rack", "storage rack", "metal rack", "wire rack", "rack upright", "racking", "rack beam", "upright", "upright frame", "upright foot"),
                 "display rack": ("display", "display stand", "display unit", "endcap", "end cap", "product display", "merchandise display",
                                  "clothing rack", "display case", "showcase", "display shelf", "display table", "shoe rack",
                                  # mvp3/judge: retail fixtures the namers named (round-2 review D3)
-                                 "clip strip", "merchandise strip", "hanging strip", "hanger", "shoe hanger"),
+                                 "clip strip", "merchandise strip", "hanging strip", "hanger", "shoe hanger",
+                                 "strip merchandiser"),
                 "cabinet": ("tool cabinet", "flammables cabinet", "flammable cabinet", "safety cabinet", "storage cabinet", "filing cabinet",
                             "cupboard", "tool chest", "drawer unit", "drawer", "roll cabinet", "chest of drawers"),
-                "locker": (), "tool holder": ("tool rack", "pegboard", "tool board", "tool organizer", "tool wall", "tool stand", "holder",
-                                                "organizer"),
+                "locker": (), "tool holder": ("tool rack", "pegboard", "tool board", "tool organizer", "tool wall", "tool stand", "toolholder",
+                                                "collet holder", "drill bit organizer", "tool holder rack", "organizer"),
                 "refrigerator": ("fridge", "freezer", "cooler", "display freezer", "refrigerated case")},
     "goods": {"box": ("cardboard box", "carton", "case", "package", "parcel", "shoe box", "shoebox", "cereal box", "packaging", "pack"),
               "stacked boxes": ("stack of boxes", "stacked cartons", "pallet of goods", "loaded pallet", "stacked goods", "stack", "pallet load"),
               "pallet": ("wooden pallet", "plastic pallet", "skid"), "crate": ("plastic crate", "milk crate"),
               "bin": ("tote", "storage bin", "parts bin", "tub", "basket", "shopping basket"),
               "bag": ("sack", "plastic bag", "shopping bag", "pouch"),
-              "container": ("plastic container", "jar", "canister", "jerry can", "gas can", "jug"), "drum": ("barrel", "oil drum", "keg"),
+              "container": ("plastic container", "jar", "canister", "jerry can", "gas can", "jug", "beaker"), "drum": ("barrel", "oil drum", "keg"),
               "bucket": ("pail",), "trash can": ("garbage can", "waste bin", "recycling bin", "dustbin", "trash bin"),
               "bottle": ("spray bottle", "water bottle"), "can": ("aerosol can", "tin"),
               "merchandise": ("product", "goods", "item", "toilet paper", "paper towel", "tissue", "diaper", "wipe", "snack", "chip",
@@ -184,12 +186,14 @@ TAXONOMY = {
                               "litter", "paper towel roll", "toilet paper roll", "bootie", "training pad", "chew", "car seat")},
     "furniture": {"workbench": ("work bench", "work table", "worktable", "workstation", "welding table", "bench"), "table": (), "desk": (),
                   "chair": ("office chair",), "stool": ()},
-    "machine": {"machine": ("equipment", "machinery", "industrial machine", "machine tool", "machine enclosure", "enclosure", "spindle",
+    "machine": {"machine": ("equipment", "machinery", "industrial machine", "machine tool", "machine enclosure", "spindle",
                             "machine head", "milling head", "motor",
                             # mvp3/judge: parts of a machine named on their own (ME340, round-2 review D3)
                             "machine component", "bellows cover", "way cover", "spindle cover", "machine leg", "machine bed",
                             "machine stand", "machine base", "coolant tank", "chip conveyor", "cable carrier", "handwheel",
-                            "steady rest", "bandsaw head"),
+                            "steady rest", "bandsaw head",
+                            # rules/library (section 6): ME340's names with no class in round 3
+                            "steadylast", "steady", "bellows", "part catcher", "crane", "jib crane", "crane boom", "edm machine", "edm"),
                 "lathe": ("cnc lathe",), "milling machine": ("mill", "cnc mill", "milling"), "cnc machine": ("machining center", "cnc", "waterjet", "water jet", "waterjet cutter", "water jet cutter",
                                                                         "plasma cutter", "laser cutter", "cnc router"),
                 "drill press": (), "grinder": ("bench grinder", "grinding machine", "belt sander", "sander"),
@@ -201,9 +205,10 @@ TAXONOMY = {
                            "collet", "chuck", "level", "cutter", "wrench set", "broom",
                            # mvp3/judge: cutting tools (a longer match than the machine word mill), gauges (round-2 review D3)
                            "end mill", "face mill", "shell mill", "fly cutter", "milling cutter", "cutting tool", "parallel",
-                           "parallel set", "blow gun", "scale", "ruler", "square"),
+                           "parallel set", "blow gun", "scale", "ruler", "square",
+                           "tool bit", "machinist jack", "knife", "utility knife"),
              "power tool": ("drill", "power drill", "cordless drill", "angle grinder", "impact driver", "heat gun", "jigsaw", "circular saw",
-                            "nail gun"),
+                            "nail gun", "rotary tool", "rotary tool set"),
              "tool box": ("toolbox", "tool kit", "tool case"), "tool tray": ("tray",)},
     "handling": {"forklift": ("fork lift", "lift truck", "reach truck"), "pallet jack": ("pallet truck", "hand pallet truck", "pump truck"),
                  "hand truck": ("dolly", "sack truck"),
@@ -213,11 +218,13 @@ TAXONOMY = {
                "work platform": ("platform", "mezzanine", "scaffold", "scaffolding"), "stairs": ("staircase", "stairway", "steps")},
     "safety": {"fire extinguisher": ("extinguisher",), "eyewash station": ("eye wash", "eyewash", "safety shower"),
                "first aid kit": ("first aid box", "first aid cabinet"), "emergency stop button": ("e stop", "emergency stop", "estop", "stop button"),
-               "fire alarm": ("fire alarm pull station", "pull station", "smoke detector")},
+               "fire alarm": ("fire alarm pull station", "pull station", "smoke detector"),
+               "sprinkler": ("sprinkler head", "fire sprinkler", "sprinkler pipe")},
     "signage": {"exit sign": ("emergency exit sign",),
                 "safety sign": ("warning sign", "caution sign", "danger sign", "hazard sign", "flammable warning sign", "safety label", "warning label"),
                 "sign": ("price sign", "banner", "poster", "placard", "notice", "signage", "aisle sign", "shelf talker"),
-                "label": ("price tag", "price label", "shelf label", "shelf label holder", "price tag holder", "tag", "sticker", "decal", "hangtag", "hang tag"),
+                "label": ("price tag", "price label", "shelf label", "shelf label holder", "price tag holder", "tag", "sticker", "decal", "hangtag", "hang tag",
+                          "shelf ticket channel", "ticket channel", "shelf ticket holder", "ticket holder"),
                 "floor marking": ("floor tape", "hazard tape", "line marking", "walkway line", "painted line", "floor line", "walkway")},
     "guarding": {"guard": ("machine guard", "safety guard", "blade guard", "chuck guard", "shield", "splash guard"),
                  "fence": ("safety fence", "wire mesh fence", "mesh fence", "cage", "wire mesh partition"),
@@ -227,22 +234,26 @@ TAXONOMY = {
                "hose": ("air hose", "water hose", "pneumatic hose", "hydraulic hose", "garden hose"),
                "pipe": ("piping", "conduit", "tube", "tubing", "pipework"), "duct": ("ventilation duct", "air duct", "exhaust duct", "vent duct", "ductwork"),
                "cable tray": ("wire tray", "cable ladder", "cable trunking")},
-    "electrical": {"control panel": ("electrical panel", "breaker panel", "electrical box", "junction box", "switch box", "fuse box", "control box",
-                                     "disconnect switch", "controller panel", "controller", "control station", "panel", "control console",
+    # rules/library (section 6): electrical equipment (E1's working space) apart from an operator's controls; 'panel' alone is no class
+    "electrical": {"electrical panel": ("breaker panel", "panelboard", "switchboard", "fuse box", "disconnect switch", "disconnect",
+                                        "motor control center", "electrical enclosure", "electrical cabinet", "control cabinet", "junction box",
+                                        "electrical box", "switch box", "breaker box", "load center"),
+                   "control panel": ("control box", "controller panel", "controller", "control station", "control console",
                                      "digital readout", "readout", "control terminal", "readout display", "digital display",
-                                     "dro", "dro display", "lcd display", "led display"),
+                                     "dro", "dro display", "lcd display", "led display", "pendant", "control pendant"),
                    "electrical outlet": ("outlet", "power outlet", "socket", "power strip", "receptacle"), "switch": ("light switch",),
                    "light fixture": ("ceiling light", "lamp", "fluorescent light", "fluorescent lamp", "light", "work light", "lighting"),
                    "fan": ("ceiling fan", "exhaust fan", "floor fan")},
-    "building": {"door": ("roll up door", "garage door", "overhead door", "doorway"), "window": ("glass window",),
+    "building": {"door": ("roll up door", "garage door", "overhead door", "doorway", "exit door", "fire door", "emergency exit door"), "window": ("glass window",),
                  "column": ("pillar", "post", "support column", "beam"), "wall panel": ("partition wall", "partition", "wall board"),
                  "floor drain": ("drain", "grate", "drain grate", "drain cover"), "vent": ("air vent", "grille", "vent cover")},
     "electronics": {"monitor": ("computer monitor", "screen", "display screen", "tv", "television"),
-                    "computer": ("pc", "laptop", "desktop computer"), "keyboard": (), "printer": (), "phone": ("telephone",), "clock": ()},
+                    "computer": ("pc", "laptop", "desktop computer", "computer terminal"), "keyboard": (), "printer": (), "phone": ("telephone",), "clock": ()},
     "material": {"wooden board": ("board", "plank", "lumber", "plywood", "wood", "wooden block", "block of wood"),
                  "metal sheet": ("sheet metal", "metal plate", "plate"),
                  "metal part": ("part", "machine part", "metal piece", "workpiece", "fitting", "bracket", "metal block", "block", "gear",
-                                "bolt", "nut", "fixture", "metal bar", "bar stock", "rod", "stud", "handle", "round stock", "jaw", "dowel", "pin", "dowel pin", "collar", "shaft"),
+                                "bolt", "nut", "fixture", "metal bar", "bar stock", "rod", "stud", "handle", "round stock", "jaw", "dowel", "pin", "dowel pin", "collar", "shaft",
+                                "metal ring", "spacer", "nozzle assembly", "metal scrap", "scrap"),
                  "whiteboard": ("bulletin board", "notice board", "dry erase board")},
     "ppe": {"glove": ("work glove",), "safety glasses": ("goggles", "glasses", "face shield"), "hard hat": ("helmet",)},
     "misc": {"rag": ("cloth", "towel", "shop towel"), "paper": ("paper sheet", "document"), "clipboard": (), "book": ("binder", "manual"),
@@ -252,25 +263,29 @@ TAXONOMY = {
 }
 NOT_OBJECT = "not an object"
 NOT_OBJECT_WORDS = ("floor", "wall", "ceiling", "shadow", "reflection", "text overlay", "subtitle", "caption", "watermark", "surface",
-                    "background", "none", "person", "hand", "arm", "several things", "part of", "crack", "scratch", "stain", "text")
+                    "background", "none", "person", "hand", "arm", "several things", "part of", "crack", "scratch", "stain", "text",
+                    "ceiling panel", "ceiling tile", "worker", "logo", "picture", "photo")
 # names whose showing is itself an EHS claim (a check reads them, or they say safety equipment is there): shown only after a
 # second check (the detector's word, the class's size and placement, and a VLM all agree), R2
 HAZARD = ("spill", "ladder", "guard", "fence", "barrier", "railing", "fire extinguisher", "cable", "hose", "forklift", "pallet jack",
-          "exit sign", "safety sign", "emergency stop button", "eyewash station", "first aid kit", "fire alarm")
+          "exit sign", "safety sign", "emergency stop button", "eyewash station", "first aid kit", "fire alarm", "sprinkler")
 CANON = {**{c: c for fam in TAXONOMY.values() for c in fam}, **{w: c for fam in TAXONOMY.values() for c, ws in fam.items() for w in ws},
          **{w: NOT_OBJECT for w in (*NOT_OBJECT_WORDS, NOT_OBJECT)}}
 FAMILY = {c: f for f, fam in TAXONOMY.items() for c in fam}
 # a name whose head is one of these and maps to no class is a part of what the words before it name (round 2's run 007 and
 # mvp3's benches: 'workbench leg', 'gondola shelf support', 'shopping cart caster wheel', 'pallet rack braces' had no class)
 PART_WORDS = ("leg", "top", "foot", "base", "support", "brace", "frame", "edge", "strip", "channel", "wheel", "caster", "cover", "hook",
-              "graphic", "bracket", "arm", "rail", "stand")
+              "graphic", "bracket", "arm", "rail", "stand", "panel", "holder", "head", "assembly", "enclosure")
+# rules/library (section 6.1): '<thing> door' is its thing's door (a cabinet's, a machine's), not a building door; these are
+BUILDING_DOORS = ("door", "roll up door", "rollup door", "overhead door", "garage door", "doorway", "exit door", "fire door", "emergency exit door",
+                  "double door", "glass door", "sliding door", "metal door", "steel door", "entrance door")
 
 
 def canonical(name):
     """A free name -> its canonical class (TAXONOMY), NOT_OBJECT, or None (no class: the free name keeps no prior).
     '<container> of <goods>' is its container ('box of snacks' -> box), 'pallet / stack / pile of <goods>' is stacked boxes."""
     n = norm(name)
-    for w in (" with ", " and "):  # 'air hose with nozzle' is an air hose; mvp3: 'work table and tools' a work table, not a tool
+    for w in (" with ", " and ", " in "):  # 'air hose with nozzle' is an air hose; mvp3: 'work table and tools' a work table, not a tool
         if w in n:
             n = norm(n.split(w)[0])
     if " of " in n:
@@ -280,13 +295,32 @@ def canonical(name):
         c = canonical(head)
         if c is not None:
             return c
+    w = n.split()
+    if len(w) > 1 and w[-1] == "door" and n not in BUILDING_DOORS:  # rules/library (6.1): 'cnc mill door' -> milling machine,
+        c = canonical(" ".join(w[:-1]))                              # 'lathe cabinet door' -> lathe, 'locker door' -> locker
+        c1 = canonical(w[0])
+        if FAMILY.get(c1) == "machine" and FAMILY.get(c) != "machine":
+            return c1
+        if c not in (None, NOT_OBJECT) and FAMILY.get(c) != "building":
+            return c
     k = head_match(n, CANON)
     if k:
-        return CANON[k]
-    w = n.split()
+        return specific(w, CANON[k])
     if len(w) > 1 and w[-1] in PART_WORDS:  # mvp3/judge: 'workbench leg', 'shelf edge strip', 'cart caster wheel': a part of its thing
         return canonical(" ".join(w[:-1]))
     return None
+
+
+def specific(w, c):
+    """rules/library (6.5): a generic machine word after a named machine is that machine ('milling machine spindle' -> milling
+    machine, not machine)."""
+    if c != "machine":
+        return c
+    for k in range(len(w) - 1, 0, -1):
+        c2 = CANON.get(head_match(" ".join(w[:k]), CANON) or "")
+        if FAMILY.get(c2) == "machine" and c2 != "machine":
+            return c2
+    return c
 
 
 def hazard_of(name):
@@ -2027,7 +2061,17 @@ def self_check():
                      ("work table and tools", "workbench"), ("gantry cnc waterjet", "cnc machine"), ("bellows cover", "machine"), ("stretch wrap", "wrap"),
                      ("pallet racking upright", "rack"), ("shelf talker", "sign"), ("product display", "display rack"), ("box cutter", "hand tool"),
                      ("workbench leg", "workbench"), ("gondola shelf support", "shelf"), ("shopping cart caster wheel", "cart"),
-                     ("jug of windshield washer fluid", "container"), ("cabinet door", "door")):
+                     ("jug of windshield washer fluid", "container"), ("cabinet door", "cabinet"),
+                     # rules/library (section 6): machine and cabinet doors, electrical equipment, greedy 'panel' / 'holder'
+                     ("cnc machine door", "cnc machine"), ("lathe cabinet door", "lathe"), ("locker door", "locker"), ("cnc mill door", "milling machine"),
+                     ("roll-up door", "door"), ("exit door", "door"), ("electrical enclosure", "electrical panel"), ("breaker panel", "electrical panel"),
+                     ("disconnect switch", "electrical panel"), ("digital readout", "control panel"), ("ceiling panel", NOT_OBJECT),
+                     ("display rack panel", "display rack"), ("sign holder", "sign"), ("shelf ticket channel", "label"),
+                     ("milling machine spindle head", "milling machine"), ("toolholder stand", "tool holder"), ("tool bits", "hand tool"),
+                     ("steadylast", "machine"), ("beaker", "container"), ("metal ring", "metal part"), ("rotary tool set", "power tool"),
+                     ("divider bar", "shelf"), ("strip merchandiser", "display rack"), ("picture of a person", NOT_OBJECT), ("machine enclosure", "machine"),
+                     ("sprinkler head", "sprinkler"), ("wall panel", "wall panel"), ("cnc machine spindle enclosure", "cnc machine"),
+                     ("milling cutter in holder", "hand tool"), ("tool holder organizer", "tool holder"), ("control panel", "control panel"), ("tool holder", "tool holder")):
         assert canonical(n_) == want, (n_, canonical(n_))
     # the gate: 'spill' named by a VLM on a 0.6 m high box (a spill is flat, on the floor) with no detector word -> not shown
     a2 = copy.deepcopy(by["obj-0-0"])
