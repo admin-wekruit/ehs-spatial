@@ -819,8 +819,9 @@ def find_spots(c, max_spots):
     return picked
 
 
-def select_views(c, sp):
-    """Score every frame of the spot's shot; the best, then diverse directions (greedy_views)."""
+def select_views(c, sp, exclude=(), gap=5):
+    """Score every frame of the spot's shot; the best, then diverse directions (greedy_views). exclude: frames whose
+    +- gap neighbours are ruled out (X11: a second, disjoint frame choice for run-to-run repeatability)."""
     g = c.G[sp["si"]]
     a, b = g["frames"]
     rng = np.random.default_rng(0)
@@ -861,6 +862,8 @@ def select_views(c, sp):
         conf_t = np.clip(np.asarray(per_k)[near], 0, 1)
     pix_t = np.clip(side / 360, 0, 1)
     score = np.where(frac >= .6, frac * pix_t * (.5 + .5 * cosn) * sharp_t * conf_t, 0.)
+    for f in exclude:
+        score[max(0, f - gap - a):max(0, f + gap + 1 - a)] = 0.
     chosen, why = greedy_views(dirs, score)
     views = []
     for i, w in zip(chosen, why):
@@ -988,7 +991,7 @@ def refine_poses(depth, Ks, c2ws, box, kept, ref):
     return out, corr
 
 
-def fine_pass(m, c, sp, imgs, Ks, c2ws, R, clock, tag, own=False, method="anchor+icp"):
+def fine_pass(m, c, sp, imgs, Ks, c2ws, R, clock, tag, own=False, method="anchor+icp", resect=None):
     """(i) DA3 posed on the crops, each view's depth scaled to the coarse map around the spot and its pose refined
     locally (method 'raw' | 'anchor' | 'anchor+icp') + (iii) a 1 cm TSDF of it inside the spot box (+15 cm). The given
     crop intrinsics are used downstream (DA3's returned ones are recorded: they should be the same)."""
@@ -1045,13 +1048,18 @@ def fine_pass(m, c, sp, imgs, Ks, c2ws, R, clock, tag, own=False, method="anchor
     kept, c2ws = list(range(len(imgs))), np.array(c2ws, np.float64)
     t_a0 = time.perf_counter()
     with clock.stage(f"refine.anchor.{tag}"):
-        if method in ("anchor", "anchor+icp"):
+        if method.startswith("anchor"):
             scales, kept, notes = anchor(g, depth, Kout, c2ws, sp["box"])
             depth = depth / np.array([s_ or 1. for s_ in scales], np.float32)[:, None, None]
             extra["anchor"] = {"scales": scales, "kept": kept, "notes": notes}
         if method == "anchor+icp" and kept:
             c2ws, corr = refine_poses(depth, Kout, c2ws, sp["box"], kept, kept[0])
             extra["pose_refine"] = corr
+    if method.startswith("anchor+ba") and kept:  # X11: local bundle adjustment of the kept views (+ the held-out's pose)
+        import local_ba
+        with clock.stage(f"refine.ba.{tag}", gpu=0, n={"views": len(kept)}):
+            redo = (lambda cw: m.posed([im[..., ::-1].copy() for im in imgs], np.linalg.inv(cw), Ks, R)[0]) if "+da3" in method else None
+            depth, c2ws, extra["ba"] = local_ba.local_ba(m, imgs, depth, Kout, c2ws, kept, sp["box"], resect, tri=method.endswith("+tri"), rerun_da3=redo)
     t_anchor = time.perf_counter()
     with torch.inference_mode(), clock.stage(f"refine.tsdf.{tag}", gpu=0, n={"views": len(imgs)}):
         d = torch.from_numpy(np.ascontiguousarray(depth)).to(m.dev)
@@ -1322,21 +1330,27 @@ def refine_spot(m, c, sp, clock, lb_call, opts):
         t_h = time.perf_counter()
         keep = [i for i in range(len(sel)) if i != hh]
         hold = {"skipped": f"{len(sel)} views: the hold-out would leave {len(keep)} cameras, DA3's Umeyama pose alignment needs >= 3"}
-        fh = fine_pass(m, c, sp, [imgs[i] for i in keep], Ks[keep], c2ws[keep], R, clock, tag + ".holdout", method=method) if len(keep) >= 3 else None
+        ba = "+ba" in method  # X11: the held-out camera is registered to the other views' solved tracks (its depth unused)
+        fh = fine_pass(m, c, sp, [imgs[i] for i in keep], Ks[keep], c2ws[keep], R, clock, tag + ".holdout", method=method,
+                       resect=(imgs[hh], Ks[hh], c2ws[hh]) if ba else None) if len(keep) >= 3 else None
         with clock.stage(f"refine.confirm.{tag}"):
             if fh is not None:
                 Kh, ch = Ks[hh], c2ws[hh]
+                rs = ((fh.get("ba") or {}).get("resect") or {}) if ba else {}
+                if rs.get("c2w") is not None:
+                    ch = np.asarray(rs["c2w"], np.float64)
+                cam = (lambda i: (fh["K"][keep.index(i)], fh["c2w"][keep.index(i)])) if ba else (lambda i: (Ks[i], c2ws[i]))  # noqa: E731
                 d_pred = raycast_depth(fh["scene"], Kh, ch, R, R)
                 d_coarse = raycast_depth(g["scene"], Kh, ch, R, R)
                 region = priors[hh] if masks[hh] is None else (masks[hh] | priors[hh])
                 both = region & np.isfinite(d_pred) & np.isfinite(d_coarse)
                 src = min(keep, key=lambda i: float(np.arccos(np.clip(V[i]["dir"] @ V[hh]["dir"], -1, 1))))
-                l1_f, n_f = warp_l1(np.where(both, d_pred, np.nan), Kh, ch, imgs[hh], Ks[src], c2ws[src], imgs[src], both)
-                l1_c, n_c = warp_l1(np.where(both, d_coarse, np.nan), Kh, ch, imgs[hh], Ks[src], c2ws[src], imgs[src], both)
+                l1_f, n_f = warp_l1(np.where(both, d_pred, np.nan), Kh, ch, imgs[hh], *cam(src), imgs[src], both)
+                l1_c, n_c = warp_l1(np.where(both, d_coarse, np.nan), Kh, ch, imgs[hh], *cam(src), imgs[src], both)
                 obs = fp["depth"][hh]
                 dd = np.abs(d_pred - obs)[both & (obs > 0)]
                 op_f = object_points(fh, [masks[i] for i in keep])  # the object from the other views' own forward only
-                hold = {"view": V[hh]["frame"], "source_view": V[src]["frame"],
+                hold = {"view": V[hh]["frame"], "source_view": V[src]["frame"], "ba": fh.get("ba"),
                         "photometric_l1": {"fine": None if l1_f is None else round(l1_f, 3), "coarse": None if l1_c is None else round(l1_c, 3),
                                            "ratio_fine_over_coarse": round(l1_f / l1_c, 4) if l1_f and l1_c else None, "pixels": n_f,
                                            "note": "same pixels, same cameras: only the depth differs; colour 0..255"},
@@ -1346,7 +1360,7 @@ def refine_spot(m, c, sp, clock, lb_call, opts):
                                         "observed": masks[hh] is not None}}
         t_hold = time.perf_counter() - t_h
         row = {"res": R, "views": len(sel), "crop": mode, "method": method, "da3_camera_check": fp.get("camera_check"),
-               "anchor": fp.get("anchor"), "pose_refine": fp.get("pose_refine"), "time_s": {"fine_i_iii": round(t_fine, 3), "da3": fp["da3_s"], "anchor_icp": fp["anchor_s"], "tsdf_1cm": fp["tsdf_s"],
+               "anchor": fp.get("anchor"), "pose_refine": fp.get("pose_refine"), "ba": fp.get("ba"), "time_s": {"fine_i_iii": round(t_fine, 3), "da3": fp["da3_s"], "anchor_icp": fp["anchor_s"], "tsdf_1cm": fp["tsdf_s"],
                                                         "holdout_check": round(t_hold, 3)},
                "sam3_masks_found": sum(mk is not None for mk in masks), **met, "holdout": hold}
         rec["variants"].append(row)
