@@ -32,7 +32,7 @@ import x4_refine as x4  # noqa: E402
 LG_REV = "eb42fee2d71449efb0aa5c10549752b5d75384d8"  # cvg/LightGlue HEAD on 2026-09-28
 CLIPS = {"me340-165": "source-full.mp4", "samsclub-337": "source-full.mp4", "walmart-190": "source-full.mp4",
          "lightning-3585": "source-rgb.mp4"}  # the factory clip has no 1280x720 cut: its 640x480 playback file
-METHODS = ("anchor", "anchor+ba", "anchor+ba+tri", "anchor+ba+da3")
+METHODS = ("anchor", "anchor+ba", "anchor+ba+tri", "anchor+ba+da3", "anchor+ba+mvs")
 CPU, MEM_GIB = 16, 64
 PRICE_S = fra.PRICE["A100-80GB"] + CPU * fra.PRICE["cpu_core"] + MEM_GIB * fra.PRICE["gib"]
 
@@ -46,7 +46,7 @@ image = (modal.Image.from_registry("nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04"
                       f"git+https://github.com/ByteDance-Seed/Depth-Anything-3.git@{fra.DA3_CODE}")
          .run_commands("python -m venv /opt/vllm && PIP_EXTRA_INDEX_URL= /opt/vllm/bin/pip install -q vllm==0.11.0 transformers==4.57.1 pillow")
          .env({"HF_HUB_OFFLINE": "1", "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
-         .pip_install("kornia==0.8.3")
+         .pip_install("kornia==0.8.3", "threadpoolctl==3.6.0")
          .run_commands(f"pip install --no-deps git+https://github.com/cvg/LightGlue.git@{LG_REV}")
          .env({"TORCH_HOME": "/v/models/torch"})
          .add_local_python_source("detect_shot_cuts", "m3_exp_geometry", "sam3_app", "video_events", "fast_report", "ehs_spatial",
@@ -225,6 +225,7 @@ class LocalBA:
                 self.sam.detect(v, 5, ("cable",), .25, logits=True)
                 f = self.matcher.features([rng.integers(0, 255, (r, r, 3), np.uint8) for _ in range(2)])
                 self.matcher.match(f[0], f[1])
+            b["mvs_self_check"] = local_ba.mvs_self_check(self.dev)  # also warms the sweep
                 torch.cuda.synchronize()
             jpg = cv2.imencode(".jpg", rng.integers(0, 255, (504, 504, 3), np.uint8))[1].tobytes()
             vlm.chat([vlm.image_block(jpg), {"type": "text", "text": "Describe."}], max_tokens=8)

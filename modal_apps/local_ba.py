@@ -19,10 +19,12 @@ import numpy as np
 
 SIGMA_PX, SIGMA_R_DEG, SIGMA_T_M = 1., 1.5, .05
 MAX_R_DEG, MAX_T_M = 3., .10  # X4's per-view ICP refusal limits
-SIGMA_LS, SIGMA_B_M, MAX_LS, MAX_B_M = .05, .05, .2, .2
+SIGMA_LS, SIGMA_B_M, MAX_LS, MAX_B_M = .1, .05, .5, .2  # per-view depth scale / shift
+SIGMA_LS_MEAN, SIGMA_LSIG, MAX_LSIG = .005, 1., .7  # the mean depth scale held at the coarse map's; the baseline scale free
+MAX_TRACKS = 800  # all tracks near the spot, then the longest others
 DEPTH_SIG = (.01, .01)  # DA3 depth at a track: 1 cm + 1 % of the depth
 REGION_M, F_SCALE, RANSAC_PX = .3, 2., 1.
-FIELD_PX, FIELD_SHRINK = 40., .25
+FIELD_PX, FIELD_SHRINK, TRI_MAX_M = 40., .25, .10
 LICENCES = {"ALIKED (code + aliked-n16 weights)": "BSD-3-Clause, github.com/Shiaoming/ALIKED",
             "LightGlue (code + aliked_lightglue weights)": "Apache-2.0, github.com/cvg/LightGlue",
             "kornia (LightGlue dependency)": "Apache-2.0"}
@@ -151,54 +153,64 @@ def cam_points(c2w, arm=.5):
     return np.concatenate([c2w[:, :3, 3]] + [c2w[:, :3, 3] + arm * c2w[:, :3, k] for k in range(3)])
 
 
-def solve(view, uv, track, K, c2w0, dobs, dsel, X0, cams=True, max_nfev=100, fns=False):
+def solve(view, uv, track, K, c2w0, dobs, dsel, X0, cams=True, max_nfev=60, fns=False):
     """Joint solve -> dict(c2w, ls, b, X, residual stats). cams=False: only the points move (the 'before' diagnostic).
-    Parameters [w 3n | t 3n | log-scale n | shift n | X 3T]; residuals [u N | v N | depth Nd | priors 8n], each in sigmas.
-    Analytic Jacobian (the rotation's through the SO(3) left Jacobian).
-    The result is put back in the coarse frame (gauge): the rigid transform that best maps the solved cameras onto the
-    coarse ones is applied to cameras and points (reprojection and depth unchanged; it is reported as 'gauge')."""
+    Parameters [w 3n | t 3n | log depth scale n | depth shift n | log baseline scale 1 | X 3T]; camera i's centre is
+    c + e^lsig (C0_i - c) + t_i (c the coarse centres' mean): the baseline scale takes any scale disagreement between
+    the coarse trajectory and the depth, the mean log depth scale is held at 0 (the coarse map's scale), and the
+    bounded t_i are what is left. Residuals [u N | v N | depth Nd | priors 8n + 2], each in sigmas; analytic Jacobian
+    (rotation through the SO(3) left Jacobian). The result is put back on the coarse cameras by the rigid transform
+    that best maps the solved cameras onto them (applied to cameras and points; reported as 'gauge')."""
     from scipy.sparse import coo_matrix
     n, T, N = len(c2w0), len(X0), len(view)
     c2w0 = np.asarray(c2w0, np.float64)
     R0, C0 = c2w0[:, :3, :3], c2w0[:, :3, 3]
+    cbar = C0.mean(0)
     di = np.flatnonzero(dsel)
     Nd = len(di)
     dval = dobs[di]
     dsig = DEPTH_SIG[0] + DEPTH_SIG[1] * dval
     sr = np.radians(SIGMA_R_DEG)
     prior_sig = np.concatenate([np.full(3 * n, sr), np.full(3 * n, SIGMA_T_M), np.full(n, SIGMA_LS), np.full(n, SIGMA_B_M)])
+    nc = 8 * n + 1
 
     def unpack(p):
-        return (p[:3 * n].reshape(n, 3), p[3 * n:6 * n].reshape(n, 3), p[6 * n:7 * n], p[7 * n:8 * n], p[8 * n:].reshape(T, 3))
+        return (p[:3 * n].reshape(n, 3), p[3 * n:6 * n].reshape(n, 3), p[6 * n:7 * n], p[7 * n:8 * n], p[8 * n], p[nc:].reshape(T, 3))
 
     def cam_frame(p):
-        w, t, ls, b, X = unpack(p)
+        w, t, ls, b, lsig, X = unpack(p)
         R = so3_exp(w) @ R0
-        C = C0 + t
+        C = cbar + np.exp(lsig) * (C0 - cbar) + t
         Rv, y = R[view], X[track] - C[view]
-        return w, t, ls, b, X, Rv, y, np.einsum("nji,nj->ni", Rv, y)
+        return w, t, ls, b, lsig, X, Rv, y, np.einsum("nji,nj->ni", Rv, y)
 
     def residual(p):
-        w, t, ls, b, X, Rv, y, Xc = cam_frame(p)
+        w, t, ls, b, lsig, X, Rv, y, Xc = cam_frame(p)
         z = Xc[:, 2]
         zs = np.where(z > 1e-3, z, 1e-3)
         u, v = K[view, 0, 0] * Xc[:, 0] / zs + K[view, 0, 2], K[view, 1, 1] * Xc[:, 1] / zs + K[view, 1, 2]
         pred = np.exp(ls[view[di]]) * dval + b[view[di]]
-        return np.concatenate([(u - uv[:, 0]) / SIGMA_PX, (v - uv[:, 1]) / SIGMA_PX, (z[di] - pred) / dsig, p[:8 * n] / prior_sig])
+        return np.concatenate([(u - uv[:, 0]) / SIGMA_PX, (v - uv[:, 1]) / SIGMA_PX, (z[di] - pred) / dsig, p[:8 * n] / prior_sig,
+                               [ls.mean() / SIGMA_LS_MEAN, lsig / SIGMA_LSIG]])
 
     cam = lambda k, vs: np.stack([3 * k * n + 3 * vs + a for a in range(3)], 1)  # noqa: E731  block k (w, t): 3 columns per view
-    Xcol = lambda ts: 8 * n + 3 * ts[:, None] + np.arange(3)  # noqa: E731
-    cols = [np.concatenate([cam(0, view), cam(1, view), Xcol(track)], 1)] * 2
-    cols.append(np.concatenate([cam(0, view[di]), cam(1, view[di]), (6 * n + view[di])[:, None], (7 * n + view[di])[:, None], Xcol(track[di])], 1))
-    rows = np.concatenate([np.repeat(np.arange(N), 9), np.repeat(N + np.arange(N), 9), np.repeat(2 * N + np.arange(Nd), 11), 2 * N + Nd + np.arange(8 * n)])
-    cols = np.concatenate([c.ravel() for c in cols] + [np.arange(8 * n)])
-    shape = (2 * N + Nd + 8 * n, 8 * n + 3 * T)
+    Xcol = lambda ts: nc + 3 * ts[:, None] + np.arange(3)  # noqa: E731
+    G = lambda m: np.full((m, 1), 8 * n)  # noqa: E731  the baseline-scale column
+    cols = [np.concatenate([cam(0, view), cam(1, view), G(N), Xcol(track)], 1)] * 2
+    cols.append(np.concatenate([cam(0, view[di]), cam(1, view[di]), (6 * n + view[di])[:, None], (7 * n + view[di])[:, None], G(Nd),
+                                Xcol(track[di])], 1))
+    P0 = 2 * N + Nd
+    rows = np.concatenate([np.repeat(np.arange(N), 10), np.repeat(N + np.arange(N), 10), np.repeat(2 * N + np.arange(Nd), 12),
+                           P0 + np.arange(8 * n), np.full(n, P0 + 8 * n), [P0 + 8 * n + 1]])
+    cols = np.concatenate([c.ravel() for c in cols] + [np.arange(8 * n), 6 * n + np.arange(n), [8 * n]])
+    shape = (P0 + 8 * n + 2, nc + 3 * T)
 
     def jacobian(p):
-        w, t, ls, b, X, Rv, y, Xc = cam_frame(p)
+        w, t, ls, b, lsig, X, Rv, y, Xc = cam_frame(p)
         Rt = Rv.transpose(0, 2, 1)
         z = np.where(Xc[:, 2] > 1e-3, Xc[:, 2], 1e-3)
-        blocks = np.concatenate([Rt @ skew(y) @ left_jac(w)[view], -Rt, Rt], 2)  # d camera-frame point / d (w, t, X): (N, 3, 9)
+        dsc = -np.einsum("nij,nj->ni", Rt, np.exp(lsig) * (C0 - cbar)[view])[:, :, None]
+        blocks = np.concatenate([Rt @ skew(y) @ left_jac(w)[view], -Rt, dsc, Rt], 2)  # d camera-frame point / d (w, t, lsig, X): (N, 3, 10)
         fx, fy = K[view, 0, 0], K[view, 1, 1]
         zero = np.zeros(N)
         du = np.stack([fx / z, zero, -fx * Xc[:, 0] / z ** 2], 1) / SIGMA_PX
@@ -206,18 +218,26 @@ def solve(view, uv, track, K, c2w0, dobs, dsel, X0, cams=True, max_nfev=100, fns
         Ju, Jv = np.einsum("nk,nkj->nj", du, blocks), np.einsum("nk,nkj->nj", dv, blocks)
         bz = blocks[di, 2] / dsig[:, None]
         Jd = np.concatenate([bz[:, :6], (-np.exp(ls[view[di]]) * dval / dsig)[:, None], (-1 / dsig)[:, None], bz[:, 6:]], 1)
-        vals = np.concatenate([Ju.ravel(), Jv.ravel(), Jd.ravel(), 1 / prior_sig])
+        vals = np.concatenate([Ju.ravel(), Jv.ravel(), Jd.ravel(), 1 / prior_sig, np.full(n, 1 / (n * SIGMA_LS_MEAN)), [1 / SIGMA_LSIG]])
         return coo_matrix((vals, (rows, cols)), shape=shape).tocsr()
-    p0 = np.concatenate([np.zeros(8 * n), np.asarray(X0, np.float64).ravel()])
+    p0 = np.concatenate([np.zeros(nc), np.asarray(X0, np.float64).ravel()])
     if fns:  # the self-check compares the Jacobian with finite differences
         return residual, jacobian, p0
-    bound = np.concatenate([np.full(3 * n, np.radians(MAX_R_DEG)), np.full(3 * n, MAX_T_M), np.full(n, MAX_LS), np.full(n, MAX_B_M)])
+    bound = np.concatenate([np.full(3 * n, np.radians(MAX_R_DEG)), np.full(3 * n, MAX_T_M), np.full(n, MAX_LS), np.full(n, MAX_B_M), [MAX_LSIG]])
     t0 = time.perf_counter()
-    p, it, lm_info = lm(residual, jacobian, p0, 8 * n, T, bound, cams, max_nfev)
-    w, t, ls, b, X = unpack(p)
-    raw = moved(c2w0, w, t)
+    try:  # one BLAS thread: the dense parts are 41 x 41; threads only add contention beside vLLM
+        from threadpoolctl import threadpool_limits
+        limit = threadpool_limits(1)
+    except ImportError:
+        limit = None
+    p, it, lm_info = lm(residual, jacobian, p0, nc, T, bound, cams, max_nfev if cams else 30, n_prior=8 * n + 2)
+    if limit is not None:
+        limit.unregister()
+    w, t, ls, b, lsig, X = unpack(p)
+    raw = moved(c2w0, w, np.zeros((n, 3)))
+    raw[:, :3, 3] = cbar + np.exp(lsig) * (C0 - cbar) + t
     at_bound = bool(cams and np.any(np.abs(p[:6 * n]) >= .999 * bound[:6 * n]))
-    Rg, tg = kabsch(cam_points(raw), cam_points(c2w0))  # the gauge back to the coarse frame
+    Rg, tg = kabsch(cam_points(raw), cam_points(c2w0))  # the rigid gauge back to the coarse frame
     c2w = raw.copy()
     c2w[:, :3, :3] = Rg @ raw[:, :3, :3]
     c2w[:, :3, 3] = raw[:, :3, 3] @ Rg.T + tg
@@ -228,29 +248,31 @@ def solve(view, uv, track, K, c2w0, dobs, dsel, X0, cams=True, max_nfev=100, fns
     rot = [float(np.degrees(np.arccos(np.clip((np.trace(a[:3, :3].T @ q[:3, :3]) - 1) / 2, -1, 1)))) for a, q in zip(c2w, c2w0)]
     mv = c2w[:, :3, 3] - C0
     return {"c2w": c2w, "ls": ls, "b": b, "X": X, "err_px": e, "depth_res_m": dres, "z": z, "s": time.perf_counter() - t0,
-            "iterations": it, **lm_info, "at_bound": at_bound,
+            "iterations": it, **lm_info, "at_bound": at_bound, "baseline_scale": float(np.exp(lsig)),
             "rot_deg": np.asarray(rot), "move_cm": 100 * np.linalg.norm(mv, axis=1), "move_vec_cm": 100 * mv,
             "gauge": {"rot_deg": round(float(np.degrees(np.arccos(np.clip((np.trace(Rg) - 1) / 2, -1, 1)))), 3),
                       "move_cm": round(float(100 * np.linalg.norm(tg + (Rg - np.eye(3)) @ C0.mean(0))), 2)}}
 
 
-def lm(residual, jacobian, p0, nc, T, bound, cams=True, iters=100):
+def lm(residual, jacobian, p0, nc, T, bound, cams=True, iters=60, tol=1e-4, n_prior=None):  # tol 1e-4: same cameras as 1e-6 within 0.001 deg (bench), 4x fewer iterations
     """Levenberg-Marquardt with the points eliminated (Schur complement: 3x3 blocks per track, a dense nc x nc camera
-    system), IRLS for the soft-L1 on the data rows (the last nc rows are the quadratic priors), camera parameters
-    clipped to +-bound after each step. cams=False: only the points move. -> p, iterations, info."""
+    system), IRLS for the soft-L1 on the data rows (the last n_prior rows are the quadratic priors), camera parameters kept
+    within +-bound by an active set (a parameter that would cross is held at the bound and the rest re-solved).
+    cams=False: only the points move. -> p, iterations, info."""
     from scipy.sparse import diags
     F2 = F_SCALE ** 2
+    npr = n_prior or nc
 
     def cost(r):
-        d = r[:-nc]
-        return float(np.sum(2 * F2 * (np.sqrt(1 + d * d / F2) - 1)) + np.sum(r[-nc:] ** 2))
+        d = r[:-npr]
+        return float(np.sum(2 * F2 * (np.sqrt(1 + d * d / F2) - 1)) + np.sum(r[-npr:] ** 2))
     p = p0.copy()
     r = residual(p)
     c = c0 = cost(r)
-    lam, it, done = 1e-3, 0, False
+    lam, it, done, evals = 1e-3, 0, False, 1
     for it in range(1, iters + 1):
         wts = np.ones(len(r))
-        wts[:-nc] = 1 / np.sqrt(1 + r[:-nc] ** 2 / F2)
+        wts[:-npr] = 1 / np.sqrt(1 + r[:-npr] ** 2 / F2)
         sw = np.sqrt(wts)
         J = diags(sw) @ jacobian(p)
         rw = sw * r
@@ -270,7 +292,17 @@ def lm(residual, jacobian, p0, nc, T, bound, cams=True, iters=100):
             if cams:
                 Y = np.einsum("tij,tjk->tik", Vinv, Hpc)
                 S = Hcc + np.diag(lam * np.diag(Hcc) + 1e-9) - np.einsum("tia,tib->ab", Hpc, Y)
-                dc = np.linalg.solve(S, -gc + np.einsum("tia,ti->a", Y, gp))
+                rhs = -gc + np.einsum("tia,ti->a", Y, gp)
+                act = np.zeros(nc, bool)
+                dc = np.linalg.solve(S, rhs)
+                for _ in range(4):  # active set on the bounds
+                    out = ~act & (np.abs(p[:nc] + dc) > bound)
+                    if not out.any():
+                        break
+                    act |= out
+                    dc[act] = np.clip(p[:nc] + dc, -bound, bound)[act] - p[:nc][act]
+                    f = ~act
+                    dc[f] = np.linalg.solve(S[np.ix_(f, f)], rhs[f] - S[np.ix_(f, act)] @ dc[act])
                 dp = -np.einsum("tij,tj->ti", Vinv, gp + np.einsum("tia,a->ti", Hpc, dc))
             else:
                 dc, dp = np.zeros(nc), -np.einsum("tij,tj->ti", Vinv, gp)
@@ -279,8 +311,9 @@ def lm(residual, jacobian, p0, nc, T, bound, cams=True, iters=100):
             pn[nc:] += dp.ravel()
             rn = residual(pn)
             cn = cost(rn)
+            evals += 1
             if cn < c:
-                done = c - cn < 1e-8 * c
+                done = c - cn < tol * c
                 p, r, c, lam = pn, rn, cn, max(lam / 3, 1e-9)
                 break
             lam *= 4
@@ -289,7 +322,7 @@ def lm(residual, jacobian, p0, nc, T, bound, cams=True, iters=100):
                 break
         if done:
             break
-    return p, it, {"cost_start": round(c0, 3), "cost_end": round(c, 3), "lambda_end": lam}
+    return p, it, {"cost_start": round(c0, 3), "cost_end": round(c, 3), "lambda_end": lam, "evaluations": evals}
 
 
 def resect(uv, K, c2w0, X, max_nfev=60):
@@ -374,6 +407,111 @@ def in_box(P, box, margin=0.):
     return np.all((P >= np.asarray(box[0]) - margin) & (P <= np.asarray(box[1]) + margin), 1)
 
 
+MVS_OFFSETS_M, MVS_WIN, MVS_NCC_MIN, MVS_PEAK_MIN, MVS_TEX_MIN = np.linspace(-.06, .06, 25), 7, .5, .05, .02
+
+
+def mvs_refine(dev, imgs, depth, K, c2w, kept, box, margin=.15):
+    """'+mvs': each kept view's depth near the spot re-chosen by photometric agreement with the other kept views through
+    the solved cameras (plane sweep of +-6 cm around the current depth in 5 mm steps, 7x7 NCC on the warped grey image,
+    the mean of the best two sources, parabolic sub-step). A pixel changes only where the best NCC >= 0.5, it beats the
+    sweep's median by >= 0.05, the peak is inside the range and the reference patch has texture (grey std >= 0.02);
+    elsewhere DA3's (scaled) depth stays. -> new depth (n,R,R) float32, per-view stats."""
+    import torch
+    import torch.nn.functional as F
+    g = torch.from_numpy(np.stack([im[..., ::-1].astype(np.float32).mean(-1) / 255 for im in imgs])).to(dev)
+    n, H, W = g.shape
+    out = np.array(depth, np.float32, copy=True)
+    pool = lambda x: F.avg_pool2d(x[None], MVS_WIN, 1, MVS_WIN // 2, count_include_pad=False)[0]  # noqa: E731
+    v, u = torch.meshgrid(torch.arange(H, device=dev, dtype=torch.float32), torch.arange(W, device=dev, dtype=torch.float32), indexing="ij")
+    stats = []
+    for i in kept:
+        D = torch.from_numpy(np.ascontiguousarray(depth[i])).to(dev)
+        P, (vv, uu) = backproject_np(depth[i], K[i], c2w[i])
+        region = np.zeros((H, W), bool)
+        region[vv, uu] = in_box(P, box, margin)
+        src = [j for j in kept if j != i]
+        if region.sum() < 50 or not src:
+            stats.append({"view": i, "region_px": int(region.sum()), "changed_share": 0.})
+            continue
+        Ki = torch.tensor(K[i], dtype=torch.float32, device=dev)
+        ray = torch.stack([(u - Ki[0, 2]) / Ki[0, 0], (v - Ki[1, 2]) / Ki[1, 1], torch.ones_like(u)], -1)  # (H,W,3)
+        ref = g[i]
+        mr = pool(ref[None])[0]
+        vr = (pool((ref * ref)[None])[0] - mr * mr).clamp_min(0)
+        cost = []
+        for o in MVS_OFFSETS_M:
+            d = (D + float(o)).clamp_min(.05)
+            nccs = []
+            for j in src:
+                M = torch.tensor(K[j] @ np.linalg.inv(c2w[j])[:3, :3] @ c2w[i][:3, :3], dtype=torch.float32, device=dev)
+                B = torch.tensor(K[j] @ (np.linalg.inv(c2w[j])[:3, :3] @ c2w[i][:3, 3] + np.linalg.inv(c2w[j])[:3, 3]), dtype=torch.float32, device=dev)
+                x = (ray @ M.T) * d[..., None] + B
+                z = x[..., 2]
+                uj, vj = x[..., 0] / z.clamp_min(1e-3), x[..., 1] / z.clamp_min(1e-3)
+                grid = torch.stack([uj / (W - 1) * 2 - 1, vj / (H - 1) * 2 - 1], -1)[None]
+                w_ = F.grid_sample(g[j][None, None], grid, align_corners=True, padding_mode="border")[0, 0]
+                ok = (z > .05) & (uj >= 0) & (uj <= W - 1) & (vj >= 0) & (vj <= H - 1)
+                mw = pool(w_[None])[0]
+                vw = (pool((w_ * w_)[None])[0] - mw * mw).clamp_min(0)
+                cv = pool((ref * w_)[None])[0] - mr * mw
+                nccs.append(torch.where(ok, cv / torch.sqrt(vr * vw + 1e-6), torch.full_like(cv, -1.)))
+            S = torch.stack(nccs)
+            cost.append(S.topk(min(2, len(src)), 0).values.mean(0))
+        C = torch.stack(cost)  # (K,H,W) NCC per offset
+        best, k = C.max(0)
+        med = C.median(0).values
+        kc = k.clamp(1, len(MVS_OFFSETS_M) - 2)
+        c0, c1, c2 = (C.gather(0, (kc + a)[None])[0] for a in (-1, 0, 1))
+        den = c0 - 2 * c1 + c2
+        sub = torch.where(den < -1e-6, .5 * (c0 - c2) / den, torch.zeros_like(den)).clamp(-.5, .5)
+        step = float(MVS_OFFSETS_M[1] - MVS_OFFSETS_M[0])
+        off = (float(MVS_OFFSETS_M[0]) + (kc.float() + sub) * step)
+        acc = (best >= MVS_NCC_MIN) & (best - med >= MVS_PEAK_MIN) & (k > 0) & (k < len(MVS_OFFSETS_M) - 1) & (vr.sqrt() >= MVS_TEX_MIN) & (D > 0)
+        acc &= torch.from_numpy(region).to(dev)
+        newD = torch.where(acc, D + off, D)
+        out[i] = newD.cpu().numpy()
+        a = acc.cpu().numpy()
+        stats.append({"view": i, "region_px": int(region.sum()), "changed_share": round(float(a.sum() / region.sum()), 4),
+                      "offset_median_abs_m": round(float(np.median(np.abs(off.cpu().numpy()[a]))), 4) if a.any() else None,
+                      "best_ncc_median": round(float(np.median(best.cpu().numpy()[region])), 3)})
+    return out, stats
+
+
+def mvs_self_check(dev):
+    """GPU: a textured plane 2 m away seen by 3 cameras 20 cm apart; view 0's depth given 3 cm too far must come back
+    to within 5 mm (run in the container's warm-up; no torch locally)."""
+    import cv2
+    rng = np.random.default_rng(0)
+    tex = cv2.GaussianBlur(rng.random((1500, 1500)).astype(np.float32), (0, 0), 2)
+    tex = (tex - tex.min()) / np.ptp(tex)
+    R, f = 504, 500.
+    K = np.array([[f, 0, (R - 1) / 2], [0, f, (R - 1) / 2], [0, 0, 1]])
+    c2w = np.repeat(np.eye(4)[None], 3, 0)
+    c2w[:, 0, 3] = [0., -.2, .2]
+    v, u = np.mgrid[:R, :R].astype(np.float32)
+    imgs = []
+    for c in c2w:  # the plane z = 2: world x, y at 2 mm per texel, centred
+        x = (u - K[0, 2]) / f * 2 + c[0, 3]
+        y = (v - K[1, 2]) / f * 2
+        g = cv2.remap(tex, (x / .002 + 750).astype(np.float32), (y / .002 + 750).astype(np.float32), cv2.INTER_LINEAR)
+        imgs.append(np.repeat((g * 255).astype(np.uint8)[..., None], 3, -1))
+    depth = np.full((3, R, R), 2., np.float32)
+    depth[0] += .03
+    out, st = mvs_refine(dev, imgs, depth, np.repeat(K[None], 3, 0), c2w, [0, 1, 2], [np.array([-3, -3, 1.]), np.array([3, 3, 3.])])
+    inner = out[0][100:-100, 100:-100]
+    err = float(np.median(np.abs(inner - 2)))
+    assert err < .005 and st[0]["changed_share"] > .5, (err, st[0])
+    return {"median_abs_err_m": round(err, 4), "changed_share": st[0]["changed_share"]}
+
+
+def backproject_np(depth, K, c2w):
+    ok = np.isfinite(depth) & (depth > 0)
+    v, u = np.nonzero(ok)
+    z = depth[v, u]
+    X = np.stack([(u - K[0, 2]) / K[0, 0] * z, (v - K[1, 2]) / K[1, 1] * z, z], 1)
+    return X @ np.asarray(c2w)[:3, :3].T + np.asarray(c2w)[:3, 3], (v, u)
+
+
 def fit_line(z, d, iters=5):
     """Robust z = s d + b (Huber IRLS, 1 cm knee) -> s, b."""
     s_, b_ = float(np.median(z / d)), 0.
@@ -385,7 +523,7 @@ def fit_line(z, d, iters=5):
     return float(s_), float(b_)
 
 
-def local_ba(m, imgs, depth, K, c2w, kept, box, resect_view=None, tri=False, rerun_da3=None):
+def local_ba(m, imgs, depth, K, c2w, kept, box, resect_view=None, tri=False, rerun_da3=None, mvs=False):
     """The spot's crops (kept views) -> depth with scale/shift (and the '+tri' field), refined c2w, info (JSON-able).
     resect_view (img, K, c2w): a held-out crop registered to the solved tracks (its pose only, its depth never used).
     rerun_da3(c2w) -> depth: '+da3', DA3 posed again with the solved cameras, then each view's scale/shift fitted to the
@@ -427,6 +565,16 @@ def local_ba(m, imgs, depth, K, c2w, kept, box, resect_view=None, tri=False, rer
         view, kpi, track, uv, dobs = view[o], kpi[o], remap[track[o]], uv[o], dobs[o]
         X0, T = X0[keep_t], len(keep_t)
     region = in_box(X0, box, REGION_M) if T else np.zeros(0, bool)
+    if T > MAX_TRACKS:  # ponytail: a cap for time; the spot's own tracks always stay
+        L = np.bincount(track, minlength=T)
+        order = np.lexsort((-L, ~region))
+        keep_t = np.sort(order[:max(MAX_TRACKS, int(region.sum()))])
+        remap = -np.ones(T, int)
+        remap[keep_t] = np.arange(len(keep_t))
+        o = remap[track] >= 0
+        view, kpi, track, uv, dobs = view[o], kpi[o], remap[track[o]], uv[o], dobs[o]
+        X0, region, T = X0[keep_t], region[keep_t], len(keep_t)
+        info["tracks_before_cap"] = int(len(L))
     dsel = np.isfinite(dobs) & region[track] if T else np.zeros(0, bool)
     lens = np.bincount(np.bincount(track)) if T else np.zeros(0, int)
     info.update(tracks=T, observations=int(len(view)), tracks_in_region=int(region.sum()), depth_observations=int(dsel.sum()),
@@ -449,6 +597,7 @@ def local_ba(m, imgs, depth, K, c2w, kept, box, resect_view=None, tri=False, rer
                            "move_vec_cm": np.round(after["move_vec_cm"], 2).tolist(), "at_bound": after["at_bound"],
                            "gauge_removed": after["gauge"], "note": "after the rigid gauge fit back onto the coarse cameras"}
     info["depth_scale"] = np.round(np.exp(after["ls"]), 4).tolist()
+    info["baseline_scale"] = round(after["baseline_scale"], 4)  # > 1: the coarse trajectory is too short for this depth
     info["depth_shift_m"] = np.round(after["b"], 4).tolist()
     info["solver"] = {"iterations": after["iterations"], "cost_start": after["cost_start"], "cost_end": after["cost_end"], "s": round(after["s"], 3),
                       "before_iterations": before["iterations"], "before_s": round(before["s"], 3)}
@@ -486,15 +635,19 @@ def local_ba(m, imgs, depth, K, c2w, kept, box, resect_view=None, tri=False, rer
             if len(o) < 5:
                 tinfo.append({"view": i, "tracks": int(len(o)), "applied": False})
                 continue
-            d_now = sample_depth(out_d[i], uv[o, 0], uv[o, 1], edge=1.)
-            ok = np.isfinite(d_now)
+            d_now = sample_depth(out_d[i], uv[o, 0], uv[o, 1])  # not across a depth edge
+            ok = np.isfinite(d_now) & (np.abs(after["z"][o] - np.nan_to_num(d_now)) <= TRI_MAX_M)  # > 10 cm: another surface
             r = after["z"][o][ok] - d_now[ok]
-            f = field(out_d[i].shape, uv[o, 0][ok], uv[o, 1][ok], r)
+            f = np.clip(field(out_d[i].shape, uv[o, 0][ok], uv[o, 1][ok], r), -TRI_MAX_M / 2, TRI_MAX_M / 2)
             on = out_d[i] > 0
             out_d[i][on] += f[on].astype(np.float32)
             tinfo.append({"view": i, "tracks": int(ok.sum()), "residual_median_abs_m": round(float(np.median(np.abs(r))), 4) if ok.any() else None,
                           "field_abs_p90_m": round(float(np.percentile(np.abs(f[on]), 90)), 4) if on.any() else None, "applied": True})
         info["tri_field"] = tinfo
+    if mvs:
+        t_m = time.perf_counter()
+        out_d, ms = mvs_refine(m.dev, imgs, out_d, np.asarray(K, np.float64), out_c2w, V, box)
+        info["mvs"] = {"views": ms, "s": round(time.perf_counter() - t_m, 3)}
     t6 = time.perf_counter()
     if resect_view is not None:  # the held-out crop: matched to the kept crops, its pose from the solved track points
         img_h, K_h, c2w_h = resect_view

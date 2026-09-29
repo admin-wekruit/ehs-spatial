@@ -1059,7 +1059,8 @@ def fine_pass(m, c, sp, imgs, Ks, c2ws, R, clock, tag, own=False, method="anchor
         import local_ba
         with clock.stage(f"refine.ba.{tag}", gpu=0, n={"views": len(kept)}):
             redo = (lambda cw: m.posed([im[..., ::-1].copy() for im in imgs], np.linalg.inv(cw), Ks, R)[0]) if "+da3" in method else None
-            depth, c2ws, extra["ba"] = local_ba.local_ba(m, imgs, depth, Kout, c2ws, kept, sp["box"], resect, tri=method.endswith("+tri"), rerun_da3=redo)
+            depth, c2ws, extra["ba"] = local_ba.local_ba(m, imgs, depth, Kout, c2ws, kept, sp["box"], resect, tri=method.endswith("+tri"), rerun_da3=redo,
+                                                         mvs="+mvs" in method)
     t_anchor = time.perf_counter()
     with torch.inference_mode(), clock.stage(f"refine.tsdf.{tag}", gpu=0, n={"views": len(imgs)}):
         d = torch.from_numpy(np.ascontiguousarray(depth)).to(m.dev)
