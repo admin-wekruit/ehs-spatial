@@ -315,6 +315,10 @@ def self_check():
     assert sp[5, 5] == 2 and np.isnan(sp[0, 0])
     assert iou(np.ones((2, 2), bool), np.eye(2, dtype=bool)) == .5
     assert parse_json('x {"object": "yes"} y') == {"object": "yes"}
+    img = rng.integers(0, 255, (300, 300, 3)).astype(np.uint8)
+    Kc = np.array([[300., 0, 149.5], [0, 300, 149.5], [0, 0, 1]])
+    l1, npx = warp_l1(np.full((300, 300), 2.), Kc, np.eye(4), img, Kc, np.eye(4), img, np.ones((300, 300), bool))
+    assert l1 < 1e-3 and npx == 90000, (l1, npx)  # more than 32767 pixels: the remap limit
     print("x4_refine self-check ok")
 
 
@@ -1152,7 +1156,6 @@ def thin_report(depth_obs, maps, K, c2w, mask, R):
 
 def warp_l1(depth_h, K_h, c2w_h, img_h, K_j, c2w_j, img_j, region):
     """Held-out view's pixels -> 3D through a predicted depth -> source view: mean |colour difference| (0..255)."""
-    import cv2
     ok = region & np.isfinite(depth_h) & (depth_h > 0)
     P, (v, u) = backproject_img(depth_h, K_h, c2w_h, ok)
     if len(P) < 50:
@@ -1162,8 +1165,12 @@ def warp_l1(depth_h, K_h, c2w_h, img_h, K_j, c2w_j, img_j, region):
     inside = (zj > .05) & (uj >= 0) & (uj <= w - 1) & (vj >= 0) & (vj <= h - 1)
     if inside.sum() < 50:
         return None, int(inside.sum())
-    samp = cv2.remap(img_j, uj[inside].astype(np.float32)[:, None], vj[inside].astype(np.float32)[:, None], cv2.INTER_LINEAR)[:, 0]
-    diff = np.abs(samp.astype(np.float32) - img_h[v[inside], u[inside]].astype(np.float32)).mean(1)
+    x, y = uj[inside], vj[inside]  # bilinear by hand: cv2.remap caps its maps at 32767 entries (run 005, Sam's Club s1)
+    x0, y0 = np.floor(x).astype(int), np.floor(y).astype(int)
+    x1, y1 = np.minimum(x0 + 1, w - 1), np.minimum(y0 + 1, h - 1)
+    ax, ay, I = (x - x0)[:, None], (y - y0)[:, None], img_j.astype(np.float32)
+    samp = I[y0, x0] * (1 - ax) * (1 - ay) + I[y0, x1] * ax * (1 - ay) + I[y1, x0] * (1 - ax) * ay + I[y1, x1] * ax * ay
+    diff = np.abs(samp - img_h[v[inside], u[inside]].astype(np.float32)).mean(1)
     return float(np.mean(diff)), int(inside.sum())
 
 
@@ -1414,8 +1421,19 @@ def refine_spot(m, c, sp, clock, lb_call, opts):
                              "total_without_sweeps": round(sp["select_s"] + row["time_s"]["fine_i_iii"] + row["time_s"]["holdout_check"] + t_vlm + t_prop, 3)}
     # images for the before/after sheet (best crop, coarse relief, fine relief, LingBot relief)
     Kb, cb = Ks[0], c2ws[0]
-    rec["_tiles"] = (ov, relief(raycast_depth(g["scene"], Kb, cb, R, R), Kb),
-                     relief(raycast_depth(fp["scene"], fp["K"][0], fp["c2w"][0], R, R), fp["K"][0]), lb_img)
+    dc = raycast_depth(g["scene"], Kb, cb, R, R)  # the coarse map, only where it lies in the spot box (+15 cm), like the fine one
+    Pc, (vv, uu) = backproject_img(dc, Kb, cb)
+    far = np.ones((R, R), bool)
+    far[vv, uu] = ~in_box(Pc, sp["box"], .15)
+    dc[far] = np.nan
+    lo_, hi_ = np.asarray(sp["box"][0]), np.asarray(sp["box"][1])
+    corners = np.array([[x, y, z] for x in (lo_[0], hi_[0]) for y in (lo_[1], hi_[1]) for z in (lo_[2], hi_[2])])
+    u_, v_, _ = project(corners, cb, Kb)
+    cx_, cy_, half = (u_.min() + u_.max()) / 2, (v_.min() + v_.max()) / 2, .6 * max(np.ptp(u_), np.ptp(v_), 48)
+    x0_, y0_ = int(np.clip(cx_ - half, 0, R - 2)), int(np.clip(cy_ - half, 0, R - 2))
+    x1_, y1_ = int(np.clip(cx_ + half, x0_ + 2, R)), int(np.clip(cy_ + half, y0_ + 2, R))
+    zoom = lambda im: None if im is None else im[y0_:y1_, x0_:x1_]  # noqa: E731  every tile: the spot's box, same window
+    rec["_tiles"] = (zoom(ov), zoom(relief(dc, Kb)), zoom(relief(raycast_depth(fp["scene"], fp["K"][0], fp["c2w"][0], R, R), fp["K"][0])), zoom(lb_img))
     c.store[f"{sp['id']}-fine"] = fp["pts"]
     c.store[f"{sp['id']}-fine-rgb"] = fp["rgb"]
     c.patched[sp["si"]] = patched
@@ -1522,7 +1540,7 @@ def sheet(rows):
         ims = []
         for i, t in enumerate(tiles):
             im = np.zeros((T, T, 3), np.uint8) if t is None else cv2.resize(t if t.ndim == 3 else cv2.cvtColor(t, cv2.COLOR_GRAY2BGR), (T, T))
-            cv2.putText(im, ("crop + refined outline", "coarse 3 cm map", "fine 1 cm map", "LingBot points")[i], (6, 18),
+            cv2.putText(im, ("best view + refined outline", "coarse 3 cm map (box)", "fine 1 cm map (box)", "LingBot points (box)")[i], (6, 18),
                         cv2.FONT_HERSHEY_SIMPLEX, .45, (0, 255, 255), 1, cv2.LINE_AA)
             ims.append(im)
         band = np.zeros((40, T * 4, 3), np.uint8)
