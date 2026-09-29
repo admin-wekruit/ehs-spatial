@@ -661,10 +661,10 @@ def g_j2(card, ctx, cards):
     if oh.get("value") is not None and oh["front_m"] <= oh["value"] - 1e-9:  # the side reading sets the value
         o = parts[0]
         o["hazard_side"] = False  # an occluded base band reads as a side overhang (Sam's Club obj-0-6: side 0.28 m, front -0.02 m)
-        if o["result"] == FAIL and oh["front_m"] + oh["u"] < OVERHANG_MAX_M:
-            o.update(result=REVIEW, before_forced=FAIL)
-            o["reasons"].append(f"only its side reaches past the base ({oh['side_m']:.2f} m; front {oh['front_m']:.2f} m): a base hidden "
-                                "behind something reads the same way")
+        if o["result"] == FAIL and oh["front_m"] - oh["u"] <= OVERHANG_MAX_M:  # mvp2/integrate: the stated rule (a side reading never
+            o.update(result=REVIEW, before_forced=FAIL)                          # FAILs): only a front that itself breaks the limit
+            o["reasons"].append(f"only its side reaches past the base ({oh['side_m']:.2f} m; front {oh['front_m']:.2f} +- {oh['u']:.2f} m): a base hidden "
+                                "behind something reads the same way")  # does; a straddling front FAILed a stable racked pallet (Sam's Club)
     slope, tilt, h, w = (fact(card, k) for k in ("planar_slope_deg", "principal_axis_tilt_deg", "height", "width"))
     if slope is not None and slope["value"] >= FACE_SLOPE_DEG:
         lean = {**slope, "value": round(90. - float(slope["value"]), 2), "unit": "deg"}
@@ -1511,6 +1511,15 @@ def self_check():
     stack["physical"]["footprint_xy"] = [[3, -1.5], [4.4, -1.5], [4.4, -.75], [3, -.75]]
     g = g_j2(stack, ctx, [stack])
     assert g["result"] == REVIEW and g["parts"][0].get("before_forced") == FAIL and not g["hazard_side"], g  # side only: never a FAIL
+    global face_overhang  # mvp2/integrate: the side sets 0.33 +- 0.12 m, the front 0.02 +- 0.12 m straddles 0.10 m: still no FAIL
+    real, oh = face_overhang, {**_val(.33, .12), "n_subsets": 3, "front_m": .02, "side_m": .33, "faces_seen": 2}
+    face_overhang = lambda c, x: oh  # noqa: E731
+    try:
+        assert g_j2(stack, ctx, [stack])["parts"][0]["result"] == REVIEW
+        oh.update(front_m=.3, value=.33)  # a front that itself breaks the limit (0.30 - 0.12 > 0.10): the FAIL stands
+        assert g_j2(stack, ctx, [stack])["parts"][0]["result"] == FAIL
+    finally:
+        face_overhang = real
     stack["physical"]["footprint_xy"] = [[3, -1.5], [4, -1.5], [4, -.75], [3, -.75]]
     ctx = shot_ctx(np.c_[face[:, 0], np.full(len(face), -1.), face[:, 2]])
     g = g_j2(stack, ctx, [stack])
