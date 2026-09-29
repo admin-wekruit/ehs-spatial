@@ -477,17 +477,21 @@ def table(rows, gate=lambda r: True):
 
 def score(run_dir, inputs):
     run_dir = Path(run_dir)
-    rows, recs = [], []
+    rows, recs, failed = [], [], []
     for rj in sorted((run_dir / "reports").glob("*/run.json")):
         report = rj.parent.name
         if not (rj.parent / "patches").exists():
+            continue
+        err = json.loads(rj.read_text()).get("error")
+        if err:  # a failed call (e.g. degenerate injected cameras): recorded, not scored
+            failed.append({"report": report, "error": err.strip().splitlines()[-1][:300]})
             continue
         r, rec = score_report(run_dir, report, inputs)
         rows += r
         recs.append(rec)
         print(report, len(r), "rows", json.dumps({i: {k: round(v, 3) if isinstance(v, float) else v for k, v in x.items()} for i, x in rec["shots"].items()}), flush=True)
     good = lambda r: r["gt_cover"] >= MIN_GT_COVER and r["scale_status"] == "estimated" and not r["first_call"]  # noqa: E731
-    out = {"reports": recs, "table": table(rows, good), "table_all_cover": table(rows), "gate": {"min_gt_points": MIN_GT_POINTS, "min_gt_cover": MIN_GT_COVER}}
+    out = {"reports": recs, "failed": failed, "table": table(rows, good), "table_all_cover": table(rows), "gate": {"min_gt_points": MIN_GT_POINTS, "min_gt_cover": MIN_GT_COVER}}
     (run_dir / "accuracy").mkdir(exist_ok=True)
     (run_dir / "accuracy" / "rows.json").write_text(json.dumps(rows, default=float))
     (run_dir / "accuracy" / "score.json").write_text(json.dumps(out, indent=1, default=float))
@@ -495,6 +499,74 @@ def score(run_dir, inputs):
         print(f"{t['seq']:8s} {t['geometry']:8s} {t['field']:24s} n={t['n']:4d}  (a) med {t['a_med']:.3f} p90 {t['a_p90']:.3f} signed {t['a_signed_med'] if t['a_signed_med'] is None else round(t['a_signed_med'], 3)} cov {t['a_cov']:.2f}"
               f"  (b) med {t['b_med']:.3f} p90 {t['b_p90']:.3f} cov {t['b_cov']:.2f}  u_med {t['u_med']:.3f}")
     return out
+
+
+MAIN_FIELDS = ("top_above_floor", "base_above_floor", "height", "width", "depth", "position_xy", "planar_slope_deg")
+
+
+def options_table(rows, recs):
+    """Per (sequence, geometry option): camera ATE after Sim3 (key-weighted over calibrated shots), the true-height scale s,
+    and per field n / median |error| (a) as delivered, (b) at the true camera height / today's coverage of (a) by u."""
+    good = lambda r: r["gt_cover"] >= MIN_GT_COVER and r["scale_status"] == "estimated" and not r["first_call"] and shown(r)  # noqa: E731
+    out = []
+    for sq in sorted({r["seq"] for r in recs}):
+        for g in sorted({r["geometry"] for r in recs if r["seq"] == sq}):
+            rr = [r for r in recs if r["seq"] == sq and r["geometry"] == g and not r["first_call"]]
+            sh = [s for r in rr for s in r["shots"].values() if s["scale_status"] == "estimated"]
+            keys = np.array([s["keys"] for s in sh], float)
+            row = {"seq": sq, "geometry": g, "windows": len(rr), "ate_sim3_m": float(np.average([s["ate_sim3_m"] for s in sh], weights=keys)) if sh else None,
+                   "s_true_height": [round(s["s"], 3) for s in sh], "fields": {}}
+            for f in MAIN_FIELDS:
+                x = [r for r in rows if r["seq"] == sq and r["geometry"] == g and r["field"] == f and good(r)]
+                if x:
+                    row["fields"][f] = {"n": len(x), "a_med": float(np.median([r["err_a"] for r in x])), "b_med": float(np.median([r["err_b"] for r in x])),
+                                        "a_p90": float(np.percentile([r["err_a"] for r in x], 90)), "b_p90": float(np.percentile([r["err_b"] for r in x], 90)),
+                                        "a_signed_med": float(np.median([r["signed_a"] for r in x])) if x[0]["signed_a"] is not None else None,
+                                        "b_signed_med": float(np.median([r["signed_b"] for r in x])) if x[0]["signed_b"] is not None else None,
+                                        "cov_R0": float(np.mean([r["cov_a"] for r in x]))}
+            out.append(row)
+    return out
+
+
+def timing_table(recs):
+    """Analysis seconds (MP4 in the container -> layer written) per call: cameras, objects, cards v1 / v3, and the DA3 stage."""
+    out = []
+    for r in recs:
+        st = r.get("stages") or {}
+        out.append({"seq": r["seq"], "window": r["window"], "geometry": r["geometry"], "first_call": bool(r["first_call"]),
+                    **{k: r["milestones"].get(k) for k in ("cameras", "objects", "cards_v1", "cards_v3", "judgements_v3")},
+                    "da3_s": round(sum(v["s"] for k, v in st.items() if k.startswith("da3.shot")), 2), "gpu_peak_gib": r["gpu_peak_gib"],
+                    "stage_peak_over_72": [k for k, v in st.items() if any((p or 0) > 72 for p in (v.get("peak_gb") or []))]})
+    return out
+
+
+def results(out, run_dirs, droid_files, inputs):
+    """summary.json + summary.md from scored run folders (score first), the DROID timings and the u rule calibration."""
+    from fast_report.core import umeyama
+    rows, recs = [], []
+    for d in run_dirs:
+        rows += json.loads((Path(d) / "accuracy" / "rows.json").read_text())
+        recs += json.loads((Path(d) / "accuracy" / "score.json").read_text())["reports"]
+    droid = []
+    for f in droid_files:
+        for j in json.loads(Path(f).read_text())["jobs"]:
+            base = j["name"].replace("-30fps", "")
+            name, wi = base.split("-")[1], int(base.rsplit("-w", 1)[1])
+            seq = Seq(inputs / name)
+            w = seq.g["windows"][wi]
+            C = np.asarray(j["c2w"], float)[:, :3, 3]
+            G = np.array([seq.c2w(w["source_frames"][0] + k // w["hold"])[:3, 3] for k in j["keys"]])
+            s, R, t = umeyama(C, G)
+            droid.append({"job": j["name"], "frames": len(j["keys"]), "seconds": j["seconds"], "track_s": j["track_s"], "terminate_s": j["terminate_s"],
+                          "peak_gib": j["peak_gib"], "gpu": j["gpu"], "ate_sim3_m": float(np.sqrt(np.mean(np.sum((s * C @ R.T + t - G) ** 2, 1))))})
+    a_rows = [r for r in rows if r["geometry"] == "shot"]
+    summary = {"options": options_table(rows, recs), "timing": timing_table(recs), "droid": droid,
+               "u_rule": {"arkit_to_tum": calibrate(a_rows, ["arkit47", "arkit42"], ["tum"]), "tum_to_arkit": calibrate(a_rows, ["tum"], ["arkit47", "arkit42"])},
+               "bounds": [b for r in recs for b in r.get("bounds", [])], "floors": {n: Seq(inputs / n).floor for n in SEQUENCES},
+               "gate": {"min_gt_points": MIN_GT_POINTS, "min_gt_cover": MIN_GT_COVER, "shown_only": True, "warm_calls_only": True}}
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "summary.json").write_text(json.dumps(summary, indent=1, default=float))
+    return summary
 
 
 def decides(r):
@@ -565,6 +637,60 @@ def calibrate(rows, calib, held, r_scale=.25, target=.9):
                 fo[f"{st}/{split}"] = row
         out["families"][fam] = fo
     return out
+
+
+def sheet(run_dir, report, rows, out_jpg, n=12, seed=0):
+    """Contact sheet: n cards (seeded draw among rows with GT), each on its largest segmented pick region, outlined, with
+    card vs GT top / base / width (card as delivered, then at the true camera height)."""
+    import cv2
+    import fast_report_eval as ev
+    run = json.loads((Path(run_dir) / "reports" / report / "run.json").read_text())
+    L = ev.load_layers(run_dir, report)
+    pick = ev.run_picks(run_dir, report, L)[-1][1]
+    by = {}
+    for r in rows:
+        if r["report"] == report and r["family"] in ("height", "extent") and r["gt_cover"] >= MIN_GT_COVER:
+            by.setdefault(r["card"], {})[r["field"]] = r
+    ids = sorted(by)
+    ids = [ids[i] for i in np.random.default_rng(seed).choice(len(ids), min(n, len(ids)), replace=False)]
+    ent = pick.data["entities"]
+    best = {}
+    for i, f in enumerate(pick.frames):
+        if f.get("source") != "segmented":
+            continue
+        m = pick.map(i)
+        for cid in ids:
+            if cid in ent:
+                a = int((m == ent.index(cid)).sum())
+                if a > best.get(cid, (0,))[0]:
+                    best[cid] = (a, i)
+    cap = cv2.VideoCapture(run["call"]["mp4"])
+    tiles = []
+    for cid in ids:
+        if cid not in best:
+            continue
+        i = best[cid][1]
+        f = pick.frames[i]
+        cap.set(cv2.CAP_PROP_POS_FRAMES, f["frame"])
+        img = cv2.resize(cap.read()[1], (640, 360))
+        mk = (pick.map(i) == ent.index(cid)).astype(np.uint8)
+        cs, _ = cv2.findContours(mk, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(img, cs, -1, (255, 255, 255), 3)
+        cv2.drawContours(img, cs, -1, (0, 160, 255), 1)
+        d = by[cid]
+        lines = [f"{cid} {next(iter(d.values()))['name']}"]
+        for fld, lab in (("top_above_floor", "top"), ("base_above_floor", "base"), ("width", "width")):
+            if fld in d:
+                r = d[fld]
+                lines.append(f"{lab}: card {r['value']:.2f}+-{r['u']:.2f} (true-h {r['s'] * r['value']:.2f}) GT {r['gt']:.2f}")
+        for j, t in enumerate(lines):
+            cv2.putText(img, t, (8, 22 + 22 * j), cv2.FONT_HERSHEY_SIMPLEX, .55, (0, 0, 0), 4)
+            cv2.putText(img, t, (8, 22 + 22 * j), cv2.FONT_HERSHEY_SIMPLEX, .55, (255, 255, 255), 1)
+        tiles.append(img)
+    while len(tiles) % 3:
+        tiles.append(np.zeros_like(tiles[0]))
+    grid = np.vstack([np.hstack(tiles[k:k + 3]) for k in range(0, len(tiles), 3)])
+    cv2.imwrite(str(out_jpg), grid, [cv2.IMWRITE_JPEG_QUALITY, 80])
 
 
 def droid_jobs(run_dir, inputs, out, jpeg_dir):

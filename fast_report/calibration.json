@@ -124,5 +124,98 @@
    "source": "warm vs +5 s shifted window, pooled over ME340/Sam's Club/Walmart (runs mvp-integrate-me340-002, -samsclub-001, -walmart-001); pairs: 1:1 centroids <= 0.5 m, part/whole excluded"
   }
  },
- "written_unix": 1790664801.184086
+ "written_unix": 1790672234.6436212,
+ "u_rule": {
+  "k_geo": {
+   "height": {
+    "sets": 1.0,
+    "one_set": 1.408
+   },
+   "extent": {
+    "sets": 2.391,
+    "one_set": 4.522
+   },
+   "position": {
+    "sets": 2.229,
+    "one_set": 4.328
+   }
+  },
+  "scale_rel": 0.25,
+  "source": "mvp2/accuracy: metric ground truth (ARKitScenes 47333932 two windows + 42445448, warm calls, per-shot DA3-GIANT any-view); k_geo = smallest k >= 1 with >= 90 percent of the errors at the true camera height inside k x the geometry parts (every part but scale), per family and view-set state; scale_rel 0.25 from a stated 1.2-1.8 m camera-height range for the assumed 1.6 m (largest |1 - s| on the ARKit shots: 0.231)",
+  "fitted_on": [
+   "arkit47 w0",
+   "arkit47 w1",
+   "arkit42 w0"
+  ],
+  "held_out": [
+   "tum w0",
+   "tum w1"
+  ],
+  "coverage_held_out": {
+   "height": {
+    "sets/tum": {
+     "n": 403,
+     "R0": 0.985,
+     "R0_u_med": 0.196,
+     "new": 0.985,
+     "new_u_med": 0.223,
+     "new_geometry_only_b": 0.928
+    },
+    "one_set/tum": {
+     "n": 108,
+     "R0": 0.917,
+     "R0_u_med": 0.191,
+     "new": 0.944,
+     "new_u_med": 0.226,
+     "new_geometry_only_b": 0.833
+    }
+   },
+   "extent": {
+    "sets/tum": {
+     "n": 492,
+     "R0": 0.896,
+     "R0_u_med": 0.098,
+     "new": 0.951,
+     "new_u_med": 0.135,
+     "new_geometry_only_b": 0.923
+    },
+    "one_set/tum": {
+     "n": 99,
+     "R0": 0.687,
+     "R0_u_med": 0.056,
+     "new": 0.869,
+     "new_u_med": 0.124,
+     "new_geometry_only_b": 0.828
+    }
+   },
+   "position": {
+    "sets/tum": {
+     "n": 207,
+     "R0": 1.0,
+     "R0_u_med": 0.545,
+     "new": 1.0,
+     "new_u_med": 0.725,
+     "new_geometry_only_b": 0.99
+    },
+    "one_set/tum": {
+     "n": 63,
+     "R0": 0.952,
+     "R0_u_med": 0.646,
+     "new": 0.952,
+     "new_u_med": 0.916,
+     "new_geometry_only_b": 0.952
+    }
+   },
+   "angle": {
+    "sets/tum": {
+     "n": 13,
+     "R0": 1.0,
+     "R0_u_med": 3.041
+    }
+   }
+  },
+  "runs": [
+   "runs/mvp2-accuracy-001"
+  ]
+ }
 }
