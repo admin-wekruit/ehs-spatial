@@ -130,6 +130,11 @@ def collect(a):
     for kind in ("warm", "first"):
         g, miss, _ = nr.heldout(bench, Path(a.out) / f"heldout-{kind}", kind)
         res["heldout_types"][kind] = {"by_site": g, "not_matched": len(miss)}
+    if base:  # round 3's warm calls on the same held-out items (the same scorer): the types before the cascade
+        g, miss, _ = nr.heldout(base, Path(a.out) / "heldout-round3-warm", "warm")
+        res["heldout_types"]["round 3 warm"] = {"by_site": g, "not_matched": len(miss)}
+        v = {s: {"share": ra.share(__import__("fast_report_eval").load_layers(Path(d) / "mirror", calls(d, s)["warm"]["run"]["report"]))} for s, d in base.items()}
+        res["round3_shares"] = {s: {k: x for k, x in v[s]["share"].items() if k != "completeness"} for s in v}
     if a.gt and (Path(a.gt) / "accuracy" / "score.json").exists():
         res["gt"] = json.loads((Path(a.gt) / "accuracy" / "score.json").read_text())
     if a.shots:
@@ -161,12 +166,14 @@ def md(res):
     out += row("typed by family (a specific name or '<family> (type only)')", lambda s: f"{pct(w(s)['share']['family_typed'])} ({pct(f(s)['share']['family_typed'])})")
     out += row("with a specific name", lambda s: f"{pct(w(s)['share']['specific_name'])} ({pct(f(s)['share']['specific_name'])})")
     out += row("shape type only (no family)", lambda s: f"{pct(w(s)['share']['shape_only'])} ({pct(f(s)['share']['shape_only'])})")
+    out += row("round 3 warm: typed by family / specific name", lambda s: f"{pct(res['round3_shares'][s]['family_typed'])} / {pct(res['round3_shares'][s]['specific_name'])}")
     ca = res.get("cards_audit") or {}
     out += row("fresh card audit: type right / close / wrong / unclear (n)", lambda s: (lambda t: f"{t.get('right', 0)} / {t.get('close', 0)} / {t.get('wrong', 0)} / "
                                                                                            f"{t.get('unclear', 0)} ({ca[s]['n']})")(ca[s]["type"]))
     ho = res.get("heldout_types", {})
-    out += row("held-out items (round 2's labels): family right / n (warm)", lambda s: f"{ho['warm']['by_site'][s]['family_right']}/{ho['warm']['by_site'][s]['n']}")
-    out += row("held-out items: name right, right-or-close (warm)", lambda s: (lambda g: f"{g['right'] / g['n']:.2f}, {(g['right'] + g['close']) / g['n']:.2f}")(ho["warm"]["by_site"][s]))
+    for k in ("warm", "first", "round 3 warm"):
+        out += row(f"held-out items (round 2's labels), {k}: type (family) right / n", lambda s, k=k: (lambda g: f"{g['family_right']}/{g['n']} = {g['family_right'] / g['n']:.2f}")(ho[k]["by_site"][s]))
+        out += row(f"held-out items, {k}: specific names right / right-or-close / named", lambda s, k=k: (lambda g: f"{g['named_right']} / {g['named_right'] + g['named_close']} / {g['named_n']}")(ho[k]["by_site"][s]))
     out += "\n## 2. Segmentation and clicks (warm call)\n\n" + head
     out += row("object cards with a pick region (clickable)", lambda s: pct(w(s)["share"]["clickable"]))
     out += row("fresh card audit: outline right / partial / wrong", lambda s: (lambda t: f"{t.get('right', 0)} / {t.get('partial', 0)} / {t.get('wrong', 0)}")(ca[s]["outline"]))
