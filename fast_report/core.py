@@ -860,11 +860,15 @@ def analyse(m, mp4, opts, clock, writer, log):
                      plumb_u_deg=a_.get("plumb_u_deg"), plumb_deg=a_.get("plumb_deg"))
 
         def job(prev):
+            try:  # round 2: the rules and the hazard judge's questions go out now, beside the previous run's wait
+                rows = judge.ahead(out["cards"], ctx, clock, carried, opts.get("hazard_ask"), m.proc_pool) if opts.get("judge_vlm", True) else None
+            except Exception:  # noqa: BLE001  run() redoes the rules and asks what is missing
+                rows = None
             if prev is not None:
                 prev.result()
             try:
                 return judge.run(out["cards"], ctx, writer, clock, vlm_on=opts.get("judge_vlm", True), pool=m.proc_pool, carried=carried,
-                                 hazard_ask=opts.get("hazard_ask"))
+                                 hazard_ask=opts.get("hazard_ask"), rows=rows)
             except Exception:  # noqa: BLE001  the judgements are one layer: their failure is recorded, the others stand
                 import traceback
                 return {"error": traceback.format_exc()[-3000:]}

@@ -71,3 +71,58 @@ def main(x8_run: str, out: str):
                                                   "items": rows, "run": res["run"], "boot_s": res["boot_s"], "client_wall_s": wall}, indent=1))
     print(json.dumps({"boot_s": res["boot_s"], "wall_s": wall, "stages": res["run"].get("stages"), "gpu_peak": res["run"].get("gpu_peak"),
                       "unanswered": sum(r["p"] is None for r in rows)}, indent=1)[:3000])
+
+
+@app.function(image=image, gpu="A100-80GB", cpu=8, memory=32768, timeout=1800, retries=0, volumes=VOLUMES, max_containers=1)
+def ask_objects(items):
+    """Round 2: the pipeline's own Qwen fallback question (judge.prompt: no measured value in it) on agent-labelled object items,
+    each with its best view marked and bare -> [answer]."""
+    from concurrent.futures import ThreadPoolExecutor
+    from fast_report import judge, vlm
+    t0 = time.perf_counter()
+    proc = vlm.start(0)
+    vlm.wait(proc)
+    boot_s = round(time.perf_counter() - t0, 2)
+    vlm.options(items[0]["jpegs"], items[0]["prompt"], judge.YNC)  # warm-up, not timed
+    t1 = time.perf_counter()
+    with ThreadPoolExecutor(vlm.MAX_SEQS) as pool:
+        got = list(pool.map(lambda x: vlm.options(x["jpegs"], x["prompt"], judge.YNC), items))
+    ask_s = round(time.perf_counter() - t1, 2)
+    proc.terminate()
+    return {"answers": got, "boot_s": boot_s, "ask_s": ask_s}
+
+
+@app.local_entrypoint()
+def objects(out: str):
+    """modal run modal_apps/judge_decider.py::objects --out RUNS/mvp2-judge-qwen-001 (labels: mvp2-judge-hazard-001)."""
+    sys.path[:0] = [str(HERE.parent / "scripts")]
+    import hazard_calibrate as hc
+    import judge_offline as jo
+    from fast_report import judge
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=False)
+    lab, items = hc.labels(), []
+    for site in jo.WARM:
+        d = jo.load(site)
+        ctx = d["ctx"]
+        ctx["outlines_by_frame"] = {f["sourceFrame"]: f["objects"] for f in d["outlines"]}
+        by = {c["id"]: judge.follow_name(c) for c in d["cards"]}
+        for (s, oid, q), x in lab.items():
+            if s != site or q not in judge.QUESTIONS or oid not in by or x["label"] not in (0, 1):
+                continue
+            card = by[oid]
+            keys = next(iter(judge.view_sets(card, ctx)), None)
+            marks = judge.marks_on(ctx, keys[0], card) if keys else None
+            if marks is None:
+                continue
+            frame = judge.frame_at(ctx, keys[0])
+            items.append({"site": site, "id": oid, "q": q, "label": x["label"], "keys": keys, "prompt": judge.prompt(card, {}, q),
+                          "jpegs": [judge.som(frame, marks), judge.som(frame, marks, marks=False)]})
+    t = time.time()
+    res = ask_objects.remote(items)
+    rows = [{k: x[k] for k in ("site", "id", "q", "label", "keys")} | {"probs": a["probs"], "mass": a["mass"], "p": judge.qwen_p(a)}
+            for x, a in zip(items, res["answers"])]
+    (out / "answers.json").write_text(json.dumps({"decider": "Qwen/Qwen3-VL-8B-Instruct via vLLM 0.11.0, option letters, first-token log-probs",
+                                                  "prompt": "judge.prompt (round 2: no measured value)", "items": rows, "boot_s": res["boot_s"],
+                                                  "ask_s": res["ask_s"], "client_wall_s": round(time.time() - t, 1)}, indent=1))
+    print(json.dumps({"items": len(rows), "boot_s": res["boot_s"], "ask_s": res["ask_s"], "unanswered": sum(r["p"] is None for r in rows)}))

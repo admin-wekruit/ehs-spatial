@@ -606,7 +606,9 @@ def face_overhang(card, ctx):
     if h < FACE_MIN_H_M:
         return nm(f"too low for an overhang ({h:.2f} m)")
     P = np.asarray(pts, float)
-    P = P[shapely.contains_xy(poly.buffer(GRID_M), P[:, 0], P[:, 1]) & (P[:, 2] > b + GRID_M) & (P[:, 2] < t)]
+    x0, y0, x1, y1 = poly.buffer(GRID_M).bounds
+    P = P[(P[:, 0] >= x0) & (P[:, 0] <= x1) & (P[:, 1] >= y0) & (P[:, 1] <= y1) & (P[:, 2] > b + GRID_M) & (P[:, 2] < t)]  # the box first
+    P = P[shapely.contains_xy(poly.buffer(GRID_M), P[:, 0], P[:, 1])]
     lo, up = P[:, 2] < b + .4 * h, P[:, 2] > b + .6 * h
     if lo.sum() < FACE_MIN_PTS or up.sum() < FACE_MIN_PTS:
         return nm(f"too few observed surface points in its box (base band {int(lo.sum())}, upper band {int(up.sum())})")
@@ -943,25 +945,10 @@ def marks_on(ctx, key, card):
 
 
 def state_line(card, row):
-    """What the geometry found, in one sentence (spec 5.3), estimated metres rounded to 0.1 m; only facts from two or more view
-    subsets on a plausible card (a one-set or inflated box would tell the model something wrong)."""
-    if card.get("kind") == "person":
-        return "The question is about the person marked [1]."
-    bits = []
-    firm = lambda k: (lambda f: f if f and (f.get("n_subsets") or 0) >= 2 and not doubts(card) else None)(fact(card, k))  # noqa: E731
-    top, base = firm("top_above_floor"), firm("base_above_floor")
-    if top:
-        bits.append(f"its top is about {top['value']:.1f} m above the floor")
-    if base and base["value"] + base["u"] < FLOOR_BASE_M:
-        bits.append("it stands on the floor")
-    g = row.get("geometry") or {}
-    if g.get("result") in (None, NO_DATA) or ONE_SET in g.get("reasons", []) or doubts(card):
-        pass
-    elif g.get("path") and g.get("object_distance_m") is not None:
-        bits.append(f"it is about {g['object_distance_m']:.1f} m from where people walked")
-    elif g.get("quantity") == "distance to walked path" and g.get("value") is not None:
-        bits.append(f"it is about {g['value']:.1f} m from where people walked")
-    return "The question is about object [1]" + (": " + ", ".join(bits) if bits else "") + " (estimated metres)."
+    """Who the question is about, and nothing the geometry measured: a picture that joins a measured value to make a FAIL must
+    not have been told that value (round 2: ME340 obj-1-95, a hose hung on a bench, read p(yes) 0.12 without and 1.00 with
+    'it is about 0.2 m from where people walked' in Qwen's prompt, and FAILed)."""
+    return f"The question is about the {'person' if card.get('kind') == 'person' else 'object'} marked [1]."
 
 
 def prompt(card, row, q):
@@ -1054,21 +1041,110 @@ def qwen_p(a):
     return float(a["probs"][0])
 
 
-def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, carried=None, hazard_ask=None):
-    """Judgements v1 (geometry) at once; then the hazard judge (round 2): per object with a check, its check's question(s) to
-    Gemini on one 2 x 2 evidence image (fast_report.hazard, 10 objects a request, all requests at once, answers waited for up
-    to HAZARD_WAIT_S), Qwen's letter probabilities (vlm.options, priority 'judgement') for what Gemini did not answer and for
-    people; each answer read at calibration.json's hazard cuts and joined to the geometry by combine(); then v2.
-    ask: a stand-in for vlm.submit; hazard_ask: reqs -> {key: Future of the provider output} (hazard.Asker.ask), None = no
-    Gemini (Qwen alone); cal: for fast_report/calibration.json (tests). carried: a dict shared by the runs of one analysis: a
-    later cards version asks only what is new. pool: a process pool for the rules. Returns counts and times."""
-    cal = load_calibration() if cal is None else cal
+def with_marks(ctx):
     outl = ctx.get("outlines") or []
     outl = outl.get("frames", []) if isinstance(outl, dict) else outl  # A passes the outlines analysis, the stub its frames
-    ctx = {**ctx, "outlines_by_frame": ctx.get("outlines_by_frame") or {f["sourceFrame"]: f["objects"] for f in outl}}
+    return {**ctx, "outlines_by_frame": ctx.get("outlines_by_frame") or {f["sourceFrame"]: f["objects"] for f in outl}}
+
+
+def rules(cards, ctx, clock, pool=None):
     with clock.stage("judge.rules", n={"cards": len(cards), "process": pool is not None}):
         lite = {k: v for k, v in ctx.items() if k not in ("frames", "outlines", "outlines_by_frame")}  # what the rules read
-        rows = pool.submit(evaluate, cards, lite).result() if pool is not None else evaluate(cards, ctx)
+        return pool.submit(evaluate, cards, lite).result() if pool is not None else evaluate(cards, ctx)
+
+
+def wanted(rows, by_id):
+    """-> {object id: [hazard question]} for the rows' checks (objects only; people keep Qwen's q3 / q5)."""
+    from fast_report import hazard
+    want = {}
+    for r in rows:
+        q = hazard.CHECK_Q.get(r["check"])
+        if q and by_id[r["subject"]].get("kind") != "person" and q not in want.setdefault(r["subject"], []):
+            want[r["subject"]].append(q)
+    return {k: v for k, v in want.items() if v}
+
+
+def ahead(cards, ctx, clock, carried, hazard_ask, pool=None):
+    """The hazard judge's send half, run as soon as a cards version exists (not after the previous judge run's wait): the rules,
+    then evidence (hazard.evidence, cached per object) and one Gemini wave for every (object, question) no run of this analysis
+    has asked yet; each left in `carried` as ('pending', object, question) -> (future, request ids, perf time sent). -> rows."""
+    from fast_report import hazard
+    ctx = with_marks(ctx)
+    rows = rules(cards, ctx, clock, pool)
+    if hazard_ask is None:
+        return rows
+    by_id = {c["id"]: c for c in (follow_name(c) for c in cards)}
+    todo = {oid: [q for q in qs if ("gemini", oid, q) not in carried and ("pending", oid, q) not in carried]
+            for oid, qs in wanted(rows, by_id).items()}
+    todo = {k: v for k, v in todo.items() if v}
+    with clock.stage("judge.evidence", n={"objects": len(todo)}):
+        def build(oid):
+            if ("ev", oid) not in carried:
+                carried[("ev", oid)] = hazard.evidence(by_id[oid], ctx, frame_at, marks_on, som)
+            return oid, carried[("ev", oid)]
+        with ThreadPoolExecutor(8) as tp:
+            ev = {oid: x for oid, x in tp.map(build, list(todo)) if x[0] is not None}
+    if not ev:
+        return rows
+    with clock.stage("judge.gemini_send", n={"objects": len(ev)}):
+        items = [{"id": oid, "name": name_of(by_id[oid]) or "object", "questions": todo[oid], "jpeg": ev[oid][0]} for oid in ev]
+        reqs = hazard.batches(items)
+        try:
+            futs = hazard_ask(reqs)
+        except Exception as error:  # noqa: BLE001  no relay: Qwen answers these questions
+            futs = {}
+            carried[("error",)] = repr(error)[:200]
+        sent = time.perf_counter()
+        for r in reqs:
+            for oid, q in r["ids"]:
+                carried[("pending", oid, q)] = (futs.get(r["key"]), r["ids"], sent)
+    return rows
+
+
+def gather(want, carried, stats):
+    """Gemini answers for `want` from `carried`: answered, or pending (waited for until HAZARD_WAIT_S after it was sent; a late one
+    is kept when it lands, for the next run). -> {(object, question): answer}."""
+    from fast_report import hazard
+    got, waited = {}, set()
+    for oid, qs in want.items():
+        for q in qs:
+            pend = carried.get(("pending", oid, q))
+            if ("gemini", oid, q) not in carried and pend is not None and pend[0] is not None and id(pend[0]) not in waited:
+                waited.add(id(pend[0]))
+                fut, ids, sent = pend
+
+                def keep(out, ids=ids):
+                    for (o, qq), a in hazard.parse((out or {}).get("output_text") or "{}", ids).items():
+                        carried[("gemini", o, qq)] = {"p": a["p"], "why": a["why"], "decider": "gemini", "keys": (carried.get(("ev", o)) or (None, None))[1]}
+                try:
+                    out = fut.result(timeout=max(.1, sent + HAZARD_WAIT_S - time.perf_counter()))
+                    stats["prompt_tokens"] += ((out or {}).get("usage") or {}).get("prompt_token_count") or 0
+                    keep(out)
+                except TimeoutError:  # late: Qwen answers it in this run, the answer still lands in `carried` for the next
+                    fut.add_done_callback(lambda f_, keep=keep: keep(f_.result()) if not f_.exception() else None)
+                    stats["gemini_late"] = stats.get("gemini_late", 0) + 1
+                except Exception as error:  # noqa: BLE001  failed: Qwen answers it
+                    stats["gemini_last_error"] = repr(error)[:200]
+            if ("gemini", oid, q) in carried:
+                got[(oid, q)] = carried[("gemini", oid, q)]
+    return got
+
+
+def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, carried=None, hazard_ask=None, rows=None):
+    """Judgements v1 (geometry) at once; then the hazard judge (round 2): per object with a check, its check's question(s) to
+    Gemini on one 2 x 2 evidence image (fast_report.hazard, 10 objects a request, all requests at once: ahead(), which the core
+    calls as soon as the cards version exists), Qwen's letter probabilities (vlm.options, priority 'judgement') for what Gemini
+    did not answer within HAZARD_WAIT_S and for people; each answer read at calibration.json's hazard cuts and joined to the
+    geometry by combine(); then v2. ask: a stand-in for vlm.submit; hazard_ask: reqs -> {key: Future of the provider output}
+    (hazard.Asker.ask), None = no Gemini (Qwen alone); cal: for fast_report/calibration.json (tests); carried: a dict shared by
+    the runs of one analysis (answers, pending questions, evidence): a later cards version asks only what is new; rows: ahead()'s.
+    pool: a process pool for the rules. Returns counts and times."""
+    cal = load_calibration() if cal is None else cal
+    carried = {} if carried is None else carried
+    ctx = with_marks(ctx)
+    t0 = time.perf_counter()
+    if rows is None:
+        rows = ahead(cards, ctx, clock, carried, hazard_ask, pool) if vlm_on else rules(cards, ctx, clock, pool)
     writer.put("judgements", layer(rows, cal, {"version_of": ctx.get("version_of"), "vlm_answers": False}), None, "estimated+inferred", LABELS)
     clock.mark("judgements_v1_put")
     rec = {"rows": len(rows), "counts_v1": layer(rows, cal)["counts"]}
@@ -1076,61 +1152,25 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, c
         return rec
     from fast_report import hazard, vlm
     ask = ask or vlm.submit
-    carried = {} if carried is None else carried
     by_id = {c["id"]: c for c in (follow_name(c) for c in cards)}
-    want = {}  # object id -> [question]: the hazard judge's
-    for r in rows:
-        q = hazard.CHECK_Q.get(r["check"])
-        if q and by_id[r["subject"]].get("kind") != "person" and q not in want.setdefault(r["subject"], []):
-            want[r["subject"]].append(q)
-    blobs, got, t0 = {}, {}, time.perf_counter()
-    for oid, qs in want.items():
-        for q in qs:
-            if ("gemini", oid, q) in carried:
-                got[(oid, q)] = {**carried[("gemini", oid, q)], "carried": True}
-    todo = {oid: [q for q in qs if (oid, q) not in got] for oid, qs in want.items()}
-    todo = {k: v for k, v in todo.items() if v}
-    stats = {"objects": len(want), "asked_gemini": 0, "requests": 0, "carried": len(got), "gemini_unanswered": 0, "qwen_questions": 0,
-             "prompt_tokens": 0}
-    with clock.stage("judge.evidence", n={"objects": len(todo)}):
-        def build(oid):
-            return oid, hazard.evidence(by_id[oid], ctx, frame_at, marks_on, som)
-        with ThreadPoolExecutor(8) as tp:
-            ev = dict((oid, x) for oid, x in tp.map(build, list(todo)) if x[0] is not None)
-    for oid, (jpg, keys) in ev.items():
-        blobs[f"ev-hz-{oid}".replace(":", "_")] = (thumb(jpg), {"mediaType": "image/jpeg", "format": "jpeg", "note": "hazard-judge evidence (2 x 2), 320 px"})
-    if hazard_ask is not None and ev:
-        with clock.stage("judge.gemini", n={"objects": len(ev)}, sync=False):
-            items = [{"id": oid, "name": name_of(by_id[oid]) or "object", "questions": todo[oid], "jpeg": ev[oid][0]} for oid in ev]
-            reqs = hazard.batches(items)
-            stats.update(asked_gemini=sum(len(i["questions"]) for i in items), requests=len(reqs))
-            try:
-                futs = hazard_ask(reqs)
-            except Exception as error:  # noqa: BLE001  no relay: Qwen answers every question
-                futs, stats["gemini_error"] = {}, repr(error)[:200]
-            deadline = time.perf_counter() + HAZARD_WAIT_S
-
-            def keep(r, out):  # an answer goes to `carried`: a later judge run of this analysis reads it without asking
-                for (oid, q), a in hazard.parse(out.get("output_text") or "{}", r["ids"]).items():
-                    carried[("gemini", oid, q)] = {"p": a["p"], "why": a["why"], "decider": "gemini", "keys": ev[oid][1]}
-            for r in reqs:
-                f = futs.get(r["key"])
-                try:
-                    out = f.result(timeout=max(.1, deadline - time.perf_counter())) if f is not None else None
-                except TimeoutError:  # late: this run falls back to Qwen, the answer still lands in `carried` for the next run
-                    f.add_done_callback(lambda f_, r=r: keep(r, f_.result()) if not f_.exception() and f_.result() else None)
-                    out, stats["gemini_late"] = None, stats.get("gemini_late", 0) + 1
-                except Exception as error:  # noqa: BLE001  failed: its questions fall back to Qwen
-                    out, stats["gemini_last_error"] = None, repr(error)[:200]
-                if not out:
-                    continue
-                stats["prompt_tokens"] += ((out.get("usage") or {}).get("prompt_token_count") or 0)
-                keep(r, out)
-                for (oid, q) in r["ids"]:
-                    if ("gemini", oid, q) in carried:
-                        got[(oid, q)] = carried[("gemini", oid, q)]
-            stats["gemini_unanswered"] = sum(1 for oid, qs in todo.items() for q in qs if (oid, q) not in got and oid in ev)
-            stats["gemini_s"] = round(time.perf_counter() - t0, 3)
+    want = wanted(rows, by_id)
+    pend = [carried.get(("pending", oid, q)) for oid, qs in want.items() for q in qs]
+    stats = {"objects": len(want), "questions": sum(len(qs) for qs in want.values()), "asked_gemini": sum(p_ is not None for p_ in pend),
+             "requests": len({id(p_[0]) for p_ in pend if p_ is not None}), "gemini_unanswered": 0, "qwen_questions": 0, "prompt_tokens": 0}
+    if ("error",) in carried:
+        stats["gemini_error"] = carried[("error",)]
+    with clock.stage("judge.gemini", n={"objects": len(want)}, sync=False):
+        got = gather(want, carried, stats) if hazard_ask is not None else {}
+    stats["gemini_unanswered"] = sum(1 for oid, qs in want.items() for q in qs if (oid, q) not in got)
+    stats["gemini_wait_s"] = round(time.perf_counter() - t0, 3)
+    blobs = {}
+    for oid in want:
+        ev = carried.get(("ev", oid))
+        if ev and ev[0] is not None:
+            if ("thumb", oid) not in carried:
+                carried[("thumb", oid)] = thumb(ev[0])
+            blobs[f"ev-hz-{oid}".replace(":", "_")] = (carried[("thumb", oid)], {"mediaType": "image/jpeg", "format": "jpeg",
+                                                                                "note": "hazard-judge evidence (2 x 2), 320 px"})
     # Qwen: what Gemini did not answer (the fallback), and people (J3a's q3 / q5 on the person's views)
     jobs = []
     for row in rows:
@@ -1540,7 +1580,7 @@ def self_check():
     carried = {}
     run([cable, hose], ctx, _Writer(), _Clock(), ask=fake, cal=cal, carried=carried, hazard_ask=fake_gemini)
     out = run([cable, hose], ctx, _Writer(), _Clock(), ask=fake, cal=cal, carried=carried, hazard_ask=fake_gemini)
-    assert gem["reqs"] == 1 and out["carried"] == 2 and not calls, (gem, out)
+    assert gem["reqs"] == 1 and out["gemini_unanswered"] == 0 and out["questions"] == 2 and not calls, (gem, out)
     far = {**cable, "id": "obj-0-8", "physical": {**cable["physical"], "footprint_xy": [[2, 2.2], [3, 2.2], [3, 2.25], [2, 2.25]]}}
     ctx["outlines"][0]["objects"].append({"entityId": far["id"], "polygons": poly})
     gem.update(p=.6)  # a PASS (2 m from the path) with a 'likely hazard' picture -> NEEDS_REVIEW (they disagree)

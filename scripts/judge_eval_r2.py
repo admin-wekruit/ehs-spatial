@@ -115,8 +115,12 @@ def main(a):
         d = jo.load(site)
         cal = {**judge.load_calibration(), **cuts_for(site, a.cuts)}
         carried = {}
-        if a.decider == "qwen":
-            carried = {("qwen", rid, q): v for (rid, q), v in qwen_round1(site).items()}
+        if a.decider == "qwen":  # Qwen's answers by object and question, carried into every row that asks it
+            qa = {(x["id"], x["q"]): x for x in hc.qwen_objects() if x["site"] == site}
+            rows0 = judge.evaluate(d["cards"], d["ctx"])
+            carried = {("qwen", r["id"], hazard.CHECK_Q[r["check"]]): {"p": qa[(r["subject"], hazard.CHECK_Q[r["check"]])]["p"], "why": None,
+                                                                       "decider": "qwen", "keys": None}
+                       for r in rows0 if hazard.CHECK_Q.get(r["check"]) and (r["subject"], hazard.CHECK_Q[r["check"]]) in qa}
         w = jo_writer()
         stats = judge.run(d["cards"], d["ctx"], w, judge._Clock(), ask=unanswered, cal=cal, carried=carried,
                           hazard_ask=replay_gemini(site) if a.decider == "gemini" else None)
@@ -144,9 +148,82 @@ def jo_writer():
     return judge._Writer()
 
 
+def id_map(site, d):
+    """New run's object id -> the round-1 warm run's id where the same id sits within 0.2 m (73% of ids keep their place across
+    calls of one video, Sam's Club round 1): labels follow only those."""
+    import numpy as np
+    r1 = {c["id"]: c for c in jo.load(site)["cards"] if c.get("kind") == "object"}
+    out = {}
+    for c in d["cards"]:
+        o = r1.get(c["id"])
+        a, b = ((c.get("physical") or {}).get("box") or {}).get("center_m"), ((o or {}).get("physical") or {}).get("box", {}).get("center_m")
+        if o is not None and a and b and np.linalg.norm(np.subtract(a, b)) < .2 and c.get("shot") == o.get("shot"):
+            out[c["id"]] = c["id"]
+    return out
+
+
+def audit_run(run, report, site, lab, extra=None):
+    """A bench run's last judgements, audited: labels of the round-1 object at the same place, else `extra` labels made on this
+    run's own sheets (labels-run.jsonl). -> the site record and the unlabelled PASS / FAIL rows."""
+    d = jo.load(run=run, report=report)
+    js = sorted(glob.glob(str(Path(run) / "mirror/reports" / report / "patches/*-judgements.json")))
+    data = json.loads(Path(js[-1]).read_text())["data"]
+    rows = data["rows"]
+    m = id_map(site, d)
+    usable = {k: v for k, v in lab.items() if k[0] == site and k[1] in m}
+    usable.update({k: v for k, v in (extra or {}).items() if k[0] == site})
+    objects = [c for c in d["cards"] if c.get("kind") == "object"]
+    checked = {r["subject"] for r in rows if not r["subject"].startswith("person")}
+    rep = {"report": report, "objects": len(objects), "objects_with_a_check": len(checked), "coverage": round(len(checked) / max(1, len(objects)), 3),
+           "rows": len(rows), "counts": dict(Counter(r["verdict"] for r in rows)), "vlm": data.get("vlm"),
+           "by_check": {k: {**v, "verdicts": dict(v["verdicts"])} for k, v in audit(rows, usable, site).items()},
+           "id_kept": len(m)}
+    todo = [r for r in rows if r["verdict"] in ("PASS", "FAIL") and truth(usable, site, r) is None and LABEL_Q.get(r["check"])
+            and (site, r["subject"], LABEL_Q[r["check"]]) not in usable]
+    return rep, todo, d
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", type=Path)
     ap.add_argument("--decider", default="gemini", choices=("gemini", "qwen"))
     ap.add_argument("--cuts", default="heldout", choices=("heldout", "all"))
     main(ap.parse_args())
+
+
+QTEXT = {"h25": "top more than 2.5 m above the floor (stack on the floor) / taller than 2.5 m (off the floor)?",
+         "q2": "stacked unstably, could fall?", "q1": "cable/hose on the floor where people walk?",
+         "q4": "blocks/narrows the walkway to < 0.7 m?", "q6": "within 60 cm of a machine guard/fence?", "q7": "ladder unsafe?"}
+
+
+def sheets(todo, d, out, site, per=4):
+    """Blind contact sheets for rows to label: the object's 2 x 2 evidence (hazard.evidence) and the check's question, never the
+    verdict. -> index rows [{n, site, id, q, check, sheet}]."""
+    import cv2
+    import numpy as np
+    ctx = d["ctx"]
+    ctx["outlines_by_frame"] = {f["sourceFrame"]: f["objects"] for f in d["outlines"]}
+    by = {c["id"]: judge.follow_name(c) for c in d["cards"]}
+    items, seen = [], set()
+    for r in todo:
+        q = LABEL_Q[r["check"]]
+        if (r["subject"], q) in seen or r["subject"] not in by:
+            continue
+        seen.add((r["subject"], q))
+        jpg, _ = hazard.evidence(by[r["subject"]], ctx, judge.frame_at, judge.marks_on, judge.som)
+        if jpg is not None:
+            items.append((r, q, cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)))
+    out.mkdir(parents=True, exist_ok=True)
+    index = []
+    for k in range(0, len(items), per):
+        panels = []
+        for j, (r, q, img) in enumerate(items[k:k + per]):
+            cap = np.full((70, 560, 3), 255, np.uint8)
+            cv2.putText(cap, f"#{k + j} {site} {r['subject']} '{r.get('subject_name')}'", (6, 24), cv2.FONT_HERSHEY_SIMPLEX, .6, (0, 0, 0), 1, cv2.LINE_AA)
+            cv2.putText(cap, QTEXT[q][:80], (6, 52), cv2.FONT_HERSHEY_SIMPLEX, .5, (0, 0, 160), 1, cv2.LINE_AA)
+            panels.append(np.vstack([cap, cv2.resize(img, (560, 560), interpolation=cv2.INTER_AREA)]))
+            index.append({"n": k + j, "site": site, "id": r["subject"], "q": q, "check": r["check"], "sheet": f"{site}-{k // per:03d}"})
+        while len(panels) < per:
+            panels.append(np.full_like(panels[0], 255))
+        cv2.imwrite(str(out / f"{site}-{k // per:03d}.jpg"), np.vstack([np.hstack(panels[:2]), np.hstack(panels[2:])]), [cv2.IMWRITE_JPEG_QUALITY, 80])
+    return index

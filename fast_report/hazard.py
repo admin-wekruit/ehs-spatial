@@ -269,7 +269,7 @@ def workspace_container():
     raise RuntimeError("expected one report-workspace container")
 
 
-def exec_gemini(reqs, on_output, log=None, workers=32, container=None):
+def exec_gemini(reqs, on_output, log=None, workers=32, container=None, phases=None):
     """Every request in one exec in the workspace container, streamed in as JSON lines; on_output(key, provider dict | None,
     error) per request as it completes (sha256-checked). log: an open file for the events (outputs dropped). Returns the
     exit code."""
@@ -283,6 +283,8 @@ def exec_gemini(reqs, on_output, log=None, workers=32, container=None):
 
     def on_line(line):
         e = json.loads(line)
+        if phases is not None:
+            phases.append(e["phase"])
         if log is not None:
             log.write(json.dumps({k: v for k, v in e.items() if k != "data"} | {"data": {k: v for k, v in (e.get("data") or {}).items() if k != "gz_b64"}}) + "\n")
             log.flush()
@@ -322,13 +324,19 @@ def relay(requests_q, answers_q, stop, log=None):
     def wave(reqs):
         def done(key, prov, err):
             out.put({"key": key, "provider": prov, "error": err, "t_unix": time.time()})
-        try:
-            container[0] = container[0] or workspace_container()
-            exec_gemini(reqs, done, log, container=container[0])
-        except Exception as error:  # noqa: BLE001  every request of the wave comes back unanswered
-            container[0] = None  # the next wave looks the container up again (it may have scaled down)
-            for r in reqs:
-                out.put({"key": r["key"], "provider": None, "error": repr(error)[:300], "t_unix": time.time()})
+        for attempt in (0, 1):  # a second exec only when the first printed nothing (a container that had just finished:
+            phases = []         # bench-002's first wave, ConflictError): no request reached Gemini, none is posted twice
+            try:
+                container[0] = container[0] or workspace_container()
+                exec_gemini(reqs, done, log, container=container[0], phases=phases)
+                return
+            except Exception as error:  # noqa: BLE001
+                container[0] = None  # looked up again (it may have scaled down)
+                if attempt == 0 and not phases:
+                    continue
+                for r in reqs:
+                    out.put({"key": r["key"], "provider": None, "error": repr(error)[:300], "t_unix": time.time()})
+                return
     def warm():
         try:
             container[0] = container[0] or workspace_container()

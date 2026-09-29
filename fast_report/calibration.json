@@ -262,21 +262,21 @@
   "qwen": {
    "q1": {
     "hazard": {
-     "t": 0.177231,
-     "n": 15,
-     "hits": 12
+     "t": 0.772714,
+     "n": 12,
+     "hits": 10
     },
     "clear": {
-     "t": 0.0017,
-     "n": 29,
-     "hits": 29
+     "t": 0.039659,
+     "n": 37,
+     "hits": 36
     },
     "veto": {
-     "t": 0.177231,
+     "t": 0.772714,
      "calibrated": true
     },
-    "n": 57,
-    "positives": 15,
+    "n": 55,
+    "positives": 14,
     "sources": [
      "me340",
      "samsclub",
@@ -302,7 +302,8 @@
      "setd-agv",
      "setd-lightning",
      "setd-samsclub",
-     "setd-walmart"
+     "setd-walmart",
+     "walmart"
     ]
    },
    "q3": {
@@ -324,16 +325,12 @@
    },
    "q4": {
     "hazard": null,
-    "clear": {
-     "t": 3e-06,
-     "n": 10,
-     "hits": 10
-    },
+    "clear": null,
     "veto": {
      "t": 0.8,
      "calibrated": false
     },
-    "n": 169,
+    "n": 167,
     "positives": 28,
     "sources": [
      "me340",

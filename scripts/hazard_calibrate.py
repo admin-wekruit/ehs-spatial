@@ -37,6 +37,15 @@ def answers(run):
     return out
 
 
+def qwen_objects():
+    """Qwen on the labelled objects: round 2's neutral prompt (mvp2-judge-qwen-001: judge.prompt, no measured value) when it
+    exists, else round 1's own answers (their prompt told the model the measured distance)."""
+    path = RUNS / "mvp2-judge-qwen-001/answers.json"
+    if path.exists():
+        return json.loads(path.read_text())["items"]
+    return json.loads((RUNS / "mvp2-judge-hazard-001/qwen-round1-object-answers.json").read_text())
+
+
 def sets(object_run="mvp2-judge-hazard-002"):
     lab = labels()
     d = json.loads((X8 / "sets/d.json").read_text())["items"]
@@ -47,9 +56,9 @@ def sets(object_run="mvp2-judge-hazard-002"):
          if qd.get(x["id"], {}).get("p") is not None]
     ga = answers(object_run)
     g += [{"question": k[2], "p": ga[k], "truth": v["label"], "source": k[0], "set": "objects", "id": k[1]} for k, v in lab.items() if k in ga]
-    for x in json.loads((RUNS / "mvp2-judge-hazard-001/qwen-round1-object-answers.json").read_text()):
+    for x in qwen_objects():
         k = (x["site"], x["id"], x["q"])
-        if k in lab:
+        if k in lab and x.get("p") is not None:
             q.append({"question": x["q"], "p": x["p"], "truth": lab[k]["label"], "source": x["site"], "set": "objects", "id": x["id"]})
     return {"gemini": g, "qwen": q}
 
