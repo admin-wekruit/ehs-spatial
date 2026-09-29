@@ -314,7 +314,9 @@ export function unknownRegion(pick: Pick, cameras: any, cardsLayer: any, t: numb
     .filter((k: any) => Number.isFinite(k.d)).sort((a: any, b: any) => a.d - b.d)[0] || null;
   if (nearest) {  // mvp2 (R7): the distance's u: this point's depth (horizontal share), the footprint's own u, the 20% scale term
     const hshare = Math.sqrt(Math.max(0, 1 - vshare * vshare)), ud = .05 * distance * hshare;
-    nearest.distance = { value: nearest.d, u: Math.hypot(ud, nearest.uFoot, .2 * nearest.d), parts: { depth: ud, footprint: nearest.uFoot, scale: .2 * nearest.d } };
+    const u = Math.hypot(ud, nearest.uFoot, .2 * nearest.d);  // mvp3: cards.unresolved_distance's rule: u >= max(d, 1 m) says nothing
+    nearest.distance = u >= Math.max(nearest.d, 1) ? { status: "not measurable", reason: "its uncertainty is larger than the distance and than 1 m" }
+      : { value: nearest.d, u, parts: { depth: ud, footprint: nearest.uFoot, scale: .2 * nearest.d } };
   }
   return {
     status: "depth" as const, t: frame.t, x, y, frame: frame.frame, shot: camShot.index, surface, nearest, point_floor: toFloor(F, P),

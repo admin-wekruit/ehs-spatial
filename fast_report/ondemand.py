@@ -371,6 +371,8 @@ def assemble(base, f, L, mask, shot, k, ans):
                    "review_base": {n: {kk: phys[n][kk] for kk in ("status", "reason") if kk in phys[n]} for n in cards.REVIEWED if "value" in phys.get(n, {})},
                    "angles": {}, "fragmented": False, "fragment_reason": ""}}
     out = cards.apply_name(out)
+    if not ident.get("name"):  # the namer could not tell (seed 41: a card without a name)
+        ident.update(name=cards.UNIDENTIFIED, status=cards.NAMER_STATUS["unclear"])
     if L is not None:
         phys["level"] = "coarse (one view)"  # apply_name sets 'coarse'
         out["on_floor"] = L["on_floor"]
@@ -426,6 +428,7 @@ def self_check():
     assert got["status"] == "card" and got["identity"]["name"] == "screwdriver" and got["physical"]["size_check"]["status"] == "implausible"
     assert got["physical"]["height"]["status"] == "needs review" and cards.contract(got) == [] and got["physical"]["level"] == "coarse (one view)"
     assert assemble(base, f, None, mask, {}, k, {"name": "floor", "status": "surface", "p": 0.9})["kind"] == "surface"
+    assert assemble(base, f, L, mask, {}, k, parse("no idea"))["identity"]["name"] == cards.UNIDENTIFIED
     # the floor rule: a floor region Qwen names after the cart beside it is the floor; a cable on the floor keeps its card
     Lf = {**L, "on_floor": .9}
     region = {**base, "mask_share": .12}

@@ -59,6 +59,8 @@ assert.equal(floor.surface.kind,'floor');assert.ok(Math.abs(floor.height.value)<
 assert.ok(floor.height.u>=.02&&floor.distance.u>=.2*floor.distance.value,'u carries floor residual and scale');
 assert.equal(floor.nearest.id,'obj-0-big');assert.ok(Math.abs(floor.nearest.d-.5)<.03,'nearest footprint 0.5 m ahead');
 assert.ok(floor.nearest.distance.u>=.2*floor.nearest.d&&floor.surface.angle_deg===undefined,'mvp2: the nearest distance carries u; one view gives no angle');
+const c0:any=cardsLayer.cards[0],far={...cardsLayer,cards:[{...c0,physical:{...c0.physical,footprint_xy:{value:c0.physical.footprint_xy,u:5}}}]};
+assert.equal((unknownRegion(pick,cameras,far,0,640,60.5*720/70) as any).nearest.distance.status,'not measurable','mvp3: u >= max(d, 1 m) says nothing');
 const wall=unknownRegion(pick,cameras,cardsLayer,0,640,10.5*720/70) as any;
 assert.equal(wall.surface.kind,'vertical surface');assert.ok(Math.abs(wall.height.value-(1.6+98/252*5))<.02,String(wall.height.value));
 assert.equal((unknownRegion({...pick,depth:new Uint16Array(depth.length)},cameras,cardsLayer,0,640,300) as any).status,'no 3D point here');

@@ -178,6 +178,52 @@ def measure(audit: str, out: str, sites: str = "me340,samsclub-a2,walmart", owl_
 
 
 @app.local_entrypoint()
+def analyse(site: str, out: str, clicks: int = 20, seed: int = 43, hold_s: int = 0, port: int = 8793):
+    """The regression check of this branch's FastReport: one analysis call (a first call after boot; no Gemini relay: the Qwen
+    decider names, so no shared report container is used), mirrored like the bench, then `clicks` random clicks on the new
+    report's pick layer that open no entity asked on demand (the state the container primed after the run), then the viewer
+    on the new report for hold_s."""
+    import hashlib
+    import click_audit as ca
+    import fast_report_bench as fb
+    from fast_report import layers as fl
+    outd = Path(out)
+    outd.mkdir(parents=True, exist_ok=False)
+    mirror = outd / "mirror"
+    mirror.mkdir()
+    fr = FastReport()
+    boot = fr.boot_info.remote()
+    (outd / "boot.json").write_text(json.dumps(boot, indent=1, default=str))
+    mp4, span, _ = fb.window(site, "first", 0., outd)
+    sha = hashlib.sha256(mp4).hexdigest()
+    report = f"mvp3-click-{site}-{sha[:8]}-{int(time.time())}"
+    fl.put_blob(mirror, mp4)
+    rec = fb.call(fr, lambda e, r: fl.mirror(e, r, int(8e6)), mirror, mp4, site, report, {"vocab": "qwen", "client_has": [sha], "background_s": 0, "window_s": span})
+    rec.update(site=site, call=0, kind="first", window_s=span, options={"namer": "none (Qwen decider)", "hazard": "qwen"})
+    (outd / f"call-{report}.json").write_text(json.dumps(rec, indent=1, default=str))
+    print(site, "analysis", json.dumps({k: v["first"]["written_s"] for k, v in fb.layer_times(rec).items()}), "error:", (rec["run"].get("error") or "")[:300], flush=True)
+    pick, _, cards, fps, _ = ca.load_run(mirror, report)
+    todo = [c for c in ca.resolve(pick, cards, ca.random_clicks(pick, fps, 4 * clicks, seed, ca.ev.patch_versions(mirror, report, "video")[0]["data"]["frames"]), fps) if c["entity"] is None][:clicks]
+    rows = []
+    for c in todo:
+        i = int(pick.frame_at(c["frame"] / fps))
+        t0 = time.perf_counter()
+        try:
+            card, err = fr.click.remote(report, i, c["x"], c["y"]), None
+        except Exception as e:  # noqa: BLE001
+            card, err = None, repr(e)[:400]
+        rows.append({"k": c["k"], "frame": c["frame"], "x": c["x"], "y": c["y"], "i": i, "round_trip_s": round(time.perf_counter() - t0, 3), "card": card, "error": err})
+        print("click", c["k"], rows[-1]["round_trip_s"], (card or {}).get("status"), ((card or {}).get("identity") or {}).get("name"), err or "", flush=True)
+    (outd / "ondemand.json").write_text(json.dumps({"report": report, "rows": rows}, indent=1, default=str))
+    if hold_s:
+        fl.serve(mirror, port, click=lambda r, i, x, y: fr.click.remote(r, i, x, y), alive=lambda: fr.alive.remote())
+        (outd / "HOLDING").write_text(report)
+        print(f"holding {hold_s} s: #/live/{report} on :{port}", flush=True)
+        time.sleep(hold_s)
+        (outd / "HOLDING").unlink()
+
+
+@app.local_entrypoint()
 def view(mirror: str, hold_s: int = 600, port: int = 8793):
     """The viewer on a mirrored report with on-demand clicks live: this app's report container behind the local server's click
     route, held hold_s (web: npx vite --host 127.0.0.1; open http://127.0.0.1:5173/app.html#/live/<report on the Volume>)."""
