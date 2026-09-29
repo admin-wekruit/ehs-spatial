@@ -22,6 +22,10 @@ from pathlib import Path
 
 QWEN, VLLM_SHARE, VLLM_PORT = "Qwen/Qwen3-VL-8B-Instruct", .35, 8000
 MAX_SEQS = 16  # E9 ran 4; naming sends 16 one-crop requests (~300 tokens each) at once, beside two event windows
+# mvp2 (runs/mvp2-click-vllm-probe-00{1,2,3}, alone on an A100): the decider's questions are front-end bound (tokenising and image
+# preprocessing in one API process): 1 server 38-44 q/s, 2 52, 3 71-73, 4 63; 32 seqs +3%, compiled +8%. Answers move no more
+# than between two fresh 1-server starts (max |dp| 0.106 vs 0.103; argmax flips 6 vs 8 of 378, all near-ties)
+API_SERVERS = 3
 CORE = ["fire extinguisher", "exit sign", "forklift", "ladder", "spill", "cable", "hose", "guard"]  # E2b's EHS core list
 MAX_TYPES, VOCAB_FRAMES, SITE_WORDS = 50, 5, 50
 # E2b's v1 prompt, verbatim (vocab_probe.PROMPT with LENGTH v1): 89% recall on ME340 with Qwen, 5 frames, first 50 + core
@@ -56,7 +60,7 @@ def start(gpu, mps=False):
     env.update(CUDA_VISIBLE_DEVICES=str(gpu), HF_HOME="/v/vlm/huggingface", HF_HUB_OFFLINE="1")
     cmd = ["/opt/vllm/bin/vllm", "serve", QWEN, "--host", "127.0.0.1", "--port", str(VLLM_PORT), "--served-model-name", "qwen",
            "--max-model-len", "16384", "--gpu-memory-utilization", str(VLLM_SHARE), "--max-num-seqs", str(MAX_SEQS),
-           "--limit-mm-per-prompt", json.dumps({"image": 40, "video": 0}), "--enforce-eager", "--seed", "0"]
+           "--limit-mm-per-prompt", json.dumps({"image": 40, "video": 0}), "--enforce-eager", "--seed", "0", "--api-server-count", str(API_SERVERS)]
     return subprocess.Popen(cmd, env=env, stdout=open("/tmp/vllm.log", "w"), stderr=subprocess.STDOUT)
 
 

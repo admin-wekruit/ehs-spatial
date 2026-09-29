@@ -67,7 +67,8 @@ def probe(crops, n=400, configs=CONFIGS):
             s = time.perf_counter() - t0
             lat = sorted(r["s"] for r in res)
             row.update(questions=n, s=round(s, 2), per_s=round(n / s, 2), prompt_tokens_mean=round(sum(r["prompt_tokens"] for r in res) / n, 1),
-                       request_p50_s=lat[n // 2], request_p90_s=lat[int(.9 * n)], engine=vlm.throughput()[-6:])
+                       request_p50_s=lat[n // 2], request_p90_s=lat[int(.9 * n)], engine=vlm.throughput()[-6:],
+                       probs=[r["probs"] for r in res])  # the same questions in every setting (and each pair twice: i, i + len(crops))
         except Exception as error:  # noqa: BLE001  one setting that does not start is that row's result
             row["error"] = repr(error)[:600]
         finally:
@@ -82,14 +83,22 @@ def probe(crops, n=400, configs=CONFIGS):
     return out
 
 
+SAME = [("base: eager, 16 seqs", [], 16), ("eager, 3 API servers", ["--api-server-count", "3"], 16), ("base again", [], 16)]
+MORE = [("base: eager, 16 seqs", [], 16), ("eager, 3 API servers", ["--api-server-count", "3"], 16),
+        ("eager, 4 API servers", ["--api-server-count", "4"], 16), ("eager, 4 API servers, 24 seqs", ["--api-server-count", "4", "--max-num-seqs", "24"], 24)]
+
+
 @app.local_entrypoint()
-def main(crops: str, out: str, n: int = 400):
+def main(crops: str, out: str, n: int = 400, more: bool = False, same: bool = False):
     jpegs = [p.read_bytes() for p in sorted(Path(crops).glob("*.jpg"))]
     assert jpegs, f"no crops in {crops}"
     o = Path(out)
     o.mkdir(parents=True, exist_ok=False)
     t = time.time()
-    rows = probe.remote(jpegs, n)
+    rows = probe.remote(jpegs, n, SAME if same else MORE if more else CONFIGS)
+    base = rows[0].get("probs") or []
+    for r in rows:  # max |p - p_base| over the same questions
+        r["max_prob_delta_vs_first"] = max((abs(a - b) for x, y in zip(r.get("probs") or [], base) for a, b in zip(x, y)), default=None)
     (o / "probe.json").write_text(json.dumps({"crops": len(jpegs), "n": n, "wall_s": round(time.time() - t, 1), "rows": rows}, indent=1))
     for r in rows:
-        print(r["config"], r.get("per_s"), r.get("startup_s"), r.get("error", ""))
+        print(r["config"], r.get("per_s"), r.get("startup_s"), r.get("max_prob_delta_vs_first"), r.get("error", ""))
