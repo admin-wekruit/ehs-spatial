@@ -100,6 +100,17 @@ def instances(bench, report, site):
         {"missed_ids": {k: v["detail"]["missed"] for k, v in res.items() if isinstance(v, dict) and "detail" in v}}
 
 
+def clicks_vs(clicks_dir, base_dir, site):
+    """The audited clicks resolved on round 3's warm call too: {label now / 'round3 picked' or 'round3 nothing': count}."""
+    import click_audit as ca
+    A = Path(clicks_dir) / site
+    meta = json.loads(next(A.glob("clicks-*.json")).read_text())
+    lab = json.loads(next(A.glob("labels-*.json")).read_text())["labels"]
+    b = ca.load_run(Path(base_dir) / "mirror", calls(base_dir, site)["warm"]["run"]["report"])
+    was = {c["k"]: c["entity"] for c in ca.resolve(b[0], b[2], [dict(c) for c in meta["clicks"]], b[3])}
+    return dict(collections.Counter(f"{lab[str(c['k'])]['label']} / round3 {'picked' if was[c['k']] else 'nothing'}" for c in meta["clicks"]))
+
+
 def collect(a):
     import click_audit as ca
     import r4_naming_results as nr
@@ -124,6 +135,8 @@ def collect(a):
                     v["instances"]["round 3 warm"] = instances(base[site], bc["warm"]["run"]["report"], site)
     if a.clicks:
         res["clicks"] = {Path(r["file"]).parent.name: r for r in ca.score(sorted(str(p) for p in Path(a.clicks).iterdir() if p.is_dir()))}
+    if a.clicks and base:
+        res["clicks_vs_round3"] = {s: clicks_vs(a.clicks, d, s) for s, d in base.items() if (Path(a.clicks) / s).exists()}
     if a.cards:
         res["cards_audit"] = ra.score(sorted(str(p) for p in Path(a.cards).iterdir() if (p / "labels.json").exists()))
     res["heldout_types"] = {}
@@ -181,6 +194,9 @@ def md(res):
     ck = res.get("clicks") or {}
     out += row("60 random clicks: right card / nothing / wrong / background right / background hit",
                lambda s: f"{ck[s]['correct']} / {ck[s]['miss']} / {ck[s]['wrong']} / {ck[s]['background']} / {ck[s]['background-hit']}")
+    cv = res.get("clicks_vs_round3") or {}
+    out += row("the same clicks on round 3's warm call: right now and nothing then / miss now and something then",
+               lambda s: f"{cv[s].get('correct / round3 nothing', 0)} / {cv[s].get('miss / round3 picked', 0)}")
     out += row("clicks on a thing that opened the right card", lambda s: f"{ck[s]['correct']}/{ck[s]['correct'] + ck[s]['miss'] + ck[s]['wrong']} = {ck[s]['on_object_correct']:.2f}")
     for ref in ("clean", "all", "models"):
         out += row(f"delivered objects ({ref}): covered, in pieces, wrong-merge cards; round 3 warm in brackets",
