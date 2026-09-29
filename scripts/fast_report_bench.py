@@ -297,7 +297,17 @@ def self_check():
     assert s["acceptance_warm"]["objects"] == {"written_s": [31.], "target_s": 30, "all_pass": False}
     assert s["flags"] == ["me340#1: gpu0 73.0 GiB > 90% at 22.0 s (sam3.vocab.wave2@gpu0)"] and "eval_holdout" not in s["calls"][0]["options"]
     assert json.loads(json.dumps(s, default=str))
-    print("fast_report_bench self-check passed: stream -> mirror, run.json kept, layer times, section 13 acceptance, summary")
+    # the MVP pieces: the base window is the clip's own cut (offset 0); the per-call latency table and the page
+    mp4, span, offset = window("me340", "warm", 5., Path("."))
+    assert offset == 0 and span == [165., 195.] and mp4[:12].find(b"ftyp") >= 0
+    rec["mvp_latency"] = {"layers": {"pick v1": {"written_s": 33.5, "target_s": 34., "ok": True}, "cameras": {"written_s": 20., "fb_written_s": 18.1, "ok": False}}}
+    rec.update(kind="shifted", call=3)
+    t = latency_table([rec])
+    assert t == {"pick v1": {"me340 shifted 3": "33.5 (34.0) ✓"}, "cameras": {"me340 shifted 3": "20.0 (18.1) ✗"}}, t
+    with tempfile.TemporaryDirectory() as tmp:
+        md = summary_md({"mvp_latency_table": t, "boot": {"ready_s": 131.}, "mvp_error": "x"}, Path(tmp))
+    assert "| pick v1 | 33.5 (34.0) ✓ |" in md and "131.0 s" in md
+    print("fast_report_bench self-check passed: stream -> mirror, run.json kept, layer times, section 13 acceptance, summary, MVP window/latency table/page")
 
 
 if __name__ == "__main__":
