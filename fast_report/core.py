@@ -518,10 +518,8 @@ def analyse(m, mp4, opts, clock, writer, log):
                          "scale_status": "estimated" if plane else "uncalibrated", "floor": floor_rec})
         geo.append({"depth_m": depth_m, "c2w_m": c2w_m, "K": g["K"], "mpu": mpu, "pos": pos, "plane": plane, "index": si,
                     "keys": [keys[q] for q in pos], "person": people_u[p]})
-    writer.put("cameras", {"shots": cam_rows, "fps": fps, "keyframe_rule": "sharpest of each 6-frame block (5 fps)", "license": LICENSE,
-                           "scale": {"status": "estimated", "source": "floor plane (SAM 3 'floor') + assumed camera height 1.6 m; unit scale where no floor"}},
-               None, "estimated", lab)
-    clock.mark("cameras_put")
+    cameras = {"shots": cam_rows, "fps": fps, "keyframe_rule": "sharpest of each 6-frame block (5 fps)", "license": LICENSE,
+               "scale": {"status": "estimated", "source": "floor plane (SAM 3 'floor') + assumed camera height 1.6 m; unit scale where no floor"}}
     for si, (gg, g) in enumerate(zip(geo, shots_gpu)):
         pos, plane, mpu, depth_m, c2w_m = gg["pos"], gg["plane"], gg["mpu"], gg["depth_m"], gg["c2w_m"]
         p = torch.tensor(pos, device=dev_geo)
@@ -544,9 +542,12 @@ def analyse(m, mp4, opts, clock, writer, log):
         gg["seeds"] = {"xyz": tsdf["points"], "rgb": tsdf["colors"]}
         room_rows.append({"index": si, "frame_id": f"shot-{si}", "triangles": tsdf["n_triangles"], "points": tsdf["n_points"], "tsdf_voxel_m": .03})
         light_rows.append({"index": si, "frame_id": f"shot-{si}", "triangles": len(quick[3]), "points": 0, "light_cell_m": .06})
-    # the light room at once, in a commit of its own; the full one (77 MB on ME340: a 4 s commit) after the people layer,
-    # which would otherwise wait for that commit (run fb-integrate-me340-003: room and people written 7.6 and 7.5 s after put)
+    # cameras and the light room in one commit (put 1 s apart, the room waited for the cameras' commit: run
+    # fb-integrate-me340-005's warm call, room written 8.3 s after put); people next; the full room (77 MB on ME340, a
+    # 4 s commit) only once people are written
+    writer.put("cameras", cameras, None, "estimated", lab)
     writer.put("room", {"shots": light_rows, "kind": "light"}, light_blobs, "estimated", lab)
+    clock.mark("cameras_put")
     clock.mark("room_put")
     # the splat (GPU 1): set up now, while SAM 3 still runs there; trains once the SAM 3 queue is empty (released below)
     longest = max(range(len(geo)), key=lambda i: len(geo[i]["pos"])) if geo else None
@@ -557,6 +558,10 @@ def analyse(m, mp4, opts, clock, writer, log):
     def people_layer():  # CPU work: runs beside GPU 0's share of the SAM 3 queue
         try:
             people_tracks()
+            for _ in range(750):  # people's own commit first (ponytail: polls the writer's committed rows, 15 s at most)
+                if any(r["layer"] == "people" for r in writer.rows):
+                    break
+                time.sleep(.02)
         finally:
             writer.put("room", {"shots": room_rows, "kind": "full"}, room_blobs, "estimated", lab)
             clock.mark("room_full_put")
