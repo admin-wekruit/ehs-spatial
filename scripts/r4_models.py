@@ -5,8 +5,8 @@
     python scripts/r4_models.py results RUN_DIR OUT [--baseline RUN_DIR] [--audit DIR ...]   # the tables as markdown
     python scripts/r4_models.py --self-check
 
-sheet: n object cards drawn at random (seeded) among the final cards with a pick region, each on the keyframe (with a camera)
-where its region is largest: left the crop with the region outlined, right the same crop dimmed with the card's model drawn
+sheet: n object cards drawn at random (seeded) among the final cards with a pick region, each on one of the card's best views
+(else the keyframe with a camera where its region is largest): left the crop with the region outlined, right the same crop dimmed with the card's model drawn
 from that camera (the SAM 3D mesh when its gate accepted one, else the primitive: seen faces solid, guessed ones faint).
 labels.json lists them for the agent's labels (plausible | implausible | unclear, by looking; 'agent-labelled').
 """
@@ -180,7 +180,7 @@ def sheet(mirror, report, out_dir, n=30, seed=4, per=10, cards=None):
     cams = {s["index"]: s for s in L["cameras"]["shots"]}
     cards = cards if cards is not None else [c for c in L["object_cards"]["cards"] if c.get("kind") == "object" and (c.get("model") or {}).get("kind")]
     want = {c["id"] for c in cards}
-    best = {}
+    best, chosen_view = {}, {c["id"]: set((c.get("views") or {}).get("best") or []) for c in cards}
     for i, f in enumerate(pick.frames):
         cam = cams.get(f.get("shot"))
         if f.get("source") != "segmented" or cam is None or f["frame"] not in cam["keys"]:
@@ -189,8 +189,10 @@ def sheet(mirror, report, out_dir, n=30, seed=4, per=10, cards=None):
         idx, cnt = np.unique(m[m > 0], return_counts=True)
         for j, a in zip(idx, cnt):
             cid = root(ent[int(j)]) if ent[int(j)] else None
-            if cid in want and a > best.get(cid, (0,))[0]:
-                best[cid] = (int(a), i)
+            # the card's own best views first (coverage x sharpness, >= 15 deg apart), then where its region is largest
+            rank = (f["frame"] in chosen_view.get(cid, ()), int(a))
+            if cid in want and rank > best.get(cid, ((False, 0),))[0]:
+                best[cid] = (rank, i)
     cards = [c for c in cards if c["id"] in best]
     chosen = [cards[i] for i in np.random.default_rng(seed).choice(len(cards), min(n, len(cards)), replace=False)]
     sam = sam_by_card(L, models_patch)
@@ -208,8 +210,8 @@ def sheet(mirror, report, out_dir, n=30, seed=4, per=10, cards=None):
         cap.set(cv2.CAP_PROP_POS_FRAMES, f["frame"])
         ok, img = cap.read()
         H, W = img.shape[:2]
-        sx = W / cam["wh"][0]
-        K = np.asarray(cam["K"][key], float) * [[sx, 1, sx], [1, sx, sx], [1, 1, 1]]
+        sx, sy = W / cam["wh"][0], H / cam["wh"][1]  # the DA3 grid to the source frame, per axis (ondemand.lift's mapping)
+        K = np.asarray(cam["K"][key], float) * [[sx, 1, sx], [1, sy, sy], [1, 1, 1]]
         c2w = np.asarray(cam["c2w"][key], float)
         mk = np.isin(pick.map(i), [j for j, e in enumerate(ent) if e and root(e) == c["id"]]).astype(np.uint8)
         mk = cv2.resize(mk, (W, H), interpolation=cv2.INTER_NEAREST)
@@ -266,6 +268,8 @@ def table(run_dir):
     out = {}
     for rep in sorted(p.name for p in (Path(run_dir) / "mirror" / "reports").iterdir()):
         L = ev.load_layers(Path(run_dir) / "mirror", rep)
+        if "object_cards" not in L or not (Path(run_dir) / "mirror" / "reports" / rep / "run.json").exists():
+            continue  # a call still running
         cs = [c for c in L["object_cards"]["cards"] if c.get("kind") == "object"]
         ms = [c.get("model") or {} for c in cs]
         have = [m for m in ms if m.get("kind")]

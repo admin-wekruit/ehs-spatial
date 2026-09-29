@@ -347,6 +347,10 @@ def person_masks(person, frames_local):
 
 
 SPLAT_LATEST_S = 72.  # analysis s: the splat waits for the facts until here at most (150 s preview + write: by ~226 s)
+# r4 (models): while the splat trains (its preview lands by ~226 s) SAM 3D keeps going in the background (the first pass's other
+# views and seed 43, then the rest of the well-observed cards) until here: more accepted meshes, no later call end (bench 001:
+# the first pass was judged by 124-141 s and GPU 0 then idled)
+MODELS_UNTIL_S = 205.
 DENSIFY_WORDS_RULE = ("densify runs the EHS core words and every word with a detection on the object keyframes (every 3rd 5 fps keyframe, "
                       "0.6 s apart); a word with none there is listed in words_not_run (round 1: 0-4 of 149-568 new objects carried such a word)")
 
@@ -628,11 +632,12 @@ def tried_rows(records):
     return list(out.values())
 
 
-def models_job(m, inputs, geo, shared, words, clock, writer, dev, cards_now=None):
+def models_job(m, inputs, geo, shared, words, clock, writer, dev, cards_now=None, until_s=None):
     """SAM 3D's first pass (fast_report.sam3d.gate: the first 30 ranked objects, one try each, GPU 0 under MPS): each
     accepted model at once as a new 'models' version (cumulative), and a last one ('final') when the pass is judged.
     r4 (models): only the cards' well-observed objects go (display_model.well_observed on the newest cards version, best
-    first); 'tried' says per object what SAM 3D did (the card's model line), a rejected one keeps its primitive."""
+    first); 'tried' says per object what SAM 3D did (the card's model line), a rejected one keeps its primitive. until_s
+    (analysis s): the gate's background mode until then (retries, then the rest of the eligible), else the first pass only."""
     import os
     import shutil
     import torch
@@ -647,7 +652,8 @@ def models_job(m, inputs, geo, shared, words, clock, writer, dev, cards_now=None
     judged = lambda: sum(r.get("stage") == "assess" for r in records)  # noqa: E731
     base = {"eligible": None if eligible is None else len(eligible), "rule": display_model.WELL_OBSERVED}
     try:
-        for x in sam3d.gate(objs, shots, shared.result(), clock, m.sam3d, m.gate_pool, vocab=words, records=records, eligible=eligible):
+        for x in sam3d.gate(objs, shots, shared.result(), clock, m.sam3d, m.gate_pool, vocab=words, records=records, eligible=eligible,
+                            background=until_s is not None, deadline=None if until_s is None else clock.t0_unix + until_s):
             models.append({"object": x["object"], "transform": {"position": [float(v) for v in x["transform"][:3, 3]], "quaternion": [0, 0, 0, 1],
                                                                 "scale": [1, 1, 1]}, "bounds": x["bounds"], "gate": x["gate"]})
             blobs[f"model-{x['object']}"] = (x["glb"], {"mediaType": "model/gltf-binary", "format": "glb"})
@@ -1416,7 +1422,8 @@ def analyse(m, mp4, opts, clock, writer, log):
             if display.get("models") or not display_on:
                 return
             display["models"] = m.cpu_pool.submit(models_job, m, sam3d_objs.result, geo, shared, words, clock, writer, dev_geo,
-                                                  lambda: next((cards_out[v] for v in ("v4", "v3", "v2", "v1") if v in cards_out), None))
+                                                  lambda: next((cards_out[v] for v in ("v4", "v3", "v2", "v1") if v in cards_out), None),
+                                                  MODELS_UNTIL_S if splat_future is not None else None)
             clock.mark("display_started")
     if not densify_on or not objects:
         start_display()
