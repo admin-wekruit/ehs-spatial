@@ -1579,9 +1579,11 @@ def identity_v1(o, sc=None):
     total = sum(votes.values()) or 1.
     cands = list(votes)[:3]
     return {"proposed": o.get("word"), "name": o.get("word"), "confidence": None, "calibrated": False, "decided_by": "sam3 vote",
-            "note": "detected word, unverified", "alternatives": [[w, round(v / total, 3)] for w, v in votes.items() if w != o.get("word")][:3],
+            # r4/coverage: whose words voted (densify's box objects: the detector's); decided_by stays 'sam3 vote' (no VLM: the hazard gate)
+            "word_source": o.get("label_source") or "sam3 word vote",
+            "note": "no word any source was sure of" if o.get("word") == UNIDENTIFIED else "detected word, unverified", "alternatives": [[w, round(v / total, 3)] for w, v in votes.items() if w != o.get("word")][:3],
             "alternatives_measure": "SAM 3 vote share", "candidates": cands, "candidates_struck": strike(cands, (sc or {}).get("measured_m")),
-            "detector_words": list(votes) or ([o["word"]] if o.get("word") else []), "label": "inferred"}
+            "detector_words": list(votes) or ([o["word"]] if o.get("word") and o["word"] != UNIDENTIFIED else []), "label": "inferred"}
 
 
 ANGLES = ("principal_axis_tilt_deg", "planar_slope_deg")

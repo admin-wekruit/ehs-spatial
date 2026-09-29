@@ -327,7 +327,8 @@ def bench(a):
                 report = f"mvp-{site}-{sha[:8]}-{int(time.time())}"
                 fl.put_blob(mirror_root, mp4)  # the client's own MP4 is never sent back
                 options = {"vocab": a.vocab, "discover": a.discover, "client_has": [sha], "background_s": a.background_s if last else 0, "window_s": span,
-                           "eval_holdout": [f - offset for f in ev.holdout_frames(site) if f - offset >= 0], **({"namer": namer_q} if relay else {}),
+                           "coverage": a.coverage and kind != "warm-off", "eval_holdout": [f - offset for f in ev.holdout_frames(site) if f - offset >= 0], **({"namer": namer_q} if relay else {}),
+                           "coverage_debug": json.loads(a.coverage_debug.read_text()).get(site, []) if a.coverage_debug else [],
                            **({} if a.judge == "on" else {"judge": False}), **({} if a.display == "on" else {"display": False}),
                            "judge_vlm": a.hazard != "off", "identity_vlm": a.identity_vlm}  # r4: the VLMs only when asked
                 options.update({k: False for k in ("judge", "identity", "display") if k in a.off} | ({"dump": True} if a.dump else {}))
@@ -454,7 +455,7 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--out", type=Path)
     p.add_argument("--sites", default="me340,samsclub-a2,walmart")
-    p.add_argument("--plan", default="first,warm,warm,shifted", help="calls per video: first | warm | shifted")
+    p.add_argument("--plan", default="first,warm,warm,shifted", help="calls per video: first | warm | shifted | warm-off (r4: warm, --coverage off)")
     p.add_argument("--shift-s", type=float, default=5.)
     p.add_argument("--click-latency", type=Path, help="C's headless click check result {p50_ms, p95_ms, n}")
     p.add_argument("--background-s", type=int, default=0)
@@ -466,6 +467,8 @@ if __name__ == "__main__":
     p.add_argument("--identity-vlm", action="store_true", help="r4: the Qwen decider names what the namer did not (off: the SAM 3 word stays)")
     p.add_argument("--judge", default="on", choices=("on", "off"), help="r4: off = no judgements at all (no rules, no hazard VLM questions)")
     p.add_argument("--display", default="on", choices=("on", "off"), help="r4: off = no SAM 3D models and no splat (the facts only)")
+    p.add_argument("--coverage", action=argparse.BooleanOptionalAction, default=True, help="r4/coverage (on by default in r4/integrate): detector boxes -> SAM 3 tracker masks in densify ('warm-off' calls leave it off)")
+    p.add_argument("--coverage-debug", type=Path, help="r4 dev: {site: [{id, frame, x, y}]} points whose box masks' fates the run records")
     p.add_argument("--discover", action="store_true", help="X10's catch-all and label words in SAM 3's wave 1 (vlm.DISCOVER)")
     p.add_argument("--serve", action="store_true")
     p.add_argument("--off", default="", help="r4: comma list of judge,identity,display to switch off (judgement paused; no VLM identity)")
