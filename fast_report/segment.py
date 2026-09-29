@@ -19,6 +19,10 @@ GENERIC = {"tool", "tools", "machine", "machinery", "equipment", "object", "item
            "thing", "material", "structure", "unit", "component", "hardware", "supplies", "fixture"}
 EMPTY = 2 ** 63 - 1
 EDGE_JUMP, ERODE_KEEP, DEPTH_REL = .05, .3, .05  # click MVP section 4.2: m3_exp_geometry.EDGE_JUMP; photo erosion rule; DA3 ~5 %
+# mvp2 (R3): the raw mask's upper / lower edge counts when it lies at most this many DA3 px beyond the kept points' own top /
+# bottom in that column: the depth-edge pixel (1) + the 1 px erosion (1) + the stride-2 sample (1) + 1 of slack. Further
+# out the mask is taken to have bled and the kept point stands. Set from the cleaning rule before any run, not tuned.
+EDGE_GAP_PX = 4
 HOLE_ITERS = 3
 
 
@@ -370,7 +374,43 @@ def mask_points(masks, frame_of, depth_m, K, c2w_m, dyn, stride=2):
     mk = masks[idx]
     border = torch.stack([mk[:, :2].flatten(1).any(1), mk[:, -2:].flatten(1).any(1), mk[:, :, :2].flatten(1).any(1), mk[:, :, -2:].flatten(1).any(1)], 1)
     return {"lifted": idx, "mid": mid, "world": backproject(depth_m, K, c2w_m, fr[mid], vy, vx, stride), "z": z, "fr": fr,
-            "border": border, "pixels": raw[idx].sum((1, 2))}, stats
+            "border": border, "pixels": raw[idx].sum((1, 2)), "edge": edges(mk, mid, vy, vx, z, fr, K, c2w_m, stride)}, stats
+
+
+def edges(mk, mid, vy, vx, z, fr, K, c2w, stride=2, batch=2048):
+    """mvp2 (R3: tops read low; the cleaning shaves the rim): per lifted mask and stride column, the raw (un-eroded) mask's
+    top and bottom pixel edge, placed at the camera depth of the object's own topmost / bottommost kept point in that
+    column (depth consistency: the rim's own depth is the blend the cleaning dropped), used only within EDGE_GAP_PX of that
+    point (else the kept point itself). A column whose raw mask reaches the image border gives no edge (cut, not seen).
+    mk: the lifted masks at full DA3 size; mid/vy/vx/z: the kept points (mask_points, after the trim). -> {top, bottom:
+    (lifted-mask index, world points)}."""
+    import torch
+    L, H, W = mk.shape
+    Wc = W // stride
+    key = mid * Wc + vx
+    out = {}
+    for name in ("top", "bottom"):
+        top = name == "top"
+        at = torch.full((L * Wc,), H if top else -1, dtype=vy.dtype, device=vy.device).scatter_reduce(0, key, vy, "amin" if top else "amax")
+        hit = vy == at[key]  # the one kept point per (mask, column) on that row
+        k, zk = key[hit], z[hit]
+        rows = []  # the raw mask's first / last row per (mask, stride column), in batches (full-height masks)
+        for b0 in range(0, L, batch):
+            c = mk[b0:b0 + batch, :, ::stride][:, :, :Wc].to(torch.uint8)
+            rows.append(c.argmax(1) if top else H - 1 - c.flip(1).argmax(1))
+        raw = torch.cat(rows).flatten()[k] if rows else torch.zeros_like(k)
+        kept = at[k] * stride  # the kept point's full-resolution row (its column holds a raw pixel there, so raw is on its side)
+        use = ((kept - raw) if top else (raw - kept)) <= EDGE_GAP_PX
+        # the raw pixel's outer boundary (backproject's convention: pixel i spans [i, i + 1)); else the kept point's own centre
+        v = torch.where(use, raw.float() + (0. if top else 1.), kept.float() + (stride - 1) / 2)
+        seen = raw != (0 if top else H - 1)
+        m, col, zk, v = (k // Wc)[seen], (k % Wc)[seen], zk[seen], v[seen]
+        f = fr[m]
+        kk = K[f]
+        u = col.float() * stride + (stride - 1) / 2
+        cam = torch.stack([(u - kk[:, 0, 2]) / kk[:, 0, 0] * zk, (v - kk[:, 1, 2]) / kk[:, 1, 1] * zk, zk], 1)
+        out[name] = (m, (c2w[f, :3, :3] @ cam[:, :, None])[:, :, 0] + c2w[f, :3, 3])
+    return out
 
 
 VB, VOFF = 1 << 21, 1 << 20
@@ -618,4 +658,21 @@ def self_check():
     who, share = join({"lifted": torch.arange(2), "mid": torch.tensor([0] * 5 + [1] * 4), "world": torch.cat([w0, w1])},
                       codes[order], torch.tensor([0] * 4 + [1] * 4)[order])
     assert who.tolist() == [1, -1] and abs(float(share[0]) - .8) < 1e-6, (who, share)
-    print("segment self-check ok: flood merge/drop, naming, polygons, pick RLE, depth-edge cleaning, depth-tail trim, mask packing, densify join")
+    # mvp2 edges: an 80 x 100 px face at 4 m before a far wall; the cleaning shaves its rim (4-5 cm here), the raw edge at the
+    # face's own depth gives the pixel boundary back; a face cut by the image top gives no top edge
+    dm = torch.full((2, 280, 504), 8.)
+    dm[:, 100:180, 200:300] = 4.
+    dm[1, :180, 200:300] = 4.
+    face = torch.zeros((2, 280, 504), dtype=torch.bool)
+    face[0, 100:180, 200:300] = True
+    face[1, :180, 200:300] = True
+    Kt = torch.tensor([[262., 0, 252], [0, 262., 140], [0, 0, 1]]).repeat(2, 1, 1)
+    p, _ = mask_points(face, torch.tensor([0, 1]), dm, Kt, torch.eye(4).repeat(2, 1, 1), torch.zeros_like(face))
+    want = (100 - 140) / 262 * 4., (180 - 140) / 262 * 4.
+    ys = p["world"][p["mid"] == 0, 1]
+    assert ys.min() > want[0] + .02 and ys.max() < want[1] - .02, "the cleaning shaves the rim"
+    (mt, top), (mb, bot) = p["edge"]["top"], p["edge"]["bottom"]
+    assert (mt == 0).all() and (mt == 0).sum() >= 45 and (top[:, 1] - want[0]).abs().max() < 1e-4, top[:, 1]
+    assert ((mb == 0).sum() >= 45 and (mb == 1).sum() >= 45 and (bot[:, 1] - want[1]).abs().max() < 1e-4 and (bot[:, 2] - 4.).abs().max() < 1e-4)
+    print("segment self-check ok: flood merge/drop, naming, polygons, pick RLE, depth-edge cleaning, depth-tail trim, mask packing, densify join, "
+          "un-eroded edges at the object's depth")

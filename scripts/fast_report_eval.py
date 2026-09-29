@@ -1018,7 +1018,9 @@ def ours_objects(layers):
                         "height": fact(ph.get("height"), k.get("extent", 1)), "sides": sorted([w, d], key=lambda f: -f[0]) if w and d else None,
                         "position": fact(ph.get("position_xy"), k.get("position", 1)), "floor_frame": ff,
                         "slope": fact(ph.get("planar_slope_deg"), angle=True), "tilt": fact(ph.get("principal_axis_tilt_deg"), angle=True),
-                        "aabb": (ph["box_min_m"], ph["box_max_m"]) if ph.get("box_min_m") else None})
+                        "aabb": (ph["box_min_m"], ph["box_max_m"]) if ph.get("box_min_m") else None,
+                        "footprint": (ph.get("footprint_xy") or {}).get("value") if isinstance(ph.get("footprint_xy"), dict) else ph.get("footprint_xy"),
+                        "base_any": (ph.get("base_above_floor") or {}).get("value")})
         return out
     for o in objs:
         lo, hi = np.asarray(o["box_min_m"], float), np.asarray(o["box_max_m"], float)
@@ -1067,6 +1069,72 @@ def match_delivered(ours, ref, align, max_m=MATCH_DELIVERED_M):
     return [(mine[j], ents[i], float(D[i, j])) for i, j in zip(r, c) if D[i, j] <= max_m], len(ents)
 
 
+FAMILY = {  # mvp2: coarse class families for the same-object check (evaluation only): a name joins every family one of its words names
+    "goods": ("box", "carton", "package", "crate", "tote", "bin", "bag", "pack", "case", "bottle", "towel", "roll", "product", "goods", "container",
+              "bundle", "tissue", "jug", "can", "food", "cereal", "snack", "tray", "item", "merchandise", "stack", "pallet"),
+    "shelving": ("shelf", "shelving", "rack", "gondola", "upright", "post", "support", "beam", "display", "stand", "pegboard", "fixture", "endcap"),
+    "machine": ("machine", "lathe", "mill", "controller", "panel", "cnc", "press", "saw", "drill", "grinder", "robot", "enclosure"),
+    "table": ("table", "desk", "workbench", "bench"), "cabinet": ("cabinet", "locker", "drawer", "chest", "cupboard"),
+    "sign": ("sign", "label", "banner", "poster", "placard"), "cart": ("cart", "trolley", "jack"),
+    "tool": ("tool", "wrench", "screwdriver", "hammer", "clamp", "vise", "vice", "plier", "holder")}
+SAME_IOU, SAME_FRAMES = .3, 2  # mvp2: mean image-box IoU over >= SAME_FRAMES shared frames (the pick rule's 0.3)
+
+
+def families(name):
+    t = tokens(name or "")
+    return {f for f, ws in FAMILY.items() if any(w in t for w in ws)}
+
+
+def image_boxes(outlines, aliases=None, wh=(1280, 720)):
+    """Our objects' outline boxes per source frame (source px), ids through the cards' aliases -> {id: {frame: [x0, y0, x1, y1]}}."""
+    out = {}
+    for f in (outlines or {}).get("frames", []):
+        for o in f["objects"]:
+            if o.get("polygons"):
+                xy = np.concatenate([np.asarray(q, float).reshape(-1, 2) for q in o["polygons"]])
+                i = (aliases or {}).get(o["entityId"], o["entityId"])
+                b = np.r_[xy.min(0), xy.max(0)]
+                old = out.setdefault(i, {}).get(f["sourceFrame"])
+                out[i][f["sourceFrame"]] = b if old is None else np.r_[np.minimum(old[:2], b[:2]), np.maximum(old[2:], b[2:])]
+    return out
+
+
+def match_same_object(ours, ref, boxes, wh=(1280, 720), iou_min=SAME_IOU):
+    """mvp2 (R5: a 0.5 m centroid match paired a workbench with a tub): the same object is the one the two reports outline in
+    the same frames: mean box IoU over the frames both saw it (theirs every 3rd frame, ours within 1 frame of it; >= SAME_FRAMES),
+    1:1 Hungarian, IoU >= iou_min, and the names agree (same_name or a shared FAMILY). Neither 3D positions nor heights enter
+    the match. The delivered boxes are on its 640x480 depth raster, a 4:3 centre crop of the source (read as a stretch, the
+    boxes paired 33 / 17 / 15 objects at IoU >= 0.3 on the round-1 calls; as the crop 48 / 44 / 21).
+    -> ([(ours, delivered entity, mean IoU, n frames)], n delivered clear, n IoU pairs)."""
+    from scipy.optimize import linear_sum_assignment
+    names = json.loads(ref["names"].read_text())
+    omap = json.loads(ref["object_map"].read_text())
+    W, H = wh
+    sc, off = H / 480, (W - H * 4 / 3) / 2
+    ents = [e for e in omap["entities"] if e["entityId"].startswith("object-") and (names.get(e["entityId"]) or {}).get("status") == "clear"]
+    theirs = [{int(k.split(":")[1]): np.asarray(b, float) * sc + [off, 0, off, 0] for k, b in e["observationBoxes"].items()} for e in ents]
+    mine = [o for o in ours if boxes.get(o["id"])]
+    if not mine or not ents:
+        return [], len(ents), 0
+
+    def iou(a, b):
+        lo, hi = np.maximum(a[:2], b[:2]), np.minimum(a[2:], b[2:])
+        inter = float(np.prod(np.clip(hi - lo, 0, None)))
+        un = float(np.prod(a[2:] - a[:2]) + np.prod(b[2:] - b[:2])) - inter
+        return inter / un if un > 0 else 0.
+    M, N = np.zeros((len(ents), len(mine))), np.zeros((len(ents), len(mine)), int)
+    for i, te in enumerate(theirs):
+        for j, o in enumerate(mine):
+            v = [iou(b, next(te[g] for g in (f, f - 1, f + 1) if g in te)) for f, b in boxes[o["id"]].items() if any(g in te for g in (f, f - 1, f + 1))]
+            if len(v) >= SAME_FRAMES:
+                M[i, j], N[i, j] = np.mean(v), len(v)
+    r, c = linear_sum_assignment(-M)
+    pairs = [(mine[j], ents[i], float(M[i, j]), int(N[i, j])) for i, j in zip(r, c) if M[i, j] >= iou_min]
+    same = [p for p in pairs if same_name(p[0]["name"] or "", names[p[1]["entityId"]]["category"])
+            or families(p[0]["name"]) & families(names[p[1]["entityId"]]["category"])]
+    return same, len(ents), len(pairs)
+
+
 def identity_row(ours, ref, align, video):
     """Our name vs the delivered name on matched objects (same_name), by route; -> (row, calibration rows)."""
     names = json.loads(ref["names"].read_text())
@@ -1096,13 +1164,27 @@ def dist(values):
     return {"n": int(v.size), **({"median": round(float(np.median(v)), 3), "p90": round(float(np.percentile(v, 90)), 3)} if v.size else {})}
 
 
-def physical_row(ours, ref, align):
+def physical_row(ours, ref, align, boxes=None, wh=(1280, 720)):
     """Spec 8.3 against the delivered report: top/base above floor and footprint sides on matched objects, in the delivered
     metric frame (ours x the Sim3 scale, so geometry not scale); coverage = share with |delta| <= u (scale part removed);
     box inflation (L1); implausible sizes per class; known verticals."""
     s = align[0]
-    pairs, n_ref = match_delivered(ours, ref, align)
-    got = {q: [] for q in ("top", "base", "long_side", "short_side")}
+    same, n_ref, n_iou = match_same_object(ours, ref, boxes or {}, wh)
+    centroid_pairs, _ = match_delivered(ours, ref, align)
+    pairs = [(o, e, None) for o, e, _, _ in same]
+    got = {q: [] for q in ("top", "base", "long_side", "short_side", "top_raw", "base_raw")}
+    signed = {"top": [], "base": [], "top_raw": [], "base_raw": []}
+    for o, e, _ in pairs:
+        dv = delivered_values(e, ref["mpn"])
+        for q in ("top", "base"):
+            if o[q]:
+                signed[q].append(s * o[q][0] - dv[q])
+                # mvp2: heights above the floor also raw: both reports put the floor 1.6 m under the camera, so the camera-path Sim3
+                # scale (Sam's Club 0.89) is not the heights' scale (it moved Sam's tops by -0.19 m on same-object pairs)
+                signed[q + "_raw"].append(o[q][0] - dv[q])
+                if o[q][2] is not None:
+                    got[q + "_raw"].append((abs(o[q][0] - dv[q]), o[q][2]))
+    cen = {"top": [s * o["top"][0] - delivered_values(e, ref["mpn"])["top"] for o, e, _ in centroid_pairs if o["top"]]}
     not_compared = {"top": 0, "sides": 0}
     for o, e, _ in pairs:
         dv = delivered_values(e, ref["mpn"])
@@ -1121,7 +1203,13 @@ def physical_row(ours, ref, align):
         d = [x[0] for x in xs]
         withu = [x for x in xs if x[1] is not None]
         agreement[q] = {**dist(d), "coverage": round(float(np.mean([a <= b for a, b in withu])), 4) if withu else None, "with_u": len(withu)}
+    for q, xs in signed.items():
+        agreement[q]["signed_median"] = round(float(np.median(xs)), 3) if xs else None
     row = {"matched": len(pairs), "delivered_clear": n_ref, "sim3_scale_ours_to_delivered": round(s, 4), "agreement": agreement,
+           "match": f"same object: mean image-box IoU >= {SAME_IOU} over >= {SAME_FRAMES} shared frames (1:1 Hungarian) and the names agree "
+                    f"(same_name or a FAMILY); {n_iou} IoU pairs, {len(pairs)} with agreeing names",
+           "centroid_match_0.5m": {"pairs": len(centroid_pairs), "top_signed_median": round(float(np.median(cen["top"])), 3) if cen["top"] else None,
+                                   "note": "the round-1 rule (R5: pairs different objects), for comparison only"},
            "not_compared": {"top (not observed)": not_compared["top"], "footprint (a side not observed)": not_compared["sides"]},
            "inflation": inflation(ours), "known_verticals": known_verticals(pairs, ref),
            "note": "delivered = heightNative / baseNative / min-area rectangle of footprintPlanNative x metres_per_native (p98 / p2 / hull): "
@@ -1403,7 +1491,8 @@ def mvp_rows(run_dir, report, site, refs=None, fb=True, clicks=None):
     extras["ours"] = ours
     rows["source"] = "object_cards" if layers.get("object_cards") else "today's objects boxes (baseline: no u, no cards)"
     rows["identity"], extras["identity_rows"] = identity_row(ours, ref, align, site)
-    rows["physical"] = physical_row(ours, ref, align)
+    rows["physical"] = physical_row(ours, ref, align, image_boxes(layers.get("outlines"), (layers.get("object_cards") or {}).get("aliases")),
+                                    (layers["video"]["width"], layers["video"]["height"]))
     if refs is not None:
         keys = {k for s in layers["cameras"]["shots"] for k in s["keyframes"]}
         clicks = clicks or make_clicks(refs)
@@ -1563,6 +1652,8 @@ def card_check(cards):
                     loud.add(c["id"])  # spec 4.2: the field should read 'implausible for a <class> ...: needs review'
             elif not v.get("reason"):
                 bad.append(f"{c['id']}.{k}: no value and no reason")
+    from fast_report.cards import contract  # mvp2 (R7): every card kind, and box / footprint / nearest path / primitive / people's numbers
+    bad += [v for c in (cards or {}).get("cards", []) for v in contract(c)]
     return {"cards": len((cards or {}).get("cards", [])), "fields": n, "violations": len(bad), "examples": bad[:20],
             "implausible_cards_with_numbers": len(loud), "implausible_examples": sorted(loud)[:10]}
 

@@ -28,7 +28,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ehs_spatial.video import BAND_M, FAIL, NO_DATA, PASS, PERSON_HEIGHT_M, REVIEW, banded_verdict, worst_verdict
+from ehs_spatial.video import BAND_M, FAIL, NO_DATA, PASS, REVIEW, banded_verdict, worst_verdict
 
 CALIBRATION = Path(__file__).with_name("calibration.json")
 SCALE_REL = .20  # spec 4.4: assumed 1.6 m camera height (-19%/+12% for 1.3-1.8 m) and 0.99-1.17 against the delivered scale
@@ -702,44 +702,11 @@ def g_j3b(card, ctx, cards):
 
 
 def foot_surface(mask, depth, K, c2w, up, p0, u_floor=.02):
-    """J3a's physical cue, per person detection: the height above the floor of the surface the feet rest on (the median 3D
-    point of the mask's lowest pixels) and whether they rest on what is below them (the patch just below the feet is not
-    nearer than them by more than max(0.3 m, 10%): else something in front hides the feet). People's footWorld cannot serve:
-    live_people puts it on the floor plane by construction. The lowest pixels are feet only when the visible body spans a
-    standing height (video.PERSON_HEIGHT_M, 1.3-2.1 m, from those pixels to the mask's p98 height): run mvp-b-judge-me340-001
-    read people behind benches at 0.5-1.5 m with the patch below at their own depth. -> {h_m, u_m, contact, span_m,
-    feet_visible, bbox (0-1)}; h_m None when the feet are not seen at all."""
-    ys, xs = np.nonzero(mask)
-    if not len(ys):
-        return None
-    H, W = mask.shape
-    bbox = [round(xs.min() / W, 4), round(ys.min() / H, 4), round((xs.max() + 1) / W, 4), round((ys.max() + 1) / H, 4)]
-    if ys.max() >= H - 2:
-        return {"h_m": None, "reason": "feet cut by the frame edge", "bbox": bbox}
-    low = ys >= ys.max() - max(2, .03 * (ys.max() - ys.min()))
-    fy, fx = ys[low], xs[low]
-    z = depth[fy, fx]
-    ok = z > 0
-    if ok.sum() < 3:
-        return {"h_m": None, "reason": "no depth at the feet", "bbox": bbox}
-    kinv = np.linalg.inv(K)
-    cam = (np.c_[fx[ok], fy[ok], np.ones(ok.sum())] @ kinv.T) * z[ok, None]
-    world = cam @ c2w[:3, :3].T + c2w[:3, 3]
-    h = float(np.median((world - p0) @ up))
-    dz = float(abs(np.median((c2w[:3, 3] - world) @ up)))
-    zm = depth[ys, xs]
-    body = (zm > 0) & (np.abs(zm - np.median(zm[zm > 0])) <= max(.5, .15 * np.median(zm[zm > 0]))) if (zm > 0).any() else zm > 0
-    pts = (np.c_[xs[body], ys[body], np.ones(body.sum())] @ kinv.T) * zm[body, None]
-    span = float(np.percentile((pts @ c2w[:3, :3].T + c2w[:3, 3] - p0) @ up, 98) - h) if body.sum() >= 10 else None
-    u = math.sqrt((.05 * dz) ** 2 + u_floor ** 2 + (SCALE_REL * h) ** 2)
-    rows = slice(ys.max() + 1, min(H, ys.max() + 4))
-    cols = slice(max(0, int(np.median(fx)) - 6), min(W, int(np.median(fx)) + 7))
-    below = depth[rows, cols][(depth[rows, cols] > 0) & ~mask[rows, cols]]
-    zf = float(np.median(z[ok]))
-    contact = bool(len(below) >= 3 and np.median(below) >= zf - max(.3, .1 * zf))  # the floor in front slopes ~5 cm a row at 4.5 m
-    visible = span is not None and PERSON_HEIGHT_M[0] <= span <= PERSON_HEIGHT_M[1]
-    return {"h_m": round(h, 3), "u_m": round(u, 3), "contact": contact, "span_m": None if span is None else round(span, 3),
-            "feet_visible": bool(visible), "bbox": bbox}
+    """J3a's physical cue, per person detection: mvp2 measures it in cards.person_geometry (the feet along their own pixel
+    rays at the visible body's range; the lowest pixels' own depth read people on the floor at +0.24-0.62 m). h_m is None
+    when the lowest pixels are not seen feet (cut, hidden, or the figure is no standing height)."""
+    from fast_report.cards import person_geometry
+    return person_geometry(mask, depth, K, c2w, up, p0, u_floor)
 
 
 def person_points(card, ctx):
