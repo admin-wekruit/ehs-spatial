@@ -209,7 +209,7 @@ def lift(mask, depth, K, c2w, wh, fr, step=2):
     pc = np.stack([(u - K[0, 2]) / K[0, 0] * zz, (v - K[1, 2]) / K[1, 1] * zz, zz], 1)
     P, cam = cards.to_floor(pc @ M[:3, :3].T + M[:3, 3], fr), cards.to_floor(M[:3, 3], fr)
     on = np.abs(P[:, 2]) <= np.maximum(FLOOR_TOL_M, FLOOR_TOL_REL * np.linalg.norm(P - cam, axis=1))
-    return {"P": P, "cells": int(keep.sum()), "z_med": med, "cam": cam, "fx": float(K[0, 0]), "on_floor": round(float(on.mean()), 3)}
+    return {"P": P, "cells": int(keep.sum()), "z_med": med, "cam": cam, "fx": float(K[0, 0]), "on_floor": round(float(on.mean()), 3), "fr": fr}
 
 
 def is_floor(L, share, ans):
@@ -393,7 +393,9 @@ def assemble(base, f, L, mask, shot, k, ans):
            "observed": ["mask"], "estimated": ["physical"], "inferred": ["identity", "class"], "note": NOTE,
            "raw": {"size": size, "size_u_m": max((phys[n]["u"] for n in ("height", "width") if "u" in phys.get(n, {})), default=None),
                    "review_base": {n: {kk: phys[n][kk] for kk in ("status", "reason") if kk in phys[n]} for n in cards.REVIEWED if "value" in phys.get(n, {})},
-                   "angles": {}, "fragmented": False, "fragment_reason": ""}}
+                   "angles": {}, "fragmented": False, "fragment_reason": "",
+                   # r4 (models): one view, so one side: the drawn depth is the visible part
+                   **(cards.display_model.raw_fields(L["P"], L["cam"][None], L["fr"], False) if L is not None else {})}}
     out = cards.apply_name(out)
     if not ident.get("name"):  # the namer could not tell (seed 41: a card without a name)
         ident.update(name=cards.UNIDENTIFIED, status=cards.NAMER_STATUS["unclear"])
@@ -451,6 +453,7 @@ def self_check():
     got = assemble(base, f, L, mask, {"u_floor_m": .03}, k, {"name": "screwdriver", "status": "object", "p": 0.7})
     assert got["status"] == "card" and got["identity"]["name"] == "screwdriver" and got["physical"]["size_check"]["status"] == "implausible"
     assert got["physical"]["height"]["status"] == "needs review" and cards.contract(got) == [] and got["physical"]["level"] == "coarse (one view)"
+    assert got["model"]["kind"] and "lower bound" in got["model"]["depth"], got["model"]  # r4: one view, one side
     assert assemble(base, f, None, mask, {}, k, {"name": "floor", "status": "surface", "p": 0.9})["kind"] == "surface"
     assert assemble(base, f, L, mask, {}, k, parse("no idea"))["identity"]["name"] == cards.UNIDENTIFIED
     # the floor rule: a floor region Qwen names after the cart beside it is the floor; a cable on the floor keeps its card

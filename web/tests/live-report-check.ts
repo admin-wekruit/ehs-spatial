@@ -92,7 +92,25 @@ if(mvp>=0){
   assert.ok(agree/n>.95,`pick vs outlines: ${agree}/${n}`);
   console.log(`recorded pick layer check passed: ${mreport}, ${p.data.frames.length} frames, pick vs outline polygons ${(100*agree/n).toFixed(1)}% of ${n} points`);
 }
-import {sceneRepresentationTasks,readPacked,readGLB} from '../src/viewer/native-viewer.ts';
+import {sceneRepresentationTasks,readPacked,readGLB,primitive} from '../src/viewer/native-viewer.ts';
+import {modelPrimitive} from '../src/live-report.ts';
+
+// ---------------- r4 (models): every kind of a card's display model builds a mesh, seen faces solid and guessed ones faint
+{
+  const box=primitive(modelPrimitive({kind:'box',size_m:[.6,.4,.02],faces:{'-y':'seen','+z':'seen','+y':'guessed','-x':'guessed','+x':'guessed','-z':'guessed'}}));
+  const alpha=(m:any)=>Array.from({length:m.vertices.length/12},(_,i)=>Math.round(m.vertices[i*12+11]*100)/100);
+  assert.equal(box.indices.length,36);assert.deepEqual([...new Set(alpha(box))].sort(),[.3,.9]);assert.equal(alpha(box).filter(a=>a===.9).length,8,'two faces seen');
+  assert.ok(Math.abs(box.bounds.max[1]-.2)<1e-6&&Math.abs(box.bounds.max[2]-.01)<1e-6,'sizes about the pose');
+  const cyl=primitive(modelPrimitive({kind:'cylinder',radius_m:.3,length_m:.9,arc_seen:'1'.repeat(18)+'0'.repeat(18),caps:{top:'seen',bottom:'guessed'}}));
+  assert.equal(cyl.indices.length,36*(6+6));assert.ok(Math.abs(cyl.bounds.max[0]-.3)<1e-6&&Math.abs(cyl.bounds.max[2]-.45)<1e-6);
+  const frame=primitive(modelPrimitive({kind:'open frame',parts:[[0,0,0,.05,.05,1.8,1],[0,0,.9,1.2,.4,.03,0]]}));
+  assert.equal(frame.indices.length,72);assert.equal(alpha(frame).filter(a=>a===.3).length,24,'an unseen member is faint');
+  // a card's model replaces the see-through box; an accepted SAM 3D mesh replaces the model
+  const one=(models:any)=>liveDocument('r',{objects:{layer:'objects',seq:1,data:{objects:[{id:'o',shot:0,word:'box',box_min_m:[0,0,0],box_max_m:[1,1,1]}]},blobs:{}} as any,...models},
+    [{id:'o',kind:'object',model:{kind:'box',size_m:[1,1,1],faces:{},position:[.5,.5,.5],quaternion:[0,0,0,1]}}]).entities[0] as any;
+  assert.equal(one({}).activeModelRepresentationId,'prim:o');
+  assert.equal(one({models:{layer:'models',seq:2,data:{models:[{object:'o',transform:{position:[0,0,0]},bounds:{}}]},blobs:{'model-o':{sha256:'ab',bytes:1}}}}).activeModelRepresentationId,'model:o');
+}
 import {splatAnnotation} from '../src/viewer/splat-layer.ts';
 import {currentCameras,cameraPath} from '../src/core.ts';
 

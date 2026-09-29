@@ -19,10 +19,12 @@ every number a card shows carries +-u and its scale (contract()).
     python -m fast_report.cards --self-check
 """
 import sys
+import time
 
 import numpy as np
 
 from fast_report import instances
+from fast_report import display_model
 
 SCALE_REL, POSE_MIN, DEPTH_REL = .25, .04, .05  # section 4.4: scale term (mvp2 accuracy: 1.6 m assumed for a camera held at 1.2-1.8 m reads up to 25 % large; ARKit 1.23 m: 23 %), pose floor (ME340 ATE ~4 cm), DA3 depth ~5 %
 EPS_MIN, MIN_POINTS, MAIN_SHARE = .10, 10, .5    # section 4.2 step 3
@@ -1152,6 +1154,7 @@ def build(inp, pool=None, chunks=12, shm_dir=None):
             if cid in by_id and rec["id"] in by_id:
                 by_id[cid]["part_of"] = rec
                 by_id[rec["id"]].setdefault("parts", []).append({"id": cid, "kind": rec["kind"]})
+    model_s = sum(r.pop("model_s", 0.) for r in rims.values())  # r4 (models): CPU seconds the display models' fits took (all processes)
     cards += people_cards(inp.get("people"), shots, cards, k)
     shot_rows = [{"index": si, "floor_frame": {"origin_m": np.round(s["frame"]["origin"], 3).tolist(), "x": np.round(s["frame"]["R"][0], 5).tolist(),
                                                "z": np.round(s["frame"]["R"][2], 5).tolist()},
@@ -1169,7 +1172,7 @@ def build(inp, pool=None, chunks=12, shm_dir=None):
              "parts": sum(r["kind"] == "part" for r in part_of.values()), "contents": sum(r["kind"] == "contents" for r in part_of.values()),
              "implausible": sum(c["physical"]["size_check"].get("status") == "implausible" for c in shown),
              "s": {"merge": round(t_merge - t0, 3), "shots": round(t_shots - t_merge, 3), "wait_counts": round(t_counts - t_shots, 3),
-                   "cards": round(t_cards - t_counts, 3),
+                   "cards": round(t_cards - t_counts, 3), "models_cpu": round(model_s, 3),
                    "people": round(time.perf_counter() - t_cards, 3)}}
     return {"cards": cards, "shots": shot_rows, "aliases": aliases, "stats": stats, "diagnostics": {"rim": rims},
             "walked": {si: {kk: np.round(v, 3).tolist() for kk, v in s["walked"].items()} for si, s in shots.items()}}
@@ -1498,14 +1501,20 @@ def object_card(o, x, s, k, marking, merged_from, counts):
             ext_change = "extents change by more than 2x between view subsets at a static place: " + " vs ".join(f"{e:.2f} m" for e in ext)
     # mvp2/identity (R1): everything a name decides is derived from these name-free measurements by apply_name, at build time
     # and on every identity update (class, size check, the review marks, deformable angles, primitive, time state)
+    t_model = time.perf_counter()
+    model_fits = display_model.raw_fields(P, cam_f[views], s["frame"], depth_seen)  # r4 (models): the display model's fits
+    diag["model_s"] = round(time.perf_counter() - t_model, 4)
     card["raw"] = {"size": None if no_floor else {"longest": longest, "footprint_longest": float(pooled["sides"].max()), "height": float(h), "base": float(pooled["base"]),
                             "observed_all": bool(not (top_cut or bottom_cut or lr_cut or long_part) and depth_seen)},
                    "size_u_m": round(max(ext_u), 3),  # mvp2/physical (R7): the size check's measured size carries its u
                    "angles": {n: phys[n] for n in ANGLES},
                    "review_base": {n: {kk: phys[n][kk] for kk in ("status", "reason") if kk in phys[n]} for n in REVIEWED if "value" in phys.get(n, {})},
                    "fragmented": bool(fragmented), "fragment_reason": f"fragmented support (main cluster {1 - x['dropped_share']:.0%} of the points)",
-                   "primitive": primitive(o.get("word"), P, frame, order, s, k), "extent_change": ext_change, "time": _time_raw(card["time"])}
+                   "primitive": primitive(o.get("word"), P, frame, order, s, k), "extent_change": ext_change, "time": _time_raw(card["time"]),
+                   **model_fits}  # generated, display only: apply_name picks the shape by the name
     card["_diag"] = diag  # build() moves it to the layer's diagnostics
+    card = apply_name(card)
+    card["raw"]["sam3d_eligibility"] = display_model.well_observed({**card, "model": {}})[1] or "well observed"  # name-free (r4 models)
     return apply_name(card)
 
 
@@ -1770,6 +1779,9 @@ def apply_name(card):
             phys["primitive"] = prim if prim["kind"] == want else \
                 {**prim, "accepted": False, "reason": f"fitted as a {prim['kind']} for the detected word; the name is {want}-like"}
         phys["level"] = "coarse + primitive" if (phys.get("primitive") or {}).get("accepted") else "coarse"
+    card["model"] = display_model.for_card(raw, key)  # r4 (models): every object card's display model, by its type and the fits
+    if card["model"].get("kind") and raw.get("sam3d_eligibility"):  # and whether SAM 3D may try it (the viewer's line says why not)
+        card["model"]["sam3d_eligibility"] = "an open frame" if card["model"]["kind"] == "open frame" else raw["sam3d_eligibility"]
     t, tr = card.get("time"), raw.get("time")
     if t is not None and tr is not None:
         t.update(tr)
@@ -2402,6 +2414,9 @@ def self_check():
     out = build({"shots": [shot], "objects": objects, "points": points, "counts": lambda: counts, "people": people, "calibration": {}})
     by = {c["id"]: c for c in out["cards"]}
     pc = by["person:0-1"]
+    # r4 (models): every object card has a display model (generated, display only), none on a person
+    assert all(c["model"]["status"] == display_model.STATUS and (c["model"]["kind"] or c["physical"]["level"] == "2d only")
+               for c in out["cards"] if c["kind"] == "object") and "model" not in pc
     assert len(pc["rules"]) == 1 and pc["nearest_objects"][0]["id"] == "obj-0-0" and pc["physical"]["path_length"]["value"] > .5, pc
     f0 = floor_frame(cams[0], [0, -1., 0], [0, 1.6, 3])
     assert people_cards({"tracks": [dict(people["tracks"][0], points=[{"t": i * .2, "xyz": [.2 + .01 * i, 1.6, 3.6]} for i in range(5)])]},
