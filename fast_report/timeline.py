@@ -10,9 +10,12 @@ Identity: an instance joins the object whose last position is within K_SIGMA x s
 overlaps it by IOU_MIN (a partial view moves the centroid by up to half the object), one to one (Hungarian).
 
 States of an object in a later window where it was not detected, from its own points (box_free_space's per-pixel rule
-on points instead of a box: a box of an object that is not axis-aligned claims air around it):
-  free        the window's depth, where the object's points project, lies > 2 sigma beyond them in >= MIN_VIEWS
-              keyframes on >= FREE_SHARE of the judged points: the camera saw through its place -> 'disappeared', or
+on points instead of a box: a box of an object that is not axis-aligned claims air around it). A point is judged only
+inside the view's inner 90 % (BORDER), within MAX_RANGE of the camera, off person pixels; an object is judged only when
+it was observed on >= MIN_OBS_KEYS keyframes and covers >= MIN_PIX grid pixels there:
+  free        the window's depth, minimum over NEIGH px around where the object's points project (a pose or stitch error
+              of a pixel or two must not put a point on the background beside the object), lies > 2 sigma beyond them in
+              >= MIN_VIEWS keyframes on >= FREE_SHARE of the judged points: the camera saw through its place -> 'disappeared', or
               'moved' when an unmatched instance of this or a later window matches its appearance (cos >= the video's
               negative-pair 99th percentile, cascade.calibrate) and size, elsewhere;
   occupied    depth at the points' depth: still there, not detected -> 'not-observed' (reason occupied-undetected);
@@ -30,6 +33,7 @@ import numpy as np
 POSE_M, DEPTH_REL = .04, .05
 K_SIGMA, IOU_MIN = 3., .2
 FREE_SHARE, MIN_VIEWS, MIN_JUDGED, SEEN_SHARE, MIN_EXTENT = .6, 2, 30, .5, .1
+BORDER, MAX_RANGE, NEIGH, MIN_PIX, MIN_OBS_KEYS = .05, 8., 2, 25, 3  # run fx-x6-windows-time-002: 10 of 10 ME340 claims false without them
 SIZE_RATIO = 2.  # a moved object keeps its size within this factor (robust box diagonal)
 LOOKBACK = 6     # windows an 'appeared' test looks back (the ones that could have seen the place)
 
@@ -56,23 +60,33 @@ def project(points, c2w, K):
         return K[0, 0] * cam[:, 0] / z + K[0, 2], K[1, 1] * cam[:, 1] / z + K[1, 2], z
 
 
+def near_min(w):
+    """Per keyframe depth, minimum over the (2 NEIGH + 1)^2 neighbourhood (0 = no depth wins: unknown is never free)."""
+    if "_dmin" not in w:
+        from scipy.ndimage import minimum_filter
+        w["_dmin"] = minimum_filter(np.asarray(w["depth"], np.float32), size=(1, 2 * NEIGH + 1, 2 * NEIGH + 1))
+    return w["_dmin"]
+
+
 def place(points, w):
     """How window w sees the place `points` occupied. -> {state, views: [per judged keyframe], best_key}."""
     h, wd = w["depth"].shape[1:]
+    dmin = near_min(w)
     views, seen = [], 0
     for j, key in enumerate(w["keys"]):
         u, v, z = project(points, w["c2w"][j], w["K"][j])
-        inside = (z > .1) & (u >= 0) & (u < wd) & (v >= 0) & (v < h)
+        inside = (z > .1) & (u >= BORDER * wd) & (u < (1 - BORDER) * wd) & (v >= BORDER * h) & (v < (1 - BORDER) * h)
         if inside.mean() < SEEN_SHARE:
             continue
         seen += 1
         ui, vi, zz = u[inside].astype(int), v[inside].astype(int), z[inside]
         d, person = w["depth"][j][vi, ui], w["person"][j][vi, ui]
-        valid = (d > 0) & ~person
+        valid = (d > 0) & ~person & (zz <= MAX_RANGE)
         m = 2 * sigma(zz)
-        free, front = valid & (d > zz + m), valid & (d < zz - m)
-        views.append({"key": int(key), "judged": int(valid.sum()), "free": int(free.sum()), "front": int(front.sum() + person.sum()),
-                      "occupied": int((valid & ~free & ~front).sum()), "inside": int(inside.sum())})
+        free, front = valid & (dmin[j][vi, ui] > zz + m), valid & (d < zz - m)
+        pix = len(np.unique(vi[valid] * wd + ui[valid]))
+        views.append({"key": int(key), "judged": int(valid.sum()) if pix >= MIN_PIX else 0, "free": int(free.sum()), "front": int(front.sum() + person.sum()),
+                      "occupied": int((valid & ~free & ~front).sum()), "inside": int(inside.sum()), "pixels": pix})
     judged = [x for x in views if x["judged"] >= max(MIN_JUDGED, .3 * len(points))]
     n_free = sum(x["free"] >= FREE_SHARE * x["judged"] for x in judged)
     n_occ = sum(x["occupied"] >= .5 * x["judged"] for x in judged)
@@ -145,6 +159,9 @@ class Tracker:
             if diag(last) < MIN_EXTENT:
                 o["states"][w["index"]] = {"state": "not-observed", "reason": "too small to judge"}
                 continue
+            if len({k for _, x in o["obs"] for k in x["keys"]}) < MIN_OBS_KEYS:
+                o["states"][w["index"]] = {"state": "not-observed", "reason": "too few observations to judge"}
+                continue
             p = place(last["points"], w)
             if p["state"] == "free":
                 free.append((o, p))
@@ -179,7 +196,7 @@ class Tracker:
         for i in new:
             a = insts[i]
             how = {"state": "first-seen"}
-            if diag(a) >= MIN_EXTENT:
+            if diag(a) >= MIN_EXTENT and len(a["keys"]) >= MIN_OBS_KEYS:
                 for prev in [x for x in self.windows[:-1] if x["frame"] == w["frame"]][::-1][:LOOKBACK]:
                     p = place(a["points"], prev)
                     if p["state"] == "free":
@@ -258,24 +275,26 @@ def _inst(lo, hi, emb, label, key, t):
     g = np.stack(np.meshgrid(*[np.linspace(a, b, 9) for a, b in zip(lo, hi)]), -1).reshape(-1, 3)
     front = g[g[:, 2] <= lo[2] + 1e-9]  # what a camera at z = 0 sees of it: its front face
     return {"points": front, "centroid": front.mean(0), "lo": lo, "hi": hi, "emb": emb, "label": label, "times": [t], "best_key": key,
+            "keys": [key, key + 1, key + 2],
             "range_m": float(lo[2])}
 
 
 def self_check():
     K, hw = np.array([[200., 0, 160], [0, 200, 120], [0, 0, 1]]), (240, 320)
     rng = np.random.default_rng(0)
-    e = {k: v / np.linalg.norm(v) for k, v in {n: rng.normal(size=16) for n in "ABCDEF"}.items()}
+    e = {k: v / np.linalg.norm(v) for k, v in {n: rng.normal(size=16) for n in "ABCDEFP"}.items()}
     box = {"A": ([-1.2, -.3, 3.], [-.6, .3, 3.5]),   # static
            "B": ([-.2, -.3, 3.], [.3, .3, 3.5]),      # moves to B2
            "B2": ([1.6, -.3, 3.], [2.1, .3, 3.5]),
            "C": ([.8, -.3, 2.8], [1.2, .3, 3.2]),     # disappears
-           "D": ([-2.6, -.3, 3.2], [-2.1, .3, 3.6]),  # appears
+           "D": ([-1.9, -.3, 3.2], [-1.5, .3, 3.6]),  # appears
            "E": ([2.6, -.2, 4.5], [3.4, .2, 4.8]),    # hidden by an occluder in window 1
            "F": ([4.5, -.3, 3.], [5., .3, 3.5])}      # out of view in window 1
 
-    def window(i, frame_boxes, insts, cams, occ=()):
+    def window(i, frame_boxes, insts, cams, occ=(), pose_error=0.):
         c2w = np.stack([_cam(x) for x in cams])
         depth = np.stack([_render([box[b] for b in frame_boxes] + list(occ), c, K, hw) for c in c2w])
+        c2w[:, 0, 3] += pose_error  # the recorded camera, off by pose_error from the one that saw
         return {"index": i, "frame": 0, "t": [i * 2., i * 2. + 1.8], "keys": [10 * i + j for j in range(len(cams))], "c2w": c2w,
                 "K": np.repeat(K[None], len(cams), 0), "depth": depth, "person": np.zeros(depth.shape, bool),
                 "instances": [_inst(*box[b], e[b[0]], b[0], 10 * i, i * 2.) for b in insts]}
@@ -305,11 +324,17 @@ def self_check():
     t2.add(window(0, "AB", "AB", [0., .1, .2]))
     t2.add(window(1, "AB", "A", [0., .1, .2]))
     assert t2.objects[1]["states"][1]["reason"] == "occupied-undetected" and not t2.changes()
+    # a thin pole (4 px), still there, its recorded camera 4.5 cm off (3 px at 3 m): its edge pixels see the wall, it is not gone
+    box["P"] = ([.3, -.3, 3.], [.36, .3, 3.06])
+    t3 = Tracker(tau_move=.9)
+    t3.add(window(0, "P", "P", [0., .1, .2]))
+    t3.add(window(1, "P", "", [0., .1, .2], pose_error=.045))
+    assert t3.objects[0]["states"][1]["state"] == "not-observed" and not t3.changes(), t3.objects[0]["states"][1]
     tl = {r["label"]: r for r in t.timelines()}
     assert [iv["state"] for iv in tl["C"]["intervals"]] == ["first-seen", "disappeared", "static"]
     assert tl["B"]["positions"][1]["centroid"][0] > 1.5 and tl["B"]["moves"] == 1
     print("timeline self-check ok: static, moved (one identity), disappeared (withdrawn when seen again), appeared, occluded, "
-          "out of view, missed detection")
+          "out of view, missed detection, a thin object under a 3 px pose error")
 
 
 if __name__ == "__main__":

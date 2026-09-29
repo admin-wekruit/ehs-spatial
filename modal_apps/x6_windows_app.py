@@ -117,28 +117,27 @@ def compact(depth_m, dyn, c2w_m, K):
             "c2w": c2w_m.double().cpu().numpy(), "K": (K.double().cpu().numpy() * np.array([[1 / STRIDE], [1 / STRIDE], [1]]))}
 
 
-def sam_window(m, dev, kf, obj_local, words, clock, tag):
-    """SAM 3 on one window's keyframes: person/floor on all (chunks of 8), vocabulary on the object keyframes."""
+def sam_chunk(m, dev, kf, obj_local, words, clock, tag):
+    """SAM 3 on <= 8 keyframes of one window: person/floor on all, the vocabulary on its object keyframes."""
     import torch
     from fast_report import segment
     gi = dev.index
-    person, voc = [], []
-    for s in range(0, len(kf), segment.PERSON_FRAMES):
-        chunk = kf[s:s + segment.PERSON_FRAMES]
-        with clock.stage(f"sam3.person@gpu{gi}", gpu=gi, n={"frames": len(chunk), "window": tag}, sync=True):
-            vision = m.sams[dev].vision(chunk)
-            r = m.sams[dev].detect(vision, len(chunk), ("person", "floor"), segment.PERSON_SCORE, top=segment.PERSON_TOP)
-            r["frame"] = r["frame"] + s
-            person.append(r)
-        objs = [j - s for j in obj_local if s <= j < s + len(chunk)]
-        if objs:
-            with clock.stage(f"sam3.vocab.wave1@gpu{gi}", gpu=gi, n={"frames": len(objs), "words": len(words), "window": tag}, sync=True):
-                r = m.sams[dev].detect(m.sams[dev].pick(vision, objs), len(objs), words, segment.VOCAB_SCORE)
-                r["frame"] = torch.tensor(objs, device=dev)[r["frame"]] + s
-                voc.append(r)
-        del vision
-    cat = lambda rows: {k: torch.cat([r[k] for r in rows]) for k in rows[0]} if rows else None  # noqa: E731
-    return cat(person), cat(voc)
+    with clock.stage(f"sam3.person@gpu{gi}", gpu=gi, n={"frames": len(kf), "window": tag}, sync=True):
+        vision = m.sams[dev].vision(kf)
+        person = m.sams[dev].detect(vision, len(kf), ("person", "floor"), segment.PERSON_SCORE, top=segment.PERSON_TOP)
+    voc = None
+    if obj_local:
+        with clock.stage(f"sam3.vocab.wave1@gpu{gi}", gpu=gi, n={"frames": len(obj_local), "words": len(words), "window": tag}, sync=True):
+            voc = m.sams[dev].detect(m.sams[dev].pick(vision, obj_local), len(obj_local), words, segment.VOCAB_SCORE)
+            voc["frame"] = torch.tensor(obj_local, device=dev)[voc["frame"]]
+    return person, voc
+
+
+def gather(parts, dev):
+    """[(chunk start, dev, result dict or None)] -> one dict on dev, frames offset to the window."""
+    import torch
+    rows = [{k: (v + s if k == "frame" else v).to(dev) for k, v in r.items()} for s, _, r in sorted(parts, key=lambda x: x[0]) if r is not None]
+    return {k: torch.cat([r[k] for r in rows]) for k in rows[0]} if rows else None
 
 
 def objects_window(m, dev, w, kf, person, voc, geo, words, clock, tag):
@@ -168,8 +167,9 @@ def objects_window(m, dev, w, kf, person, voc, geo, words, clock, tag):
             mem = np.concatenate([x["members"] for x in insts])
             owner = torch.as_tensor(np.repeat(np.arange(len(insts)), [len(x["members"]) for x in insts]), device=dev)
             mt = torch.as_tensor(mem, device=dev)
-            emb = m.embs[dev].crops(kf, voc["frame"][mt], voc["mask"][mt])
-            m.embs[dev].release()
+            with m.emb_locks[dev]:  # the embedder keeps the last frames' RGB: one window at a time per card
+                emb = m.embs[dev].crops(kf, voc["frame"][mt], voc["mask"][mt])
+                m.embs[dev].release()
             e = torch.nn.functional.normalize(torch.zeros((len(insts), emb.shape[1]), device=dev).index_add_(0, owner, emb), dim=1).cpu().numpy()
             for x, v in zip(insts, e):
                 x["emb"] = v.astype(np.float64)
@@ -179,14 +179,6 @@ def objects_window(m, dev, w, kf, person, voc, geo, words, clock, tag):
         pm = {k: v for k, v in person.items()}
         people = people_points(pm, {j: j for j in range(n)}, depth_m, K, c2w_m, w["keys"], w["times"])
     return {"instances": insts, "lift": stats, "people": people, **compact(depth_m, dyn, c2w_m, K)}
-
-
-def geometry(m, dev, kf, person, n, clock, tag):
-    """(b): DA3 on the window's keyframes + floor-plane scale (core.floor_plane, 1.6 m assumed camera height)."""
-    gi = dev.index
-    with clock.stage(f"da3.shot{tag}@gpu{gi}", gpu=gi, n={"views": len(kf)}, sync=True):
-        g = m.da3s[dev].shot(kf)
-    return scale(g, person, n, dev)
 
 
 def scale(g, person, n, dev):
@@ -370,14 +362,28 @@ def analyse(m, mp4, words, opts, clock):
     cap = cv2.VideoCapture(path)
     fps, n_total = cap.get(cv2.CAP_PROP_FPS), int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     frames, grays, futures, ranges, keys = [], [], [], [], []
-    key_q, cv, decoded = queue.Queue(), threading.Condition(), threading.Event()
-    shared_q, dev_q = queue.PriorityQueue(), {d: queue.PriorityQueue() for d in m.devs}
+    key_q, cv, decoded, built, stop = queue.Queue(), threading.Condition(), threading.Event(), threading.Event(), threading.Event()
+    tasks, dev_q = queue.PriorityQueue(), {d: queue.PriorityQueue() for d in m.devs}
     seq = iter(range(10 ** 9))
-    wins, results, errors = [], {}, []
+    wins, results, errors, split_log = [], {}, [], []
     res_cv = threading.Condition()
     builder = win.Builder(opts["threshold"], opts.get("max_keys", win.MAX_KEYS), opts.get("carry", win.CARRY), min_keys=opts.get("min_keys", win.MIN_KEYS))
     cut_cache = {"n": -1, "cuts": []}
-    split_log = []
+    # per window: SAM 3 chunks done, DA3 result (b) or shot geometry (a); the lift runs once both are in
+    sam_parts, geo_raw, shot_of, lifted = {}, {}, {}, set()
+    TASK_RANK = {"lift": 0, "da3": 1, "sam": 2}
+
+    def put(kind, i, extra=None, dev=None):
+        (dev_q[dev] if dev is not None else tasks).put((i * 4 + TASK_RANK[kind], next(seq), kind, i, extra))
+
+    def maybe_lift(i):
+        with lock:
+            w = wins[i]
+            ready = len(sam_parts.get(i, [])) == w["chunks"] and (i in geo_raw if option == "b" else i in shot_of)
+            if not ready or i in lifted:
+                return
+            lifted.add(i)
+        put("lift", i)
 
     def prefix_cuts(need):
         """Cuts the measure already covers up to frame `need` (+ margin), from the chunks done so far."""
@@ -406,20 +412,25 @@ def analyse(m, mp4, words, opts, clock):
         parts, cur = [], list(w["keys"])
         for c in cuts:  # a cut the prefix found late splits the window; fragments of carried keys only are dropped
             if cur and cur[0] < c <= cur[-1]:
-                a = [k for k in cur if k < c]
-                parts.append((a, w["carried"] if parts == [] else 0))
+                parts.append(([k for k in cur if k < c], w["carried"] if not parts else 0))
                 cur = [k for k in cur if k >= c]
                 split_log.append({"window_keys": [w["keys"][0], w["keys"][-1]], "cut": c})
         parts.append((cur, 0 if parts else w["carried"]))
         for ks, carried in parts:
-            if len(ks) <= carried or not ks:
+            if not ks or len(ks) <= carried:
                 continue
-            i = len(wins)
-            rec = {"index": i, "keys": ks, "carried": carried, "reason": w["reason"], "times": [k / fps for k in ks],
-                   "t": [round(ks[0] / fps, 3), round(ks[-1] / fps, 3)], "dispatched_s": clock.now(), "covis": w["covis"][-len(ks):]}
-            wins.append(rec)
+            with lock:
+                i = len(wins)
+                wins.append({"index": i, "keys": ks, "carried": carried, "reason": w["reason"], "times": [k / fps for k in ks],
+                             "t": [round(ks[0] / fps, 3), round(ks[-1] / fps, 3)], "dispatched_s": clock.now(), "covis": w["covis"][-len(ks):],
+                             "chunks": (len(ks) + segment.PERSON_FRAMES - 1) // segment.PERSON_FRAMES})
             mark("first_window_dispatched")
-            shared_q.put((i, next(seq), "window" if option == "b" else "sam", i))
+            if option == "b":
+                put("da3", i)
+            for s in range(0, len(ks), segment.PERSON_FRAMES):
+                put("sam", i, s)
+            with res_cv:
+                res_cv.notify_all()
 
     def build():
         try:
@@ -441,72 +452,79 @@ def analyse(m, mp4, words, opts, clock):
         except Exception:  # noqa: BLE001
             errors.append(traceback.format_exc()[-2000:])
         finally:
-            for _ in range(len(m.devs) * m.per_gpu):
-                shared_q.put((10 ** 9, next(seq), "stop", None))
+            built.set()
+            with res_cv:
+                res_cv.notify_all()
 
-    sam_res, geo_shots = {}, {}
+    def upload(i, dev, s=0, e=None):
+        return torch.from_numpy(np.stack([frames[k] for k in wins[i]["keys"][s:e]])).to(dev)
 
     def work(dev):
         gi = dev.index
         with torch.cuda.device(dev), torch.inference_mode():
-            while True:
+            while not stop.is_set():
                 try:
                     item = dev_q[dev].get_nowait()
                 except queue.Empty:
                     try:
-                        item = shared_q.get(timeout=.01)
+                        item = tasks.get(timeout=.01)
                     except queue.Empty:
                         continue
-                _, _, kind, i = item
-                if kind == "stop":
-                    if all_lifts_queued.is_set() and dev_q[dev].empty():
-                        break
-                    shared_q.put(item)  # (a): lifts still to come on this card
-                    time.sleep(.01)
-                    continue
+                _, _, kind, i, s = item
                 w = wins[i]
                 try:
-                    kf = torch.from_numpy(np.stack([frames[k] for k in w["keys"]])).to(dev)
-                    obj_local = [j for j, k in enumerate(w["keys"]) if (k // core.BLOCK) % segment.OBJECT_EVERY == 0]
-                    if kind == "window":  # (b)
-                        w["gpu"], w["started_s"] = gi, clock.now()
-                        person, voc = sam_window(m, dev, kf, obj_local, words, clock, i)
-                        g = geometry(m, dev, kf, person, len(kf), clock, i)
-                        r = objects_window(m, dev, w, kf, person, voc, g, words, clock, i)
-                        r.update(plane=g["plane"], mpu=g["mpu"], scale_status=g["scale_status"], frame_note="window")
-                        done(i, r)
-                    elif kind == "sam":  # (a) part 1
-                        w["gpu"], w["started_s"] = gi, clock.now()
-                        sam_res[i] = (dev, sam_window(m, dev, kf, obj_local, words, clock, i))
-                        mark(f"sam_done_{i}")
+                    if kind == "sam":
+                        w.setdefault("started_s", clock.now())
+                        ks = w["keys"][s:s + segment.PERSON_FRAMES]
+                        obj = [j for j, k in enumerate(ks) if (k // core.BLOCK) % segment.OBJECT_EVERY == 0]
+                        person, voc = sam_chunk(m, dev, upload(i, dev, s, s + segment.PERSON_FRAMES), obj, words, clock, i)
+                        with lock:
+                            sam_parts.setdefault(i, []).append((s, dev, person, voc))
                         with res_cv:
                             res_cv.notify_all()
-                    elif kind == "lift":  # (a) part 2, on the card that holds this window's masks
-                        person, voc = sam_res[i][1]
-                        si, pos = shot_of[i]
-                        G = geo_shots[si]
-                        mine = [j for j, q in enumerate(pos) if q >= 0]
-                        src = torch.as_tensor([pos[j] for j in mine], device=G["depth_m"].device)
-                        g = {"depth_m": torch.zeros((len(pos), *core.DA3_HW), device=dev), "K": G["K"][src[:1]].repeat(len(pos), 1, 1).to(dev),
-                             "c2w_m": torch.eye(4, device=dev).repeat(len(pos), 1, 1)}
-                        for k in g:  # keys of another shot keep depth 0: nothing of them is lifted or judged
-                            g[k][mine] = G[k][src].to(dev)
-                        r = objects_window(m, dev, w, kf, person, voc, g, words, clock, i)
-                        r.update(plane=G["plane"], mpu=G["mpu"], scale_status=G["scale_status"], frame_note=f"shot {si}")
+                        maybe_lift(i)
+                    elif kind == "da3":
+                        w.setdefault("started_s", clock.now())
+                        with clock.stage(f"da3.shot{i}@gpu{gi}", gpu=gi, n={"views": len(w["keys"])}, sync=True):
+                            g = m.da3s[dev].shot(upload(i, dev))
+                        with lock:
+                            geo_raw[i] = g
+                        maybe_lift(i)
+                    else:  # lift, on this card: SAM 3 chunks and geometry are brought here
+                        person = gather([(p[0], p[1], p[2]) for p in sam_parts[i]], dev)
+                        voc = gather([(p[0], p[1], p[3]) for p in sam_parts[i]], dev)
+                        n = len(w["keys"])
+                        if option == "b":
+                            g = scale({k: v.to(dev) for k, v in geo_raw.pop(i).items()}, person, n, dev)
+                            note = "window"
+                        else:
+                            si, pos = shot_of[i]
+                            G = geo_shots[si]
+                            mine = [j for j, q in enumerate(pos) if q >= 0]
+                            src = torch.as_tensor([pos[j] for j in mine], device=G["depth_m"].device)
+                            g = {"depth_m": torch.zeros((n, *core.DA3_HW), device=dev), "K": G["K"][src[:1]].repeat(n, 1, 1).to(dev),
+                                 "c2w_m": torch.eye(4, device=dev).repeat(n, 1, 1)}
+                            for k in ("depth_m", "K", "c2w_m"):  # keys of another shot keep depth 0: nothing of them is lifted or judged
+                                g[k][mine] = G[k][src].to(dev)
+                            g.update({k: G[k] for k in ("mpu", "plane", "scale_status")})
+                            note = f"shot {si}"
+                        r = objects_window(m, dev, w, upload(i, dev), person, voc, g, words, clock, i)
+                        r.update(plane=g["plane"], mpu=g["mpu"], scale_status=g["scale_status"], frame_note=note, gpu=gi)
+                        with lock:
+                            sam_parts.pop(i, None)
                         done(i, r)
                 except Exception:  # noqa: BLE001
-                    errors.append(f"window {i}: " + traceback.format_exc()[-2500:])
+                    errors.append(f"window {i} {kind}: " + traceback.format_exc()[-2500:])
                     done(i, None)
 
     def done(i, r):
-        wins[i]["done_s"] = clock.now()
         with res_cv:
+            if i in results:
+                return
+            wins[i]["done_s"] = clock.now()
             results[i] = r
             res_cv.notify_all()
 
-    all_lifts_queued = threading.Event()
-    if option == "b":
-        all_lifts_queued.set()
     workers = [threading.Thread(target=work, args=(d,), daemon=True) for d in m.devs for _ in range(m.per_gpu)]
     for t in workers:
         t.start()
@@ -552,49 +570,44 @@ def analyse(m, mp4, words, opts, clock):
             cv.notify_all()
         key_q.put(None)
     mark("decoded")
-    with clock.stage("cuts"):
-        cuts = core.cuts_from(core.stitch([f.result() for f in futures]), n)
-        shots = [(s, e) for s, e in cuts["segments"] if e - s + 1 >= core.MIN_SHOT]
-    mark("cuts_final")
 
-    shot_of = {}
-    overlap_rows = []
-    if option == "a":  # per-shot DA3 on GPU 0 (all the shot's keyframes), while the SAM 3 queue keeps both cards busy
+    geo_shots, overlap_rows, shots, cuts = {}, [], None, None
+
+    def final_cuts():
+        with clock.stage("cuts"):
+            c = core.cuts_from(core.stitch([f.result() for f in futures]), n)
+        mark("cuts_final")
+        return c, [(s, e) for s, e in c["segments"] if e - s + 1 >= core.MIN_SHOT]
+
+    if option == "a":  # per-shot DA3 on GPU 0 (all the shot's keyframes) while both cards work through the SAM 3 queue
+        cuts, shots = final_cuts()
         dev0 = m.devs[0]
         with torch.cuda.device(dev0), torch.inference_mode():
             for si, (s, e) in enumerate(shots):
                 ks = [k for k in keys if s <= k <= e]
-                kf = torch.from_numpy(np.stack([frames[k] for k in ks])).to(dev0)
                 with clock.stage(f"da3.shot{si}", gpu=0, n={"views": len(ks)}, sync=True):
-                    g = m.da3s[dev0].shot(kf)
+                    g = m.da3s[dev0].shot(torch.from_numpy(np.stack([frames[k] for k in ks])).to(dev0))
                 geo_shots[si] = {"keys": ks, "g": g}
-            mark("da3_done")
+        mark("da3_done")
         bt.join()
-        # floor per shot from the windows' person/floor masks, waiting for those SAM tasks
-        for si, G in geo_shots.items():
-            ks = G["keys"]
-            idx = {k: j for j, k in enumerate(ks)}
-            floor = torch.zeros((len(ks), *core.DA3_HW), dtype=torch.bool, device=dev0)
+        for si, G in geo_shots.items():  # the shot's floor from its windows' SAM 3 'floor' masks, then the scale
+            idx = {k: j for j, k in enumerate(G["keys"])}
+            floor = torch.zeros((len(idx), *core.DA3_HW), dtype=torch.bool, device=dev0)
             for i, w in enumerate(wins):
                 if not any(k in idx for k in w["keys"]):
                     continue
                 with res_cv:
-                    res_cv.wait_for(lambda: i in sam_res or i in results)
-                if i not in sam_res:
-                    continue
-                person = sam_res[i][1][0]
-                if person is None:
-                    continue
-                f = person["word"] == 1
-                for fr, mk in zip(person["frame"][f].tolist(), person["mask"][f]):
-                    k = w["keys"][fr]
-                    if k in idx:
-                        floor[idx[k]] |= mk.to(dev0)
+                    res_cv.wait_for(lambda: len(sam_parts.get(i, [])) == w["chunks"] or i in results)
+                for s, _, person, _ in list(sam_parts.get(i, [])):
+                    f = person["word"] == 1
+                    for fr, mk in zip(person["frame"][f].tolist(), person["mask"][f]):
+                        k = w["keys"][s + fr]
+                        if k in idx:
+                            floor[idx[k]] |= mk.to(dev0)
             with torch.cuda.device(dev0), torch.inference_mode(), clock.stage(f"scale.shot{si}", gpu=0, sync=True):
-                gg = scale(G["g"], {"word": torch.ones(len(ks), dtype=torch.long, device=dev0), "frame": torch.arange(len(ks), device=dev0),
-                                    "mask": floor}, len(ks), dev0)
-                G.update(gg)
-        for i, w in enumerate(wins):  # each window's lift on its shot (the shot holding most of its keys)
+                G.update(scale(G["g"], {"word": torch.ones(len(idx), dtype=torch.long, device=dev0), "frame": torch.arange(len(idx), device=dev0),
+                                        "mask": floor}, len(idx), dev0))
+        for i, w in enumerate(wins):  # each window on its shot (the one holding most of its keys)
             best = max(geo_shots.items(), key=lambda kv: sum(k in kv[1]["keys"] for k in w["keys"]), default=None)
             if best is None or not any(k in best[1]["keys"] for k in w["keys"]):
                 w["skipped"] = "no geometry (short shot)"
@@ -602,35 +615,30 @@ def analyse(m, mp4, words, opts, clock):
                 continue
             si, G = best
             w["foreign_keys"] = [k for k in w["keys"] if k not in G["keys"]]
-            shot_of[i] = (si, [G["keys"].index(k) if k in G["keys"] else -1 for k in w["keys"]])
-            with res_cv:
-                res_cv.wait_for(lambda: i in sam_res or i in results)
-            if i in sam_res:
-                dev_q[sam_res[i][0]].put((i, next(seq), "lift", i))
-        all_lifts_queued.set()
-    else:
-        bt.join()
+            with lock:
+                shot_of[i] = (si, [G["keys"].index(k) if k in G["keys"] else -1 for k in w["keys"]])
+            maybe_lift(i)
 
-    # windows in order -> map frames -> the tracker; facts after the last one
-    tracker, frame_of = None, {}
-    T, comp, stitches, planes, people = None, -1, [], {}, {}
-    per_window_inst, seen_inst, together = [], [], {}
-    for i in range(len(wins)):
+    # windows in order -> map frames -> the tracker (starts as soon as window 0 is lifted)
+    tracker, frame_of, T, comp = tl.Tracker(), {}, None, -1
+    stitches, planes, people, per_window_inst, seen_inst, together = [], {}, {}, [], [], {}
+    i = 0
+    while True:
         with res_cv:
-            res_cv.wait_for(lambda: i in results)
+            res_cv.wait_for(lambda: i in results or (built.is_set() and i >= len(wins)))
+        if i >= len(wins):
+            break
         r, w = results[i], wins[i]
         if r is None:
             w["frame"] = None
+            i += 1
             continue
         w.update(r)
         with clock.stage("stitch", n={"window": i}):
             if option == "a":
                 si = shot_of[i][0]
-                if si not in frame_of:
-                    frame_of[si] = len(frame_of)
-                w["frame"] = frame_of[si]
+                w["frame"] = frame_of.setdefault(si, len(frame_of))
                 T = (1., np.eye(3), np.zeros(3))
-                st = None
             else:
                 prev = next((x for x in reversed(wins[:i]) if x.get("frame") is not None), None)
                 st = stitch(prev["raw"], w) if prev is not None and w["carried"] else None
@@ -640,7 +648,8 @@ def analyse(m, mp4, words, opts, clock):
                     comp += 1
                     T = (1., np.eye(3), np.zeros(3))
                 w["frame"] = comp
-                stitches.append({"window": i, **({k: v for k, v in st.items() if k not in ("R", "t")} if st else {"accepted": None, "why": "no carried keys" if not w["carried"] else "no shared depth"})})
+                stitches.append({"window": i, **({k: v for k, v in st.items() if k not in ("R", "t")} if st else
+                                                 {"accepted": None, "why": "no carried keys" if not w["carried"] else "no shared depth"})})
                 w["raw"] = {k: (w[k].copy() if hasattr(w[k], "copy") else w[k]) for k in ("keys", "carried", "c2w", "depth", "person")}
             to_frame(w, T)
             if w.get("plane") and w["frame"] not in planes:
@@ -648,8 +657,6 @@ def analyse(m, mp4, words, opts, clock):
             seen = {p["key"] for p in people.get(w["frame"], [])}
             people.setdefault(w["frame"], []).extend(p for p in w["people"] if p["key"] not in seen)
         with clock.stage("timeline", n={"window": i, "instances": len(w["instances"])}):
-            if tracker is None:
-                tracker = tl.Tracker()
             for x in w["instances"]:
                 for k in x["keys"]:
                     together.setdefault((i, k), []).append(len(seen_inst))
@@ -660,18 +667,25 @@ def analyse(m, mp4, words, opts, clock):
             for x in w["instances"]:
                 per_window_inst.append({"window": i, "frame": w["frame"], "label": x["label"], "centroid": np.round(x["centroid"], 3).tolist(),
                                         "lo": np.round(x["lo"], 3).tolist(), "hi": np.round(x["hi"], 3).tolist(), "keys": x["keys"], "best_key": x["best_key"]})
-        mark("first_window_facts")
         w["facts_s"] = clock.now()
-    # the appearance threshold for 'moved': the video's own negatives (instances seen together on one keyframe)
+        mark("first_window_facts")
+        if w["instances"]:
+            mark("first_objects")
+        i += 1
     with clock.stage("facts"):
         tau, calib = calibrate(np.array([x["emb"] for _, x in seen_inst]), list(together.values())) if seen_inst else (1.01, {})
-        fct = facts(tracker, planes, people) if tracker else []
+        fct = facts(tracker, planes, people)
     mark("all_windows_facts")
+    stop.set()
+    if cuts is None:
+        cuts, shots = final_cuts()  # (b): only to check the windows against them, after the facts
     if option == "a":  # the geometric co-visibility the window rule is compared with: after the facts, never on their clock
         dev0 = m.devs[0]
         for si, G in geo_shots.items():
             with torch.cuda.device(dev0), torch.inference_mode(), clock.stage("overlap.da3", gpu=0, sync=True):
                 overlap_rows.append({"shot": si, "keys": G["keys"], "rows": da3_overlap(G["depth_m"], G["K"], G["c2w_m"])})
+    for t in workers:
+        t.join()
     summary = {"marks": marks, "stitches": stitches, "splits": split_log, "tau_move_calibrated": tau, "calibration": calib,
                "cuts_final": [int(c) for c in cuts["cuts"]], "shots": shots, "errors": errors, "overlap_da3": overlap_rows,
                "windows_spanning_final_cut": [w["index"] for w in wins if any(w["keys"][0] < c <= w["keys"][-1] for c in cuts["cuts"])]}
@@ -732,7 +746,8 @@ class X6:
         from fast_report import cascade, segment
         lap("imports_s")
         self.devs = [torch.device("cuda:0"), torch.device("cuda:1")]
-        self.per_gpu = 1
+        self.per_gpu = 2
+        self.emb_locks = {d: threading.Lock() for d in self.devs}
         da3 = DepthAnything3.from_pretrained(DA3_MODEL, revision=DA3_REV, cache_dir="/v/da3/huggingface/hub").eval()
         self.da3s = {d: core.Da3(copy.deepcopy(da3).to(d), d) for d in self.devs}
         lap("da3_both_s")
@@ -772,7 +787,7 @@ class X6:
         import torch
         from fast_report.instrument import Clock, usd_per_s
         clock = Clock()  # t0: the bytes are in the container
-        self.per_gpu = opts.get("per_gpu", 1)
+        self.per_gpu = opts.get("per_gpu", 2)
         for d in self.devs:
             torch.cuda.reset_peak_memory_stats(d)
         try:
@@ -789,7 +804,7 @@ class X6:
             p = Path("/v/layers/x6") / run_id
             p.mkdir(parents=True, exist_ok=True)
             with open(p / "windows.pkl", "wb") as f:  # the sweep's input: windows in their map frames, as the tracker saw them
-                pickle.dump({"wins": [{k: v for k, v in w.items() if k != "raw"} for w in out["wins"]], "planes": out["planes"],
+                pickle.dump({"wins": [{k: v for k, v in w.items() if k != "raw" and not k.startswith("_")} for w in out["wins"]], "planes": out["planes"],
                              "people": out["people"], "tau": out["summary"]["tau_move_calibrated"]}, f)
             VOLUMES["/v/layers"].commit()
         for d in self.devs:
@@ -830,7 +845,7 @@ def export(out):
         changes.append(c)
     fact_points = {f["object"]: np.round(np.concatenate([i["points"] for _, i in objs[f["object"]]["obs"]])[::6], 3).tolist() for f in out["facts"]}
     keep = ("index", "keys", "carried", "reason", "t", "dispatched_s", "started_s", "done_s", "facts_s", "gpu", "frame", "mpu", "scale_status",
-            "frame_note", "lift", "skipped", "foreign_keys", "covis")
+            "frame_note", "lift", "skipped", "foreign_keys", "covis", "chunks")
     return {"windows": [{k: w.get(k) for k in keep} | {"instances": len(w.get("instances", []))} for w in wins], "cameras": cams,
             "objects": tracker.timelines() if tracker else [], "changes": changes, "facts": out["facts"], "fact_points": fact_points,
             "per_window_instances": out["per_window_instances"], "summary": out["summary"], "fps": out["fps"], "frames": out["frames"],
@@ -873,7 +888,7 @@ def words_for(site):
 
 
 @app.local_entrypoint()
-def main(out: str, plan: str = "me340:b:0.4", per_gpu: int = 1):
+def main(out: str, plan: str = "me340:b:0.4", per_gpu: int = 2):
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     x = X6()
@@ -911,7 +926,6 @@ def self_check():
         k = np.array(axis, float) / np.linalg.norm(axis)
         K_ = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
         return np.eye(3) + np.sin(a) * K_ + (1 - np.cos(a)) * K_ @ K_
-    K = np.array([[100., 0, 63], [0, 100, 35], [0, 0, 1]])
     c2w = np.stack([np.block([[rot([0, 1, 0], 5 * i), np.array([[.3 * i], [0], [0]])], [np.zeros((1, 3)), np.ones((1, 1))]]) for i in range(6)])
     depth = rng.uniform(2, 5, (6, 70, 126))
     prev = {"keys": list(range(6)), "carried": 0, "c2w": c2w, "depth": depth, "person": np.zeros(depth.shape, bool)}
