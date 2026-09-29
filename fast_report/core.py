@@ -1309,7 +1309,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         todo = [c for c in card_list if to_name(c, which)]
         if not todo:
             return 0
-        with clock.stage(f"vlm.identity.{which}{tag}", n={"objects": len(todo)}):
+        with clock.stage(f"vlm.identity.{which or 'all'}{tag}", n={"objects": len(todo)}):
             with ThreadPoolExecutor(8) as pool:  # never the core's cpu_pool: its threads would wait on vLLM (the judge's queue)
                 built = list(pool.map(build, todo))
             asked = []
@@ -1384,12 +1384,15 @@ def analyse(m, mp4, opts, clock, writer, log):
             release_splat()
         m.cpu_pool.submit(wait)
 
+    display_lock = threading.Lock()
+
     def start_display():
-        splat_after_facts()
-        if display.get("models") or not display_on:
-            return
-        display["models"] = m.cpu_pool.submit(models_job, m, sam3d_objs.result, geo, shared, words, clock, writer, dev_geo)
-        clock.mark("display_started")
+        with display_lock:  # mvp3 integrate: called from densify or from the Qwen densify naming's end, whichever is last
+            splat_after_facts()
+            if display.get("models") or not display_on:
+                return
+            display["models"] = m.cpu_pool.submit(models_job, m, sam3d_objs.result, geo, shared, words, clock, writer, dev_geo)
+            clock.mark("display_started")
     if not densify_on or not objects:
         start_display()
     v1_labels = {o["id"]: o["label"] for o in objects}
@@ -1443,7 +1446,8 @@ def analyse(m, mp4, opts, clock, writer, log):
             return densify()
         finally:
             v3["done"].set()  # cards v3 put, or never will be: densify's naming pass stops waiting for it
-            start_display()
+            if not ("densify" in namer and opts.get("namer") is None and not facts_done["densify_names"].is_set()):
+                start_display()  # else the Qwen naming of densify's objects starts it when it ends
             for d in work.chunks:
                 work.chunks[d] = []
 
@@ -1579,7 +1583,8 @@ def analyse(m, mp4, opts, clock, writer, log):
             cards_put(3, out)
         v3["by"] = {c["id"]: c for c in out["cards"] if c["kind"] == "object"}  # densify's objects that are cards (the rest merged away)
         v3["done"].set()
-        start_display()  # facts before display (section 7): the gate's CPU processes slowed cards v3 by 2-3x beside it (run 005)
+        if facts_done["densify_names"].is_set():  # facts before display (section 7): the gate's CPU processes slowed cards v3 by 2-3x
+            start_display()                        # beside it (run 005); the Qwen naming of densify's objects starts it when done
         judge_hook(out, 3)
         return {**st, "cards": out["stats"]}
 
@@ -1599,7 +1604,9 @@ def analyse(m, mp4, opts, clock, writer, log):
                     with cards_lock:
                         known = set(cards_out.get("identities") or {})
                         rest = [copy.deepcopy(c) for c in cards_out["v3"]["cards"] if c["kind"] == "object" and c["id"] not in known]
-                    n = sum(ask_identity(rest, which, "outlines_v2", "_densify") for which in ("ehs", "other"))
+                    # one pass over EHS and other objects: two passes drew the views twice (the second 13 s later beside SAM 3D's
+                    # prepare, ME340 run 002); the display (SAM 3D) starts after it, not beside it
+                    n = ask_identity(rest, None, "outlines_v2", "_densify")
                     if n:
                         publish({c["id"]: c["identity"] for c in rest}, "qwen_densify")
                     fut.set_result({"namer": "qwen decider (densify's objects)", "objects": len(rest), "asked": n})
@@ -1608,6 +1615,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                     fut.set_result({"error": traceback.format_exc()[-2000:]})
                 finally:
                     facts_done["densify_names"].set()
+                    start_display()
             threading.Thread(target=qwen_densified, name="namer-densify-qwen", daemon=True).start()
             return
         namer["densify"] = fut = Future()
