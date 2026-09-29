@@ -109,6 +109,11 @@ def load_layers(run_dir, report=None):
         blob = next(run_dir.rglob(latest["outlines"]["blobs"]["analysis"]["sha256"])).read_bytes()
         out["outlines"] = json.loads(gzip.decompress(blob) if blob[:2] == b"\x1f\x8b" else blob)
     out["_report"] = reports.pop()
+    for s in (out.get("cameras") or {}).get("shots", []):  # the viewer's names (fast_report.layers docstring) -> the ones read here
+        s.setdefault("keyframes", s.get("keys"))
+        s.setdefault("c2w_m", s.get("c2w"))
+    if "people" in out:
+        out["people"]["tracks"] = [t["points"] if isinstance(t, dict) else t for t in out["people"].get("tracks", [])]
     return out
 
 

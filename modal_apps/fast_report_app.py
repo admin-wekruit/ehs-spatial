@@ -3,10 +3,15 @@
 One resident Modal container, 2 x A100-80GB, MPS on. boot() loads everything once (cold start, recorded, never part of
 the analysis time); run() takes the MP4 bytes and yields every layer patch as the writer sends it, then run.json.
 Analysis time = seconds from the MP4 bytes in the container to each layer written (Volume commit returned).
+Core (A): video, cameras, room, people, events, objects, outlines; SAM 3D models on GPU 0 and the splat on GPU 1 (B);
+patch store, local mirror and loopback endpoint (C, fast_report.layers); clock and memory (D, fast_report.instrument).
 
-  modal run modal_apps/fast_report_app.py --video PATH --start S --end E --site NAME --out RUNS/fb-a-core-NNN \
-      [--windows "S-E[:nocache|:site],S-E,..."]  # windows of the same video, one boot (the first = the first call);
-                                                  # nocache: no label cache; site: the site's earlier words in wave 1
+  modal run modal_apps/fast_report_app.py --video PATH --start S --end E --site NAME --out RUNS/fb-NNN \
+      [--serve] [--eval-site me340|samsclub-a2|walmart] [--windows "S-E[:nocache|:site],S-E,..."] [--background-s 0]
+      # --serve: the viewer's endpoint on 127.0.0.1:8793 (web: npm run dev, then #/live/<report>), polled like the viewer;
+      # --eval-site: the delivered splat's held-out frames stay out of training, and the quality table runs after the call;
+      # windows of the same video share one boot (the first = the first call); nocache: no label cache; site: the
+      # site's earlier words in wave 1
   modal run modal_apps/fast_report_app.py::setup      # image check + SigLIP 2 weights to the models volume (once)
   python modal_apps/fast_report_app.py --self-check    # CPU only: cuts, flood rules, naming, cascade, parsing
   python modal_apps/fast_report_app.py --evaluate RUN_DIR   # local numpy: poses vs DROID, naming vs the delivered names
@@ -24,31 +29,43 @@ import modal
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-sys.path[:0] = [str(HERE), str(HERE.parent / "scripts"), str(HERE.parent)]
+REPO = HERE.parent if (HERE.parent / "fast_report").is_dir() else Path("/repo")  # the container mounts the repo at /repo
+sys.path[:0] = [str(REPO), str(REPO / "scripts"), str(REPO / "modal_apps"), str(HERE)]
 import sam3_app  # noqa: E402  SAM 3 revision pin
 
 PHASE2 = Path("/Users/adam/Desktop/panoptes-public/research-notes/phase2")
 DA3_CODE = "3d835ec1a5802d64a8b8b15f817a1ab54809bfe4"
 DA3_MODEL, DA3_REV = "depth-anything/DA3-GIANT-1.1", "72ee9f89ce4e50d704e9d55ee9c646ec8dc25a19"
-PROCS, CPU, MEMORY_GIB, GPU = 24, 32, 160, "A100-80GB:2"
-VLLM_MPS = False  # vLLM outside MPS; this process (and SAM 3D later, E4) inside
-PRICE = {"A100-80GB": .000694, "cpu_core": .0000131, "gib": .00000222}  # Modal list $/s
+PROCS, CPU, MEMORY_GIB, GPU, GATE_PROCS = 24, 32, 160, "A100-80GB:2", 16
+VLLM_MPS = False  # vLLM outside MPS; this process, SAM 3D (E4) and the splat inside
 
 app = modal.App("panoptes-fast-report")
 VOLUMES = {"/v/da3": modal.Volume.from_name("moge3-hf-cache"), "/v/sam3": modal.Volume.from_name("sam3-hf-cache"),
            "/v/vlm": modal.Volume.from_name("panoptes-vlm-cache"),
            "/v/models": modal.Volume.from_name("panoptes-fb-models", create_if_missing=True),
-           "/v/layers": modal.Volume.from_name("panoptes-fb-layers", create_if_missing=True)}
-# CUDA devel base (nvcc) so the SAM 3D builder can compile pytorch3d in its own venv; E9's main environment, pinned to
-# the versions E9 ran (torch 2.14.0+cu130, transformers 5.17.0, open3d 0.19.0), vLLM in its own venv as in E9
-image = (modal.Image.from_registry("nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04", add_python="3.11")
-         .apt_install("git", "libgl1", "libglib2.0-0", "libgomp1")
-         .pip_install("torch==2.14.0", "torchvision", "xformers", "transformers==5.17.0", "accelerate", "addict", "pillow", "scipy",
-                      "open3d==0.19.0", "shapely", "pydantic", "opencv-python-headless", "sentencepiece",
-                      f"git+https://github.com/ByteDance-Seed/Depth-Anything-3.git@{DA3_CODE}")
-         .run_commands("python -m venv /opt/vllm && PIP_EXTRA_INDEX_URL= /opt/vllm/bin/pip install -q vllm==0.11.0 transformers==4.57.1 pillow")
-         .env({"HF_HUB_OFFLINE": "1", "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
-         .add_local_python_source("detect_shot_cuts", "m3_exp_geometry", "sam3_app", "video_events", "fast_report", "ehs_spatial"))
+           "/v/layers": modal.Volume.from_name("panoptes-fb-layers", create_if_missing=True),
+           "/weights": modal.Volume.from_name("panoptes-sam3d-weights"),  # SAM 3D (sam3d_research's volume)
+           "/ckpt": modal.Volume.from_name("panoptes-splat-train")}  # LPIPS' AlexNet for the splat's held-out score (torch hub cache)
+
+
+def build_image():
+    """CUDA devel base (nvcc for SAM 3D's pytorch3d); E9's main environment, pinned to the versions E9 ran (torch
+    2.14.0+cu130, transformers 5.17.0, open3d 0.19.0), vLLM in its own venv as in E9; then B's venvs (/opt/sam3d,
+    /opt/gate, /opt/splat); the repo's code mounted at /repo (the SAM 3D, gate and splat processes run it from there)."""
+    from fast_report import sam3d, splat
+    base = (modal.Image.from_registry("nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04", add_python="3.11")
+            .apt_install("git", "libgl1", "libglib2.0-0", "libgomp1")
+            .pip_install("torch==2.14.0", "torchvision", "xformers", "transformers==5.17.0", "accelerate", "addict", "pillow", "scipy",
+                         "open3d==0.19.0", "shapely", "pydantic", "opencv-python-headless", "sentencepiece",
+                         f"git+https://github.com/ByteDance-Seed/Depth-Anything-3.git@{DA3_CODE}")
+            .run_commands("python -m venv /opt/vllm && PIP_EXTRA_INDEX_URL= /opt/vllm/bin/pip install -q vllm==0.11.0 transformers==4.57.1 pillow"))
+    out = splat.with_envs(sam3d.with_envs(base)).env({"HF_HUB_OFFLINE": "1", "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
+    for d in ("fast_report", "scripts", "modal_apps", "ehs_spatial"):
+        out = out.add_local_dir(REPO / d, f"/repo/{d}", ignore=["**/__pycache__/**", "**/*.pyc"])
+    return out
+
+
+image = build_image() if modal.is_local() else modal.Image.debian_slim()  # a container runs the image it was built from
 
 
 def gpu_listing():
@@ -82,14 +99,8 @@ def setup():
     return out
 
 
-try:  # D's and C's modules once merged; the stand-ins until then
-    from fast_report.instrument import Clock, Vram  # noqa: F401
-except ImportError:
-    from fast_report.stubs import Clock, Vram
-try:
-    from fast_report.layers import Writer, mirror  # noqa: F401
-except ImportError:
-    from fast_report.stubs import Writer, mirror
+from fast_report.instrument import Clock, Vram, torch_peaks, usd_per_s  # noqa: E402  D
+from fast_report.layers import Writer  # noqa: E402  C
 
 
 @app.cls(image=image, gpu=GPU, cpu=CPU, memory=MEMORY_GIB * 1024, volumes=VOLUMES, timeout=3600, retries=0, max_containers=1,
@@ -100,7 +111,7 @@ class FastReport:
         import copy
         import multiprocessing
         from concurrent.futures import ProcessPoolExecutor
-        from fast_report import core, vlm
+        from fast_report import core, sam3d, splat, vlm
         entered, t0 = time.time(), time.perf_counter()
         sys.setswitchinterval(1e-3)  # the decode thread gets the GIL back sooner from the two SAM 3 threads (E9: 1.7 -> 4.5 s)
         b = self.boot_record = {"entered_unix": entered}
@@ -115,6 +126,8 @@ class FastReport:
         self.vllm = vlm.start(1, mps=VLLM_MPS)  # first: its load overlaps everything below; GPU 1 stays empty until it has profiled
         b["vllm_mps"] = VLLM_MPS
         lap("vllm_spawned_s")
+        self.sam3d = sam3d.Workers(gpu=0, n=2)  # B: two SAM 3D processes under MPS on GPU 0 (~60 s load + 16 s warm-up, beside vLLM's load)
+        self.gate_pool = sam3d.GatePool(GATE_PROCS)  # the gate's prepare/assess processes (niced)
         self.proc_pool = ProcessPoolExecutor(PROCS, mp_context=multiprocessing.get_context("spawn"))
         self.proc_pool.map(core.warm_worker, range(PROCS))
         import torch
@@ -136,6 +149,9 @@ class FastReport:
         lap("sam3_siglip_gpu0_s")
         vlm.wait(self.vllm)
         lap("vllm_ready_s")
+        self.splat = splat.Worker(gpu=1, torch_home="/ckpt/torch")  # after vLLM sized its cache from GPU 1's free memory (B)
+        b["sam3d"] = self.sam3d.ready()  # before this process warms up on GPU 0: SAM 3D's warm-up holds ~20 GB a process until it is done
+        lap("sam3d_ready_s")
         self.sams = {self.dev_geo: segment.Sam3(sam0, proc, self.dev_geo), self.dev_seg: segment.Sam3(sam.to(self.dev_seg), proc, self.dev_seg)}
         self.cpu_pool, self.vlm_pool, self.run_pool = ThreadPoolExecutor(CPU), ThreadPoolExecutor(4), ThreadPoolExecutor(1)
         vllm_warm = self.cpu_pool.submit(self.warm_vllm)
@@ -166,6 +182,9 @@ class FastReport:
         lap("warm_open3d_s")
         b["vllm_warm_s"] = vllm_warm.result()
         b["process_pool_pids"] = len(set(self.proc_pool.map(core.warm_worker, range(PROCS))))
+        b["splat"] = self.splat.ready()
+        b["gate_processes"] = len(self.gate_pool.ready())
+        lap("sam3d_splat_gate_ready_s")
         for d in (self.dev_geo, self.dev_seg):
             with torch.cuda.device(d):
                 torch.cuda.empty_cache()
@@ -193,6 +212,9 @@ class FastReport:
 
     @modal.exit()
     def stop(self):
+        for name in ("sam3d", "gate_pool", "splat"):
+            if getattr(self, name, None) is not None:
+                getattr(self, name).close()
         if getattr(self, "vllm", None) is not None:
             self.vllm.terminate()
 
@@ -206,12 +228,13 @@ class FastReport:
         import torch
         from fast_report import core
         clock = Clock()  # t0: the bytes are in the container
-        vram = Vram([self.dev_geo, self.dev_seg], clock)
-        vram.start()
+        vram = Vram([0, 1], source=options.get("vram_source", "auto")).start()  # whole-device memory, every process
         for d in (self.dev_geo, self.dev_seg):
             torch.cuda.reset_peak_memory_stats(d)
         self.calls += 1
-        writer = Writer(VOLUMES["/v/layers"], "/v/layers", report_id, clock, options.get("client_has", ()))
+        price = usd_per_s(2, CPU, MEMORY_GIB)
+        writer = Writer(VOLUMES["/v/layers"], report_id, clock, root="/v/layers", client_has=options.get("client_has", ()),
+                        report=lambda: clock.report(vram, price))
         job = self.run_pool.submit(core.analyse, self, mp4, {**options, "site": site}, clock, writer, None)
         job.add_done_callback(lambda _: writer.close())
         yield from writer.events()
@@ -220,26 +243,26 @@ class FastReport:
             summary, error = job.result(), None
         except Exception:  # noqa: BLE001  reported, never retried
             summary, error = None, traceback.format_exc()[-4000:]
-        rep = clock.report(vram)
-        seconds = time.time() - clock.t0_unix
-        run = {"schema": "panoptes-fast-run-v1", "report": report_id, "site": site, "error": error, "t0_unix": clock.t0_unix,
+            if getattr(self, "release", None) is not None:
+                self.release.set()  # a splat still holding for the SAM 3 queue trains and ends instead of waiting forever
+        with clock.stage("da3.restore", gpu=self.dev_geo):  # after every layer (off the clock): the core offloaded DA3 for SAM 3D
+            self.da3.restore()
+        run = {**clock.report(vram, price), "report": report_id, "site": site, "error": error,
                "video": {"sha256": core.sha256(mp4), "bytes": len(mp4), "window_s": options.get("window_s")},
                "hardware": {"gpus": self.listing, "cpu": CPU, "memory_gib": MEMORY_GIB, "mps": self.boot_record.get("mps")},
                "boot": {**self.boot_record, "first_call_after_boot": self.calls == 1, "note": "cold start: never part of the analysis time"},
-               **rep, "layers": writer.layers, "summary": summary,
-               "main_process_torch_reserved_peak_gb": [round(torch.cuda.max_memory_reserved(d) / 1e9, 2) for d in (self.dev_geo, self.dev_seg)],
-               "analysis_wall_s": round(seconds, 3),
-               "usd_estimate": round(seconds * (2 * PRICE["A100-80GB"] + CPU * PRICE["cpu_core"] + MEMORY_GIB * PRICE["gib"]), 4)}
+               "layers": writer.rows, "summary": summary, "main_process_torch_reserved_peak_gib": torch_peaks()}
         path = Path("/v/layers/reports") / report_id / "run.json"
         path.write_text(json.dumps(run, indent=1, default=plain))
         VOLUMES["/v/layers"].commit()
-        self.last = None
-        torch.cuda.empty_cache()
-        yield {"type": "run", "run": run}
+        for d in (self.dev_geo, self.dev_seg):
+            with torch.cuda.device(d):
+                torch.cuda.empty_cache()
+        yield {"type": "run", "report": report_id, "run": run}
 
 
 def plain(o):
-    return o.item() if hasattr(o, "item") else str(o)
+    return o.tolist() if hasattr(o, "tolist") else str(o)
 
 
 # ---------- local ----------
@@ -269,9 +292,49 @@ def cut(video, start, end, out_path, max_width=1280):
     return {"first_frame": first, "frames": written, "fps": fps, "size": size}
 
 
+MILESTONES = {  # name -> (layer, which version): the report's moments, each at its patch's written time
+    "cameras": ("cameras", lambda d: True), "first_3d": ("room", lambda d: True), "people": ("people", lambda d: True),
+    "events": ("events", lambda d: True), "objects": ("objects", lambda d: True), "outlines": ("outlines", lambda d: True),
+    "first_model": ("models", lambda d: bool(d.get("models"))), "all_models": ("models", lambda d: d.get("final")),
+    "splat_preview": ("splat", lambda d: d.get("kind") == "preview")}
+
+
+def milestones(root, report, t0_unix):
+    """Per milestone: seq, sent_s and written_s (container clock from t0), served_s (the endpoint's first fetch: this machine's
+    clock minus t0_unix, two clocks)."""
+    folder = Path(root) / "reports" / report
+    written = json.loads((folder / "written.json").read_text()) if (folder / "written.json").exists() else {}
+    served = json.loads((folder / "served.json").read_text()) if (folder / "served.json").exists() else {}
+    out = {}
+    for path in sorted((folder / "patches").glob("*.json")):
+        patch = json.loads(path.read_text())
+        for name, (layer, want) in MILESTONES.items():
+            if name not in out and patch["layer"] == layer and want(patch["data"] or {}):
+                seq = str(patch["seq"])
+                out[name] = {"seq": patch["seq"], "version": patch["version"], "sent_s": patch["sent_s"], "written_s": written.get(seq),
+                             "served_s": round(served[seq] - t0_unix, 3) if seq in served else None}
+    return out
+
+
+def poll_like_the_viewer(report, stop, port=8793):
+    """GET the new patches every 0.5 s, as web/src/live-report.ts does: the endpoint records each patch's first fetch."""
+    import urllib.request
+    after = 0
+    while not stop.is_set():
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/fast/reports/{report}/patches?after={after}", timeout=5) as r:
+                after = max([after] + [p["seq"] for p in json.loads(r.read())["patches"]])
+        except OSError:
+            pass
+        stop.wait(.5)
+
+
 @app.local_entrypoint()
-def main(video: str, start: float = 0., end: float = 0., site: str = "site", out: str = "", windows: str = "", vocab: str = "qwen"):
+def main(video: str, start: float = 0., end: float = 0., site: str = "site", out: str = "", windows: str = "", vocab: str = "qwen",
+         serve: bool = False, eval_site: str = "", splat_preview_s: float = 0., background_s: float = 0., vram_source: str = "auto"):
     import hashlib
+    import threading
+    from fast_report import layers
     assert vocab == "qwen", "only the Qwen vocabulary is wired (fast_report/vlm.py docstring)"
     out = Path(out)
     out.mkdir(parents=True, exist_ok=False)  # never reuse a run folder
@@ -284,6 +347,12 @@ def main(video: str, start: float = 0., end: float = 0., site: str = "site", out
             clip = cut(video, a, b, path)
             (out / f"input-{a:g}-{b:g}.json").write_text(json.dumps({"video": video, "start_s": a, "end_s": b, **clip}, indent=1))
         plan.append((a, b, flag, path.read_bytes()))
+    ev = None
+    if eval_site:
+        sys.path.append(str(REPO / "scripts"))
+        import fast_report_eval as ev  # D: the quality table (CPU rows) against the delivered report
+    if serve:
+        layers.serve(out, 8793)  # loopback only; web/vite.config.ts proxies /fast here
     fr = FastReport()
     submitted = time.time()
     boot = fr.boot_info.remote()
@@ -295,29 +364,49 @@ def main(video: str, start: float = 0., end: float = 0., site: str = "site", out
         use_cache = flag != "nocache"
         digest = hashlib.sha256(mp4).hexdigest()
         report_id = f"fb-{site}-{digest[:8]}-{int(time.time())}"
-        options = {"cache": use_cache, "site_vocab": flag == "site", "window_s": [a, b], "client_has": [digest]}
-        called, got = time.time(), {}
-        run = None
+        layers.put_blob(out, mp4)  # the client holds its own MP4: it is never sent back
+        options = {"cache": use_cache, "site_vocab": flag == "site", "window_s": [a, b], "client_has": [digest], "background_s": background_s,
+                   "vram_source": vram_source,
+                   "splat_preview_s": splat_preview_s or None, "eval_holdout": ev.holdout_frames(eval_site) if ev else None}
+        if serve:
+            print(f"viewer: http://127.0.0.1:5173/app.html#/live/{report_id}", flush=True)
+        stop = threading.Event()
+        poller = threading.Thread(target=poll_like_the_viewer, args=(report_id, stop), daemon=True)
+        if serve:
+            poller.start()
+        called, received, errors, run = time.time(), {}, [], None
         for e in fr.run.remote_gen(mp4, site, report_id, options):
             now = time.time()
+            if e["type"] in ("patch", "written", "run"):
+                layers.mirror(e, out)
             if e["type"] == "patch":
-                mirror(e, out)
-                got.setdefault(e["patch"]["seq"], {})["received_unix"] = now
+                received[e["patch"]["seq"]] = now
+                print(f"  [{i}] {e['patch']['layer']} v{e['patch']['version']}: sent {e['patch']['sent_s']} s", flush=True)
             elif e["type"] == "written":
-                got.setdefault(e["seq"], {}).update(e, written_seen_unix=now)
-                print(f"  [{i}] {e['layer']} v{e['version']}: written {e['written_s']} s", flush=True)
+                print(f"  [{i}] written {e['written_s']} s (seqs {e['seqs']}, commit {e['commit_s']} s)", flush=True)
+            elif e["type"] == "error":
+                errors.append(e)
+                print("  writer error:", json.dumps(e)[:1500], flush=True)
             elif e["type"] == "run":
                 run = e["run"]
-        for row in run["layers"]:
-            g = got.get(row["seq"], {})
-            row["received_client_s_two_clocks"] = round(g["received_unix"] - run["t0_unix"], 3) if "received_unix" in g else None
+        time.sleep(1.5 if serve else 0)  # one more poll after the last patch
+        stop.set()
+        for r in run["layers"]:
+            r["received_s_two_clocks"] = round(received[r["seq"]] - run["t0_unix"], 3) if r["seq"] in received else None
         run.update(client={"called_unix": called, "returned_unix": time.time(), "wall_s": round(time.time() - called, 2), "cache": use_cache,
-                           "first_call": i == 0})
-        (out / report_id / "run.json").write_text(json.dumps(run, indent=1, default=plain))
-        rows.append({"report": report_id, "window_s": [a, b], "cache": use_cache, "first_call": i == 0, "error": run["error"] is not None,
-                     "layers": {f"{r['layer']}.v{r['version']}": r["written_s"] for r in run["layers"]}, "flags": run["flags"],
-                     "gpu_peak_gb": [g["peak_gb"] for g in run["gpu_peak"]], "cascade": (run["summary"] or {}).get("cascade"),
-                     "usd_estimate": run["usd_estimate"]})
+                           "first_call": i == 0, "upload_and_dispatch_s_two_clocks": round(run["t0_unix"] - called, 3), "writer_errors": errors},
+                   milestones=milestones(out, report_id, run["t0_unix"]))
+        if ev is not None:
+            try:
+                q = ev.evaluate(ev.load_layers(out, report_id), eval_site)
+                run["quality"] = {"verdict": q["verdict"], "rows": q["rows"], "not_scored": q["not_scored"]}
+            except Exception:  # noqa: BLE001  a quality failure must not lose the timing
+                run["quality"] = {"error": traceback.format_exc()[-2000:]}
+        layers._write_json(out / "reports" / report_id / "run.json", run)
+        rows.append({"report": report_id, "window_s": [a, b], "cache": use_cache, "first_call": i == 0, "error": run["error"],
+                     "milestones": {k: v["written_s"] for k, v in run["milestones"].items()}, "flags": run["flags"],
+                     "gpu_peak_gib": [g["peak_gb"] for g in run["gpu_peak"]], "gpus": run["hardware"]["gpus"],
+                     "quality_verdict": (run.get("quality") or {}).get("verdict"), "usd_estimate": run["usd_estimate"]})
         print(json.dumps(rows[-1], default=plain)[:3000], flush=True)
         if run["error"]:
             print(run["error"][-3000:], flush=True)
@@ -387,7 +476,8 @@ def evaluate(run_dir):
             kind, f, inst = o.split(":")
             obs_by_frame.setdefault(int(f), []).append((e["entityId"], int(inst)))
     report = {}
-    for rdir in sorted(p for p in Path(run_dir).iterdir() if (p / "patches").is_dir()):
+    base = Path(run_dir) / "reports" if (Path(run_dir) / "reports").is_dir() else Path(run_dir)  # layers.mirror's layout, or the stub's
+    for rdir in sorted(p for p in base.iterdir() if (p / "patches").is_dir()):
         runj = json.loads((rdir / "run.json").read_text()) if (rdir / "run.json").exists() else {}
         if (runj.get("video", {}).get("window_s") or [None])[0] != 165:
             continue
@@ -396,7 +486,8 @@ def evaluate(run_dir):
         cams = latest["cameras"]["data"]["shots"]
         walk = next(s for s in cams if s["frames"][0] <= 500 <= s["frames"][1])
         ours = np.array(walk["c2w"], np.float64)
-        target = droid[walk["keyframes"]].copy()
+        walk_keys = walk.get("keyframes") or walk["keys"]
+        target = droid[walk_keys].copy()
         target[:, :3, 3] *= mpn
         s, R, t = geo.align_sim3(ours, target)
         err = np.linalg.norm((s * (R @ ours[:, :3, 3].T)).T + t - target[:, :3, 3], axis=1)
@@ -404,7 +495,7 @@ def evaluate(run_dir):
                             "path_m_reference": round(float(np.linalg.norm(np.diff(target[:, :3, 3], axis=0), axis=1).sum()), 3)}
         objs = {o["id"]: o for o in latest["objects"]["data"]["objects"]}
         blob = latest["outlines"]["blobs"]["analysis"]["sha256"]
-        analysis = json.loads((rdir / "blobs" / blob).read_text())
+        analysis = json.loads(next(p for p in (Path(run_dir) / "blobs/sha256" / blob, rdir / "blobs" / blob) if p.exists()).read_text())
         best = {}  # entity -> (iou, our object id)
         pairs = 0
         for fr in analysis["frames"]:
@@ -474,7 +565,7 @@ def evaluate(run_dir):
             detail.append({"entity": ent, "delivered": theirs, "object": oid, "word": o["word"], "zero_shot": zs, "cascade_label": cascade_label(o),
                            "source": cascade_source(o), "iou": round(best[ent][0], 3), **ok})
         from fast_report import segment
-        vocab_words = latest["objects"]["data"].get("words", [])
+        vocab_words = latest["objects"]["data"].get("vocabulary") or latest["objects"]["data"].get("words", [])
         bv = {"sam3_word": [], "zero_shot_top1": [], "zero_shot_context_top1": [], "cascade_final": [], "displayed_label": [],
               "what_if_vlm_only_for_generic_sam3_words": []}
         bv_source = {}

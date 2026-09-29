@@ -126,7 +126,9 @@ def train(message, emit, torch, fs, st):
     person = np.asarray(shot["person"], bool)
     c2w = poses(keys, shot["c2w"], n)
     use = [k for k in keys if k not in set(held)] if message["train"] == "keyframes" else [i for i in range(a, b + 1) if i not in set(held)]
-    boxes = {i: caption_box(frames[i]) for i in range(max(a, min(use) - CAPTION_WINDOW), min(b, max(use) + CAPTION_WINDOW) + 1)}
+    given = message.get("held_excluded") is not None  # else the held-out frames are scored under the training frames' own rule
+    masked = use + ([] if given else held)
+    boxes = {i: caption_box(frames[i]) for i in range(max(a, min(masked) - CAPTION_WINDOW), min(b, max(masked) + CAPTION_WINDOW) + 1)}
     box_of = lambda i: union_box([boxes.get(j) for j in range(i - CAPTION_WINDOW, i + CAPTION_WINDOW + 1)])
     span = sorted(set(use) | set(held))
     gpu_frames = torch.zeros((n, H, W, 3), dtype=torch.uint8, device="cuda")
@@ -135,17 +137,17 @@ def train(message, emit, torch, fs, st):
         gpu_frames[s:s + len(block)] = block.flip(-1)
     out_mask = torch.zeros((n, H, W), dtype=torch.bool, device="cuda")
     ellipse = torch.from_numpy(cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * DILATE + 1,) * 2)).half().cuda()[None, None]
-    for s in range(0, len(use), 32):  # excluded() on the GPU: nearest upsampling, then the ellipse dilation as a convolution
-        part = use[s:s + 32]
+    for s in range(0, len(masked), 32):  # excluded() on the GPU: nearest upsampling, then the ellipse dilation as a convolution
+        part = masked[s:s + 32]
         raster = torch.from_numpy(np.stack([person_of(keys, person, i) for i in part])).cuda()
         full = torch.nn.functional.interpolate(raster[:, None].half(), size=(H, W), mode="nearest")
         out_mask[part] = (torch.nn.functional.conv2d(full, ellipse, padding=DILATE) > 0)[:, 0]
-    for i in use:
+    for i in masked:
         box = box_of(i)
         if box is not None:
             out_mask[i, max(box[1], 0):box[3] + 1, max(box[0], 0):box[2] + 1] = True
     check = [int((out_mask[i].cpu().numpy() != excluded(frames[i], person_of(keys, person, i), box_of(i))).sum()) for i in use[::max(1, len(use) // 4)]]
-    if held:  # scoring only (D's eval_holdout): the frames' exclusion as the reference scored them
+    if held and given:  # scoring only (D's eval_holdout): the frames' exclusion as the reference scored them
         scored = np.unpackbits(message["held_excluded"], axis=1)[:, :H * W].reshape(len(held), H, W).astype(bool)
         out_mask[held] = torch.from_numpy(scored).cuda()
     rgb = np.asarray(message["seeds"]["rgb"], np.float32)
@@ -195,6 +197,8 @@ def train(message, emit, torch, fs, st):
             t = time.time()
             summary = st.evaluate(st.as_model(blob), {"pose": pose, "used": knots["used"]}, {"pose": True, "exposure": False}, data, net)[0]["summary"]
             emit({"kind": "score", "of": kind, "seconds": seconds, "held_out": summary, "score_s": round(time.time() - t, 1)})
+    data = gpu_frames = out_mask = params = None  # the tensors go (a closure still names data)
+    torch.cuda.empty_cache()  # the frames and Gaussians' cache back to GPU 1 before the next report's core
     return {"done": True, "max_reserved_gb": round(torch.cuda.max_memory_reserved() / 1e9, 2), "wall_s": round(time.time() - started, 1)}
 
 
@@ -225,14 +229,15 @@ class Worker:
     def start(self, frames_host, shot, seeds, budget_s=PREVIEW_S, background_s=0, train="all", held=(), held_excluded=None, hold=False):
         """{"kind": "preview" | "full" | "score", "seconds", "steps", "splat32", "count", ...} as they are made. shot: A's Shot (keys,
         frames (a, b), c2w_m, K, person); seeds: {"xyz" (m, 3) metres, "rgb" (m, 3)}; held/held_excluded: frames kept out of
-        training and scored after it, with the exclusion masks to score them by ((m, H, W) bool). With hold, the process sets up
+        training and scored after it, with the exclusion masks to score them by ((m, H, W) bool; None: the training frames' own rule,
+        person and caption). With hold, the process sets up
         (frames and masks onto the GPU, 8-16 s), yields {"kind": "ready"} and trains only after release()."""
         self.ready()
         message = {"frames": frames_path(frames_host), "budget_s": budget_s, "background_s": background_s, "train": train, "held": list(held), "hold": hold,
                    "shot": {"keys": [int(k) for k in shot["keys"]], "frames": [int(x) for x in shot["frames"]], "c2w": host(shot["c2w_m"]).astype(np.float64),
                             "K": host(shot["K"]).astype(np.float64), "person": host(shot["person"]).astype(bool)},
                    "seeds": {"xyz": host(seeds["xyz"]).astype(np.float32), "rgb": host(seeds["rgb"])}}
-        if held:
+        if held and held_excluded is not None:
             message["held_excluded"] = np.packbits(np.asarray(held_excluded, bool).reshape(len(held), -1), axis=1)
         with self.lock:
             send(self.proc.stdin, message)

@@ -46,7 +46,7 @@ class Poller(threading.Thread):
         while not self.halt.is_set():
             try:
                 with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/fast/reports/{self.report}/patches?after={after}", timeout=5) as r:
-                    for p in json.loads(r.read()):
+                    for p in json.loads(r.read())["patches"]:
                         self.seen.setdefault(p["seq"], time.time())
                         after = max(after, p["seq"])
             except OSError:
@@ -59,12 +59,13 @@ def call(fr, mirror, root, mp4, site, report, options, poller=None):
     started, received, run_json = time.time(), [], None
     if poller:
         poller.start()
-    for event in fr.run.remote_gen(mp4, site, report, options):
-        if isinstance(event, dict) and event.get("schema") == RUN_SCHEMA:
-            run_json = event
-            continue
-        mirror(event, root)
-        received.append((time.time(), event.get("seq") if isinstance(event, dict) else None, event.get("layer") if isinstance(event, dict) else None))
+    for event in fr.run.remote_gen(mp4, site, report, options):  # fast_report.layers events, then {"type": "run", "run": run.json}
+        if event.get("type") in ("patch", "written", "run"):
+            mirror(event, root)
+        if event.get("type") == "run":
+            run_json = event["run"]
+        elif event.get("type") == "patch":
+            received.append((time.time(), event["patch"]["seq"], event["patch"]["layer"]))
     finished = time.time()
     if poller:
         time.sleep(1.5)  # one more poll after the last patch
@@ -139,7 +140,7 @@ def quality(rec, mirror_root, out, gpu):
 def bench(a):
     import modal
     from fast_report import layers as fl  # C: mirror, serve
-    from modal_apps.fast_report import FastReport, app  # A: the resident class
+    from modal_apps.fast_report_app import FastReport, app  # A: the resident class
     out = a.out
     out.mkdir(parents=True, exist_ok=False)  # never reuse a run folder
     mirror_root = out / "mirror"
@@ -162,7 +163,8 @@ def bench(a):
             for i in range(a.calls):
                 last = site == sites[-1] and i == a.calls - 1
                 report = f"fb-{site}-{sha[:8]}-{int(time.time())}"
-                options = {"vocab": a.vocab, "splat_preview_s": 120, "background_s": a.background_s if last else 0,
+                fl.put_blob(mirror_root, mp4)  # the client's own MP4 is never sent back
+                options = {"vocab": a.vocab, "client_has": [sha], "background_s": a.background_s if last else 0,
                            "eval_holdout": ev.holdout_frames(site)}
                 rec = call(fr, fl.mirror, mirror_root, mp4, site, report, options, Poller(report) if a.serve else None)
                 rec.update(site=site, call=i, options=options)
@@ -206,15 +208,15 @@ def self_check():
             def remote_gen(mp4, site, report, options):
                 t0 = time.time() - .01
                 for seq, layer in enumerate(["video", "cameras", "objects", "models"]):
-                    yield {"kind": "patch", "seq": seq, "layer": layer}
-                yield {"schema": RUN_SCHEMA, "report": report, "t0_unix": t0, "elapsed_s": 40.,
+                    yield {"type": "patch", "report": report, "patch": {"seq": seq, "layer": layer}, "blobs": {}}
+                yield {"type": "run", "report": report, "run": {"schema": RUN_SCHEMA, "report": report, "t0_unix": t0, "elapsed_s": 40.,
                        "layers": [{"layer": "video", "seq": 0, "sent_s": 1., "written_s": 2.}, {"layer": "cameras", "seq": 1, "sent_s": 17., "written_s": 18.5},
                                   {"layer": "objects", "seq": 2, "sent_s": 29., "written_s": 31.}, {"layer": "models", "seq": 3, "sent_s": 60., "written_s": 61.}],
-                       "gpu_peak": [], "flags": ["gpu0 73.0 GiB > 90% at 22.0 s (sam3.vocab.wave2@gpu0)"], "stages": [{"stage": "decode", "where": "cpu", "start_s": 0, "end_s": 1.7, "s": 1.7}]}
+                       "gpu_peak": [], "flags": ["gpu0 73.0 GiB > 90% at 22.0 s (sam3.vocab.wave2@gpu0)"], "stages": [{"stage": "decode", "where": "cpu", "start_s": 0, "end_s": 1.7, "s": 1.7}]}}
     mirrored = []
     with tempfile.TemporaryDirectory() as tmp:
-        rec = call(Fake(), lambda e, root: mirrored.append(e["seq"]), Path(tmp), b"", "me340", "r1", {})
-    assert mirrored == [0, 1, 2, 3] and rec["run"]["report"] == "r1", "every patch mirrored in order, run.json kept apart"
+        rec = call(Fake(), lambda e, root: mirrored.append(e["patch"]["seq"] if e["type"] == "patch" else e["type"]), Path(tmp), b"", "me340", "r1", {})
+    assert mirrored == [0, 1, 2, 3, "run"] and rec["run"]["report"] == "r1", "every patch mirrored in order, run.json last"
     rec.update(site="me340", call=1, options={"eval_holdout": [1]}, quality=None)
     rec["served"] = {1: rec["run"]["t0_unix"] + 19.}
     layers = layer_times(rec)

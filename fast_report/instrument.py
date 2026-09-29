@@ -28,7 +28,11 @@ from contextlib import contextmanager
 FLAG_SHARE = .9
 STAGES = {"decode", "cuts", "sam3.person", "vlm.vocab", "sam3.vocab.wave1", "sam3.vocab.wave2", "da3.shot", "scale.shot",
           "tsdf.shot", "people", "lift", "outlines", "vlm.events", "sam3d.prepare", "sam3d.generate", "sam3d.assess",
-          "sam3d.decimate", "splat.preview", "splat.full"}  # plus write.<layer>; fixed so runs compare stage by stage
+          "sam3d.decimate", "splat.preview", "splat.full",
+          # the core's finer stages (fb/a-core), fixed as well
+          "vlm.vocab.frames", "vlm.events.frames", "gather.person_floor", "pack.room.shot", "people.shot", "dedupe",
+          "outlines.segmented", "outlines.projected", "outlines.polygons", "cascade.embed", "cascade.decide", "vlm.name.crops",
+          "vlm.name", "frames.shared", "sam3d.inputs", "splat.setup", "splat.score", "da3.restore"}  # plus write.<layer>
 PRICE = {"A100-80GB": .000694, "cpu_core": .0000131, "gib": .00000222}  # Modal list prices, $/s
 
 
@@ -37,8 +41,8 @@ def usd_per_s(gpus=2, cpu=32, gib=160):
 
 
 def known_stage(name):
-    base = re.sub(r"\d+$", "", name.split("@")[0])
-    return base in STAGES or (name.startswith("write.") and len(name) > 6)
+    base = name.split("@")[0]
+    return base in STAGES or re.sub(r"\d+$", "", base) in STAGES or (name.startswith("write.") and len(name) > 6)
 
 
 def torch_peaks(reset=False):
@@ -137,7 +141,7 @@ class Clock:
 
     def __init__(self):
         self.t0, self.t0_unix = time.perf_counter(), time.time()
-        self.rows, self.layers, self.flags, self.lock = [], {}, [], threading.Lock()
+        self.rows, self.layers, self.flags, self.marks, self.lock = [], {}, [], {}, threading.Lock()
 
     def now(self):
         return round(time.perf_counter() - self.t0, 3)
@@ -145,9 +149,14 @@ class Clock:
     def unix_to_s(self, unix):
         return round(unix - self.t0_unix, 3)
 
+    def mark(self, name):
+        """A named moment (first time only): 'cameras_put', 'sam3_done', ..."""
+        with self.lock:
+            self.marks.setdefault(name, self.now())
+
     def add(self, name, gpu, start, end, n=None, error=None):
-        row = {"stage": name, "where": "cpu" if gpu is None else f"gpu{gpu}", "start_s": round(start, 3), "end_s": round(end, 3),
-               "s": round(end - start, 3), "n": n or {}}
+        where = "cpu" if gpu is None else f"gpu{getattr(gpu, 'index', gpu)}"  # gpu: an int or a torch.device
+        row = {"stage": name, "where": where, "start_s": round(start, 3), "end_s": round(end, 3), "s": round(end - start, 3), "n": n or {}}
         if error:
             row["error"] = error
         with self.lock:
@@ -156,7 +165,7 @@ class Clock:
                 self.flags.append(f"unknown stage name {name!r} (section 8's fixed set)")
 
     @contextmanager
-    def stage(self, name, gpu=None, n=None, sync=False):
+    def stage(self, name, gpu=None, n=None, sync=True):
         start, error = self.now(), None
         try:
             yield
@@ -169,7 +178,7 @@ class Clock:
                 torch.cuda.current_stream(gpu).synchronize()
             self.add(name, gpu, start, self.now(), n, error)
 
-    def external(self, name, gpu, start_unix, end_unix, n=None):
+    def external(self, name, gpu=None, start_unix=0., end_unix=0., n=None):
         self.add(name, gpu, self.unix_to_s(start_unix), self.unix_to_s(end_unix), n)
 
     def layer(self, layer, seq, **fields):
@@ -206,7 +215,7 @@ class Clock:
             meta.setdefault("vram_source", vram.source)
             meta.setdefault("memory_unit", "GiB (2^30 bytes) in every *_gb field")
         return {"schema": "panoptes-fast-run-v1", **meta, "clock": "seconds from the MP4 bytes in the container (t0_unix)",
-                "t0_unix": self.t0_unix, "elapsed_s": end, "stages": sorted(rows, key=lambda r: (r["start_s"], r["stage"])),
+                "t0_unix": self.t0_unix, "elapsed_s": end, "stages": sorted(rows, key=lambda r: (r["start_s"], r["stage"])), "marks": dict(self.marks),
                 "gpu_peak": gpu_peak, "flags": flags, "layers": layers,
                 "usd_estimate": round(end * price_per_s, 4) if price_per_s else None}
 

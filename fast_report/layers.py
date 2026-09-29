@@ -58,10 +58,15 @@ def put_blob(root, payload):
     return sha
 
 
+def _plain(o):
+    """numpy scalars and arrays (the pipeline's floats and ints) as JSON."""
+    return o.item() if hasattr(o, "item") and getattr(o, "ndim", 0) == 0 else o.tolist() if hasattr(o, "tolist") else str(o)
+
+
 def _write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{threading.get_ident()}.part")
-    tmp.write_text(json.dumps(value, separators=(",", ":")))
+    tmp.write_text(json.dumps(value, separators=(",", ":"), default=_plain))
     tmp.rename(path)
 
 

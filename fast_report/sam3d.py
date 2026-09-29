@@ -42,7 +42,7 @@ WEIGHTS = "/weights"  # the panoptes-sam3d-weights volume, as modal_apps/sam3d_r
 TORCH_HUB = "/opt/torch-hub"  # DINOv2 (code + weights) for SAM 3D's embedders, baked into the image
 S1CFG12 = {"stage1_inference_steps": 12, "use_stage2_distillation": True, "stage2_inference_steps": 4}  # E4: 3.49 s a call, gate rate kept
 VOXEL_M = .01399 * 2.8591949  # ME340's delivered gate: its fused voxel (fuse-metrics voxel_native) x its metres per native unit
-DISPLAY_FACES, FIRST_PASS, PREPARING, NICE = 40_000, 30, 8, 10
+DISPLAY_FACES, FIRST_PASS, PREPARING, NICE, IDLE_S = 40_000, 30, 8, 10, 3.
 CORE = ("fire extinguisher", "exit sign", "forklift", "ladder", "spill", "cable", "hose", "guard")  # E2b's EHS core words
 SHARED = Path("/dev/shm") if Path("/dev/shm").is_dir() else Path("/tmp")
 for _p in (ROOT / "scripts", ROOT / "modal_apps"):  # complete_video_objects and the pinned recipes, in every venv
@@ -286,9 +286,16 @@ def sam3d_worker():
                 "allocated_gb": round(torch.cuda.memory_allocated() / 1e9, 2)}
 
     def handle(message, _):
+        if state.get("idle"):
+            state["idle"].cancel()
         torch.cuda.reset_peak_memory_stats()
         start = time.time()
         out = run_once(state["pipeline"], message["rgb"], message["mask"], message["pointmap"], message["seed"], S1CFG12)
+        # idle for IDLE_S (the pass is over): the ~17 GB a call caches goes back to the device, else the next report's
+        # core runs beside two full caches (run fb-integrate-me340-002's second call: GPU 0 at 79 GiB, SAM 3 twice as slow)
+        state["idle"] = threading.Timer(IDLE_S, torch.cuda.empty_cache)
+        state["idle"].daemon = True
+        state["idle"].start()
         return {**out, "start_unix": start, "end_unix": time.time(), "gpu": torch.cuda.get_device_name(0),
                 "max_reserved_gb": round(torch.cuda.max_memory_reserved() / 1e9, 2)}
     serve(handle, boot)
@@ -558,7 +565,8 @@ def judge(src, key, view, c2w, generated):
         transform = np.eye(4)
         transform[:3, 3] = centre
         out.update(glb=cvo.glb(light - centre, light_faces, np.column_stack([(light_colors * 255).round(), alpha]).astype(np.uint8), blend=True),
-                   transform=transform, faces=len(light_faces), decimate_end_unix=time.time())
+                   transform=transform, bounds={"min": light.min(0).tolist(), "max": light.max(0).tolist()}, faces=len(light_faces),
+                   decimate_end_unix=time.time())
     return out
 
 
@@ -641,7 +649,7 @@ def _external(clock, name, gpu, start, end, **n):
 
 
 def gate(objs, shots, frames_host, clock, workers, pool, vocab=(), first=FIRST_PASS, background=False, deadline=None, records=None):
-    """Accepted complete models, one dict each as soon as the gate passes it: {"object", "glb", "transform", "gate"}.
+    """Accepted complete models, one dict each as soon as the gate passes it: {"object", "glb", "transform", "bounds", "gate"}.
 
     First pass: one try each (the best view, seed 42) for the first `first` ranked objects that have a usable view; objects are
     prepared in rank order, PREPARING at a time (1-4 s each), so first-pass assesses never queue behind a flood of prepares;
@@ -723,7 +731,7 @@ def gate(objs, shots, frames_host, clock, workers, pool, vocab=(), first=FIRST_P
                             "assessed_unix": result["end_unix"], "max_reserved_gb": p["generated"]["max_reserved_gb"],
                             "key": p["jobs"][0 if extra else n]["keys"][seed]})
             if g["accepted_source_consistency"]:
-                yield {"object": o["id"], "glb": result["glb"], "transform": result["transform"],
+                yield {"object": o["id"], "glb": result["glb"], "transform": result["transform"], "bounds": result["bounds"],
                        "gate": {**g, "attempt": n + 1, "seed": seed, "word": o["word"], "faces": result["faces"],
                                 "status": "generated display model: never used for measurement"}}
                 pending -= 1

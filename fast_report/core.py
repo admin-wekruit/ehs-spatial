@@ -150,6 +150,13 @@ class Da3:
         self.mean = torch.tensor([.485, .456, .406], device=dev).view(1, 3, 1, 1)
         self.std = torch.tensor([.229, .224, .225], device=dev).view(1, 3, 1, 1)
 
+    def offload(self):
+        """The weights to host memory (after the run's last shot); restore() brings them back."""
+        self.model.to("cpu")
+
+    def restore(self):
+        self.model.to(self.dev)
+
     def shot(self, kf):
         """(k,720,1280,3) uint8 BGR on this GPU -> colors (k,H,W,3) [0,1], depth (k,H,W), c2w (k,4,4), K (k,3,3); DA3 units."""
         import torch
@@ -255,6 +262,92 @@ def sha256(b):
     return hashlib.sha256(b).hexdigest()
 
 
+GENERATED = ["a generated display layer: never used for measurement"]
+
+
+def share_frames(frames, clock):
+    """The decoded frames (cv2 BGR) as one .npy in RAM (/dev/shm) that the SAM 3D gate and splat processes map. Plain file
+    writes: the copy happens in the kernel without the GIL (filling a memmap from this thread took 15.8 s beside SAM 3)."""
+    import os
+    from fast_report import sam3d
+    path = sam3d.SHARED / f"fb-frames-{os.getpid()}-{time.time_ns()}.npy"
+    with clock.stage("frames.shared", n={"frames": len(frames)}), open(path, "wb") as fh:
+        np.lib.format.write_array_header_1_0(fh, {"descr": "|u1", "fortran_order": False, "shape": (len(frames), *frames[0].shape)})
+        for f in frames:
+            fh.write(memoryview(np.ascontiguousarray(f)))
+    return str(path)
+
+
+def splat_job(m, gg, frames_ab, shared, opts, clock, writer, release):
+    """GPU 1's splat process on the longest shot: set up now, train once `release` is set (the SAM 3 queue is empty), a
+    preview after opts['splat_preview_s'] (B: 150 s keeps ME340 above 27 dB), then optional background snapshots. Held-out
+    frames (opts['eval_holdout'], the delivered splat's) stay out of training and are scored after it; the preview's score
+    comes as a second version of the layer (same file)."""
+    from fast_report import splat
+    a, b = frames_ab
+    held = sorted(f for f in opts.get("eval_holdout") or [] if a <= f <= b)
+    shot = {"keys": gg["keys"], "frames": [a, b], "c2w_m": gg["c2w_m"], "K": gg["K"], "person": gg["person"]}
+    out, released, preview = {"held_out_frames": len(held), "versions": []}, None, None
+    for r in m.splat.start(shared.result(), shot, gg["seeds"], opts.get("splat_preview_s") or splat.PREVIEW_S, background_s=opts.get("background_s") or 0,
+                           held=held, hold=True):
+        now = time.time()
+        if r["kind"] == "ready":
+            clock.external("splat.setup", 1, r["end_unix"] - r["setup_s"], r["end_unix"])
+            release.wait()
+            released = time.time()
+            m.splat.release()
+            clock.mark("splat_released")
+        elif r["kind"] == "score":
+            clock.external("splat.score", 1, now - r["score_s"], now, n={"of": r["of"]})
+            out["versions"].append({"score_of": r["of"], "seconds": r["seconds"], "held_out": r["held_out"]})
+            got = (r["held_out"] or {}).get("corrected_pose")
+            if r["of"] == "preview" and preview and got:
+                writer.put("splat", {**preview[0], "holdout": {k: got.get(k) for k in ("psnr", "ssim", "lpips", "frames")}}, preview[1], "generated", GENERATED)
+        else:
+            blob = r.pop("splat32")
+            clock.external(f"splat.{r['kind']}", 1, released, r["end_unix"], n={"steps": r["steps"], "count": r["count"]})
+            data = {"format": "splat32", "shot": gg["index"], "count": r["count"], "kind": r["kind"], "train_s": r["seconds"], "steps": r["steps"],
+                    "trained_frames": r.get("trained_frames"), "held_out_frames": len(held)}
+            blobs = {"splat": (blob, {"mediaType": "application/octet-stream", "format": "splat32"})}
+            writer.put("splat", data, blobs, "generated", GENERATED)
+            clock.mark(f"splat_{r['kind']}_put")
+            if r["kind"] == "preview":
+                preview = (data, blobs)
+            out["versions"].append(r)
+    out["worker"] = getattr(m.splat, "last", None)
+    return out
+
+
+def models_job(m, inputs, geo, shared, words, clock, writer, dev):
+    """SAM 3D's first pass (fast_report.sam3d.gate: the first 30 ranked objects, one try each, GPU 0 under MPS): each
+    accepted model at once as a new 'models' version (cumulative), and a last one ('final') when the pass is judged."""
+    import os
+    import shutil
+    import torch
+    from fast_report import sam3d
+    with torch.cuda.device(dev):
+        torch.cuda.empty_cache()  # the core's cached blocks back to the device before SAM 3D's two processes generate beside it
+    objs = inputs()
+    records, models, blobs = [], [], {}
+    shots = [{k: gg[k] for k in ("index", "keys", "depth_m", "c2w_m", "K", "person")} for gg in geo]
+    judged = lambda: sum(r.get("stage") == "assess" for r in records)  # noqa: E731
+    try:
+        for x in sam3d.gate(objs, shots, shared.result(), clock, m.sam3d, m.gate_pool, vocab=words, records=records):
+            models.append({"object": x["object"], "transform": {"position": [float(v) for v in x["transform"][:3, 3]], "quaternion": [0, 0, 0, 1],
+                                                                "scale": [1, 1, 1]}, "bounds": x["bounds"], "gate": x["gate"]})
+            blobs[f"model-{x['object']}"] = (x["glb"], {"mediaType": "model/gltf-binary", "format": "glb"})
+            writer.put("models", {"models": list(models), "attempted": judged(), "final": False}, dict(blobs), "generated", GENERATED)
+            clock.mark("first_model_put")
+    finally:
+        summary = {"ranked": len(sam3d.rank(objs, words)), "attempted": judged(), "accepted": len(models),
+                   "prepare_rejected": sum("rejected" in r for r in records), "errors": [r for r in records if "error" in r][:5]}
+        writer.put("models", {"models": models, "attempted": judged(), "final": True, "first_pass": summary}, dict(blobs), "generated", GENERATED)
+        clock.mark("models_final_put")
+        for d in sam3d.SHARED.glob(f"fb-gate-{os.getpid()}-*"):  # this run's staged gate inputs
+            shutil.rmtree(d, ignore_errors=True)
+    return {**summary, "records": records}
+
+
 def analyse(m, mp4, opts, clock, writer, log):
     """m: the resident models (FastReport): sams, da3, emb, devs, pools. Every layer goes to `writer` as soon as it
     exists. Returns the run summary; layers are the product."""
@@ -262,7 +355,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     import torch
     import torch.nn.functional as F
     import video_events
-    from fast_report import cascade, segment, vlm
+    from fast_report import cascade, layers, segment, vlm
     dev_geo, dev_seg = m.dev_geo, m.dev_seg
     video_sha = sha256(mp4)
     site = opts.get("site") or "unknown"
@@ -279,8 +372,8 @@ def analyse(m, mp4, opts, clock, writer, log):
     cap = cv2.VideoCapture("/tmp/in.mp4")
     fps, n_total = cap.get(cv2.CAP_PROP_FPS), int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     W, H = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    writer.put("video", {"fps": fps, "frames": n_total, "wh": [W, H], "sha256": video_sha, "window_s": opts.get("window_s")},
-               {"mp4": (mp4, {"mediaType": "video/mp4"})}, "observed", ["the uploaded video"])
+    writer.put("video", {"fps": fps, "frames": n_total, "width": W, "height": H, "sha256": video_sha, "window_s": opts.get("window_s")},
+               {"video": (mp4, {"mediaType": "video/mp4"})}, "observed", ["the uploaded video"])
     work = segment.SamWork(m.sams, dev_geo, clock, wave1)
     for words in (("person", "floor"), tuple(wave1)):
         for s in m.sams.values():
@@ -321,7 +414,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                 windows.append((float(t0), float(t1), picked))
         with clock.stage("vlm.events", n={"windows": len(windows)}):
             ev = vlm.events(windows)
-        writer.put("events", {"windows": [{"t0": e["t0"], "t1": e["t1"], **(e["parsed"] if isinstance(e["parsed"], dict) else {"caption": None, "events": []}),
+        writer.put("events", {"model": vlm.QWEN + " (vLLM)", "windows": [{"t0": e["t0"], "t1": e["t1"], **(e["parsed"] if isinstance(e["parsed"], dict) else {"caption": None, "events": []}),
                                            "raw": e["text"]} for e in ev]},
                    None, "inferred", ["events are Qwen3-VL-8B descriptions of the frames: model output, not findings"])
         clock.mark("events_put")
@@ -362,6 +455,7 @@ def analyse(m, mp4, opts, clock, writer, log):
             work.add_chunk([frames[f] for f in keys[len(keys) - len(keys) % segment.PERSON_FRAMES:]])
         work.seal_decode()
         decoded_all.set()
+        shared = m.cpu_pool.submit(share_frames, frames, clock)
         gray_all = [g.result()[0] for g in grays]
         for a1 in range(a, n, TAIL):  # the tail in small pieces: after decoding it is on the critical path
             b1, lo = min(a1 + TAIL, n), max(0, a1 - 2)
@@ -384,16 +478,18 @@ def analyse(m, mp4, opts, clock, writer, log):
         with clock.stage(f"da3.shot{si}", gpu=dev_geo, n={"views": len(pos)}):
             shots_gpu.append(m.da3.shot(kf[pos]))
     clock.mark("da3_done")
+    da3_off = m.cpu_pool.submit(m.da3.offload)  # spec section 5 lever 3: ~5 GB of GPU 0 for SAM 3D; run() puts it back
     if dev_geo != dev_seg:
         work.worker(dev_geo, "geo", until=work.person_ready)
     work.wait(work.person_ready)
     with torch.inference_mode(), clock.stage("gather.person_floor", gpu=dev_geo):
         person = work.gathered("person")
         is_person = person["word"] == 0
-        dyn = F.max_pool2d(union_by_frame(person["frame"][is_person], person["mask"][is_person], len(keys))[:, None].float(), 5, 1, 2)[:, 0] > 0
+        people_u = union_by_frame(person["frame"][is_person], person["mask"][is_person], len(keys))
+        dyn = F.max_pool2d(people_u[:, None].float(), 5, 1, 2)[:, 0] > 0
         floor = union_by_frame(person["frame"][~is_person], person["mask"][~is_person], len(keys))
 
-    cam_rows, room_rows, room_blobs, people_rows, people_blobs, geo = [], [], {}, [], {}, []
+    cam_rows, room_rows, room_blobs, light_rows, light_blobs, people_blobs, geo = [], [], {}, [], {}, {}, []
     lab = [SCALE_LABEL, LICENSE]
     for si, (pos, g) in enumerate(zip(shot_pos, shots_gpu)):  # scale first: the cameras layer needs nothing else
         p = torch.tensor(pos, device=dev_geo)
@@ -405,14 +501,15 @@ def analyse(m, mp4, opts, clock, writer, log):
         floor_rec = {k: v for k, v in (plane or {}).items() if k not in ("normal", "point")}
         if plane:
             floor_rec.update(normal=plane["normal"].tolist(), point_m=(plane["point"] * mpu).tolist())
-        cam_rows.append({"index": si, "frame_id": f"shot-{si}", "frames": list(shots[si]), "keyframes": [keys[q] for q in pos],
-                         "times_s": [round(keys[q] / fps, 4) for q in pos], "c2w": c2w_m.cpu().numpy().round(5).tolist(),
-                         "K_grid": g["K"].cpu().numpy().round(3).tolist(), "grid_wh": [DA3_HW[1], DA3_HW[0]], "source_wh": [W, H],
-                         "scale": {"metres_per_unit": mpu, "status": "estimated" if plane else "uncalibrated",
-                                   "source": "floor plane (SAM 3 'floor') + assumed camera height 1.6 m" if plane else "none: unit scale",
-                                   "floor": floor_rec}})
-        geo.append({"depth_m": depth_m, "c2w_m": c2w_m, "K": g["K"], "mpu": mpu, "pos": pos, "plane": plane})
-    writer.put("cameras", {"shots": cam_rows, "fps": fps, "keyframe_rule": "sharpest of each 6-frame block (5 fps)"}, None, "estimated", lab)
+        cam_rows.append({"index": si, "frame_id": f"shot-{si}", "frames": list(shots[si]), "keys": [keys[q] for q in pos],
+                         "times": [round(keys[q] / fps, 4) for q in pos], "c2w": c2w_m.cpu().numpy().round(5).tolist(),
+                         "K": g["K"].cpu().numpy().round(3).tolist(), "wh": [DA3_HW[1], DA3_HW[0]], "source_wh": [W, H], "mpu": mpu,
+                         "scale_status": "estimated" if plane else "uncalibrated", "floor": floor_rec})
+        geo.append({"depth_m": depth_m, "c2w_m": c2w_m, "K": g["K"], "mpu": mpu, "pos": pos, "plane": plane, "index": si,
+                    "keys": [keys[q] for q in pos], "person": people_u[p]})
+    writer.put("cameras", {"shots": cam_rows, "fps": fps, "keyframe_rule": "sharpest of each 6-frame block (5 fps)", "license": LICENSE,
+                           "scale": {"status": "estimated", "source": "floor plane (SAM 3 'floor') + assumed camera height 1.6 m; unit scale where no floor"}},
+               None, "estimated", lab)
     clock.mark("cameras_put")
     for si, (gg, g) in enumerate(zip(geo, shots_gpu)):
         pos, plane, mpu, depth_m, c2w_m = gg["pos"], gg["plane"], gg["mpu"], gg["depth_m"], gg["c2w_m"]
@@ -425,15 +522,28 @@ def analyse(m, mp4, opts, clock, writer, log):
             tsdf = geo_e7.fuse(d, g["K"].cpu().numpy(), c2w_m.cpu().numpy().astype(np.float64), g["colors"])
         with clock.stage(f"pack.room.shot{si}", gpu=dev_geo):
             mesh = tsdf["mesh"]
-            raw, meta = pack_mesh(np.asarray(mesh.vertices), np.asarray(mesh.triangles), np.asarray(mesh.vertex_colors), dev_geo)
+            faces = np.asarray(mesh.triangles)
+            raw, meta = pack_mesh(np.asarray(mesh.vertices), faces, np.asarray(mesh.vertex_colors), dev_geo)
             room_blobs[f"mesh-{si}"] = (raw, {**meta, "frame": f"shot-{si}"})
+            rows9 = np.frombuffer(raw, "<f4", count=9 * meta["byteLayout"]["vertexCount"]).reshape(-1, 9)
+            quick = layers.light_mesh(rows9[:, :3], rows9[:, 3:6], rows9[:, 6:9], faces)
+            light_blobs[f"mesh-{si}"] = layers.pack_mesh(*quick)
             raw, meta = points_glb(tsdf["points"], tsdf["colors"], .03)
             room_blobs[f"points-{si}"] = (raw, {**meta, "frame": f"shot-{si}"})
-        room_rows.append({"frame_id": f"shot-{si}", "triangles": tsdf["n_triangles"], "points": tsdf["n_points"], "tsdf_voxel_m": .03,
-                          "mesh": f"mesh-{si}", "points_blob": f"points-{si}"})
-    writer.put("room", {"shots": room_rows}, room_blobs, "estimated", lab)
+        gg["seeds"] = {"xyz": tsdf["points"], "rgb": tsdf["colors"]}
+        room_rows.append({"index": si, "frame_id": f"shot-{si}", "triangles": tsdf["n_triangles"], "points": tsdf["n_points"], "tsdf_voxel_m": .03})
+        light_rows.append({"index": si, "frame_id": f"shot-{si}", "triangles": len(quick[3]), "points": 0, "light_cell_m": .06})
+    writer.put("room", {"shots": light_rows, "kind": "light"}, light_blobs, "estimated", lab)  # both in one commit
+    writer.put("room", {"shots": room_rows, "kind": "full"}, room_blobs, "estimated", lab)
     clock.mark("room_put")
+    # the splat (GPU 1): set up now, while SAM 3 still runs there; trains once the SAM 3 queue is empty (released below)
+    longest = max(range(len(geo)), key=lambda i: len(geo[i]["pos"])) if geo else None
+    release = m.release = threading.Event()  # run() sets it too if this run fails before the SAM 3 queue empties
+    splat_future = m.cpu_pool.submit(splat_job, m, geo[longest], shots[longest], shared, opts, clock, writer, release) \
+        if longest is not None else None
+
     def people_layer():  # CPU work: runs beside GPU 0's share of the SAM 3 queue
+        tracks_out, rules_out, per_shot = [], [], []
         for si, (gg, g) in enumerate(zip(geo, shots_gpu)):
             pos = gg["pos"]
             with clock.stage(f"people.shot{si}", n={"keyframes": len(pos)}):
@@ -445,11 +555,12 @@ def analyse(m, mp4, opts, clock, writer, log):
                     if rb is not None:
                         raw, meta = pack_mesh(*rb, dev_geo)
                         people_blobs[f"track-{si}-{tid}"] = (raw, {**meta, "frame": f"shot-{si}"})
-            people_rows.append({"frame_id": f"shot-{si}", "tracks": [{"id": f"{si}-{t}", "points": pts, "detections": len(pts), "ribbon": f"track-{si}-{t}"}
-                                                                      for t, pts in tracks.items()],
-                                "rules": findings, "detections": len(rows)})
-        writer.put("people", {"shots": people_rows, "note": "the fast path tracks people only: no non-person movers"}, people_blobs,
-                   "observed+estimated", [*lab, "rules that need metres say NEEDS_REVIEW: the scale is not measured"])
+            tracks_out += [{"id": f"{si}-{t}", "shot": si, "t0": pts[0]["t"], "t1": pts[-1]["t"], "detections": len(pts), "points": pts}
+                           for t, pts in tracks.items()]
+            rules_out += [{**f, "shot": si} for f in findings]
+            per_shot.append({"index": si, "frame_id": f"shot-{si}", "detections": len(rows), "tracks": len(tracks)})
+        writer.put("people", {"tracks": tracks_out, "rules": rules_out, "shots": per_shot, "note": "the fast path tracks people only: no non-person movers"},
+                   people_blobs, "observed+estimated", [*lab, "rules that need metres say NEEDS_REVIEW: the scale is not measured"])
         clock.mark("geometry_layers_put")
 
     people_future = m.cpu_pool.submit(people_layer)
@@ -458,6 +569,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         work.worker(dev_geo, "geo")
     work.wait(work.all_ready)
     seg_future.result()
+    release.set()
     people_future.result()
     clock.mark("sam3_done")
     words = work.words
@@ -517,8 +629,26 @@ def analyse(m, mp4, opts, clock, writer, log):
         o.update(label=o["word"], label_source="sam3 word vote", status="estimated box; name is a detected word, unverified")
     obj_labels = ["object names are detected words or model outputs: unverified", SCALE_LABEL]
     casc = {"objects": len(objects)}
-    writer.put("objects", copy.deepcopy({"objects": objects, "cascade": casc, "words": words}), None, "estimated+inferred", obj_labels)
+    writer.put("objects", copy.deepcopy({"objects": objects, "cascade": casc, "vocabulary": words}), None, "estimated+inferred", obj_labels)
     clock.mark("objects_v1_put")
+    def sam3d_inputs():
+        """B's Obj: every object's SAM 3 logits on each keyframe it was seen in (the max over its masks there, B's fixture rule)."""
+        with torch.inference_mode(), clock.stage("sam3d.inputs", gpu=dev_geo, n={"objects": len(objects)}):
+            pair, owner, rows = {}, [], []
+            for oi, mem in enumerate(members):
+                for gi in mem:
+                    owner.append(pair.setdefault((oi, int(keys[vf[gi]])), len(pair)))
+                    rows.append(int(gi))
+            lr = torch.full((len(pair), segment.LR, segment.LR), -1e4, dtype=torch.half, device=dev_geo)
+            if rows:
+                lr.index_reduce_(0, torch.tensor(owner, device=dev_geo), voc["logits"][torch.tensor(rows, device=dev_geo)], "amax")
+            lr = lr.cpu().numpy()
+        objs = [{"id": o["id"], "shot": o["shot"], "word": o["word"], "box_min_m": o["box_min_m"], "box_max_m": o["box_max_m"], "masks_lr": {}} for o in objects]
+        for (oi, f), r in pair.items():
+            objs[oi]["masks_lr"][f] = lr[r]
+        return objs
+    # complete models: SAM 3D + the fit gate on GPU 0's two processes, beside the outlines and the naming cascade
+    models_future = m.cpu_pool.submit(models_job, m, sam3d_inputs, geo, shared, words, clock, writer, dev_geo)
     v1_labels = {o["id"]: o["label"] for o in objects}
 
     maps_ready = threading.Event()
@@ -608,6 +738,8 @@ def analyse(m, mp4, opts, clock, writer, log):
             ctx = m.emb.zero_shot(m.emb.crops(frames_obj, torch.tensor([kf_index[int(q)] for q in vf[best_masks]], device=dev_geo),
                                               voc["mask"][bt], masked=False), txt)
             m.emb.release()
+            with torch.cuda.device(dev_geo):
+                torch.cuda.empty_cache()
         with clock.stage("cascade.decide", n={"objects": len(objects)}):
             cache = cascade.LabelCache("/v/layers/label-cache/siglip2-base-p16-224-v3.npz")
             e_np, p_np, c_np = obj_emb.cpu().numpy(), probs.cpu().numpy(), ctx.cpu().numpy()
@@ -629,7 +761,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                     zero_shot_accepted=sum(r["source"] == "zero-shot" for r in recs), in_video_hits=sum(r["source"] == "cache:in-video" for r in recs),
                     uncertain=len(unsure), vlm_requests_objects=len(groups))
     if objects and not groups:
-        writer.put("objects", copy.deepcopy({"objects": objects, "cascade": casc, "words": words}), blobs_obj, "estimated+inferred", obj_labels)
+        writer.put("objects", copy.deepcopy({"objects": objects, "cascade": casc, "vocabulary": words}), blobs_obj, "estimated+inferred", obj_labels)
         clock.mark("objects_v2_put")
 
     def vlm_crop(gi):
@@ -655,6 +787,8 @@ def analyse(m, mp4, opts, clock, writer, log):
         reps = list(groups)
         with clock.stage("vlm.name.crops", n={"crops": len(reps)}):
             items = list(m.cpu_pool.map(lambda r: vlm_crop(obj_masks_on[r][1]), reps))
+            with torch.cuda.device(dev_geo):
+                torch.cuda.empty_cache()  # this process's last GPU 0 work of the run: its cache back for SAM 3D
         with clock.stage("vlm.name", n={"crops": len(items)}):
             names, rec = vlm.name_crops(items)
         answered = []
@@ -672,19 +806,18 @@ def analyse(m, mp4, opts, clock, writer, log):
             cache.add(e_np[answered], [objects[r]["cascade"]["label"] for r in answered], video_sha, site, "vlm")
             cache.save()
         casc.update(vlm={k: v for k, v in rec.items() if k != "texts"}, vlm_answered=len(answered), cache_entries_after=len(cache))
-        writer.put("objects", copy.deepcopy({"objects": objects, "cascade": casc, "words": words}), blobs_obj, "estimated+inferred", obj_labels)
+        writer.put("objects", copy.deepcopy({"objects": objects, "cascade": casc, "vocabulary": words}), blobs_obj, "estimated+inferred", obj_labels)
         clock.mark("objects_v2_put")
     esc = m.vlm_pool.submit(escalate) if objects and groups else None
 
-    # hand-off for the SAM 3D / splat builders (in process, GPU tensors): Shot and Obj as FAST-BUILD-SPEC section 12
-    m.last = {"shots": [{"index": si, "frames": shots[si], "keys": [keys[q] for q in gg["pos"]], "depth_m": gg["depth_m"], "K": gg["K"],
-                         "c2w_m": gg["c2w_m"], "colors": shots_gpu[si]["colors"], "person": dyn[torch.tensor(gg["pos"], device=dev_geo)],
-                         "mpu": gg["mpu"], "scale_status": "estimated"} for si, gg in enumerate(geo)],
-              "objs": [{**o, "mask_logits_lr": voc["logits"][obj_masks_on[i][1]]} for i, o in enumerate(objects)], "frames": frames}
     outlines_future.result()
     ev = vocab_future.result()
     if esc is not None:
         esc.result()
+    da3_off.result()
+    summary["sam3d"] = models_future.result()
+    summary["splat"] = splat_future.result() if splat_future is not None else None
+    Path(shared.result()).unlink(missing_ok=True)
     summary.update(frames=n, fps=fps, wh=[W, H], cuts=cuts, keyframes=len(keys), object_keyframes=len(range(0, len(keys), segment.OBJECT_EVERY)),
                    words=len(words), wave2_words=len(work.wave2 or []), vocab=results.get("vocab"), sam3_tasks_by_worker=work.by_worker,
                    vocab_frames_equal_decoded=[bool(img is not None and np.array_equal(img, frames[f])) for img, f in zip(seeked, vlm_frames)],
