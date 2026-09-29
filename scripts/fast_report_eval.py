@@ -118,6 +118,8 @@ def load_layers(run_dir, report=None):
     if "analysis" in (latest.get("outlines", {}).get("blobs") or {}):
         blob = next(run_dir.rglob(latest["outlines"]["blobs"]["analysis"]["sha256"])).read_bytes()
         out["outlines"] = json.loads(gzip.decompress(blob) if blob[:2] == b"\x1f\x8b" else blob)
+    if (out.get("object_cards") or {}).get("cards") == "blob":  # A's cards over 1 MB go out of line as the list itself
+        out["object_cards"]["cards"] = json.loads(next(run_dir.rglob(latest["object_cards"]["blobs"]["cards"]["sha256"])).read_bytes())
     out["_report"] = reports.pop()
     for s in (out.get("cameras") or {}).get("shots", []):  # the viewer's names (fast_report.layers docstring) -> the ones read here
         s.setdefault("keyframes", s.get("keys"))
@@ -701,6 +703,7 @@ FB_RUNS = {"me340": ("fb-integrate-me340-006", "fb-me340-e84efffd-1790649860"), 
            "walmart": ("fb-integrate-walmart-001", "fb-walmart-c0761a2a-1790651216")}
 REF_MIN_PX, REF_ON_PERSON, CLICK_ERODE, BG_MARGIN, CLICKS_PER_REF, BG_PER_FRAME = 1200, .5, 3, 5, 2, 5
 PICK_IOU, PICK_COVER, PERSON_IOU, MATCH_DELIVERED_M, LONG_M = .3, .5, .5, .5, 3.
+MIN_PATH_M = .5  # repeatability: a shot whose aligned cameras moved less cannot be Sim3-aligned (ME340 shot 0: 2 cm, scale 0.80)
 # ponytail: spec 4.2's seed size table, used for today's boxes (the baseline) and for 'large class' in the L1 acceptance. The
 # MVP's cards carry their own size_check (A's cards.CLASS_SIZE); the rows read that when it is there.
 CLASS_SIZE = [  # (names, longest side lo, hi in m, large class)
@@ -748,7 +751,9 @@ def patch_versions(run_dir, report, layer):
 def patch_data(run_dir, patch, blob=None):
     """A patch's data, or its named JSON blob when the data went out of line (cards over 1 MB, outlines)."""
     if blob and blob in (patch.get("blobs") or {}):
-        return json.loads(blob_bytes(run_dir, patch["blobs"][blob]["sha256"]))
+        got = json.loads(blob_bytes(run_dir, patch["blobs"][blob]["sha256"]))
+        # A's cards blob is the card list itself (the layer's data says "cards": "blob"): the layer with the list in place
+        return {**(patch.get("data") or {}), blob: got} if isinstance(got, list) else got
     return patch.get("data") or {}
 
 
@@ -1192,6 +1197,10 @@ def repeat_row(layers_a, layers_b, offset, min_keys=5):
         use = [i for i, c in enumerate(cams) if c is not None]
         if len(use) < min_keys:
             continue
+        ca = np.asarray(sa["c2w_m"], float)[use][:, :3, 3]
+        if np.linalg.norm(np.diff(ca, axis=0), axis=1).sum() < MIN_PATH_M:  # a still camera: the Sim3's scale and rotation are undetermined
+            shots.append({"a": sa["index"], "b": sb["index"], "keyframes_aligned": len(use), "skipped": "camera path < 0.5 m: no Sim3"})
+            continue
         s, R, t = geo.align_sim3(np.stack([cams[i] for i in use]), np.asarray(sa["c2w_m"], float)[use])
         floor = shot_floor(sa)
         up = floor[1] if floor else np.array([0, -1., 0])
@@ -1501,7 +1510,8 @@ def decider_acceptance(deciders):
             "false_alarm_only": {q: v["calibrated_cv"]["false_yes"] for q, v in qs.items() if q not in judged}}
 
 
-CARD_META = {"box", "dropped_share", "merged_from", "size_check", "footprint_xy", "walkway", "nearest_walked_path", "primitive"}
+CARD_META = {"box", "dropped_share", "merged_from", "size_check", "footprint_xy", "walkway", "nearest_walked_path", "primitive",
+             "level", "box_min_m", "box_max_m", "fragmented_support", "reason"}  # A's card bookkeeping, not facts
 
 
 def card_check(cards):

@@ -22,6 +22,8 @@ EPS_MIN, MIN_POINTS, MAIN_SHARE = .10, 10, .5    # section 4.2 step 3
 K_SIGMA, IOU_MIN = 3., .2                        # X6 association (timeline.sigma: sqrt(0.04^2 + (0.05 z)^2))
 AZ_DEPTH_DEG, SEP_DEG, BEST_VIEWS = 30., 15., 3  # section 4.3
 AGREE_DEG, PLUMB_MAX_DEG, NEAR_VERTICAL_DEG = 3., 2., 20.  # section 4.5
+FIT_MAX_DEG = 15.  # integration: a fit term above this is no angle (bulky objects' principal axes read 70 +- 43 deg on ME340)
+UP_MIN_DEG = 1.  # integration: the up direction's floor (the walls' p90 plumb reading when larger)
 MIN_PX, GAP_S, AFTER_KEYS, PLACE_POINTS = 25, .5, 24, 400  # section 4.6
 STRIDE = 2  # the lift's pixel grid over DA3's 504 x 280
 SCALE = "estimated (floor plane + assumed 1.6 m camera height)"
@@ -677,6 +679,7 @@ def object_card(o, x, s, k, marking, merged_from, counts):
     if len(sub) < 2:
         sub = []
     u_floor = s.get("u_floor_m") or 0.
+    up_rad = np.tan(np.radians(max(UP_MIN_DEG, s.get("plumb_u_deg") or s.get("plumb_deg") or 2.)))
     med = lambda f: float(np.median([f(q) for q in sub])) if sub else None  # noqa: E731
     subs = lambda f: [f(q) for q in sub] if sub else None  # noqa: E731
     phys = {}
@@ -684,7 +687,10 @@ def object_card(o, x, s, k, marking, merged_from, counts):
     for name, fn, pooled_v, cut in (("top_above_floor", lambda q: q["box"]["top"], pooled["top"], top_cut),
                                     ("base_above_floor", lambda q: q["box"]["base"], pooled["base"], bottom_cut)):
         v = med(fn) if sub else pooled_v
-        parts = {"views": spread(subs(fn)) if sub else None, "depth": DEPTH_REL * abs(v - cam_med_f[2]), "floor": u_floor, "scale": SCALE_REL * abs(v)}
+        # integration: 'up' = the floor normal's own uncertainty (the walls' p90 plumb reading) x the horizontal distance to the
+        # cameras; without it heights covered 72% of the warm-vs-shifted differences on ME340 (89% with it)
+        parts = {"views": spread(subs(fn)) if sub else None, "depth": DEPTH_REL * abs(v - cam_med_f[2]), "floor": u_floor,
+                 "up": up_rad * float(np.linalg.norm(centroid[:2] - cam_med_f[:2])), "scale": SCALE_REL * abs(v)}
         rec = value(v, parts, "height", k, subs(fn))
         if cut:
             rec.update(status="at least" if name == "top_above_floor" else "at most", reason="cut by the frame edge in every view")
@@ -755,7 +761,8 @@ def object_card(o, x, s, k, marking, merged_from, counts):
         review.append(f"fragmented support (main cluster {1 - x['dropped_share']:.0%} of the points)")
     if review:
         phys["fragmented_support"] = fragmented
-        for name in ("top_above_floor", "base_above_floor", "height", "width", "depth", "footprint_m2", "position_xy", "nearest_walked_path"):
+        for name in ("top_above_floor", "base_above_floor", "height", "width", "depth", "footprint_m2", "position_xy", "nearest_walked_path",
+                     "principal_axis_tilt_deg", "planar_slope_deg"):
             if name in phys and "value" in phys[name]:
                 phys[name].update(status="needs review", reason="; ".join(review))
     order = sorted(views, key=lambda v: -(meta.get(v, [1])[0] * (s["sharp"][v] if s.get("sharp") is not None else 1.)))
@@ -913,6 +920,8 @@ def angle(name, sub, s, k):
         return {"status": "not measurable", "reason": f"passes the fit gates on {len(ok)} of {len(got)} view subsets ({why})"}
     vals = [g[0] for g in ok]
     u_fit = float(np.median([g[1] for g in ok if g[1] is not None])) if any(g[1] is not None for g in ok) else 0.
+    if u_fit > FIT_MAX_DEG:
+        return {"status": "not measurable", "reason": f"the fit is too loose for an angle (fit term {u_fit:.0f} deg > {FIT_MAX_DEG:g})"}
     if max(vals) - min(vals) > max(AGREE_DEG, 2 * u_fit):
         return {"status": "not measurable", "reason": "view sets disagree: " + " vs ".join(f"{v:.1f} deg" for v in vals)}
     if not s["angles_usable"]:

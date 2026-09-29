@@ -15,6 +15,9 @@ import {spawn} from 'node:child_process';
 const web=path.resolve(new URL('..',import.meta.url).pathname),repo=path.dirname(web),argv=process.argv.slice(2);
 const option=(name,fallback)=>{const i=argv.indexOf(name);return i<0?fallback:argv[i+1];};
 const [root,out]=argv,reports=option('--reports','me340-mvp-fixture,samsclub-mvp-fixture,walmart-mvp-fixture').split(','),n=Number(option('--clicks','200')),speed=option('--speed','1');
+// --judged N: N aimed clicks on judged objects (one per check first, the biggest in the video), before the plain object / miss / person;
+// --height: a taller viewport keeps the whole card (identity to judgements) in the screenshot
+const nJudged=Number(option('--judged','1')),height=Number(option('--height','1100'));
 const python='/Users/adam/Desktop/Tesla/panoptes-platform/.venv/bin/python',VITE=5183,FAST=8803;
 const {chromium}=createRequire(process.env.PLAYWRIGHT_FROM||'/Users/adam/Desktop/ontab/package.json')('playwright');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -43,7 +46,7 @@ const aim=([id,miss])=>{const p=window.__live.pick,d=p.data,[W,H]=d.source_wh,va
 async function video(name){
   const as=`${name}-check-${Date.now()/1000|0}`;
   const server=spawn(python,['-m','fast_report.layers','serve',root,'--port',String(FAST),'--replay',root,name,'--as',as,'--speed',speed],{cwd:repo,stdio:['ignore','pipe','inherit']});
-  const page=await browser.newPage({viewport:{width:1600,height:1100}});
+  const page=await browser.newPage({viewport:{width:1600,height}});
   const errors=[];page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});page.on('pageerror',e=>errors.push(String(e)));
   await page.addInitScript(()=>localStorage.setItem('panoptes.language','en'));
   await page.goto(`http://127.0.0.1:${VITE}/app.html#/live/${as}`);await page.waitForSelector('.live-report');
@@ -77,8 +80,12 @@ async function video(name){
   const biggest=async ids=>{let best=null;for(const id of ids.slice(0,25)){const a=await page.evaluate(aim,[id,false]);if(a&&(!best||a.count>best.count))best={...a,id};}return best?.id;};
   const plain=layers.cards.filter(c=>c.kind==='object'&&c.physical?.size_check?.status==='plausible'&&c.physical?.depth?.value!==undefined&&(c.views?.n||0)>=4).map(c=>c.id);
   const persons=layers.cards.filter(c=>c.kind==='person'&&c.rules?.length).map(c=>c.id);
-  const targets=[await biggest(judged.filter(r=>r.verdict===judged[0]?.verdict).map(r=>r.subject)),await biggest(plain),null,await biggest(persons)]
-    .map((id,k)=>({id,k})).filter(({id,k})=>id||k===2);
+  const picks=[];  // one subject per check (most severe verdict first), then the next biggest judged subjects
+  for(const check of [...new Set(judged.map(r=>r.check))]){if(picks.length>=nJudged)break;
+    const id=await biggest(judged.filter(r=>r.check===check&&!picks.includes(r.subject)).map(r=>r.subject));if(id)picks.push(id);}
+  while(picks.length<nJudged){const id=await biggest(judged.map(r=>r.subject).filter(s=>!picks.includes(s)));if(!id)break;picks.push(id);}
+  const targets=[...picks,await biggest(plain),null,await biggest(persons)]
+    .map((id,k)=>({id,k})).filter(({id,k})=>id||k===picks.length+1);
   const shots=[];
   for(const {id,k} of targets){
     const a=await page.evaluate(aim,[id,!id]);if(!a)continue;
