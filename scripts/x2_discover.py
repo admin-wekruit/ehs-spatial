@@ -158,10 +158,10 @@ def run(out, sites, designs):
             for name, (pages, pages_exp) in sheets.items():
                 for k, jpg in enumerate(pages or []):
                     if jpg:
-                        (d / f"sheet-{name}-{k}.jpg").write_bytes(jpg)
+                        (d / f"sheet-{name.replace('/', '-every')}-{k}.jpg").write_bytes(jpg)
                 for k, jpg in enumerate(pages_exp or []):
                     if jpg:
-                        (d / f"sheet-{name}-expansion-{k}.jpg").write_bytes(jpg)
+                        (d / f"sheet-{name.replace('/', '-every')}-expansion-{k}.jpg").write_bytes(jpg)
             print(site, "discover:", json.dumps({k: {kk: v.get(kk) for kk in ("analysis_s", "found", "new_words", "rounds_run", "error")}
                                                  for k, v in rec["designs"].items()})[:3000], flush=True)
     meta["finished_unix"] = time.time()
