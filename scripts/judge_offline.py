@@ -65,8 +65,9 @@ class Frames:
             return self.cache[k]
 
 
-def load(site=None, run=None, report=None):
-    """-> dict(cards, ctx, judgements (the run's last), card_shots, outline frames, report, run)."""
+def load(site=None, run=None, report=None, upto=None):
+    """-> dict(cards, ctx, judgements (the run's last), card_shots, outline frames, report, run). upto: the layers as they
+    stood at that patch seq (the room's points: the first full room, if none was out yet)."""
     from fast_report import judge
     if site:
         run, report = WARM[site]
@@ -76,7 +77,8 @@ def load(site=None, run=None, report=None):
     for f in sorted(glob.glob(str(pdir / "*.json"))):
         p = json.loads(Path(f).read_text())
         key = p["layer"] + (":" + p["data"].get("kind", "") if p["layer"] == "room" else "")
-        last[key] = p
+        if upto is None or p["seq"] <= upto or (key == "room:full" and key not in last):
+            last[key] = p
     cam = last["cameras"]["data"]
     people = last["people"]["data"]
     outl = last["outlines"]

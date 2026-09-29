@@ -1164,10 +1164,12 @@ def matters(row):
 
 
 def ask_key(decider, card, q, keys):
-    """The answer cache of one analysis (mvp3 integrate): one answer per (object, question, evidence keyframes, and for Gemini
-    the name its prompt carries), shared by every cards version: a later version asks only for a new object or one whose
-    name or evidence views changed."""
-    return (decider, card["id"], q, tuple(int(k) for k in keys), name_of(card) if decider == "gemini" else None)
+    """The answer cache of one analysis (mvp3 integrate): one answer per (object, question, evidence keyframes), shared by every
+    cards version: a later version asks only for a new object or question, or one whose evidence views changed. The name is
+    not part of it: Gemini's prompt gives it only as a hint ('it may be wrong'), and keying on it re-asked most objects once
+    the names came (replay on round 2's Sam's Club first call: 290 evidence images with it, 212 without, 229 under round 2's
+    rule)."""
+    return (decider, card["id"], q, tuple(int(k) for k in keys))
 
 
 def wanted(rows, by_id):
@@ -1805,12 +1807,12 @@ def self_check():
     out = run([cable, hose], ctx, _Writer(), _Clock(), ask=fake, cal=cal, carried=carried, hazard_ask=fake_gemini)
     assert gem["reqs"] == 1 and out["gemini_unanswered"] == 0 and out["questions"] == 1 and not calls, (gem, out)
     assert out["gemini_sent"]["questions"] == 0 and out["gemini_sent"]["cached"] == 1, out
-    renamed = {**hose, "identity": {**hose["identity"], "name": "extension cord"}}  # a changed name (Gemini's prompt carries it): asked again
+    renamed = {**hose, "identity": {**hose["identity"], "name": "extension cord"}}  # a new name alone (a hint in the prompt): not asked again
     out = run([cable, renamed], ctx, _Writer(), _Clock(), ask=fake, cal=cal, carried=carried, hazard_ask=fake_gemini)
-    assert gem["reqs"] == 2 and out["gemini_sent"]["questions"] == 1, (gem, out)
+    assert gem["reqs"] == 1 and out["gemini_sent"]["questions"] == 0, (gem, out)
     moved = {**renamed, "views": {**renamed["views"], "best": [60, 30]}}  # other evidence views: asked again
     out = run([cable, moved], ctx, _Writer(), _Clock(), ask=fake, cal=cal, carried=carried, hazard_ask=fake_gemini)
-    assert gem["reqs"] == 3 and out["gemini_sent"]["questions"] == 1, (gem, out)
+    assert gem["reqs"] == 2 and out["gemini_sent"]["questions"] == 1, (gem, out)
     far = {**cable, "id": "obj-0-8", "physical": {**cable["physical"], "footprint_xy": [[2, 2.2], [3, 2.2], [3, 2.25], [2, 2.25]]}}
     ctx["outlines"][0]["objects"].append({"entityId": far["id"], "polygons": poly})
     gem.update(p=.6, reqs=0)  # a PASS (2 m from the path) is decided: no picture is asked, it stays PASS
@@ -1847,7 +1849,7 @@ def self_check():
     contract = contract_check()
     print(f"judge self-check ok ({contract}): verdict table (20 cells), worst_verdict fix, Qwen p rules, numeric rule with u and bias, one "
           "view set, implausible size, NO_DATA paths, J5 aisle (wide / narrow person path / cart), J2 faces (overhang FAIL / one-face PASS), "
-          "J1 top allowance, J4 (thin-hose base), J3a + foot surface, run v1 -> v2 (Gemini, pictures only where they can matter, relay down -> Qwen, answers cached per object, question, views and name), "
+          "J1 top allowance, J4 (thin-hose base), J3a + foot surface, run v1 -> v2 (Gemini, pictures only where they can matter, relay down -> Qwen, answers cached per object, question and evidence views), "
           "set-of-marks (white, no red), calibration")
 
 

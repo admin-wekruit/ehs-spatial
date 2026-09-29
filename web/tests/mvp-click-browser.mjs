@@ -17,7 +17,7 @@ const option=(name,fallback)=>{const i=argv.indexOf(name);return i<0?fallback:ar
 const [root,out]=argv,reports=option('--reports','me340-mvp-fixture,samsclub-mvp-fixture,walmart-mvp-fixture').split(','),n=Number(option('--clicks','200')),speed=option('--speed','1');
 // --judged N: N aimed clicks on judged objects (one per check first, the biggest in the video), before the plain object / miss / person;
 // --height: a taller viewport keeps the whole card (identity to judgements) in the screenshot
-const nJudged=Number(option('--judged','1')),height=Number(option('--height','1100')),finalLayers=argv.includes('--final');
+const nJudged=Number(option('--judged','1')),height=Number(option('--height','1100')),finalLayers=argv.includes('--final'),noServer=argv.includes('--no-server');
 const python='/Users/adam/Desktop/Tesla/panoptes-platform/.venv/bin/python',VITE=Number(option('--vite-port','5183')),FAST=Number(option('--fast-port','8803'));
 const {chromium}=createRequire(process.env.PLAYWRIGHT_FROM||'/Users/adam/Desktop/ontab/package.json')('playwright');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -44,8 +44,10 @@ const aim=([id,miss])=>{const p=window.__live.pick,d=p.data,[W,H]=d.source_wh,va
   return best;};
 
 async function video(name){
-  const as=`${name}-check-${Date.now()/1000|0}`;
-  const server=spawn(python,['-m','fast_report.layers','serve',root,'--port',String(FAST),'--replay',root,name,'--as',as,'--speed',speed],{cwd:repo,stdio:['ignore','pipe','inherit']});
+  // mvp3: --no-server: a server is already up on FAST_PORT (click_ondemand.py view/measure --hold-s: the report container behind
+  // its click route), the recording is served as it is (no replay); --ondemand 'report@t,x,y;...': one click there, on no entity
+  const as=noServer?name:`${name}-check-${Date.now()/1000|0}`;
+  const server=noServer?{kill(){}}:spawn(python,['-m','fast_report.layers','serve',root,'--port',String(FAST),'--replay',root,name,'--as',as,'--speed',speed],{cwd:repo,stdio:['ignore','pipe','inherit']});
   const page=await browser.newPage({viewport:{width:1600,height}});
   const errors=[];page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});page.on('pageerror',e=>errors.push(String(e)));
   await page.addInitScript(()=>localStorage.setItem('panoptes.language','en'));
@@ -103,6 +105,18 @@ async function video(name){
     const file=path.join(out,`${name}-click-${k+1}.png`);await page.screenshot({path:file});
     shots.push({aimed:id||'miss',t:a.t,x:Math.round(a.x),y:Math.round(a.y),...picked,file});
     if(id)assert.ok(!picked.unknown,`aimed at ${id} but got the unknown region`);else assert.ok(picked.unknown,'aimed at a miss');
+  }
+
+  // mvp3: the on-demand card of a click on no entity (the report container segments and names that point)
+  const odAim=(option('--ondemand','').split(';').find(x=>x.startsWith(name+'@'))||'').split('@')[1];
+  if(odAim){
+    const [t,x,y]=odAim.split(',').map(Number);await seekTo(t);await click(x,y);
+    await page.waitForFunction(()=>document.querySelector('.mvp-ondemand')||/surface, not an object|On demand unavailable/.test(document.querySelector('.mvp-unknown')?.textContent||''),null,{timeout:15000});
+    await sleep(300);
+    const picked=await page.evaluate(()=>({title:document.querySelector('.mvp-ondemand h3')?.textContent||document.querySelector('.mvp-unknown')?.textContent?.slice(0,120),
+      unknown:true,chips:[...document.querySelectorAll('.mvp-card .mvp-chip')].map(e=>e.textContent)}));
+    const file=path.join(out,`${name}-click-ondemand.png`);await page.screenshot({path:file});
+    shots.push({aimed:'on demand',t,x,y,...picked,file});
   }
 
   // Evidence thumbnail seeks the video to its keyframe
