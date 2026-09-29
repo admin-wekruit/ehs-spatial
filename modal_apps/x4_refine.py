@@ -50,6 +50,7 @@ SURFACE, THIN = {"box_stack", "shelf_partition"}, {"cable", "floor_item"}
 ANGLE_MIN, VIEWS_MIN, VIEWS_MAX, RES, DEFAULT_RES = 12., 4, 10, (336, 504, 756), 504  # 4: the hold-out leaves the >= 3 cameras DA3's pose alignment needs
 TILT_RULE = 5.  # an assumed example threshold: ehs_spatial/policy.py says tilt has no calibrated budget yet
 FINE_VOXEL, COARSE_ERR_M, SPOT_CAP_M, CLUSTER_M = .01, .05, 1.5, .4
+DEFAULT_CROP, DEFAULT_METHOD, METHODS = "wide", "anchor", ("raw", "anchor", "anchor+icp", "unposed")
 # the confirmation rule, fixed before any run
 PASS = {"pairwise_median_m": .015, "coarse_nn_median_m": COARSE_ERR_M, "photometric_ratio": 1.05, "outline_iou": .5,
         "plane_ci_width_deg": 2., "thin_min_height_m": .004}
@@ -104,8 +105,9 @@ def ls_normal(P):
     return np.linalg.eigh((P - c).T @ (P - c))[1][:, 0], c
 
 
-def fit_plane(P, thr, rng, iters=300):
-    """RANSAC plane, least squares on its inliers -> (normal, centre, inlier indices, rms m)."""
+def fit_plane(P, thr, rng, iters=300, up=None):
+    """RANSAC plane, least squares on its inliers -> (normal, centre, inlier indices, rms m). up given: only
+    near-vertical planes (normal within 60 deg of horizontal): the lean of a shelf, a partition or a stack's face."""
     best = None
     for _ in range(iters):
         a, b, c = P[rng.choice(len(P), 3, replace=False)]
@@ -113,6 +115,8 @@ def fit_plane(P, thr, rng, iters=300):
         if np.linalg.norm(n) < 1e-12:
             continue
         n /= np.linalg.norm(n)
+        if up is not None and abs(float(n @ up)) > .5:
+            continue
         inl = np.flatnonzero(np.abs((P - a) @ n) <= thr)
         if best is None or len(inl) > len(best):
             best = inl
@@ -128,12 +132,13 @@ def tilt(n, up):
     return ("vertical", 90 - theta) if theta > 45 else ("horizontal", theta)
 
 
-def plane_tilt(P, up, thr, seed=0, boot=200, cap=4000):
-    """Plane tilt with a 95 % bootstrap interval over the inliers (point noise only: the up vector's own error is not in it)."""
+def plane_tilt(P, up, thr, seed=0, boot=200, cap=4000, vertical=True):
+    """Plane tilt with a 95 % bootstrap interval over the inliers (point noise only: the up vector's own error is not in it).
+    vertical: the dominant near-vertical plane, so coarse, fine and LingBot measure the same face."""
     if P is None or len(P) < 50:
         return None
     rng = np.random.default_rng(seed)
-    n, c, inl, rms = fit_plane(P, thr, rng)
+    n, c, inl, rms = fit_plane(P, thr, rng, up=up if vertical else None)
     if len(inl) < 30:
         return None
     kind, deg = tilt(n, up)
@@ -340,12 +345,21 @@ def fuse_local(d, K, c2w, colors, voxel, weight, block_count=40000, depth_max=15
     vbg = o3d.t.geometry.VoxelBlockGrid(attr_names=("tsdf", "weight", "color"), attr_dtypes=(o3c.float32, o3c.float32, o3c.float32),
                                         attr_channels=((1), (1), (3)), voxel_size=voxel, block_resolution=16, block_count=block_count,
                                         device=o3c.Device("CUDA:0"))
+    used = 0
     for i in range(len(d)):
+        if not bool((d[i] > 0).any()):  # a view that sees nothing of the region: Open3D aborts on it
+            continue
+        used += 1
         di = o3d.t.geometry.Image(o3c.Tensor.from_dlpack(tdl.to_dlpack(d[i].contiguous())))
         ci = o3d.t.geometry.Image(o3c.Tensor.from_dlpack(tdl.to_dlpack(colors[i].contiguous())))
         k, e = o3c.Tensor(np.asarray(K[i], np.float64)), o3c.Tensor(np.linalg.inv(np.asarray(c2w[i], np.float64)))
-        coords = vbg.compute_unique_block_coordinates(di, k, e, depth_scale=1., depth_max=depth_max)
-        vbg.integrate(coords, di, ci, k, e, depth_scale=1., depth_max=depth_max)
+        try:
+            coords = vbg.compute_unique_block_coordinates(di, k, e, depth_scale=1., depth_max=depth_max)
+            vbg.integrate(coords, di, ci, k, e, depth_scale=1., depth_max=depth_max)
+        except RuntimeError:  # "no block is touched": this view's depth misses the grid; it adds nothing
+            used -= 1
+    if not used:
+        return np.zeros((0, 3), np.float32), np.zeros((0, 3), np.uint8), o3d.geometry.TriangleMesh()
     pcd = vbg.extract_point_cloud(weight_threshold=float(weight))
     mesh = vbg.extract_triangle_mesh(weight_threshold=float(weight)).to_legacy()
     pts = pcd.point.positions.cpu().numpy() if "positions" in pcd.point else np.zeros((0, 3), np.float32)
@@ -417,24 +431,29 @@ class Refine:
         lap("models_s")
         vlm.wait(self.vllm)
         lap("vllm_ready_s")
-        rng = np.random.default_rng(0)
-        with torch.inference_mode():
-            da3_shot(self.da3, torch.randint(0, 255, (16, 720, 1280, 3), dtype=torch.uint8, device=self.dev))
-            for r in RES:  # posed crops: first-call costs stay out of the spot times
-                for n in (3, 9):
-                    w2c = np.repeat(np.eye(4)[None], n, 0)
-                    w2c[:, :3, 3] = rng.normal(0, .3, (n, 3))  # non-collinear centres: DA3 aligns them by Umeyama
-                    K = np.repeat(np.array([[r, 0, r / 2], [0, r, r / 2], [0, 0, 1.]])[None], n, 0)
-                    self.posed([rng.integers(0, 255, (r, r, 3), np.uint8) for _ in range(n)], w2c, K, r)
-            v = self.sam.vision(torch.randint(0, 255, (8, 720, 1280, 3), dtype=torch.uint8, device=self.dev))
-            self.sam.detect(v, 8, ("person", "floor"), segment.PERSON_SCORE, top=segment.PERSON_TOP)
-            self.sam.detect(self.sam.pick(v, [0, 3, 6]), 3, tuple(WORDS), segment.VOCAB_SCORE)
-            for r in RES:
-                v = self.sam.vision(torch.randint(0, 255, (6, r, r, 3), dtype=torch.uint8, device=self.dev))
-                self.sam.detect(v, 6, ("cable",), .25, logits=True)
-            torch.cuda.synchronize()
-        jpg = cv2.imencode(".jpg", rng.integers(0, 255, (504, 504, 3), np.uint8))[1].tobytes()
-        vlm.chat([vlm.image_block(jpg), {"type": "text", "text": "Describe."}], max_tokens=8)
+        try:  # a failing warm-up is recorded, never a crash loop (a raising @enter restarts the container, run 001)
+            rng = np.random.default_rng(0)
+            with torch.inference_mode():
+                da3_shot(self.da3, torch.randint(0, 255, (16, 720, 1280, 3), dtype=torch.uint8, device=self.dev))
+                for r in RES:  # posed crops: first-call costs stay out of the spot times
+                    for n in (3, 9):
+                        w2c = np.repeat(np.eye(4)[None], n, 0)
+                        w2c[:, :3, 3] = rng.normal(0, .3, (n, 3))  # non-collinear centres: DA3 aligns them by Umeyama
+                        K = np.repeat(np.array([[r, 0, r / 2], [0, r, r / 2], [0, 0, 1.]])[None], n, 0)
+                        self.posed([rng.integers(0, 255, (r, r, 3), np.uint8) for _ in range(n)], w2c, K, r)
+                        self.posed([rng.integers(0, 255, (r, r, 3), np.uint8) for _ in range(n)], w2c, K, r, own=True)
+                        self.unposed([rng.integers(0, 255, (r, r, 3), np.uint8) for _ in range(n)], r)
+                v = self.sam.vision(torch.randint(0, 255, (8, 720, 1280, 3), dtype=torch.uint8, device=self.dev))
+                self.sam.detect(v, 8, ("person", "floor"), segment.PERSON_SCORE, top=segment.PERSON_TOP)
+                self.sam.detect(self.sam.pick(v, [0, 3, 6]), 3, tuple(WORDS), segment.VOCAB_SCORE)
+                for r in RES:
+                    v = self.sam.vision(torch.randint(0, 255, (6, r, r, 3), dtype=torch.uint8, device=self.dev))
+                    self.sam.detect(v, 6, ("cable",), .25, logits=True)
+                torch.cuda.synchronize()
+            jpg = cv2.imencode(".jpg", rng.integers(0, 255, (504, 504, 3), np.uint8))[1].tobytes()
+            vlm.chat([vlm.image_block(jpg), {"type": "text", "text": "Describe."}], max_tokens=8)
+        except Exception:  # noqa: BLE001
+            b["warm_error"] = traceback.format_exc()[-1500:]
         torch.cuda.empty_cache()
         lap("ready_s")
         b["gpus"] = fra.gpu_listing()
@@ -449,14 +468,26 @@ class Refine:
     def boot_info(self):
         return self.boot_record
 
-    def posed(self, crops_rgb, w2c, K, R):
-        """DA3 posed on crops (the coarse cameras condition it and fix the scale) -> depth (n,R,R), conf, K."""
+    def posed(self, crops_rgb, w2c, K, R, own=False):
+        """DA3 posed on crops (the coarse cameras condition it and fix the scale) -> depth (n,R,R), conf, K.
+        own=True: DA3's own cameras instead, Umeyama-aligned to the given ones (a diagnostic of how far it agrees)."""
         import torch
         with torch.inference_mode():
             out = self.api.inference(list(crops_rgb), extrinsics=np.asarray(w2c, np.float32), intrinsics=np.asarray(K, np.float32),
-                                     align_to_input_ext_scale=True, process_res=R)
+                                     align_to_input_ext_scale=not own, process_res=R)
         assert out.depth.shape == (len(crops_rgb), R, R), out.depth.shape
-        return np.asarray(out.depth, np.float32), np.asarray(out.conf, np.float32), np.asarray(out.intrinsics, np.float64)
+        ext = np.asarray(out.extrinsics, np.float64)
+        return np.asarray(out.depth, np.float32), np.asarray(out.conf, np.float32), np.asarray(out.intrinsics, np.float64), ext
+
+    def unposed(self, crops_rgb, R):
+        """DA3 any-view on the crops, no cameras given: its own depth, K and cameras (one joint forward: consistent)."""
+        import torch
+        with torch.inference_mode():
+            out = self.api.inference(list(crops_rgb), process_res=R)
+        n = len(crops_rgb)
+        w2c = np.repeat(np.eye(4)[None], n, 0)
+        w2c[:, :3, :4] = np.asarray(out.extrinsics, np.float64).reshape(n, -1, 4)[:, :3]
+        return np.asarray(out.depth, np.float32), np.asarray(out.conf, np.float32), np.asarray(out.intrinsics, np.float64), np.linalg.inv(w2c)
 
     @modal.method()
     def run(self, clip, mp4, opts):
@@ -484,25 +515,31 @@ class Refine:
 class LingBot:
     @modal.enter()
     def load(self):
-        import torch
-        from huggingface_hub import hf_hub_download
-        t = time.perf_counter()
-        weight = hf_hub_download("robbyant/lingbot-map", "lingbot-map.pt", revision=lingbot_room.WEIGHTS_REV, cache_dir="/artifact/hf")
-        assert lingbot_room.digest(weight) == lingbot_room.WEIGHTS_SHA
-        sys.path.insert(0, "/opt/lingbot")
-        from types import SimpleNamespace
-        from demo import load_model
-        args = SimpleNamespace(mode="streaming", image_size=518, patch_size=14, enable_3d_rope=True, max_frame_num=1024,
-                               kv_cache_sliding_window=64, num_scale_frames=8, use_sdpa=True, camera_num_iterations=4, model_path=weight)
-        self.model = load_model(args, "cuda")
-        self.model.aggregator = self.model.aggregator.to(dtype=torch.bfloat16)
-        self.model.eval()
-        self.load_s = round(time.perf_counter() - t, 2)
-        self.calls = 0
+        self.error = None
+        try:  # a raising @enter restarts the container in a loop: keep the error for run()
+            import torch
+            from huggingface_hub import hf_hub_download
+            t = time.perf_counter()
+            weight = hf_hub_download("robbyant/lingbot-map", "lingbot-map.pt", revision=lingbot_room.WEIGHTS_REV, cache_dir="/artifact/hf")
+            assert lingbot_room.digest(weight) == lingbot_room.WEIGHTS_SHA
+            sys.path.insert(0, "/opt/lingbot")
+            from types import SimpleNamespace
+            from demo import load_model
+            args = SimpleNamespace(mode="streaming", image_size=518, patch_size=14, enable_3d_rope=True, max_frame_num=1024,
+                                   kv_cache_sliding_window=64, num_scale_frames=8, use_sdpa=True, camera_num_iterations=4, model_path=weight)
+            self.model = load_model(args, "cuda")
+            self.model.aggregator = self.model.aggregator.to(dtype=torch.bfloat16)
+            self.model.eval()
+            self.load_s = round(time.perf_counter() - t, 2)
+            self.calls = 0
+        except Exception:  # noqa: BLE001
+            self.error = traceback.format_exc()[-1500:]
 
     @modal.method()
     def run(self, jpegs):
         """Chronological JPEG frames of one span -> native depth, confidence, W2C, K per frame (official demo output)."""
+        if self.error:
+            raise RuntimeError("LingBot load failed: " + self.error)
         import tempfile
         import torch
         from demo import postprocess, prepare_for_visualization
@@ -740,14 +777,18 @@ def find_spots(c, max_spots):
               "planarity": float(ev[0] / max(ev[1], 1e-12)), "members": mem,
               "emb": None if "emb" not in mem[0] else (lambda e: e / np.linalg.norm(e))(np.mean([d["emb"] for d in mem], 0))}
         sp["normal"] = np.linalg.eigh(np.cov((pts - pts.mean(0)).T))[1][:, 0] if sp["planarity"] < .15 else None
-        sp["rank"] = sp["max_score"] * np.log2(1 + sp["n_keyframes"])
+        dirs = np.stack([g["c2w_np"][d["l"]][:3, 3] for d in mem]) - sp["centre"]
+        dirs /= np.maximum(np.linalg.norm(dirs, axis=1, keepdims=True), 1e-9)
+        sp["view_spread_deg"] = round(float(np.degrees(np.arccos(np.clip((dirs @ dirs.T).min(), -1, 1)))), 2)
+        # ponytail: a spot seen from one viewpoint (a static or panning camera) cannot be refined multi-view; ranked last
+        sp["rank"] = sp["max_score"] * np.log2(1 + sp["n_keyframes"]) * min(1., sp["view_spread_deg"] / 30)
         tr = [f"semantic: {cl['group']} ('{w}')"]
         if c.conf_p25 is not None and sp["mean_conf"] is not None and sp["mean_conf"] < c.conf_p25:
             tr.append(f"quality: mean DA3 confidence {sp['mean_conf']:.2f} < the video's 25th percentile {c.conf_p25:.2f}")
         if sp["holes"] > .15:
             tr.append(f"quality: {sp['holes']:.0%} of the mask's depth dropped as flying pixels (holes)")
         if cl["group"] in SURFACE and g["plane_ok"]:
-            t = plane_tilt(pts, g["up"], .03)
+            t = plane_tilt(pts, g["up"], .03, boot=60)
             sp["coarse_tilt"] = t
             if t and (t["ci95_deg"][0] <= TILT_RULE <= t["ci95_deg"][1] or abs(t["tilt_deg"] - TILT_RULE) <= 2):
                 tr.append(f"rule-borderline: coarse tilt {t['tilt_deg']:.1f} deg, CI {t['ci95_deg']} vs an assumed {TILT_RULE:g} deg rule")
@@ -755,11 +796,11 @@ def find_spots(c, max_spots):
         out.append(sp)
     picked = []
     for grp in GROUPS:
-        cand = sorted([s for s in out if s["group"] == grp and s["n_keyframes"] >= 2], key=lambda s: -s["rank"])
+        cand = sorted([s for s in out if s["group"] == grp and s["n_keyframes"] >= 2 and s["view_spread_deg"] >= ANGLE_MIN], key=lambda s: -s["rank"])
         if cand:
             picked.append(cand[0])
     taken = {s["id"] for s in picked}
-    rest = sorted([s for s in out if s["id"] not in taken and s["n_keyframes"] >= 2],
+    rest = sorted([s for s in out if s["id"] not in taken and s["n_keyframes"] >= 2 and s["view_spread_deg"] >= ANGLE_MIN],
                   key=lambda s: (-sum(t.startswith(("quality", "rule")) for t in s["triggers"]), -s["rank"]))
     picked += rest[:max(0, max_spots - len(picked))]
     picked = picked[:max_spots]
@@ -822,15 +863,16 @@ def select_views(c, sp):
             "median_score": round(float(np.median(score[score > 0])), 4) if (score > 0).any() else None}
 
 
-def crop_boxes(c, sp, views):
-    """One square crop per view around the spot's visible projection (1.5 x its extent, 256..720 source px)."""
+def crop_boxes(c, sp, views, mode="tight"):
+    """One square crop per view around the spot's visible projection: 'tight' = 1.5 x its extent (256..720 source px,
+    a telephoto field of view), 'wide' = the largest square (720 px, ~36 deg: the field of view DA3 was trained on)."""
     g = c.G[sp["si"]]
     boxes = []
     for vw in views:
         u, v, z = project(sp["pts"], c.pose(sp["si"], vw["frame"]), g["Kfull"])
         ok = (z > .1) & (u >= 0) & (u < c.W) & (v >= 0) & (v < c.H)
         u, v = u[ok], v[ok]
-        side = int(np.clip(1.5 * max(np.ptp(u), np.ptp(v)), 256, min(c.H, c.W)))
+        side = int(np.clip(1.5 * max(np.ptp(u), np.ptp(v)), 256, min(c.H, c.W))) if mode == "tight" else min(c.H, c.W)
         cx, cy = (u.min() + u.max()) / 2, (v.min() + v.max()) / 2
         x0 = int(np.clip(round(cx - side / 2), 0, c.W - side))
         y0 = int(np.clip(round(cy - side / 2), 0, c.H - side))
@@ -871,41 +913,170 @@ def sam_crops(m, imgs, word, priors, R):
     return out
 
 
-def fine_pass(m, c, sp, imgs, Ks, c2ws, R, clock, tag):
-    """(i) DA3 posed on the crops + (iii) a 1 cm TSDF of it, inside the spot box (+15 cm). -> dict."""
+def anchor(g, depth, Ks, c2ws, box, stride=4):
+    """Per-view scale of the crop depth to the coarse map around the spot (box + 0.5 m): the median ratio where both
+    have depth (run 003: posed DA3 on crops drifts 0.76-1.31 per view on tight crops, 1.00-1.10 on wide ones). A view
+    whose ratio on the spot itself differs by > 15 % sees something else there (a person the coarse map leaves out, an
+    occluder): it is dropped. -> scales, kept, notes."""
+    n, R = depth.shape[:2]
+    scales, kept, notes = [], [], []
+    r = R // stride
+    for i in range(n):
+        Kc = np.array(Ks[i], np.float64)
+        Kc[:2, :2] /= stride
+        Kc[0, 2], Kc[1, 2] = (Kc[0, 2] - (stride - 1) / 2) / stride, (Kc[1, 2] - (stride - 1) / 2) / stride
+        Dc = raycast_depth(g["scene"], Kc, c2ws[i], r, r)
+        Df = depth[i][stride // 2::stride, stride // 2::stride][:r, :r]
+        P, (vv, uu) = backproject_img(Dc, Kc, c2ws[i])
+        region, spot = np.zeros((r, r), bool), np.zeros((r, r), bool)
+        region[vv, uu], spot[vv, uu] = in_box(P, box, .5), in_box(P, box)
+        ok = region & (Df > 0) & np.isfinite(Dc)
+        if ok.sum() < 20:
+            scales.append(None)
+            notes.append("coarse map not seen around the spot")
+            continue
+        sc = float(np.median(Df[ok] / Dc[ok]))
+        so = spot & (Df > 0) & np.isfinite(Dc)
+        dev = float(np.median(Df[so] / Dc[so]) / sc - 1) if so.sum() >= 10 else None
+        scales.append(round(sc, 4))
+        if dev is None or abs(dev) > .15:
+            notes.append("spot not seen" if dev is None else f"spot depth {dev:+.0%} off the region's scale: occluded")
+            continue
+        notes.append(f"spot {dev:+.1%}")
+        kept.append(i)
+    return scales, kept, notes
+
+
+def refine_poses(depth, Ks, c2ws, box, kept, ref):
+    """Local pose refinement: each kept view's points around the spot (box + 0.3 m, 1 cm voxels) ICP'd point-to-plane
+    onto the reference view's, max 5 cm apart; a correction over 3 deg or 10 cm (past the coarse error) is refused."""
+    import open3d as o3d
+    reg = o3d.pipelines.registration
+
+    def cloud(i):
+        P, _ = backproject_img(depth[i], Ks[i], c2ws[i])
+        pc = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(voxel_down(P[in_box(P, box, .3)], .01)))
+        pc.estimate_normals(o3d.geometry.KDTreeSearchParamHybrid(radius=.04, max_nn=30))
+        return pc
+    out, corr = np.array(c2ws, np.float64), []
+    tgt = cloud(ref)
+    for i in kept:
+        if i == ref:
+            continue
+        src = cloud(i)
+        if len(src.points) < 100 or len(tgt.points) < 100:
+            corr.append({"view": i, "status": "too few points"})
+            continue
+        r_ = reg.registration_icp(src, tgt, .05, np.eye(4), reg.TransformationEstimationPointToPlane())
+        T = np.asarray(r_.transformation)
+        deg = float(np.degrees(np.arccos(np.clip((np.trace(T[:3, :3]) - 1) / 2, -1, 1))))
+        cm = float(np.linalg.norm(T[:3, 3])) * 100
+        good = r_.fitness >= .3 and deg <= 3 and cm <= 10
+        if good:
+            out[i] = T @ out[i]
+        corr.append({"view": i, "fitness": round(float(r_.fitness), 3), "rmse_mm": round(float(r_.inlier_rmse) * 1000, 2),
+                     "deg": round(deg, 3), "cm": round(cm, 2), "applied": bool(good)})
+    return out, corr
+
+
+def fine_pass(m, c, sp, imgs, Ks, c2ws, R, clock, tag, own=False, method="anchor+icp"):
+    """(i) DA3 posed on the crops, each view's depth scaled to the coarse map around the spot and its pose refined
+    locally (method 'raw' | 'anchor' | 'anchor+icp') + (iii) a 1 cm TSDF of it inside the spot box (+15 cm). The given
+    crop intrinsics are used downstream (DA3's returned ones are recorded: they should be the same)."""
     import torch
     import m3_exp_geometry as geo
     t0 = time.perf_counter()
     with clock.stage(f"refine.da3.{tag}", gpu=0, n={"views": len(imgs), "res": R}, sync=True):
-        depth, conf, Kout = m.posed([im[..., ::-1].copy() for im in imgs], np.linalg.inv(c2ws), Ks, R)
+        if method == "unposed":
+            depth, conf, K_da3, own_c2w = m.unposed([im[..., ::-1].copy() for im in imgs], R)
+        else:
+            depth, conf, K_da3, _ = m.posed([im[..., ::-1].copy() for im in imgs], np.linalg.inv(c2ws), Ks, R)
     t1 = time.perf_counter()
+    Kout = np.asarray(Ks, np.float64)
+    extra = {"K_da3": K_da3}
+    if method == "unposed":  # DA3's own cameras -> the coarse frame: Sim3 on the cameras, then one rigid ICP on the region
+        import open3d as o3d
+        import m3_exp_geometry as geo
+        s_, Rm, t_ = geo.align_sim3(own_c2w, np.asarray(c2ws, np.float64))
+        new = own_c2w.copy()
+        new[:, :3, :3] = Rm @ own_c2w[:, :3, :3]
+        new[:, :3, 3] = s_ * (Rm @ own_c2w[:, :3, 3].T).T + t_
+        depth, Kout = depth * np.float32(s_), K_da3
+        rot = [float(np.degrees(np.arccos(np.clip((np.trace(a[:3, :3].T @ b[:3, :3]) - 1) / 2, -1, 1)))) for a, b in zip(new, c2ws)]
+        extra["unposed_vs_coarse"] = {"scale": round(float(s_), 5), "rotation_deg": [round(r_, 3) for r_ in rot],
+                                      "centre_m": [round(float(x), 4) for x in np.linalg.norm(new[:, :3, 3] - np.asarray(c2ws)[:, :3, 3], axis=1)],
+                                      "K_fx_da3_over_crop": [round(float(a[0, 0] / b[0, 0]), 4) for a, b in zip(K_da3, Ks)]}
+        P = np.concatenate([backproject_img(depth[i], Kout[i], new[i])[0] for i in range(len(depth))])
+        g0 = c.G[sp["si"]]
+        src, tgt = voxel_down(P[in_box(P, sp["box"], .5)], .01), g0["pts"][in_box(g0["pts"], sp["box"], .5)]
+        if len(src) > 100 and len(tgt) > 100:
+            reg = o3d.pipelines.registration
+            r_ = reg.registration_icp(o3d.geometry.PointCloud(o3d.utility.Vector3dVector(src)),
+                                      o3d.geometry.PointCloud(o3d.utility.Vector3dVector(tgt.astype(np.float64))), .10, np.eye(4),
+                                      reg.TransformationEstimationPointToPoint())
+            T = np.asarray(r_.transformation)
+            deg = float(np.degrees(np.arccos(np.clip((np.trace(T[:3, :3]) - 1) / 2, -1, 1))))
+            ok = deg <= 3 and np.linalg.norm(T[:3, 3]) <= .10
+            if ok:
+                new = T @ new
+            extra["unposed_vs_coarse"]["icp"] = {"fitness": round(float(r_.fitness), 3), "rmse_mm": round(float(r_.inlier_rmse) * 1000, 2),
+                                                 "deg": round(deg, 3), "cm": round(float(np.linalg.norm(T[:3, 3])) * 100, 2), "applied": bool(ok)}
+        c2ws = new
+    if own:  # diagnostic, outside the timed path: DA3's own cameras for the same crops vs the coarse ones
+        _, _, _, ext = m.posed([im[..., ::-1].copy() for im in imgs], np.linalg.inv(c2ws), Ks, R, own=True)
+        w2c_own = np.repeat(np.eye(4)[None], len(ext), 0)
+        w2c_own[:, :3, :4] = ext.reshape(len(ext), -1, 4)[:, :3]
+        own_c2w = np.linalg.inv(w2c_own)
+        rot = [float(np.degrees(np.arccos(np.clip((np.trace(a[:3, :3].T @ b[:3, :3]) - 1) / 2, -1, 1)))) for a, b in zip(own_c2w, c2ws)]
+        extra.update(own_c2w=own_c2w, camera_check={
+            "da3_own_vs_coarse_rotation_deg": [round(r_, 3) for r_ in rot],
+            "da3_own_vs_coarse_centre_m": [round(float(x), 4) for x in np.linalg.norm(own_c2w[:, :3, 3] - c2ws[:, :3, 3], axis=1)],
+            "K_da3_vs_given_max_rel": round(float(np.abs(K_da3 - Kout).max() / Kout[0, 0, 0]), 5)})
+    g = c.G[sp["si"]]
+    kept, c2ws = list(range(len(imgs))), np.array(c2ws, np.float64)
+    t_a0 = time.perf_counter()
+    with clock.stage(f"refine.anchor.{tag}"):
+        if method in ("anchor", "anchor+icp"):
+            scales, kept, notes = anchor(g, depth, Kout, c2ws, sp["box"])
+            depth = depth / np.array([s_ or 1. for s_ in scales], np.float32)[:, None, None]
+            extra["anchor"] = {"scales": scales, "kept": kept, "notes": notes}
+        if method == "anchor+icp" and kept:
+            c2ws, corr = refine_poses(depth, Kout, c2ws, sp["box"], kept, kept[0])
+            extra["pose_refine"] = corr
+    t_anchor = time.perf_counter()
     with torch.inference_mode(), clock.stage(f"refine.tsdf.{tag}", gpu=0, n={"views": len(imgs)}):
-        d = torch.from_numpy(depth).to(m.dev)
+        d = torch.from_numpy(np.ascontiguousarray(depth)).to(m.dev)
         geo.edge_filter(d)
         dn = d.cpu().numpy()
+        in_box_px = []
         for i in range(len(dn)):  # only the spot's neighbourhood goes into the 1 cm grid
             P, (vv, uu) = backproject_img(dn[i], Kout[i], c2ws[i])
             keep = np.zeros(dn[i].shape, bool)
             keep[vv, uu] = in_box(P, sp["box"], .15)
+            if i not in kept:  # dropped by the anchor (occluded / unseen): kept out of the grid
+                keep[:] = False
             dn[i][~keep] = 0
+            in_box_px.append(int(keep.sum()))
         d = torch.from_numpy(dn).to(m.dev)
         col = torch.from_numpy(np.stack([im[..., ::-1] for im in imgs]).astype(np.float32) / 255).to(m.dev)
         pts, rgb, mesh = fuse_local(d, Kout, c2ws, col, FINE_VOXEL, 2)
     t2 = time.perf_counter()
     return {"depth": depth, "depth_box": dn, "conf": conf, "K": Kout, "c2w": c2ws, "pts": pts, "rgb": rgb, "mesh": mesh,
-            "scene": scene_of(mesh), "da3_s": round(t1 - t0, 3), "tsdf_s": round(t2 - t1, 3)}
+            "scene": scene_of(mesh), "da3_s": round(t1 - t0, 3), "anchor_s": round(t_anchor - t_a0, 3), "tsdf_s": round(t2 - t_anchor, 3),
+            "in_box_px": in_box_px, "kept": kept, **extra}
 
 
 def pairwise(fp, box):
-    """Multi-view consistency: each view's in-box depth re-projected into every other view, |dz| there (m)."""
+    """Multi-view consistency: each kept view's in-box depth re-projected into every other kept view, |dz| there (m)."""
     diffs = []
-    n = len(fp["depth_box"])
-    for i in range(n):
+    kept = fp.get("kept", list(range(len(fp["depth_box"]))))
+    n = len(kept)
+    for i in kept:
         P, _ = backproject_img(fp["depth_box"][i], fp["K"][i], fp["c2w"][i])
         P = P[in_box(P, box)]
         if len(P) > 20000:
             P = P[np.random.default_rng(i).choice(len(P), 20000, replace=False)]
-        for j in range(n):
+        for j in kept:
             if i == j or not len(P):
                 continue
             u, v, z = project(P, fp["c2w"][j], fp["K"][j])
@@ -1057,7 +1228,8 @@ def metrics(c, sp, fp, masks, best, R, coarse_box_pts, dist):
     fine_box = fp["pts"][in_box(fp["pts"], sp["box"])]
     raw_n = sum(int(in_box(backproject_img(fp["depth_box"][i], fp["K"][i], fp["c2w"][i])[0], sp["box"]).sum()) for i in range(len(fp["depth"])))
     d = nn(fine_box, coarse_box_pts)
-    out = {"points_in_box": {"coarse_tsdf_3cm": int(len(coarse_box_pts)), "fine_tsdf_1cm": int(len(fine_box)), "fine_raw_da3_pixels": raw_n},
+    out = {"points_in_box": {"coarse_tsdf_3cm": int(len(coarse_box_pts)), "fine_tsdf_1cm": int(len(fine_box)), "fine_raw_da3_pixels": raw_n,
+                             "crop_pixels_in_box_plus_15cm_per_view": fp["in_box_px"]},
            "spacing_m": {"coarse": spacing_m(coarse_box_pts), "fine": spacing_m(fine_box)},
            "pixel_footprint_mm_at_best_view": {"coarse_grid": round(1000 * dist / float(np.median(g["K_np"][:, 0, 0])), 2),
                                                "fine_crop": round(1000 * dist / float(fp["K"][best][0, 0]), 2), "distance_m": round(dist, 3)},
@@ -1083,20 +1255,23 @@ def refine_spot(m, c, sp, clock, lb_call, opts):
     if n < 2:
         rec["verdict"] = {"status": "NEEDS_REVIEW", "reasons": [f"only {n} usable view(s)"]}
         return rec
-    boxes = crop_boxes(c, sp, views)
-    rec["crop_boxes_src_px"] = [list(b) for b in boxes]
+    boxes = {m_: crop_boxes(c, sp, views, m_) for m_ in ("tight", "wide")}
+    rec["crop_boxes_src_px"] = {k: [list(b) for b in v] for k, v in boxes.items()}
     coarse_box_pts = g["pts"][in_box(g["pts"], sp["box"])]
     h = n // 2 if n >= 3 else 1  # the held-out view: from the middle of the selection order, never the best
-    variants = [(DEFAULT_RES, list(range(n)))]
+    P0 = opts.get("method", DEFAULT_METHOD)
+    variants = [(DEFAULT_RES, list(range(n)), DEFAULT_CROP, P0)]
     if opts.get("sweep", True):
-        variants += [(r, list(range(n))) for r in RES if r != DEFAULT_RES]
-        variants += [(DEFAULT_RES, list(range(k))) for k in (3, 5) if k < n]
+        variants += [(DEFAULT_RES, list(range(n)), DEFAULT_CROP, m_) for m_ in METHODS if m_ != P0]
+        variants += [(DEFAULT_RES, list(range(n)), m_, P0) for m_ in ("tight", "wide") if m_ != DEFAULT_CROP]
+        variants += [(r, list(range(n)), DEFAULT_CROP, P0) for r in RES if r != DEFAULT_RES]
+        variants += [(DEFAULT_RES, list(range(k)), DEFAULT_CROP, P0) for k in (3, 5) if k < n]
     rec["variants"] = []
     product = None
-    for vi, (R, sel) in enumerate(variants):
-        tag = f"{sp['id']}.r{R}.v{len(sel)}"
+    for vi, (R, sel, mode, method) in enumerate(variants):
+        tag = f"{sp['id']}.{mode}.{method}.r{R}.v{len(sel)}"
         V = [views[i] for i in sel]
-        B = [boxes[i] for i in sel]
+        B = [boxes[mode][i] for i in sel]
         t_all = time.perf_counter()
         with clock.stage(f"refine.crops.{tag}"):
             imgs, Ks, c2ws = crops_at(c, sp, V, B, R)
@@ -1104,8 +1279,15 @@ def refine_spot(m, c, sp, clock, lb_call, opts):
             priors = [p if p is not None else np.zeros((R, R), bool) for p in priors]
         with clock.stage(f"refine.sam3.{tag}", gpu=0, n={"crops": len(imgs)}, sync=True):
             masks = sam_crops(m, imgs, sp["word"], priors, R)
-        fp = fine_pass(m, c, sp, imgs, Ks, c2ws, R, clock, tag)
+        fp = fine_pass(m, c, sp, imgs, Ks, c2ws, R, clock, tag, own=bool(opts.get("debug")), method=method)
         t_fine = time.perf_counter() - t_all
+        if opts.get("debug") and vi < 2:  # the arrays behind the numbers, for a local look (a few MB per spot, on the volume)
+            import io
+            buf = io.BytesIO()
+            np.savez_compressed(buf, imgs=np.stack(imgs), depth=fp["depth"], conf=fp["conf"], K=Ks, K_da3=fp["K_da3"], c2w=c2ws,
+                                own_c2w=fp.get("own_c2w", np.zeros(0)), spot=sp["pts"], box=np.asarray(sp["box"]),
+                                coarse=coarse_box_pts, masks=np.stack([mk if mk is not None else np.zeros((R, R), bool) for mk in masks]))
+            c.store_raw[f"{sp['id']}-{mode}-r{R}-debug"] = buf.getvalue()
         with clock.stage(f"refine.metrics.{tag}"):
             met = metrics(c, sp, fp, masks, 0, R, coarse_box_pts, V[0]["distance_m"])
         # held-out: the map from the other views predicts the held-out one (DA3's pose alignment needs >= 3 cameras)
@@ -1113,7 +1295,7 @@ def refine_spot(m, c, sp, clock, lb_call, opts):
         t_h = time.perf_counter()
         keep = [i for i in range(len(sel)) if i != hh]
         hold = {"skipped": f"{len(sel)} views: the hold-out would leave {len(keep)} cameras, DA3's Umeyama pose alignment needs >= 3"}
-        fh = fine_pass(m, c, sp, [imgs[i] for i in keep], Ks[keep], c2ws[keep], R, clock, tag + ".holdout") if len(keep) >= 3 else None
+        fh = fine_pass(m, c, sp, [imgs[i] for i in keep], Ks[keep], c2ws[keep], R, clock, tag + ".holdout", method=method) if len(keep) >= 3 else None
         with clock.stage(f"refine.confirm.{tag}"):
             if fh is not None:
                 Kh, ch = Ks[hh], c2ws[hh]
@@ -1136,7 +1318,8 @@ def refine_spot(m, c, sp, clock, lb_call, opts):
                         "outline_iou": {"fine": iou(outline_in(op_f, Kh, ch, R), masks[hh]), "coarse": iou(outline_in(sp["pts"], Kh, ch, R), masks[hh]),
                                         "observed": masks[hh] is not None}}
         t_hold = time.perf_counter() - t_h
-        row = {"res": R, "views": len(sel), "time_s": {"fine_i_iii": round(t_fine, 3), "da3": fp["da3_s"], "tsdf_1cm": fp["tsdf_s"],
+        row = {"res": R, "views": len(sel), "crop": mode, "method": method, "da3_camera_check": fp.get("camera_check"),
+               "anchor": fp.get("anchor"), "pose_refine": fp.get("pose_refine"), "time_s": {"fine_i_iii": round(t_fine, 3), "da3": fp["da3_s"], "anchor_icp": fp["anchor_s"], "tsdf_1cm": fp["tsdf_s"],
                                                         "holdout_check": round(t_hold, 3)},
                "sam3_masks_found": sum(mk is not None for mk in masks), **met, "holdout": hold}
         rec["variants"].append(row)
@@ -1148,7 +1331,7 @@ def refine_spot(m, c, sp, clock, lb_call, opts):
     # VLM on an overlay: the refined object's outline (all views' object points) on the best crop
     t_v = time.perf_counter()
     op = object_points(fp, masks)
-    out_mask = outline_in(op, Ks[0], c2ws[0], R) if len(op) else None
+    out_mask = outline_in(op, fp["K"][0], fp["c2w"][0], R) if len(op) else None  # the fine map's own camera of this crop
     ov = imgs[0].copy()
     cnts, _ = cv2.findContours((out_mask if out_mask is not None else priors[0]).astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     cv2.drawContours(ov, cnts, -1, (0, 0, 255), 2)
@@ -1214,7 +1397,8 @@ def refine_spot(m, c, sp, clock, lb_call, opts):
                              "total_without_sweeps": round(sp["select_s"] + row["time_s"]["fine_i_iii"] + row["time_s"]["holdout_check"] + t_vlm + t_prop, 3)}
     # images for the before/after sheet (best crop, coarse relief, fine relief, LingBot relief)
     Kb, cb = Ks[0], c2ws[0]
-    rec["_tiles"] = (ov, relief(raycast_depth(g["scene"], Kb, cb, R, R), Kb), relief(raycast_depth(fp["scene"], Kb, cb, R, R), Kb), lb_img)
+    rec["_tiles"] = (ov, relief(raycast_depth(g["scene"], Kb, cb, R, R), Kb),
+                     relief(raycast_depth(fp["scene"], fp["K"][0], fp["c2w"][0], R, R), fp["K"][0]), lb_img)
     c.store[f"{sp['id']}-fine"] = fp["pts"]
     c.store[f"{sp['id']}-fine-rgb"] = fp["rgb"]
     c.patched[sp["si"]] = patched
@@ -1331,7 +1515,7 @@ def sheet(rows):
 def analyse(m, clip, mp4, opts, clock):
     import io
     c = coarse(m, mp4, clock)
-    c.store, c.patched = {}, {}
+    c.store, c.patched, c.store_raw = {}, {}, {}
     with clock.stage("refine.spots"):
         spots = find_spots(c, opts.get("spots", 5))
     lb_calls = {}
@@ -1347,7 +1531,7 @@ def analyse(m, clip, mp4, opts, clock):
             lb_calls[sp["id"]] = {"call": LingBot().run.spawn(jpegs), "frames": frames, "stride": stride}
     recs, rows = [], []
     for sp in spots:
-        head = {k: sp[k] for k in ("id", "group", "word", "si", "extent_m", "capped_to_1_5_m", "n_keyframes", "max_score", "mean_conf",
+        head = {k: sp[k] for k in ("id", "group", "word", "si", "extent_m", "capped_to_1_5_m", "n_keyframes", "view_spread_deg", "max_score", "mean_conf",
                                    "holes", "planarity", "triggers")}
         head.update(centre_m=np.round(sp["centre"], 3).tolist(), box_m=[np.round(b, 3).tolist() for b in sp["box"]],
                     coarse_tilt=sp.get("coarse_tilt"))
@@ -1375,6 +1559,9 @@ def analyse(m, clip, mp4, opts, clock):
         _np.savez_compressed(buf, v=_np.asarray(v))
         (base / f"{k}.npz").write_bytes(buf.getvalue())
         paths[k] = f"panoptes-fb-layers:/x4/{opts.get('run', 'run')}/{clip}/{k}.npz"
+    for k, v in c.store_raw.items():
+        (base / f"{k}.npz").write_bytes(v)
+        paths[k] = f"panoptes-fb-layers:/x4/{opts.get('run', 'run')}/{clip}/{k}.npz"
     for si, (p, col) in c.patched.items():
         buf = io.BytesIO()
         _np.savez_compressed(buf, points=p.astype(_np.float32), rgb=col)
@@ -1382,6 +1569,7 @@ def analyse(m, clip, mp4, opts, clock):
         paths[f"shot{si}-patched-map"] = f"panoptes-fb-layers:/x4/{opts.get('run', 'run')}/{clip}/shot{si}-patched-map.npz"
     fra.VOLUMES["/v/layers"].commit()
     cands = [{"id": s["id"], "group": s["group"], "word": s["word"], "n_keyframes": s["n_keyframes"], "rank": round(float(s["rank"]), 3),
+              "view_spread_deg": s["view_spread_deg"],
               "triggers": s["triggers"]} for s in c.candidates]
     return {"coarse": {**c.cuts, "shots_geometry": [{"frames": list(g["frames"]), "keyframes": len(g["pos"]), "metres_per_unit": g["mpu"],
                                                       "floor_plane": g["plane_ok"], "coarse_points": int(len(g["pts"]))} for g in c.G],
@@ -1396,7 +1584,7 @@ def plain(o):
 
 
 @app.local_entrypoint()
-def main(out: str, clips: str = ",".join(CLIPS), spots: int = 5, lingbot: bool = True, sweep: bool = True):
+def main(out: str, clips: str = ",".join(CLIPS), spots: int = 5, lingbot: bool = True, sweep: bool = True, debug: bool = False):
     import shutil
     out = Path(out)
     out.mkdir(parents=True, exist_ok=False)  # never reuse a run folder
@@ -1410,7 +1598,7 @@ def main(out: str, clips: str = ",".join(CLIPS), spots: int = 5, lingbot: bool =
     for clip in clips.split(","):
         mp4 = (PHASE2 / "data/clips" / clip / "source-full.mp4").read_bytes()
         t = time.time()
-        res = r.run.remote(clip, mp4, {"spots": spots, "lingbot": lingbot, "sweep": sweep, "run": out.name})
+        res = r.run.remote(clip, mp4, {"spots": spots, "lingbot": lingbot, "sweep": sweep, "debug": debug, "run": out.name})
         res["client_wall_s"] = round(time.time() - t, 2)
         jpg = res.pop("jpg", None)
         if jpg:
