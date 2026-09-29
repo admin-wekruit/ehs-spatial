@@ -46,10 +46,11 @@ COCO_TO = {"bicycle": "bicycle", "car": "car", "motorcycle": "motorcycle", "truc
            "train": "vehicle", "boat": "boat"}  # person and animals: not boxed (people are tracked apart)
 MIN_BOX_PX, MAX_BOX_SHARE = 24 * 24, .6  # source px: smaller boxes are below the lift's area floor; a box over 60 % of the frame is a scene
 MAX_MASK_SHARE = .4  # a mask over 40 % of the frame is a region (the probe's gridwall-with-slippers mask: 49 %; no dev click changed), not one thing
-# a box mask with more of its pixels on kept SAM 3 masks of that keyframe duplicates one: dropped. r4 dev run 001 (Walmart) at 0.5:
-# 8341 of 10149 boxes dropped and 4 of 42 dev misses opened: the misses lie on SAM 3 masks that never became objects (the lift did
-# not confirm them), so only near-copies go
-CLAIMED_MAX = .9
+# no 'SAM 3 has it' gate (None): the dev misses lie on SAM 3 masks that never became objects. r4 dev run 001 (Walmart), a box mask
+# dropped when > 50 % of it lay on kept SAM 3 masks of its keyframe: 8341 of 10149 dropped, 4 of 42 dev misses opened; run 002 at
+# 90 %: 20 of 42 opened on Walmart, 5 of 40 on Sam's Club, where 22 of the 40 misses had a box mask dropped as a near-copy of
+# SAM 3's (unlifted) masks. A copy of a mask that did become an object joins that object and paints nothing new (fill)
+CLAIMED_MAX = None
 NMS_IOU = .7  # OWLv2 has no NMS: neighbouring patches box the same thing (r4 dev run 001: 81 boxes a keyframe)
 ON_FLOOR_MAX, ON_PEOPLE_MAX = .5, .3  # a box mask mostly on SAM 3's floor (not a flat class) is the floor; on a person, the person
 FLAT = ("mat", "rug", "cable", "hose", "drain", "pallet", "board", "sheet", "tape", "cord")  # classes that lie on the floor and stay
@@ -58,7 +59,7 @@ NAME_MIN = {"yoloe": .3, "yolo11": .3, "yolo26": .3, "owlv2": .2, "yoloepf": .3}
 # 0.1 OWLv2's masks lie under 52 of 96 missed clicks and 9 of 117 background clicks, at 0.15 under 45 and 4
 SCORE = {"yoloe": .15, "yolo11": .25, "yolo26": .25, "owlv2": .1, "yoloepf": .15}
 RULE = ("OWLv2 objectness >= 0.1 (dev clicks of rounds 2 and 3, seeds 2 and 61), boxes >= 24 x 24 px and <= 60 % of the frame; NMS at IoU 0.7, a SAM 3 "
-        "tracker mask per box, kept when <= 40 % of the frame, <= 90 % of it on kept SAM 3 masks of its keyframe, <= 50 % on SAM 3's "
+        "tracker mask per box, kept when <= 40 % of the frame (on SAM 3's own masks too: those never lifted are the misses), <= 50 % on SAM 3's "
         "floor (flat classes excepted) and <= 30 % on people; it joins densify's pool (joins an object: pick pixels only, no points; "
         "else lifted, >= 2 keyframes); on the pick maps it fills only pixels no entity holds; its word only at class score >= 0.2")
 
@@ -86,7 +87,7 @@ def keep_mask(area, claimed, on_floor, on_people, word, frame_px=None):
         return False, "empty"
     if frame_px and area > MAX_MASK_SHARE * frame_px:
         return False, "a region"
-    if claimed > CLAIMED_MAX * area:
+    if CLAIMED_MAX is not None and claimed > CLAIMED_MAX * area:
         return False, "sam3 has it"
     if on_people > ON_PEOPLE_MAX * area:
         return False, "on a person"
@@ -249,10 +250,10 @@ class Owl:
         return out
 
 
-def fill_maps(maps, box, ent, qs):
+def fill_maps(maps, box, ent, qs, dev=None):
     """maps: [(entry, label map, sx, sy, keyframe)], replaced in place; box: {pool index: (source, word, packed map-grid mask)};
     ent: object index + 1 per pool mask (0 = none); qs: keyframe per pool mask. Each box mask of an object fills its keyframe's
-    free pixels with that object (fill). -> pixels filled."""
+    free pixels with that object (fill; on `dev` with segment.paint, the same rule). -> pixels filled."""
     by_q = {}
     for g, (_, _, up) in box.items():
         if ent[g]:
@@ -260,11 +261,19 @@ def fill_maps(maps, box, ent, qs):
     n = 0
     for i, e in enumerate(maps):
         got = by_q.get(e[4])
-        if got:
-            ms = np.unpackbits(np.stack([u for u, _ in got]), axis=2).astype(bool)
-            lab = fill(e[1], ms, [k for _, k in got])
-            n += int((lab != e[1]).sum())
-            maps[i] = (e[0], lab, *e[2:])
+        if not got:
+            continue
+        if dev is None:
+            lab = fill(e[1], np.unpackbits(np.stack([u for u, _ in got]), axis=2).astype(bool), [k for _, k in got])
+        else:
+            import torch
+            from fast_report import segment
+            top = segment.paint(segment.unpack(np.stack([u for u, _ in got]), dev))  # 0 = none, k + 1 = the smallest mask there
+            ids = torch.tensor([0] + [k for _, k in got], device=dev)[top]
+            old = torch.from_numpy(e[1]).to(dev)
+            lab = torch.where(old == 0, ids.to(old.dtype), old).cpu().numpy()
+        n += int((lab != e[1]).sum())
+        maps[i] = (e[0], lab, *e[2:])
     return n
 
 
@@ -280,7 +289,7 @@ def self_check():
     hw = (720, 1280)
     assert keep_box([0, 0, 100, 100], hw, "box") and not keep_box([0, 0, 10, 10], hw, "box") and not keep_box([0, 0, 1280, 720], hw, "box")
     assert not keep_box([0, 0, 100, 100], hw, None)
-    assert keep_mask(100, 40, 0, 0, "box") == (True, "kept") and keep_mask(100, 95, 0, 0, "box")[1] == "sam3 has it"
+    assert keep_mask(100, 40, 0, 0, "box") == (True, "kept") and keep_mask(100, 100, 0, 0, "box") == (True, "kept")  # no 'SAM 3 has it' gate
     assert keep_mask(100, 0, 80, 0, "box")[1] == "floor" and keep_mask(100, 0, 80, 0, "extension cord") == (True, "kept")
     assert keep_mask(100, 0, 0, 40, "bag")[1] == "on a person" and keep_mask(450, 0, 0, 0, "bag", frame_px=1000)[1] == "a region"
     lab = np.zeros((6, 8), np.int16)

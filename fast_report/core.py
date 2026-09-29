@@ -1643,7 +1643,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                 lut = np.r_[0, ent[gidx]].astype(np.int16)
                 maps_v2.append(({"timeSec": round(keys[q] / fps, 4), "sourceFrame": int(keys[q]), "source": "segmented"}, lut[lab], W / (W // 2),
                                 H / (H // 2), q))
-            filled = coverage.fill_maps(maps_v2, dens["box"], ent, qs) if dens["box"] else 0
+            filled = coverage.fill_maps(maps_v2, dens["box"], ent, qs, dev_geo) if dens["box"] else 0
         st.update(joined=int((ent[:] > 0).sum() - sum(new_o["masks"] for new_o in new_objs)), new_objects=len(new_objs),
                   objects_gaining_views=len(added))
         if cov_on:
