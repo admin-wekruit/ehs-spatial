@@ -1004,7 +1004,6 @@ def analyse(m, mp4, opts, clock, writer, log):
         as numbered white-over-black marks, the subject [1]; EHS-relevant classes only (ponytail: the rest wait for B's queue)."""
         try:
             from fast_report import judge
-            som = judge.som
         except ImportError:
             return
         outl = {f["sourceFrame"]: f for f in (results.get("outlines") or {}).get("frames", []) if f["source"] == "segmented"}
@@ -1034,8 +1033,10 @@ def analyse(m, mp4, opts, clock, writer, log):
             opts = cards.identity_options(c["identity"])
             # integration fix: the options go into the prompt as letters (vlm.qwen_prompt); A's bare question listed none
             p = vlm.qwen_prompt(" ".join([judge.SCENE, judge.MARKS]), "What is the object marked [1]?", opts)
-            # 336 px crops: ~144 image tokens each instead of 256 (the identity pass is prefill-bound: Sam's Club 413 questions, 87 s)
-            return opts, [som(frames[best], marks, subject=1, side=336), som(frames[best], marks, subject=1, marks=False, side=336)], p
+            # 336 px crops: ~144 image tokens each instead of 256 (the identity pass is prefill-bound: Sam's Club 413 questions, 87 s);
+            # rendered in the process pool (mvp2: GIL-bound in threads beside the rest of the run)
+            crop, local = judge.som_crop(frames[best], marks)
+            return opts, m.proc_pool.submit(judge.som_pair, np.ascontiguousarray(crop), local, 1, 336), p
         ehs = lambda c: c["class"]["category"] != "other" or cards.head_match(c["identity"]["name"], cards.CLASS_SIZE) is not None  # noqa: E731
         # integration: every object seen on >= 3 views is asked (spec 5.3's 'identity for the other objects', after the
         # judgement questions): the SAM 3 word alone named a floor drain 'metal part' and a flammables cabinet 'machine'
@@ -1043,7 +1044,13 @@ def analyse(m, mp4, opts, clock, writer, log):
         with clock.stage(f"vlm.identity.{which}", n={"objects": len(todo)}):
             with ThreadPoolExecutor(8) as pool:  # never the core's cpu_pool: its threads would wait on vLLM (the judge's queue)
                 built = list(pool.map(build, todo))
-            asked = [(c, b[0], vlm.submit(b[1], b[2], len(b[0]), "identity" if ehs(c) else "identity_other")) for c, b in zip(todo, built) if b is not None]
+            asked = []
+            for c, b in zip(todo, built):
+                try:
+                    if b is not None:
+                        asked.append((c, b[0], vlm.submit(list(b[1].result()), b[2], len(b[0]), "identity" if ehs(c) else "identity_other")))
+                except Exception:  # noqa: BLE001  a crop that cannot be drawn leaves that card's detected word
+                    pass
             for c, opts, fut in asked:
                 try:
                     c["identity"] = cards.decide_identity(c["identity"], opts, fut.result(), cal)
