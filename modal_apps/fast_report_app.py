@@ -82,10 +82,8 @@ def setup():
     return out
 
 
-try:  # D's and C's modules once merged; the stand-ins until then
-    from fast_report.instrument import Clock, Vram  # noqa: F401
-except ImportError:
-    from fast_report.stubs import Clock, Vram
+# x7: fb/a-core's stand-ins, as its runs 008-011 used them (D's instrument.Vram takes other arguments; fb/integrate owns that)
+from fast_report.stubs import Clock, Vram  # noqa: E402
 try:
     from fast_report.layers import Writer, mirror  # noqa: F401
 except ImportError:
@@ -230,6 +228,10 @@ class FastReport:
                "main_process_torch_reserved_peak_gb": [round(torch.cuda.max_memory_reserved(d) / 1e9, 2) for d in (self.dev_geo, self.dev_seg)],
                "analysis_wall_s": round(seconds, 3),
                "usd_estimate": round(seconds * (2 * PRICE["A100-80GB"] + CPU * PRICE["cpu_core"] + MEMORY_GIB * PRICE["gib"]), 4)}
+        if options.get("dump") and self.last is not None:  # x7: the in-process hand-off to a volume, after the clock stopped
+            t = time.time()
+            run["x7_fixture"] = dump_last(self.last, Path("/v/layers/x7") / options["dump"], report_id)
+            run["x7_fixture"]["dump_s"] = round(time.time() - t, 2)
         path = Path("/v/layers/reports") / report_id / "run.json"
         path.write_text(json.dumps(run, indent=1, default=plain))
         VOLUMES["/v/layers"].commit()
@@ -240,6 +242,40 @@ class FastReport:
 
 def plain(o):
     return o.item() if hasattr(o, "item") else str(o)
+
+
+def dump_last(last, folder, report_id):
+    """x7 fixture: the core's hand-off (m.last) as it was in GPU memory -> folder/fixture.npz + fixture.json. Per object the
+    union of its SAM 3 logits on every object keyframe it was seen on (sam3d.py's masks_lr); RGB only of those keyframes
+    (BGR, as decoded)."""
+    import torch
+    folder.mkdir(parents=True, exist_ok=True)
+    keys, arrays, objs = last["keys"], {}, []
+    for oi, o in enumerate(last["objs"]):
+        frames = sorted(int(keys[q]) for q, objs_q in last["by_frame"].items() if oi in objs_q)
+        pos = {int(keys[q]): q for q in last["by_frame"]}
+        arrays[f"o{oi}_frames"] = np.array(frames, np.int32)
+        arrays[f"o{oi}_logits"] = torch.stack([last["logits"][torch.tensor(last["by_frame"][pos[f]][oi], device=last["logits"].device)].amax(0)
+                                               for f in frames]).half().cpu().numpy()
+        objs.append({k: v for k, v in o.items() if k != "mask_logits_lr"})
+    shots = []
+    for s in last["shots"]:
+        i = s["index"]
+        arrays.update({f"s{i}_keys": np.array(s["keys"], np.int32), f"s{i}_depth": s["depth_m"].float().cpu().numpy(),
+                       f"s{i}_c2w": s["c2w_m"].double().cpu().numpy(), f"s{i}_K": s["K"].float().cpu().numpy(),
+                       f"s{i}_person": s["person"].cpu().numpy()})
+        plane = s["plane"]
+        shots.append({"index": i, "frames": list(s["frames"]), "mpu": s["mpu"], "scale_status": s["scale_status"],
+                      "plane": None if plane is None else {"normal": plane["normal"].tolist(), "point_m": (plane["point"] * s["mpu"]).tolist(),
+                                                           **{k: v for k, v in plane.items() if k not in ("normal", "point")}}})
+    used = sorted({int(f) for oi in range(len(objs)) for f in arrays[f"o{oi}_frames"]})
+    arrays["frame_ids"] = np.array(used, np.int32)
+    arrays["frames"] = np.stack([last["frames"][f] for f in used]) if used else np.zeros((0, 720, 1280, 3), np.uint8)
+    np.savez(folder / "fixture.npz", **arrays)
+    meta = {"report": report_id, "n_frames": len(last["frames"]), "fps": last["fps"], "wh": list(last["frames"][0].shape[1::-1]),
+            "shots": shots, "objects": objs, "frames_note": "RGB of object keyframes only, BGR as decoded"}
+    (folder / "fixture.json").write_text(json.dumps(meta, default=plain))
+    return {"folder": str(folder), "objects": len(objs), "object_keyframes": len(used), "bytes": (folder / "fixture.npz").stat().st_size}
 
 
 # ---------- local ----------
@@ -267,6 +303,43 @@ def cut(video, start, end, out_path, max_width=1280):
     cap.release(), writer.release()
     assert written == count, (written, count)
     return {"first_frame": first, "frames": written, "fps": fps, "size": size}
+
+
+@app.local_entrypoint()
+def x7_fixtures(clips: str, out: str, dump: str):
+    """x7: one boot, each clip's source-full.mp4 as it is (== fb/a-core's cut, same sha256), the core's hand-off dumped to
+    /v/layers/x7/<dump>/<clip>. Mirrors patch JSON and blobs under 5 MB only (disk)."""
+    import hashlib
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=False)
+    fr = FastReport()
+    submitted = time.time()
+    boot = fr.boot_info.remote()
+    boot.update(client_submitted_unix=submitted, submit_to_ready_s_two_clocks=round(boot["ready_unix"] - submitted, 1))
+    (out / "boot.json").write_text(json.dumps(boot, indent=1, default=plain))
+    rows = []
+    for name in clips.split(","):
+        spec = json.loads((PHASE2 / "data/clips" / name / "clip.json").read_text())["source"]
+        mp4 = (PHASE2 / "data/clips" / name / "source-full.mp4").read_bytes()
+        digest = hashlib.sha256(mp4).hexdigest()
+        report_id = f"x7-{name}-{digest[:8]}-{int(time.time())}"
+        options = {"cache": True, "site_vocab": False, "window_s": [spec["start_s"], spec["end_s"]], "client_has": [digest], "dump": f"{dump}/{name}"}
+        called, run = time.time(), None
+        for e in fr.run.remote_gen(mp4, name.split("-")[0], report_id, options):
+            if e["type"] == "patch":
+                e = {**e, "blobs": {h: raw for h, raw in e["blobs"].items() if len(raw) < 5e6}}
+                mirror(e, out)
+            elif e["type"] == "run":
+                run = e["run"]
+        (out / report_id / "run.json").write_text(json.dumps(run, indent=1, default=plain))
+        rows.append({"clip": name, "report": report_id, "error": run["error"], "wall_s": round(time.time() - called, 1),
+                     "layers": {f"{r['layer']}.v{r['version']}": r["written_s"] for r in run["layers"]}, "flags": run["flags"],
+                     "gpu_peak_gb": [g["peak_gb"] for g in run["gpu_peak"]], "fixture": run.get("x7_fixture"),
+                     "objects": (run["summary"] or {}).get("objects"), "usd_estimate": run["usd_estimate"]})
+        print(json.dumps(rows[-1], default=plain)[:2000], flush=True)
+        if run["error"]:
+            print(run["error"][-3000:], flush=True)
+    (out / "summary.json").write_text(json.dumps({"boot": boot, "runs": rows}, indent=1, default=plain))
 
 
 @app.local_entrypoint()

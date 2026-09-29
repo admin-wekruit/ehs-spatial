@@ -109,14 +109,16 @@ def log_tail(path, lines=30):
 
 class Pool:
     """Persistent worker processes behind one priority queue: submit(message, priority tuple) -> Future. Each process sends
-    its boot record first (ready()). A process that dies fails its job; when none is left, every queued job fails."""
+    its boot record first (ready()). A process that dies fails its job; when none is left, every queued job fails.
+    `env` may be a list, one per process (x7: one queue over processes on both GPUs)."""
 
     def __init__(self, argv, n, env, name):
         self.jobs, self.order, self.name, self.live = queue.PriorityQueue(), itertools.count(), name, n
         self.boot, self.procs, self.logs, self.lock = [Future() for _ in range(n)], [], [], threading.Lock()
         for i in range(n):
             self.logs.append(f"/tmp/fb-{name}-{i}.log")
-            self.procs.append(subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=open(self.logs[i], "wb"), env=env, cwd=str(ROOT)))
+            self.procs.append(subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=open(self.logs[i], "wb"),
+                                               env=env[i] if isinstance(env, list) else env, cwd=str(ROOT)))
             threading.Thread(target=self._serve, args=(i,), daemon=True).start()
 
     def _serve(self, i):
@@ -138,6 +140,8 @@ class Pool:
                 if isinstance(reply, dict) and "error" in reply:
                     future.set_exception(RuntimeError(f"{self.name}-{i}: {reply['error']}"))
                 else:
+                    if isinstance(reply, dict):
+                        reply.setdefault("worker", i)  # x7: which process (so which GPU) served it
                     future.set_result(reply)
         except Exception as error:
             if not self.boot[i].done():

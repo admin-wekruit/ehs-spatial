@@ -679,8 +679,9 @@ def analyse(m, mp4, opts, clock, writer, log):
     # hand-off for the SAM 3D / splat builders (in process, GPU tensors): Shot and Obj as FAST-BUILD-SPEC section 12
     m.last = {"shots": [{"index": si, "frames": shots[si], "keys": [keys[q] for q in gg["pos"]], "depth_m": gg["depth_m"], "K": gg["K"],
                          "c2w_m": gg["c2w_m"], "colors": shots_gpu[si]["colors"], "person": dyn[torch.tensor(gg["pos"], device=dev_geo)],
-                         "mpu": gg["mpu"], "scale_status": "estimated"} for si, gg in enumerate(geo)],
-              "objs": [{**o, "mask_logits_lr": voc["logits"][obj_masks_on[i][1]]} for i, o in enumerate(objects)], "frames": frames}
+                         "mpu": gg["mpu"], "plane": gg["plane"], "scale_status": "estimated"} for si, gg in enumerate(geo)],
+              "objs": [{**o, "mask_logits_lr": voc["logits"][obj_masks_on[i][1]]} for i, o in enumerate(objects)], "frames": frames,
+              "fps": fps, "keys": keys, "by_frame": by_frame, "logits": voc["logits"] if voc is not None else None}  # x7: every mask, off the clock
     outlines_future.result()
     ev = vocab_future.result()
     if esc is not None:
