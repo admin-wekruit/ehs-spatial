@@ -45,16 +45,20 @@ COCO_TO = {"bicycle": "bicycle", "car": "car", "motorcycle": "motorcycle", "truc
            "surfboard": "board", "skis": "skis", "snowboard": "board", "tennis racket": "racket", "airplane": "toy", "bus": "vehicle",
            "train": "vehicle", "boat": "boat"}  # person and animals: not boxed (people are tracked apart)
 MIN_BOX_PX, MAX_BOX_SHARE = 24 * 24, .6  # source px: smaller boxes are below the lift's area floor; a box over 60 % of the frame is a scene
-MAX_MASK_SHARE = .25  # a mask over a quarter of the frame is a region (the probe's gridwall-with-slippers mask: 49 %), not one thing
-CLAIMED_MAX = .5   # a box mask with more of its pixels on kept SAM 3 masks of that keyframe is SAM 3's thing: dropped, its word a vote
+MAX_MASK_SHARE = .4  # a mask over 40 % of the frame is a region (the probe's gridwall-with-slippers mask: 49 %; no dev click changed), not one thing
+# a box mask with more of its pixels on kept SAM 3 masks of that keyframe duplicates one: dropped. r4 dev run 001 (Walmart) at 0.5:
+# 8341 of 10149 boxes dropped and 4 of 42 dev misses opened: the misses lie on SAM 3 masks that never became objects (the lift did
+# not confirm them), so only near-copies go
+CLAIMED_MAX = .9
+NMS_IOU = .7  # OWLv2 has no NMS: neighbouring patches box the same thing (r4 dev run 001: 81 boxes a keyframe)
 ON_FLOOR_MAX, ON_PEOPLE_MAX = .5, .3  # a box mask mostly on SAM 3's floor (not a flat class) is the floor; on a person, the person
 FLAT = ("mat", "rug", "cable", "hose", "drain", "pallet", "board", "sheet", "tape", "cord")  # classes that lie on the floor and stay
 NAME_MIN = {"yoloe": .3, "yolo11": .3, "yolo26": .3, "owlv2": .2, "yoloepf": .3}  # a word below this is no word: 'unidentified object'
 # box floor per source (objectness for OWLv2): set on the dev clicks of rounds 2 and 3 (seeds 2 and 61, runs/r4-coverage-probe-002): at
 # 0.1 OWLv2's masks lie under 52 of 96 missed clicks and 9 of 117 background clicks, at 0.15 under 45 and 4
 SCORE = {"yoloe": .15, "yolo11": .25, "yolo26": .25, "owlv2": .1, "yoloepf": .15}
-RULE = ("OWLv2 objectness >= 0.1 (dev clicks of rounds 2 and 3, seeds 2 and 61), boxes >= 24 x 24 px and <= 60 % of the frame; a SAM 3 "
-        "tracker mask per box, kept when <= 25 % of the frame, <= 50 % of it on kept SAM 3 masks of its keyframe, <= 50 % on SAM 3's "
+RULE = ("OWLv2 objectness >= 0.1 (dev clicks of rounds 2 and 3, seeds 2 and 61), boxes >= 24 x 24 px and <= 60 % of the frame; NMS at IoU 0.7, a SAM 3 "
+        "tracker mask per box, kept when <= 40 % of the frame, <= 90 % of it on kept SAM 3 masks of its keyframe, <= 50 % on SAM 3's "
         "floor (flat classes excepted) and <= 30 % on people; it joins densify's pool (joins an object: pick pixels only, no points; "
         "else lifted, >= 2 keyframes); on the pick maps it fills only pixels no entity holds; its word only at class score >= 0.2")
 
@@ -180,8 +184,11 @@ class Detector:
             import torch
             out = []
             rgb = torch.from_numpy(np.ascontiguousarray(np.stack(frames)[..., ::-1])).to(self.dev)
+            from torchvision.ops import nms
             for xyxy, obj, word, s in self.owl.detect(rgb, self.q):
-                k = obj >= floor
+                k = torch.zeros_like(obj, dtype=torch.bool)
+                k[nms(xyxy, obj, NMS_IOU)] = True
+                k &= obj >= floor
                 out.append((xyxy[k].cpu().numpy(), obj[k].cpu().numpy(), [TAXO[i] if v >= NAME_MIN["owlv2"] else None
                                                                           for i, v in zip(word[k].tolist(), s[k].tolist())]))
             return out
@@ -273,9 +280,9 @@ def self_check():
     hw = (720, 1280)
     assert keep_box([0, 0, 100, 100], hw, "box") and not keep_box([0, 0, 10, 10], hw, "box") and not keep_box([0, 0, 1280, 720], hw, "box")
     assert not keep_box([0, 0, 100, 100], hw, None)
-    assert keep_mask(100, 40, 0, 0, "box") == (True, "kept") and keep_mask(100, 60, 0, 0, "box")[1] == "sam3 has it"
+    assert keep_mask(100, 40, 0, 0, "box") == (True, "kept") and keep_mask(100, 95, 0, 0, "box")[1] == "sam3 has it"
     assert keep_mask(100, 0, 80, 0, "box")[1] == "floor" and keep_mask(100, 0, 80, 0, "extension cord") == (True, "kept")
-    assert keep_mask(100, 0, 0, 40, "bag")[1] == "on a person" and keep_mask(300, 0, 0, 0, "bag", frame_px=1000)[1] == "a region"
+    assert keep_mask(100, 0, 0, 40, "bag")[1] == "on a person" and keep_mask(450, 0, 0, 0, "bag", frame_px=1000)[1] == "a region"
     lab = np.zeros((6, 8), np.int16)
     lab[:, :2] = 7  # an existing entity
     big, small = np.zeros((6, 8), bool), np.zeros((6, 8), bool)

@@ -326,6 +326,7 @@ def bench(a):
                 fl.put_blob(mirror_root, mp4)  # the client's own MP4 is never sent back
                 options = {"vocab": a.vocab, "discover": a.discover, "client_has": [sha], "background_s": a.background_s if last else 0, "window_s": span,
                            "coverage": a.coverage and kind != "warm-off", "judge_vlm": a.hazard != "off",
+                           "coverage_debug": json.loads(a.coverage_debug.read_text()).get(site, []) if a.coverage_debug else [],
                            "eval_holdout": [f - offset for f in ev.holdout_frames(site) if f - offset >= 0], **({"namer": namer_q} if relay else {})}
                 if queues is not None:
                     hazard.workspace_container()  # awake before the call (the report service is up in production): off the analysis clock
@@ -459,6 +460,7 @@ if __name__ == "__main__":
     p.add_argument("--hazard", default="gemini", choices=("qwen", "gemini", "off"),
                    help="the hazard judge's decider (gemini: relayed by this CLI; off: no hazard VLM question at all, r4)")
     p.add_argument("--coverage", action="store_true", help="r4/coverage: detector boxes -> SAM 3 tracker masks in densify ('warm-off' calls leave it off)")
+    p.add_argument("--coverage-debug", type=Path, help="r4 dev: {site: [{id, frame, x, y}]} points whose box masks' fates the run records")
     p.add_argument("--namer", default="gemini", choices=("gemini", "none"), help="mvp2/identity: object names from Gemini through the relay, or the Qwen decider only")
     p.add_argument("--discover", action="store_true", help="X10's catch-all and label words in SAM 3's wave 1 (vlm.DISCOVER)")
     p.add_argument("--serve", action="store_true")
