@@ -21,7 +21,8 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
 DESIGNS = ("sam3-generic", "amg", "amg16", "vlm-ground")  # + ':part' on any of them: a proposal >= PART_INSIDE inside one
-# vocabulary mask is a part of a known object, not new (default: only IoU >= 0.5 counts as found)
+# vocabulary mask is a part of a known object, not new (default: only IoU >= 0.5 counts as found); + ':vlm': no SigLIP
+# zero-shot name for a new cluster (the cache and the VLM name it)
 GENERIC_WORDS = ["object", "item", "equipment", "tool", "container", "cable", "wire", "debris"]  # the task's catch-alls
 STUFF_WORDS = ["floor", "wall", "ceiling"]  # SigLIP zero-shot: a sure one of these is not an object
 STUFF_SAM3 = ["wall", "ceiling", "subtitle"]  # SAM 3 masks of surfaces (+ the core's floor) and burned-in captions (run 001)
@@ -411,7 +412,7 @@ def run_design(m, S, P, design, clock, cache, eval_data=None):
     t_design = clock.now()
     dev = m.dev_geo
     H, W = P["H"], P["W"]
-    source, _, variant = design.partition(":")
+    source, *variants = design.split(":")
     if source in P["cache"]:  # a variant of a source already run: the same proposals, their time counted again below
         p, rec, prop_s = P["cache"][source]
         rec = {**rec, "proposals_reused_s": prop_s}
@@ -489,7 +490,7 @@ def run_design(m, S, P, design, clock, cache, eval_data=None):
         t_round = clock.now()
         with torch.inference_mode(), clock.stage(f"discover.{design}.cover", gpu=dev):
             best, ins = (t.cpu().numpy() for t in iou_found(p["frame"], p["mask"], vocab["frame"], vocab["mask"], inside=True))
-        found = (best >= FOUND_IOU) | ((ins >= PART_INSIDE) if variant == "part" else False)
+        found = (best >= FOUND_IOU) | ((ins >= PART_INSIDE) if "part" in variants else False)
         new = [ci for ci, c in enumerate(clusters) if (~found[c["members"]]).mean() >= NEW_SHARE]
         todo = [ci for ci in new if ci not in names]
         row = {"round": r, "new_clusters": len(new), "to_name": len(todo), "covered_since_last": None}
@@ -508,6 +509,8 @@ def run_design(m, S, P, design, clock, cache, eval_data=None):
                 sub = [todo[i] for i in keep_i]
                 pw = probs[keep_i][:, :len(words)]
                 pw = pw / np.maximum(pw.sum(1, keepdims=True), 1e-9)  # over the words alone, the stuff words taken out
+                if "vlm" in variants:  # run 002: zero-shot over the words named slippers 'spill' (the detector had not fired on them)
+                    pw = np.zeros_like(pw)
                 recs, unsure = cascade.decide(obj_emb[sub], pw, words, [None] * len(sub), cache, S["video_sha"], tau,
                                               lambda w: segment.is_generic(w, words), use_cache=cache is not None) if sub else ([], [])
                 for i, rc in zip(sub, recs):
