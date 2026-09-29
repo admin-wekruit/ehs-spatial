@@ -814,6 +814,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                                  "K": gg["K"].cpu().numpy().astype(float), "normal": normal, "point_m": point, "mpu": gg["mpu"],
                                  "u_floor_m": cam_rows[si]["floor"].get("u_floor_m"), "scale_status": cam_rows[si]["scale_status"],
                                  "sharp": np.array([sharp_all[k_] for k_ in gg["keys"]]), "plumb_deg": cards.plumb(*gg["mesh_vf"], normal),
+                                 "plumb_walls_deg": cards.plumb_walls(*gg["mesh_vf"], normal),
                                  "depth": gg["depth_m"].cpu().numpy(), "person": gg["person"].cpu().numpy()})
         pick_ready.wait(120)
         with clock.stage("cards.v1", n={"objects": len(objects)}):

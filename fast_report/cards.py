@@ -293,6 +293,40 @@ def plumb(vertices, faces, up):
     return float(tilt[o][np.searchsorted(cw, cw[-1] / 2)])
 
 
+def plumb_walls(vertices, faces, up, bin_deg=10.):
+    """A wall-level plumb reading: near-vertical triangles binned by the azimuth of their normal, the area-weighted mean
+    normal per bin (marching-cubes staircase facets average out), its tilt from vertical; the area-weighted median over
+    bins. -> degrees or None. Recorded beside plumb() (the spec's per-triangle median)."""
+    v = np.asarray(vertices, np.float64)
+    f = np.asarray(faces, np.int64)
+    if not len(f):
+        return None
+    up = np.asarray(up, float) / np.linalg.norm(up)
+    n = np.cross(v[f[:, 1]] - v[f[:, 0]], v[f[:, 2]] - v[f[:, 0]])
+    area = np.linalg.norm(n, axis=1)
+    ok = area > 1e-12
+    n, area = n[ok] / area[ok, None], area[ok]
+    s = n @ up
+    near = np.abs(s) <= np.sin(np.radians(NEAR_VERTICAL_DEG))
+    if not near.any():
+        return None
+    n, area, s = n[near], area[near], s[near]
+    a = np.cross(up, [1., 0, 0] if abs(up[0]) < .9 else [0, 1., 0])
+    a /= np.linalg.norm(a)
+    b = np.cross(up, a)
+    az = np.degrees(np.arctan2(n @ b, n @ a)) % 360
+    k = (az // bin_deg).astype(int)
+    tilts, weights = [], []
+    for i in np.unique(k):
+        m = k == i
+        mean = (n[m] * area[m, None]).sum(0)
+        tilts.append(np.degrees(np.arcsin(min(1., abs(mean @ up) / max(np.linalg.norm(mean), 1e-12)))))
+        weights.append(area[m].sum())
+    o = np.argsort(tilts)
+    cw = np.cumsum(np.asarray(weights)[o])
+    return float(np.asarray(tilts)[o][np.searchsorted(cw, cw[-1] / 2)])
+
+
 def azimuth_spread(az):
     """Smallest arc (deg) containing every azimuth."""
     if len(az) < 2:
@@ -527,6 +561,7 @@ def build(inp, pool=None, chunks=12, shm_dir=None):
                                                "z": np.round(s["frame"]["R"][2], 5).tolist()},
                   "u_pose_m": round(s["u_pose_m"], 3), "view_centroid_spread_m": s["view_centroid_spread_m"], "u_floor_m": s.get("u_floor_m"),
                   "plumb_deg": None if s.get("plumb_deg") is None else round(s["plumb_deg"], 2), "angles_usable": s["angles_usable"],
+                  "plumb_walls_deg": None if s.get("plumb_walls_deg") is None else round(s["plumb_walls_deg"], 2),
                   "scale": {"status": s.get("scale_status", "estimated"), "source": "floor plane (SAM 3 'floor') + assumed camera height 1.6 m",
                             "u_rel": SCALE_REL}}
                  for si, s in shots.items()]
@@ -1049,6 +1084,22 @@ def summarize(cards):
         rel[name] = {"n": len(r), "median_u_over_value": round(float(np.median(r)), 3) if r else None}
     out["relative_u"] = rel
     out["contract_broken_fields"] = sum(t.get("broken", 0) for t in out["fields"].values())
+    # L1 acceptance: shown (plausible) boxes of non-large classes (class range max <= 3.5 m; 'any other word' counts as
+    # non-large: its 6 m bound is a catch-all) with a longest side over 3 m
+    shown = [c["physical"] for c in objs if "box" in c["physical"] and c["physical"]["size_check"].get("status") != "implausible"]
+    small = [p for p in shown if p["size_check"].get("class") == "any other word" or p["size_check"].get("class_range_m", [0, 99])[1] <= 3.5]
+    longest = lambda ps: [max(p["box"]["size_m"]) for p in ps]  # noqa: E731
+    out["boxes"] = {"shown": len(shown), "shown_over_3m": int(sum(x > 3 for x in longest(shown))), "non_large": len(small),
+                    "non_large_over_3m": int(sum(x > 3 for x in longest(small))),
+                    "non_large_over_3m_share": round(float(np.mean([x > 3 for x in longest(small)])), 4) if small else None,
+                    "longest_p90_m": round(float(np.percentile(longest(shown), 90)), 3) if shown else None,
+                    "longest_max_m": round(float(max(longest(shown))), 3) if shown else None}
+    out["primitives"] = {"tried": sum("primitive" in c["physical"] for c in objs),
+                         "accepted": sum(bool(c["physical"].get("primitive", {}).get("accepted")) for c in objs)}
+    out["mobility"] = {}
+    for c in objs:
+        mb = c["class"].get("mobility")
+        out["mobility"][mb] = out["mobility"].get(mb, 0) + 1
     return out
 
 
@@ -1194,6 +1245,15 @@ def self_check():
     # plumb of a vertical wall with a 1 deg lean
     v = np.array([[0, 0, 0], [1, 0, 0], [0, np.sin(np.radians(1)), 1.]], float)
     assert abs(plumb(v, [[0, 1, 2]], [0, 0, 1.]) - 1.) < 1e-3
+    # a plumb wall as a staircase of facets tilted +-10 deg: facets read 10 deg, the wall-level mean reads 0
+    st = []
+    for i, t in enumerate((10, -10) * 4):
+        z0 = i * .1
+        dy = np.tan(np.radians(t)) * .1
+        st.append([[0, 0, z0], [1, 0, z0], [0, dy, z0 + .1]])
+    st = np.array(st, float).reshape(-1, 3)
+    fs = np.arange(len(st)).reshape(-1, 3)
+    assert abs(plumb(st, fs, [0, 0, 1.]) - 10) < .5 and plumb_walls(st, fs, [0, 0, 1.]) < .5
     # the floor frame: z up, x the first camera's forward on the floor
     fr = floor_frame(cams[0], [0, -1., 0], [0, 1.6, 3])
     assert np.allclose(fr["R"][2], [0, -1, 0]) and np.allclose(fr["R"][0], [0, 0, 1]) and np.allclose(fr["origin"], [0, 1.6, 0])
