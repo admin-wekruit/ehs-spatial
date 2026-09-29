@@ -28,9 +28,9 @@ TYPE_KIND = {
     "cylinder": ("drum", "bucket", "trash can", "bottle", "can", "fire extinguisher", "column", "bollard", "safety cone", "pipe", "duct",
                  "cup", "pole", "barrel", "tank", "cylinder", "roll", "paper towel roll", "toilet paper roll"),
     "plane": ("door", "window", "wall panel", "whiteboard", "sign", "safety sign", "exit sign", "label", "wooden board", "metal sheet", "monitor",
-              "curtain", "clipboard", "paper", "floor marking", "fence", "barrier", "mat", "panel", "board", "partition", "screen"),
+              "curtain", "clipboard", "paper", "floor marking", "fence", "barrier", "mat", "board", "partition"),  # not 'panel': a control panel is a box
     "open frame": ("shelf", "rack", "display rack", "ladder", "cart", "hand truck", "step stool", "work platform", "stairs", "table", "desk",
-                   "workbench", "chair", "stool", "railing", "cable tray", "tool holder", "pallet jack"),
+                   "workbench", "chair", "stool", "railing", "cable tray", "pallet jack"),  # not 'tool holder': ME340's are CNC tool cones
 }
 FACES = ("-x", "+x", "-y", "+y", "-z", "+z")
 
@@ -124,11 +124,14 @@ def fit_cylinder(P, cams):
     exceeds the section's extent, or whose centre sits on the cameras' side (a concave face), falls back to the section's width
     across the view as the diameter, the centre one radius behind the near side ('fitted' False: drawn for a cylinder-like type
     only). The residual is
-    the distance to the cylinder's surface, caps included. The better of the two axes by residual."""
+    the distance to the cylinder's surface, caps included. The better of the two axes by residual; points 2.5 x longer one way
+    than the next (a pipe, a pole) take their long axis (ME340's ceiling pipes went vertical as flat discs)."""
     best = None
     d = P - P.mean(0)
-    long = np.linalg.eigh(d.T @ d)[1][:, 2]
-    for axis, A in (("vertical", yaw_axes(0.)), ("long axis", axis_frame(long))):
+    ev, vec = np.linalg.eigh(d.T @ d)
+    long = vec[:, 2]
+    elongated = ev[2] >= 2.5 ** 2 * max(ev[1], 1e-12)
+    for axis, A in (("long axis", axis_frame(long)),) if elongated else (("vertical", yaw_axes(0.)), ("long axis", axis_frame(long))):
         L, C = P @ A.T, cams @ A.T
         sec = L[:, :2]
         slo, shi = np.percentile(sec, 2, 0), np.percentile(sec, 98, 0)
