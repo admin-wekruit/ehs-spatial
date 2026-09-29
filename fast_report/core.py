@@ -21,7 +21,7 @@ import detect_shot_cuts as dsc  # cut rules, unchanged
 
 BLOCK, MIN_SHOT, CHUNK, TAIL = 6, 30, 16, 8  # E9: sharpest of each 6-frame block; shots under 1 s get no geometry
 DENSIFY_BATCH = 4  # click MVP section 7: keyframes per densify SAM 3 task
-NAMER_WAIT_S, NAMER_HEDGE_S = 36., 20.  # mvp2/identity: Gemini answers awaited this long after the requests went out (then the Qwen
+NAMER_WAIT_S, NAMER_HEDGE_S = 36., 15.  # mvp2/identity: Gemini answers awaited this long after the requests went out (then the Qwen
 # decider names what is left); a request unanswered after NAMER_HEDGE_S (or answered with an error) is sent once more (tail latency)
 DA3_HW = (280, 504)
 CAMERA_HEIGHT_M = 1.6  # the reference's own assumption: every metre here is 'estimated'
@@ -923,6 +923,7 @@ def analyse(m, mp4, opts, clock, writer, log):
 
     def identity_pass():
         if not cards_ready.wait(120):
+            namer["published"].set()
             return
         by = {o["id"]: o for o in objects}
         new = copy.deepcopy(cards_out["v1"]["cards"])
@@ -938,8 +939,11 @@ def analyse(m, mp4, opts, clock, writer, log):
             rows = {o["id"]: o for o in objects}
             idents = {i: cards.open_identity(cards.identity_v1(rows[i]), a) for i, a in named.items() if i in rows}
             publish({**idents, **{c["id"]: c["identity"] for c in new if c["id"] in named}}, "gemini")
-        rest = [c for c in new if c["kind"] == "object" and c["id"] not in named]
-        for which in ("ehs", "other"):  # the EHS classes' names first (the checks read them), then every other object's
+        namer["published"].set()
+        if named:  # what Gemini did not name in time keeps its detected word until densify's pass asks again (the Qwen decider
+            return rec  # for 56 late objects put Sam's Club's identity 8 s later, with the weaker names)
+        rest = [c for c in new if c["kind"] == "object"]
+        for which in ("ehs", "other"):  # no Gemini at all: the Qwen decider, EHS classes' names first (the checks read them)
             if ask_identity(rest, which):
                 publish({c["id"]: c["identity"] for c in rest}, f"qwen_{which}")
         return rec
@@ -980,7 +984,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         return c["kind"] == "object" and (ehs(c) if which == "ehs" else not ehs(c) and (c.get("views") or {}).get("n", 0) >= 3 if which else
                                           ehs(c) or (c.get("views") or {}).get("n", 0) >= 3)
 
-    namer = {"started": threading.Event()}
+    namer = {"started": threading.Event(), "published": threading.Event()}
 
     def start_namer():
         """mvp2/identity: the Gemini naming starts as soon as the outlines and pick counts exist (3-4 s before cards v1)."""
@@ -1332,8 +1336,10 @@ def analyse(m, mp4, opts, clock, writer, log):
             namer["densify"] = fut = Future()
 
             def name_densified():
-                try:
-                    got, rec = gemini_names(new_rows, "outlines_v2", counts_v2, ready_v2, first=100, tag="gemini_densify")
+                try:  # after the first pass's names are in: only what they left (Sam's Club asked 623 twice when v3 came first)
+                    namer["published"].wait(120)
+                    rows_now = [o for o in new_rows if o["id"] not in cards_out.get("identities", {})]
+                    got, rec = gemini_names(rows_now, "outlines_v2", counts_v2, ready_v2, first=100, tag="gemini_densify")
                     by = {c["id"]: c for c in out["cards"] if c["kind"] == "object"}
                     idents = {i: cards.open_identity(by[i]["identity"], a) for i, a in got.items() if i in by}
                     if idents:

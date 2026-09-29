@@ -423,44 +423,63 @@ def score(out):
     return res
 
 
-def score_final(out):
-    """The final runs' shown names on the fresh held-out items (labels-final.json, agent-labelled blind), beside round 1's
-    names for the same card id when its box centre is within 0.5 m (same pipeline up to objects v1); hazard names shown /
-    held back against the labels. -> metrics dict (also written to OUT/metrics-final.json)."""
+def _centres(site_run):
     import fast_report_eval as ev
+    d, rep = site_run
+    out = {}
+    for c in ev.load_layers(PHASE2 / "runs" / d, rep)["object_cards"]["cards"]:
+        if c["kind"] == "object":
+            ctr = np.mean([c["physical"]["box_min_m"], c["physical"]["box_max_m"]], 0) if "box_min_m" in c["physical"] else None
+            out[c["id"]] = (c["identity"], ctr)
+    return out
+
+
+def score_final(out, now=None):
+    """The shown names of the runs `now` ({site: (run dir, report)}, default: the runs the items came from) on the fresh
+    held-out items (labels-final.json, agent-labelled blind), an item's card found by id with its box centre within 0.3 m of
+    the item's own run (else 'not matched'); round 1's names for the same card id beside (box centre within 0.5 m); hazard
+    names shown / held back against the labels. -> metrics dict (also OUT/metrics-final.json). Round 1's name: its card whose
+    box centre is nearest the item's (within 0.3 m; the shots share the camera frame, same video and cameras layer)."""
     rows = json.loads((out / "items.json").read_text())["items"]
     lab = json.loads((out / "labels-final.json").read_text())
-    r1 = {}
-    for site, (d, rep) in RUNS.items():
-        for c in ev.load_layers(PHASE2 / "runs" / d, rep)["object_cards"]["cards"]:
-            if c["kind"] == "object" and "box" in c["physical"]:
-                r1[f"{site}:{c['id']}"] = (c["identity"].get("name"), np.mean([c["physical"]["box_min_m"], c["physical"]["box_max_m"]], 0))
-    runs = json.loads((out / "items.json").read_text())["runs"]
-    now_box = {}
-    for site, (d, rep) in runs.items():
-        for c in ev.load_layers(PHASE2 / "runs" / d, rep)["object_cards"]["cards"]:
-            if c["kind"] == "object" and "box" in c["physical"]:
-                now_box[f"{site}:{c['id']}"] = np.mean([c["physical"]["box_min_m"], c["physical"]["box_max_m"]], 0)
-    g_now, g_r1, per, hz = [], [], [], {"shown": [], "held_back": []}
+    src_runs = json.loads((out / "items.json").read_text())["runs"]
+    now = now or src_runs
+    src = {s: _centres(v) for s, v in src_runs.items()}
+    cur = {s: _centres(v) for s, v in now.items() if s in src_runs}
+    r1 = {s: _centres(v) for s, v in RUNS.items()}
+    near = lambda a, b, m: a is not None and b is not None and float(np.linalg.norm(np.asarray(a) - np.asarray(b))) < m  # noqa: E731
+    g_now, g_r1, per, unmatched, hz = [], [], [], [], {"shown": [], "held_back": []}
     for r in rows:
-        L = lab[r["id"]]
-        name = r["round1"]["name"]
+        if r["site"] not in cur:
+            continue
+        L, ctr = lab[r["id"]], src[r["site"]].get(r["card"], (None, None))[1]
+        got = cur[r["site"]].get(r["card"])
+        if got is None or not near(got[1], ctr, .3):  # object ids are not stable between runs: the nearest box centre within 0.3 m
+            cand = [(float(np.linalg.norm(np.asarray(c) - ctr)), (i, c)) for i, c in cur[r["site"]].values() if c is not None and ctr is not None]
+            best = min(cand, default=None, key=lambda x: x[0])
+            got = best[1] if best is not None and best[0] < .3 else None
+        if got is None:
+            unmatched.append(r["id"])
+            continue
+        ident = got[0]
+        name = ident.get("name")
         g = grade(name, L, name == cards.NOT_OBJECT)
         g_now.append((r["site"], g))
-        old = r1.get(r["id"])
-        same = old is not None and r["id"] in now_box and np.linalg.norm(old[1] - now_box[r["id"]]) < .5
-        if same:
-            g_r1.append((r["site"], grade(old[0], L, False)))
-        h = r["round1"].get("hazard_check")
+        cand = [(float(np.linalg.norm(np.asarray(c) - ctr)), i["name"]) for i, c in r1[r["site"]].values() if c is not None and ctr is not None]
+        best = min(cand, default=None, key=lambda x: x[0])  # round 1's card nearest the item's box centre (ids differ between runs)
+        old_name = best[1] if best is not None and best[0] < .3 else None
+        if old_name is not None:
+            g_r1.append((r["site"], grade(old_name, L, False)))
+        h = ident.get("hazard_check")
         if h:
             hz["shown" if h.get("confirmed") else "held_back"].append({"id": r["id"], "proposed": h.get("proposed"), "class": h.get("class"),
                                                                         "truth": L["canon"], "failed": h.get("failed")})
-        per.append({"id": r["id"], "name": name, "by": r["round1"].get("decided_by"), "grade": g, "truth": L["canon"], "truth_name": L["name"],
-                    "round1": old[0] if same else None})
+        per.append({"id": r["id"], "name": name, "by": ident.get("decided_by"), "grade": g, "truth": L["canon"], "truth_name": L["name"],
+                    "round1": old_name})
     right = lambda x: x["truth"] == x["class"] or cards.FAMILY.get(x["truth"]) == cards.FAMILY.get(x["class"])  # noqa: E731
-    res = {"items": len(rows), "labelled": sum(1 for r in rows if lab[r["id"]]["canon"] != "unclear"),
+    res = {"items": len(rows), "labelled": sum(1 for r in rows if lab[r["id"]]["canon"] != "unclear"), "runs": now, "not_matched": unmatched,
            "final_names": table(g_now), "round1_names_same_objects": table(g_r1), "round1_matched": len(g_r1),
-           "hazard_names": {"shown": len(hz["shown"]), "shown_right": sum(map(right, hz["shown"])),
+           "hazard_names": {"shown": len(hz["shown"]), "shown_right": sum(map(right, hz["shown"])), "shown_unclear_truth": sum(x["truth"] == "unclear" for x in hz["shown"]),
                             "held_back": len(hz["held_back"]), "held_back_but_true": sum(map(right, hz["held_back"])), "detail": hz},
            "per_item": per}
     (out / "metrics-final.json").write_text(json.dumps(res, indent=1, default=str))
@@ -508,9 +527,69 @@ def timing(run_dir):
     return rows
 
 
+ROUND1_TIMES = {"me340": {"objects v1": 36.3, "identity complete": 60.3}, "samsclub-a2": {"objects v1": 27.2, "identity complete": 88.3},
+                "walmart": {"objects v1": 20.2, "identity complete": 69.5}}  # runs/mvp-results (warm calls, written s)
+
+
+def results(out, bench, final_dir, study_dir):
+    """runs/mvp2-identity-results: summary.json + summary.md from the final benches ({site: run dir name}), the fresh held-out
+    items (final_dir) and the dev study (study_dir)."""
+    out.mkdir(parents=True, exist_ok=True)
+    tim = {site: timing(PHASE2 / "runs" / d) for site, d in bench.items()}
+    warm = {site: next((r["report"] for r in rows if r["call"] == "warm"), None) for site, rows in tim.items()}
+    cons = {site: {rep["report"]: consistency(PHASE2 / "runs" / bench[site], rep["report"]) for rep in rows} for site, rows in tim.items()}
+    viol = {site: sum(v.get(k, 0) for c in per.values() for v in c.values() for k in ("kind_not_from_name", "size_class_not_from_name",
+                                                                                         "on_a_check_the_final_class_does_not_apply")
+                      if isinstance(v.get(k, 0), int)) + sum(v["not_derived_by_apply_name"] for c in per.values() for v in c.values()
+                                                             if isinstance(v.get("not_derived_by_apply_name"), int)) for site, per in cons.items()}
+    fin = score_final(final_dir, {site: (bench[site], warm[site]) for site in bench if warm.get(site)})
+    dev = score(study_dir)
+    res = {"schema": "mvp2-identity-results-v1", "bench": bench, "timing": tim, "r1_violations": viol, "r1_detail": cons,
+           "heldout_final": {k: v for k, v in fin.items() if k != "per_item"}, "dev_study": dev}
+    (out / "summary.json").write_text(json.dumps(res, indent=1, default=str))
+    md = ["# mvp2/identity: results", "",
+          "Labels are agent-made by looking at blind contact sheets (not ground truth). Times: s from the MP4 bytes in the container "
+          "to the layer committed on the Volume (written); cold start apart.", "",
+          "## Identity timing (first-pass names, warm call; first call after boot in brackets)", "",
+          "| | objects v1 | Gemini sent | identity written | identity - objects | densify's names written | last judgements | request s (median / max) | GPU peaks GiB |",
+          "|---|---|---|---|---|---|---|---|---|"]
+    for site, rows in tim.items():
+        w = next((r for r in rows if r["call"] == "warm"), {})
+        f = next((r for r in rows if r["call"] == "first"), {})
+        cell = lambda k: f"{w.get(k)} ({f.get(k)})"  # noqa: E731
+        rs = w.get("namer_request_s") or [0]
+        md.append(f"| {site} | {cell('objects_v1_written_s')} | {cell('identity_gemini_sent_s')} | {cell('identity_first_pass_written_s')} | "
+                  f"{cell('identity_minus_objects_s')} | {cell('identity_gemini_densify_written_s')} | {cell('last_judgements_written_s')} | "
+                  f"{np.median(rs):.1f} / {max(rs):.1f} | {w.get('gpu_peak_gib')} ({f.get('gpu_peak_gib')}) |")
+    md += ["", "Round 1 (runs/mvp-results, warm): identity complete - objects v1 = " + ", ".join(
+        f"{s} {v['identity complete'] - v['objects v1']:.1f} s" for s, v in ROUND1_TIMES.items()) + ". Target: <= 45 s.", "",
+        "## R1: name -> kind, size check, checks, verdicts", "",
+        "Violations over every cards and judgements version of every call (a card whose class or size-check class is not the one its "
+        "shown name gives; a card apply_name would change; a judgement row on a check its card's final class does not apply): " +
+        ", ".join(f"{s} {v}" for s, v in viol.items()) + ". Round 1's review: 51 / 155 / 51 cards.", "",
+        "## Names on fresh held-out items (warm call of the final runs; round 1 on the same objects)", "",
+        "| | n | right | right or close | round 1, same objects: n / right / right or close |", "|---|---|---|---|---|"]
+    for site in [*bench, "all"]:
+        a_, b_ = fin["final_names"].get(site), fin["round1_names_same_objects"].get(site)
+        if a_:
+            md.append(f"| {site} | {a_['n']} | {a_['right']:.2f} | {a_['right_or_close']:.2f} | " +
+                      (f"{b_['n']} / {b_['right']:.2f} / {b_['right_or_close']:.2f} |" if b_ else "— |"))
+    h = fin["hazard_names"]
+    md += ["", f"Hazard-class names on these items: {h['shown']} shown ({h['shown_right']} right or same family, {h['shown_unclear_truth']} "
+               f"on items labelled unclear), {h['held_back']} held back by the second check ({h['held_back_but_true']} of them were true). "
+               f"Items not matched between the labelled run and the final run: {len(fin['not_matched'])}.", "",
+           "## Dev study (runs/mvp2-identity-study-001: 181 labelled items from round 1's runs; the method and the taxonomy were chosen on it)", "",
+           "| method | ME340 | Sam's Club | Walmart | all | hazard-class items |", "|---|---|---|---|---|---|"]
+    for m, v in dev.items():
+        md.append(f"| {m} | " + " | ".join(f"{v[s]['right']:.2f} / {v[s]['right_or_close']:.2f}" if s in v else "—" for s in (*RUNS, "all")) +
+                  f" | {v['hazard_items']['right']:.2f} / {v['hazard_items']['right_or_close']:.2f} (n {v['hazard_items']['n']}) |")
+    (out / "summary.md").write_text("\n".join(md) + "\n")
+    return res
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("what", nargs="?", choices=("items", "dev", "gemini", "score", "final", "consistency", "score-final", "timing"))
+    ap.add_argument("what", nargs="?", choices=("items", "dev", "gemini", "score", "final", "consistency", "score-final", "timing", "results"))
     ap.add_argument("out", nargs="?", type=Path)
     ap.add_argument("--variant", default="pair", choices=("pair", "sheet", "pair2", "tile4"))
     ap.add_argument("--runs", default="", help="final: site=RUN_DIR_NAME:REPORT,... (fresh held-out items from these runs)")
@@ -520,12 +599,17 @@ if __name__ == "__main__":
         self_check()
     elif a.what == "items":
         items(a.out)
+    elif a.what == "results":  # OUT = runs/mvp2-identity-results; --runs site=BENCH_DIR,...
+        bench = dict(x.split("=", 1) for x in a.runs.split(","))
+        results(a.out, bench, PHASE2 / "runs/mvp2-identity-final-001", PHASE2 / "runs/mvp2-identity-study-001")
+        print((a.out / "summary.md").read_text())
     elif a.what == "timing":
         print(json.dumps(timing(a.out), indent=1))
     elif a.what == "score":
         print(json.dumps(score(a.out), indent=1))
-    elif a.what == "score-final":
-        print(json.dumps({k: v for k, v in score_final(a.out).items() if k != "per_item"}, indent=1, default=str)[:6000])
+    elif a.what == "score-final":  # --runs site=RUN:REPORT,... : grade these runs' names (default: the items' own runs)
+        now = {k: tuple(v.rsplit(":", 1)) for k, v in (x.split("=", 1) for x in a.runs.split(","))} if a.runs else None
+        print(json.dumps({k: v for k, v in score_final(a.out, now).items() if k != "per_item"}, indent=1, default=str)[:6000])
     elif a.what == "consistency":  # OUT = RUN_DIR, --runs REPORT
         print(json.dumps(consistency(a.out, a.runs), indent=1))
     elif a.what == "final":  # fresh held-out items (seed 1) from the final runs, none of the study's

@@ -89,13 +89,26 @@ class NamerRelay:
             apps = [x for x in json.loads(subprocess.check_output([MODAL, "app", "list", "--json"], timeout=30))
                     if x["description"] == APP_NAME and x["state"] == "deployed"]
             live = json.loads(subprocess.check_output([MODAL, "container", "list", "--app-id", apps[0]["app_id"], "--json"], timeout=30))
-            self.container = live[0]["container_id"]
+            self.container = max(live, key=lambda x: str(x.get("start_time") or x.get("started_at") or ""))["container_id"]  # the newest
             return self.container
 
     def warm(self):
-        """At each call's start (the report container may have scaled down between calls): wake and find it in the background."""
-        self.ready = threading.Event()
+        """At each call's start (the report container may have scaled down between calls): wake and find it in the background,
+        then keep it awake (its /health every 10 s) until stop(): Sam's Club's warm call found it gone 25 s after the wake
+        ('Task has already finished', every request)."""
+        self.ready, self.awake = threading.Event(), threading.Event()
         threading.Thread(target=lambda: (self._try(self.resolve), self.ready.set()), daemon=True).start()
+
+        def ping(awake=self.awake):
+            import modal
+            from modal_apps.sam3_video_fal import APP_NAME
+            url = self._try(lambda: modal.Function.from_name(APP_NAME, "web").get_web_url())
+            while url and not awake.wait(10):
+                self._try(lambda: urllib.request.urlopen(url.rstrip("/") + "/health", timeout=20).close())
+        threading.Thread(target=ping, daemon=True).start()
+
+    def stop(self):
+        getattr(self, "awake", threading.Event()).set()
 
     @staticmethod
     def _try(fn):
@@ -121,7 +134,14 @@ class NamerRelay:
             elif e["phase"] == "provider_output_chunk":
                 chunks.append(e["data"]["chunk"])
         getattr(self, "ready", threading.Event()).wait(90)
-        code, _ = synchronizer.create_blocking(container_command)(self.container or self.resolve(), payload, on_line, self.program)
+        try:
+            code, _ = synchronizer.create_blocking(container_command)(self.container or self.resolve(), payload, on_line, self.program)
+        except Exception as e:  # noqa: BLE001  the container scaled down under us: find (wake) it again, once
+            if "already finished" not in str(e) and "ConflictError" not in repr(e):
+                raise
+            chunks.clear()
+            meta.clear()
+            code, _ = synchronizer.create_blocking(container_command)(self.resolve(), payload, on_line, self.program)
         raw = gzip.decompress(base64.b64decode("".join(chunks), validate=True))
         if code or hashlib.sha256(raw).hexdigest() != meta.get("sha256"):
             raise RuntimeError(f"provider exit {code}, output hash {'ok' if raw else 'missing'}")
@@ -160,6 +180,8 @@ def call(fr, mirror, root, mp4, site, report, options, poller=None, relay=None):
     for event in fr.run.remote_gen(mp4, site, report, options):  # fast_report.layers events, then {"type": "run", "run": run.json}
         if event.get("type") == "namer_request" and relay:
             relay.submit(event)
+        if event.get("type") == "run" and relay:
+            relay.stop()
         if event.get("type") in ("patch", "written", "run"):
             mirror(event, root)
         if event.get("type") == "run":

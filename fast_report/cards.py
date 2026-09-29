@@ -1188,10 +1188,12 @@ def open_identity(ident, ans, source="gemini open name"):
     surface or a named non-object proposes 'not an object'; p is the namer's stated probability (uncalibrated)."""
     name = " ".join(str(ans.get("name") or "").lower().replace("_", " ").split()) or None
     status = ans.get("status") if ans.get("status") in NAMER_STATUS else None
-    c = canonical(name)
-    not_obj = name is None or c == NOT_OBJECT or status == "surface" and c is None
     p = ans.get("p")
     p = None if p is None else round(min(max(float(p), 0.), 1.), 3)
+    if status == "unclear" or name in ("unclear", "unknown", "unidentified", "unidentified object"):  # no name: the detected word stays
+        return {**ident, "namer": {"name": name, "status": status, "p": p}, "note": f"{source.split()[0]} could not tell; detected word, unverified"}
+    c = canonical(name)
+    not_obj = name is None or c == NOT_OBJECT or status == "surface" and c is None
     return {**ident, "proposed": NOT_OBJECT if not_obj else name, "decided_by": source, "confidence": p, "calibrated": False,
             "covers": name if not_obj else None, "namer": {"name": name, "status": status, "p": p},
             "note": f"open name from {source.split()[0]}, stated probability (uncalibrated)", "alternatives": ident.get("alternatives"),
@@ -1497,6 +1499,10 @@ def self_check():
     # a surface proposes 'not an object'; a floor pattern named 'concrete floor' too
     a2["identity"] = open_identity(a2["identity"], {"name": "concrete floor", "status": "surface", "p": .9})
     assert apply_name(a2)["identity"]["name"] == NOT_OBJECT and a2["class"]["mobility_source"] == "not an object"
+    # a namer that cannot tell leaves the detected word ('box' here), never the name 'unclear'
+    a3 = copy.deepcopy(by["obj-0-0"])
+    a3["identity"] = open_identity(a3["identity"], {"name": "unclear", "status": "unclear", "p": .3})
+    assert apply_name(a3)["identity"]["name"] == "box" and a3["identity"]["decided_by"] == "sam3 vote" and a3["identity"]["namer"]["status"] == "unclear"
     assert by["obj-0-0"]["time"]["first_seen_s"] == 0. and by["obj-0-0"]["time"]["intervals"] == [[0., .8]], by["obj-0-0"]["time"]
     # the same scene through a process pool (shot arrays via .npy files): box B detected on keyframes 0-2, then the camera
     # sees the far wall through its place on 3-5 -> 'disappeared' with before/after keyframes; box A stays 'last seen'
