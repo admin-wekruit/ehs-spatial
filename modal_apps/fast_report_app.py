@@ -241,6 +241,13 @@ class FastReport:
         for d in (self.dev_geo, self.dev_seg):
             torch.cuda.reset_peak_memory_stats(d)
         self.calls += 1
+        pool_note = None
+        import multiprocessing
+        from concurrent.futures import ProcessPoolExecutor
+        if getattr(self.proc_pool, "_broken", False):  # mvp2/integrate: a worker died in the last call (Sam's Club 003, in cards.v1_box):
+            self.proc_pool = ProcessPoolExecutor(PROCS, mp_context=multiprocessing.get_context("spawn"))  # every later call failed
+            list(self.proc_pool.map(core.warm_worker, range(PROCS)))  # at its first submit; a new pool, warmed (not analysis time)
+            pool_note = "the process pool broke in an earlier call and was recreated before this one"
         price = usd_per_s(2, CPU, MEMORY_GIB)
         writer = Writer(VOLUMES["/v/layers"], report_id, clock, root="/v/layers", client_has=options.get("client_has", ()),
                         report=lambda: clock.report(vram, price))
@@ -265,7 +272,7 @@ class FastReport:
                 self.da3.restore()
         except Exception:  # noqa: BLE001  a dead CUDA context (a GPU fault) still returns this call's run.json
             error = (error or "") + "\nda3.restore failed: " + traceback.format_exc()[-1500:]
-        run = {**clock.report(vram, price), "report": report_id, "site": site, "error": error,
+        run = {**clock.report(vram, price), "report": report_id, "site": site, "error": error, "process_pool": pool_note,
                "video": {"sha256": core.sha256(mp4), "bytes": len(mp4), "window_s": options.get("window_s")},
                "hardware": {"gpus": self.listing, "cpu": CPU, "memory_gib": MEMORY_GIB, "mps": self.boot_record.get("mps")},
                "boot": {**self.boot_record, "first_call_after_boot": self.calls == 1, "note": "cold start: never part of the analysis time"},
