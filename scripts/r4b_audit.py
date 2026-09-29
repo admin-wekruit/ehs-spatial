@@ -3,6 +3,7 @@
     python scripts/r4b_audit.py cards MIRROR REPORT OUT_DIR [--n 30 --seed 29]   # contact sheets + labels.json (labels by eye)
     python scripts/r4b_audit.py score OUT_DIR [...]                              # labels.json -> tallies
     python scripts/r4b_audit.py share MIRROR REPORT                              # typed / segmented / physical / model shares
+    python scripts/r4b_audit.py aims MIRROR REPORT CLICKS_DIR BASE_MIRROR BASE_REPORT [CARDS_DIR]   # the viewer screenshots' aims
     python scripts/r4b_audit.py --self-check
 
 cards: n object cards drawn at random (seeded) among the final object cards with a pick region (with or without a model), each on
@@ -159,6 +160,57 @@ def share(L):
             "model_kinds": dict(Counter((c.get("model") or {}).get("kind") for c in cs)), "completeness": req}
 
 
+def aims(mirror, report, clicks_dir, base_mirror, base_report, cards_dir=None):
+    """The viewer screenshots' aims: a named object with a model (SAM 3D's mesh first), a 'type only' object, a formerly missed
+    object (a click of the fresh audit labelled correct that opened nothing on round 3's warm call), a person, a background click
+    (labelled background). -> [{label, id} | {label, t, x, y}] for web/tests/r4b-viewer-shots.mjs."""
+    import click_audit as ca
+    import fast_report_eval as ev
+    import r4_models as rm
+    import r4_naming_results as nr
+    L, pick, models_patch = rm.load(mirror, report)
+    fps = float(L["video"]["fps"])
+    area = {}
+    for i, f in enumerate(pick.frames):
+        if f.get("source") == "segmented":
+            idx, cnt = np.unique(pick.map(i), return_counts=True)
+            for j, a in zip(idx, cnt):
+                e = pick.data["entities"][int(j)] if j else None
+                if e:
+                    area[e] = max(area.get(e, 0), int(a))
+    good = set()
+    if cards_dir and (Path(cards_dir) / "labels.json").exists():  # prefer cards the audit found right (type and model)
+        good = {r["card"] for r in json.loads((Path(cards_dir) / "labels.json").read_text())["rows"] if r.get("type") == "right" and r.get("model") == "plausible"}
+    sam = {k for k, v in rm.sam_by_card(L, models_patch).items() if v.get("accepted")}
+    objs = [c for c in L["object_cards"]["cards"] if c.get("kind") == "object" and (c.get("model") or {}).get("kind") and c["id"] in area]
+    rank = lambda c: (c["id"] in good, c["id"] in sam, area[c["id"]])  # noqa: E731
+    named = max([c for c in objs if nr.is_named(c["identity"]["name"])], key=rank)
+    typed = max([c for c in objs if c["identity"]["name"].endswith(" (type only)")], key=rank)
+    people = [c for c in L["object_cards"]["cards"] if c.get("kind") == "person" and c["id"] in area]
+    out = [{"label": "1-named-object-with-model", "id": named["id"], "name": named["identity"]["name"], "sam3d": named["id"] in sam},
+           {"label": "2-type-only-object-physical-model", "id": typed["id"], "name": typed["identity"]["name"]}]
+    meta = json.loads(next(Path(clicks_dir).glob("clicks-*.json")).read_text())
+    lab = json.loads(next(Path(clicks_dir).glob("labels-*.json")).read_text())["labels"]
+    bpick = ca.load_run(base_mirror, base_report)
+    before = ca.resolve(bpick[0], bpick[2], [dict(c) for c in meta["clicks"]], bpick[3])
+    was = {c["k"]: c["entity"] for c in before}
+    missed = [c for c in meta["clicks"] if lab[str(c["k"])]["label"] == "correct" and c.get("kind") == "object" and was.get(c["k"]) is None]
+    if missed:
+        c = max(missed, key=lambda c: area.get(c["entity"], 0))
+        out.append({"label": "3-formerly-missed-object", "t": c["frame"] / fps, "x": c["x"], "y": c["y"], "name": c["name"], "round3": "nothing picked"})
+    if people:
+        p = max(people, key=lambda c: area[c["id"]])
+        out.append({"label": "4-person", "id": p["id"], "name": p["identity"]["name"]})
+    bg = [c for c in meta["clicks"] if lab[str(c["k"])]["label"] == "background"]
+    if bg:
+        c = bg[0]
+        out.append({"label": "5-background", "t": c["frame"] / fps, "x": c["x"], "y": c["y"], "note": lab[str(c["k"])].get("note")})
+    if sam and named["id"] not in sam:
+        m = max([c for c in objs if c["id"] in sam], key=lambda c: area[c["id"]])
+        out.append({"label": "6-sam3d-mesh", "id": m["id"], "name": m["identity"]["name"]})
+    return out
+
+
 def self_check():
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
@@ -177,13 +229,15 @@ if __name__ == "__main__":
         self_check()
         sys.exit()
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("cmd", choices=("cards", "score", "share"))
+    p.add_argument("cmd", choices=("cards", "score", "share", "aims"))
     p.add_argument("args", nargs="+")
     p.add_argument("--n", type=int, default=30)
     p.add_argument("--seed", type=int, default=29)
     a = p.parse_args()
     if a.cmd == "cards":
         cards(Path(a.args[0]), a.args[1], Path(a.args[2]), a.n, a.seed)
+    elif a.cmd == "aims":  # MIRROR REPORT CLICKS_DIR BASE_MIRROR BASE_REPORT [CARDS_DIR]
+        print(json.dumps(aims(Path(a.args[0]), a.args[1], Path(a.args[2]), Path(a.args[3]), a.args[4], a.args[5] if len(a.args) > 5 else None), indent=1))
     elif a.cmd == "score":
         print(json.dumps(score(a.args), indent=1))
     else:
