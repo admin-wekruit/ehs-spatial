@@ -349,9 +349,9 @@ def g_j4(card, ctx, cards):
 
 
 def stacks(ctx, cards, shot):
-    """The shot's floor stacks, found once per run (GOODS / STACK above). A stack's root stands on the floor: a pallet, or
-    goods standing free (not inside a shelf, rack or other storage fixture's footprint: goods on a gondola's bottom shelf are
-    shelved, not stacked). Goods resting on a member join it, upward, when their footprint overlaps that member's (>=
+    """The shot's floor stacks, found once per run (GOODS / STACK above). A stack's root stands on the floor: a pallet, a named
+    load ('stacked boxes': a pallet of paper towels in a rack bay), or goods standing free (not inside a shelf, rack or other
+    storage fixture's footprint: goods on a gondola's bottom shelf are shelved, not stacked). Goods resting on a member join it, upward, when their footprint overlaps that member's (>=
     STACK_OVERLAP of the smaller), lies within the root's footprint + 0.2 m (>= 80 %: a stack is no wider than its base; walmart
     joined a gondola's 22 slippers without this), and they rest on no other pallet (a pallet is the next rack level: never
     joined). A pallet with nothing on it and at most PALLET_H_M + u tall is bare: no stack. -> {card id: {members, top (card),
@@ -378,8 +378,8 @@ def stacks(ctx, cards, shot):
     on_pallet = {j: {p for p in near[j] if ok[p][4] and abs(ok[j][1] - ok[p][2]) <= STACK_GAP_M} for j in range(len(ok))}
     out = {}
     for i, (c, b, t, poly, pal) in enumerate(ok):
-        if b - fact(c, "base_above_floor")["u"] > FLOOR_BASE_M or not pal and shelved(poly):
-            continue  # off the floor (a member of the stack below it, or shelved), or goods standing inside a storage fixture
+        if b - fact(c, "base_above_floor")["u"] > FLOOR_BASE_M or not pal and class_of(c) != "stacked boxes" and shelved(poly):
+            continue  # off the floor (a member of the stack below it, or shelved), or goods (not a named load) inside a storage fixture
         wide, members, todo = poly.buffer(.2), [i], [i]
         while todo:
             m = todo.pop()
