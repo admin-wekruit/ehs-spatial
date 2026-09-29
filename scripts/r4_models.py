@@ -1,6 +1,6 @@
 """r4 (models): does every object card carry a display model, and does it look right from the camera that saw it?
 
-    python scripts/r4_models.py sheet MIRROR REPORT OUT_DIR [--n 30 --seed 4]   # contact sheets for the audit by eye
+    python scripts/r4_models.py sheet MIRROR REPORT OUT_DIR [--n 30 --seed 4] [--sam3d]   # contact sheets for the audit by eye
     python scripts/r4_models.py table RUN_DIR [...]                              # per report: models, residuals, SAM 3D, time, GPU
     python scripts/r4_models.py results RUN_DIR OUT [--baseline RUN_DIR] [--audit DIR ...]   # the tables as markdown
     python scripts/r4_models.py --self-check
@@ -171,7 +171,7 @@ def sam_by_card(L, models_patch):
     return out
 
 
-def sheet(mirror, report, out_dir, n=30, seed=4, per=10, cards=None):
+def sheet(mirror, report, out_dir, n=30, seed=4, per=10, cards=None, only_sam3d=False):
     import cv2
     import fast_report_eval as ev
     L, pick, models_patch = load(mirror, report)
@@ -179,6 +179,9 @@ def sheet(mirror, report, out_dir, n=30, seed=4, per=10, cards=None):
     ent = pick.data["entities"]
     cams = {s["index"]: s for s in L["cameras"]["shots"]}
     cards = cards if cards is not None else [c for c in L["object_cards"]["cards"] if c.get("kind") == "object" and (c.get("model") or {}).get("kind")]
+    if only_sam3d:  # every card whose SAM 3D mesh the gate accepted (the mesh replaces its primitive)
+        acc = sam_by_card(L, models_patch)
+        cards = [c for c in cards if acc.get(c["id"], {}).get("accepted")]
     want = {c["id"] for c in cards}
     best, chosen_view = {}, {c["id"]: set((c.get("views") or {}).get("best") or []) for c in cards}
     for i, f in enumerate(pick.frames):
@@ -398,6 +401,7 @@ if __name__ == "__main__":
     s.add_argument("out", type=Path)
     s.add_argument("--n", type=int, default=30)
     s.add_argument("--seed", type=int, default=4)
+    s.add_argument("--sam3d", action="store_true", help="only the cards whose SAM 3D mesh was accepted")
     t = sub.add_parser("table")
     t.add_argument("runs", nargs="+", type=Path)
     r = sub.add_parser("results")
@@ -407,7 +411,7 @@ if __name__ == "__main__":
     r.add_argument("--audit", nargs="*", default=[])
     a = p.parse_args()
     if a.cmd == "sheet":
-        sheet(a.mirror, a.report, a.out, a.n, a.seed)
+        sheet(a.mirror, a.report, a.out, a.n, a.seed, only_sam3d=a.sam3d)
     elif a.cmd == "table":
         print(json.dumps({str(r): table(r) for r in a.runs}, indent=1, default=str))
     else:
