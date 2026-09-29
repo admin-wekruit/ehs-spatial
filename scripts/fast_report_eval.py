@@ -920,7 +920,11 @@ def click_row(pick, refs, clicks, fps, drop_frames=()):
         return {"n": n, "hit_rate": round(len(hit) / n, 4), "unknown_rate": round(1 - len(hit) / n, 4),
                 "correct_rate": round(sum(bool(r["correct"]) for r in rs) / n, 4),
                 "wrong_entity_rate": round(sum(r["correct"] is False for r in hit) / n, 4),
-                "correct_by_cover_only": sum(bool(r["correct"]) and r["iou"] < PICK_IOU for r in hit)}
+                "correct_by_cover_only": sum(bool(r["correct"]) and r["iou"] < PICK_IOU for r in hit),
+                # D1's audit: the cover branch calls a whole workbench right for a board lying on it; the IoU branch alone
+                # agreed with the agent on 'same object' 0.915 vs 0.709 (165 labelled clicks, runs/mvp-d1-baseline-001)
+                "correct_iou_only_rate": round(sum(r["correct"] is not None and r["iou"] >= (PERSON_IOU if r["kind"] == "person" else PICK_IOU)
+                                                   and (r["kind"] == "person") == r["entity"].startswith("person") for r in hit) / n, 4)}
     obj = [r for r in recs if r["kind"] == "object"]
     bg = [r for r in recs if r["kind"] == "background"]
     row = {"frames": len({c["frame"] for c in clicks} - drop), "dropped_frames_on_keyframes": sorted(drop & {c["frame"] for c in clicks}),
@@ -1335,7 +1339,7 @@ def latency_row(run, patches, fb_run, click_latency=None):
 
 # ---------- one video, one call: every MVP row ----------
 
-def mvp_rows(run_dir, report, site, refs=None, fb=True):
+def mvp_rows(run_dir, report, site, refs=None, fb=True, clicks=None):
     """Every spec-8 row that one mirrored call supports (no GPU; refs = load_refs(...) for clicks). -> (rows, extras)."""
     layers = load_layers(run_dir, report)
     for name in ("object_cards", "judgements"):  # large cards / judgements go out of line as blobs
@@ -1353,7 +1357,7 @@ def mvp_rows(run_dir, report, site, refs=None, fb=True):
     rows["physical"] = physical_row(ours, ref, align)
     if refs is not None:
         keys = {k for s in layers["cameras"]["shots"] for k in s["keyframes"]}
-        clicks = make_clicks(refs)
+        clicks = clicks or make_clicks(refs)
         rows["clicks"], extras["clicks"] = {}, {}
         for name, pick in run_picks(run_dir, report, layers):
             rows["clicks"][name], extras["clicks"][name] = click_row(pick, refs, clicks, fps, drop_frames=keys)
@@ -1377,6 +1381,7 @@ def mvp_rows(run_dir, report, site, refs=None, fb=True):
 # ---------- the decider on X8 set d (spec 8.4, 5.5) ----------
 
 X8_RUN = PHASE2 / "runs/fx-x8-jev-001"
+B_ANSWERS = PHASE2 / "runs/mvp-b-judge-decider-001/answers.json"  # B2's set-d run with the deployed prompt
 
 
 def x8_probs(decisions, model):
@@ -1395,6 +1400,8 @@ def decider_rows(decisions=None):
     gem = X8_RUN / "gemini-d.json"
     if gem.exists():
         got["gemini-stated-p"] = {k: min(max(float(a["p_yes"]), 0.), 1.) for k, a in json.loads(gem.read_text())["answers"].items()}
+    if B_ANSWERS.exists():  # B's deployed prompt (yes / no / cannot tell), the one the pipeline calibrates
+        got["qwen deployed (B)"] = {x["id"]: float(x["p"]) for x in json.loads(B_ANSWERS.read_text())["items"] if x.get("p") is not None}
     out = {m: cb.decider(items, p, f"{decisions.name}:{m}") for m, p in got.items() if p}
     lat = (json.loads(decisions.read_text())["res"].get("latency") or {})
     swap = None
@@ -1425,7 +1432,13 @@ def mvp(out, runs, repeats, gpu=True, labels_dir=None, decisions=None, write_cal
     fam_all, judged = {}, {}
     for site, (run_dir, report) in runs.items():
         refs = load_refs(out / f"refs-{site}.npz") if (out / f"refs-{site}.npz").exists() else None
-        rows, extras = mvp_rows(run_dir, report, site, refs)
+        clicks = None
+        if refs is not None:  # the seed-0 clicks depend on the references only: made once, kept beside them
+            cpath = out / f"clicks-{site}.json"
+            if not cpath.exists():
+                cpath.write_text(json.dumps(make_clicks(refs)))
+            clicks = json.loads(cpath.read_text())
+        rows, extras = mvp_rows(run_dir, report, site, refs, clicks=clicks)
         for name, recs in (extras.get("clicks") or {}).items():
             (out / f"clicks-{site}-{name.split(' ')[1]}.json").write_text(json.dumps(recs))
         summary["ident_rows"] += extras["identity_rows"]
@@ -1438,6 +1451,8 @@ def mvp(out, runs, repeats, gpu=True, labels_dir=None, decisions=None, write_cal
                 fam_all.setdefault("shifted" in name, {}).setdefault(f, []).extend(xs)
         if labels_dir and (Path(labels_dir) / f"labels-clicks-{site}.json").exists():
             rows["click_audit"] = click_audit(json.loads((Path(labels_dir) / f"labels-clicks-{site}.json").read_text()))
+        if labels_dir and (Path(labels_dir) / f"labels-boxes-{site}.json").exists():
+            rows["box_audit"] = box_audit(json.loads((Path(labels_dir) / f"labels-boxes-{site}.json").read_text()))
         summary["sites"][site] = rows
     if judged:
         lab = Path(labels_dir or out) / "labels-judgements.json"
@@ -1449,12 +1464,11 @@ def mvp(out, runs, repeats, gpu=True, labels_dir=None, decisions=None, write_cal
     summary["k_family"] = cb.k_family(fam_k) if any(fam_k.values()) else None
     summary["k_source"] = "warm vs shifted window" if fam_all.get(True) else "repeats of the same window" if fam_k else None
     summary["identity_calibration"] = cb.identity([r for r in summary["ident_rows"] if r["p"] is not None]) if summary["ident_rows"] else None
-    if write_calibration:  # the MVP decider (Qwen option letters) always; identity and k only from cards (the baseline has neither)
-        sections = {"decider": summary["decider"]["qwen"]}
-        if has_cards:
-            sections.update(identity=summary["identity_calibration"], k=summary["k_family"])
-        cal = cb.write(sections)
+    if write_calibration and has_cards:  # identity and k come from cards (today's boxes carry neither); B owns 'questions'
+        cal = cb.write({k: v for k, v in (("identity", summary["identity_calibration"]), ("k", summary["k_family"])) if v})
         (out / "calibration.json").write_text(json.dumps(cal, indent=1))
+    elif write_calibration:
+        summary["calibration_note"] = "not written: no object_cards in these runs (identity and k are learnt from cards)"
     summary["acceptance"] = acceptance(summary)
     (out / "summary.json").write_text(json.dumps(summary, indent=1, default=str))
     (out / "summary.md").write_text(summary_md(summary))
@@ -1532,6 +1546,16 @@ def click_audit(labels):
             "auto_wrong_but_labelled_right": sum(not v["auto"] and v["label"] != "different" for v in rows), "labeller": "agent"}
 
 
+def box_audit(labels):
+    """L1 audit (spec 8.3): labels {tile: {'group': 'flagged' | 'largest-unflagged', 'label': 'inflated' | 'size right' | 'unclear'}}
+    -> the flag's precision (inflated among decided flagged boxes) and what it misses (inflated among the largest unflagged)."""
+    out = {}
+    for g in ("flagged", "largest-unflagged"):
+        c = {k: sum(v["group"] == g and v["label"] == k for v in labels.values()) for k in ("inflated", "size right", "unclear")}
+        out[g] = {**c, "inflated_share_of_decided": round(c["inflated"] / max(c["inflated"] + c["size right"], 1), 4)}
+    return {**out, "labeller": "agent", "reading": "flagged: share truly inflated (the flag's precision); largest-unflagged: share the flag missed"}
+
+
 def summary_md(summary):
     """One table across the videos (spec 8.6), then the decider table."""
     sites = list(summary["sites"])
@@ -1553,11 +1577,16 @@ def summary_md(summary):
         c = lambda r, n=name: r["clicks"][n]  # noqa: E731
         row(f"{name}: object clicks correct / unknown / wrong (n)", lambda r, c=c: "{} / {} / {} ({})".format(
             pct(c(r)["object"]["correct_rate"]), pct(c(r)["object"]["unknown_rate"]), pct(c(r)["object"]["wrong_entity_rate"]), c(r)["object"]["n"]))
+        row(f"{name}: object clicks correct by IoU >= 0.3 alone", lambda r, c=c: pct(c(r)["object"].get("correct_iou_only_rate")))
         row(f"{name}: correct on segmented / projected pick frames", lambda r, c=c: " / ".join(
             f"{pct(v.get('correct_rate'))} ({v['n']})" for v in (c(r)["object_by_source"].get(k, {"n": 0}) for k in ("segmented", "projected"))))
         row(f"{name}: person clicks correct (n)", lambda r, c=c: f"{pct(c(r)['person'].get('correct_rate'))} ({c(r)['person']['n']})")
         row(f"{name}: background false hits (<= 10%)", lambda r, c=c: pct(c(r)["background"]["false_hit_rate"]))
     row("click audit: auto rule agrees with the agent", lambda r: f"{pct(r['click_audit']['agreement_with_auto_rule'])} {r['click_audit']['labels']}")
+    row("L1 audit: flagged boxes truly inflated (inflated / size right / unclear)", lambda r: "{} ({} / {} / {})".format(
+        pct(r["box_audit"]["flagged"]["inflated_share_of_decided"]), *(r["box_audit"]["flagged"][k] for k in ("inflated", "size right", "unclear"))))
+    row("L1 audit: 30 largest unflagged boxes inflated (inflated / size right / unclear)", lambda r: "{} ({} / {} / {})".format(
+        pct(r["box_audit"]["largest-unflagged"]["inflated_share_of_decided"]), *(r["box_audit"]["largest-unflagged"][k] for k in ("inflated", "size right", "unclear"))))
     row("identity: matched / delivered clear; agreement", lambda r: f"{r['identity']['matched']}/{r['identity']['delivered_clear']}; {pct(r['identity']['agreement'])}")
     row("identity: SAM 3 word on the same pairs", lambda r: pct(r["identity"].get("sam3_word_agreement")))
     for q in ("top", "base", "long_side", "short_side"):

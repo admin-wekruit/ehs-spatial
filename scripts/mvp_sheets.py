@@ -1,9 +1,10 @@
 """Contact sheets for the click MVP's agent audits (CLICK-MVP-SPEC 8.1, 8.3, 8.4), each with a label template beside it.
 The agent (not a person, not ground truth) fills the 'label' fields; fast_report_eval reads them back.
 
-  clicks:      60 object clicks a video (seed 0): the eval frame with the reference outlined and the click marked | the pick
-               frame with the picked entity lit | the picked entity's best view with its outline and name.
-               labels: same object | part of it | different | unclear
+  clicks:      60 object clicks a video that returned an entity (seed 0): the eval frame with the reference outlined (green)
+               and the click marked | the pick frame with the picked entity lit (cyan) | the picked entity's best view.
+               labels: same object (the lit entity is the referenced thing) | part of it (one is a part of the other: a
+               mill's table and the mill, a label on a cabinet) | different (another thing, e.g. the bench under a board) | unclear
   boxes:       30 flagged (implausible) boxes and the 30 largest unflagged a video, on their best view with the outline.
                labels: size right | inflated | unclear
   judgements:  every FAIL, then PASS / NEEDS_REVIEW rows per check (>= 60 over the videos): evidence images + the geometry line.
@@ -116,10 +117,10 @@ def best_view(entity, objects, polys):
 
 
 def clicks(out, site, run_dir, report, variant="v1", n=60, mp4=None):
-    """The click audit: n object clicks of clicks-<site>-<variant>.json (seeded), three panels a tile."""
+    """The click audit: n object clicks that returned an entity (seeded; a miss needs no audit), three panels a tile."""
     import cv2
     out = Path(out)
-    recs = [r for r in json.loads((out / f"clicks-{site}-{variant}.json").read_text()) if r["kind"] == "object"]
+    recs = [r for r in json.loads((out / f"clicks-{site}-{variant}.json").read_text()) if r["kind"] == "object" and r["entity"]]
     pick_idx = np.random.default_rng(0).permutation(len(recs))[:n]
     recs = [recs[i] for i in sorted(pick_idx, key=lambda i: (recs[i]["frame"], recs[i]["x"]))]
     refs = ev.load_refs(out / f"refs-{site}.npz")

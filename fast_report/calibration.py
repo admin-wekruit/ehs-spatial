@@ -1,10 +1,13 @@
-"""Calibration for the click MVP (CLICK-MVP-SPEC sections 4.4, 4.7, 5.3, 8.2-8.4). D writes fast_report/calibration.json;
-A reads the identity table and k, B reads the decider's Platt pairs. One JSON, three sections, each optional:
+"""Calibration for the click MVP (CLICK-MVP-SPEC sections 4.4, 4.7, 5.3, 8.2-8.4). One JSON, fast_report/calibration.json.
+B owns its top-level "questions" (the decider's Platt pairs, fitted by fast_report.judge --calibrate on its deployed
+prompt); D adds, when the run has cards to learn them from:
 
-  decider:  {"source", "questions": {qid: {"a", "b", "fit": "per-question" | "pooled", "n", "positives",
-                                           "raw": {...}, "calibrated_cv": {...}}}}   p' = sigmoid(a * logit(p_yes) + b)
-  identity: {"routes": {route: {"bins": [[lo, hi, n, accuracy]], "n", "accuracy"}}, "ece_cv_by_video", ...}
-  k:        {family: {"k", "n", "coverage_before", "coverage_after"}}   families: height, extent, position, angle
+  identity: {"routes": {route: {"bins": [[lo, hi, n, accuracy]], "n", "accuracy"}}, "ece_cv_by_video", ...}  (A reads it:
+            identity_confidence(cal["identity"]["routes"], decided_by, p))
+  k:        {family: {"k", "n", "coverage_before", "coverage_after"}}   families: height, extent, position, angle  (A's u)
+
+decider() here evaluates any decider's set-d probabilities (raw vs Platt-calibrated, cross-fitted by source) for the
+report; it does not write the file.
 
 Metrics: Brier; ECE two ways, 10 bins: 'ece' = top-label confidence vs correct (X8's x8_metrics.ece, so numbers compare with
 X8) and 'ece_p_yes' = binned p_yes vs the yes rate; AUROC of p_yes (Mann-Whitney, ties half). Cross-validation is grouped:
@@ -115,12 +118,6 @@ def decider(items, probs, source, folds=5):
     return out
 
 
-def apply_decider(cal, qid, p_yes):
-    """Calibrated p_yes, or None when the file has no pair for this question (the answer stays uncalibrated)."""
-    qs = ((cal or {}).get("decider") or {}).get("questions") or {}
-    return None if qid not in qs else float(platt_apply((qs[qid]["a"], qs[qid]["b"]), p_yes))
-
-
 def _bin(p, bins=BINS):
     return min(int(float(p) * bins), bins - 1)
 
@@ -187,7 +184,7 @@ def load(path=PATH):
 
 
 def write(sections, path=PATH):
-    """Merge sections into the file (others kept); k may only go up (spec 4.4: D may only raise it)."""
+    """Merge sections into the file (B's 'questions' and anything else kept); k may only go up (spec 4.4: D may only raise it)."""
     cal = load(path) or {"schema": "panoptes-calibration-v1"}
     if "k" in sections and cal.get("k"):
         for fam, v in sections["k"].items():
@@ -215,9 +212,7 @@ def self_check():
     assert d["all"]["calibrated_cv"]["brier"] <= d["all"]["raw"]["brier"] + 1e-6, d["all"]
     assert d["all"]["calibrated_cv"]["ece"] < d["all"]["raw"]["ece"], d["all"]
     assert d["all"]["raw"]["n"] == 420, "items without a probability are left out"
-    cal = {"decider": d}
-    assert apply_decider(cal, "q9", .9) is None and 0 < apply_decider(cal, "q1", .999) < .999
-    assert abs(float(platt_apply((1., 0.), .7)) - .7) < 1e-9
+    assert abs(float(platt_apply((1., 0.), .7)) - .7) < 1e-9 and 0 < float(platt_apply((d["questions"]["q1"]["a"], 0.), .999)) < .999
     # identity: a route whose 0.9 bin is right half the time reads 0.5; unknown route -> None
     rows = [{"video": v, "route": "vlm options", "p": .95, "correct": k % 2} for v in "abc" for k in range(10)]
     rows += [{"video": v, "route": "sam3 vote", "p": .35, "correct": 1} for v in "abc" for _ in range(4)]
@@ -234,7 +229,8 @@ def self_check():
         f = Path(tmp) / "c.json"
         write({"k": {"height": {"k": 1.5}}}, f)
         assert write({"k": {"height": {"k": 1.2}}}, f)["k"]["height"]["k"] == 1.5, "k may only go up"
-        assert write({"identity": ident}, f)["k"]["height"]["k"] == 1.5, "other sections kept"
+        f.write_text(json.dumps({**json.loads(f.read_text()), "questions": {"q1": {"a": 1, "b": 0, "status": "calibrated"}}}))
+        assert write({"identity": ident}, f)["k"]["height"]["k"] == 1.5 and json.loads(f.read_text())["questions"]["q1"]["a"] == 1, "others kept"
     print("calibration self-check passed: Platt per question / pooled, grouped CV, metrics, identity bins, k, merge")
 
 
