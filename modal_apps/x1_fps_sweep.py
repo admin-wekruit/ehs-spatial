@@ -189,7 +189,7 @@ def unpack(p, dev):
 def lift_big(m2, frame_of, depth_m, K, c2w_m, dyn2, rows=4096, batch=16384):
     """fast_report.segment.lift (E7/E9's rule, unchanged) for masks and people already at stride 2, with the voxel
     overlap product in row blocks (one product over 30 fps masks does not fit) -> (comp, arrays, stats, extra) where
-    extra: per lifted mask its index and 3D centroid, per component its voxel codes."""
+    extra: per lifted mask its index, 3D centroid and own extents (edge pixels out), per component its voxel codes."""
     import torch
     from scipy.sparse import coo_matrix
     from scipy.sparse.csgraph import connected_components
@@ -258,9 +258,22 @@ def lift_big(m2, frame_of, depth_m, K, c2w_m, dyn2, rows=4096, batch=16384):
     # extras for the sweep's measures (not part of the lift rule)
     cnt = torch.bincount(mid, minlength=L).float().clamp(min=1)
     mask_cent = torch.zeros(L, 3, device=dev).index_add_(0, mid, world) / cnt[:, None]
+    # per lifted mask, its own 3D extents (one view: no cross-view depth disagreement), flying depth-edge pixels out
+    import m3_exp_geometry as geo
+    pad = torch.nn.functional.pad(depth_m[:, None], (1, 1, 1, 1), mode="replicate")[:, 0]
+    nb = torch.stack([pad[:, 1:-1, :-2], pad[:, 1:-1, 2:], pad[:, :-2, 1:-1], pad[:, 2:, 1:-1]])
+    edge = ((nb - depth_m).abs().amax(0) > geo.EDGE_JUMP * depth_m)[:, ::stride, ::stride]
+    ok = ~edge[fr_[mid], vy, vx]
+    m_, w_ = mid[ok], world[ok]
+    n_ = torch.bincount(m_, minlength=L).float()
+    mu = torch.zeros(L, 3, device=dev).index_add_(0, m_, w_) / n_.clamp(min=1)[:, None]
+    dm = w_ - mu[m_]
+    cov = torch.zeros(L, 9, device=dev).index_add_(0, m_, (dm[:, :, None] * dm[:, None, :]).reshape(-1, 9)).reshape(L, 3, 3) / n_.clamp(min=1)[:, None, None]
+    view_ext = torch.sqrt(12 * torch.linalg.eigvalsh(cov).clamp(min=0)).flip(1)
+    view_ext[n_ < 8] = float("nan")
     counts = torch.bincount(oc, minlength=ncomp).cpu().numpy()
     codes = np.split(vox[ovid].cpu().numpy(), np.cumsum(counts)[:-1])
-    extra = {"lifted": idx.cpu().numpy(), "mask_centroid": mask_cent.cpu().numpy(), "codes": codes}
+    extra = {"lifted": idx.cpu().numpy(), "mask_centroid": mask_cent.cpu().numpy(), "codes": codes, "view_extent": view_ext.cpu().numpy()}
     return comp, arrays, stats, extra
 
 
@@ -899,13 +912,15 @@ def analyse(p, M, clock, rec, jpgs):
                         for w_, s_ in V["votes"].get(int(x), []):
                             vv[words[w_]] = vv.get(words[w_], 0.) + s_
                     best = gi[np.argmax(V["score"][gi] * np.sqrt(area[mem]))]
-                    e = robust_extents(ex["codes"][c], sg.LIFT_VOXEL)
+                    ve = ex["view_extent"][[lifted_pos[int(m)] for m in mem]]
+                    eu = robust_extents(ex["codes"][c], sg.LIFT_VOXEL)
+                    e = np.nanmedian(ve, 0) if np.isfinite(ve).all(1).any() else eu  # the median view's extents; the union's when no view has 8 points
                     mc = ex["mask_centroid"][[lifted_pos[int(m)] for m in mem]]
                     dev_ = np.linalg.norm(mc - np.median(mc, 0), axis=1)
                     nfr = len(set(V["frame"][gi].tolist()))
                     found.append({"id": f"{cfg}-{si}-{len(found)}", "shot": si, "word": sg.name(vv, words), "frames": int(arr["frames"][c]),
                                   "masks": int(len(mem)), "voxels": int(arr["voxels"][c]), "centroid_m": arr["centroid"][c].round(3).tolist(),
-                                  "extent_m": e.round(3).tolist(), "aabb_m": [(arr["lo"][c] - sg.LIFT_VOXEL / 2).round(3).tolist(), (arr["hi"][c] + sg.LIFT_VOXEL / 2).round(3).tolist()],
+                                  "extent_m": e.round(3).tolist(), "extent_union_m": eu.round(3).tolist(), "aabb_m": [(arr["lo"][c] - sg.LIFT_VOXEL / 2).round(3).tolist(), (arr["hi"][c] + sg.LIFT_VOXEL / 2).round(3).tolist()],
                                   "best": [int(V["frame"][best]), int(best)], "first_frame": int(V["frame"][gi].min()),
                                   "view_centroid_spread_m": round(float(np.median(dev_)), 4) if nfr >= 3 else None,
                                   "small": bool(e[0] < SMALL_M), "thin_long": bool(e[0] >= THIN_MIN_M and e[0] >= THIN_RATIO * e[1])})
@@ -942,7 +957,7 @@ def analyse(p, M, clock, rec, jpgs):
                                        new_with_3plus_views=sum(o["frames"] >= 3 for o in new),
                                        new_words_top=sorted(words_new.items(), key=lambda x: -x[1])[:15],
                                        spread_of_objects_shared_with_current_m=round(float(np.median(kept_)), 4) if kept_ else None)
-    rec["object_lists"] = {cfg: [{k: o[k] for k in ("id", "shot", "word", "centroid_m", "frames", "extent_m", "small", "thin_long")} | {"share_in_current": o.get("share_in_current")}
+    rec["object_lists"] = {cfg: [{k: o[k] for k in ("id", "shot", "word", "centroid_m", "frames", "extent_m", "extent_union_m", "small", "thin_long", "first_frame")} | {"share_in_current": o.get("share_in_current")}
                                  for o in objs[cfg]] for cfg in obj_cfgs}
 
     # contact sheets: objects found at 30 fps (every frame) / 5 fps with no counterpart at the current rate
@@ -1020,7 +1035,7 @@ def analyse(p, M, clock, rec, jpgs):
     with guard("outlines"), torch.inference_mode(), clock.stage("outlines", gpu=1, n={"frames": len(evalf)}):
         refs = {e: idmap("b1", e, d1) for e in evalf}
         for cfg in [c for c in obj_cfgs if c != "b1"]:
-            rows = {"projected": [], "held": []}
+            rows, union = {"projected": [], "held": []}, {"projected": [0, 0], "held": [0, 0]}
             t_o = time.perf_counter()
             for e in evalf:
                 si = in_shot(e)
@@ -1033,18 +1048,23 @@ def analyse(p, M, clock, rec, jpgs):
                 lab = project_to(srcs, lambda k: idmap(cfg, k, d1), get, e)
                 person = dyn[e].to(d1)
                 lab[person] = -1
-                rows["projected"] += score(refs[e], lab.clamp(min=0), person)
                 held_lab = idmap(cfg, (before or after)[0], d1)
-                rows["held"] += score(refs[e], held_lab, person)
+                for kind, pred in (("projected", lab.clamp(min=0)), ("held", held_lab)):
+                    rows[kind] += score(refs[e], pred, person)
+                    a_, b_ = (refs[e] > 0) & ~person, (pred > 0) & ~person
+                    union[kind][0] += int((a_ & b_).sum())
+                    union[kind][1] += int((a_ | b_).sum())
             res = {}
             for kind, r in rows.items():
                 a = np.array(r, float).reshape(-1, 3)
                 res[kind] = {"regions": len(a), "iou_mean": round(float(a[:, 0].mean()), 4) if len(a) else None,
                              "iou_area_weighted": round(float((a[:, 0] * a[:, 1]).sum() / a[:, 1].sum()), 4) if len(a) else None,
-                             "coverage_area_weighted": round(float((a[:, 2] * a[:, 1]).sum() / a[:, 1].sum()), 4) if len(a) else None}
+                             "coverage_area_weighted": round(float((a[:, 2] * a[:, 1]).sum() / a[:, 1].sum()), 4) if len(a) else None,
+                             "object_pixels_iou": round(union[kind][0] / max(union[kind][1], 1), 4)}
             res["s"] = round(time.perf_counter() - t_o, 2)
             out_rows[cfg] = res
-    rec["outlines"] = {"eval_frames": evalf, "reference": "every-frame (b1) objects' SAM 3 masks at the eval frame, static (< 50% on a person), >= 1200 px at 1280x720",
+    rec["outlines"] = {"eval_frames": evalf, "reference": "every-frame (b1) objects' SAM 3 masks at the eval frame, static (< 50% on a person), >= 1200 px at 1280x720; "
+                                                          "object_pixels_iou: all object pixels vs all object pixels (no identity, people out)",
                        "rows": out_rows}
 
     # ---------- people: PeopleLoop at 5 / 10 / 15 fps and person-adaptive, same G5 floor and scale ----------
@@ -1091,7 +1111,7 @@ def analyse(p, M, clock, rec, jpgs):
                 uv = (cc @ K_ref.T)[:, :2] / cc[:, 2:3]
                 x0, y0 = uv.min(0)
                 x1, y1 = uv.max(0)
-                if x0 < 0 or y0 < 0 or x1 > 1280 or y1 > 720 or (x1 - x0) * (y1 - y0) < 60 * 60 or (x1 - x0) * (y1 - y0) > 700 * 500:
+                if x0 < 0 or y0 < 0 or x1 > 1280 or y1 > 720 or max(x1 - x0, y1 - y0) < 40 or x1 - x0 > 420 or y1 - y0 > 320:
                     continue
                 picks.append((o["frames"], h, o, (x0, y0, x1, y1)))
         picks.sort(key=lambda x: -x[0])
@@ -1168,7 +1188,7 @@ def payload(site, run, frame_range=None, g30_single=False):
 
 
 @app.local_entrypoint()
-def main(out: str, sites: str = "me340,samsclub-a2,walmart", frames: str = "", g30_single: str = "me340"):
+def main(out: str, sites: str = "me340,samsclub-a2,walmart", frames: str = "", g30_single: str = "me340,samsclub-a2,walmart"):
     import shutil
     out = Path(out)
     out.mkdir(parents=True, exist_ok=False)  # never reuse a run folder
