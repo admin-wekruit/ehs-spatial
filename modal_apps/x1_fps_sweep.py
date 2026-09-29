@@ -1387,6 +1387,10 @@ def evaluate(run_dir):
         out["render_compare"] = rec.get("render_compare")
         result["sites"][site] = out
     result["spend_usd_estimate"] = round(result["spend_usd_estimate"], 3)
+    result["summary"] = summarize(result)
+    extra = run_dir / "results-notes.json"  # hand-written context (provenance, spend of earlier runs, conclusions), merged as is
+    if extra.exists():
+        result.update(json.loads(extra.read_text()))
     (run_dir / "results.json").write_text(json.dumps(result, indent=1, default=plain))
     print(json.dumps({s: {"objects": {c: {k: v.get(k) for k in ("objects", "small", "thin_long", "new_vs_current", "sam3_s_2gpu_MxN")} | {
         "recall_0.5": (v.get("harness_objects_3d") or {}).get("reference_recall_0.5m")} for c, v in o["objects"].items()},
@@ -1394,6 +1398,87 @@ def evaluate(run_dir):
                          "absrel": (v.get("held_out_depth") or {}).get("absrel_median")} for c, v in o["geometry"].items()},
         "errors": list((o.get("errors") or {}).keys())} for s, o in result["sites"].items()}, indent=1, default=plain))
     return result
+
+
+# ---------- summary tables (every number from results.json's site rows) ----------
+
+OBJ_ORDER = ["b6x3", "b6", "b3", "b2", "b1", "a1-motion", "a1-novel", "a2-motion", "a2-novel"]
+GEO_ORDER = ["G5", "G10", "Gmotion", "G30i", "G30c", "G30single"]
+PEOPLE_ORDER = ["b6", "b3", "b2", "p-adapt"]
+LABELS = {"b6x3": "current: every 3rd 5 fps keyframe (~1.7 fps; 1.4 at 25 fps)", "b6": "every 5 fps keyframe (4.2 at 25 fps)",
+          "b3": "sharpest of 3 (~10 fps; 8.3)", "b2": "sharpest of 2 (~15 fps; 12.5)", "b1": "every frame (30 / 25 fps), held-out frames out",
+          "a1-motion": "current + extras by camera motion to the 5 fps frame count", "a1-novel": "current + extras by new content to the 5 fps count",
+          "a2-motion": "5 fps + extras by camera motion to the 10 fps count", "a2-novel": "5 fps + extras by new content to the 10 fps count",
+          "p-adapt": "5 fps, and 15 fps frames only between keyframes where SAM 3 saw a person",
+          "G5": "DA3 any-view on 5 fps keyframes, one forward per shot (production)", "G10": "~10 fps, one forward per shot",
+          "Gmotion": "5 fps + extras by camera motion, 10 fps view budget, one forward", "G30i": "every frame: interleaved chunks (all 5 fps frames + every m-th other, <= 300 views) Sim3 onto G5",
+          "G30c": "every frame: consecutive 150-view chunks chained by Sim3 on shared frames' depth", "G30single": "every frame of the reference shot in ONE forward"}
+
+
+def summarize(result):
+    sites = result["sites"]
+    objects = {cfg: {"meaning": LABELS[cfg], **{s: {
+        "fps_equivalent": r["sets"][cfg]["fps_equivalent"], "segmented_frames": r["sets"][cfg]["frames"],
+        "recall_0.5m": _dig(r, ("objects", cfg, "harness_objects_3d", "reference_recall_0.5m")),
+        "recall_0.3m": _dig(r, ("objects", cfg, "harness_objects_3d", "reference_recall_0.3m")),
+        "recall_0.5m_small_delivered": _dig(r, ("objects", cfg, "recall_by_delivered_size", "small_lt_0.3m", "recall_0.5m")),
+        "recall_0.5m_thin_delivered": _dig(r, ("objects", cfg, "recall_by_delivered_size", "thin_long", "recall_0.5m")),
+        "word_matched_recall_0.5m": _dig(r, ("objects", cfg, "recall_by_delivered_size", "word_matched_named_0.5m", "recall")),
+        "objects": _dig(r, ("objects", cfg, "objects")), "small": _dig(r, ("objects", cfg, "small")), "thin_long": _dig(r, ("objects", cfg, "thin_long")),
+        "views_mean": _dig(r, ("objects", cfg, "views_mean")), "new_vs_current": _dig(r, ("objects", cfg, "new_vs_current")),
+        "new_with_3plus_views": _dig(r, ("objects", cfg, "new_with_3plus_views")),
+        "view_centroid_spread_median_m": _dig(r, ("objects", cfg, "view_centroid_spread_m", "median")),
+        "outline_iou_area_weighted_projected": _dig(r, ("outlines", cfg, "projected", "iou_area_weighted")),
+        "outline_iou_area_weighted_held": _dig(r, ("outlines", cfg, "held", "iou_area_weighted")),
+        "outline_object_pixels_iou_projected": _dig(r, ("outlines", cfg, "projected", "object_pixels_iou")),
+        "sam3_s_2gpu_MxN": _dig(r, ("objects", cfg, "sam3_s_2gpu_MxN")), "lift_s": _dig(r, ("objects", cfg, "lift_s")),
+        "a_core_layout_gib_MxN": _dig(r, ("objects", cfg, "production_layout_gib_MxN"))} for s, r in sites.items()}} for cfg in OBJ_ORDER}
+    for cfg, row in objects.items():
+        rec = [row[s]["recall_0.5m"] for s in sites if row[s]["recall_0.5m"] is not None]
+        row["mean_recall_0.5m_3_videos"] = round(float(np.mean(rec)), 3) if len(rec) == len(sites) else None
+        row["recall_gain_per_extra_sam3_s_vs_current"] = {s: (round((row[s]["recall_0.5m"] - objects["b6x3"][s]["recall_0.5m"]) /
+                                                                    (row[s]["sam3_s_2gpu_MxN"] - objects["b6x3"][s]["sam3_s_2gpu_MxN"]), 5)
+                                                              if cfg != "b6x3" and row[s]["recall_0.5m"] is not None and row[s]["sam3_s_2gpu_MxN"] != objects["b6x3"][s]["sam3_s_2gpu_MxN"] else None)
+                                                          for s in sites}
+    geometry = {cfg: {"meaning": LABELS[cfg], **{s: {
+        "views": _dig(r, ("geometry", cfg, "views_all_shots")), "ate_m": _dig(r, ("geometry", cfg, "ate", "ate_m")),
+        "ate_on_5fps_frames_m": _dig(r, ("geometry", cfg, "ate_on_5fps_frames_only", "ate_m")),
+        "ate_share_of_path": _dig(r, ("geometry", cfg, "ate", "ate_share_of_path")), "path_m": _dig(r, ("geometry", cfg, "ate", "path_m")),
+        "rotation_error_median_deg": _dig(r, ("geometry", cfg, "ate", "rotation_error_deg", "median")),
+        "scale_ours_over_reference": _dig(r, ("geometry", cfg, "scale_vs_reference", "ours_over_reference")),
+        "held_out_coverage": _dig(r, ("geometry", cfg, "held_out_depth", "coverage")), "held_out_hole_fraction": _dig(r, ("geometry", cfg, "held_out_depth", "hole_fraction")),
+        "held_out_absrel_median": _dig(r, ("geometry", cfg, "held_out_depth", "absrel_median")),
+        "held_out_within_10pct": _dig(r, ("geometry", cfg, "held_out_depth", "within_10pct")),
+        "tsdf_points_reference_shot": _dig(r, ("geometry", cfg, "main_shot_tsdf", "tsdf_points")),
+        "da3_gpu_s": _dig(r, ("geometry", cfg, "da3_gpu_s")), "da3_forwards": _dig(r, ("geometry", cfg, "da3_forwards")),
+        "da3_max_views_per_forward": _dig(r, ("geometry", cfg, "da3_max_views_per_forward")),
+        "da3_peak_gib_per_gpu_device_wide": _dig(r, ("geometry", cfg, "da3_peak_gib_per_gpu")),
+        "tsdf_s": _dig(r, ("geometry", cfg, "tsdf_s_all_shots"))} for s, r in sites.items()}} for cfg in GEO_ORDER}
+    people = {cfg: {"meaning": LABELS.get(cfg, cfg), **{s: {
+        "keyframes": _dig(r, ("people", cfg, "keyframes")),
+        "path_difference_median_m": _dig(r, ("people", cfg, "harness_people", "path_difference_floor_m", "median")),
+        "path_difference_p90_m": _dig(r, ("people", cfg, "harness_people", "path_difference_floor_m", "p90")),
+        "points_matched": _dig(r, ("people", cfg, "harness_people", "matched")), "points_extra": _dig(r, ("people", cfg, "harness_people", "extra")),
+        "id_switches": _dig(r, ("people", cfg, "identity", "id_switches_inside_our_tracks")),
+        "extra_tracks_per_delivered_person": _dig(r, ("people", cfg, "identity", "extra_tracks_per_delivered_person")),
+        "delivered_people_matched": _dig(r, ("people", cfg, "identity", "delivered_people_matched")),
+        "R3_speed_agree_vs_5fps_before_gate": _dig(r, ("people", cfg, "rules_vs_5fps", "R3_speed_before_gate", "agree_share")),
+        "pass_fail_flips_vs_5fps": (sum(v["pass_fail_flips"] for v in r["people"][cfg]["rules_vs_5fps"].values())
+                                    if isinstance(_dig(r, ("people", cfg, "rules_vs_5fps")), dict) else None),
+        "R3_speed_agree_vs_E3_ref10": _dig(r, ("people", cfg, "harness_people", "rules_vs_e3_ref10", "R3_speed_before_gate", "agree_share")),
+        "peopleloop_s": _dig(r, ("people", cfg, "s")), "sam3_person_s_2gpu_MxN": _dig(r, ("people", cfg, "sam3_person_s_2gpu_MxN"))}
+        for s, r in sites.items()}} for cfg in PEOPLE_ORDER}
+    sam3 = {s: {"gpu_s_per_frame": r["sam3"]["gpu_s_per_frame"], "words": r["words"], "phases": r["sam3"]["phases"],
+                "peak_gib_per_gpu_device_wide": r["sam3"]["peak_gib_per_gpu_during_sam3"], "masks": r["sam3"]["masks"]} for s, r in sites.items()}
+    return {"objects": objects, "geometry": geometry, "people": people, "sam3": sam3}
+
+
+def _dig(d, keys):
+    for k in keys:
+        if not isinstance(d, dict) or k not in d:
+            return None
+        d = d[k]
+    return d
 
 
 if __name__ == "__main__":
