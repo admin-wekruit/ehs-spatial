@@ -22,6 +22,7 @@ MAX_R_DEG, MAX_T_M = 3., .10  # X4's per-view ICP refusal limits
 SIGMA_LS, SIGMA_B_M, MAX_LS, MAX_B_M = .1, .05, .5, .2  # per-view depth scale / shift
 SIGMA_LS_MEAN, SIGMA_LSIG, MAX_LSIG = .005, 1., .3  # the mean depth scale (views with depth data) held at the coarse map's;
 # the baseline scale free within x0.74..1.35 (a solve at that bound is refused: the coarse cameras are kept)
+START_MAX_PX = 50.
 MIN_DEPTH_OBS, OUTLIER_LS = 10, .2  # a view's depth scale counts with >= 10 observations; > 0.2 off the median: its depth is dropped
 MAX_TRACKS = 800  # all tracks near the spot, then the longest others
 DEPTH_SIG = (.01, .01)  # DA3 depth at a track: 1 cm + 1 % of the depth
@@ -96,6 +97,13 @@ def build_tracks(nkp, pairs):
     keep = ((per == uniq) & (per >= 2))[comp]
     _, track = np.unique(comp[keep], return_inverse=True)
     return view[keep], nodes[keep] - off[view[keep]], track.astype(int)
+
+
+def sane(view, uv, track, K, c2w, X, zmin=.1, max_px=START_MAX_PX):
+    """Observations whose start point is in front of the view (> 10 cm) and within 50 px of the keypoint: a point behind
+    a camera (a DLT start at infinity) makes the projection discontinuous and stalls the solve (run 007: 4 spots)."""
+    u, v, z = proj(c2w[view, :3, :3], c2w[view, :3, 3], K[view], X[track])
+    return (z > zmin) & (np.hypot(u - uv[:, 0], v - uv[:, 1]) <= max_px)
 
 
 def init_points(view, uv, track, K, c2w, dobs, T):
@@ -623,11 +631,14 @@ def local_ba(m, imgs, depth, K, c2w, kept, box, resect_view=None, tri=False, rer
         uv[o] = kp[k][kpi[o]]
         dobs[o] = sample_depth(Dv[k], uv[o, 0], uv[o, 1])
     X0, has = init_points(view, uv, track, Kv, C0, dobs, T) if T else (np.zeros((0, 3)), np.zeros(0, bool))
-    if T and not has.all():  # tracks with neither depth nor a triangulation: out
-        keep_t = np.flatnonzero(has)
+    if T:  # tracks with neither depth nor a triangulation, or whose start point sits behind / far off a view: out
+        ok_o = sane(view, uv, track, Kv, C0, X0) & has[track]
+        good = np.bincount(track[ok_o], minlength=T) >= 2
+        info["tracks_dropped_at_start"] = int(T - good.sum())
+        keep_t = np.flatnonzero(good)
         remap = -np.ones(T, int)
         remap[keep_t] = np.arange(len(keep_t))
-        o = has[track]
+        o = ok_o & good[track]
         view, kpi, track, uv, dobs = view[o], kpi[o], remap[track[o]], uv[o], dobs[o]
         X0, T = X0[keep_t], len(keep_t)
     region = in_box(X0, box, REGION_M) if T else np.zeros(0, bool)
@@ -802,7 +813,11 @@ def self_check():
     tt *= .06 / np.linalg.norm(tt, axis=1, keepdims=True)
     coarse = moved(c2w, w, tt)
     X0, has = init_points(view, uv, track, Ks, coarse, dobs, len(X))
-    assert has.all()
+    assert has.all() and sane(view, uv, track, Ks, coarse, X0).mean() > .98  # 2 deg / 6 cm / 7 % off: a few starts past 50 px
+    Xb = X0.copy()
+    Xb[0] = [0, 0, -2.]  # behind every camera
+    sb, s0 = sane(view, uv, track, Ks, coarse, Xb), sane(view, uv, track, Ks, coarse, X0)
+    assert not sb[track == 0].any() and np.array_equal(sb[track != 0], s0[track != 0])
     dsel = np.ones(len(view), bool)
     b4 = solve(view, uv, track, Ks, coarse, dobs, dsel, X0, cams=False)
     af = solve(view, uv, track, Ks, coarse, dobs, dsel, X0, cams=True)

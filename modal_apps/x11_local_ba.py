@@ -32,7 +32,7 @@ import x4_refine as x4  # noqa: E402
 LG_REV = "eb42fee2d71449efb0aa5c10549752b5d75384d8"  # cvg/LightGlue HEAD on 2026-09-28
 CLIPS = {"me340-165": "source-full.mp4", "samsclub-337": "source-full.mp4", "walmart-190": "source-full.mp4",
          "lightning-3585": "source-rgb.mp4"}  # the factory clip has no 1280x720 cut: its 640x480 playback file
-METHODS = ("anchor", "anchor+ba", "anchor+ba+tri", "anchor+ba+da3", "anchor+ba+mvs")
+METHODS = ("anchor", "anchor+ba", "anchor+ba+tri", "anchor+ba+da3", "anchor+ba+da3+tri", "anchor+ba+mvs")
 CPU, MEM_GIB = 16, 64
 FACE_M = .03  # tilt repeatability: points within 3 cm of frames A's plane
 PRICE_S = fra.PRICE["A100-80GB"] + CPU * fra.PRICE["cpu_core"] + MEM_GIB * fra.PRICE["gib"]
