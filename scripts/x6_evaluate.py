@@ -32,7 +32,44 @@ def delivered(site, ref):
     ids = list(json.loads((PHASE2 / "runs" / MERGED[site] / "merge.json").read_text())["choice"])
     ents = {e["entityId"]: e for e in json.loads(ref["object_map"].read_text())["entities"]}
     names = json.loads(ref["names"].read_text())
-    return [{"id": i, "name": names.get(i, {}).get("category"), "xyz": np.array(ents[i]["centroidNative"]) * ref["mpn"]} for i in ids if i in ents]
+    return [{"id": i, "name": names.get(i, {}).get("category"), "xyz": np.array(ents[i]["centroidNative"]) * ref["mpn"],
+             "box": np.array(ents[i]["boundsNative"]) * ref["mpn"]} for i in ids if i in ents]
+
+
+def fragments(points, dl, sim, pad=.1):
+    """Per delivered object: how many of `points` lie inside its box (+ pad): 2 or more = one object in pieces."""
+    s, R, t = sim
+    if not len(points):
+        return {"covered": 0, "of": len(dl), "in_pieces": 0}
+    xyz = (s * (R @ np.asarray(points, float).T)).T + t
+    per = np.array([np.all((xyz >= o["box"][0] - pad) & (xyz <= o["box"][1] + pad), axis=1).sum() for o in dl])
+    return {"covered": int((per >= 1).sum()), "of": len(dl), "in_pieces": int((per >= 2).sum()), "pieces_per_covered_median": float(np.median(per[per >= 1])) if (per >= 1).any() else None,
+            "ours_inside": int(per.sum())}
+
+
+def split_candidates(objs, radius=.3):
+    """Pairs of our objects that are probably one object split across windows: same map frame and word, never seen in one
+    window together, some per-window positions within `radius`."""
+    n = 0
+    for i, a in enumerate(objs):
+        wa = {p["window"] for p in a["positions"]}
+        pa = np.array([p["centroid"] for p in a["positions"]])
+        for b in objs[i + 1:]:
+            if b["frame"] != a["frame"] or b["label"] != a["label"] or wa & {p["window"] for p in b["positions"]}:
+                continue
+            pb = np.array([p["centroid"] for p in b["positions"]])
+            n += bool((np.linalg.norm(pa[:, None] - pb[None], axis=2) <= radius).any())
+    return n
+
+
+def baseline_me340():
+    """Today's core on ME340 (fb-a-core-011, the whole-shot lift) in the same shape as a run, for the duplicate rows."""
+    rep = PHASE2 / "runs/fb-a-core-011/fb-me340-e84efffd-1790639941/patches"
+    cams = json.loads((rep / "000002-cameras.json").read_text())["data"]["shots"]
+    objs = json.loads((rep / "000008-objects.json").read_text())["data"]["objects"]
+    cameras = {str(k): {"frame": s["index"], "c2w": c} for s in cams for k, c in zip(s["keyframes"], s["c2w"])}
+    return {"cameras": cameras, "keyframes": [k for s in cams for k in s["keyframes"]],
+            "objects": [{"frame": o["shot"], "label": o["word"], "positions": [{"window": 0, "centroid": o["centroid_m"]}]} for o in objs]}
 
 
 def align(run, ref):
@@ -116,9 +153,20 @@ def evaluate(run, site):
         row["duplicates_vs_delivered"] = {f"{r}m": {"global_objects": duplicates(cent, [o["label"] for o in objs], dl, sim, r),
                                                     "per_window_instances": duplicates([x["centroid"] for x in inst], [x["label"] for x in inst], dl, sim, r)}
                                           for r in (.3, .5)}
+        row["pieces_in_delivered_boxes"] = {"global_objects": fragments(cent, dl, sim), "per_window_instances": fragments([x["centroid"] for x in inst], dl, sim)}
+        if site == "me340":
+            b = baseline_me340()
+            ab = align(b, ref)
+            if ab:
+                bs = ab.pop("sim3")
+                bo = [o for o in b["objects"] if o["frame"] == ab["frame"]]
+                row["today_core_fb_a_core_011"] = {"ate_m": ab["ate_m"], "objects_in_frame": len(bo),
+                                                   "pieces_in_delivered_boxes": fragments([o["positions"][0]["centroid"] for o in bo], dl, bs),
+                                                   "within_0.3m": duplicates([o["positions"][0]["centroid"] for o in bo], [o["label"] for o in bo], dl, bs, .3)}
     objs = run["objects"]
     row["objects"] = {"global": len(objs), "per_window_instances": len(run["per_window_instances"]),
                       "seen_in_2plus_windows": sum(o["windows_observed"] >= 2 for o in objs),
+                      "split_candidates_0.3m_same_word": split_candidates(objs),
                       "states": count_states(objs)}
     row["changes"] = [{k: c.get(k) for k in ("object", "label", "kind", "window", "t_before", "t_after", "before_key", "after_key", "distance_m", "appearance_cos")}
                       | {"free_views": c["place"]["free_views"], "best_free_share": c["place"]["best_free_share"], "withdrawn_in_window": c.get("withdrawn_in_window")}

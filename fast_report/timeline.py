@@ -14,7 +14,8 @@ on points instead of a box: a box of an object that is not axis-aligned claims a
 inside the view's inner 90 % (BORDER), within MAX_RANGE of the camera, off person pixels; an object is judged only when
 it was observed on >= MIN_OBS_KEYS keyframes and covers >= MIN_PIX grid pixels there:
   free        the window's depth, minimum over NEIGH px around where the object's points project (a pose or stitch error
-              of a pixel or two must not put a point on the background beside the object), lies > 2 sigma beyond them in
+              of a pixel or two must not put a point on the background beside the object), lies > 2 sigma + REL_MARGIN z
+              beyond them (depth errors between windows are relative: a stitched scale, a far view) in
               >= MIN_VIEWS keyframes on >= FREE_SHARE of the judged points: the camera saw through its place -> 'disappeared', or
               'moved' when an unmatched instance of this or a later window matches its appearance (cos >= the video's
               negative-pair 99th percentile, cascade.calibrate) and size, elsewhere;
@@ -33,7 +34,8 @@ import numpy as np
 POSE_M, DEPTH_REL = .04, .05
 K_SIGMA, IOU_MIN = 3., .2
 FREE_SHARE, MIN_VIEWS, MIN_JUDGED, SEEN_SHARE, MIN_EXTENT = .6, 2, 30, .5, .1
-BORDER, MAX_RANGE, NEIGH, MIN_PIX, MIN_OBS_KEYS = .05, 8., 2, 25, 3  # run fx-x6-windows-time-002: 10 of 10 ME340 claims false without them
+BORDER, MAX_RANGE, NEIGH, MIN_PIX, MIN_OBS_KEYS = .05, 5., 2, 25, 3  # run fx-x6-windows-time-002: 10 of 10 ME340 claims false without them
+REL_MARGIN, PERSON_GROW = .2, 2  # run 003: 5 of 5 claims left were far/edge places seen < 20 % past the object, or a person's rim
 SIZE_RATIO = 2.  # a moved object keeps its size within this factor (robust box diagonal)
 LOOKBACK = 6     # windows an 'appeared' test looks back (the ones that could have seen the place)
 
@@ -61,17 +63,20 @@ def project(points, c2w, K):
 
 
 def near_min(w):
-    """Per keyframe depth, minimum over the (2 NEIGH + 1)^2 neighbourhood (0 = no depth wins: unknown is never free)."""
-    if "_dmin" not in w:
-        from scipy.ndimage import minimum_filter
+    """Per keyframe depth, minimum over the (2 NEIGH + 1)^2 neighbourhood (0 = no depth wins: unknown is never free), and
+    the person masks grown by PERSON_GROW px (a person's rim is neither free nor the object)."""
+    if w.get("_dmin_key") != (NEIGH, PERSON_GROW):
+        from scipy.ndimage import maximum_filter, minimum_filter
         w["_dmin"] = minimum_filter(np.asarray(w["depth"], np.float32), size=(1, 2 * NEIGH + 1, 2 * NEIGH + 1))
-    return w["_dmin"]
+        w["_person"] = maximum_filter(np.asarray(w["person"], bool), size=(1, 2 * PERSON_GROW + 1, 2 * PERSON_GROW + 1))
+        w["_dmin_key"] = (NEIGH, PERSON_GROW)
+    return w["_dmin"], w["_person"]
 
 
 def place(points, w):
     """How window w sees the place `points` occupied. -> {state, views: [per judged keyframe], best_key}."""
     h, wd = w["depth"].shape[1:]
-    dmin = near_min(w)
+    dmin, grown = near_min(w)
     views, seen = [], 0
     for j, key in enumerate(w["keys"]):
         u, v, z = project(points, w["c2w"][j], w["K"][j])
@@ -80,10 +85,10 @@ def place(points, w):
             continue
         seen += 1
         ui, vi, zz = u[inside].astype(int), v[inside].astype(int), z[inside]
-        d, person = w["depth"][j][vi, ui], w["person"][j][vi, ui]
+        d, person = w["depth"][j][vi, ui], grown[j][vi, ui]
         valid = (d > 0) & ~person & (zz <= MAX_RANGE)
         m = 2 * sigma(zz)
-        free, front = valid & (dmin[j][vi, ui] > zz + m), valid & (d < zz - m)
+        free, front = valid & (dmin[j][vi, ui] > zz * (1 + REL_MARGIN) + m), valid & (d < zz - m)
         pix = len(np.unique(vi[valid] * wd + ui[valid]))
         views.append({"key": int(key), "judged": int(valid.sum()) if pix >= MIN_PIX else 0, "free": int(free.sum()), "front": int(front.sum() + person.sum()),
                       "occupied": int((valid & ~free & ~front).sum()), "inside": int(inside.sum()), "pixels": pix})

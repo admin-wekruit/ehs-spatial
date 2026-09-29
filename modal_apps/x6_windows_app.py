@@ -864,8 +864,11 @@ def sweep(run_id: str, grid: list):
     with open(f"/v/layers/x6/{run_id}/windows.pkl", "rb") as f:
         d = pickle.load(f)
     rows = []
+    defaults = {k: getattr(tl, k) for k in ("FREE_SHARE", "NEIGH", "MIN_OBS_KEYS", "MAX_RANGE", "REL_MARGIN", "PERSON_GROW")}
     for cfg in grid:
         t = time.perf_counter()
+        for k, v in defaults.items():  # the change rule's constants, per config
+            setattr(tl, k, cfg.get(k.lower(), v))
         tr = tl.Tracker(k_sigma=cfg["k_sigma"], iou_min=cfg["iou_min"], app_min=cfg.get("app_min"), tau_move=d["tau"])
         for w in d["wins"]:
             if w.get("frame") is not None:
@@ -873,8 +876,27 @@ def sweep(run_id: str, grid: list):
         ch = tr.changes()
         rows.append({"cfg": cfg, "s": round(time.perf_counter() - t, 2), "objects": [{"id": o["id"], "frame": o["frame"], "label": max(o["votes"], key=o["votes"].get),
                      "centroid": np.round(o["obs"][0][1]["centroid"], 3).tolist(), "windows": len({wi for wi, _ in o["obs"]})} for o in tr.objects],
-                     "changes": [{k: (v if k != "place" else {kk: vv for kk, vv in v.items()}) for k, v in c.items()} for c in ch]})
+                     "changes": [{k: (v if k != "place" else {kk: vv for kk, vv in v.items()}) for k, v in c.items()} for c in ch],
+                     "timelines": [{k: r[k] for k in ("id", "frame", "label", "positions", "windows_observed")} for r in tr.timelines()]})
     return json.loads(json.dumps(rows, default=plain))
+
+
+@app.local_entrypoint()
+def sweep_main(out: str, runs: str):
+    """The association and change-rule grid on saved windows (CPU containers, one per run)."""
+    out = Path(out)
+    ids, grids = [], []
+    for rid in runs.split(","):
+        run = json.loads(next(out.parent.glob(f"*/{rid}.json")).read_text())
+        q = run["summary"]["calibration"].get("negative_cos_q50_q90_q99_max") or [None, None]
+        grid = [{"k_sigma": k, "iou_min": i, "app_min": a} for k in (2., 3., 5.) for i in (.1, .2, .3, 9.) for a in (None, q[0], q[1])]
+        grid += [{"k_sigma": 3., "iou_min": .2, "neigh": nb, "rel_margin": rm, "max_range": mr, "person_grow": pg}
+                 for nb in (0, 2) for rm in (0., .1, .2, .3) for mr in (5., 8.) for pg in (0, 2)]
+        ids.append(rid)
+        grids.append(grid)
+    for rid, rows in zip(ids, sweep.starmap(list(zip(ids, grids)))):
+        (out / f"sweep-{rid}.json").write_text(json.dumps(rows))
+        print(rid, len(rows), "configs", flush=True)
 
 
 # ---------- local ----------
