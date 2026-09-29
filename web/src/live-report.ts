@@ -79,14 +79,17 @@ export function liveDocument(report: string, layers: Record<string, Patch>, card
     const box = { id: "box:" + o.id, kind: "primitive", primitive: { kind: "box", dimensions: [0, 1, 2].map(k => Math.max(max[k] - min[k], .01)) },
       coordinateFrameId: frame, transform: { ...identity(frame), position: [0, 1, 2].map(k => (min[k] + max[k]) / 2) }, placementState: "confirmed",
       material: { alphaMode: "BLEND", baseColorFactor: [1, 1, 1, .05], color: [.45, .9, .8] } };
-    const reps: any[] = [box];
-    if (glb) reps.push({ id: "model:" + o.id, kind: "generated_mesh", assetId: asset(glb), coordinateFrameId: frame,
-      transform: { ...identity(frame), ...model.transform }, placementState: "confirmed", bounds: model.bounds });
-    if (dm) reps.push({ id: "prim:" + o.id, kind: "primitive", primitive: modelPrimitive(dm), coordinateFrameId: frame,
-      transform: { ...identity(frame), position: dm.position, quaternion: dm.quaternion }, placementState: "confirmed",
-      material: { alphaMode: "BLEND", baseColorFactor: [1, 1, 1, .1], selectedFactor: [1, 1, 1, 1], color: [1, .72, .3] } });
+    // one model per object (the viewer's preview and bounds read every model representation): SAM 3D's accepted mesh, else the card's
+    // display model, else the see-through box
+    const half = dm && (dm.kind === "cylinder" ? [dm.radius_m, dm.radius_m, dm.length_m / 2] : dm.size_m.map((v: number) => v / 2));
+    const rep: any = glb ? { id: "model:" + o.id, kind: "generated_mesh", assetId: asset(glb), coordinateFrameId: frame,
+      transform: { ...identity(frame), ...model.transform }, placementState: "confirmed", bounds: model.bounds }
+      : dm ? { id: "prim:" + o.id, kind: "primitive", primitive: modelPrimitive(dm), coordinateFrameId: frame,
+        transform: { ...identity(frame), position: dm.position, quaternion: dm.quaternion }, placementState: "confirmed",
+        bounds: { min: half.map((v: number) => -Math.max(v, .0025)), max: half.map((v: number) => Math.max(v, .0025)) },
+        material: { alphaMode: "BLEND", baseColorFactor: [1, 1, 1, .1], selectedFactor: [1, 1, 1, 1], color: [1, .72, .3] } } : box;
     doc.entities.push({ id: o.id, label: o.label || o.word, associationState: "association_pending", visible: true, observationRefs: [],
-      activeModelRepresentationId: glb ? "model:" + o.id : dm ? "prim:" + o.id : box.id, representations: reps, fast: { kind: "object", ...o, model: model || null, display_model: dm || null } });
+      activeModelRepresentationId: rep.id, representations: [rep], fast: { kind: "object", ...o, model: model || null, display_model: dm || null } });
   }
   for (const t of people?.data.tracks || []) {
     const ref = people.blobs["track-" + t.id];

@@ -43,6 +43,7 @@ export default function LiveReport({ reportId }: { reportId: string }) {
   const [cardsLayer, setCardsLayer] = useState<any>(null);  // declared here: the document draws each card's display model (r4)
   const document = useMemo(() => liveDocument(reportId, layers, cardsLayer?.cards), [reportId, docKey, cardsLayer]);
   const docRef = useRef(document); docRef.current = document;
+  const sceneId = docKey + (cardsLayer ? ":cards" + cardsLayer.version : "");
   // For the headless checks: an asset fetched twice was reloaded; ready = when each asset was first on the GPU (unix s); clicks = ms
   // from pointer-down to the card in the DOM; pickDecodeMs = pick + depth fetched, inflated and indexed.
   const stats = useRef({ uploads: {} as Record<string, number>, ready: {} as Record<string, number>, scenes: 0, errors: [] as string[],
@@ -163,12 +164,31 @@ export default function LiveReport({ reportId }: { reportId: string }) {
     const v = viewer.current;
     if (!v) return;
     stats.scenes++;
-    v.setScene({ id: docKey + (cardsLayer ? ":cards" + cardsLayer.version : ""), document }).catch((e: Error) => setError(e.message));
+    v.setScene({ id: sceneId, document }).catch((e: Error) => setError(e.message));
     // The first cameras open a free view of the longest shot, never the (image-less) camera view.
     if (!opened.current && document.cameras.length) { opened.current = true; v.setCamera({ mode: "free" }); setFrame(currentCameras(document)[0].coordinateFrameId); }
   }, [document]);
   useEffect(() => { viewer.current?.setLayers({ ...view, allBounds: view.primitive }); }, [view]);  // boxes: fill and outline together
   useEffect(() => { viewer.current?.setSelection({ entityId: selected }); }, [selected]);
+  const [inset, setInset] = useState<string | null>(null);
+  useEffect(() => {  // r4 (models): the selected object's model alone in a corner of the 3D pane (the viewer's own preview capture), its shot opened
+    setInset(null);
+    const e = docRef.current.entities.find(x => x.id === selected) as any;
+    if (!selected || !(e?.fast?.display_model || e?.fast?.model)) return;
+    const frameId = "shot-" + e.fast.shot;
+    if (frame !== frameId) {
+      setFrame(frameId); follow.current = false; setFollowing(false);
+      viewer.current?.setCamera({ mode: "free", cameraId: currentCameras(docRef.current).find(c => c.coordinateFrameId === frameId)?.id });
+    }
+    let live = true, tries = 0;
+    const grab = () => {
+      if (!live) return;
+      const png = viewer.current?.capturePreview(selected, "free", sceneId, frameId);
+      if (png) setInset(png); else if (++tries < 40) window.setTimeout(grab, 250);  // until its model is on the GPU
+    };
+    grab();
+    return () => { live = false; };
+  }, [selected, sceneId]);
   const splat = splatAnnotation(document);
   useEffect(() => {
     viewer.current?.setSplats(splat ? { key: splat.assetId, url: assetURL(splat.assetId)!, count: splat.count, coordinateFrameId: splat.coordinateFrameId } : null);
@@ -222,6 +242,8 @@ export default function LiveReport({ reportId }: { reportId: string }) {
             <small>{load.total ? `${load.loaded}/${load.total}` : ""}</small>
           </div>
           <div ref={host} className="live-report-viewer" />
+          {inset && <figure className="live-report-model-inset"><img src={inset} alt={tr("所选对象的模型", "the selected object's model")} />
+            <figcaption>{tr("模型：生成的，仅供显示", "model: generated, display only")}</figcaption></figure>}
           {!!labels.length && <ul className="live-report-labels">{labels.map(l => <li key={l}>{l}</li>)}</ul>}
         </div>
       </div>

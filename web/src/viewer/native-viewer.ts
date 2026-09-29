@@ -230,7 +230,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
     // Unequal sampling would need source-mask area; nearer depth always wins.
     const pickRank=(g:GPU)=>entity(g.entityId)?.sourceContext?0:g.mesh.mode===4&&g.representation.kind==='observed_surface'&&g.representation.placementState==='confirmed'?2:1;
     const selectedIds=new Set(selection.entityId?modelPreviewEntities(doc,selection.entityId).map(e=>e.id):[]),isSelected=(g:GPU)=>['generated_mesh','primitive'].includes(g.representation.kind)?selectedIds.has(g.entityId):g.entityId===selection.entityId;
-    const materialFor=(g:GPU)=>{const m={...g.mesh.material,...(['generated_mesh','primitive'].includes(g.representation.kind)?g.representation.material:{})};return m.selectedFactor&&isSelected(g)?{...m,baseColorFactor:m.selectedFactor}:m;};  // r4: a model shows in full when its object is selected
+    const materialFor=(g:GPU)=>{const m={...g.mesh.material,...(['generated_mesh','primitive'].includes(g.representation.kind)?g.representation.material:{})};return m.selectedFactor&&(isSelected(g)||layers.studio)?{...m,baseColorFactor:m.selectedFactor}:m;};  // r4: a model shows in full when its object is selected (and in its preview)
     const blended=(g:GPU)=>materialFor(g).alphaMode==='BLEND';
     const depth=(g:GPU)=>dot(add(point(model(g),g.mesh.bounds.min.map((n,k)=>(n+g.mesh.bounds.max[k])/2)),scale(camera!.eye,-1)),unit(add(camera!.target,scale(camera!.eye,-1))));
     // ponytail: primitive-depth sorting covers separate sheets; intersecting translucent geometry needs per-triangle sorting or order-independent transparency.
