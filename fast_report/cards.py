@@ -37,8 +37,10 @@ _SIZE = [  # (words, longest side lo, hi m, rules): a prior, not a measurement (
     (("sign", "label"), .05, 2., {}),
     (("fire extinguisher",), .3, 1., {}),
     (("box", "carton", "package", "crate", "tote", "bin", "bag"), .05, 1.5, {}),
-    (("pallet",), .8, 1.4, {"on_floor": True, "measure": "footprint"}),
-    (("stacked boxes", "pallet of goods"), .3, 3.5, {"on_floor": True}),
+    # ponytail: no floor rule for pallets and stacked boxes (the spec's table has one): on Sam's Club 73 of 78 flags were
+    # pallets and stacks standing on rack beams (run mvp-a-cards-samsclub-001)
+    (("pallet",), .8, 1.4, {"measure": "footprint"}),
+    (("stacked boxes", "pallet of goods"), .3, 3.5, {}),
     (("cart", "trolley", "shopping cart", "pallet jack"), .5, 2.2, {"on_floor": True}),
     (("chair",), .3, 1.3, {}), (("stool",), .3, .8, {}),
     (("table", "desk", "workbench"), .5, 3.5, {}), (("cabinet", "locker"), .3, 2.5, {}), (("door",), .6, 3., {}),
@@ -295,8 +297,9 @@ def plumb(vertices, faces, up):
 
 def plumb_walls(vertices, faces, up, bin_deg=10.):
     """A wall-level plumb reading: near-vertical triangles binned by the azimuth of their normal, the area-weighted mean
-    normal per bin (marching-cubes staircase facets average out), its tilt from vertical; the area-weighted median over
-    bins. -> degrees or None. Recorded beside plumb() (the spec's per-triangle median)."""
+    normal per bin (marching-cubes staircase facets average out), its tilt from vertical. -> {median, p90} over bins
+    (area-weighted) or None. The median gates angles; the p90 is the angle's plumb term: how far this shot's own
+    verticals read off vertical (ME340: a door read 82.4 deg with a 1 deg median plumb, run mvp-a-cards-me340-005)."""
     v = np.asarray(vertices, np.float64)
     f = np.asarray(faces, np.int64)
     if not len(f):
@@ -324,7 +327,8 @@ def plumb_walls(vertices, faces, up, bin_deg=10.):
         weights.append(area[m].sum())
     o = np.argsort(tilts)
     cw = np.cumsum(np.asarray(weights)[o])
-    return float(np.asarray(tilts)[o][np.searchsorted(cw, cw[-1] / 2)])
+    t = np.asarray(tilts)[o]
+    return {"median": float(t[np.searchsorted(cw, cw[-1] / 2)]), "p90": float(t[min(np.searchsorted(cw, .9 * cw[-1]), len(t) - 1)])}
 
 
 def azimuth_spread(az):
@@ -447,6 +451,27 @@ def merge(objs, shot_boxes):
     return groups
 
 
+def light_chunk(jobs):
+    """Worker: per object a 1500-point floor-frame sample, views, centroid, camera range, its view-centroid spread."""
+    rng = np.random.default_rng(0)
+    out = []
+    for i, fr, p in jobs:
+        n = len(p["world"])
+        ix = np.sort(rng.choice(n, 1500, replace=False)) if n > 1500 else np.arange(n)
+        P = to_floor(p["world"][ix], fr)
+        f = np.asarray(p["frame"])[ix]
+        views = sorted(int(v) for v in np.unique(p["frame"]))
+        spread_ = None
+        if len(views) >= 2:
+            c = [np.median(P[f == v], 0) for v in views if (f == v).any()]
+            if len(c) >= 2:
+                c = np.stack(c)
+                spread_ = float(np.median(np.linalg.norm(c - np.median(c, 0), axis=1)))
+        out.append((i, {"P": P, "frame": f, "views": views, "n": n, "centroid": np.median(P, 0) if n else np.zeros(3),
+                        "z_med": float(np.median(p["z"])) if n else 4., "spread": spread_}))
+    return out
+
+
 _SHM = {}
 
 
@@ -501,16 +526,16 @@ def build(inp, pool=None, chunks=12, shm_dir=None):
         s["frame"] = floor_frame(s["c2w"][0], s["normal"], s["point_m"])
         s["cam_floor"] = to_floor(s["c2w"][:, :3, 3], s["frame"])
         s["fx"] = float(np.median(s["K"][:, 0, 0]))
-    # a light sample per object for the merge and the pose proxy
-    rng = np.random.default_rng(0)
-    light = []
-    for o, p in zip(objects, points):
-        n = len(p["world"])
-        ix = np.sort(rng.choice(n, 1500, replace=False)) if n > 1500 else np.arange(n)
-        P = to_floor(p["world"][ix], shots[o["shot"]]["frame"])
-        f = np.asarray(p["frame"])[ix]
-        light.append({"P": P, "frame": f, "views": sorted(int(v) for v in np.unique(p["frame"])), "n": n, "word": o.get("word") or "",
-                      "centroid": np.median(P, 0) if n else np.zeros(3), "z_med": float(np.median(p["z"])) if n else 4.})
+    # a light sample per object for the merge and the pose proxy (in the pool: the parent's Python stays small, it shares a
+    # GIL with densify's and SAM 3D's threads)
+    jobs = [(i, shots[o["shot"]]["frame"], p) for i, (o, p) in enumerate(zip(objects, points))]
+    parts = [light_chunk(jobs)] if pool is None else list(pool.map(light_chunk, [jobs[c::chunks] for c in range(chunks)]))
+    light = [None] * len(objects)
+    for part in parts:
+        for i, x in part:
+            light[i] = x
+    for o, x in zip(objects, light):
+        x["word"] = o.get("word") or ""
     aliases, members = {}, {}
     for si in shots:
         idx = [i for i, o in enumerate(objects) if o["shot"] == si and light[i]["n"] >= 3]
@@ -525,18 +550,14 @@ def build(inp, pool=None, chunks=12, shm_dir=None):
     t_merge = time.perf_counter()
     paths = []
     for si, s in shots.items():
-        sp = []  # the shot's pose proxy: median per-object view-centroid spread (X1's metric)
-        for i in members:
-            x = light[i]
-            if objects[i]["shot"] == si and len(x["views"]) >= 2:
-                c = np.stack([np.median(x["P"][x["frame"] == v], 0) for v in x["views"] if (x["frame"] == v).any()])
-                if len(c) >= 2:
-                    sp.append(float(np.median(np.linalg.norm(c - np.median(c, 0), axis=1))))
+        sp = [light[i]["spread"] for i in members if objects[i]["shot"] == si and light[i]["spread"] is not None]  # X1's pose proxy
         s["view_centroid_spread_m"] = round(float(np.median(sp)), 4) if sp else None
         s["u_pose_m"] = max(POSE_MIN, k_pose * (s["view_centroid_spread_m"] or 0.))
         # the plumb check (section 4.5) on the wall-level reading: the per-facet median of a 3 cm TSDF mesh read 5.8 / 7.0 deg
         # on ME340's two shots (marching-cubes staircase) while its walls' mean normals read 0.9 / 1.1 deg (run mvp-a-cards-me340-004)
-        s["plumb_facets_deg"], s["plumb_deg"] = s.get("plumb_deg"), s.get("plumb_walls_deg", s.get("plumb_deg"))
+        pw = s.get("plumb_walls") or {}
+        s["plumb_facets_deg"], s["plumb_deg"] = s.get("plumb_deg"), pw.get("median", s.get("plumb_deg"))
+        s["plumb_u_deg"] = pw.get("p90", s["plumb_deg"])
         s["angles_usable"] = s.get("plumb_deg") is not None and s["plumb_deg"] <= PLUMB_MAX_DEG
         s["walked"] = walked_paths(s, inp.get("people"))
         if s.get("depth") is not None:
@@ -552,11 +573,14 @@ def build(inp, pool=None, chunks=12, shm_dir=None):
                     s[key] = path
     t_shots = time.perf_counter()
     markings = {si: any(head_match(o.get("word"), FLOOR_MARKING) for o in objects if o["shot"] == si) for si in shots}
+    all_counts = inp.get("counts")
+    all_counts = (all_counts() if callable(all_counts) else all_counts) or {}  # a callable waits for the pick maps only now
+    t_counts = time.perf_counter()
     items = []
     for i, bs in members.items():
         counts = {}
         for j in [i, *bs]:
-            for kf, c in ((inp.get("counts") or {}).get(objects[j]["id"]) or {}).items():
+            for kf, c in (all_counts.get(objects[j]["id"]) or {}).items():
                 a = counts.setdefault(int(kf), [0, 0])
                 a[0], a[1] = a[0] + c[0], a[1] + c[1]
         items.append((objects[i], [points[j] for j in [i, *bs]], [objects[b]["id"] for b in bs], counts, markings[objects[i]["shot"]]))
@@ -579,14 +603,17 @@ def build(inp, pool=None, chunks=12, shm_dir=None):
                   "u_pose_m": round(s["u_pose_m"], 3), "view_centroid_spread_m": s["view_centroid_spread_m"], "u_floor_m": s.get("u_floor_m"),
                   "plumb_deg": None if s.get("plumb_deg") is None else round(s["plumb_deg"], 2), "angles_usable": s["angles_usable"],
                   "plumb_facets_deg": None if s.get("plumb_facets_deg") is None else round(s["plumb_facets_deg"], 2),
-                  "plumb_rule": "area-weighted median over 10 deg azimuth bins of the near-vertical mesh triangles' mean normal",
+                  "plumb_u_deg": None if s.get("plumb_u_deg") is None else round(s["plumb_u_deg"], 2),
+                  "plumb_rule": "area-weighted median (gate) and p90 (the angles' plumb term) over 10 deg azimuth bins of the near-vertical "
+                                "mesh triangles' mean normal",
                   "scale": {"status": s.get("scale_status", "estimated"), "source": "floor plane (SAM 3 'floor') + assumed camera height 1.6 m",
                             "u_rel": SCALE_REL}}
                  for si, s in shots.items()]
     shown = [c for c in cards if c["kind"] == "object"]
     stats = {"objects_in": len(objects), "cards": len(shown), "people_cards": len(cards) - len(shown), "merged_away": len(aliases),
              "implausible": sum(c["physical"]["size_check"].get("status") == "implausible" for c in shown),
-             "s": {"merge": round(t_merge - t0, 3), "shots": round(t_shots - t_merge, 3), "cards": round(t_cards - t_shots, 3),
+             "s": {"merge": round(t_merge - t0, 3), "shots": round(t_shots - t_merge, 3), "wait_counts": round(t_counts - t_shots, 3),
+                   "cards": round(t_cards - t_counts, 3),
                    "people": round(time.perf_counter() - t_cards, 3)}}
     return {"cards": cards, "shots": shot_rows, "aliases": aliases, "stats": stats,
             "walked": {si: {kk: np.round(v, 3).tolist() for kk, v in s["walked"].items()} for si, s in shots.items()}}
@@ -891,7 +918,8 @@ def angle(name, sub, s, k):
     if not s["angles_usable"]:
         return {"status": "not measurable", "reason": "plumb check failed: the room's walls read "
                 f"{'n/a' if s.get('plumb_deg') is None else round(s['plumb_deg'], 1)} deg off vertical (limit {PLUMB_MAX_DEG:g})"}
-    return value(float(np.median(vals)), {"views": max(vals) - min(vals), "fit": u_fit, "plumb": s["plumb_deg"]}, "angle", k, vals, unit="deg",
+    return value(float(np.median(vals)), {"views": max(vals) - min(vals), "fit": u_fit, "plumb": s.get("plumb_u_deg", s["plumb_deg"])}, "angle", k, vals,
+                 unit="deg",
                  scale=SCALE_FREE)
 
 
@@ -1024,11 +1052,13 @@ def people_cards(people, shots, object_cards):
             continue
         xy = to_floor([q["xyz"] for q in t["points"]], s["frame"])[:, :2]
         length = float(np.linalg.norm(np.diff(xy, axis=0), axis=1).sum()) if len(xy) > 1 else 0.
-        near = []
-        for c in object_cards:
-            if c["shot"] == t["shot"] and "footprint_xy" in c["physical"] and c["physical"]["size_check"].get("status") != "implausible":
-                near.append((c["id"], path_distance(c["physical"]["footprint_xy"]["value"], xy)))
-        near.sort(key=lambda x: x[1])
+        cand = [c for c in object_cards if c["shot"] == t["shot"] and "footprint_xy" in c["physical"]
+                and c["physical"]["size_check"].get("status") != "implausible"]
+        if cand:  # the 10 nearest footprint centres first (numpy), then the exact footprint-to-path distance (shapely)
+            ctr = np.array([np.mean(c["physical"]["footprint_xy"]["value"], 0) for c in cand])
+            dmin = np.linalg.norm(ctr[:, None] - xy[None], axis=2).min(1)
+            cand = [cand[i] for i in np.argsort(dmin)[:10]]
+        near = sorted(((c["id"], path_distance(c["physical"]["footprint_xy"]["value"], xy)) for c in cand), key=lambda x: x[1])
         local = str(t["id"]).split("-", 1)[-1]
         out.append({"id": f"person:{t['id']}", "kind": "person", "shot": t["shot"],
                     "identity": {"name": "person", "decided_by": "sam3 person + tracker", "label": "observed", "track": t["id"]},
@@ -1165,8 +1195,14 @@ def self_check():
     points[0]["frame"] = np.where(points[0]["frame"] == 5, 4, points[0]["frame"])  # box A itself is never on keyframe 5
     points[0]["views"] = {int(v): [500, 0, 0, 0, 0] for v in np.unique(points[0]["frame"])}
     counts = {"obj-0-0": {j: [300, 0] for j in range(5)}, "obj-0-2": {0: [100, 0], 1: [100, 0]}}
-    out = build({"shots": [shot], "objects": objects, "points": points, "counts": counts, "people": None, "calibration": {}})
+    people = {"tracks": [{"id": "0-1", "shot": 0, "t0": 0., "t1": .8, "detections": 3,
+                          "points": [{"t": i * .4, "xyz": [.2 + .3 * i, 1.6, 3.6]} for i in range(3)]}],
+              "rules": [{"shot": 0, "tracks": [1], "rule": "R2", "verdict": "NEEDS_REVIEW"}, {"shot": 0, "tracks": [2], "rule": "R2"}]}
+    out = build({"shots": [shot], "objects": objects, "points": points, "counts": lambda: counts, "people": people, "calibration": {}})
     by = {c["id"]: c for c in out["cards"]}
+    pc = by["person:0-1"]
+    assert len(pc["rules"]) == 1 and pc["nearest_objects"][0][0] == "obj-0-0" and pc["physical"]["path_length"]["value"] > .5, pc
+    assert "person:untracked" in by and out["walked"][0]["person:0-1"]
     a = by["obj-0-0"]["physical"]
     assert out["aliases"] == {"obj-0-3": "obj-0-0"}, out["aliases"]  # the fragment joins box A
     assert "obj-0-4" in by, "a co-visible neighbour never merges"
@@ -1271,7 +1307,7 @@ def self_check():
         st.append([[0, 0, z0], [1, 0, z0], [0, dy, z0 + .1]])
     st = np.array(st, float).reshape(-1, 3)
     fs = np.arange(len(st)).reshape(-1, 3)
-    assert abs(plumb(st, fs, [0, 0, 1.]) - 10) < .5 and plumb_walls(st, fs, [0, 0, 1.]) < .5
+    assert abs(plumb(st, fs, [0, 0, 1.]) - 10) < .5 and plumb_walls(st, fs, [0, 0, 1.])["median"] < .5
     # the floor frame: z up, x the first camera's forward on the floor
     fr = floor_frame(cams[0], [0, -1., 0], [0, 1.6, 3])
     assert np.allclose(fr["R"][2], [0, -1, 0]) and np.allclose(fr["R"][0], [0, 0, 1]) and np.allclose(fr["origin"], [0, 1.6, 0])

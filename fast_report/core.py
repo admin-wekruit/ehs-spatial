@@ -814,11 +814,11 @@ def analyse(m, mp4, opts, clock, writer, log):
                                  "K": gg["K"].cpu().numpy().astype(float), "normal": normal, "point_m": point, "mpu": gg["mpu"],
                                  "u_floor_m": cam_rows[si]["floor"].get("u_floor_m"), "scale_status": cam_rows[si]["scale_status"],
                                  "sharp": np.array([sharp_all[k_] for k_ in gg["keys"]]), "plumb_deg": cards.plumb(*gg["mesh_vf"], normal),
-                                 "plumb_walls_deg": cards.plumb_walls(*gg["mesh_vf"], normal),
+                                 "plumb_walls": cards.plumb_walls(*gg["mesh_vf"], normal),
                                  "depth": gg["depth_m"].cpu().numpy(), "person": gg["person"].cpu().numpy()})
-        pick_ready.wait(120)
-        with clock.stage("cards.v1", n={"objects": len(objects)}):
-            out = cards.build({"shots": shots_in, "objects": copy.deepcopy(objects), "points": obj_points, "counts": pick_counts,
+        with clock.stage("cards.v1", n={"objects": len(objects)}):  # the pick maps' counts are read only for the time fields
+            out = cards.build({"shots": shots_in, "objects": copy.deepcopy(objects), "points": obj_points,
+                               "counts": lambda: (pick_ready.wait(120), pick_counts)[1],
                                "people": results.get("people"), "calibration": cards_calibration()}, m.proc_pool, 16)
         cards_out["v1"], cards_out["shots_in"] = out, shots_in
         cards_ready.set()
@@ -935,11 +935,16 @@ def analyse(m, mp4, opts, clock, writer, log):
     sam3d_objs = m.cpu_pool.submit(sam3d_inputs)
     display = {}
 
+    def release_splat():
+        if not release.is_set():
+            release.set()  # the splat trains on GPU 1 from here
+            clock.mark("splat_started")
+
     def start_display():
+        release_splat()
         if display:
             return
         display["models"] = m.cpu_pool.submit(models_job, m, sam3d_objs.result, geo, shared, words, clock, writer, dev_geo)
-        release.set()  # the splat trains on GPU 1 from here
         clock.mark("display_started")
     if not densify_on or not objects:
         start_display()
@@ -1080,7 +1085,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                                 H / (H // 2), q))
         st.update(joined=int((ent[:] > 0).sum() - sum(new_o["masks"] for new_o in new_objs)), new_objects=len(new_objs),
                   objects_gaining_views=len(added))
-        start_display()  # the facts' GPU work is done: SAM 3D (GPU 0) and the splat (GPU 1) from here
+        release_splat()  # densify's GPU 1 share is done: the splat trains; SAM 3D (GPU 0, and 16 CPU processes) after cards v3
         points_v3 = list(obj_points)
         for oi, ds in added.items():
             points_v3[oi] = merge_points([obj_points[oi]] + ds)
@@ -1123,6 +1128,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                                                                                     c["physical"].get("size_check", {}).get("measured_m"))}
         cards_out["v3"] = out
         cards_put(3, out)
+        start_display()  # facts before display (section 7): the gate's CPU processes slowed cards v3 by 2-3x beside it (run 005)
         judge_hook(out, shots_in)
         return {**st, "cards": out["stats"]}
     densify_future = m.cpu_pool.submit(densify_job) if densify_on and objects else None
@@ -1372,10 +1378,11 @@ def analyse(m, mp4, opts, clock, writer, log):
     if esc is not None:
         esc.result()
     summary["cards"] = cards_future.result()
-    summary["boxes"] = box_stats(objects, cards_out.get("v1"))
+    summary["boxes"] = box_stats(objects[:len(members)], cards_out.get("v1"))
     summary["judge"] = [f.result() for f in judge_futures]
     summary["densify"] = densify_future.result() if densify_future is not None else None
     summary["cards"] = {"v1": summary["cards"], "v3": cards_out.get("v3", {}).get("stats")}
+    summary["boxes_v3"] = box_stats(objects, cards_out.get("v3"))
     summary["sam3d"] = display["models"].result()
     summary["splat"] = splat_future.result() if splat_future is not None else None
     Path(shared.result()).unlink(missing_ok=True)
