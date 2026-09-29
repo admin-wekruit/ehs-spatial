@@ -45,7 +45,7 @@ def completeness(run_dir):
     return out
 
 
-def sheet(mirror, report, mp4, out_dir, n=30, seed=4, per=10):
+def sheet(mirror, report, mp4, out_dir, n=30, seed=4, per=10, kinds=("object", "person"), ids=None):
     import cv2
     import fast_report_eval as ev
     from fast_report import cards as fc
@@ -70,8 +70,9 @@ def sheet(mirror, report, mp4, out_dir, n=30, seed=4, per=10):
             cid = owner.get(ent[int(j)])
             if cid and a > best.get(cid, (0,))[0]:
                 best[cid] = (int(a), i)
-    cards = [c for c in oc["cards"] if c.get("kind") in ("object", "person") and c["id"] in best]
-    pickd = [cards[i] for i in np.random.default_rng(seed).choice(len(cards), min(n, len(cards)), replace=False)]
+    cards = [c for c in oc["cards"] if c.get("kind") in kinds and c["id"] in best]
+    by_id = {c["id"]: c for c in cards}  # ids: these cards in this order (r4 integrate: the naming audit's sample), else a seeded draw
+    pickd = [by_id[i] for i in ids if i in by_id] if ids else [cards[i] for i in np.random.default_rng(seed).choice(len(cards), min(n, len(cards)), replace=False)]
     cap = cv2.VideoCapture(str(mp4))
     tiles, rows = [], []
     for k, c in enumerate(pickd):
@@ -197,6 +198,8 @@ if __name__ == "__main__":
     p.add_argument("--n", type=int, default=30)
     p.add_argument("--seed", type=int, default=4)
     p.add_argument("--out", type=Path)
+    p.add_argument("--objects-only", action="store_true", help="sheet: object cards only (r4 integrate's card audit)")
+    p.add_argument("--ids", help="sheet: comma list of card ids, drawn in this order (r4 integrate: the naming audit's sample)")
     p.add_argument("--self-check", action="store_true")
     a = p.parse_args()
     if a.self_check:
@@ -205,4 +208,4 @@ if __name__ == "__main__":
         res = {d: completeness(d) for d in a.args}
         (a.out.write_text(json.dumps(res, indent=1)) if a.out else print(json.dumps(res, indent=1)))
     else:
-        sheet(*a.args, n=a.n, seed=a.seed)
+        sheet(*a.args, n=a.n, seed=a.seed, kinds=("object",) if a.objects_only else ("object", "person"), ids=a.ids.split(",") if a.ids else None)
