@@ -49,7 +49,7 @@ EHS_TAGS = {"cable/wire": ("cable", "wire", "cord", "hose", "extension", "plug",
             "boxes/stacks": ("box", "carton", "case", "crate", "pallet", "stack", "package", "pack", "tote", "bin"),
             "tools": ("tool", "wrench", "hammer", "screwdriver", "drill", "plier", "knife", "clamp", "saw", "file", "cutter", "vise"),
             "labels/signs": ("label", "sign", "tag", "sticker", "placard", "notice", "poster"),
-            "spill/debris": ("spill", "debris", "trash", "litter", "scrap", "puddle", "rag", "paper")}
+            "spill/debris": ("spill", "debris", "trash", "litter", "scrap", "puddle", "rag")}  # not "paper": paper towels (run 002)
 GROUND_PROMPT = """This frame comes from a video walk-through of an indoor workplace. Find every distinct physical object
 visible in it, including small ones: cables and wires, tools, items lying on the floor, labels and signs, boxes,
 containers, parts. Leave out people, the floor, walls and ceiling.
@@ -199,6 +199,16 @@ def load_sam2(m):
             with torch.cuda.device(d):
                 m.sam2[d] = build_sam2(config, path, device=str(d))
     return m.sam2
+
+
+def warm_amg(m):
+    """One AMG call per GPU on a noise frame (kernels, allocator): part of the cold start, like boot()'s warm-ups."""
+    import torch
+    from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
+    rgb = np.random.default_rng(0).integers(0, 255, (720, 1280, 3), np.uint8)
+    for d, model in load_sam2(m).items():
+        with torch.cuda.device(d), torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
+            SAM2AutomaticMaskGenerator(model, **{**SAM2_SETTINGS, "points_per_side": 16}).generate(rgb)
 
 
 def amg(m, S, qs, side=32):
@@ -388,11 +398,14 @@ def proposals(m, S, P, design, clock):
             kept, _ = segment.dedupe(r["frame"], r["word"], r["score"], r["mask"])
             k = torch.from_numpy(kept).to(m.dev_geo)
             p = {"frame": r["frame"][k], "score": r["score"][k].float(), "mask": r["mask"][k], "label": [GENERIC_WORDS[w] for w in r["word"][k].tolist()]}
-    elif design in ("amg", "amg16"):
-        with clock.stage(f"discover.{design}.propose", gpu=m.dev_geo, n={"frames": len(P["qs"])}):
-            p = amg(m, S, P["qs"], 32 if design == "amg" else 16)
+    elif design.startswith("amg"):  # amg (32 points a side) | amg16 (16), '/k': every k-th object keyframe only
+        name, _, every = design.partition("/")
+        qs = P["qs"][::int(every or 1)]
+        with clock.stage(f"discover.{design}.propose", gpu=m.dev_geo, n={"frames": len(qs)}):
+            p = amg(m, S, qs, 32 if name == "amg" else 16)
             p["label"] = [None] * len(p["frame"])
             rec["raw_masks"] = int(len(p["frame"]))
+            rec["frames_asked"] = qs
     else:
         qs = [P["qs"][int((i + .5) * len(P["qs"]) / GROUND_FRAMES)] for i in range(min(GROUND_FRAMES, len(P["qs"])))]
         with clock.stage("discover.vlm-ground.boxes", n={"frames": len(qs)}):
@@ -401,7 +414,7 @@ def proposals(m, S, P, design, clock):
             p, rec["sam3_boxes"] = box_prompts(m, S, boxes)
             rec["raw_masks"] = int(len(p["frame"]))
             rec["frames_asked"] = qs
-    rec["per_frame"] = round(rec["raw_masks"] / max(len(P["qs"]) if design != "vlm-ground" else len(rec["frames_asked"]), 1), 1)
+    rec["per_frame"] = round(rec["raw_masks"] / max(len(rec.get("frames_asked") or P["qs"]), 1), 1)
     return p, rec
 
 
@@ -598,7 +611,10 @@ def run_design(m, S, P, design, clock, cache, eval_data=None):
         exp_clusters = len(exp_objs)
         exp_objs = dedupe_objects(exp_objs)
     rec["analysis_s"] = round(clock.now() - t_design + rec.get("proposals_reused_s", 0.), 3)  # a variant pays its proposals too
-    # records, EHS tags, crops for the judge and the contact sheet (after the timed part)
+    # records, EHS tags, crops for the judge and the contact sheet (after the timed part). A name that is a word SAM 3
+    # already ran on these frames without finding this region is 'detector-vetoed' (run 002: VLM 'fire extinguisher' on
+    # slippers and machine panels): kept as an object, never as that EHS item
+    vocab0 = {norm(w) for w in S["words"]}
     objs = []
     for k, ci in enumerate(found_objs):
         c, nm = clusters[ci], names[ci]
@@ -607,7 +623,8 @@ def run_design(m, S, P, design, clock, cache, eval_data=None):
                      "views": len(c["members"]), "centroid_m": c["centroid_m"], "box_min_m": c["box_min_m"], "box_max_m": c["box_max_m"],
                      "height_bottom_m": c["height_bottom_m"], "height_top_m": c["height_top_m"],
                      "proposal_labels": sorted({lab for lab in (p["label"][i] for i in c["members"]) if lab})[:5],
-                     "ehs": ehs_tags(nm["label"], floor_item), "cluster": ci})
+                     "ehs": ehs_tags(nm["label"], floor_item) if norm(nm["label"]) not in vocab0 else (["on the floor"] if floor_item else []),
+                     "name_status": "detector-vetoed" if norm(nm["label"]) in vocab0 else "model name, unverified", "cluster": ci})
     found_clusters = len(objs)
     objs = dedupe_objects(objs)
     t_judge = time.perf_counter()

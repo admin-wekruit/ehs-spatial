@@ -54,6 +54,9 @@ def recall(rows, obs):
     for k in ("vocab", "with_discovery"):
         out[k] = {"position_found": len(pos[k]), "position_recall": round(len(pos[k]) / n, 3), "word_match_found": len(word[k]),
                   "word_match_recall": round(len(word[k]) / n, 3)}
+    for part in ("discovered", "expansion"):  # which half of the design found them: the clusters' own views, or the new words' masks
+        got = {o[0] for o, r in zip(obs, rows) if r["paired"] and max(r["sets"].get("vocab", 0), r["sets"].get(part, 0)) >= ev.IOU_FOUND}
+        out[f"position_found_vocab+{part}"] = len(got)
     out["position_gain"] = out["with_discovery"]["position_found"] - out["vocab"]["position_found"]
     out["word_match_gain"] = out["with_discovery"]["word_match_found"] - out["vocab"]["word_match_found"]
     out["found_only_by_discovery"] = [{"entity": e, **v} for e, v in sorted(only.items())]

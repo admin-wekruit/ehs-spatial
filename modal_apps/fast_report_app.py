@@ -249,8 +249,9 @@ class FastReport:
         S = self.last
         assert S and "work" in S, "run() with options['discover'] first"
         t = time.perf_counter()
-        if "amg" in designs:
+        if any(d.startswith("amg") for d in designs):
             dsc.load_sam2(self)
+            dsc.warm_amg(self)
         load_s = round(time.perf_counter() - t, 2)  # model load: cold start, not analysis
         clock = Clock()
         vram = Vram([self.dev_geo, self.dev_seg], clock)
