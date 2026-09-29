@@ -987,6 +987,28 @@ def calibrate(items):
 
 # ---------- self-check ----------
 
+def contract_check():
+    """After A merges (fast_report.cards): its synthetic scene through its build(), then evaluate() on the real card shapes.
+    Run by hand on A's branch (2026-09-29): J1 PASS 0.59 +- 0.13 m on a two-subset stack; J4 NEEDS_REVIEW on its one-side cable."""
+    try:
+        from fast_report import cards as A
+    except ImportError:
+        return "A's cards not on this branch: contract check skipped"
+    cams, objs = A._scene()
+    K = np.repeat(np.array([[262., 0, 252], [0, 262., 140], [0, 0, 1]])[None], 6, 0)
+    shot = {"index": 0, "keys": list(range(0, 36, 6)), "times": [i / 5 for i in range(6)], "c2w": cams, "K": K, "normal": [0., -1., 0.],
+            "point_m": [0., 1.6, 3.], "u_floor_m": .02, "mpu": 1., "sharp": np.ones(6), "plumb_deg": 1., "depth": None, "person": None}
+    objects = [{"id": f"obj-0-{i}", "shot": 0, "word": w, "votes": {w: 1.}} for i, w in enumerate(["stacked boxes", "box", "cable"])]
+    points = [{"world": P, "frame": f, "z": P[:, 2], "sample_ratio": 1., "views": {int(v): [500, 0, 0, 0, 0] for v in np.unique(f)}} for P, f in objs]
+    out = A.build({"shots": [shot], "objects": objects, "points": points, "people": None, "calibration": {},
+                   "counts": {"obj-0-0": {j: [300, 0] for j in range(6)}, "obj-0-2": {0: [100, 0], 1: [100, 0]}}})
+    ctx = {"shots": [{"index": 0, "floor_frame": out["shots"][0]["floor_frame"], "u_pose_m": out["shots"][0]["u_pose_m"]}],
+           "outlines": {"frames": []}, "walked": out["walked"]}
+    got = {r["id"]: r["verdict"] for r in evaluate(out["cards"], ctx)}
+    assert got.get("J1:obj-0-0") == PASS and got.get("J4:obj-0-2") == REVIEW and got.get("J2:obj-0-0") == NO_DATA, got
+    return "A's cards: contract ok"
+
+
 class _Clock:
     def stage(self, *a, **k):
         import contextlib
@@ -1157,7 +1179,8 @@ def self_check():
     items += [{"question_id": "qb", "source": "s0", "truth": 0, "p": .1}] * 40
     c = calibrate(items)
     assert c["qa"]["status"] == "calibrated" and c["qa"]["a"] > 0 and c["qb"]["status"].startswith("advisory"), c
-    print("judge self-check ok: verdict table (13 cells), worst_verdict fix, VLM answer rules, numeric rule with u, one view set, "
+    contract = contract_check()
+    print(f"judge self-check ok ({contract}): verdict table (13 cells), worst_verdict fix, VLM answer rules, numeric rule with u, one view set, "
           "implausible size, NO_DATA paths, J5 scan (wide / narrow / gap asymmetry), J4, J3a + foot surface, run v1 -> v2, "
           "set-of-marks (white, no red), calibration")
 
