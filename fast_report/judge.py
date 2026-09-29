@@ -41,6 +41,10 @@ CLIMB_TOP_M, CLIMB_SIDE_M, CLIMB_SLOPE_DEG = (.3, 1.2), .3, 10.
 HAZARD_P, CLEAR_P, IDENTITY_P, PERSON_SCORE, MIN_MASS, SCREEN_P = .90, .10, .7, .5, .5, .5
 CAL_MIN_N, CAL_MIN_EACH, CAL_MAX_ECE = 30, 5, .10  # a question decides only when calibrated on this much, this well (spec 10)
 ONE_SET = "one view set: uncertainty from model terms only (likely understated)"
+# J3a's foot-height cue decides nothing yet: people standing on the floor read 0.12-0.62 m (median 0.36 m, 15 visible resting
+# feet, run mvp-b-judge-samsclub-002; ME340 one foot at 0.40 m) against u of about 0.1 m, and no clip here has a positive
+FOOT_CUE_VALIDATED = False
+FOOT_CUE_NOTE = "foot-height cue not validated: people on the floor read +0.36 m median (Sam's Club), more than its u"
 LABELS = ["verdicts: PASS/FAIL only when value +- u clears the threshold; a VLM answer alone never makes a FAIL",
           "scale estimated: floor plane + an assumed 1.6 m camera height (a 20% scale part is in every metric u)",
           "VLM probabilities are model outputs; 'calibrated' = Platt-fitted on X8 set d (agent-labelled frames)"]
@@ -505,6 +509,9 @@ def g_j3a(card, ctx, cards):
     r = FAIL if FAIL in per else PASS if all(v == PASS for v in per) else worst_verdict(dict(enumerate(per)))
     counts = {v: per.count(v) for v in (FAIL, REVIEW, PASS, NO_DATA) if per.count(v)}
     reasons = [f"detections: {counts}"] + ([f"highest feet {worst[0]:.2f} +- {worst[1]:.2f} m at t = {worst[2]} s"] if worst else [])
+    if r in (PASS, FAIL) and not FOOT_CUE_VALIDATED:
+        return forced(geo("feet above the floor", worst[0] if worst else None, worst[1] if worst else None, "m", STAND_M, "max", r, reasons),
+                      [FOOT_CUE_NOTE])
     return geo("feet above the floor", worst[0] if worst else None, worst[1] if worst else None, "m", STAND_M, "max", r, reasons)
 
 
@@ -1124,6 +1131,9 @@ def self_check():
     person = {"id": "person:0-person-0", "kind": "person", "shot": 0, "points": [
         {"t": 1., "frame": 30, "xyz": [3.5, -.6, 0], "score": .9, "foot_surface": {"h_m": .6, "u_m": .08, "contact": True, "bbox": [.1, .1, .3, .9]}}]}
     tall = box(0, -.9, -.4)
+    global FOOT_CUE_VALIDATED
+    assert g_j3a(person, ctx, [person, tall])["result"] == REVIEW  # not validated: the cue asks for review
+    FOOT_CUE_VALIDATED = True
     assert g_j3a(person, ctx, [person, tall])["result"] == FAIL
     person["points"][0]["foot_surface"].update(h_m=.02)
     assert g_j3a(person, ctx, [person, tall])["result"] == PASS
@@ -1146,6 +1156,7 @@ def self_check():
     assert not fs["feet_visible"], fs
     person["points"][0]["foot_surface"].update(contact=True, feet_visible=False, h_m=.6)
     assert g_j3a(person, ctx, [person, tall])["result"] == NO_DATA
+    FOOT_CUE_VALIDATED = False
     # the whole run with a fake decider: v1 then v2, set-of-marks images, the combined verdict
     frame_img = np.full((720, 1280, 3), 90, np.uint8)
     cable.update(physical={**cable["physical"], "footprint_xy": [[2, .2], [3, .2], [3, .25], [2, .25]], "base_above_floor": _val(0., .02)},

@@ -4,6 +4,9 @@ stages and GPU peaks, verdict counts per check and per object type, the VLM's ra
 surfaces (J3a's cue).
 
   python scripts/mvp_judge_summary.py OUT_DIR RUN_DIR [RUN_DIR ...]
+
+'recomputed' = judge.evaluate of this checkout on the same recorded layers (stand-in cards rebuilt from them): the verdicts a
+rules fix after the run gives; the VLM answers cannot change them while no question is calibrated (all advisory).
 """
 import json
 import sys
@@ -54,7 +57,16 @@ def one(run_dir, row):
     contact = [f["contact"] for f in feet if f and f.get("h_m") is not None]
     vis = [f for f in feet if f and f.get("h_m") is not None and f.get("feet_visible")]
     vis_h = [f["h_m"] for f in vis if f["contact"]]
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from fast_report import cards_stub, judge
+    cs, ctx = cards_stub.replay(run_dir, row["report"])
+    again = judge.layer(judge.evaluate(cs, ctx), judge.load_calibration())
+    by_type_again = defaultdict(Counter)
+    for r in again["rows"]:
+        by_type_again[(r.get("subject_name") or "?", r["check"])][r["verdict"]] += 1
     return {"report": row["report"], "first_call": row["first_call"], "error": run.get("error"),
+            "recomputed": {"counts": again["counts"], "by_check": again["by_check"], "by_object_summary": dict(Counter(again["by_object"].values())),
+                           "by_type": {f"{n}, {c}": dict(v) for (n, c), v in sorted(by_type_again.items(), key=lambda x: -sum(x[1].values()))}},
             "judge_summary": (run.get("summary") or {}).get("judge"), "times_s": times,
             "milestones": row.get("milestones"), "gpu_peak_gib": [{k: g[k] for k in ("gpu", "peak_gb", "at_s", "stages_active")} for g in run["gpu_peak"]],
             "flags": run["flags"], "usd_estimate": run.get("usd_estimate"), "judge_stages": stages,
@@ -92,11 +104,12 @@ def main(out, runs):
     for r in res:
         if r["first_call"]:
             continue
-        lines += ["", f"## {r['run']} (warm): verdicts", "", "| check | " + " | ".join(V) + " |", "|---|---|---|---|---|"]
-        for c, v in sorted((r["by_check"] or {}).items()):
-            lines.append(f"| {c} | " + " | ".join(str(v.get(x, 0)) for x in V) + " |")
-        lines += ["", "| object type, check | " + " | ".join(V) + " |", "|---|---|---|---|---|"]
-        for k, v in list(r["by_type"].items())[:25]:
+        lines += ["", f"## {r['run']} (warm): verdicts (in the run / recomputed with this checkout)", "", "| check | " + " | ".join(V) + " |", "|---|---|---|---|---|"]
+        for c in sorted(set(r["by_check"] or {}) | set(r["recomputed"]["by_check"])):
+            v, w = (r["by_check"] or {}).get(c, {}), r["recomputed"]["by_check"].get(c, {})
+            lines.append(f"| {c} | " + " | ".join(f"{v.get(x, 0)} / {w.get(x, 0)}" for x in V) + " |")
+        lines += ["", "| object type, check (recomputed) | " + " | ".join(V) + " |", "|---|---|---|---|---|"]
+        for k, v in list(r["recomputed"]["by_type"].items())[:25]:
             lines.append(f"| {k} | " + " | ".join(str(v.get(x, 0)) for x in V) + " |")
         lines += ["", f"VLM raw p(hazard) per question: {json.dumps(r['vlm_raw_p_hazard'])}", "",
                   f"Foot surfaces (J3a): {json.dumps(r['foot_surface'])}", "", f"Judge stages: {json.dumps(r['judge_stages'])}"]
