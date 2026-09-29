@@ -23,7 +23,16 @@ import detect_shot_cuts as dsc  # cut rules, unchanged
 BLOCK, MIN_SHOT, CHUNK, TAIL = 6, 30, 16, 8  # E9: sharpest of each 6-frame block; shots under 1 s get no geometry
 DENSIFY_BATCH = 4  # click MVP section 7: keyframes per densify SAM 3 task
 NAMER_WAIT_S, NAMER_HEDGE_S = 36., 15.  # mvp2/identity: Gemini answers awaited this long after the requests went out (then the Qwen
-# decider names what is left); a request unanswered after NAMER_HEDGE_S (or answered with an error) is sent once more (tail latency)
+# decider names what is left); a request answered with an error is sent once more at once, one still out is copied by hedge_due
+NAMER_HEDGE_MAX_S, NAMER_TAIL = 24., .25
+
+
+def hedge_due(elapsed, n_pending, n_reqs):
+    """A second copy of a naming request still out: once the pass is in its tail (<= NAMER_TAIL of its requests unanswered) after
+    NAMER_HEDGE_S, or at NAMER_HEDGE_MAX_S whatever the rest do. mvp2/integrate: copying every request at 15 s re-sent 42 of 44
+    on Sam's Club; the doubled load slowed the report container's requests to 16-24 s (ME340's 19: 11-13 s) and queued copies
+    in the relay's workers, where two copies of one request were never answered."""
+    return elapsed >= NAMER_HEDGE_MAX_S or elapsed >= NAMER_HEDGE_S and n_pending <= NAMER_TAIL * n_reqs
 DA3_HW = (280, 504)
 CAMERA_HEIGHT_M = 1.6  # the reference's own assumption: every metre here is 'estimated'
 LICENSE = "DA3-GIANT-1.1 (CC BY-NC 4.0): research licence, not for commercial use"
@@ -1220,9 +1229,8 @@ def analyse(m, mp4, opts, clock, writer, log):
         rec = {"namer": "gemini via the bench relay", "asked": len(ids), "requests": len(reqs), "answers": []}
         with clock.stage("identity.gemini", n={"objects": len(ids), "requests": len(reqs)}):
             while pending and time.time() - sent < NAMER_WAIT_S:
-                wake = NAMER_WAIT_S if len(again) >= len(reqs) or time.time() - sent >= NAMER_HEDGE_S else NAMER_HEDGE_S
-                try:
-                    a = relay.get(timeout=max(.1, wake - (time.time() - sent)), partition=part)
+                try:  # polled each second: hedge_due may turn true without an answer arriving
+                    a = relay.get(timeout=max(.1, min(1., NAMER_WAIT_S - (time.time() - sent))), partition=part)
                 except _queue.Empty:
                     a = None
                 r = pending.get((a or {}).get("request"))
@@ -1235,7 +1243,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                     elif r["request"] not in again:  # an error or an empty answer: once more, at once
                         again.add(r["request"])
                         send(r, 2)
-                if time.time() - sent >= NAMER_HEDGE_S:
+                if hedge_due(time.time() - sent, len(pending), len(reqs)):
                     for k, r in pending.items():  # the tail: a second copy of every request still out
                         if k not in again:
                             again.add(k)
@@ -1556,11 +1564,18 @@ def analyse(m, mp4, opts, clock, writer, log):
                     by = {c["id"]: c for c in out["cards"] if c["kind"] == "object"}
                     known = lambda: cards_out.get("identities", {})  # noqa: E731
                     rows_now = [o for o in new_rows if o["id"] not in namer["asked"] and o["id"] not in known()]
-                    rec = name_and_publish(rows_now, by, 100, "gemini_densify") if rows_now else {}
-                    namer["published"].wait(120)
-                    left = [o for o in objects if o["id"] in namer["asked"] and o["id"] in by and o["id"] not in known()]
-                    if left:
-                        rec["left"] = name_and_publish(left, by, 200, "gemini_densify_left")
+                    rec = {}
+
+                    def leftovers():  # beside the densify pass, as soon as the first pass's names are in
+                        namer["published"].wait(120)
+                        left = [o for o in objects if o["id"] in namer["asked"] and o["id"] in by and o["id"] not in known()]
+                        if left:
+                            rec["left"] = name_and_publish(left, by, 200, "gemini_densify_left")
+                    side = threading.Thread(target=leftovers, name="namer-left", daemon=True)
+                    side.start()
+                    if rows_now:
+                        rec.update(name_and_publish(rows_now, by, 100, "gemini_densify"))
+                    side.join(160)
                     fut.set_result(rec)
                 except Exception:  # noqa: BLE001  those objects keep their detected words
                     import traceback
@@ -1813,6 +1828,7 @@ def self_check():
     Rq = cv2.Rodrigues(np.array([.3, -.2, .5]))[0]
     s_, R_, t_ = umeyama(A, 2.5 * A @ Rq.T + [1., 2, 3])
     assert abs(s_ - 2.5) < 1e-9 and np.allclose(R_, Rq) and np.allclose(t_, [1, 2, 3])
+    assert not hedge_due(14.9, 1, 20) and not hedge_due(16., 6, 20) and hedge_due(16., 5, 20) and hedge_due(24., 20, 20)  # tail or 24 s
     assert densify_words(["box", "spill", "lamp", "shelf"], [{"box": .5}, {"shelf": .4, "box": .3}], ["spill", "ladder"]) == (["box", "spill", "shelf"], ["lamp"])
     import gzip  # pick chunks: 23 frames -> 10 + 10 + 3, each blob inflates to its frames' bytes, depth alike
     meta, blobs = pick_chunks([bytes([i]) * 4 for i in range(23)], [bytes([i]) * 2 for i in range(23)])

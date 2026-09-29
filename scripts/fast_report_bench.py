@@ -66,7 +66,7 @@ class NamerRelay:
     no key leaves that container), every request at once; each answer back on the modal.Queue partition named by the report.
     Provider outputs (no images) are kept under OUT/namer/<report>/."""
 
-    def __init__(self, queue, out, workers=64):
+    def __init__(self, queue, out, workers=160):  # mvp2/integrate: 64 queued copies behind each other on Sam's Club (57 requests + copies)
         from concurrent.futures import ThreadPoolExecutor
         from review_video_object_semantics import REMOTE
         self.queue, self.out, self.pool, self.lock, self.container = queue, out, ThreadPoolExecutor(workers), threading.Lock(), None
