@@ -17,7 +17,7 @@ const option=(name,fallback)=>{const i=argv.indexOf(name);return i<0?fallback:ar
 const [root,out]=argv,reports=option('--reports','me340-mvp-fixture,samsclub-mvp-fixture,walmart-mvp-fixture').split(','),n=Number(option('--clicks','200')),speed=option('--speed','1');
 // --judged N: N aimed clicks on judged objects (one per check first, the biggest in the video), before the plain object / miss / person;
 // --height: a taller viewport keeps the whole card (identity to judgements) in the screenshot
-const nJudged=Number(option('--judged','1')),height=Number(option('--height','1100'));
+const nJudged=Number(option('--judged','1')),height=Number(option('--height','1100')),finalLayers=argv.includes('--final');
 const python='/Users/adam/Desktop/Tesla/panoptes-platform/.venv/bin/python',VITE=5183,FAST=8803;
 const {chromium}=createRequire(process.env.PLAYWRIGHT_FROM||'/Users/adam/Desktop/ontab/package.json')('playwright');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -51,6 +51,10 @@ async function video(name){
   await page.addInitScript(()=>localStorage.setItem('panoptes.language','en'));
   await page.goto(`http://127.0.0.1:${VITE}/app.html#/live/${as}`);await page.waitForSelector('.live-report');
   await page.waitForFunction(()=>window.__live?.pick&&document.querySelector('.live-report-head span')?.textContent.includes('judgements v2'),null,{timeout:300000});
+  if(finalLayers)for(let i=0;;i++){  // --final: the densified layers (pick v2, cards v3) and their judgements with VLM answers are in
+    const done=await page.evaluate(async()=>{const r=await fetch(location.hash.replace('#/live/','/fast/reports/')+'/patches?after=0').then(r=>r.json());
+      return r.patches.some(p=>p.layer==='judgements'&&p.data?.vlm_answers&&p.data?.version_of?.object_cards===3);});
+    if(done)break;assert.ok(i<600,'the final judgements never arrived');await sleep(1000);}
   await page.waitForFunction(()=>document.querySelector('.report-video-stage video')?.readyState>=2,null,{timeout:60000});
   const seekTo=async t=>{await page.evaluate(t=>window.dispatchEvent(new CustomEvent('panoptes:seek',{detail:t})),t);await sleep(30);};
   const box=await page.evaluate(()=>{const b=document.querySelector('.report-video-stage').getBoundingClientRect();return [b.left,b.top,b.width,b.height];});

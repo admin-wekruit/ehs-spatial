@@ -34,6 +34,7 @@ put_blob(out, mp4), calls mirror(event, out) on every event, and with --serve ru
 """
 import hashlib
 import json
+import sys
 from pathlib import Path
 import queue
 import re
@@ -259,7 +260,8 @@ def recording(src, report):
     """A mirrored report as its patches (seq order), its blobs by sha256 and its written times."""
     folder = Path(src) / "reports" / report
     patches = [json.loads(p.read_text()) for p in sorted((folder / "patches").glob("*.json"))]
-    blobs = {r["sha256"]: (Path(src) / "blobs" / "sha256" / r["sha256"]).read_bytes() for p in patches for r in p["blobs"].values()}
+    have = lambda r: (Path(src) / "blobs" / "sha256" / r["sha256"]).exists()  # noqa: E731  a capped mirror (--mirror-max-mb) lacks big blobs
+    blobs = {r["sha256"]: (Path(src) / "blobs" / "sha256" / r["sha256"]).read_bytes() for p in patches for r in p["blobs"].values() if have(r)}
     return patches, blobs, _read_json(folder / "written.json", {})
 
 
@@ -269,6 +271,9 @@ def replay(src, report, root, as_report=None, speed=1.0):
     patches, blobs, written = recording(src, report)
     as_report, start, seen, timeline = as_report or report, time.time(), set(), []
     for p in patches:
+        if any(r["sha256"] not in blobs for r in p["blobs"].values()):  # its blobs stayed on the Volume: the layer is left out
+            print(f"replay: patch {p['seq']} ({p['layer']}) skipped, a blob is not in {src}", file=sys.stderr)
+            continue
         send = {r["sha256"]: blobs[r["sha256"]] for r in p["blobs"].values() if r["sha256"] not in seen}
         seen |= set(send)
         timeline.append((p["sent_s"], 0, {"type": "patch", "report": as_report, "patch": {**p, "report": as_report, "t0_unix": start}, "blobs": send}))

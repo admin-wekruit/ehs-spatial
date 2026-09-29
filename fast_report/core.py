@@ -899,8 +899,17 @@ def analyse(m, mp4, opts, clock, writer, log):
         outl = {f["sourceFrame"]: f for f in (results.get("outlines") or {}).get("frames", []) if f["source"] == "segmented"}
         cal = cards_calibration()
 
+        area = {}  # entity -> [(outline bbox area, segmented keyframe)]: the fallback when no best view was segmented
+        for q, f in outl.items():
+            for o in f["objects"]:
+                xy = np.concatenate([np.asarray(pp, float).reshape(-1, 2) for pp in o["polygons"]]) if o["polygons"] else None
+                if xy is not None and len(xy):
+                    area.setdefault(o["entityId"], []).append((float(np.prod(xy.max(0) - xy.min(0))), q))
+
         def build(c):  # CPU: the set-of-marks pair and the lettered prompt
             best = next((k for k in c["views"].get("best", []) if k in outl), None)
+            if best is None and area.get(c["id"]):
+                best = max(area[c["id"]])[1]  # integration: the object's largest segmented outline (its best views were projected)
             if best is None:
                 return None
             marks, n = {}, 2

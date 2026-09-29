@@ -267,6 +267,9 @@ def g_j4(card, ctx, cards):
     else:
         r = REVIEW
     g = geo("distance to walked path", d, u, "m", TRIP_PATH_M, "min", r, reasons, path=pid)
+    if on == FAIL:  # integration: the PASS rests on the base height, so the geometry line shows that quantity
+        g = geo("base above the floor (off the floor: no trip hazard)", float(base["value"]), float(base["u"]), "m", ON_FLOOR_M, "min", r, reasons,
+                base.get("scale"), path=pid, path_distance_m=round(float(d), 3))
     gap = ["footprint seen from one side: the gap may be smaller"] if r == PASS and on != FAIL and not observed(card, "depth") else []
     return forced(g, doubts(card) + gap + fact_doubts(base, on, "max") + (one_set(card) if r != PASS or on != FAIL else []))
 
