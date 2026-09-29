@@ -147,7 +147,7 @@ class FastReport:
             self.sam3d = sam3d.Workers(gpu=0, n=2)  # B: two SAM 3D processes under MPS on GPU 0 (~60 s load + 16 s warm-up, beside vLLM's load)
             self.gate_pool = sam3d.GatePool(GATE_PROCS)  # the gate's prepare/assess processes (niced)
         b["profile"] = self.profile
-        self.proc_pool = ProcessPoolExecutor(PROCS, mp_context=multiprocessing.get_context("spawn"))
+        self.proc_pool = ProcessPoolExecutor(PROCS, mp_context=multiprocessing.get_context("spawn"), initializer=core.single_threaded)
         self.proc_pool.map(core.warm_worker, range(PROCS))
         import torch
         import open3d  # noqa: F401
@@ -301,7 +301,7 @@ class FastReport:
         import multiprocessing
         from concurrent.futures import ProcessPoolExecutor
         if getattr(self.proc_pool, "_broken", False):  # mvp2/integrate: a worker died in the last call (Sam's Club 003, in cards.v1_box):
-            self.proc_pool = ProcessPoolExecutor(PROCS, mp_context=multiprocessing.get_context("spawn"))  # every later call failed
+            self.proc_pool = ProcessPoolExecutor(PROCS, mp_context=multiprocessing.get_context("spawn"), initializer=core.single_threaded)  # every later call failed
             list(self.proc_pool.map(core.warm_worker, range(PROCS)))  # at its first submit; a new pool, warmed (not analysis time)
             pool_note = "the process pool broke in an earlier call and was recreated before this one"
         price = usd_per_s(2, CPU, MEMORY_GIB)

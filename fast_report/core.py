@@ -101,6 +101,15 @@ def measure_chunk(gray, a, b, a0, b1):
             "jump": m["jump"][pairs], "spans": m["spans"][spans], "shape": m["shape"], "s": time.perf_counter() - t}
 
 
+def single_threaded():
+    """The process pool's initializer (r5): one thread a process for OpenMP / BLAS before any library starts its pool. 24 processes x
+    open3d's default 32 OpenMP threads (the surfaces job, the planar parts in the cards) took ME340's surfaces 218 s instead of ~2 s
+    and slowed SAM 3D's calls 5x beside them (run r5-models-report-commercial-001)."""
+    import os
+    for k in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+        os.environ[k] = "1"
+
+
 def warm_worker(_):
     import cv2
     from fast_report import cards, judge  # noqa: F401  the cards' and the judge's work runs in these processes (MVP A, B)
