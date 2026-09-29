@@ -273,6 +273,7 @@ def main():
     ap.add_argument("runs", nargs="+")
     ap.add_argument("--out", required=True)
     ap.add_argument("--sheets", action="store_true")
+    ap.add_argument("--windows", action="store_true")
     args = ap.parse_args()
     out = Path(args.out)
     rows = {}
@@ -281,6 +282,10 @@ def main():
             run = json.loads(p.read_text())
             site = run["opts"]["site"]
             row, _ = evaluate(run, site)
+            if not run["error"] and run["opts"].get("planted"):
+                row["planted"] = planted(run, d)
+            if not run["error"] and args.windows and run["opts"]["geometry"] == "a":
+                row["window_rule_vs_da3"] = window_compare(run)
             rows[p.stem] = row
             if args.sheets and not run["error"]:
                 row["contact_sheet"] = sheet(run, site, out / f"{p.stem}-changes.jpg")
@@ -288,9 +293,6 @@ def main():
             print(p.stem, json.dumps({k: row.get(k) for k in ("timing_s", "ate_vs_droid", "stitch", "objects")}, default=str)[:1500], flush=True)
     (out / "evaluation.json").write_text(json.dumps(rows, indent=1, default=lambda o: o.item() if hasattr(o, "item") else str(o)))
 
-
-if __name__ == "__main__":
-    main()
 
 
 def sweep_table(sweep_dir, runs_dir):
@@ -315,3 +317,102 @@ def sweep_table(sweep_dir, runs_dir):
                          "claims_withdrawn": sum(c.get("withdrawn_in_window") is not None for c in ch), "s": r["s"]})
         out[rid] = rows
     return out
+
+
+# ---------- planted changes (recall) ----------
+
+def planted(run, run_dir):
+    """Our change claims next to the planted boxes (scripts/x6_plant.py truth, DROID metres): a claim matches an event
+    when its kind agrees, its place is within 0.6 m of the box (centre 0.3 m above the floor) after the Sim3, and the
+    event time lies between its before and after keyframes (+- 1 s)."""
+    site = run["opts"]["site"]
+    truth = json.loads((Path(run_dir) / f"planted-{site}.json").read_text())
+    ref = fe.reference(site)
+    a = align(run, ref)
+    if a is None:
+        return {"error": "no alignment"}
+    s, R, t = a.pop("sim3")
+    up = json.loads((PHASE2 / "runs" / __import__("x6_plant").SCALE[site] / "metric-scale.json").read_text())["up_native"]
+    up = np.asarray(up, float) / np.linalg.norm(up)
+    mv = lambda p: s * (R @ np.asarray(p, float)) + t  # noqa: E731
+    rows, used = [], set()
+    for e in truth["events"]:
+        if not e["placed"]:
+            rows.append({"kind": e["kind"], "placed": False})
+            continue
+        box = [np.asarray(c) + .3 * up for c in e["centre_m"]]
+        hit, near_obj = None, None
+        for i, c in enumerate(run["changes"]):
+            if c["kind"] != e["kind"] or run["cameras"].get(str(c["after_key"]), {}).get("frame", a["frame"]) != a["frame"]:
+                continue
+            where = c.get("from_centroid") if e["kind"] in ("disappeared", "moved") else c.get("to_centroid")
+            if where is None or np.linalg.norm(mv(where) - box[0 if e["kind"] != "appeared" else 0]) > .6:
+                continue
+            if not (c["t_before"] - 1 <= e["change_s"] <= c["t_after"] + 1):
+                continue
+            if e["kind"] == "moved" and np.linalg.norm(mv(c["to_centroid"]) - box[1]) > .6:
+                continue
+            hit = i
+            used.add(i)
+            break
+        for o in run["objects"]:  # was the box an object at all? (any position within 0.6 m)
+            if o["frame"] == a["frame"] and any(np.linalg.norm(mv(p["centroid"]) - b) <= .6 for p in o["positions"] for b in box):
+                near_obj = {"id": o["id"], "label": o["label"], "intervals": [(iv["state"], iv["t0"], iv["t1"]) for iv in o["intervals"]]}
+                break
+        rows.append({"kind": e["kind"], "placed": True, "change_s": e["change_s"], "found": hit is not None, "claim": run["changes"][hit]["object"] if hit is not None else None,
+                     "box_as_object": near_obj})
+    other = [c for i, c in enumerate(run["changes"]) if i not in used]
+    return {"events": rows, "placed": sum(r["placed"] for r in rows), "found": sum(bool(r.get("found")) for r in rows),
+            "claims_not_planted": len(other), "claims_not_planted_detail": [(c["object"], c["label"], c["kind"], c["t_after"]) for c in other],
+            "ate_m": a["ate_m"]}
+
+
+# ---------- window rule: ORB co-visibility next to DA3's geometric overlap ----------
+
+def window_compare(run, thresholds=(.4, .55, .7)):
+    """(a) runs carry DA3's overlap of each keyframe with the next 60 of its shot: the window rule on it, and its
+    correlation with the ORB co-visibility of the same keyframe pairs."""
+    from fast_report import windows as win
+    rows = run["summary"].get("overlap_da3") or []
+    if not rows:
+        return None
+    site = run["opts"]["site"]
+    cap = cv2.VideoCapture(str(PHASE2 / "data/clips" / CLIPS[site] / "source-full.mp4"))
+    out = {"shots": []}
+    orb_all, da3_all = [], []
+    for sh in rows:
+        keys, M = sh["keys"], sh["rows"]
+        feats = []
+        for k in keys:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, k)
+            bgr = cap.read()[1]
+            h, w = bgr.shape[:2]
+            x0 = (w - h * 4 // 3) // 2
+            feats.append(win.features(cv2.cvtColor(cv2.resize(bgr[:, x0:w - x0], (640, 480), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY)))
+        index = {id(f): i for i, f in enumerate(feats)}
+
+        def da3(a, b):
+            i, j = index[id(a)], index[id(b)]
+            return M[i][j - i - 1] if 0 < j - i <= len(M[i]) else 0.
+        for i in range(0, len(keys) - 1, 3):
+            for j in (i + 1, i + 5, i + 10, i + 20):
+                if j < len(keys) and j - i <= len(M[i]):
+                    orb_all.append(win.covisibility(feats[i], feats[j]))
+                    da3_all.append(M[i][j - i - 1])
+        s = {"shot": sh["shot"], "keyframes": len(keys)}
+        for thr in thresholds:
+            wa = win.run(keys, feats, threshold=thr, covis=da3)
+            wo = win.run(keys, feats, threshold=thr)
+            s[str(thr)] = {"da3_windows": len(wa), "orb_windows": len(wo), "da3_span_s_median": round(float(np.median([(x["keys"][-1] - x["keys"][x["carried"]]) / run["fps"] for x in wa])), 2),
+                           "orb_span_s_median": round(float(np.median([(x["keys"][-1] - x["keys"][x["carried"]]) / run["fps"] for x in wo])), 2)}
+        out["shots"].append(s)
+    o, d = np.array(orb_all), np.array(da3_all)
+    out["pairs"] = len(o)
+    out["pearson_orb_da3"] = round(float(np.corrcoef(o, d)[0, 1]), 3) if len(o) > 2 else None
+    out["da3_overlap_when_orb_below"] = {str(x): round(float(np.median(d[o < x])), 3) if (o < x).any() else None for x in thresholds}
+    out["orb_when_da3_below"] = {str(x): round(float(np.median(o[d < x])), 3) if (d < x).any() else None for x in thresholds}
+    return out
+
+
+if __name__ == "__main__":
+    main()

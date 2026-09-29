@@ -3,7 +3,7 @@ that appears and one that moves 1.2 m, each at a known time. The walk-throughs t
 sees twice (runs/fx-x6-windows-time-003), so without a plant the change rule's recall is unmeasured.
 
 The boxes are drawn with the delivered report's cameras (DROID poses and lens, metric by its own floor-plane scale):
-0.6 m cubes standing on the delivered floor plane, flat-shaded cardboard faces (painter's order), placed where DROID's
+0.8 m cubes standing on the delivered floor plane, flat-shaded cardboard faces (painter's order), placed where DROID's
 depth saw free space behind every corner in view in every keyframe that sees >= 5 of its 8 corners and centre (>= 1 such), >= 0.7 m beside the camera path. People or
 things passing in front of a box are not drawn over it (the places are picked in open floor). A plant, not a finding:
 every number measured on these clips is labelled 'planted'.
@@ -24,7 +24,7 @@ sys.path[:0] = [str(REPO / "scripts"), str(REPO / "modal_apps"), str(REPO)]
 PHASE2 = Path("/Users/adam/Desktop/panoptes-public/research-notes/phase2")
 CLIPS = {"me340": "me340-165", "samsclub-a2": "samsclub-337", "walmart": "walmart-190"}
 SCALE = {"me340": "da3-posed-me340-223-shotc", "samsclub-a2": "da3-posed-samsclub-a2-281", "walmart": "da3-posed-walmart-251-shot383"}
-SIDE, MOVE, CLEAR = .6, 1.2, .7  # metres: cube side, the move, distance kept from the camera path
+SIDE, MOVE, CLEAR = .8, 1.2, .7  # metres: cube side, the move, distance kept from the camera path
 FACES = [(0, 1, 2, 3), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)]  # bottom, top, sides
 
 
@@ -114,15 +114,26 @@ def free_everywhere(corners, d, frames):
     return seen >= 1, seen
 
 
-def visible(corners, poses, frames, Kr):
-    """Frames where the cube is in front of the camera with >= half its corners inside the 640 x 480 raster (>= 50 frames, 2 s, wanted:
-    a window before its change and one after)."""
+def visible(corners, poses, frames, Kr, mpn):
+    """Frames where the cube is 1.2-7 m from the camera (run 005's 0.6 m boxes, seen at 5-11 m, were never lifted; a
+    floor object is below the view of a level camera 1.6 m up closer than ~3.5 m) with >= 6 of its 8 corners inside the
+    raster and its centre above the bottom 15 % (the camera operator's own cart fills the bottom of Sam's Club's
+    frames). >= 40 frames wanted: a window before the change and one after."""
     out = []
     for f in frames:
         xy, z = project(corners, poses[f], Kr)
-        if (z > .5).all() and ((xy[:, 0] > 0) & (xy[:, 0] < 640) & (xy[:, 1] > 0) & (xy[:, 1] < 480)).mean() > .5:
+        inside = (xy[:, 0] > 0) & (xy[:, 0] < 640) & (xy[:, 1] > 0) & (xy[:, 1] < 480)
+        if (z * mpn > 1.2).all() and (z * mpn < 7.).all() and inside.sum() >= 6 and xy[:, 1].mean() < .85 * 480:
             out.append(f)
     return out
+
+
+def ok_views(cs, up, fwd, size, poses, frames, Kr, mpn):
+    """>= 40 close views of the (first) place; a moved box's new place has >= 20 close views after the change."""
+    v = visible(cube(cs[0], up, fwd, size), poses, frames, Kr, mpn)
+    if len(v) < 40:
+        return False
+    return len(cs) < 2 or sum(f >= v[len(v) // 2] for f in visible(cube(cs[1], up, fwd, size), poses, frames, Kr, mpn)) >= 20
 
 
 def plan(site):
@@ -150,7 +161,7 @@ def plan(site):
                             any(np.linalg.norm(x - u) < 2 * size for x in cs for u in used):
                         continue
                     oks = [free_everywhere(cube(x, up, fwd, size), d, set(frames)) for x in cs]
-                    if all(o for o, _ in oks) and len(visible(cube(cs[0], up, fwd, size), poses, frames, Kr)) >= 50:
+                    if all(o for o, _ in oks) and ok_views(cs, up, fwd, size, poses, frames, Kr, mpn):
                         best = (cs, dist, lat, [n for _, n in oks])
                         break
                 if best:
@@ -162,7 +173,7 @@ def plan(site):
             continue
         used += best[0]
         cs, dist, lat, seen = best
-        vis = visible(cube(cs[0], up, fwd, size), poses, frames, Kr)
+        vis = visible(cube(cs[0], up, fwd, size), poses, frames, Kr, mpn)  # the change: mid-way through the close views of its place
         t_frame = vis[len(vis) // 2] if vis else f0
         events.append({"kind": kind, "placed": True, "centre_native": [x.tolist() for x in cs], "centre_m": [(x * mpn).tolist() for x in cs],
                        "change_frame": int(t_frame), "visible_frames": [int(vis[0]), int(vis[-1])] if vis else None, "droid_keyframes_judged": seen,
