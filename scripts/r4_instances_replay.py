@@ -194,7 +194,8 @@ def to_npz(D, path):
     np.savez(path, **arr)
 
 
-CARD_VARIANTS = {"C0": {"merge_v2": False, "parts": False}, "C1": {"merge_v2": True, "parts": True}}
+CARD_VARIANTS = {"C0": {"merge_v2": False, "parts": False, "project": False}, "C1": {"merge_v2": True, "parts": True, "project": True},
+                 "C1np": {"merge_v2": True, "parts": True, "project": False}}
 
 
 def matrix(site, runs, out_json, dump_dir):
@@ -204,12 +205,22 @@ def matrix(site, runs, out_json, dump_dir):
     T = masks_table(D)
     maps = label_maps(D, T)
     dl, out = None, {}
+    base = {k: getattr(cards, k) for k in dir(cards) if k.isupper() and isinstance(getattr(cards, k), (int, float))}
     for lv, cv in runs:
-        cards.R4.update(CARD_VARIANTS[cv])
+        var = CARD_VARIANTS.get(cv) or json.loads(cv)
+        for k, v in base.items():
+            setattr(cards, k, v)
+        cards.R4.update({k: v for k, v in var.items() if k in cards.R4})
+        for k, v in var.items():
+            if k.isupper():
+                setattr(cards, k, v)
         res, co, _, dl, _ = evaluate_replay(site, D, Path(dump_dir).parent / f"rep-{site}-{lv}.npz", dl=dl, maps=maps)
         res["cards_stats"] = co["stats"]
-        out[f"{lv}{cv}"] = res
-        print(site, lv + cv, json.dumps(brief(res)), flush=True)
+        name = f"{lv}{cv}" if cv in CARD_VARIANTS else f"{lv}:{cv}"
+        out[name] = res
+        print(site, name.replace(" ", ""), json.dumps(brief(res)), flush=True)
     cards.R4.update(CARD_VARIANTS["C1"])
+    for k, v in base.items():
+        setattr(cards, k, v)
     Path(out_json).write_text(json.dumps(out, indent=1, default=str))
     return out

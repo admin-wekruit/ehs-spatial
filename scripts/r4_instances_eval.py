@@ -10,6 +10,7 @@ mask: I = overlap pixels, A_c = c's pixels on those frames, A_D = D's pixels.
   covered    one card has I >= COVER x A_D, or D's pieces together do
   miss       not covered
   wrong merge  a card holds I >= COVER x A_D of two delivered objects that do not overlap each other (IoMin < 0.5 on shared frames)
+             and those objects make up >= EXPLAIN of the card's pixels on their frames (else it is a whole over them: counted apart)
 Reference sets: the delivered objects with a model (22 / 67 / 40, X6's list) and every delivered object seen on >= 3 frames; the
 'clean' subset has one mask per frame (entities made of several SAM 2 masks on one frame are often look-alikes the delivered
 associator joined: splitting them is not fragmentation).
@@ -29,6 +30,8 @@ PHASE2 = Path("/Users/adam/Desktop/panoptes-public/research-notes/phase2")
 REPO = Path(__file__).resolve().parents[1]
 MERGED = {"me340": "me340-object-models-303-merged", "samsclub-a2": "samsclub-a2-object-models-303-merged", "walmart": "walmart-object-models-303-merged"}
 PIECE_IN, PIECE_MIN, COVER, TOL = .5, .03, .3, 1
+EXPLAIN = .6  # a card over several delivered objects is a wrong merge when they make up >= this share of its pixels there (else a whole
+# over them: a pallet load over its packs, a rack over its goods)
 CROP_X0, CROP_W = 80, 480  # the 4:3 centre crop (160..1120 of 1280) on the 640x360 pick grid
 
 
@@ -162,11 +165,13 @@ def score(dl, I, AC, AD, DD, subset=None, root=lambda c: c):
             holds.setdefault(c, []).append(D)
     covered = [D for D in Ds if cover1[D] >= COVER or sum(I[(c, D)] for c in pieces[D]) >= COVER * AD[D]]
     frag = {D: len({root(c) for c in pieces[D]}) for D in covered}
-    merges = []
+    merges, wholes = [], []
     for c, held in holds.items():
         apart = [(a, b) for i, a in enumerate(held) for b in held[i + 1:] if not DD.get((a, b))]
-        if apart:
-            merges.append({"card": c, "delivered": held})
+        if not apart:
+            continue
+        explained = min(1., sum(I[(c, D)] for D in held) / max(np.mean([AC[(c, D)] for D in held]), 1))  # the card's area: its mean over their frames
+        (merges if explained >= EXPLAIN else wholes).append({"card": c, "delivered": held, "explained": round(explained, 3)})
     n = len(Ds)
     fr = np.array([max(v, 1) for v in frag.values()]) if frag else np.zeros(0)
     return {"delivered": n, "covered": len(covered), "missed": n - len(covered), "miss_rate": round((n - len(covered)) / n, 3) if n else None,
@@ -174,8 +179,9 @@ def score(dl, I, AC, AD, DD, subset=None, root=lambda c: c):
             "pieces_per_covered_mean": round(float(fr.mean()), 3) if len(fr) else None,
             "pieces_per_covered_median": float(np.median(fr)) if len(fr) else None,
             "wrong_merge_cards": len(merges), "delivered_in_wrong_merges": len({D for m in merges for D in m["delivered"] if D in pieces}),
+            "wholes_over_several": len(wholes),
             "detail": {"pieces": {D: pieces[D] for D in covered if len(pieces[D]) >= 2}, "missed": [D for D in Ds if D not in covered],
-                       "merges": merges}}
+                       "merges": merges, "wholes": wholes}}
 
 
 def evaluate(site, maps, entities, aliases, parent=None, dl=None):
@@ -211,9 +217,13 @@ def self_check():
     r, _ = evaluate("x", [(10, m)], [None, "o1", "o2"], {}, parent={"o2": "o1"}, dl=dl)  # a part of its parent card: one object
     assert r["all"]["in_pieces"] == 0, r["all"]
     m2 = np.zeros((360, 640), np.uint16)
-    m2[100:200, 80 + 50:80 + 400] = 3
+    m2[100:200, 80 + 50:80 + 400] = 3  # over A, B and the 150 px between them: they make up 0.57 of it -> a whole over them
     r, _ = evaluate("x", [(10, m2)], [None, None, None, "o3"], {}, dl=dl)
-    assert r["all"]["wrong_merge_cards"] == 1 and r["all"]["covered"] == 2, r["all"]
+    assert r["all"]["wrong_merge_cards"] == 0 and r["all"]["wholes_over_several"] == 1 and r["all"]["covered"] == 2, r["all"]
+    dl["B"]["frames"][10] = np.roll(B, -140, axis=1)  # B right beside A: the card is just the two -> a wrong merge
+    m2[:, 80 + 260:] = 0
+    r, _ = evaluate("x", [(10, m2)], [None, None, None, "o3"], {}, dl=dl)
+    assert r["all"]["wrong_merge_cards"] == 1, r["all"]
     print("r4_instances_eval self-check ok")
 
 
