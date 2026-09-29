@@ -40,14 +40,15 @@ export default function LiveReport({ reportId }: { reportId: string }) {
   }, [reportId]);
   const layers = useMemo(() => latest(state.patches), [state.patches]);
   const docKey = Object.values(layers).filter(p => p.layer !== "timing").map(p => p.seq).sort((a, b) => a - b).join(",");
-  const document = useMemo(() => liveDocument(reportId, layers), [reportId, docKey]);
+  const [cardsLayer, setCardsLayer] = useState<any>(null);  // declared here: the document draws each card's display model (r4)
+  const document = useMemo(() => liveDocument(reportId, layers, cardsLayer?.cards), [reportId, docKey, cardsLayer]);
   const docRef = useRef(document); docRef.current = document;
   // For the headless checks: an asset fetched twice was reloaded; ready = when each asset was first on the GPU (unix s); clicks = ms
   // from pointer-down to the card in the DOM; pickDecodeMs = pick + depth fetched, inflated and indexed.
   const stats = useRef({ uploads: {} as Record<string, number>, ready: {} as Record<string, number>, scenes: 0, errors: [] as string[],
     clicks: [] as number[], pickDecodeMs: null as number | null, pickSteps: null as Record<string, number> | null, pick: null as Pick | null,
     pickDecodes: [] as { seq: number; ms: number; fetch: number; all_ms?: number; chunks?: number; reused?: number }[] }).current;
-  const [pick, setPick] = useState<Pick | null>(null), [cardsLayer, setCardsLayer] = useState<any>(null), [clickMs, setClickMs] = useState<number[]>([]);
+  const [pick, setPick] = useState<Pick | null>(null), [clickMs, setClickMs] = useState<number[]>([]);
   const older = useRef<Pick | null>(null);  // the previous version, for frames whose chunk of the new one is not in yet
   useEffect(() => {  // pick + depth per version, chunk by chunk (mvp2): the chunk at the video's time first, so a click works at once
     const p = layers.pick;
@@ -162,7 +163,7 @@ export default function LiveReport({ reportId }: { reportId: string }) {
     const v = viewer.current;
     if (!v) return;
     stats.scenes++;
-    v.setScene({ id: docKey, document }).catch((e: Error) => setError(e.message));
+    v.setScene({ id: docKey + (cardsLayer ? ":cards" + cardsLayer.version : ""), document }).catch((e: Error) => setError(e.message));
     // The first cameras open a free view of the longest shot, never the (image-less) camera view.
     if (!opened.current && document.cameras.length) { opened.current = true; v.setCamera({ mode: "free" }); setFrame(currentCameras(document)[0].coordinateFrameId); }
   }, [document]);
@@ -232,7 +233,8 @@ export default function LiveReport({ reportId }: { reportId: string }) {
         <div className="mvp-panel">
           {tab === "card" && (clicked?.miss ? <UnknownCard r={clicked.miss} od={od} under={clicked.under} names={names} onSelect={choose} tr={tr} />
             : <Card id={selected} info={infos.get(selected || "")} entity={entity} under={clicked?.id === selected ? clicked?.under || [] : []} names={names}
-                judgementsPatch={layers.judgements} cardsPatch={layers.object_cards} duration={duration} onSelect={choose} tr={tr} />)}
+                judgementsPatch={layers.judgements} cardsPatch={layers.object_cards} duration={duration} onSelect={choose} tr={tr}
+                sam={samFor(layers.models, cardsLayer?.aliases, selected)} />)}
           {tab === "objects" && <ObjectList cards={cardsLayer?.cards || []} infos={infos} selected={selected} onSelect={choose} tr={tr} />}
           {tab === "memory" && <VideoMemory document={document} onSelect={choose} />}
         </div>
@@ -267,9 +269,36 @@ const PHYSICAL: [string, string, string][] = [["top_above_floor", "顶部离地"
   ["principal_axis_tilt_deg", "主轴倾斜", "principal axis tilt"], ["planar_slope_deg", "平面坡度", "planar slope"]];
 const SIZE_FIELDS = new Set(["top_above_floor", "base_above_floor", "height", "width", "depth", "visible_length", "footprint_m2", "position_xy", "nearest_walked_path"]);
 
-function Card({ id, info, entity, under, names, judgementsPatch, cardsPatch, duration, onSelect, tr }: {
+/** r4 (models): SAM 3D's word on a card (the models layer's 'tried' rows and accepted models; merged-away ids follow the aliases). */
+function samFor(models: Patch | undefined, aliases: Record<string, string> | undefined, id: string | null) {
+  if (!models || !id) return null;
+  const mine = (o: string) => o === id || aliases?.[o] === id, got = (models.data.models || []).find((m: any) => mine(m.object));
+  return got ? { accepted: true, iou: got.gate?.silhouette_iou, final: models.data.final } : { ...(models.data.tried || []).find((t: any) => mine(t.object)), final: models.data.final };
+}
+
+/** r4 (models): the card's display model in one line: its kind, where it comes from, how it was chosen, what SAM 3D did. */
+function ModelLine({ model, sam, tr }: { model: any; sam?: any; tr: Tr }) {
+  if (!model) return null;
+  const pct = (v: number) => `${Math.round(v * 100)}%`;
+  const s3 = !sam ? tr("未尝试（报告没有 SAM 3D 层）", "not tried (no SAM 3D layer in this report)")
+    : sam.accepted ? tr(`通过（留出视角 IoU ${fmt(sam.iou, 2)}）：显示网格`, `accepted (held-out IoU ${fmt(sam.iou, 2)}): its mesh is shown`)
+    : sam.reasons ? `${tr("未通过，保留基本形状", "rejected, the primitive stays")}: ${sam.reasons.slice(0, 2).join("; ")}`
+    : sam.why ? `${tr("未生成", "not generated")}: ${sam.why}`
+    : sam.final ? `${tr("未尝试", "not tried")}: ${model.sam3d_eligibility === "well observed" ? tr("首轮已满", "the first pass was full") : model.sam3d_eligibility || "—"}`
+    : tr("进行中", "pending");
+  return <section className="mvp-block mvp-model"><h4>{tr("模型", "Model")} <Tag>{tr("生成的，仅供显示", "generated, display only")}</Tag></h4>
+    {model.kind ? <p>{sam?.accepted ? tr("SAM 3D 网格", "SAM 3D mesh") : ({ box: tr("长方体", "box"), cylinder: tr("圆柱", "cylinder"), plane: tr("平板", "plane"), "open frame": tr("开放框架", "open frame") } as any)[model.kind] || model.kind}
+      {" · "}{tr("来源", "source")}: {sam?.accepted ? "SAM 3D s1cfg12" : tr("拟合观测点的基本形状", "primitive fitted to the observed points")}
+      {" · "}{tr("选择", "chosen by")} {model.chosen_by} · {tr("残差", "residual")} {fmt(model.residual_m * 100, 1)} cm
+      {" · "}{tr("看到的面", "seen")} {pct(model.seen_share ?? 0)} <small>({tr("其余是猜的，画得淡", "the rest is guessed, drawn faint")})</small>
+      {model.depth && <><br /><small>{model.depth}</small></>}</p>
+      : <p><small>{model.reason}</small></p>}
+    <p><small>SAM 3D: {s3}</small></p></section>;
+}
+
+function Card({ id, info, entity, under, names, judgementsPatch, cardsPatch, duration, onSelect, tr, sam }: {
   id: string | null; info?: Info; entity: any; under: string[]; names: (id: string) => string; judgementsPatch?: Patch; cardsPatch?: Patch;
-  duration: number; onSelect: (id: string) => void; tr: Tr;
+  duration: number; onSelect: (id: string) => void; tr: Tr; sam?: any;
 }) {
   if (!id) return <p className="mvp-empty">{tr("点视频里的任何东西：它是什么、它的物理信息、它的安全判断。", "Click anything in the video: what it is, its physical info, its safety judgement.")}</p>;
   const card = info?.card;
@@ -306,6 +335,7 @@ function Card({ id, info, entity, under, names, judgementsPatch, cardsPatch, dur
         <p><small>{tr("u = √(各项平方和) × k；k 由验证校准，未校准时为 1", "u = k × √(sum of squared parts); k comes from D's calibration, 1 until then")}</small></p>
       </details>
     </section>}
+    {card.kind === "object" && <ModelLine model={card.model} sam={sam} tr={tr} />}
     <Time card={card} duration={duration} patch={cardsPatch} tr={tr} />
     <Judgements info={info!} patch={judgementsPatch} tr={tr} />
     <Under under={under} names={names} onSelect={onSelect} tr={tr} />
@@ -406,6 +436,7 @@ function OnDemand({ od, tr }: { od: any; tr: Tr }) {
       {ph.size_check && <tr><th>{tr("尺寸检查", "size check")}</th><td>{ph.size_check.status}{ph.size_check.reason ? <small> ({ph.size_check.reason})</small> : null}</td></tr>}
     </tbody></table>
     <p><small>{od.note}</small></p>
+    <ModelLine model={od.model} sam={{ why: tr("按需卡片只有一个视角", "an on-demand card has one view") }} tr={tr} />
     <p>{took}</p>
   </section>;
 }

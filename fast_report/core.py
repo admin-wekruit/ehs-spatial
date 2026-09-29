@@ -615,30 +615,50 @@ def splat_job(m, gg, frames_ab, shared, opts, clock, writer, release):
     return out
 
 
-def models_job(m, inputs, geo, shared, words, clock, writer, dev):
+def tried_rows(records):
+    """r4 (models): per object SAM 3D's last word (the viewer's card line): accepted, rejected with the gate's reasons, or not
+    generated with the prepare step's reason."""
+    out = {}
+    for r in records:
+        if r.get("stage") == "assess":
+            out[r["object"]] = {"object": r["object"], "accepted": bool(r["accepted"]), "reasons": [str(x)[:120] for x in r.get("reasons") or []],
+                                "iou": r.get("iou"), "view": r.get("view"), "attempt": r.get("attempt")}
+        elif r["object"] not in out or not out[r["object"]].get("accepted"):
+            out[r["object"]] = {"object": r["object"], "accepted": False, "why": str(r.get("rejected") or r.get("untried") or r.get("error"))[:160]}
+    return list(out.values())
+
+
+def models_job(m, inputs, geo, shared, words, clock, writer, dev, cards_now=None):
     """SAM 3D's first pass (fast_report.sam3d.gate: the first 30 ranked objects, one try each, GPU 0 under MPS): each
-    accepted model at once as a new 'models' version (cumulative), and a last one ('final') when the pass is judged."""
+    accepted model at once as a new 'models' version (cumulative), and a last one ('final') when the pass is judged.
+    r4 (models): only the cards' well-observed objects go (display_model.well_observed on the newest cards version, best
+    first); 'tried' says per object what SAM 3D did (the card's model line), a rejected one keeps its primitive."""
     import os
     import shutil
     import torch
-    from fast_report import sam3d
+    from fast_report import display_model, sam3d
     with torch.cuda.device(dev):
         torch.cuda.empty_cache()  # the core's cached blocks back to the device before SAM 3D's two processes generate beside it
     objs = inputs()
+    cs = (cards_now() or {}).get("cards") if cards_now else None
+    eligible = None if cs is None else {c["id"]: sc for c in cs if c.get("kind") == "object" for sc in [display_model.well_observed(c)[0]] if sc}
     records, models, blobs = [], [], {}
     shots = [{k: gg[k] for k in ("index", "keys", "depth_m", "c2w_m", "K", "person")} for gg in geo]
     judged = lambda: sum(r.get("stage") == "assess" for r in records)  # noqa: E731
+    base = {"eligible": None if eligible is None else len(eligible), "rule": display_model.WELL_OBSERVED}
     try:
-        for x in sam3d.gate(objs, shots, shared.result(), clock, m.sam3d, m.gate_pool, vocab=words, records=records):
+        for x in sam3d.gate(objs, shots, shared.result(), clock, m.sam3d, m.gate_pool, vocab=words, records=records, eligible=eligible):
             models.append({"object": x["object"], "transform": {"position": [float(v) for v in x["transform"][:3, 3]], "quaternion": [0, 0, 0, 1],
                                                                 "scale": [1, 1, 1]}, "bounds": x["bounds"], "gate": x["gate"]})
             blobs[f"model-{x['object']}"] = (x["glb"], {"mediaType": "model/gltf-binary", "format": "glb"})
-            writer.put("models", {"models": list(models), "attempted": judged(), "final": False}, dict(blobs), "generated", GENERATED)
+            writer.put("models", {**base, "models": list(models), "attempted": judged(), "final": False, "tried": tried_rows(records)}, dict(blobs),
+                       "generated", GENERATED)
             clock.mark("first_model_put")
     finally:
-        summary = {"ranked": len(sam3d.rank(objs, words)), "attempted": judged(), "accepted": len(models),
+        summary = {"ranked": len(sam3d.rank(objs, words, eligible)), "attempted": judged(), "accepted": len(models), "eligible": base["eligible"],
                    "prepare_rejected": sum("rejected" in r for r in records), "errors": [r for r in records if "error" in r][:5]}
-        writer.put("models", {"models": models, "attempted": judged(), "final": True, "first_pass": summary}, dict(blobs), "generated", GENERATED)
+        writer.put("models", {**base, "models": models, "attempted": judged(), "final": True, "first_pass": summary, "tried": tried_rows(records)},
+                   dict(blobs), "generated", GENERATED)
         clock.mark("models_final_put")
         for d in sam3d.SHARED.glob(f"fb-gate-{os.getpid()}-*"):  # this run's staged gate inputs
             shutil.rmtree(d, ignore_errors=True)
@@ -1395,7 +1415,8 @@ def analyse(m, mp4, opts, clock, writer, log):
             splat_after_facts()
             if display.get("models") or not display_on:
                 return
-            display["models"] = m.cpu_pool.submit(models_job, m, sam3d_objs.result, geo, shared, words, clock, writer, dev_geo)
+            display["models"] = m.cpu_pool.submit(models_job, m, sam3d_objs.result, geo, shared, words, clock, writer, dev_geo,
+                                                  lambda: next((cards_out[v] for v in ("v4", "v3", "v2", "v1") if v in cards_out), None))
             clock.mark("display_started")
     if not densify_on or not objects:
         start_display()
