@@ -267,29 +267,40 @@ def compose(A, B):
 
 # ---------- facts ----------
 
-STACK = ("box", "carton", "shelf", "shelves", "rack", "pallet", "paper towel", "toilet paper", "tissue", "crate", "packaging", "display",
-         "cabinet", "machine", "workbench", "container", "tool box", "package")
-UPRIGHT = ("shelf", "shelves", "rack", "cabinet", "door", "machine", "display", "control panel", "workbench", "stacked boxes", "boxes")
-HAZARD = ("forklift", "pallet jack", "trolley", "shopping cart", "ladder", "machine", "cable", "hose", "spill", "stroller", "workbench",
-          "fire extinguisher", "control panel")
+# words in priority order: the first class with a candidate wins
+STACK = ("stacked boxes", "pallet", "boxes", "box", "carton", "crate", "paper towel", "toilet paper", "tissue", "packaging", "package",
+         "shelves", "shelf", "rack", "machine", "cabinet", "tool box")
+UPRIGHT = ("shelving", "shelves", "shelf", "rack", "display stand", "cabinet", "door", "machine", "control panel", "stacked boxes", "boxes")
+HAZARD = ("forklift", "pallet jack", "trolley", "hand truck", "ladder", "machine", "shopping cart", "stroller", "cable", "hose", "spill",
+          "fire extinguisher", "control panel", "workbench")
+NEAR_M = 2.  # a person-hazard fact only when someone came this close; otherwise the narrowest aisle
 
 
 def has(label, words):
     return any(w in (label or "") for w in words)
 
 
+def first_class(objs, words, lab):
+    for w in words:
+        c = [o for o in objs if w in lab(o)]
+        if c:
+            return c
+    return []
+
+
 def facts(tracker, planes, people):
-    """Three facts per video with time intervals: the tallest stack's top height, the tilt of the largest upright
-    surface, and the closest approach of a person to a hazard-class object. Values are 'estimated' (scale from the
-    floor plane and an assumed 1.6 m camera height); +- is the spread over the windows that saw it combined with the
-    measured pose/depth uncertainty."""
+    """Three facts per video, each (object, property, value +- uncertainty, time interval, evidence keyframes):
+      1. top height above the floor of the highest stack of the first stack class present (boxes, pallets, shelves...);
+      2. tilt from vertical of the main face of the first upright class present (shelving, racks, cabinets, machines);
+      3. a person's closest approach on the floor plan to the first hazard class someone came within NEAR_M of, with the
+         interval spent within 1 m; when nobody did, the narrowest aisle: free width across the walking direction between
+         object points 0.1-2 m above the floor.
+    Values are 'estimated' (scale from the floor plane and an assumed 1.6 m camera height: the +- leaves that assumption
+    out); +- is the spread over the windows (or keyframes) that measured it, combined with sigma(z) of the timeline."""
     from fast_report import timeline as tl
     out = []
     objs = [o for o in tracker.objects if o["frame"] in planes]
     lab = lambda o: max(o["votes"], key=o["votes"].get)  # noqa: E731
-
-    def per_window(o, fn):
-        return [(wi, fn(inst, planes[o["frame"]])) for wi, inst in o["obs"]]
 
     def evidence(o):
         return sorted({inst["best_key"] for _, inst in o["obs"]})[:4]
@@ -297,58 +308,89 @@ def facts(tracker, planes, people):
     def interval(o):
         ts = [t for _, inst in o["obs"] for t in inst["times"]]
         return [round(min(ts), 2), round(max(ts), 2)]
+
+    def flat(p, pl):
+        return p - np.outer((p - pl["point"]) @ pl["up"], pl["up"])
+
     height = lambda inst, pl: float(np.percentile((inst["points"] - pl["point"]) @ pl["up"], 95))  # noqa: E731
-    cands = [o for o in objs if has(lab(o), STACK) and len(o["obs"]) >= 2] or [o for o in objs if has(lab(o), STACK)]
+    cands = first_class([o for o in objs if len(o["obs"]) >= 2], STACK, lab) or first_class(objs, STACK, lab)
     if cands:
-        o = max(cands, key=lambda o: np.median([h for _, h in per_window(o, height)]))
-        hs = [h for _, h in per_window(o, height)]
-        rng = np.median([inst["range_m"] for _, inst in o["obs"]])
-        unc = float(np.hypot(np.std(hs) if len(hs) > 1 else 0., tl.sigma(rng)))
+        o = max(cands, key=lambda o: np.median([height(i, planes[o["frame"]]) for _, i in o["obs"]]))
+        hs = [height(i, planes[o["frame"]]) for _, i in o["obs"]]
+        rng = np.median([i["range_m"] for _, i in o["obs"]])
         out.append({"object": o["id"], "label": lab(o), "property": "top height above floor (m)", "value": round(float(np.median(hs)), 2),
-                    "uncertainty": round(unc, 2), "interval_s": interval(o), "windows": len(hs), "evidence_keys": evidence(o), "status": "estimated"})
+                    "uncertainty": round(float(np.hypot(np.std(hs) if len(hs) > 1 else 0., tl.sigma(rng))), 2), "interval_s": interval(o),
+                    "windows": len(hs), "evidence_keys": evidence(o), "status": "estimated"})
 
     def tilt(inst, pl):
         p = inst["points"] - inst["points"].mean(0)
         if len(p) < 30:
             return None
-        n = np.linalg.eigh(p.T @ p)[1][:, 0]
-        a = float(np.degrees(np.arccos(abs(n @ pl["up"]))))
-        return 90. - a if a > 45 else None  # a vertical face: its normal lies near the floor plane
-    cands = [(o, [x for _, x in per_window(o, tilt) if x is not None]) for o in objs if has(lab(o), UPRIGHT)]
-    cands = [(o, v) for o, v in cands if len(v) >= 2] or [(o, v) for o, v in cands if v]
-    if cands:
-        o, v = max(cands, key=lambda c: (len(c[1]), np.median([len(i["points"]) for _, i in c[0]["obs"]])))
-        out.append({"object": o["id"], "label": lab(o), "property": "tilt of its main face from vertical (deg)", "value": round(float(np.median(v)), 1),
-                    "uncertainty": round(float(np.std(v)) if len(v) > 1 else 0., 1), "interval_s": interval(o), "windows": len(v),
-                    "evidence_keys": evidence(o), "status": "estimated", "note": "sign-free; the +- is the spread over windows"})
-    best = None
-    for o in objs:
-        if not has(lab(o), HAZARD):
-            continue
-        pl = planes[o["frame"]]
-        for _, inst in o["obs"]:
-            flat = inst["points"] - np.outer((inst["points"] - pl["point"]) @ pl["up"], pl["up"])
-            for p in people.get(o["frame"], []):
-                q = p["xyz"] - ((p["xyz"] - pl["point"]) @ pl["up"]) * pl["up"]
-                d = float(np.min(np.linalg.norm(flat - q, axis=1)))
-                if best is None or d < best[0]:
-                    best = (d, o, p)
-    if best:
-        d, o, p = best
-        near = sorted((q for q in people.get(o["frame"], [])), key=lambda q: q["t"])
-        pl = planes[o["frame"]]
-
-        def dist(q):
-            flat = np.concatenate([i["points"] for _, i in o["obs"]])
-            flat = flat - np.outer((flat - pl["point"]) @ pl["up"], pl["up"])
-            qq = q["xyz"] - ((q["xyz"] - pl["point"]) @ pl["up"]) * pl["up"]
-            return float(np.min(np.linalg.norm(flat - qq, axis=1)))
-        close = [q for q in near if dist(q) <= max(1., d + .3)]
+        ev, vec = np.linalg.eigh(p.T @ p)
+        if ev[0] > .2 * ev[1]:  # not a face: no normal to speak of
+            return None
+        a = float(np.degrees(np.arccos(abs(vec[:, 0] @ pl["up"]))))
+        return 90. - a if a > 45 else None
+    for w_ in UPRIGHT:
+        cands = [(o, [x for x in (tilt(i, planes[o["frame"]]) for _, i in o["obs"]) if x is not None]) for o in objs if w_ in lab(o)]
+        cands = [(o, v) for o, v in cands if len(v) >= 2] or [(o, v) for o, v in cands if v]
+        if cands:
+            o, v = max(cands, key=lambda c: (len(c[1]), np.median([len(i["points"]) for _, i in c[0]["obs"]])))
+            out.append({"object": o["id"], "label": lab(o), "property": "tilt of its main face from vertical (deg)", "value": round(float(np.median(v)), 1),
+                        "uncertainty": round(float(np.std(v)) if len(v) > 1 else 0., 1), "interval_s": interval(o), "windows": len(v),
+                        "evidence_keys": evidence(o), "status": "estimated", "note": "sign-free; +- is the spread over windows"})
+            break
+    near = None
+    for w_ in HAZARD:
+        for o in (o for o in objs if w_ in lab(o)):
+            pl = planes[o["frame"]]
+            fo = flat(np.concatenate([i["points"] for _, i in o["obs"]]), pl)
+            rows = [(float(np.min(np.linalg.norm(fo - flat(p["xyz"][None], pl), axis=1))), p) for p in people.get(o["frame"], [])]
+            if rows and min(r[0] for r in rows) <= NEAR_M and (near is None or min(r[0] for r in rows) < near[0]):
+                near = (min(r[0] for r in rows), o, rows)
+        if near:
+            break
+    if near:
+        d, o, rows = near
+        close = sorted((r for r in rows if r[0] <= 1.), key=lambda r: r[1]["t"]) or [min(rows, key=lambda r: r[0])]
+        p = min(rows, key=lambda r: r[0])[1]
         out.append({"object": o["id"], "label": lab(o), "property": "closest person on the floor plan (m)", "value": round(d, 2),
                     "uncertainty": round(float(np.hypot(tl.sigma(np.linalg.norm(p["xyz"] - o["obs"][0][1]["centroid"])), .15)), 2),
-                    "interval_s": [round(min(q["t"] for q in close), 2), round(max(q["t"] for q in close), 2)] if close else [p["t"], p["t"]],
-                    "within_m": round(max(1., d + .3), 2), "evidence_keys": sorted({q["key"] for q in close})[:4] or [p["key"]], "status": "estimated",
+                    "interval_s": [round(close[0][1]["t"], 2), round(close[-1][1]["t"], 2)], "within_1m_keyframes": sum(r[0] <= 1. for r in rows),
+                    "evidence_keys": sorted({r[1]["key"] for r in close})[:4], "status": "estimated",
                     "note": "person = median 3D point of the SAM 3 person mask; +- adds 0.15 m for the body's half-width"})
+    else:
+        best = None
+        for w in tracker.windows:
+            f = w.get("frame")
+            if f not in planes:
+                continue
+            pl = planes[f]
+            pts = np.concatenate([i["points"] for o in objs if o["frame"] == f for wi, i in o["obs"]]) if objs else np.zeros((0, 3))
+            h = (pts - pl["point"]) @ pl["up"]
+            pts = flat(pts[(h > .1) & (h < 2.)], pl)
+            widths = []
+            for j in range(0, len(w["keys"]), 2):
+                c = flat(w["c2w"][j][:3, 3][None], pl)[0]
+                fwd = flat(w["c2w"][j][:3, 3][None] + w["c2w"][j][:3, 2][None], pl)[0] - c
+                fwd /= max(np.linalg.norm(fwd), 1e-9)
+                side = np.cross(pl["up"], fwd)
+                rel = pts - c
+                along, lat = rel @ fwd, rel @ side
+                sel = (np.abs(along) <= .75) & (np.abs(lat) <= 4.)
+                left, right = lat[sel & (lat > .2)], -lat[sel & (lat < -.2)]
+                if len(left) >= 5 and len(right) >= 5:
+                    widths.append((float(np.percentile(left, 5) + np.percentile(right, 5)), w["keys"][j]))
+            if len(widths) >= 2:
+                m = float(np.median([x for x, _ in widths]))
+                if best is None or m < best[0]:
+                    best = (m, float(np.std([x for x, _ in widths])), w, [k for _, k in widths])
+        if best:
+            m, sd, w, ks = best
+            out.append({"object": None, "label": "aisle", "property": "free width across the walking direction, 0.1-2 m above the floor (m)",
+                        "value": round(m, 2), "uncertainty": round(float(np.hypot(sd, 2 * tl.sigma(m / 2))), 2), "interval_s": w["t"],
+                        "window": w["index"], "evidence_keys": ks[:4], "status": "estimated",
+                        "note": "the narrowest window; bounded by detected objects only (an undetected obstacle would narrow it)"})
     return out
 
 
@@ -851,7 +893,7 @@ def export(out):
         c["points_before"], c["points_after"] = pts(tracker, c, True), pts(tracker, c, False)
         c["label"] = max(o["votes"], key=o["votes"].get)
         changes.append(c)
-    fact_points = {f["object"]: np.round(np.concatenate([i["points"] for _, i in objs[f["object"]]["obs"]])[::6], 3).tolist() for f in out["facts"]}
+    fact_points = {f["object"]: np.round(np.concatenate([i["points"] for _, i in objs[f["object"]]["obs"]])[::6], 3).tolist() for f in out["facts"] if f["object"]}
     keep = ("index", "keys", "carried", "reason", "t", "dispatched_s", "started_s", "done_s", "facts_s", "gpu", "frame", "mpu", "scale_status",
             "frame_note", "lift", "skipped", "foreign_keys", "covis", "chunks", "chain")
     return {"windows": [{k: w.get(k) for k in keep} | {"instances": len(w.get("instances", []))} for w in wins], "cameras": cams,
@@ -893,6 +935,13 @@ def sweep(run_id: str, grid: list):
                      "centroid": np.round(o["obs"][0][1]["centroid"], 3).tolist(), "windows": len({wi for wi, _ in o["obs"]})} for o in tr.objects],
                      "changes": [dict(c, points_before=pts(tr, c, True), points_after=pts(tr, c, False)) for c in ch],
                      "timelines": [{k: r[k] for k in ("id", "frame", "label", "positions", "windows_observed")} for r in tr.timelines()]})
+        if cfg.get("facts"):  # the final rule: facts, their objects' points, full timelines
+            t0 = time.perf_counter()
+            fs = facts(tr, d["planes"], d["people"])
+            objs = {o["id"]: o for o in tr.objects}
+            rows[-1].update(facts=fs, facts_s=round(time.perf_counter() - t0, 3), timelines=tr.timelines(),
+                            fact_points={f["object"]: np.round(np.concatenate([i["points"] for _, i in objs[f["object"]]["obs"]])[::6], 3).tolist()
+                                         for f in fs if f["object"]})
     return json.loads(json.dumps(rows, default=plain))
 
 
@@ -904,7 +953,9 @@ def sweep_main(out: str, runs: str, mode: str = "all"):
     for rid in runs.split(","):
         run = json.loads(next(out.parent.glob(f"*/{rid}.json")).read_text())
         q = run["summary"]["calibration"].get("negative_cos_q50_q90_q99_max") or [None, None]
-        if mode == "change":
+        if mode == "facts":
+            grid = [{"k_sigma": 3., "iou_min": .2, "facts": True}]
+        elif mode == "change":
             grid = [{"k_sigma": 3., "iou_min": .2, "neigh": nb, "rel_margin": rm, "max_range": mr, "min_obs_windows": mw, "chain_max": cm}
                     for nb in (0, 2) for rm in (0., .1, .2, .3) for mr in (5., 8.) for mw in (1, 2) for cm in (.1, 9.)]
         else:
@@ -996,7 +1047,21 @@ def self_check():
     assert np.allclose(w["c2w"][:2], c2w[4:]) and np.allclose(w["instances"][0]["points"], s * pts @ R.T + t)
     assert np.allclose(w["depth"][:2], depth[4:], rtol=2e-3), "depth carried by the scale"
     assert w["instances"][0]["range_m"] == 2. * s and tl.sigma(0) == tl.POSE_M
-    print("x6 app self-check ok: Sim3 from carried keyframes, 3 deg gate, compose, to_frame")
+    # facts on a made-up tracker: a shelf face 5 deg off vertical, boxes topping at 2.0 m, a person 0.5 m from a pallet jack
+    import types
+    up = np.array([0., -1, 0])
+    g = np.stack(np.meshgrid(np.linspace(0, 2, 12), np.linspace(0, 1.8, 12)), -1).reshape(-1, 2)
+    shelf = np.stack([g[:, 0], -g[:, 1], 3 + np.tan(np.radians(5)) * g[:, 1]], 1)
+    stack = np.stack(np.meshgrid(np.linspace(-2, -1, 6), -np.linspace(0, 2., 11), np.linspace(2, 3, 6)), -1).reshape(-1, 3)
+    jack = np.stack(np.meshgrid(np.linspace(3, 4, 6), -np.linspace(0, .3, 4), np.linspace(1, 1.5, 4)), -1).reshape(-1, 3)
+    inst = lambda p, k: {"points": p, "centroid": p.mean(0), "range_m": 3., "times": [k / 10], "best_key": k}  # noqa: E731
+    obj = lambda i, lb, p: {"id": f"g{i}", "frame": 0, "votes": {lb: 1.}, "obs": [(0, inst(p, 10)), (1, inst(p, 20))]}  # noqa: E731
+    tr = types.SimpleNamespace(objects=[obj(0, "shelves", shelf), obj(1, "stacked boxes", stack), obj(2, "pallet jack", jack)], windows=[])
+    fs = {f["property"].split(" ")[0]: f for f in facts(tr, {0: {"up": up, "point": np.zeros(3)}}, {0: [{"xyz": np.array([3.5, -1., 2.]), "t": 1.5, "key": 15}]})}
+    assert abs(fs["top"]["value"] - 1.92) < .1 and fs["top"]["label"] == "stacked boxes", fs["top"]  # the 95th percentile of 0-2 m
+    assert abs(fs["tilt"]["value"] - 5.) < .5 and fs["tilt"]["label"] == "shelves", fs["tilt"]
+    assert abs(fs["closest"]["value"] - .5) < .05 and fs["closest"]["interval_s"] == [1.5, 1.5], fs["closest"]
+    print("x6 app self-check ok: Sim3 from carried keyframes, 3 deg gate, compose, to_frame, facts (height, tilt, person)")
 
 
 if __name__ == "__main__":
