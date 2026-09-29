@@ -21,6 +21,7 @@ import detect_shot_cuts as dsc  # cut rules, unchanged
 
 BLOCK, MIN_SHOT, CHUNK, TAIL = 6, 30, 16, 8  # E9: sharpest of each 6-frame block; shots under 1 s get no geometry
 DENSIFY_BATCH = 4  # click MVP section 7: keyframes per densify SAM 3 task
+NAMER_WAIT_S = 40.  # mvp2/identity: Gemini answers awaited this long after the requests went out; what is left goes to the Qwen decider
 DA3_HW = (280, 504)
 CAMERA_HEIGHT_M = 1.6  # the reference's own assumption: every metre here is 'estimated'
 LICENSE = "DA3-GIANT-1.1 (CC BY-NC 4.0): research licence, not for commercial use"
@@ -849,7 +850,7 @@ def analyse(m, mp4, opts, clock, writer, log):
             return
         if not opts.get("judge", True):
             return
-        outl = results.get("outlines_v2" if version == 3 else "outlines") or {}
+        outl = results.get("outlines_v2" if version >= 3 else "outlines") or {}
         ctx = judge.context(cam_rows, outl.get("frames", []), results.get("people"), frames,
                             {gg["index"]: gg["seeds"]["xyz"] for gg in geo if "seeds" in gg}, fps, (W, H), version_of={"object_cards": version})
         by = {x["index"]: x for x in out["shots"]}
@@ -883,17 +884,29 @@ def analyse(m, mp4, opts, clock, writer, log):
                 o["merged_into"] = out["aliases"][o["id"]]
 
     def with_identity(out, idents):
-        """A cards version with the decider's identities (by object id; the size veto re-read on this version's box)."""
+        """A cards version with these identities (by object id), every name-dependent field re-derived on this version's
+        measurements (cards.apply_name: the single source of truth, mvp2/identity R1)."""
         new = copy.deepcopy(out)
         for c in new["cards"]:
             if c["kind"] == "object" and c["id"] in idents:
-                i = idents[c["id"]]
-                c["identity"] = {**i, "candidates_struck": cards.strike(i["candidates"], c["physical"].get("size_check", {}).get("measured_m"))}
+                c["identity"] = copy.deepcopy(idents[c["id"]])
+                cards.apply_name(c)
         return new
 
+    def publish(idents, route):
+        """Every identity update (R1): the newest cards version with it (v2, or v4 once densify's v3 is out), then that
+        version's judgements, so kind, size check, checks and verdicts follow the final names."""
+        with cards_lock:
+            cards_out["identities"] = {**cards_out.get("identities", {}), **idents}
+            v = 4 if "v3" in cards_out else 2
+            cards_out[f"v{v}"] = out = with_identity(cards_out["v3" if v == 4 else "v1"], cards_out["identities"])
+            cards_put(v, out)
+        clock.mark(f"identity_{route}_put")
+        judge_hook(out, v)
+
     def cards_v2():
-        """Identity once the cascade answered (section 4.7: the decider's options replace the free-text naming). Put as v2,
-        or, when densify's cards v3 is already out, merged into it as v4 (the viewer shows the newest version). A failure is
+        """Identity once the cards exist: Gemini's open names through the bench's relay when it is there (mvp2/identity), the
+        lettered Qwen decider for what it did not name (section 4.7). Put as v2, or merged into densify's v3 as v4. A failure is
         recorded, never raised: raised, it ended the run while densify's SAM 3 still ran, and run()'s cleanup then faulted
         both GPUs for every later call (runs mvp-integrate-*-002/003, CUDA illegal address)."""
         try:
@@ -906,39 +919,34 @@ def analyse(m, mp4, opts, clock, writer, log):
         if not cards_ready.wait(120):
             return
         by = {o["id"]: o for o in objects}
-        new = [{**c, "identity": cards.identity_v2(c["identity"], by[c["id"]], c["physical"].get("size_check") or {})} if c["kind"] == "object" else c
-               for c in cards_out["v1"]["cards"]]
+        new = copy.deepcopy(cards_out["v1"]["cards"])
+        for c in new:
+            if c["kind"] == "object":
+                c["identity"] = cards.identity_v2(c["identity"], by[c["id"]], c["physical"].get("size_check") or {})
+        named, rec = gemini_names(new) if opts.get("namer") is not None else ({}, {"namer": "none: no relay (Qwen decider only)"})
+        for c in new:
+            if c["id"] in named:
+                c["identity"] = cards.open_identity(c["identity"], named[c["id"]])
+        if named:
+            publish({c["id"]: c["identity"] for c in new if c["id"] in named}, "gemini")
+        rest = [c for c in new if c["kind"] == "object" and c["id"] not in named]
         for which in ("ehs", "other"):  # the EHS classes' names first (the checks read them), then every other object's
-            ask_identity(new, which)
-            idents = {c["id"]: c["identity"] for c in new if c["kind"] == "object"}
-            with cards_lock:
-                cards_out["identities"] = idents
-                if "v3" in cards_out:
-                    cards_out["v4"] = with_identity(cards_out["v3"], idents)
-                    cards_put(4, cards_out["v4"])
-                else:
-                    cards_out["v2"] = {**cards_out["v1"], "cards": copy.deepcopy(new)}
-                    cards_put(2, cards_out["v2"])
+            if ask_identity(rest, which):
+                publish({c["id"]: c["identity"] for c in rest}, f"qwen_{which}")
+        return rec
 
-    def ask_identity(card_list, which="ehs"):
-        """Section 4.7 step 3 through B's decider (vlm.options + judge.som, when both exist): the best view with the outlines
-        as numbered white-over-black marks, the subject [1]; EHS-relevant classes only (ponytail: the rest wait for B's queue)."""
-        try:
-            from fast_report import judge
-            som = judge.som
-        except ImportError:
-            return
+    def views_for_identity():
+        """{entity: (keyframe, marks {1: its polygons, 2..: the others'})} on segmented outlines: the card's first best view
+        that was segmented, else its largest segmented outline."""
         outl = {f["sourceFrame"]: f for f in (results.get("outlines") or {}).get("frames", []) if f["source"] == "segmented"}
-        cal = cards_calibration()
-
-        area = {}  # entity -> [(outline bbox area, segmented keyframe)]: the fallback when no best view was segmented
+        area = {}
         for q, f in outl.items():
             for o in f["objects"]:
                 xy = np.concatenate([np.asarray(pp, float).reshape(-1, 2) for pp in o["polygons"]]) if o["polygons"] else None
                 if xy is not None and len(xy):
                     area.setdefault(o["entityId"], []).append((float(np.prod(xy.max(0) - xy.min(0))), q))
 
-        def build(c):  # CPU: the set-of-marks pair and the lettered prompt
+        def view(c):
             best = next((k for k in c["views"].get("best", []) if k in outl), None)
             if best is None and area.get(c["id"]):
                 best = max(area[c["id"]])[1]  # integration: the object's largest segmented outline (its best views were projected)
@@ -950,26 +958,85 @@ def analyse(m, mp4, opts, clock, writer, log):
                     marks[1] = o["polygons"]
                 else:
                     marks[n], n = o["polygons"], n + 1
-            if 1 not in marks:
+            return (best, marks) if 1 in marks else None
+        return view
+
+    def ehs(c):
+        i = c["identity"]
+        return c["class"]["category"] != "other" or cards.head_match(i.get("proposed") or i["name"], cards.CLASS_SIZE) is not None \
+            or any(cards.hazard_of(w) for w in i.get("detector_words") or [])
+
+    def to_name(c, which=None):
+        """The objects asked for a name: EHS classes (their SAM 3 words) whatever their views, every other seen on >= 3 views."""
+        return c["kind"] == "object" and (ehs(c) if which == "ehs" else not ehs(c) and (c.get("views") or {}).get("n", 0) >= 3 if which else
+                                          ehs(c) or (c.get("views") or {}).get("n", 0) >= 3)
+
+    def gemini_names(card_list):
+        """mvp2/identity (R2): open names from Gemini (cloud) for the objects to name, two a sheet (the thing in its surroundings
+        | a close crop), 28 a request, every request at once; the requests go out on the event stream (writer.send), the
+        bench relays them into the deployed report container and puts each answer on opts['namer'] (a modal.Queue, this
+        report's partition). -> ({object id: {name, status, p}}, record); what is unanswered after NAMER_WAIT_S goes to Qwen."""
+        relay, view = opts["namer"], views_for_identity()
+        todo = [c for c in card_list if to_name(c)]
+        with clock.stage("identity.gemini.sheets", n={"objects": len(todo)}):
+            with ThreadPoolExecutor(8) as pool:
+                tiles = list(pool.map(lambda c: (lambda v: v and vlm.namer_tile(frames[v[0]], v[1][1]))(view(c)), todo))
+            ids = [c["id"] for c, t in zip(todo, tiles) if t is not None]
+            reqs = vlm.namer_requests(ids, [t for t in tiles if t is not None])
+        sent = time.time()
+        for r in reqs:
+            writer.send({"type": "namer_request", "report": writer.report_id, "request": r["request"], "n": len(r["ids"]), "blocks": r["blocks"]})
+        clock.mark("identity_gemini_sent")
+        got, rec, pending = {}, {"namer": "gemini via the bench relay", "asked": len(ids), "requests": len(reqs), "answers": []}, {r["request"]: r for r in reqs}
+        import queue as _queue
+        with clock.stage("identity.gemini", n={"objects": len(ids), "requests": len(reqs)}):
+            while pending and time.time() - sent < NAMER_WAIT_S:
+                try:
+                    a = relay.get(timeout=max(.1, NAMER_WAIT_S - (time.time() - sent)), partition=writer.report_id)
+                except _queue.Empty:
+                    break
+                r = pending.pop((a or {}).get("request"), None)
+                if r is not None:
+                    got.update(vlm.namer_answers(r, a.get("provider")))
+                    rec["answers"].append({k: a.get(k) for k in ("request", "s", "status", "error", "usage")} | {"at_s": round(time.time() - clock.t0_unix, 2)})
+        rec.update(named=len(got), late_requests=sorted(pending))
+        return got, rec
+
+    def ask_identity(card_list, which="ehs"):
+        """Section 4.7 step 3 through B's decider (vlm.options + judge.som, when both exist): the best view with the outlines
+        as numbered white-over-black marks, the subject [1]. -> the number of questions asked."""
+        try:
+            from fast_report import judge
+            som = judge.som
+        except ImportError:
+            return 0
+        cal, view = cards_calibration(), views_for_identity()
+
+        def build(c):  # CPU: the set-of-marks pair and the lettered prompt
+            v = view(c)
+            if v is None:
                 return None
-            opts = cards.identity_options(c["identity"])
+            best, marks = v
+            opts_ = cards.identity_options(c["identity"])
             # integration fix: the options go into the prompt as letters (vlm.qwen_prompt); A's bare question listed none
-            p = vlm.qwen_prompt(" ".join([judge.SCENE, judge.MARKS]), "What is the object marked [1]?", opts)
+            p = vlm.qwen_prompt(" ".join([judge.SCENE, judge.MARKS]), "What is the object marked [1]?", opts_)
             # 336 px crops: ~144 image tokens each instead of 256 (the identity pass is prefill-bound: Sam's Club 413 questions, 87 s)
-            return opts, [som(frames[best], marks, subject=1, side=336), som(frames[best], marks, subject=1, marks=False, side=336)], p
-        ehs = lambda c: c["class"]["category"] != "other" or cards.head_match(c["identity"]["name"], cards.CLASS_SIZE) is not None  # noqa: E731
+            return opts_, [som(frames[best], marks, subject=1, side=336), som(frames[best], marks, subject=1, marks=False, side=336)], p
         # integration: every object seen on >= 3 views is asked (spec 5.3's 'identity for the other objects', after the
         # judgement questions): the SAM 3 word alone named a floor drain 'metal part' and a flammables cabinet 'machine'
-        todo = [c for c in card_list if c["kind"] == "object" and (ehs(c) if which == "ehs" else not ehs(c) and (c.get("views") or {}).get("n", 0) >= 3)]
+        todo = [c for c in card_list if to_name(c, which)]
+        if not todo:
+            return 0
         with clock.stage(f"vlm.identity.{which}", n={"objects": len(todo)}):
             with ThreadPoolExecutor(8) as pool:  # never the core's cpu_pool: its threads would wait on vLLM (the judge's queue)
                 built = list(pool.map(build, todo))
             asked = [(c, b[0], vlm.submit(b[1], b[2], len(b[0]), "identity" if ehs(c) else "identity_other")) for c, b in zip(todo, built) if b is not None]
-            for c, opts, fut in asked:
+            for c, opts_, fut in asked:
                 try:
-                    c["identity"] = cards.decide_identity(c["identity"], opts, fut.result(), cal)
+                    c["identity"] = cards.decide_identity(c["identity"], opts_, fut.result(), cal)
                 except Exception as error:  # noqa: BLE001  one unanswered question leaves that card's detected word
                     c["identity"] = {**c["identity"], "decider": {"question": "identity", "answer": "unanswered", "error": repr(error)[:200]}}
+        return len(asked)
 
     cards_future = m.cpu_pool.submit(cards_job)
 

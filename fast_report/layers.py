@@ -101,6 +101,10 @@ class Writer:
         the seq is given when the patch is written, so seqs follow write order and a viewer polling after=<last seq> misses none."""
         self.inbox.put((layer, data, blobs or {}, status, list(labels), self.now()))
 
+    def send(self, event):
+        """An event for the client that is not a layer (mvp2/identity: a naming request the bench relays), in stream order."""
+        self.outbox.put(event)
+
     def events(self):
         """What run() yields, in order, until close(): patch, written, error."""
         while (event := self.outbox.get()) is not None:
