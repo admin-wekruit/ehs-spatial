@@ -3,7 +3,7 @@ PASS / FAIL, verdict counts per check, why the others have none), the walked pat
 analysis times (s from the MP4 bytes in the container) with per-GPU stage peaks, the offline replay on round 2's run 007,
 the fresh audit's precision, and spend.
 
-  python scripts/judge_results_mvp3.py --bench me340=RUN,samsclub-a2=RUN,walmart=RUN --replay DIR --audit DIR --out DIR
+  python scripts/judge_results_mvp3.py --bench me340=RUN,samsclub-a2=RUN,walmart=RUN --replay DIR --audit DIR[,DIR..] --out DIR
 """
 import argparse
 import glob
@@ -48,7 +48,8 @@ def main(a):
                        report=report)
             res["calls"][f"{site} {kind}"] = rep
     res["replay_007"] = json.loads((a.replay / "replay.json").read_text()) if a.replay else None
-    res["audit"] = json.loads((a.audit / "score.json").read_text()) if a.audit and (a.audit / "score.json").exists() else None
+    res["audit"] = {k: v for d in (a.audit or "").split(",") if d and (Path(d) / "score.json").exists()
+                    for k, v in json.loads((Path(d) / "score.json").read_text()).items()} or None
     a.out.mkdir(parents=True, exist_ok=True)
     (a.out / "results.json").write_text(json.dumps(res, indent=1, default=str))
     (a.out / "tables.md").write_text(md(res, benches))
@@ -116,6 +117,6 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--bench", required=True)
     ap.add_argument("--replay", type=Path)
-    ap.add_argument("--audit", type=Path)
+    ap.add_argument("--audit", help="audit folders (judge_audit_mvp3.py score), comma-separated")
     ap.add_argument("--out", type=Path, required=True)
     main(ap.parse_args())
