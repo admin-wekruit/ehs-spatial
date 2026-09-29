@@ -799,7 +799,7 @@ class X6:
         from fast_report import cascade, segment
         lap("imports_s")
         self.devs = [torch.device("cuda:0"), torch.device("cuda:1")]
-        self.per_gpu = 2
+        self.per_gpu = 1  # runs 005: two workers per card were 13-26 % slower to all facts (the GIL)
         self.emb_locks = {d: threading.Lock() for d in self.devs}
         da3 = DepthAnything3.from_pretrained(DA3_MODEL, revision=DA3_REV, cache_dir="/v/da3/huggingface/hub").eval()
         self.da3s = {d: core.Da3(copy.deepcopy(da3).to(d), d) for d in self.devs}
@@ -840,7 +840,7 @@ class X6:
         import torch
         from fast_report.instrument import Clock, usd_per_s
         clock = Clock()  # t0: the bytes are in the container
-        self.per_gpu = opts.get("per_gpu", 2)
+        self.per_gpu = opts.get("per_gpu", 1)
         for d in self.devs:
             torch.cuda.reset_peak_memory_stats(d)
         try:
@@ -980,7 +980,7 @@ def words_for(site):
 
 
 @app.local_entrypoint()
-def main(out: str, plan: str = "me340:b:0.4", per_gpu: int = 2, video_dir: str = ""):
+def main(out: str, plan: str = "me340:b:0.4", per_gpu: int = 1, video_dir: str = ""):
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     x = X6()
