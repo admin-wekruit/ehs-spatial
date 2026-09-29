@@ -317,6 +317,8 @@ def analyse(m, clip, mp4, opts, clock):
         runs, tiles = {}, {}
         for fs in ("A", "B") if opts.get("repeat", True) else ("A",):
             for mi, meth in enumerate(methods):
+                if fs == "B" and meth not in opts.get("methods_b", methods):
+                    continue
                 s2 = dict(sp, select=sel[fs], select_s=ts[fs], id=f"{sp['id']}{fs}{mi}")  # unique stage names per run
                 c.patched = {}
                 try:
@@ -365,7 +367,8 @@ def plain(o):
 
 
 @app.local_entrypoint()
-def main(out: str, clips: str = ",".join(CLIPS), spots: int = 8, methods: str = ",".join(METHODS), repeat: bool = True):
+def main(out: str, clips: str = ",".join(CLIPS), spots: int = 8, methods: str = ",".join(METHODS), repeat: bool = True,
+         methods_b: str = "anchor,anchor+ba,anchor+ba+mvs"):
     import shutil
     out = Path(out)
     out.mkdir(parents=True, exist_ok=False)
@@ -377,7 +380,7 @@ def main(out: str, clips: str = ",".join(CLIPS), spots: int = 8, methods: str = 
     for clip in clips.split(","):
         mp4 = (x4.PHASE2 / "data/clips" / clip / CLIPS[clip]).read_bytes()
         t = time.time()
-        res = r.run.remote(clip, mp4, {"spots": spots, "methods": tuple(methods.split(",")), "repeat": repeat})
+        res = r.run.remote(clip, mp4, {"spots": spots, "methods": tuple(methods.split(",")), "repeat": repeat, "methods_b": tuple(methods_b.split(","))})
         res["client_wall_s"] = round(time.time() - t, 2)
         res["source_file"] = f"data/clips/{clip}/{CLIPS[clip]}"
         jpg = res.pop("jpg", None)
@@ -466,7 +469,10 @@ def spot_row(s, stages, methods):
             t, th = ba.get("time_s") or {}, hba.get("time_s") or {}
             row["ba"] = {k: ba.get(k) for k in ("status", "views", "keypoints", "pairs", "tracks", "observations", "tracks_in_region",
                                                 "depth_observations", "track_length_hist", "reprojection_px_at_504_crop", "depth_residual_m",
-                                                "pose_change", "depth_scale", "depth_shift_m", "solver", "tri_field")}
+                                                "pose_change", "depth_scale", "depth_shift_m", "baseline_scale", "solver", "tri_field",
+                                                "da3_rerun", "mvs", "geometry", "tracks_before_cap")}
+            for k in ("consistency_before", "consistency_after"):  # the per-pair lists stay in <clip>.json
+                row["ba"][k] = {x: y for x, y in (ba.get(k) or {}).items() if x != "pairs"} or None
             row["time_split_s"] = {"matching": round(t.get("features", 0) + t.get("match_verify", 0), 3),
                                    "ba": round(t.get("tracks", 0) + t.get("solve", 0) + t.get("apply_depth", 0), 3),
                                    "fuse_tsdf_1cm": v["time_s"]["tsdf_1cm"],
@@ -555,6 +561,14 @@ def summarise(run_dir, extra=None, x4_run="fx-x4-refine-006"):
                            "any_at_bound": sum(bool(b["pose_change"]["at_bound"]) for b in bas),
                            "median_depth_scale": _med([x for b in bas for x in b["depth_scale"]]),
                            "median_depth_shift_m": _med([x for b in bas for x in b["depth_shift_m"]]),
+                           "median_baseline_scale": _med([b.get("baseline_scale") for b in bas]),
+                           "baseline_scale_range": [min([b["baseline_scale"] for b in bas if b.get("baseline_scale")], default=None),
+                                                    max([b["baseline_scale"] for b in bas if b.get("baseline_scale")], default=None)],
+                           "median_tri_sigma_m_at_0_5px": _med([(b.get("geometry") or {}).get("tri_sigma_m_at_0_5px") for b in bas]),
+                           "median_consistency_before": {k: _med([(b.get("consistency_before") or {}).get(k) for b in bas])
+                                                         for k in ("median_abs_pair_offset_m", "median_pair_mad_m", "median_abs_dz_m")},
+                           "median_consistency_after": {k: _med([(b.get("consistency_after") or {}).get(k) for b in bas])
+                                                        for k in ("median_abs_pair_offset_m", "median_pair_mad_m", "median_abs_dz_m")},
                            "median_depth_residual_m_before": _med([(b["depth_residual_m"]["before"] or {}).get("median") for b in bas]),
                            "median_depth_residual_m_after": _med([(b["depth_residual_m"]["after"] or {}).get("median") for b in bas]),
                            "median_resect_px_before": _med([((m["holdout"]["resect"] or {}).get("reprojection_px_before") or {}).get("median") for m in rows]),
