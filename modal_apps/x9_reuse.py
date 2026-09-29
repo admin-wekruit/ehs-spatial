@@ -922,6 +922,89 @@ def make_qwen():
     return decide
 
 
+@app.function(image=image, gpu="A100-80GB", cpu=8, memory=64 * 1024, volumes=VOLUMES, timeout=1800, retries=0)
+def dropped(p: dict):
+    """What the two outline references disagree on: at the evaluation frames, SAM 3's kept static masks that the lift
+    reference (X1's convention) does not contain (< 20 % of the mask inside any lifted object). Area shares by word and
+    a contact sheet of the largest ones, for the agent to look at."""
+    import base64
+    import cv2
+    import torch
+    torch.set_grad_enabled(False)
+    from fast_report.instrument import Clock
+    out = {}
+    for site in p["sites"]:
+        S = Site(p["stage1"], site, p["mp4"][site], torch.device("cuda:0"), Clock())
+        S.ref_lift, _ = baseline(S, sorted(set(S.b2) | set(S.evalf)))
+        by_word, kept_area, drop_area, tiles = {}, 0, 0, []
+        for e in S.evalf:
+            sm = S.sam(e)
+            if not len(sm["masks"]):
+                continue
+            dyn = S.dyn(e)
+            m = sm["masks"] & ~dyn[None]
+            area = m.flatten(1).sum(1)
+            static = (sm["masks"] & dyn[None]).flatten(1).sum(1) < .5 * sm["masks"].flatten(1).sum(1).clamp(min=1)
+            inside = (m & (S.ref_lift.get(e, torch.zeros_like(dyn, dtype=torch.int32)) > 0)[None]).flatten(1).sum(1)
+            for j in torch.nonzero(static & (area >= MIN_REF_PX)).squeeze(1).tolist():
+                w = S.word_of(sm["idx"][j])
+                a, gone = int(area[j]), bool(inside[j] < .2 * area[j])
+                row = by_word.setdefault(w, [0, 0, 0])
+                row[0] += a
+                row[1] += a if gone else 0
+                row[2] += 1 if gone else 0
+                kept_area += a
+                drop_area += a if gone else 0
+                if gone:
+                    tiles.append((a, e, j, w))
+        tiles.sort(key=lambda x: -x[0])
+        pick, seen_f = [], {}
+        for a, e, j, w in tiles:  # at most 2 per frame, 24 in all
+            if seen_f.get(e, 0) < 2:
+                pick.append((a, e, j, w))
+                seen_f[e] = seen_f.get(e, 0) + 1
+            if len(pick) == 24:
+                break
+        imgs = []
+        for k, (a, e, j, w) in enumerate(pick):
+            img = S.frames[e].copy()
+            mk = cv2.resize(x1.unpack(S.packed[[S.sam(e)["idx"][j]]], "cpu")[0].numpy().astype(np.uint8), (1280, 720), interpolation=cv2.INTER_NEAREST)
+            ys, xs = np.nonzero(mk)
+            cy, cx = (ys.min() + ys.max()) / 2, (xs.min() + xs.max()) / 2
+            half = max(ys.max() - ys.min(), xs.max() - xs.min(), 64) * .7
+            y0, y1, x0, x1_ = int(max(0, cy - half)), int(min(720, cy + half)), int(max(0, cx - half)), int(min(1280, cx + half))
+            cv2.drawContours(img, cv2.findContours(mk, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0], -1, (0, 0, 255), 2)
+            t_ = cv2.copyMakeBorder(cv2.resize(img[y0:y1, x0:x1_], (180, 180), interpolation=cv2.INTER_AREA), 0, 20, 0, 0, cv2.BORDER_CONSTANT, value=(255, 255, 255))
+            cv2.putText(t_, f"#{k} {w}"[:28] + f" f{e}", (3, 194), cv2.FONT_HERSHEY_SIMPLEX, .36, (0, 0, 0), 1, cv2.LINE_AA)
+            imgs.append(t_)
+        sheet = None
+        if imgs:
+            imgs += [np.full_like(imgs[0], 255)] * (-len(imgs) % 6)
+            sheet = base64.b64encode(cv2.imencode(".jpg", np.concatenate([np.concatenate(imgs[i:i + 6], 1) for i in range(0, len(imgs), 6)], 0),
+                                                  [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()).decode()
+        out[site] = {"raw_static_mask_area": kept_area, "not_in_lift_reference_area": drop_area, "not_in_lift_share": round(drop_area / max(kept_area, 1), 4),
+                     "by_word": {w: {"area": r[0], "dropped_share": round(r[1] / max(r[0], 1), 3), "dropped_masks": r[2]} for w, r in sorted(by_word.items(), key=lambda x: -x[1][1])},
+                     "sheet_items": [{"k": k, "frame": e, "word": w, "area_px_da3": a} for k, (a, e, j, w) in enumerate(pick)], "sheet": sheet}
+        del S
+        torch.cuda.empty_cache()
+    return out
+
+
+@app.local_entrypoint()
+def references(out: str, stage1: str, sites: str = "me340,samsclub-a2,walmart"):
+    import base64
+    out = Path(out)
+    mp4 = {s: (PHASE2 / "data/clips" / SITES[s] / "source-full.mp4").read_bytes() for s in sites.split(",")}
+    t0 = time.time()
+    res = dropped.remote({"stage1": stage1, "sites": sites.split(","), "mp4": mp4})
+    for site, r in res.items():
+        if r.get("sheet"):
+            (out / f"{site}-not-in-lift-reference.jpg").write_bytes(base64.b64decode(r.pop("sheet")))
+    res["client_wall_s"] = round(time.time() - t0, 1)
+    (out / "references-disagreement.json").write_text(json.dumps(res, indent=1))
+    print(json.dumps({s: {k: v for k, v in r.items() if k in ("not_in_lift_share",)} for s, r in res.items() if isinstance(r, dict)}))
+
+
 @app.function(image=image, cpu=8, memory=16 * 1024, timeout=900, retries=0)
 def selfcheck():
     from fast_report import x9_ladder
@@ -1175,6 +1258,25 @@ def evaluate(run_dir):
                 row["total_gpu_s_estimate"] = round(row["sam3_gpu_s"] + sum(vv for kk, vv in row["other_gpu_s"].items() if isinstance(vv, (int, float)) and not kk.startswith("of_which")), 2)
                 row["two_gpu_s_estimate"] = round(row["sam3_gpu_s"] / 2 + (row["total_gpu_s_estimate"] - row["sam3_gpu_s"]), 2)
                 site_out["configs"][name] = row
+        cf, b15, b5 = site_out["configs"], site_out["configs"].get("B15"), site_out["configs"].get("B5")
+        site_out["text_search_gpu_s_per_frame"] = round(c["sam3.rest"] + c["dedupe"], 4)
+        site_out["text_search_gpu_s_per_word_frame"] = round(c["sam3.rest"] / max(len(rec1["words"]) - rec1["n_always"], 1), 5)
+        for name, row in cf.items():
+            d = row["derived"] = {}
+            if b15 and b5:
+                d["sam3_saved_vs_B15_2gpu_s"] = round((b15["sam3_gpu_s"] - row["sam3_gpu_s"]) / 2, 1)
+                d["sam3_saved_vs_B15_pct"] = round(100 * (b15["sam3_gpu_s"] - row["sam3_gpu_s"]) / b15["sam3_gpu_s"], 1)
+                d["total_minus_B15_s"] = round(row["two_gpu_s_estimate"] - b15["two_gpu_s_estimate"], 1)
+                d["total_minus_B5_s"] = round(row["two_gpu_s_estimate"] - b5["two_gpu_s_estimate"], 1)
+            idv = row["identity_vs_delivered"]
+            d["lookalike_switches_per_100_matched"] = round(100 * idv["lookalike_switches"] / max(idv["matched"], 1), 2)
+            if row.get("counts", {}).get("box_prompts"):
+                nb = row["counts"]["box_prompts"]
+                nf = n_b2 - row["sam3_text_frames"]
+                d["box_decode_ms_per_box"] = round(1000 * row["other_gpu_s"]["of_which_box_decode"] / nb, 3)
+                d["boxes_per_non_sam_frame"] = round(nb / max(nf, 1), 1)
+                d["box_decode_ms_per_frame"] = round(1000 * row["other_gpu_s"]["of_which_box_decode"] / max(nf, 1), 1)
+                d["box_frame_cost_over_text_search"] = round((row["other_gpu_s"]["of_which_box_decode"] / max(nf, 1) + tim.get("tracker_neck_s_per_frame", 0)) / (c["sam3.rest"] + c["dedupe"]), 3)
         result["sites"][site] = site_out
     result["spend_usd_estimate"] = {**spend, "total": round(sum(v or 0 for v in spend.values()), 3)}
     result["summary"] = summarize(result)
