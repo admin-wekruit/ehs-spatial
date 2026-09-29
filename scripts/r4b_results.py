@@ -7,7 +7,7 @@ audits by eye (clicks, cards: agent-labelled) and the instances scorer; summary.
     python scripts/r4b_results.py --self-check
 
 --clicks DIR/<site>/ (click_audit.py sample + labels), --cards DIR/<site>/ (r4b_audit.py cards + labels), --gt a GT run
-(accuracy_gt.py score wrote DIR/accuracy/score.json), --baseline round 3's benches (the instances scorer on the same frames).
+(accuracy_gt.py score wrote DIR/accuracy/score.json; a comma list), --baseline round 3's benches (the instances scorer on the same frames).
 """
 import argparse
 import collections
@@ -135,8 +135,9 @@ def collect(a):
         res["heldout_types"]["round 3 warm"] = {"by_site": g, "not_matched": len(miss)}
         v = {s: {"share": ra.share(__import__("fast_report_eval").load_layers(Path(d) / "mirror", calls(d, s)["warm"]["run"]["report"]))} for s, d in base.items()}
         res["round3_shares"] = {s: {k: x for k, x in v[s]["share"].items() if k != "completeness"} for s in v}
-    if a.gt and (Path(a.gt) / "accuracy" / "score.json").exists():
-        res["gt"] = json.loads((Path(a.gt) / "accuracy" / "score.json").read_text())
+    for d in (a.gt or "").split(","):  # GT runs (accuracy_gt.py score wrote DIR/accuracy/score.json); several: one per sequence set
+        if d and (Path(d) / "accuracy" / "score.json").exists():
+            res.setdefault("gt", {})[Path(d).name] = json.loads((Path(d) / "accuracy" / "score.json").read_text())
     if a.shots:
         res["shots"] = {p.name: json.loads((p / "shots.json").read_text()) for p in sorted(Path(a.shots).iterdir()) if (p / "shots.json").exists()}
     return res
@@ -193,6 +194,11 @@ def md(res):
     for fld in ("position_xy", "top_above_floor", "base_above_floor", "height", "width", "depth", "principal_axis_tilt_deg"):
         out += row(f"object cards with a number or bound: {fld}", lambda s, fld=fld: pct(w(s)["physical"]["with_number_share_objects"][fld]))
     out += row("fresh card audit: physical plausible / implausible / unclear", lambda s: (lambda t: f"{t.get('plausible', 0)} / {t.get('implausible', 0)} / {t.get('unclear', 0)}")(ca[s]["physical"]))
+    if res.get("gt"):  # r4_physical's GT tables: median |error| as delivered (assumed 1.6 m camera) and at the true height, bounds holding
+        from r4_physical import gt_tables
+        out += "\n### Physical against ground truth (TUM fr1 room, ARKitScenes; warm calls)\n"
+        for name, sc in res["gt"].items():
+            out += f"\n{name}:\n" + gt_tables(sc)
     out += "\n## 4. Display models (warm call)\n\n" + head
     out += row("object cards with a display model", lambda s: pct(w(s)["share"]["model"]))
     out += row("model kinds", lambda s: ", ".join(f"{k} {v}" for k, v in sorted(w(s)["share"]["model_kinds"].items(), key=lambda x: -x[1])))
