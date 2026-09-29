@@ -1068,8 +1068,9 @@ def analyse(m, mp4, opts, clock, writer, log):
             x.update(u_pose_m=a_.get("u_pose_m", x["u_pose_m"]), u_floor_m=a_.get("u_floor_m") or x["u_floor_m"], angles_usable=a_.get("angles_usable"),
                      plumb_u_deg=a_.get("plumb_u_deg"), plumb_deg=a_.get("plumb_deg"))
         def job():  # mvp2: runs overlap (v3 no longer waits for v1's questions: Sam's Club final judgements 76 -> 117 s, mvp2/click);
+            # r4: judge_vlm defaults off (hazard VLM questions stay off in every run; the rules still run)
             try:     # judge.run shares their answers and evidence through `carried` and never puts an older version over a newer one
-                return judge.run(out["cards"], ctx, writer, clock, vlm_on=opts.get("judge_vlm", True), pool=m.proc_pool, carried=carried,
+                return judge.run(out["cards"], ctx, writer, clock, vlm_on=opts.get("judge_vlm", False), pool=m.proc_pool, carried=carried,
                                  hazard_ask=opts.get("hazard_ask"), provisional=version < 3 and densify_on and bool(objects))
             except Exception:  # noqa: BLE001  the judgements are one layer: their failure is recorded, the others stand
                 import traceback
@@ -1285,7 +1286,10 @@ def analyse(m, mp4, opts, clock, writer, log):
     def ask_identity(card_list, which="ehs", key="outlines", tag=""):
         """Section 4.7 step 3 through B's decider (vlm.options + judge.som, when both exist): the best view with the outlines
         as numbered white-over-black marks, the subject [1]. key: the outlines the views come from (densify's objects are only
-        on 'outlines_v2'); tag: the stage's suffix. -> the number of questions asked."""
+        on 'outlines_v2'); tag: the stage's suffix. -> the number of questions asked. r4: off unless options 'identity_vlm'
+        (the VLM comes last, never by default: a card keeps its SAM 3 word, 'detected word, unverified')."""
+        if not opts.get("identity_vlm", False):
+            return 0
         try:
             from fast_report import judge
         except ImportError:

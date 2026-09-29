@@ -910,6 +910,19 @@ def long_object(phys, pooled, subs, wi, di, lr_cut, depth_seen, res, k):
 
 
 UNRESOLVED = ("height", "width", "depth", "visible_length", "footprint_m2")
+# r4 (physical): the object layer's fields: every card, named or unidentified, object or person, carries each of these as a value
+# with +-u and its scale label, a bound, or 'not observed' / 'not measurable' with a reason (a long object seen in parts adds
+# 'visible_length' beside its width / depth). contract() enforces it, completeness() counts it.
+REQUIRED = ("position_xy", "top_above_floor", "base_above_floor", "height", "width", "depth", "principal_axis_tilt_deg", "planar_slope_deg")
+
+
+def fill_required(card, reason, status="not measurable"):
+    """Every REQUIRED field the card does not carry becomes {status, reason}. Idempotent. -> card"""
+    ph = card.setdefault("physical", {})
+    for n in REQUIRED:
+        if not isinstance(ph.get(n), dict):
+            ph[n] = {"status": status, "reason": reason}
+    return card
 
 
 def unresolved(phys):
@@ -964,6 +977,7 @@ def object_card(o, x, s, k, marking, merged_from, counts):
                 "observed": ["masks"], "estimated": [], "inferred": ["identity", "class"]}
         card["raw"] = {"size": None, "angles": {}, "review_base": {}, "fragmented": False, "primitive": None, "extent_change": None,
                        "time": _time_raw(card["time"])}
+        fill_required(card, f"seen in 2D only: {len(P)} lifted points after cleaning (fewer than 8), no 3D measurement")
         return apply_name(card)
     axes = footprint_axes(P[:, :2])
     pooled = box_of(P, axes)
@@ -1043,8 +1057,9 @@ def object_card(o, x, s, k, marking, merged_from, counts):
                     "extent", k, subs(fn), note="pooled over every view; subsets give the spread")
         if name == "width" and lr_cut:
             rec.update(status="at least", reason="cut by the frame edge in every view")
-        if not seen:
-            rec = {"status": "not observed", "reason": f"seen from one side (azimuth spread {az_spread:.0f} deg)"}
+        if not seen:  # r4: the depth seen from this side stays beside it as a lower bound when it is resolved (u < value)
+            rec = {"status": "not observed", "reason": f"seen from one side (azimuth spread {az_spread:.0f} deg)",
+                   **({"visible": {**rec, "status": "at least", "reason": "the depth seen from this side: the far side is hidden"}} if rec["u"] < rec["value"] else {})}
         phys[name] = rec
     fp = float(pooled["sides"][0] * pooled["sides"][1])
     fp_fn = lambda q: float(q["box"]["sides"][0] * q["box"]["sides"][1])  # noqa: E731
@@ -1060,7 +1075,7 @@ def object_card(o, x, s, k, marking, merged_from, counts):
     pos = np.median([pc_fn(q) for q in sub], 0) if sub else pooled["centre_xy"]
     hdist = float(np.linalg.norm(pos - cam_med_f[:2]))
     phys["position_xy"] = value(pos, {"views": spread(subs(pc_fn)) if sub else None, "depth": DEPTH_REL * hdist, "pose": s["u_pose_m"],
-                                      "scale": SCALE_REL * float(np.linalg.norm(pos))}, "position", k, subs(pc_fn))
+                                      "scale": SCALE_REL * float(np.linalg.norm(pos))}, "position", k, subs(pc_fn), frame=f"floor frame of shot {o['shot']}")
     # nearest walked path
     best = None
     for name, path in s["walked"].items():
@@ -1095,7 +1110,7 @@ def object_card(o, x, s, k, marking, merged_from, counts):
     no_floor = s.get("scale_status", "estimated") != "estimated"
     if no_floor:  # no floor plane: DA3 units and a guessed floor, not metres
         for name in (*METRIC, "visible_length"):  # mvp2 accuracy: TUM fr1 room's 9-keyframe shot read 1.67x off true scale as 'estimated' metres
-            if name in phys and "value" in phys[name]:
+            if name in phys and ("value" in phys[name] or "visible" in phys[name]):
                 phys[name] = {"status": "not measurable", "reason": NO_FLOOR}
         phys["size_check"] = {"status": "no data", "reason": NO_FLOOR}
     order = sorted(views, key=lambda v: -(meta.get(v, [1])[0] * (s["sharp"][v] if s.get("sharp") is not None else 1.)))
@@ -1697,6 +1712,25 @@ def people_cards(people, shots, object_cards, k=None):
                                         "surface or hidden behind it in the rest" if name == "foot_height" else ""))
             else:
                 phys[name] = {"status": "not observed", "reason": "the whole body (feet to head) was never in view with its feet seen"}
+        # r4: the object layer's fields on a person: the track's median place, the head and the feet above the floor, the stature
+        pos = np.median(xy, 0)
+        phys["position_xy"] = value(pos, {"detections": float(np.median(noise)), "scale": SCALE_REL * float(np.linalg.norm(pos))}, "position", k, None,
+                                    views_term=False, frame=f"floor frame of shot {t['shot']}",
+                                    note="the track's median place (a person moves: time.positions has one per keyframe)")
+        heads = [g_ for g_ in geo if g_.get("head_m") is not None and not (g_.get("cut") or {}).get("top")]
+        if heads:
+            hv = [g_["head_m"] for g_ in heads]
+            phys["top_above_floor"] = value(float(np.median(hv)), {"detections": float(np.median([g_["u_head_m"] for g_ in heads])),
+                                                                   "spread": float(np.percentile(hv, 75) - np.percentile(hv, 25)) if len(hv) >= 4 else None},
+                                            "height", k, None, views_term=False, n_detections=len(heads),
+                                            note="the head: median over the detections whose top was in view")
+        else:
+            phys["top_above_floor"] = {"status": "not observed", "reason": "the head was cut by the frame edge (or had no depth) in every detection"}
+        phys["base_above_floor"], phys["height"] = dict(phys["foot_height"]), dict(phys["stature"])
+        for n in ("width", "depth"):
+            phys[n] = {"status": "not measurable", "reason": "a person's width and depth change with pose: not measured (its height is the stature)"}
+        for n in ANGLES:
+            phys[n] = {"status": "not measurable", "reason": "a person: the posture changes, no shape angle"}
         moving = moved - mv["u"] >= MOVED_M
         ident = {"name": "person", "decided_by": "sam3 person + tracker", "label": "observed", "track": t["id"],
                  "confirmed_by": "motion" if moving else None,
@@ -1755,6 +1789,7 @@ def people_cards(people, shots, object_cards, k=None):
     out.append({"id": "person:untracked", "kind": "person", "identity": {"name": "person, not tracked", "label": "observed"},
                 "class": {"category": "other", "mobility": "agent", "mobility_source": "class prior"},
                 "note": "a SAM 3 person mask no track claimed (a short or far detection)", "observed": ["masks"], "estimated": [], "inferred": []})
+    fill_required(out[-1], "the person masks no track claimed (short or far detections): not one thing, no 3D measurement")
     rej = people.get("rejected") or []
     if rej:
         why = {}
@@ -1766,6 +1801,7 @@ def people_cards(people, shots, object_cards, k=None):
                     "note": f"{len(rej)} SAM 3 person masks measured as no person: " + "; ".join(f"{w} ({len(ts)}x, first at {min(ts):.1f} s)" for w, ts in why.items()),
                     "examples": [r["reason"] for r in rej[:5]], "time": {"first_seen_s": min(r["t"] for r in rej), "last_seen_s": max(r["t"] for r in rej)},
                     "observed": ["masks"], "estimated": ["geometry"], "inferred": ["not a person"]})
+        fill_required(out[-1], f"{len(rej)} person masks measured as pictures of people, not one thing: each was measured only as its span (examples)")
     return out
 
 
@@ -1802,13 +1838,18 @@ def contract(card):
         st = field_state(f)
         if st in ("broken", "missing"):
             bad.append(f"{cid}.{path}: {st}")
+    if kind in ("object", "person", "not a person"):
+        for n in REQUIRED:
+            need(n, ph.get(n))
     if kind == "object":
         if ph.get("level") == "2d only":
             bad += [f"{cid}.{n}: a number on a 2d-only card" for n in METRIC if isinstance(ph.get(n), dict) and "value" in ph[n]]
             return bad
         for n in (*METRIC, "visible_length"):
-            if n in ph or n in METRIC:
+            if n not in REQUIRED and (n in ph or n in METRIC):
                 need(n, ph.get(n))
+        if isinstance((ph.get("depth") or {}).get("visible"), dict):  # r4: the depth seen from one side (a lower bound)
+            need("depth.visible", ph["depth"]["visible"])
         b, fp = ph.get("box") or {}, ph.get("footprint_xy") or {}
         # mvp3: an on-demand card (fast_report.ondemand, one view) draws no box and has no footprint: none is required
         if not card.get("on_demand") and not (b.get("size_m") and len(b.get("u_m") or []) == 3 and b.get("center_u_m") is not None and b.get("scale")):
@@ -1828,7 +1869,7 @@ def contract(card):
             bad.append(f"{cid}.walkway: no status")
     elif kind == "person":
         for n, f in ph.items():
-            if isinstance(f, dict):
+            if isinstance(f, dict) and n not in REQUIRED:
                 need(n, f)
         for i, x in enumerate(card.get("nearest_objects") or []):
             if not isinstance(x, dict):
@@ -1845,6 +1886,42 @@ def contract(card):
     elif any(isinstance(f, (int, float)) and not isinstance(f, bool) for f in ph.values()):
         bad.append(f"{cid}.physical: numbers on a card of kind {kind}")
     return bad
+
+
+def identified(card):
+    """r4: 'named' (a VLM, a human or the tracker named it), 'detector word' (SAM 3's word, unverified) or 'unidentified'."""
+    idn = card.get("identity") or {}
+    if idn.get("name") in (None, UNIDENTIFIED) or (idn.get("namer") or {}).get("status") == "unclear":
+        return "unidentified"
+    return "detector word" if idn.get("decided_by") == "sam3 vote" else "named"
+
+
+NUMBER = ("value", "at least", "at most", "needs review")
+
+
+def completeness(cards):
+    """r4: per card kind (object cards also per identity state), how each REQUIRED field is carried; 'complete' = every one is a
+    number with +-u and scale, a bound, or a status with its reason (none missing or broken); 'with number' per field = a value
+    or a bound; 'extent' = height, width or visible length with a number."""
+    out = {}
+    for c in cards:
+        kd = c.get("kind")
+        if kd not in ("object", "person", "not a person"):
+            continue
+        ph = c.get("physical") or {}
+        st = {n: field_state(ph.get(n)) for n in REQUIRED}
+        ext = any(field_state(ph.get(n)) in NUMBER for n in ("height", "width", "visible_length"))
+        for key in [kd] + ([f"object: {identified(c)}"] if kd == "object" else []):
+            r = out.setdefault(key, {"cards": 0, "complete": 0, "extent_number": 0, "fields": {n: {} for n in REQUIRED}})
+            r["cards"] += 1
+            r["complete"] += all(v not in ("missing", "broken") for v in st.values())
+            r["extent_number"] += ext
+            for n, v in st.items():
+                r["fields"][n][v] = r["fields"][n].get(v, 0) + 1
+    for r in out.values():
+        r["complete_share"] = round(r["complete"] / r["cards"], 4)
+        r["with_number_share"] = {n: round(sum(x for v, x in t.items() if v in NUMBER) / r["cards"], 4) for n, t in r["fields"].items()}
+    return out
 
 
 def summarize(cards):
@@ -1884,6 +1961,7 @@ def summarize(cards):
     out["contract_broken_fields"] = sum(t.get("broken", 0) for t in out["fields"].values())
     viol = [v for c in cards for v in contract(c)]
     out["contract"] = {"cards": len(cards), "violations": len(viol), "examples": viol[:10]}
+    out["required"] = completeness(cards)
     # L1 acceptance: shown (plausible) boxes of non-large classes (class range max <= 3.5 m; 'any other word' counts as
     # non-large: its 6 m bound is a catch-all) with a longest side over 3 m
     shown = [c["physical"] for c in objs if "box" in c["physical"] and c["physical"]["size_check"].get("status") != "implausible"]
@@ -1944,6 +2022,9 @@ def self_check():
     nb = objs[1][0] + [.45, 0, 0]
     points.append({"world": nb, "frame": objs[1][1], "z": nb[:, 2], "views": {int(v): [400, 0, 0, 0, 0] for v in np.unique(objs[1][1])}})
     objects.append({"id": "obj-0-4", "shot": 0, "word": "box", "votes": {"box": 1.}})
+    tiny2 = np.array([[5., 1.5, 6.], [5.01, 1.5, 6.]])  # r4: two lifted points: a 2d-only card
+    points.append({"world": tiny2, "frame": np.array([0, 1]), "z": tiny2[:, 2], "views": {0: [5, 0, 0, 0, 0], 1: [5, 0, 0, 0, 0]}})
+    objects.append({"id": "obj-0-5", "shot": 0, "word": "bolt", "votes": {"bolt": 1.}})
     points[0]["frame"] = np.where(points[0]["frame"] == 5, 4, points[0]["frame"])  # box A itself is never on keyframe 5
     points[0]["views"] = {int(v): [500, 0, 0, 0, 0] for v in np.unique(points[0]["frame"])}
     counts = {"obj-0-0": {j: [300, 0] for j in range(5)}, "obj-0-2": {0: [100, 0], 1: [100, 0]}}
@@ -1991,6 +2072,14 @@ def self_check():
     c = by["obj-0-2"]["physical"]
     assert c["depth"]["status"] == "not observed" and "one side" in c["depth"]["reason"], c["depth"]
     assert c["planar_slope_deg"]["status"] == "not measurable", c["planar_slope_deg"]
+    # r4: seen from one side, the depth seen stays beside 'not observed' as a lower bound when it is resolved: box A from keyframes
+    # 0-1 only (8 deg apart) keeps its 0.5 m as 'at least'; the cable's 3 cm is not resolved and shows none
+    one = {**points[0], "frame": points[0]["frame"] % 2, "views": {0: [500, 0, 0, 0, 0], 1: [500, 0, 0, 0, 0]}}
+    c1 = build({"shots": [shot], "objects": objects[:1], "points": [one], "counts": None, "people": None, "calibration": {}})["cards"][0]
+    d1 = c1["physical"]["depth"]
+    assert d1["status"] == "not observed" and d1["visible"]["status"] == "at least" and abs(d1["visible"]["value"] - .5) < .05 and not contract(c1), d1
+    assert "visible" not in c["depth"], c["depth"]
+    assert contract({**c1, "physical": {**c1["physical"], "depth": {**d1, "visible": {"value": .5}}}}) == [f"{c1['id']}.depth.visible: broken"]
     assert by["obj-0-0"]["class"]["category"] == "F payload"
     # mvp2/identity R2: the SAM 3 word 'cable' alone is a hazard name no VLM has checked: not shown, no class prior
     c2 = by["obj-0-2"]
@@ -2223,10 +2312,22 @@ def self_check():
     sm = summarize(out["cards"])
     assert sm["contract_broken_fields"] == 0 and sm["fields"]["depth"].get("not observed") == 1, sm
     assert sm["contract"]["violations"] == 0, sm["contract"]
-    assert contract({"id": "p", "kind": "person", "physical": {}, "nearest_objects": [["obj-0-0", 0.]]}) == ["p.nearest_objects[0]: a bare distance"]
+    assert contract({"id": "p", "kind": "person", "physical": {}, "nearest_objects": [["obj-0-0", 0.]]}) == \
+        [f"p.{n}: missing" for n in REQUIRED] + ["p.nearest_objects[0]: a bare distance"]
+    # r4: every card carries the object layer's fields: the person its median place (and head when seen), a 2d-only card why it has none
+    pp = pc["physical"]
+    assert pp["position_xy"]["u"] > 0 and pp["position_xy"]["frame"] == "floor frame of shot 0" and pp["top_above_floor"]["status"] == "not observed"
+    assert pp["width"]["status"] == "not measurable" and pp["height"] == pp["stature"] and not contract(pc), contract(pc)
+    t2 = by["obj-0-5"]["physical"]
+    assert t2["level"] == "2d only" and all(t2[n]["status"] == "not measurable" and "2D only" in t2[n]["reason"] for n in REQUIRED), t2
+    assert a["position_xy"]["frame"] == "floor frame of shot 0"
+    req = sm["required"]
+    assert req["object"]["cards"] == 5 and all(r["complete_share"] == 1. for r in req.values()), req
+    assert sum(r["cards"] for key, r in req.items() if key.startswith("object: ")) == 5 and req["object"]["with_number_share"]["position_xy"] == .8, req
+    assert contract({**by["obj-0-2"], "physical": {k2: v2 for k2, v2 in by["obj-0-2"]["physical"].items() if k2 != "base_above_floor"}}) == ["obj-0-2.base_above_floor: missing"]
     assert contract({"id": "o", "kind": "object", "physical": {**a, "box": {**a["box"], "u_m": None}}}) == ["o.box: size or centre without u / scale"]
     # a track whose lowest point floats 1.6 m up over no object and does not move: kept, named a likely picture; the rejected masks
-    fl = {"contact": True, "cut": {"bottom": False}, "foot_h_m": 1.6, "u_m": .15, "feet_visible": False, "range_m": 4.}
+    fl = {"contact": True, "cut": {"bottom": False}, "foot_h_m": 1.6, "u_m": .15, "feet_visible": False, "range_m": 4., "head_m": 2.3, "u_head_m": .1}
     pc2 = people_cards({"tracks": [{"id": "0-9", "shot": 0, "t0": 0., "t1": .8, "detections": 3,
                                     "points": [{"t": i * .4, "frame": 6 * i, "xyz": [.2, 1.6, 3.6], "foot_surface": fl} for i in range(3)]}],
                         "rejected": [{"t": .2, "reason": "its true bottom is in view and it spans 0.11 +- 0.03 m: less than a head and shoulders (a picture or print)"}]},
@@ -2234,6 +2335,7 @@ def self_check():
     by2 = {c["id"]: c for c in pc2}
     assert by2["person:0-9"]["identity"]["name"].startswith("person?") and by2["person:0-9"]["identity"]["support"]["status"] == "on nothing seen"
     assert by2["person:not-a-person"]["kind"] == "not a person" and not [v for c in pc2 for v in contract(c)]
+    assert by2["person:0-9"]["physical"]["top_above_floor"]["value"] == 2.3 and by2["person:0-9"]["physical"]["top_above_floor"]["n_detections"] == 3
     tiny = {**fl, "stature_m": .6, "u_stature_m": .13, "u_m": .4}  # a 0.6 m figure 1.6 m up, feet hidden: small and floating across the track
     pc3 = people_cards({"tracks": [{"id": "0-8", "shot": 0, "t0": 0., "t1": .8, "detections": 2,
                                     "points": [{"t": i * .4, "frame": 6 * i, "xyz": [.2 + 2 * i, 1.6, 3.6], "foot_surface": dict(tiny, contact=False)} for i in range(2)]}]},

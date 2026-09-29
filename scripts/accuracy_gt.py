@@ -261,7 +261,7 @@ def gt_floor(folder):
 # ---------------------------------------------------------------- scoring
 
 FIELDS = {"top_above_floor": "height", "base_above_floor": "height", "height": "extent", "width": "extent", "depth": "extent",
-          "position_xy": "position", "planar_slope_deg": "angle", "principal_axis_tilt_deg": "angle"}
+          "position_xy": "position", "planar_slope_deg": "angle", "principal_axis_tilt_deg": "angle", "visible_length": "extent"}
 MIN_GT_POINTS, MIN_GT_COVER = 50, .5
 
 
@@ -340,6 +340,7 @@ def gt_card(P, card, fr):
     w = (ph.get("width") or {}).get("value", (ph.get("width") or {}).get("visible_m"))
     wi = int(np.argmin(np.abs(sides - w))) if w is not None else 0
     out["width"], out["depth"] = float(b["sides"][wi]), float(b["sides"][1 - wi])
+    out["visible_length"] = float(max(b["sides"]))  # r4: the GT points are the card's own segmented regions: the length seen
     o = fc.orient(Q, 1.)
     for name in ("planar_slope_deg", "principal_axis_tilt_deg"):
         if o[name][0] is not None and (o[name][1] or 0) <= fc.FIT_MAX_DEG:
@@ -417,10 +418,17 @@ def score_report(run_dir, report, inputs):
                 continue
             got = ev.fact(ph.get(f), k.get(fam, 1.), angle=fam == "angle")
             x = ph.get(f) or {}
+            if f == "visible_length" and x.get("value") is not None:  # r4: always a lower bound ('needs review' overwrites its status)
+                got, x = None, {**x, "status": "at least"}
+            if f == "depth" and isinstance(x.get("visible"), dict):  # r4: a one-side depth's visible part, a lower bound
+                got, x = None, {**x["visible"], "status": "at least"}
             if got is None and x.get("status") in ("at least", "at most") and x.get("value") is not None and fam in ("height", "extent"):
+                lo = x["status"] == "at least"
+                u_ns = float(np.sqrt(max(x["u"] ** 2 - float((x.get("parts") or {}).get("scale", 0.)) ** 2, 0.)))  # (b): without the scale term
                 bounds.append({"report": report, "seq": name, "geometry": geometry, "card": c["id"], "field": f, "status": x["status"],
-                               "value": x["value"], "u": x["u"], "gt": gt[f], "s": s["s"], "gt_cover": round(cover, 3),
-                               "holds_a": bool(gt[f] >= x["value"] - x["u"]) if x["status"] == "at least" else bool(gt[f] <= x["value"] + x["u"])})
+                               "value": x["value"], "u": x["u"], "gt": gt[f], "s": s["s"], "gt_cover": round(cover, 3), "first_call": bool(run.get("first_call")),
+                               "holds_a": bool(gt[f] >= x["value"] - x["u"]) if lo else bool(gt[f] <= x["value"] + x["u"]),
+                               "holds_b": bool(gt[f] >= s["s"] * (x["value"] - u_ns)) if lo else bool(gt[f] <= s["s"] * (x["value"] + u_ns))})
             if got is None:
                 continue
             v, u, u_ns = got
