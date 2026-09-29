@@ -465,7 +465,7 @@ if __name__ == "__main__":
                    help="the hazard judge's VLM (r4: off by default, the rules alone; gemini: relayed by this CLI)")
     p.add_argument("--namer", default="none", choices=("gemini", "none"), help="mvp2/identity: object names from Gemini through the relay, or none (r4 default)")
     p.add_argument("--identity-vlm", action="store_true", help="r4: the Qwen decider names what the namer did not (off: the SAM 3 word stays)")
-    p.add_argument("--judge", default="on", choices=("on", "off"), help="r4: off = no judgements at all (no rules, no hazard VLM questions)")
+    p.add_argument("--judge", default="off", choices=("on", "off"), help="r4: off = no judgements at all (no rules, no hazard VLM questions); r4 integrate default off: judgement paused")
     p.add_argument("--display", default="on", choices=("on", "off"), help="r4: off = no SAM 3D models and no splat (the facts only)")
     p.add_argument("--coverage", action=argparse.BooleanOptionalAction, default=True, help="r4/coverage (on by default in r4/integrate): detector boxes -> SAM 3 tracker masks in densify ('warm-off' calls leave it off)")
     p.add_argument("--coverage-debug", type=Path, help="r4 dev: {site: [{id, frame, x, y}]} points whose box masks' fates the run records")
