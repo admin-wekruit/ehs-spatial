@@ -717,8 +717,9 @@ def recgen_worker():
         torch.cuda.reset_peak_memory_stats()
         start = time.time()
         out = run_recgen(state["pipeline"], message["views"], message["seed"])
-        return {**out, "start_unix": start, "end_unix": time.time(), "gpu": os.environ.get("CUDA_VISIBLE_DEVICES"),
-                "max_reserved_gb": round(torch.cuda.max_memory_reserved() / 2 ** 30, 2)}
+        peak = round(torch.cuda.max_memory_reserved() / 2 ** 30, 2)
+        torch.cuda.empty_cache()  # r5: the call's cache back to the device (two processes beside the report's core took GPU 0 to 75.9 GiB)
+        return {**out, "start_unix": start, "end_unix": time.time(), "gpu": os.environ.get("CUDA_VISIBLE_DEVICES"), "max_reserved_gb": peak}
     serve(handle, boot)
 
 
