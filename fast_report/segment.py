@@ -301,8 +301,9 @@ def backproject(depth, K, c2w, f, vy, vx, stride):
     return (c2w[f, :3, :3] @ cam[:, :, None])[:, :, 0] + c2w[f, :3, 3]
 
 
-def lift(masks, frame_of, depth_m, K, c2w_m, dyn, stride=2):
+def lift(masks, frame_of, depth_m, K, c2w_m, dyn, stride=2, emb=None, emb_min=None):
     """E7's lift (E9's code): pixels -> 5 cm voxels -> cross-frame voxel overlap -> connected components.
+    emb (len(masks), D) unit, optional (X2 proposals): an edge also needs the two masks' cosine >= emb_min.
     -> (component per input mask, -1 = not lifted; per component arrays; stats)."""
     import torch
     from scipy.sparse import coo_matrix
@@ -330,6 +331,9 @@ def lift(masks, frame_of, depth_m, K, c2w_m, dyn, stride=2):
     inter = torch.sparse.mm(A, A.t()).coalesce()
     (a, b), c = inter.indices(), inter.values()
     edge = (a < b) & (fr[a] != fr[b]) & (c >= MATCH_MIN * torch.minimum(size[a], size[b])) & (c >= MATCH_MAX * torch.maximum(size[a], size[b]))
+    if emb is not None:
+        e = emb[idx]
+        edge &= (e[a] * e[b]).sum(1) >= emb_min
     a, b = a[edge].cpu().numpy(), b[edge].cpu().numpy()
     ncomp, label = connected_components(coo_matrix((np.ones(len(a)), (a, b)), shape=(len(idx), len(idx))), directed=False)
     lab = torch.from_numpy(label).to(dev)
@@ -452,4 +456,10 @@ def self_check():
     assert sorted((int(a), int(w)) for a, w, _ in votes) == [(0, 0), (0, 1), (3, 0), (4, 1)], votes
     lab = paint(masks[[0, 2, 3]])  # 2 lies inside 0: the smaller one keeps its pixels
     assert int(lab[20, 20]) == 2 and int(lab[45, 45]) == 1 and int(lab[120, 120]) == 3 and int(lab[200, 400]) == 0
-    print("segment self-check ok: flood merge/drop, naming, polygons")
+    two = torch.zeros((2, 280, 504), dtype=torch.bool)  # one mask seen twice from one camera: joined, unless SigLIP disagrees (X2)
+    two[:, 100:160, 200:260] = True
+    geo = (torch.full((2, 280, 504), 2.), torch.tensor([[300., 0, 252], [0, 300, 140], [0, 0, 1]]).repeat(2, 1, 1), torch.eye(4).repeat(2, 1, 1),
+           torch.zeros((2, 280, 504), dtype=torch.bool))
+    assert lift(two, torch.tensor([0, 1]), *geo)[0].tolist() == [0, 0]
+    assert lift(two, torch.tensor([0, 1]), *geo, emb=torch.eye(2), emb_min=.5)[0].tolist() == [0, 1]
+    print("segment self-check ok: flood merge/drop, naming, polygons, lift with the SigLIP gate")

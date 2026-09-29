@@ -47,6 +47,8 @@ image = (modal.Image.from_registry("nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04"
                       "open3d==0.19.0", "shapely", "pydantic", "opencv-python-headless", "sentencepiece",
                       f"git+https://github.com/ByteDance-Seed/Depth-Anything-3.git@{DA3_CODE}")
          .run_commands("python -m venv /opt/vllm && PIP_EXTRA_INDEX_URL= /opt/vllm/bin/pip install -q vllm==0.11.0 transformers==4.57.1 pillow")
+         # X2 discovery: SAM 2.1 automatic masks (segment_fast_probe's pinned sam2 commit; weights on /v/da3, sam2_everything's pin)
+         .run_commands("SAM2_BUILD_CUDA=0 pip install -q git+https://github.com/facebookresearch/sam2.git@c2ec8e14a185632b0a5d8b161928ceb50197eddc")
          .env({"HF_HUB_OFFLINE": "1", "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
          .add_local_python_source("detect_shot_cuts", "m3_exp_geometry", "sam3_app", "video_events", "fast_report", "ehs_spatial"))
 
@@ -82,10 +84,9 @@ def setup():
     return out
 
 
-try:  # D's and C's modules once merged; the stand-ins until then
-    from fast_report.instrument import Clock, Vram  # noqa: F401
-except ImportError:
-    from fast_report.stubs import Clock, Vram
+# ponytail (fx/x2-discover): the stand-ins' Clock/Vram, the ones every fb-a-core run used; D's instrument (merged here for
+# its eval harness) has another interface (no mark(), Vram(gpus, period)) and is wired at fb/build
+from fast_report.stubs import Clock, Vram  # noqa: E402
 try:
     from fast_report.layers import Writer, mirror  # noqa: F401
 except ImportError:
@@ -233,9 +234,55 @@ class FastReport:
         path = Path("/v/layers/reports") / report_id / "run.json"
         path.write_text(json.dumps(run, indent=1, default=plain))
         VOLUMES["/v/layers"].commit()
-        self.last = None
+        if not options.get("discover"):
+            self.last = None
         torch.cuda.empty_cache()
         yield {"type": "run", "run": run}
+
+    @modal.method()
+    def discover(self, report_id: str, designs: list, eval_data: dict = None):
+        """X2: the discovery designs on the state the last run() kept (options['discover']), one after the other, each
+        timed from its first proposal to its last expansion lift; then written to the layers volume (timed)."""
+        import torch
+        from fast_report import cascade
+        from fast_report import discover as dsc
+        S = self.last
+        assert S and "work" in S, "run() with options['discover'] first"
+        t = time.perf_counter()
+        if "amg" in designs:
+            dsc.load_sam2(self)
+        load_s = round(time.perf_counter() - t, 2)  # model load: cold start, not analysis
+        clock = Clock()
+        vram = Vram([self.dev_geo, self.dev_seg], clock)
+        vram.start()
+        cache = cascade.LabelCache("/v/layers/label-cache/siglip2-base-p16-224-v3.npz")  # read only: never saved here
+        out = {"sam2_load_s": load_s, "cache_entries": len(cache), "designs": {}}
+        sheets = {}
+        try:
+            with clock.stage("discover.prep"):
+                P = dsc.prepare(self, S, clock)
+            out["prep_s"] = clock.rows[-1]["s"]
+            out["object_keyframes"] = len(P["qs"])
+            for d in designs:
+                try:
+                    rec, sheet, sheet_exp = dsc.run_design(self, S, P, d, clock, cache, eval_data)
+                except Exception:  # noqa: BLE001  one design failing must not lose the others
+                    rec, sheet, sheet_exp = {"error": traceback.format_exc()[-3000:]}, None, None
+                t_w = clock.now()
+                path = Path("/v/layers/reports") / report_id / f"discover-{d}.json"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps(rec, default=plain))
+                VOLUMES["/v/layers"].commit()
+                rec["write_s"] = round(clock.now() - t_w, 3)
+                rec["volume_path"] = str(path)
+                out["designs"][d] = rec
+                sheets[d] = (sheet, sheet_exp)
+        finally:
+            vram.stop()
+            self.last = None
+            torch.cuda.empty_cache()
+        out["timing"] = clock.report(vram)
+        return json.loads(json.dumps(out, default=plain)), sheets
 
 
 def plain(o):

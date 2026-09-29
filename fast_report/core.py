@@ -461,7 +461,8 @@ def analyse(m, mp4, opts, clock, writer, log):
     people_future.result()
     clock.mark("sam3_done")
     words = work.words
-    work.cache.clear()
+    if not opts.get("discover"):  # X2: discovery re-reads the object keyframes' vision features
+        work.cache.clear()
 
     # ---------- objects: flood handling, lift, naming, cascade ----------
     with torch.inference_mode(), clock.stage("dedupe", gpu=dev_geo):
@@ -681,6 +682,9 @@ def analyse(m, mp4, opts, clock, writer, log):
                          "c2w_m": gg["c2w_m"], "colors": shots_gpu[si]["colors"], "person": dyn[torch.tensor(gg["pos"], device=dev_geo)],
                          "mpu": gg["mpu"], "scale_status": "estimated"} for si, gg in enumerate(geo)],
               "objs": [{**o, "mask_logits_lr": voc["logits"][obj_masks_on[i][1]]} for i, o in enumerate(objects)], "frames": frames}
+    if opts.get("discover"):  # X2: what the discovery loop reads (fast_report/discover.py)
+        m.last.update(work=work, voc=voc, words=list(words), keys=keys, kf=kf, fps=fps, wh=(W, H), geo=geo, dyn=dyn, floor=floor,
+                      objects=objects, video_sha=video_sha, cam_rows=cam_rows)
     outlines_future.result()
     ev = vocab_future.result()
     if esc is not None:
