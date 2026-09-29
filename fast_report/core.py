@@ -926,8 +926,9 @@ def analyse(m, mp4, opts, clock, writer, log):
         maps_ready.wait()
         if voc is not None:
             voc.clear()
-        with torch.cuda.device(dev_geo):
-            torch.cuda.empty_cache()
+        if not densify_on:  # densify: the one empty_cache is models_job's, after its SAM 3 (see below)
+            with torch.cuda.device(dev_geo):
+                torch.cuda.empty_cache()
 
     # complete models: SAM 3D + the fit gate on GPU 0's two processes; its inputs are gathered now, the generation waits for
     # the facts (click MVP section 7: densify, cards and judgements before the display layers)
@@ -1281,8 +1282,11 @@ def analyse(m, mp4, opts, clock, writer, log):
             ctx = m.emb.zero_shot(m.emb.crops(frames_obj, torch.tensor([kf_index[int(q)] for q in vf[best_masks]], device=dev_geo),
                                               voc["mask"][bt], masked=False), txt)
             m.emb.release()
-            with torch.cuda.device(dev_geo):
-                torch.cuda.empty_cache()
+            if not densify_on:
+                # torch.cuda.empty_cache() empties every device's cache: called here while densify's SAM 3 ran on GPU 1 it
+                # faulted that GPU (XID 31, illegal address, runs mvp-a-cards-me340-002/003, both at the second GPU 1 batch)
+                with torch.cuda.device(dev_geo):
+                    torch.cuda.empty_cache()
     gpu0_free.set()  # densify's GPU 0 share starts after the objects' own GPU work (section 7)
     if objects:
         with clock.stage("cascade.decide", n={"objects": len(objects)}):
