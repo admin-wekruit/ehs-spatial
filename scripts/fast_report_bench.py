@@ -1,5 +1,10 @@
-"""Three videos through one FastReport container (FAST-BUILD-SPEC.md sections 12 D and 13): one app.run(), one boot; per
-video one first call and two warm calls; the last call of the last video runs the background layers (background_s).
+"""Three videos through one FastReport container (FAST-BUILD-SPEC.md sections 12 D and 13; CLICK-MVP-SPEC 8): one
+app.run(), one boot; per video the calls of --plan (default: a first call, two warm calls, one shifted-window call +5 s,
+cut from the clip's source video with fast_report_app.cut); the last call of the last video runs the background layers.
+After the container is released, fast_report_eval.mvp scores the MVP rows (clicks against SAM 3 references, identity,
+physical info vs the delivered report, repeatability warm vs warm and warm vs shifted, latency vs spec 7's targets) into
+OUT/mvp, and summary.md holds one table for the three videos. Only the first call of the first video is a first call
+after boot (L5); the other videos' call 0 runs on a warm container and is labelled so.
 
 Each call streams its patches into one local mirror (layers.mirror); with --serve a poller plays the viewer against
 layers.serve (500 ms, like live-report.ts) and records when each patch is first served. After each call the quality table's
@@ -8,8 +13,8 @@ on the first warm call, after the container is released. summary.json: analysis 
 each layer (written, from the MP4 bytes in the container), sent / received / served, boot, upload, per-stage per-GPU
 peaks and >90% flags, quality, acceptance against section 13, and the Modal list-price estimate.
 
-    python scripts/fast_report_bench.py --out RUNS/fb-bench-NNN [--sites me340,samsclub-a2,walmart] [--calls 3]
-        [--background-s 1800] [--serve] [--no-gpu-eval]
+    python scripts/fast_report_bench.py --out RUNS/mvp-bench-NNN [--sites me340,samsclub-a2,walmart]
+        [--plan first,warm,warm,shifted] [--shift-s 5] [--background-s 0] [--serve] [--no-gpu-eval] [--click-latency C.json]
     python scripts/fast_report_bench.py --billing RUNS/fb-bench-NNN     # reconcile with `modal billing report` (hours settle late)
     python scripts/fast_report_bench.py --self-check                    # the loop and the summary on a fake container
 """
@@ -105,11 +110,13 @@ def summarize(out, records, boot, meta):
     rows = []
     for rec in records:
         run, layers = rec["run"], layer_times(rec)
-        rows.append({"site": rec["site"], "call": rec["call"], "report": run.get("report"), "first_call_after_boot": rec["call"] == 0,
+        rows.append({"site": rec["site"], "call": rec["call"], "kind": rec.get("kind", "warm"), "report": run.get("report"),
+                     "window_s": rec.get("window_s"), "first_call_after_boot": bool((run.get("boot") or {}).get("first_call_after_boot", rec["call"] == 0)),
+                     "mvp_latency": rec.get("mvp_latency"),
                      "options": {k: v for k, v in rec["options"].items() if k != "eval_holdout"},
                      "upload_and_dispatch_s": round(run["t0_unix"] - rec["client_call_unix"], 3),
                      "analysis_elapsed_s": run.get("elapsed_s"), "layers": layers,
-                     "acceptance": acceptance(layers) if rec["call"] else "first call after boot: reported, not judged",
+                     "acceptance": acceptance(layers) if rec.get("kind", "warm") == "warm" else f"{rec.get('kind')} call: reported, not judged",
                      "gpu_peak": run.get("gpu_peak"), "flags": run.get("flags"), "hardware": run.get("hardware"),
                      "stages": {s["stage"]: {k: s.get(k) for k in ("where", "start_s", "end_s", "s", "peak_gb", "over_90")} for s in run.get("stages", [])},
                      "quality": rec.get("quality"), "usd_estimate": run.get("usd_estimate")})
@@ -137,6 +144,28 @@ def quality(rec, mirror_root, out, gpu):
     (out / f"call-{report}.json").write_text(json.dumps(rec, indent=1, default=str))
 
 
+def window(site, kind, shift_s, out):
+    """(mp4 bytes, [start, end] s, frame offset vs the base window) for a call: the base window is the clip's source-full.mp4
+    (prepare_video_clip.full_video's cut of [S, E)); 'shifted' cuts [S + shift, E + shift) from the clip's source video."""
+    clip = json.loads((ev.PHASE2 / "data/clips" / ev.CLIPS[site] / "clip.json").read_text())["source"]
+    a, b = clip["start_s"], clip["end_s"]
+    if kind != "shifted":
+        return (ev.PHASE2 / "data/clips" / ev.CLIPS[site] / "source-full.mp4").read_bytes(), [a, b], 0
+    from modal_apps.fast_report_app import cut
+    path = out / f"input-{site}-{a + shift_s:g}-{b + shift_s:g}.mp4"
+    if not path.exists():
+        cut(clip["video"], a + shift_s, b + shift_s, path)
+    return path.read_bytes(), [a + shift_s, b + shift_s], int(round((a + shift_s) * clip["fps"])) - int(round(a * clip["fps"]))
+
+
+def mvp_latency(rec, mirror_root, site, click_latency=None):
+    """Spec 7's targets on one call (fast_report_eval.latency_row), fb/integrate's warm call of the same video beside."""
+    fb_dir, fb_report = ev.FB_RUNS[site]
+    fb_run = json.loads((ev.PHASE2 / "runs" / fb_dir / "reports" / fb_report / "run.json").read_text())
+    patches = [json.loads(p.read_text()) for p in (mirror_root / "reports" / rec["run"]["report"] / "patches").glob("*.json")]
+    return ev.latency_row(rec["run"], patches, fb_run, click_latency)
+
+
 def bench(a):
     import modal
     from fast_report import layers as fl  # C: mirror, serve
@@ -147,8 +176,9 @@ def bench(a):
     mirror_root.mkdir()
     if a.serve:
         threading.Thread(target=fl.serve, args=(mirror_root, PORT), daemon=True).start()
-    sites = a.sites.split(",")
-    records, meta = [], {"sites": sites, "calls_per_site": a.calls, "background_s": a.background_s, "started_unix": time.time(),
+    sites, plan = a.sites.split(","), a.plan.split(",")
+    click_latency = json.loads(a.click_latency.read_text()) if a.click_latency else None
+    records, meta = [], {"sites": sites, "plan": plan, "shift_s": a.shift_s, "background_s": a.background_s, "started_unix": time.time(),
                          "container": {"gpu": "A100-80GB:2", "cpu": 32, "memory_gib": 160}, "usd_per_s_list": usd_per_s()}
     with modal.enable_output(), app.run():
         meta["app_id"] = app.app_id
@@ -158,28 +188,68 @@ def bench(a):
         boot = {**boot, "client_submitted_unix": submitted, "client_ready_unix": time.time(), "submit_to_ready_s_two_clocks": round(time.time() - submitted, 1)}
         (out / "boot.json").write_text(json.dumps(boot, indent=1))
         for site in sites:
-            mp4 = (ev.PHASE2 / "data/clips" / ev.CLIPS[site] / "source-full.mp4").read_bytes()  # prepare_video_clip.full_video's cut of [S, E)
-            sha = hashlib.sha256(mp4).hexdigest()
-            for i in range(a.calls):
-                last = site == sites[-1] and i == a.calls - 1
-                report = f"fb-{site}-{sha[:8]}-{int(time.time())}"
+            for i, kind in enumerate(plan):
+                mp4, span, offset = window(site, kind, a.shift_s, out)
+                sha = hashlib.sha256(mp4).hexdigest()
+                last = site == sites[-1] and i == len(plan) - 1
+                report = f"mvp-{site}-{sha[:8]}-{int(time.time())}"
                 fl.put_blob(mirror_root, mp4)  # the client's own MP4 is never sent back
-                options = {"vocab": a.vocab, "client_has": [sha], "background_s": a.background_s if last else 0,
-                           "eval_holdout": ev.holdout_frames(site)}
+                options = {"vocab": a.vocab, "client_has": [sha], "background_s": a.background_s if last else 0, "window_s": span,
+                           "eval_holdout": [f - offset for f in ev.holdout_frames(site) if f - offset >= 0]}
                 rec = call(fr, fl.mirror, mirror_root, mp4, site, report, options, Poller(report) if a.serve else None)
-                rec.update(site=site, call=i, options=options)
-                quality(rec, mirror_root, out, gpu=False)
+                rec.update(site=site, call=i, kind=kind, window_s=span, frame_offset=offset, options=options)
+                if kind != "shifted":  # the delivered report's frames are the base window's
+                    quality(rec, mirror_root, out, gpu=False)
+                rec["mvp_latency"] = mvp_latency(rec, mirror_root, site, click_latency)
                 records.append(rec)
-                print(site, i, json.dumps({k: v["first"]["written_s"] for k, v in layer_times(rec).items()}), flush=True)
+                (out / f"call-{report}.json").write_text(json.dumps(rec, indent=1, default=str))
+                print(site, i, kind, json.dumps({k: v["first"]["written_s"] for k, v in layer_times(rec).items()}), flush=True)
     meta["finished_unix"] = time.time()
     meta["usd_estimate_upper"] = round((meta["finished_unix"] - submitted) * usd_per_s(), 2)  # the container's whole life, list prices
-    for rec in records:
-        if a.gpu_eval and rec["call"] == 1:
-            quality(rec, mirror_root, out, gpu=True)
     summary = summarize(out, records, boot, meta)
     (out / "summary.json").write_text(json.dumps(summary, indent=1, default=str))
-    print(json.dumps({"acceptance_warm": summary["acceptance_warm"], "flags": summary["flags"], "quality": summary["quality_verdicts"],
-                      "usd_estimate_upper": meta["usd_estimate_upper"]}, indent=1))
+    runs, repeats = {}, {}
+    for site in sites:  # the MVP rows: the first warm call, against the second warm call and the shifted window
+        mine = [r for r in records if r["site"] == site]
+        warm = [r for r in mine if r["kind"] == "warm"] or [r for r in mine if r["kind"] != "shifted"]
+        if not warm:
+            continue
+        runs[site] = (mirror_root, warm[0]["run"]["report"])
+        repeats[site] = [(mirror_root, r["run"]["report"], r["frame_offset"], f"{r['kind']} call {r['call']}") for r in mine
+                         if r is not warm[0] and r["kind"] in ("warm", "shifted")]
+    if runs:
+        try:
+            ev.mvp(out / "mvp", runs, repeats, gpu=a.gpu_eval, labels_dir=out / "mvp")
+        except Exception as error:  # a scoring failure must not lose the timing
+            summary["mvp_error"] = repr(error)[:600]
+    summary["mvp_latency_table"] = latency_table(records)
+    (out / "summary.json").write_text(json.dumps(summary, indent=1, default=str))
+    (out / "summary.md").write_text(summary_md(summary, out))
+    print((out / "summary.md").read_text())
+
+
+def latency_table(records):
+    """{layer: {'<site> <kind> <call>': 'written s (target) ok'}}: first call after boot, warm and shifted calls side by side (L5)."""
+    table = {}
+    for rec in records:
+        col = f"{rec['site']} {rec.get('kind', '')} {rec['call']}"
+        for layer, v in (rec.get("mvp_latency") or {}).get("layers", {}).items():
+            ok = "" if v["ok"] is None else " ✓" if v["ok"] else " ✗"
+            table.setdefault(layer, {})[col] = f"{v['written_s']} ({v.get('target_s') or v.get('fb_written_s') or v.get('target')}){ok}"
+    return table
+
+
+def summary_md(summary, out):
+    """The bench's one page: the MVP table (fast_report_eval.summary_md), then every call's clock against spec 7, boot, spend."""
+    md = (out / "mvp" / "summary.md").read_text() if (out / "mvp" / "summary.md").exists() else f"# Click MVP bench\n\nMVP rows not scored: {summary.get('mvp_error')}\n"
+    t = summary.get("mvp_latency_table") or {}
+    cols = sorted({c for v in t.values() for c in v}, key=lambda c: (c.split(" ")[0], int(c.split(" ")[-1])))
+    md += "\n## Every call against spec 7 (s from the MP4 in the container; target in brackets)\n\n| layer | " + " | ".join(cols) + " |\n|---|" + "---|" * len(cols) + "\n"
+    for layer, v in t.items():
+        md += f"| {layer} | " + " | ".join(v.get(c, "—") for c in cols) + " |\n"
+    md += f"\nCold start (not analysis time): {summary.get('boot', {}).get('ready_s')} s in the container; submit to ready {summary.get('boot', {}).get('submit_to_ready_s_two_clocks')} s.\n"
+    md += f"Flags: {summary.get('flags') or 'none'}. Spend: list-price upper bound ${summary.get('usd_estimate_upper')}; `--billing` reconciles with Modal's report.\n"
+    return md
 
 
 def billing(out, prefix="panoptes-fb"):
@@ -234,8 +304,10 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--out", type=Path)
     p.add_argument("--sites", default="me340,samsclub-a2,walmart")
-    p.add_argument("--calls", type=int, default=3)
-    p.add_argument("--background-s", type=int, default=1800)
+    p.add_argument("--plan", default="first,warm,warm,shifted", help="calls per video: first | warm | shifted")
+    p.add_argument("--shift-s", type=float, default=5.)
+    p.add_argument("--click-latency", type=Path, help="C's headless click check result {p50_ms, p95_ms, n}")
+    p.add_argument("--background-s", type=int, default=0)
     p.add_argument("--vocab", default="qwen", choices=("qwen", "gemini"))
     p.add_argument("--serve", action="store_true")
     p.add_argument("--no-gpu-eval", dest="gpu_eval", action="store_false")
