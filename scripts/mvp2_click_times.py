@@ -29,7 +29,7 @@ def times(run):
                 [s["end_s"] for s in run["stages"] if s["stage"] == "vlm.identity.other"], default=None)
     cards = [x for x in lay if x["layer"] == "object_cards"]
     out["identity complete"] = next((x["written_s"] for x in cards if other is not None and x["queued_s"] >= other - .01), None)
-    dens = max([m[k] for k in ("identity_gemini_densify_put", "identity_gemini_densify_left_put") if k in m], default=None)
+    dens = max([m[k] for k in ("identity_gemini_densify_put", "identity_gemini_densify_left_put", "identity_qwen_densify_put") if k in m], default=None)
     out["densify names"] = next((x["written_s"] for x in cards if dens is not None and x["queued_s"] >= dens - .01), None)
     out["cards v3"] = next((x["written_s"] for x in cards if x["queued_s"] >= (st.get("cards.v3") or {}).get("end_s", 1e9) - .01), None)  # patch versions count puts
     out["final judgements"] = max((x["written_s"] for x in lay if x["layer"] == "judgements"), default=None)

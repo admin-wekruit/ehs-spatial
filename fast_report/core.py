@@ -994,9 +994,11 @@ def analyse(m, mp4, opts, clock, writer, log):
     # ---------- click MVP: object cards (section 4) and the judgement hook (B's fast_report.judge, when present) ----------
     cards_out, cards_ready, pick_ready, judge_futures, cards_lock = {}, threading.Event(), threading.Event(), [], threading.Lock()
     judge_lock = threading.Lock()
-    facts_done = {"identity": threading.Event(), "judge3": threading.Event()}  # the decider's last work: the splat waits for it (mvp2)
-    if not opts.get("densify", True) or not objects:
-        facts_done["judge3"].set()
+    facts_done = {"identity": threading.Event(), "judge3": threading.Event(), "densify_names": threading.Event()}  # the decider's last
+    if not opts.get("densify", True) or not objects:  # work: the splat waits for it (mvp2); densify_names: the Qwen decider on
+        facts_done["judge3"].set()                     # densify's objects (mvp3 integrate, no Gemini namer)
+    if not opts.get("densify", True) or not objects or opts.get("namer") is not None:
+        facts_done["densify_names"].set()
     if not objects:
         facts_done["identity"].set()
     carried = {}  # the judge's VLM answers by (row, question, keyframes), shared by its runs on cards v1 and v3
@@ -1280,14 +1282,15 @@ def analyse(m, mp4, opts, clock, writer, log):
         rec.update(named=len(got), late_requests=sorted(pending), resent=sorted(again))
         return got, rec
 
-    def ask_identity(card_list, which="ehs"):
+    def ask_identity(card_list, which="ehs", key="outlines", tag=""):
         """Section 4.7 step 3 through B's decider (vlm.options + judge.som, when both exist): the best view with the outlines
-        as numbered white-over-black marks, the subject [1]. -> the number of questions asked."""
+        as numbered white-over-black marks, the subject [1]. key: the outlines the views come from (densify's objects are only
+        on 'outlines_v2'); tag: the stage's suffix. -> the number of questions asked."""
         try:
             from fast_report import judge
         except ImportError:
             return 0
-        cal, view = cards_calibration(), views_for_identity()
+        cal, view = cards_calibration(), views_for_identity(key)
 
         def build(c):  # CPU: the set-of-marks pair and the lettered prompt
             v = view(c)
@@ -1306,7 +1309,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         todo = [c for c in card_list if to_name(c, which)]
         if not todo:
             return 0
-        with clock.stage(f"vlm.identity.{which}", n={"objects": len(todo)}):
+        with clock.stage(f"vlm.identity.{which}{tag}", n={"objects": len(todo)}):
             with ThreadPoolExecutor(8) as pool:  # never the core's cpu_pool: its threads would wait on vLLM (the judge's queue)
                 built = list(pool.map(build, todo))
             asked = []
@@ -1584,9 +1587,29 @@ def analyse(m, mp4, opts, clock, writer, log):
         """mvp2/identity: densify's own objects named too (a second, smaller pass). mvp3/speed: asked as soon as outlines v2 and
         its pick counts exist, beside the objects/pick puts and cards v3 (ME340 run 007: v3 was put at 68 s and the requests went
         out at 69 s; outlines v2 existed at 63 s). An object that cards v3 merges away is asked too; its answer is dropped."""
-        if opts.get("namer") is None:
-            return
         from concurrent.futures import Future
+        if opts.get("namer") is None:  # mvp3 integrate: no Gemini: densify's own objects kept their SAM 3 word (ME340 held-out
+            namer["densify"] = fut = Future()  # items: 13 of 18 such names wrong); the Qwen decider names them once cards v3 is out
+
+            def qwen_densified():
+                try:
+                    if not v3["done"].wait(240):
+                        return fut.set_result({"namer": "qwen decider", "error": "no cards v3"})
+                    facts_done["identity"].wait(180)  # after the first pass's decider questions (one queue)
+                    with cards_lock:
+                        known = set(cards_out.get("identities") or {})
+                        rest = [copy.deepcopy(c) for c in cards_out["v3"]["cards"] if c["kind"] == "object" and c["id"] not in known]
+                    n = sum(ask_identity(rest, which, "outlines_v2", "_densify") for which in ("ehs", "other"))
+                    if n:
+                        publish({c["id"]: c["identity"] for c in rest}, "qwen_densify")
+                    fut.set_result({"namer": "qwen decider (densify's objects)", "objects": len(rest), "asked": n})
+                except Exception:  # noqa: BLE001  those objects keep their detected words
+                    import traceback
+                    fut.set_result({"error": traceback.format_exc()[-2000:]})
+                finally:
+                    facts_done["densify_names"].set()
+            threading.Thread(target=qwen_densified, name="namer-densify-qwen", daemon=True).start()
+            return
         namer["densify"] = fut = Future()
         known = lambda: cards_out.get("identities", {})  # noqa: E731
 
