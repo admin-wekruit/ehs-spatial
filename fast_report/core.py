@@ -239,10 +239,16 @@ def person_masks(person, frames_local):
     return masks
 
 
+PEOPLE_GATE_MPS = 12.  # mvp2: X12's association gate at 5 fps (4 m/s split fast movers; 12 m/s cost nothing on walkers, VERIFY.md)
+PEOPLE_UP_DEG = 2.  # the up direction's u for people (the cards use the walls' plumb p90, not known yet here: ME340 read 1-2 deg)
+
+
 def people_shot(si, keys, fps, g, depth_m, c2w_m, masks, plane, mpu):
-    """PeopleLoop (the live rules, video.judge_frame) over the shot's 5 fps keyframes: tracks and rule rows."""
+    """PeopleLoop (the live rules, video.judge_frame) over the shot's 5 fps keyframes: tracks and rule rows. mvp2 (R4): each
+    SAM 3 person mask is measured first (cards.person_geometry: feet and head along their rays at the body's range); a mask
+    that cannot be a person (a picture or print: cards.PERSON_H_M rules) never reaches the loop and is returned in `rejected`."""
     from ehs_spatial.live_people import PeopleLoop
-    from fast_report import judge
+    from fast_report import cards
     if plane:
         up, p0 = plane["normal"].cpu().numpy().astype(float), plane["point"].cpu().numpy().astype(float) * mpu
         scale = {"status": "model_estimated", "nativeToMeters": mpu,
@@ -252,18 +258,24 @@ def people_shot(si, keys, fps, g, depth_m, c2w_m, masks, plane, mpu):
     rgb = (g["colors"] * 255).clamp(0, 255).byte().cpu().numpy()
     depth = depth_m.cpu().numpy()
     K, c2w = g["K"].cpu().numpy().astype(float), c2w_m.cpu().numpy().astype(float)
+    u_floor = plane["residual_p90_units"] * mpu if plane else .02
+    body = {i: cards.person_geometry(mk, depth[j], K[j], c2w[j], up, p0, u_floor, PEOPLE_UP_DEG) if plane else None
+            for j, kept in masks.items() for mk, _, i in kept}
+    rejected = [{"t": round(keys[j] / fps, 4), "frame": int(keys[j]), "source": f"sam3-person-{i}", "score": round(sc, 3), "reason": body[i]["reason"],
+                 "geometry": body[i]} for j, kept in masks.items() for _, sc, i in kept if body[i] and not body[i]["plausible"]]
+    out_ = {r["source"] for r in rejected}
 
     def detector(frame):
-        return [{"label": "person", "source": f"sam3-person-{j}", "score": s, "mask": m} for m, s, j in masks.get(frame["local"], [])]
-    loop = PeopleLoop(p0, up, scale, detector, None, world_epoch=si)
+        return [{"label": "person", "source": f"sam3-person-{j}", "score": s, "mask": m} for m, s, j in masks.get(frame["local"], [])
+                if f"sam3-person-{j}" not in out_]
+    loop = PeopleLoop(p0, up, scale, detector, None, world_epoch=si, max_speed_mps=PEOPLE_GATE_MPS)
     rows, findings = [], []
     for j, f in enumerate(keys):
         r, fnd = loop.step({"t": f / fps, "frame": int(f), "local": j, "streamGap": None, "rgb": rgb[j], "depth": depth[j], "K": K[j],
                             "cameraToWorld": c2w[j], "trackingState": "normal", "trackingStateReason": None, "worldOriginEpoch": si})
-        by_source = {f"sam3-person-{i}": mk for mk, _, i in masks.get(j, [])}
         for row in r:  # MVP J3a: the surface the feet rest on (footWorld is on the floor plane by construction)
-            mk = by_source.get(row.get("source"))
-            row["footSurface"] = judge.foot_surface(mk, depth[j], K[j], c2w[j], up, p0) if mk is not None and plane else None
+            src = row.get("source") or ""
+            row["footSurface"] = body.get(int(src.rsplit("-", 1)[1])) if src.startswith("sam3-person-") else None
         rows += r
         findings += fnd
     tracks = {}
@@ -274,7 +286,7 @@ def people_shot(si, keys, fps, g, depth_m, c2w_m, masks, plane, mpu):
             tracks.setdefault(r["track"], []).append({"t": r["t"], "frame": r["frame"], "xyz": np.round(ground, 3).tolist(),
                                                       "foot": r["footWorld"], "accepted_foot": r["accepted"], "score": r.get("score"),
                                                       "foot_surface": r.get("footSurface")})
-    return tracks, rows, findings, up
+    return tracks, rows, findings, up, rejected
 
 
 def object_points(pts, frame_of_lifted, conf, cap=20000):
@@ -303,6 +315,13 @@ def object_points(pts, frame_of_lifted, conf, cap=20000):
         v = out[oi_m[j]]["views"].setdefault(int(fm[j]), [0, False, False, False, False])
         v[0] += int(px[j])
         v[1:] = [a or bool(b) for a, b in zip(v[1:], bd[j])]
+    for name, (m, w) in (pts.get("edge") or {}).items():  # mvp2: the un-eroded top / bottom edges (segment.edges), all kept
+        oi = want[lab[m]]
+        k = oi >= 0
+        oi, w, f = oi[k].cpu().numpy(), w[k].cpu().numpy(), frame_of_lifted[m[k]].cpu().numpy().astype(np.int32)
+        order = np.argsort(oi, kind="stable")
+        for i, ix in enumerate(np.split(order, np.cumsum(np.bincount(oi, minlength=len(conf)))[:-1])):
+            out[i][f"{name}_world"], out[i][f"{name}_frame"] = w[ix], f[ix]
     return out
 
 
@@ -336,7 +355,9 @@ def merge_points(parts, cap=20000):
             a = views.setdefault(v, [0, False, False, False, False])
             a[0] += m[0]
             a[1:] = [x or bool(y) for x, y in zip(a[1:], m[1:])]
-    return {"world": world, "frame": frame, "z": z, "sample_ratio": ratio, "views": views}
+    edge = {f"{e}_{k}": np.concatenate([p[f"{e}_{k}"] for p in parts if f"{e}_{k}" in p] or [np.zeros((0, 3) if k == "world" else 0)])
+            for e in ("top", "bottom") for k in ("world", "frame")}
+    return {"world": world, "frame": frame, "z": z, "sample_ratio": ratio, "views": views, **edge}
 
 
 def cards_calibration():
@@ -683,18 +704,22 @@ def analyse(m, mp4, opts, clock, writer, log):
             clock.mark("room_full_put")
 
     def people_tracks():
-        tracks_out, rules_out, per_shot = [], [], []
+        tracks_out, rules_out, per_shot, rejected_out = [], [], [], []
         for si, (gg, g) in enumerate(zip(geo, shots_gpu)):
             pos = gg["pos"]
             with clock.stage(f"people.shot{si}", n={"keyframes": len(pos)}):
                 local = {q: j for j, q in enumerate(pos)}
                 pm = person_masks(person, local)
-                tracks, rows, findings, up = people_shot(si, [keys[q] for q in pos], fps, g, gg["depth_m"], gg["c2w_m"], pm, gg["plane"], gg["mpu"])
+                tracks, rows, findings, up, rejected = people_shot(si, [keys[q] for q in pos], fps, g, gg["depth_m"], gg["c2w_m"], pm, gg["plane"],
+                                                                    gg["mpu"])
                 for j, kept in pm.items():  # the pick layer's people: each kept mask with its track (section 3.2)
                     person_kept[pos[j]] = [(gi, mk) for mk, _, gi in kept]
                 for r in rows:
                     if (r.get("source") or "").startswith("sam3-person-"):
                         person_entity[int(r["source"].rsplit("-", 1)[1])] = f"person:{si}-{r['track']}" if r["track"] else "person:untracked"
+                for r in rejected:  # mvp2: a picture of a person clicks through to the card that says why it is none
+                    person_entity[int(r["source"].rsplit("-", 1)[1])] = "person:not-a-person"
+                rejected_out.extend({**r, "shot": si} for r in rejected)
                 for tid, pts in tracks.items():
                     rb = ribbon([q["xyz"] for q in pts], up)
                     if rb is not None:
@@ -704,7 +729,8 @@ def analyse(m, mp4, opts, clock, writer, log):
                            for t, pts in tracks.items()]
             rules_out += [{**f, "shot": si} for f in findings]
             per_shot.append({"index": si, "frame_id": f"shot-{si}", "detections": len(rows), "tracks": len(tracks)})
-        results["people"] = {"tracks": tracks_out, "rules": rules_out, "shots": per_shot, "note": "the fast path tracks people only: no non-person movers"}
+        results["people"] = {"tracks": tracks_out, "rules": rules_out, "shots": per_shot, "rejected": rejected_out,
+                             "association_gate_mps": PEOPLE_GATE_MPS, "note": "the fast path tracks people only: no non-person movers"}
         writer.put("people", results["people"], people_blobs, "observed+estimated", [*lab, "rules that need metres say NEEDS_REVIEW: the scale is not measured"])
         clock.mark("geometry_layers_put")
 
@@ -810,13 +836,16 @@ def analyse(m, mp4, opts, clock, writer, log):
                          4: "after densify, identity from the decider"}.get(version),
                 "calibration": cards_calibration(), "shots": out["shots"], "aliases": out["aliases"], "stats": out["stats"]}
         body = json.dumps(out["cards"], separators=(",", ":"), default=layers._plain).encode()
-        blobs = None
+        blobs = {}
         if len(body) < 1 << 20:
             data["cards"] = out["cards"]
         else:
             data["cards"] = "blob"
-            blobs = {"cards": (body, {"mediaType": "application/json", "format": "panoptes-object-cards-v1 cards"})}
-        writer.put("object_cards", data, blobs, "estimated+inferred", card_labels)
+            blobs["cards"] = (body, {"mediaType": "application/json", "format": "panoptes-object-cards-v1 cards"})
+        if out.get("diagnostics"):  # mvp2: the tops' edge-vs-points record per object (evaluation only; never shown)
+            blobs["diagnostics"] = (json.dumps(out["diagnostics"], separators=(",", ":"), default=layers._plain).encode(),
+                                    {"mediaType": "application/json", "format": "panoptes-object-cards diagnostics"})
+        writer.put("object_cards", data, blobs or None, "estimated+inferred", card_labels)
         clock.mark(f"cards_v{version}_put")
 
     def cards_job():
@@ -1453,11 +1482,13 @@ def self_check():
         return
     # the cards' point hand-off: components by label (a sentinel label is skipped), per-view pixels and edge flags
     p = {"world": torch.rand(10, 3), "mid": torch.tensor([0, 0, 1, 1, 1, 2, 2, 2, 2, 2]), "z": torch.rand(10), "pixels": torch.tensor([5, 6, 7]),
-         "border": torch.tensor([[1, 0, 0, 0], [0, 0, 0, 0], [0, 1, 0, 0]], dtype=torch.bool), "label": torch.tensor([4, 9, 2])}
+         "border": torch.tensor([[1, 0, 0, 0], [0, 0, 0, 0], [0, 1, 0, 0]], dtype=torch.bool), "label": torch.tensor([4, 9, 2]),
+         "edge": {"top": (torch.tensor([0, 2, 2]), torch.rand(3, 3)), "bottom": (torch.tensor([1]), torch.rand(1, 3))}}
     out = object_points(p, torch.tensor([0, 1, 1]), np.array([2, 4]))
     assert [len(o["world"]) for o in out] == [5, 2] and out[0]["views"] == {1: [7, False, True, False, False]}
+    assert [len(o["top_world"]) for o in out] == [2, 1] and [len(o["bottom_world"]) for o in out] == [0, 0] and out[0]["top_frame"].tolist() == [1, 1]
     u, owner = object_voxels((torch.tensor([0, 0, 1, 2, 2]), torch.tensor([10, 11, 11, 30, 31])), np.array([0, 2]), 7)
     assert u.tolist() == [10, 11, 30, 31] and owner.tolist() == [7, 7, 8, 8]  # component 1 is not an object
     mp = merge_points(out, cap=4)
-    assert len(mp["world"]) == 4 and mp["views"][1][0] == 7 and mp["views"][0][1] is True
+    assert len(mp["world"]) == 4 and mp["views"][1][0] == 7 and mp["views"][0][1] is True and len(mp["top_world"]) == 3
     print(f"core self-check ok: chunked cut measure == sequential (chunks 8/{CHUNK}/64), ribbon, GLB points, object points, voxel owners")

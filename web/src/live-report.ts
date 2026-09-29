@@ -241,16 +241,23 @@ export function unknownRegion(pick: Pick, cameras: any, cardsLayer: any, t: numb
     return v && row >= 0 && col >= 0 && row < g.h && col < g.w ? unproject(cam, (col + .5) * W / g.w, (row + .5) * H / g.h, v / 1000) : null;
   };
   const [l, r, u, d] = [cellPoint(hit.row, hit.col - 1), cellPoint(hit.row, hit.col + 1), cellPoint(hit.row - 1, hit.col), cellPoint(hit.row + 1, hit.col)];
-  let surface: { kind: string; angle_deg?: number } = { kind: "no surface estimate (a neighbouring cell has no depth)" };
+  // mvp2 (R7): a class only, never a number: one keyframe's 3x3 depth cells are one view (the policy wants two agreeing
+  // view sets for an angle), and the classes' 15 / 75 degree bands are wider than its depth noise near the camera
+  let surface: { kind: string } = { kind: "no surface estimate (a neighbouring cell has no depth)" };
   if (l && r && u && d) {
     const n = unit(cross(sub(r, l), sub(d, u))), tilt = Math.acos(Math.min(1, Math.abs(n.reduce((s, v, i) => s + v * F.z[i], 0)))) * 180 / Math.PI;
-    surface = tilt <= 15 ? { kind: height < .1 ? "floor" : "horizontal surface", angle_deg: tilt } : tilt >= 75 ? { kind: "vertical surface", angle_deg: tilt } : { kind: "sloped surface", angle_deg: tilt };
+    surface = tilt <= 15 ? { kind: height < .1 ? "floor" : "horizontal surface" } : tilt >= 75 ? { kind: "vertical surface" } : { kind: "sloped surface" };
   }
   const here = toFloor(F, P).slice(0, 2);
-  const nearest = (cardsLayer?.cards || []).filter((k: any) => k.shot === camShot.index && k.kind === "object" && k.physical?.size_check?.status !== "implausible")
+  const nearest: any = (cardsLayer?.cards || []).filter((k: any) => k.shot === camShot.index && k.kind === "object" && k.physical?.size_check?.status !== "implausible")
     .map((k: any) => { const fp = k.physical?.footprint_xy, poly = Array.isArray(fp) ? fp : fp?.value;  // A: {value: [[x, y], ...], unit, frame}
-      return { id: k.id, name: k.identity?.name, d: poly?.length ? footprintDistance(here, poly) : Array.isArray(k.physical?.position_xy?.value) ? norm(sub(here, k.physical.position_xy.value)) : Infinity }; })
+      return { id: k.id, name: k.identity?.name, d: poly?.length ? footprintDistance(here, poly) : Array.isArray(k.physical?.position_xy?.value) ? norm(sub(here, k.physical.position_xy.value)) : Infinity,
+               uFoot: (poly?.length ? fp?.u : k.physical?.position_xy?.u) ?? 0 }; })
     .filter((k: any) => Number.isFinite(k.d)).sort((a: any, b: any) => a.d - b.d)[0] || null;
+  if (nearest) {  // mvp2 (R7): the distance's u: this point's depth (horizontal share), the footprint's own u, the 20% scale term
+    const hshare = Math.sqrt(Math.max(0, 1 - vshare * vshare)), ud = .05 * distance * hshare;
+    nearest.distance = { value: nearest.d, u: Math.hypot(ud, nearest.uFoot, .2 * nearest.d), parts: { depth: ud, footprint: nearest.uFoot, scale: .2 * nearest.d } };
+  }
   return {
     status: "depth" as const, t: frame.t, x, y, frame: frame.frame, shot: camShot.index, surface, nearest, point_floor: toFloor(F, P),
     distance: { value: distance, u: Math.hypot(.05 * distance, .2 * distance), parts: { depth: .05 * distance, scale: .2 * distance } },

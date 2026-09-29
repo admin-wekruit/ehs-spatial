@@ -115,9 +115,12 @@ class PeopleLoop:
     (track rows, finding rows); findings are emitted when a rule's verdict changes."""
 
     def __init__(self, floor_point, floor_up, scale_record: dict, detector: Callable,
-                 zone: Polygon | None = None, person_labels=("person",), world_epoch: int = 0) -> None:
+                 zone: Polygon | None = None, person_labels=("person",), world_epoch: int = 0,
+                 max_speed_mps: float = MAX_HUMAN_SPEED_MPS) -> None:
         """floor_point, floor_up and zone are in world metres of world_epoch, the frame cameraToWorld maps into;
-        scale_record says whether those metres were measured (device) or assumed, for the scale gate."""
+        scale_record says whether those metres were measured (device) or assumed, for the scale gate; max_speed_mps is the
+        association gate (a detection further than 2 bands + this speed x the time since a track was seen starts a new one)."""
+        self.max_speed_mps = max_speed_mps
         self.p0 = np.asarray(floor_point, float)
         self.up = np.asarray(floor_up, float) / np.linalg.norm(floor_up)
         axis = np.eye(3)[np.argmin(np.abs(self.up))]
@@ -150,7 +153,7 @@ class PeopleLoop:
             if track["kind"] != kind or track_id in taken:
                 continue
             distance = np.hypot(xy[0] - track["last_xy"][0], xy[1] - track["last_xy"][1])
-            if distance <= 2 * BAND_M + MAX_HUMAN_SPEED_MPS * (t - track["last_t"]) and (
+            if distance <= 2 * BAND_M + self.max_speed_mps * (t - track["last_t"]) and (
                     best_distance is None or distance < best_distance):
                 best, best_distance = track_id, distance
         if best is None:

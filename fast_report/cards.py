@@ -25,6 +25,12 @@ AGREE_DEG, PLUMB_MAX_DEG, NEAR_VERTICAL_DEG = 3., 2., 20.  # section 4.5
 FIT_MAX_DEG = 15.  # integration: a fit term above this is no angle (bulky objects' principal axes read 70 +- 43 deg on ME340)
 UP_MIN_DEG = 1.  # integration: the up direction's floor (the walls' p90 plumb reading when larger)
 MIN_PX, GAP_S, AFTER_KEYS, PLACE_POINTS = 25, .5, 24, 400  # section 4.6
+# mvp2 (R3): tops / bases from the un-eroded mask edges (segment.edges): p90 of the top edges (p10 of the bottom ones) over the
+# views that do not look onto that face (camera height <= top + LOOK_MARGIN_M; >= base - LOOK_MARGIN_M): there the silhouette's
+# boundary is the face's far edge and the rim would overstate it by its pixel height. Edges further than 2 eps from the main
+# cluster are dropped with the points they extend; fewer than EDGE_MIN edges leave the p98 / p2 of the points.
+LOOK_MARGIN_M, EDGE_MIN = .3, 5
+LONG_MIN_M, LONG_RATIO, LONG_AGREE, SHORT_AGREE = 1., 2., .25, .5  # mvp2 (R5): long objects seen in parts (long_object)
 STRIDE = 2  # the lift's pixel grid over DA3's 504 x 280
 SCALE = "estimated (floor plane + assumed 1.6 m camera height)"
 SCALE_FREE = "scale-free (angle)"
@@ -403,7 +409,19 @@ def prepare(obj, fr, fx):
     z_med = float(np.median(obj["z"])) if len(obj.get("z", [])) else 4.
     eps = max(EPS_MIN, 2 * STRIDE * z_med / fx)
     keep = main_cluster(P, eps, max(3, int(round(MIN_POINTS * obj.get("sample_ratio", 1.)))))
-    return {"P": P[keep], "frame": f[keep], "dropped_share": round(1 - float(keep.mean()), 4), "eps": eps, "z_med": z_med}
+    out = {"P": P[keep], "frame": f[keep], "dropped_share": round(1 - float(keep.mean()), 4), "eps": eps, "z_med": z_med}
+    tree = None
+    for e in ("top", "bottom"):  # mvp2: the un-eroded edges that extend kept (main-cluster) points
+        w = obj.get(f"{e}_world")
+        if w is None or not len(w) or not keep.any():
+            continue
+        if tree is None:
+            from scipy.spatial import cKDTree
+            tree = cKDTree(out["P"])
+        E = to_floor(w, fr)
+        ok = np.isfinite(tree.query(E, distance_upper_bound=2 * eps)[0])
+        out[e] = (E[ok], np.asarray(obj[f"{e}_frame"])[ok])
+    return out
 
 
 def merge(objs, shot_boxes):
@@ -496,6 +514,10 @@ def cards_chunk(shots, items, k):
                 s[key] = _arr(s[key])
         joined = {"world": np.concatenate([p["world"] for p in pts]), "frame": np.concatenate([p["frame"] for p in pts]),
                   "z": np.concatenate([p["z"] for p in pts]), "sample_ratio": float(np.mean([p.get("sample_ratio", 1.) for p in pts]))}
+        for e in ("top_world", "top_frame", "bottom_world", "bottom_frame"):
+            got = [np.asarray(p[e]) for p in pts if p.get(e) is not None and len(p[e])]
+            if got:
+                joined[e] = np.concatenate(got)
         x = prepare(joined, s["frame"], s["fx"])
         x["views"] = sorted(int(v) for v in np.unique(x["frame"]))
         x["meta"] = {}
@@ -599,7 +621,8 @@ def build(inp, pool=None, chunks=12, shm_dir=None):
         for path in paths:
             os.unlink(path)
     t_cards = time.perf_counter()
-    cards += people_cards(inp.get("people"), shots, cards)
+    rims = {c["id"]: c.pop("_diag") for c in cards if "_diag" in c}
+    cards += people_cards(inp.get("people"), shots, cards, k)
     shot_rows = [{"index": si, "floor_frame": {"origin_m": np.round(s["frame"]["origin"], 3).tolist(), "x": np.round(s["frame"]["R"][0], 5).tolist(),
                                                "z": np.round(s["frame"]["R"][2], 5).tolist()},
                   "u_pose_m": round(s["u_pose_m"], 3), "view_centroid_spread_m": s["view_centroid_spread_m"], "u_floor_m": s.get("u_floor_m"),
@@ -617,7 +640,7 @@ def build(inp, pool=None, chunks=12, shm_dir=None):
              "s": {"merge": round(t_merge - t0, 3), "shots": round(t_shots - t_merge, 3), "wait_counts": round(t_counts - t_shots, 3),
                    "cards": round(t_cards - t_counts, 3),
                    "people": round(time.perf_counter() - t_cards, 3)}}
-    return {"cards": cards, "shots": shot_rows, "aliases": aliases, "stats": stats,
+    return {"cards": cards, "shots": shot_rows, "aliases": aliases, "stats": stats, "diagnostics": {"rim": rims},
             "walked": {si: {kk: np.round(v, 3).tolist() for kk, v in s["walked"].items()} for si, s in shots.items()}}
 
 
@@ -634,6 +657,47 @@ def path_distance(poly_xy, path):
     from shapely.geometry import LineString, Point, Polygon
     g = Point(path[0]) if len(path) == 1 else LineString(path)
     return float(Polygon(poly_xy).distance(g)) if len(poly_xy) >= 3 else float(Point(poly_xy[0]).distance(g))
+
+
+def long_object(phys, pooled, subs, wi, di, lr_cut, depth_seen, res, k):
+    """mvp2 (R5): a long object (footprint long side >= LONG_MIN_M and >= LONG_RATIO x the short one) is mostly seen in parts:
+    walked past, in and out of the frame. Its long side becomes 'visible length >= x' (u from depth, resolution and scale:
+    the view subsets saw different parts, so their spread is coverage, not error) unless it lies across the views, was never
+    cut by the frame edge and the subsets agree; its short side is 'not measurable' when the subsets disagree by more than
+    half of it (a Walmart gondola read 'width 0.42 +- 0.42 m' from subsets 0.26 / 0.11 / 0.41). -> True when seen in parts."""
+    sides = pooled["sides"]
+    li = int(np.argmax(sides))
+    L, S = float(sides[li]), float(sides[1 - li])
+    if L < LONG_MIN_M or L < LONG_RATIO * S:
+        return False
+    along = subs(lambda q: float(q["box"]["sides"][li]))
+    whole = li == wi and not lr_cut and along is not None and spread(along) <= LONG_AGREE * L
+    if not whole:
+        phys["visible_length"] = value(L, {"depth": DEPTH_REL * L, "resolution": res, "scale": SCALE_REL * L}, "extent", k, None, views_term=False,
+                                       status="at least", reason="a long object seen in parts: the length seen (its ends may lie beyond the views)")
+        lname = "width" if li == wi else "depth"
+        if "value" in phys.get(lname, {}):
+            phys[lname].update(status="at least", reason="a long object seen in parts: its visible length")
+    short = subs(lambda q: float(q["box"]["sides"][1 - li]))
+    name = "width" if li == di else "depth"
+    if short is not None and spread(short) > SHORT_AGREE * S and "value" in phys.get(name, {}):
+        phys[name] = {"status": "not measurable", "reason": "view sets disagree (" + " / ".join(f"{v:.2f}" for v in short) + " m): a long object seen in parts"}
+    if not whole and "value" in phys.get("footprint_m2", {}):
+        phys["footprint_m2"].update(status="at least", reason="a long object seen in parts: visible length x width")
+    return not whole
+
+
+def rim(x, vs, cam_h, ref, which):
+    """mvp2 (R3): the un-eroded edges' height over views vs: p90 of the top edges (p10 of the bottom edges) from the views
+    whose camera does not look onto that face (camera height <= ref + LOOK_MARGIN_M for the top, >= ref - LOOK_MARGIN_M for
+    the base). None with fewer than EDGE_MIN edges."""
+    if which not in x:
+        return None
+    E, f = x[which]
+    ok = np.isin(f, vs) & ((cam_h[f] <= ref + LOOK_MARGIN_M) if which == "top" else (cam_h[f] >= ref - LOOK_MARGIN_M))
+    if ok.sum() < EDGE_MIN:
+        return None
+    return float(np.percentile(E[ok, 2], 90 if which == "top" else 10))
 
 
 def object_card(o, x, s, k, marking, merged_from, counts):
@@ -678,6 +742,21 @@ def object_card(o, x, s, k, marking, merged_from, counts):
         sub.append({"views": b, "box": bx, "orient": orient(Q, s.get("mpu", 1.)), "centroid": np.median(Q, 0)})
     if len(sub) < 2:
         sub = []
+    # mvp2 (R3): the top / base from the un-eroded edges where they apply (the p98 / p2 of the cleaned points stay otherwise);
+    # the per-view pairs go to the layer's diagnostics (the distance test: a shaved rim reads lower the farther the view)
+    cam_h = cam_f[:, 2]
+    diag = {"top_p98": round(float(pooled["top"]), 4), "base_p2": round(float(pooled["base"]), 4), "z_med": round(z_med, 3), "views": []}
+    for b, vs in [(pooled, views)] + [(q["box"], q["views"]) for q in sub]:
+        t, bo = rim(x, vs, cam_h, b["top"], "top"), rim(x, vs, cam_h, b["base"], "bottom")
+        b["top"], b["base"] = max(b["top"], t if t is not None else -np.inf), min(b["base"], bo if bo is not None else np.inf)
+    diag.update(top=round(float(pooled["top"]), 4), base=round(float(pooled["base"]), 4))
+    if len(views) >= 4:
+        for v in views[:: max(1, len(views) // 12)]:
+            Pv = P[frame == v, 2]
+            if len(Pv) >= 30 and not meta.get(v, [0, 0])[1]:
+                p98 = float(np.percentile(Pv, 98))
+                r = rim(x, [v], cam_h, p98, "top")
+                diag["views"].append([round(dist[v], 3), round(p98, 4), None if r is None else round(r, 4)])
     u_floor = s.get("u_floor_m") or 0.
     up_rad = np.tan(np.radians(max(UP_MIN_DEG, s.get("plumb_u_deg") or s.get("plumb_deg") or 2.)))
     med = lambda f: float(np.median([f(q) for q in sub])) if sub else None  # noqa: E731
@@ -689,7 +768,7 @@ def object_card(o, x, s, k, marking, merged_from, counts):
         v = med(fn) if sub else pooled_v
         # integration: 'up' = the floor normal's own uncertainty (the walls' p90 plumb reading) x the horizontal distance to the
         # cameras; without it heights covered 72% of the warm-vs-shifted differences on ME340 (89% with it)
-        parts = {"views": spread(subs(fn)) if sub else None, "depth": DEPTH_REL * abs(v - cam_med_f[2]), "floor": u_floor,
+        parts = {"views": spread(subs(fn)) if sub else None, "depth": DEPTH_REL * abs(v - cam_med_f[2]), "floor": u_floor, "edge": z_med / s["fx"],
                  "up": up_rad * float(np.linalg.norm(centroid[:2] - cam_med_f[:2])), "scale": SCALE_REL * abs(v)}
         rec = value(v, parts, "height", k, subs(fn))
         if cut:
@@ -710,7 +789,7 @@ def object_card(o, x, s, k, marking, merged_from, counts):
         if name == "width" and lr_cut:
             rec.update(status="at least", reason="cut by the frame edge in every view")
         if not seen:
-            rec = {"status": "not observed", "reason": f"seen from one side (azimuth spread {az_spread:.0f} deg)", "visible_m": round(v, 3)}
+            rec = {"status": "not observed", "reason": f"seen from one side (azimuth spread {az_spread:.0f} deg)"}
         phys[name] = rec
     fp = float(pooled["sides"][0] * pooled["sides"][1])
     fp_fn = lambda q: float(q["box"]["sides"][0] * q["box"]["sides"][1])  # noqa: E731
@@ -718,6 +797,7 @@ def object_card(o, x, s, k, marking, merged_from, counts):
                                  "extent", k, subs(fp_fn), unit="m2", note="pooled over every view; subsets give the spread")
     if not depth_seen:
         phys["footprint_m2"].update(status="at least", reason="depth not observed: width x visible depth")
+    long_part = long_object(phys, pooled, subs, wi, di, lr_cut, depth_seen, res, k)
     corners = corners_xy(pooled, axes)
     phys["footprint_xy"] = {"value": np.round(corners, 3).tolist(), "unit": "m", "frame": f"floor frame of shot {o['shot']}", "scale": SCALE}
     pc_fn = lambda q: q["box"]["centre_xy"]  # noqa: E731
@@ -736,7 +816,8 @@ def object_card(o, x, s, k, marking, merged_from, counts):
         phys["nearest_walked_path"] = value(best[1], {"views": up.get("views"), "depth": up.get("depth"), "pose": up.get("pose"),
                                                       "scale": SCALE_REL * best[1]}, "position", k, None, path=best[0], n_subsets=len(sub) or 1,
                                             note="footprint to the nearest walked path (camera or person) on the floor")
-    phys["walkway"] = "floor marking detected in this shot (not interpreted)" if marking else "no marked walkway detected"
+    phys["walkway"] = ({"status": "floor marking detected in this shot", "reason": "not interpreted as a walkway"} if marking else
+                       {"status": "no marked walkway detected", "reason": "no floor-marking object in this shot"})
     # angles (section 4.5)
     for name in ("principal_axis_tilt_deg", "planar_slope_deg"):
         phys[name] = angle(name, sub, s, k)
@@ -746,7 +827,7 @@ def object_card(o, x, s, k, marking, merged_from, counts):
             phys[name] = {"status": "not measurable", "reason": "deformable class: no shape claim"}
     longest = float(max(pooled["sides"].max(), h))
     sc = size_check(o.get("word"), longest, float(pooled["sides"].max()), h, pooled["base"],
-                    not (top_cut or bottom_cut or lr_cut) and depth_seen)
+                    not (top_cut or bottom_cut or lr_cut or long_part) and depth_seen)
     fragmented = x["dropped_share"] > 1 - MAIN_SHARE
     phys["size_check"] = sc
     phys["dropped_share"] = x["dropped_share"]
@@ -754,6 +835,15 @@ def object_card(o, x, s, k, marking, merged_from, counts):
     phys["level"] = "coarse"
     phys["box"], lo, hi = box_world(pooled, axes, s["frame"])
     phys["box_min_m"], phys["box_max_m"] = np.round(lo, 3).tolist(), np.round(hi, 3).tolist()
+    # mvp2 (R7): the drawn box and the footprint hull carry their u too (the extents' and the position's model terms)
+    ext_u = [k.get("extent", 1.) * float(np.sqrt((DEPTH_REL * v) ** 2 + res ** 2 + (SCALE_REL * v) ** 2 + ((spread(f) if f else 0.) or 0.) ** 2))
+             for v, f in zip(phys["box"]["size_m"], [subs(lambda q, a=a: float(q["box"]["sides"][a])) for a in (0, 1)] +
+                             [subs(lambda q: q["box"]["top"] - q["box"]["base"])])]
+    phys["box"].update(u_m=np.round(ext_u, 3).tolist(), center_u_m=round(float(np.hypot(phys["position_xy"]["u"], phys["top_above_floor"]["u"] / 2)), 3),
+                       scale=SCALE, level="coarse", note="the drawn box (box_min_m / box_max_m: its axis-aligned bounds, same u): display geometry")
+    phys["footprint_xy"].update(u=round(float(np.hypot(phys["position_xy"]["u"], max(ext_u[:2]) / 2)), 3), level="coarse",
+                                note="corners of the footprint rectangle; each corner +- u")
+    sc.update(measured_u_m=round(max(ext_u), 3), scale=SCALE)
     review = []
     if sc["status"] == "implausible":
         review.append(sc["reason"])
@@ -761,7 +851,7 @@ def object_card(o, x, s, k, marking, merged_from, counts):
         review.append(f"fragmented support (main cluster {1 - x['dropped_share']:.0%} of the points)")
     if review:
         phys["fragmented_support"] = fragmented
-        for name in ("top_above_floor", "base_above_floor", "height", "width", "depth", "footprint_m2", "position_xy", "nearest_walked_path",
+        for name in ("top_above_floor", "base_above_floor", "height", "width", "depth", "visible_length", "footprint_m2", "position_xy", "nearest_walked_path",
                      "principal_axis_tilt_deg", "planar_slope_deg"):
             if name in phys and "value" in phys[name]:
                 phys[name].update(status="needs review", reason="; ".join(review))
@@ -797,6 +887,7 @@ def object_card(o, x, s, k, marking, merged_from, counts):
         if max(ext) > 2 * max(min(ext), 1e-3):
             card["class"] = {**kind, "mobility": "deformable candidate", "mobility_source": "observed",
                              "reason": "extents change by more than 2x between view subsets at a static place: " + " vs ".join(f"{e:.2f} m" for e in ext)}
+    card["_diag"] = diag  # build() moves it to the layer's diagnostics
     return card
 
 
@@ -860,9 +951,8 @@ def primitive(word, P, frame, ranked, s, k):
                         note="primitive dimension (display beside the observed values, never replacing them)")
             for i, name in enumerate(("length", "width", "thickness" if kind == "plane" else "height")) if not (kind == "plane" and i == 2)}
     rec = {"kind": kind, "accepted": bool(ok), "views_fit": [int(s["keys"][v]) for v in gen], "view_held_out": int(s["keys"][held]),
-           "gate": gate, "rule": "X7 held-out gate: IoU >= 0.65, relative depth p50 <= 0.04, p95 <= 0.10", "dimensions": dims}
-    if kind == "plane":
-        rec["slope_deg"] = round(float(np.degrees(np.arccos(np.clip(abs(axes[2][2]), 0, 1)))), 2)
+           "gate": {**gate, "scale": "scale-free (ratios and pixel counts)"}, "rule": "X7 held-out gate: IoU >= 0.65, relative depth p50 <= 0.04, p95 <= 0.10",
+           "dimensions": dims}
     return rec
 
 
@@ -1050,38 +1140,185 @@ def time_card(o, s, counts, sub, views, P, frame, kind):
     return out
 
 
-def people_cards(people, shots, object_cards):
-    """kind person: track time, path length, the R1-R3 rows of its track, its nearest objects (section 4.9); person:untracked."""
+# mvp2 (R4): people. A standing person is 1.0-2.1 m tall (+ ARM_M for a raised arm); the feet sit within STANCE_M of the visible
+# body's horizontal range (stride, lean, body depth); a figure whose true bottom is in view and that spans less than
+# HEAD_MIN_M (a head and shoulders) is a picture, as is one under a standing height whose head is above a standing head's
+# reach; a track that moves less than MOVED_M is not confirmed by motion.
+PERSON_H_M, ARM_M, STANCE_M, HEAD_MIN_M, MOVED_M, STAND_M = (1., 2.1), .3, .25, .5, 1., .3
+
+
+def person_geometry(mask, depth, K, c2w, up, p0, u_floor=.02, up_deg=1.):
+    """One person detection (mask and metric depth on one raster, K on it, c2w in metres, the floor's up and a point on it):
+    the feet's height above the floor measured along the rays through the lowest mask pixels, at the visible body's horizontal
+    range (the body's median depth: the rim pixels at the feet are a foot/floor depth blend, which read people on the floor at
+    +0.24-0.62 m); the head's height the same way through the top pixels; the stature between them. u from the body's depth
+    (5 %), the stance, the floor, the up direction over the range, one pixel and the 20 % scale. 'contact': the patch just below
+    the feet is not nearer than them by more than max(0.3 m, 10 %) (else something in front hides them). The old per-pixel
+    reading stays as h_pixels_m. -> dict (heights m above the floor, floor frame 'estimated') or None for an empty mask."""
+    ys, xs = np.nonzero(mask)
+    if not len(ys):
+        return None
+    H, W = mask.shape
+    bbox = [round(xs.min() / W, 4), round(ys.min() / H, 4), round((xs.max() + 1) / W, 4), round((ys.max() + 1) / H, 4)]
+    zm = depth[ys, xs]
+    ok = zm > 0
+    if ok.sum() < 10:
+        return {"h_m": None, "reason": "no depth on the body", "bbox": bbox}
+    zmed = float(np.median(zm[ok]))
+    body = ok & (np.abs(zm - zmed) <= max(.5, .15 * zmed))
+    up = np.asarray(up, float) / np.linalg.norm(up)
+    kinv, R, c = np.linalg.inv(K), np.asarray(c2w, float)[:3, :3], np.asarray(c2w, float)[:3, 3]
+    ray = lambda px, py: (np.c_[px, py, np.ones(len(px))] @ kinv.T) @ R.T  # noqa: E731  world direction, unit camera z
+    rel = ray(xs[body] + .5, ys[body] + .5) * zm[body, None]
+    r = float(np.median(np.linalg.norm(rel - (rel @ up)[:, None] * up, axis=1)))
+    cam_h = float((c - np.asarray(p0, float)) @ up)
+
+    def at_range(px, py):
+        d = ray(px, py)
+        dv = d @ up
+        dh = np.maximum(np.linalg.norm(d - dv[:, None] * up, axis=1), 1e-6)
+        return float(np.median(cam_h + r * dv / dh)), float(np.median(np.abs(dv / dh)))
+    span = max(2, .03 * (ys.max() - ys.min()))
+    low, high = ys >= ys.max() - span, ys <= ys.min() + span
+    bot, top = np.full(W, -1), np.full(W, H)  # per column the lowest / highest mask pixel; the columns near the extreme row
+    np.maximum.at(bot, xs, ys)
+    np.minimum.at(top, xs, ys)
+    cb, ct = np.flatnonzero(bot >= ys.max() - span), np.flatnonzero((top <= ys.min() + span) & (top < H))
+    foot, tf = at_range(cb + .5, bot[cb] + 1.)  # their outer pixel boundary (backproject's pixel-centre convention)
+    head, th = at_range(ct + .5, top[ct] + 0.)
+    px = r / K[1, 1]
+    up_t = np.tan(np.radians(up_deg)) * r
+    u_foot = float(np.sqrt((DEPTH_REL * r * tf) ** 2 + (STANCE_M * tf) ** 2 + u_floor ** 2 + up_t ** 2 + px ** 2 + (SCALE_REL * foot) ** 2))
+    u_head = float(np.sqrt((DEPTH_REL * r * th) ** 2 + u_floor ** 2 + up_t ** 2 + px ** 2 + (SCALE_REL * head) ** 2))
+    st = head - foot
+    u_st = float(np.sqrt((DEPTH_REL * st) ** 2 + (STANCE_M * tf) ** 2 + 2 * px ** 2 + (SCALE_REL * st) ** 2))
+    # the old reading (the lowest pixels' own depth), kept to compare
+    fz = depth[ys[low], xs[low]]
+    fo = fz > 0
+    h_pix = float(np.median(((ray(xs[low][fo] + .5, ys[low][fo] + .5) * fz[fo, None] + c - p0) @ up))) if fo.sum() >= 3 else None
+    rows = slice(ys.max() + 1, min(H, ys.max() + 4))
+    cols = slice(max(0, int(np.median(xs[low])) - 6), min(W, int(np.median(xs[low])) + 7))
+    below = depth[rows, cols][(depth[rows, cols] > 0) & ~mask[rows, cols]]
+    zf = float(np.median(fz[fo])) if fo.any() else zmed
+    contact = bool(len(below) >= 3 and np.median(below) >= zf - max(.3, .1 * zf))
+    cut_bottom, cut_top = bool(ys.max() >= H - 2), bool(ys.min() <= 1)
+    true_bottom = contact and not cut_bottom
+    feet = true_bottom and PERSON_H_M[0] <= st <= PERSON_H_M[1] + ARM_M
+    why = None
+    if true_bottom and not cut_top:
+        if st + u_st < HEAD_MIN_M:
+            why = f"its true bottom is in view and it spans {st:.2f} +- {u_st:.2f} m: less than a head and shoulders (a picture or print)"
+        elif st + u_st < PERSON_H_M[0] and head - u_head > PERSON_H_M[1] + ARM_M:
+            why = (f"it spans {st:.2f} +- {u_st:.2f} m (under a standing height) with its top {head:.2f} +- {u_head:.2f} m up (above a standing "
+                   "head's reach): a picture")
+        elif st - u_st > PERSON_H_M[1] + ARM_M:
+            why = f"it spans {st:.2f} +- {u_st:.2f} m: taller than a person"
+    out = {"h_m": round(foot, 3) if feet else None, "u_m": round(u_foot, 3), "foot_h_m": round(foot, 3), "head_m": round(head, 3), "u_head_m": round(u_head, 3),
+           "stature_m": round(st, 3), "u_stature_m": round(u_st, 3), "range_m": round(r, 3), "contact": contact, "feet_visible": bool(feet),
+           "cut": {"bottom": cut_bottom, "top": cut_top}, "plausible": why is None, "h_pixels_m": None if h_pix is None else round(h_pix, 3),
+           "span_m": round(st, 3), "bbox": bbox, "scale": SCALE}
+    if why:
+        out["reason"] = why
+    elif not feet:
+        out["reason"] = "feet cut by the frame edge" if cut_bottom else "something in front hides the feet" if not contact else \
+            f"the lowest pixels are not feet (the figure spans {st:.2f} m)"
+    return out
+
+
+def people_cards(people, shots, object_cards, k=None):
+    """kind person: track time, path length, the R1-R3 rows of its track, its nearest objects (section 4.9); person:untracked;
+    mvp2 (R4, R7): stature and feet height (medians over the detections whose whole body was in view), how far it moved (a
+    track that did not move is not confirmed by motion), every number with its u (positions, nearest objects); a card
+    'person:not-a-person' for the SAM 3 person masks measured as pictures (the people layer's 'rejected')."""
     if not people:
         return []
+    k = k or {}
     out = []
     for t in people.get("tracks", []):
         s = shots.get(t["shot"])
         if s is None:
             continue
         xy = to_floor([q["xyz"] for q in t["points"]], s["frame"])[:, :2]
+        geo = [q.get("foot_surface") or {} for q in t["points"]]
+        cams = to_floor(s["c2w"][[list(s["keys"]).index(q["frame"]) for q in t["points"]], :3, 3], s["frame"]) \
+            if all(q.get("frame") in s["keys"] for q in t["points"]) else None
+        rng_ = np.array([g_.get("range_m") or (np.linalg.norm(p_ - c_[:2]) if cams is not None else 4.) for g_, p_, c_ in
+                         zip(geo, xy, cams if cams is not None else np.zeros((len(xy), 3)))], float)
+        u_xy = np.hypot(np.hypot(DEPTH_REL * rng_, s["u_pose_m"]), SCALE_REL * np.linalg.norm(xy, axis=1))
         length = float(np.linalg.norm(np.diff(xy, axis=0), axis=1).sum()) if len(xy) > 1 else 0.
+        moved = float(np.linalg.norm(xy - np.median(xy, 0), axis=1).max()) if len(xy) else 0.
+        u_move = float(np.median(np.hypot(DEPTH_REL * rng_, s["u_pose_m"])))
+        phys = {"path_length": value(length, {"scale": SCALE_REL * length, "depth": DEPTH_REL * length}, "position", k, None, views_term=False),
+                "moved": value(moved, {"depth": u_move, "scale": SCALE_REL * moved}, "position", k, None, views_term=False,
+                               note="the largest distance of a detection from the track's median place"),
+                "level": "coarse"}
+        whole = [g_ for g_ in geo if g_.get("feet_visible")]
+        for name, key, ukey in (("stature", "stature_m", "u_stature_m"), ("foot_height", "h_m", "u_m")):
+            if whole:
+                vals = [g_[key] for g_ in whole]
+                phys[name] = value(float(np.median(vals)), {"detections": float(np.median([g_[ukey] for g_ in whole])),
+                                                            "spread": float(np.percentile(vals, 75) - np.percentile(vals, 25)) if len(vals) >= 4 else None},
+                                   "height", k, None, views_term=False, n_detections=len(whole),
+                                   note="median over the detections with the whole body in view; u: a detection's own (depth, stance, floor, up, "
+                                        "pixel, 20% scale) and the interquartile spread")
+            else:
+                phys[name] = {"status": "not observed", "reason": "the whole body (feet to head) was never in view with its feet seen"}
+        moving = moved - phys["moved"]["u"] >= MOVED_M
+        ident = {"name": "person", "decided_by": "sam3 person + tracker", "label": "observed", "track": t["id"],
+                 "confirmed_by": "motion" if moving else None,
+                 "note": None if moving else f"not confirmed by motion (moved {moved:.2f} +- {phys['moved']['u']:.2f} m, under {MOVED_M:g} m + u): "
+                                             "a person standing still, or a life-size picture"}
+        # standing on the floor or on something: a figure whose true bottom floats above the floor over no object is a picture on
+        # a wall (a Walmart poster tracked 15 m); kept as a person to review, never dropped from the rules
+        low = [g_ for g_ in geo if g_.get("contact") and g_.get("foot_h_m") is not None and not (g_.get("cut") or {}).get("bottom")]
+        if low:
+            bh, bu = float(np.median([g_["foot_h_m"] for g_ in low])), float(np.median([g_["u_m"] for g_ in low]))
+            if bh - bu > STAND_M:
+                from shapely.geometry import Point, Polygon
+                here = Point(np.median(xy, 0))
+                on = [c["id"] for c in object_cards if c["shot"] == t["shot"] and "footprint_xy" in c["physical"]
+                      and Polygon(c["physical"]["footprint_xy"]["value"]).buffer(.1).contains(here)
+                      and "value" in c["physical"].get("top_above_floor", {})
+                      and abs(c["physical"]["top_above_floor"]["value"] - bh) <= STAND_M + bu + c["physical"]["top_above_floor"]["u"]]
+                ident["support"] = {"status": "on " + on[0] if on else "on nothing seen", "bottom_above_floor": value(bh, {"detections": bu}, "height", k, None,
+                                                                                                                     views_term=False)}
+                if not on and not moving:
+                    ident.update(name="person? (likely a picture)", note=f"its lowest point is {bh:.2f} +- {bu:.2f} m above the floor over no object, "
+                                 "and it does not move: likely a picture on a wall (needs review)")
         cand = [c for c in object_cards if c["shot"] == t["shot"] and "footprint_xy" in c["physical"]
                 and c["physical"]["size_check"].get("status") != "implausible"]
         if cand:  # the 10 nearest footprint centres first (numpy), then the exact footprint-to-path distance (shapely)
             ctr = np.array([np.mean(c["physical"]["footprint_xy"]["value"], 0) for c in cand])
             dmin = np.linalg.norm(ctr[:, None] - xy[None], axis=2).min(1)
             cand = [cand[i] for i in np.argsort(dmin)[:10]]
-        near = sorted(((c["id"], path_distance(c["physical"]["footprint_xy"]["value"], xy)) for c in cand), key=lambda x: x[1])
+        near = sorted(((c, path_distance(c["physical"]["footprint_xy"]["value"], xy)) for c in cand), key=lambda x: x[1])
         local = str(t["id"]).split("-", 1)[-1]
-        out.append({"id": f"person:{t['id']}", "kind": "person", "shot": t["shot"],
-                    "identity": {"name": "person", "decided_by": "sam3 person + tracker", "label": "observed", "track": t["id"]},
+        out.append({"id": f"person:{t['id']}", "kind": "person", "shot": t["shot"], "identity": ident,
                     "class": {"category": "other", "mobility": "agent", "mobility_source": "class prior"},
                     "time": {"first_seen_s": t["t0"], "last_seen_s": t["t1"], "detections": t["detections"], "state": "agent: position per keyframe",
-                             "positions": [{"t": q["t"], "xy": np.round(p, 3).tolist()} for q, p in zip(t["points"], xy)]},
-                    "physical": {"path_length": value(length, {"scale": SCALE_REL * length, "depth": DEPTH_REL * length}, "position", {}, None,
-                                                      views_term=False), "level": "coarse"},
+                             "positions": [{"t": q["t"], "xy": np.round(p_, 3).tolist(), "u_m": round(float(u_), 3), "scale": SCALE}
+                                           for q, p_, u_ in zip(t["points"], xy, u_xy)]},
+                    "physical": phys,
                     "rules": [r for r in people.get("rules", []) if r.get("shot") == t["shot"] and local in [str(x) for x in r.get("tracks", [])]],
-                    "nearest_objects": [[a, round(d, 2)] for a, d in near[:3]], "ppe": None,
-                    "observed": ["masks", "track"], "estimated": ["physical", "positions"], "inferred": []})
+                    "nearest_objects": [{"id": c["id"], "distance": value(d, {"footprint": c["physical"]["footprint_xy"].get("u", 0.),
+                                                                              "person": float(np.median(u_xy)), "scale": SCALE_REL * d},
+                                                                    "position", k, None, views_term=False,
+                                                                    note="footprint to the track's path on the floor")} for c, d in near[:3]],
+                    "ppe": None, "observed": ["masks", "track"], "estimated": ["physical", "positions"], "inferred": [] if moving else ["unconfirmed"]})
     out.append({"id": "person:untracked", "kind": "person", "identity": {"name": "person, not tracked", "label": "observed"},
                 "class": {"category": "other", "mobility": "agent", "mobility_source": "class prior"},
                 "note": "a SAM 3 person mask no track claimed (a short or far detection)", "observed": ["masks"], "estimated": [], "inferred": []})
+    rej = people.get("rejected") or []
+    if rej:
+        why = {}
+        for r in rej:
+            why.setdefault(r["reason"].split(":")[-1].strip(), []).append(r["t"])
+        out.append({"id": "person:not-a-person", "kind": "not a person", "identity": {"name": "picture of a person (not a person)", "decided_by":
+                    "geometry (cards.person_geometry)", "label": "inferred"},
+                    "class": {"category": "other", "mobility": "not applicable", "mobility_source": "geometry"},
+                    "note": f"{len(rej)} SAM 3 person masks measured as no person: " + "; ".join(f"{w} ({len(ts)}x, first at {min(ts):.1f} s)" for w, ts in why.items()),
+                    "examples": [r["reason"] for r in rej[:5]], "time": {"first_seen_s": min(r["t"] for r in rej), "last_seen_s": max(r["t"] for r in rej)},
+                    "observed": ["masks"], "estimated": ["geometry"], "inferred": ["not a person"]})
     return out
 
 
@@ -1104,6 +1341,63 @@ def field_state(f):
             return "broken"
         return st
     return "value" if all(k in f for k in ("value", "u", "level", "scale")) else "broken"
+
+
+def contract(card):
+    """mvp2 (R7): every number a card shows carries +-u, a level and its scale label, or the field says why it has none.
+    Object cards: the metric fields, visible length, the drawn box (u_m per side, center_u_m), the footprint hull (u), the
+    size check's measured side (measured_u_m), the primitive's dimensions (its gate: scale-free ratios and pixel counts), the
+    walkway (a status); person cards: every physical field, the nearest objects' distances, every position (u_m); other kinds
+    show no number. -> ['<id>.<field>: why', ...]."""
+    cid, ph, kind, bad = card.get("id"), card.get("physical") or {}, card.get("kind"), []
+
+    def need(path, f):
+        st = field_state(f)
+        if st in ("broken", "missing"):
+            bad.append(f"{cid}.{path}: {st}")
+    if kind == "object":
+        if ph.get("level") == "2d only":
+            bad += [f"{cid}.{n}: a number on a 2d-only card" for n in METRIC if isinstance(ph.get(n), dict) and "value" in ph[n]]
+            return bad
+        for n in (*METRIC, "visible_length"):
+            if n in ph or n in METRIC:
+                need(n, ph.get(n))
+        b = ph.get("box") or {}
+        if not (b.get("size_m") and len(b.get("u_m") or []) == 3 and b.get("center_u_m") is not None and b.get("scale")):
+            bad.append(f"{cid}.box: size or centre without u / scale")
+        fp = ph.get("footprint_xy") or {}
+        if not (fp.get("value") and fp.get("u") is not None and fp.get("scale")):
+            bad.append(f"{cid}.footprint_xy: corners without u / scale")
+        sc = ph.get("size_check") or {}
+        if sc.get("measured_m") is not None and (sc.get("measured_u_m") is None or not sc.get("scale")):
+            bad.append(f"{cid}.size_check: measured side without u / scale")
+        pr = ph.get("primitive")
+        if pr:
+            for n, f in (pr.get("dimensions") or {}).items():
+                need(f"primitive.{n}", f)
+            if pr.get("gate") and not pr["gate"].get("scale"):
+                bad.append(f"{cid}.primitive.gate: numbers without a scale label")
+        if not isinstance(ph.get("walkway"), dict) or not ph["walkway"].get("status"):
+            bad.append(f"{cid}.walkway: no status")
+    elif kind == "person":
+        for n, f in ph.items():
+            if isinstance(f, dict):
+                need(n, f)
+        for i, x in enumerate(card.get("nearest_objects") or []):
+            if not isinstance(x, dict):
+                bad.append(f"{cid}.nearest_objects[{i}]: a bare distance")
+            else:
+                need(f"nearest_objects[{i}].distance", x.get("distance"))
+        for i, q in enumerate((card.get("time") or {}).get("positions") or []):
+            if q.get("u_m") is None or not q.get("scale"):
+                bad.append(f"{cid}.time.positions[{i}]: xy without u / scale")
+                break
+        sup = (card.get("identity") or {}).get("support")
+        if sup:
+            need("identity.support.bottom_above_floor", sup.get("bottom_above_floor"))
+    elif any(isinstance(f, (int, float)) and not isinstance(f, bool) for f in ph.values()):
+        bad.append(f"{cid}.physical: numbers on a card of kind {kind}")
+    return bad
 
 
 def summarize(cards):
@@ -1141,6 +1435,8 @@ def summarize(cards):
         rel[name] = {"n": len(r), "median_u_over_value": round(float(np.median(r)), 3) if r else None}
     out["relative_u"] = rel
     out["contract_broken_fields"] = sum(t.get("broken", 0) for t in out["fields"].values())
+    viol = [v for c in cards for v in contract(c)]
+    out["contract"] = {"cards": len(cards), "violations": len(viol), "examples": viol[:10]}
     # L1 acceptance: shown (plausible) boxes of non-large classes (class range max <= 3.5 m; 'any other word' counts as
     # non-large: its 6 m bound is a catch-all) with a longest side over 3 m
     shown = [c["physical"] for c in objs if "box" in c["physical"] and c["physical"]["size_check"].get("status") != "implausible"]
@@ -1210,7 +1506,9 @@ def self_check():
     out = build({"shots": [shot], "objects": objects, "points": points, "counts": lambda: counts, "people": people, "calibration": {}})
     by = {c["id"]: c for c in out["cards"]}
     pc = by["person:0-1"]
-    assert len(pc["rules"]) == 1 and pc["nearest_objects"][0][0] == "obj-0-0" and pc["physical"]["path_length"]["value"] > .5, pc
+    assert len(pc["rules"]) == 1 and pc["nearest_objects"][0]["id"] == "obj-0-0" and pc["physical"]["path_length"]["value"] > .5, pc
+    assert pc["nearest_objects"][0]["distance"]["u"] > 0 and all(q["u_m"] > 0 for q in pc["time"]["positions"])
+    assert pc["physical"]["stature"]["status"] == "not observed" and pc["identity"]["confirmed_by"] is None  # 0.6 m walked: not confirmed
     assert "person:untracked" in by and out["walked"][0]["person:0-1"]
     a = by["obj-0-0"]["physical"]
     assert out["aliases"] == {"obj-0-3": "obj-0-0"}, out["aliases"]  # the fragment joins box A
@@ -1225,6 +1523,60 @@ def self_check():
     assert c["planar_slope_deg"]["status"] == "not measurable", c["planar_slope_deg"]
     assert by["obj-0-2"]["class"]["mobility"] == "deformable" and by["obj-0-0"]["class"]["category"] == "F payload"
     assert by["obj-0-0"]["time"]["first_seen_s"] == 0. and by["obj-0-0"]["time"]["intervals"] == [[0., .8]], by["obj-0-0"]["time"]
+    # mvp2 (R4): people along their rays (camera 1.6 m up, world = camera frame, up -y). A 1.70 m person standing on the floor
+    # 4 m away whose lowest rows blend with the floor in front (3.3 m): the old per-pixel reading says +0.3 m, the rays at the
+    # body's range say 0 +- u; a 15 cm figure printed on a box face is no person; a person behind a bench at their own depth
+    # (legs hidden) stays a person, feet not seen
+    Kp, up_, p0_ = np.array([[200., 0, 100], [0, 200, 100], [0, 0, 1]]), np.array([0., -1, 0]), np.array([0., 1.6, 0])
+    rows_ = np.arange(200)[:, None] + .5
+    floor_d = np.where(rows_ > 100.5, 1.6 * 200 / np.maximum(rows_ - 100, 1e-3), 30.) * np.ones((1, 200))
+    d1, m1 = floor_d.copy(), np.zeros((200, 200), bool)
+    m1[95:180, 95:105] = True
+    d1[m1] = 4.
+    d1[177:180, 95:105] = 3.3
+    g1 = person_geometry(m1, d1, Kp, np.eye(4), up_, p0_)
+    assert g1["plausible"] and g1["feet_visible"] and abs(g1["h_m"]) < .02 < g1["u_m"] and g1["h_pixels_m"] > .25, g1
+    assert abs(g1["stature_m"] - 1.7) < .03 and g1["u_stature_m"] < .45 and g1["contact"]
+    d2, m2 = floor_d.copy(), np.zeros((200, 200), bool)
+    d2[140:, 30:80] = 3.
+    m2[150:160, 50:55] = True
+    g2 = person_geometry(m2, d2, Kp, np.eye(4), up_, p0_)
+    assert not g2["plausible"] and "picture" in g2["reason"] and g2["h_m"] is None, g2
+    d3, m3 = floor_d.copy(), np.zeros((200, 200), bool)
+    d3[95:180, 90:110] = 4.
+    m3[95:141, 95:105] = True
+    g3 = person_geometry(m3, d3, Kp, np.eye(4), up_, p0_)
+    assert g3["plausible"] and not g3["feet_visible"] and g3["h_m"] is None and "not feet" in g3["reason"], g3
+    # mvp2 (R3): a 2.0 m stack whose cleaned points stop 6 cm short of its top and bottom (the shaved rim); its un-eroded
+    # edges (segment.edges) give them back, the camera (1.6 m) being below its top. Box A's top edge placed 5 cm above its
+    # top face must not count: the camera looks onto that face, where the rim overstates
+    rng = np.random.default_rng(3)
+    stack = np.c_[rng.uniform(0, 1, 6000), rng.uniform(-.34, 1.54, 6000), rng.uniform(4, 4.6, 6000)]
+    xs = np.linspace(0, 1, 50)
+    edge = lambda y: np.tile(np.c_[xs, np.full(50, y), np.full(50, 4.)], (6, 1))  # noqa: E731
+    six = np.repeat(np.arange(6), 50)
+    pe = {"world": stack, "frame": rng.integers(0, 6, 6000), "z": stack[:, 2], "views": {v: [500, 0, 0, 0, 0] for v in range(6)},
+          "top_world": edge(-.4), "top_frame": six, "bottom_world": edge(1.6), "bottom_frame": six}
+    pa = dict(points[0], top_world=edge(.95), top_frame=six)
+    o3 = build({"shots": [shot], "objects": [{"id": "obj-0-9", "shot": 0, "word": "stacked boxes", "votes": {}}, dict(objects[0])],
+                "points": [pe, pa], "counts": {}, "people": None, "calibration": {}})
+    b3 = {c["id"]: c["physical"] for c in o3["cards"]}
+    st = b3["obj-0-9"]
+    assert abs(st["top_above_floor"]["value"] - 2.) < .02 and abs(st["base_above_floor"]["value"]) < .02, (st["top_above_floor"], st["base_above_floor"])
+    assert o3["diagnostics"]["rim"]["obj-0-9"]["top_p98"] < 1.93 and abs(st["height"]["value"] - 2.) < .03
+    assert abs(b3["obj-0-0"]["top_above_floor"]["value"] - .6) < .03, b3["obj-0-0"]["top_above_floor"]
+    # mvp2 (R5): a 2.08 m gondola seen along its length (a Walmart case): visible length >= 2.08 m, its short side (subsets
+    # 0.26 / 0.11 / 0.41 m) not measurable; a 2 m bench across the views, never cut, subsets agreeing, keeps its length
+    sb = lambda rows: (lambda f: [f({"box": {"sides": np.array(r)}}) for r in rows])  # noqa: E731
+    ph = {"width": value(.42, {"views": .3}, "extent", {}, [.26, .11, .41]), "depth": {"status": "not observed", "reason": "one side"},
+          "footprint_m2": value(.8, {"views": .5}, "extent", {}, [.1, .2, .3], unit="m2")}
+    assert long_object(ph, {"sides": np.array([.42, 2.08])}, sb([[.26, 2.1], [.11, 1.7], [.41, 1.]]), 0, 1, False, False, .05, {})
+    assert ph["visible_length"]["status"] == "at least" and ph["visible_length"]["value"] == 2.08 and ph["visible_length"]["u"] > .4
+    assert ph["width"]["status"] == "not measurable" and ph["depth"]["status"] == "not observed" and ph["footprint_m2"]["status"] == "at least"
+    ph = {"width": value(2., {"views": .05}, "extent", {}, [2., 1.95]), "depth": value(.6, {"views": .02}, "extent", {}, [.6, .58]),
+          "footprint_m2": value(1.2, {"views": .1}, "extent", {}, [1.2, 1.1], unit="m2")}
+    assert not long_object(ph, {"sides": np.array([2., .6])}, sb([[2., .6], [1.95, .58]]), 0, 1, False, True, .05, {}) and "visible_length" not in ph
+    assert "status" not in ph["width"] and "status" not in ph["depth"]
     # the same scene through a process pool (shot arrays via .npy files): box B detected on keyframes 0-2, then the camera
     # sees the far wall through its place on 3-5 -> 'disappeared' with before/after keyframes; box A stays 'last seen'
     import multiprocessing
@@ -1322,6 +1674,18 @@ def self_check():
     assert np.allclose(fr["R"][2], [0, -1, 0]) and np.allclose(fr["R"][0], [0, 0, 1]) and np.allclose(fr["origin"], [0, 1.6, 0])
     sm = summarize(out["cards"])
     assert sm["contract_broken_fields"] == 0 and sm["fields"]["depth"].get("not observed") == 1, sm
+    assert sm["contract"]["violations"] == 0, sm["contract"]
+    assert contract({"id": "p", "kind": "person", "physical": {}, "nearest_objects": [["obj-0-0", 0.]]}) == ["p.nearest_objects[0]: a bare distance"]
+    assert contract({"id": "o", "kind": "object", "physical": {**a, "box": {**a["box"], "u_m": None}}}) == ["o.box: size or centre without u / scale"]
+    # a track whose lowest point floats 1.6 m up over no object and does not move: kept, named a likely picture; the rejected masks
+    fl = {"contact": True, "cut": {"bottom": False}, "foot_h_m": 1.6, "u_m": .15, "feet_visible": False, "range_m": 4.}
+    pc2 = people_cards({"tracks": [{"id": "0-9", "shot": 0, "t0": 0., "t1": .8, "detections": 3,
+                                    "points": [{"t": i * .4, "frame": 6 * i, "xyz": [.2, 1.6, 3.6], "foot_surface": fl} for i in range(3)]}],
+                        "rejected": [{"t": .2, "reason": "its true bottom is in view and it spans 0.11 +- 0.03 m: less than a head and shoulders (a picture or print)"}]},
+                       {0: dict(shot, frame=fr, cam_floor=to_floor(cams[:, :3, 3], fr), u_pose_m=.04)}, [])
+    by2 = {c["id"]: c for c in pc2}
+    assert by2["person:0-9"]["identity"]["name"].startswith("person?") and by2["person:0-9"]["identity"]["support"]["status"] == "on nothing seen"
+    assert by2["person:not-a-person"]["kind"] == "not a person" and not [v for c in pc2 for v in contract(c)]
     print(f"cards self-check ok: robust extents within 5 % with flying pixels, fragment merge + cannot-link, depth not observed from one side, "
           f"subset u > 0, size plausibility, angle gates, grid DBSCAN, plumb, floor frame ({out['stats']['s']})")
 

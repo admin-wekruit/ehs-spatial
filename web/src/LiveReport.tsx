@@ -216,10 +216,10 @@ function Quantity({ q, tr }: { q: any; tr: Tr }) {
 }
 
 const PHYSICAL: [string, string, string][] = [["top_above_floor", "顶部离地", "top above floor"], ["base_above_floor", "底部离地", "base above floor"],
-  ["height", "高", "height"], ["width", "宽", "width"], ["depth", "深", "depth"], ["footprint_m2", "占地", "footprint"],
+  ["height", "高", "height"], ["width", "宽", "width"], ["depth", "深", "depth"], ["visible_length", "可见长度", "visible length"], ["footprint_m2", "占地", "footprint"],
   ["nearest_walked_path", "离走过的路径", "nearest walked path"], ["position_xy", "位置（地面坐标 x, y）", "position (floor frame x, y)"],
   ["principal_axis_tilt_deg", "主轴倾斜", "principal axis tilt"], ["planar_slope_deg", "平面坡度", "planar slope"]];
-const SIZE_FIELDS = new Set(["top_above_floor", "base_above_floor", "height", "width", "depth", "footprint_m2", "position_xy", "nearest_walked_path"]);
+const SIZE_FIELDS = new Set(["top_above_floor", "base_above_floor", "height", "width", "depth", "visible_length", "footprint_m2", "position_xy", "nearest_walked_path"]);
 
 function Card({ id, info, entity, under, names, judgementsPatch, cardsPatch, duration, onSelect, tr }: {
   id: string | null; info?: Info; entity: any; under: string[]; names: (id: string) => string; judgementsPatch?: Patch; cardsPatch?: Patch;
@@ -252,7 +252,7 @@ function Card({ id, info, entity, under, names, judgementsPatch, cardsPatch, dur
         {ph.primitive && <tr><th>{tr("参数化形状", "primitive")}</th><td>{ph.primitive.kind}: {ph.primitive.accepted ? tr("通过留出检验（显示用，不替代观测值）", "passed the held-out gate (beside the observed values, never replacing them)") : tr("未采用", "not accepted")}
           {ph.primitive.reason && <small> ({ph.primitive.reason})</small>}</td></tr>}
         {ph.walkway && <tr><th>{tr("通道", "walkway")}</th><td><span className="mvp-status">{ph.walkway.status}</span></td></tr>}
-        {ph.size_check && <tr><th>{tr("尺寸检查", "size check")}</th><td>{ph.size_check.status}{ph.size_check.class_range_m && <small> ({ph.size_check.class || tr("其他词", "other word")}: {ph.size_check.class_range_m.join("–")} m{ph.size_check.measured_m != null ? `, measured ${fmt(ph.size_check.measured_m, 2)} m` : ""})</small>}</td></tr>}
+        {ph.size_check && <tr><th>{tr("尺寸检查", "size check")}</th><td>{ph.size_check.status}{ph.size_check.class_range_m && <small> ({ph.size_check.class || tr("其他词", "other word")}: {ph.size_check.class_range_m.join("–")} m{tr("（先验）", " (a prior)")}{ph.size_check.measured_m != null ? `, measured ${fmt(ph.size_check.measured_m, 2)}${ph.size_check.measured_u_m != null ? ` ± ${fmt(ph.size_check.measured_u_m, 2)}` : ""} m` : ""})</small>}</td></tr>}
       </tbody></table>
       <details className="mvp-parts"><summary>{tr("± 是怎么来的", "How each ± is made")}</summary>
         <table><tbody>{PHYSICAL.filter(([k]) => ph[k]?.parts).map(([k, zh, en]) => <tr key={k}><th>{tr(zh, en)}</th>
@@ -273,19 +273,25 @@ const byRule = (rows: any[]) => Object.values(rows.reduce((m: Record<string, any
   return m;
 }, {})) as { rule: string; verdicts: string[]; reasons: Set<string>; n: number }[];
 
+const PERSON: [string, string, string][] = [["stature", "身高（估计）", "height (feet to head)"], ["foot_height", "脚离地", "feet above the floor"],
+  ["moved", "移动距离", "moved"]];
+
 function PersonFacts({ card, names, onSelect, tr }: { card: any; names: (id: string) => string; onSelect: (id: string) => void; tr: Tr }) {
-  const path = card.physical?.path_length ?? card.path_length_m, ppe = card.ppe;
+  const path = card.physical?.path_length ?? card.path_length_m, ppe = card.ppe, sup = card.identity?.support;
   return <section className="mvp-block"><h4>{tr("轨迹", "Track")}</h4>
     {card.note && <p><small>{card.note}</small></p>}
+    {card.identity?.note && <p className={card.identity?.name?.startsWith("person?") ? "mvp-warn" : undefined}><small>{card.identity.note}</small></p>}
     <table className="mvp-physical"><tbody>
       {path && <tr><th>{tr("路径长度", "path length")}</th><td><Quantity q={path} tr={tr} /></td></tr>}
+      {PERSON.filter(([k]) => card.physical?.[k]).map(([k, zh, en]) => <tr key={k}><th>{tr(zh, en)}</th><td><Quantity q={card.physical[k]} tr={tr} /></td></tr>)}
+      {sup && <tr><th>{tr("站在", "standing")}</th><td>{sup.status} · {tr("最低点", "lowest point")} <Quantity q={{ ...sup.bottom_above_floor, unit: "m" }} tr={tr} /></td></tr>}
       <tr><th>{tr("检测次数", "detections")}</th><td>{card.detections ?? card.time?.detections ?? "—"}</td></tr>
       {byRule(card.rules || []).map(r => <tr key={r.rule}><th>{r.rule}</th><td><Chip v={worstVerdict(r.verdicts)} tr={tr} /> <small>{r.n} {tr("行", "rows")}{r.reasons.size ? ` · ${[...r.reasons].join("; ")}` : ""}</small></td></tr>)}
       <tr><th>PPE</th><td><span className="mvp-status">{ppe?.status || tr("没问", "not asked")}{ppe?.reason ? ` (${ppe.reason})` : ""}</span></td></tr>
     </tbody></table>
-    {!!card.nearest_objects?.length && <p>{tr("最近的物体", "Nearest objects")}: {card.nearest_objects.map((x: any[]) => {
-      const [id, d] = [x[0], x[x.length - 1]];  // A: [id, d]; older fixtures: [id, name, d]
-      return <button key={id} className="mvp-link" onClick={() => onSelect(id)}>{names(id)} {fmt(d, 2)} m</button>; })}</p>}
+    {!!card.nearest_objects?.length && <p>{tr("最近的物体", "Nearest objects")}: {card.nearest_objects.map((x: any) => {
+      const id = Array.isArray(x) ? x[0] : x.id;  // mvp2: {id, distance: {value, u, ...}}; older cards: [id, d] (no u: not shown as a number)
+      return <button key={id} className="mvp-link" onClick={() => onSelect(id)}>{names(id)}{!Array.isArray(x) && x.distance ? <> <Quantity q={x.distance} tr={tr} /></> : null}</button>; })}</p>}
   </section>;
 }
 
@@ -342,9 +348,8 @@ function UnknownCard({ r, under, names, onSelect, tr }: { r: NonNullable<Clicked
       <table className="mvp-physical"><tbody>
         <tr><th>{tr("离相机", "distance from the camera")}</th><td><Quantity q={{ ...r.distance, unit: "m", scale: "estimated" }} tr={tr} /></td></tr>
         <tr><th>{tr("离地高度", "height above the floor")}</th><td><Quantity q={{ ...r.height, unit: "m", scale: "estimated" }} tr={tr} /></td></tr>
-        <tr><th>{tr("表面", "surface")}</th><td>{r.surface.kind}{r.surface.kind === "horizontal surface" ? ` ${tr("高", "at")} ${fmt(r.height.value, 2)} m` : ""}
-          {r.surface.angle_deg != null && <small> · {tr("法线离竖直", "normal from up")} {fmt(r.surface.angle_deg, 0)}°</small>}</td></tr>
-        <tr><th>{tr("最近的对象", "nearest entity")}</th><td>{r.nearest ? <button className="mvp-link" onClick={() => onSelect(r.nearest.id)}>{r.nearest.name} · {fmt(r.nearest.d, 2)} m</button> : "—"}</td></tr>
+        <tr><th>{tr("表面", "surface")}</th><td>{r.surface.kind} <small>({tr("单个视角：不给角度", "one view: no angle is given")})</small></td></tr>
+        <tr><th>{tr("最近的对象", "nearest entity")}</th><td>{r.nearest ? <button className="mvp-link" onClick={() => onSelect(r.nearest.id)}>{r.nearest.name} · <Quantity q={{ ...r.nearest.distance, unit: "m", scale: "estimated" }} tr={tr} /></button> : "—"}</td></tr>
       </tbody></table>
       <p><small>{tr("深度按距离 5%，加地面残差和 20% 尺度项", "u: 5% of distance for depth (height: times the ray's vertical share) + floor residual, with the 20% scale term")} · {tr("关键帧", "keyframe")} {r.frame}</small></p>
     </section>}
