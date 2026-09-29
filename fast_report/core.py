@@ -27,6 +27,13 @@ NAMER_WAIT_S, NAMER_HEDGE_S = 30., 15.  # mvp2/identity: Gemini answers awaited 
 # one still out is copied by hedge_due. mvp2/integrate: 36 -> 30 s: 1-2 of 20-48 requests never return (ME340 005: two), and
 # their objects wait for this deadline before the leftover pass asks again
 NAMER_HEDGE_MAX_S, NAMER_TAIL, NAMER_SMALL = 24., .25, 8
+NAMER_WAIT_MAX_S = 60.  # a pass with more than half of its requests out keeps waiting until here: the service is slow, not a request
+# lost (Walmart 006: every request of a warm call took 32-34 s; at 30 s the pass gave up on all and the Qwen decider named 538 objects)
+
+
+def still_waiting(elapsed, n_pending, n_reqs):
+    """The naming pass waits until NAMER_WAIT_S, or until NAMER_WAIT_MAX_S while more than half of its requests are out."""
+    return elapsed < NAMER_WAIT_S or (n_pending > n_reqs / 2 and elapsed < NAMER_WAIT_MAX_S)
 
 
 def hedge_due(elapsed, n_pending, n_reqs):
@@ -35,7 +42,11 @@ def hedge_due(elapsed, n_pending, n_reqs):
     mvp2/integrate: copying every request at 15 s re-sent 42 of 44 on Sam's Club; the doubled load slowed the report container's
     requests to 16-24 s (ME340's 19: 11-13 s) and queued copies in the relay's workers, where two copies of one request were
     never answered. A 4-request densify pass with one lost request waited for the tail rule until 15.2 s, its copy until 33 s."""
-    return elapsed >= NAMER_HEDGE_MAX_S or elapsed >= NAMER_HEDGE_S and (n_pending <= NAMER_TAIL * n_reqs or n_reqs <= NAMER_SMALL)
+    if n_reqs <= NAMER_SMALL:
+        return elapsed >= NAMER_HEDGE_S
+    if n_pending == n_reqs:  # nothing back yet: the service is slow, a copy of everything only adds to its load
+        return False
+    return elapsed >= NAMER_HEDGE_MAX_S or elapsed >= NAMER_HEDGE_S and n_pending <= NAMER_TAIL * n_reqs
 DA3_HW = (280, 504)
 CAMERA_HEIGHT_M = 1.6  # the reference's own assumption: every metre here is 'estimated'
 LICENSE = "DA3-GIANT-1.1 (CC BY-NC 4.0): research licence, not for commercial use"
@@ -1231,9 +1242,9 @@ def analyse(m, mp4, opts, clock, writer, log):
         got, pending, again = {}, {r["request"]: r for r in reqs}, set()
         rec = {"namer": "gemini via the bench relay", "asked": len(ids), "requests": len(reqs), "answers": []}
         with clock.stage("identity.gemini", n={"objects": len(ids), "requests": len(reqs)}):
-            while pending and time.time() - sent < NAMER_WAIT_S:
+            while pending and still_waiting(time.time() - sent, len(pending), len(reqs)):
                 try:  # polled each second: hedge_due may turn true without an answer arriving
-                    a = relay.get(timeout=max(.1, min(1., NAMER_WAIT_S - (time.time() - sent))), partition=part)
+                    a = relay.get(timeout=1., partition=part)
                 except _queue.Empty:
                     a = None
                 r = pending.get((a or {}).get("request"))
@@ -1833,6 +1844,8 @@ def self_check():
     assert abs(s_ - 2.5) < 1e-9 and np.allclose(R_, Rq) and np.allclose(t_, [1, 2, 3])
     assert not hedge_due(14.9, 1, 20) and not hedge_due(16., 6, 20) and hedge_due(16., 5, 20) and hedge_due(24., 20, 20)  # tail or 24 s
     assert hedge_due(15., 2, 4) and not hedge_due(14., 2, 4)  # a small pass: every request still out at 15 s
+    assert not hedge_due(25., 39, 39) and hedge_due(24., 38, 39)  # nothing back: slow, no copies; a pass under way copies at 24 s
+    assert not still_waiting(30., 10, 39) and still_waiting(30., 39, 39) and not still_waiting(60., 39, 39)  # stragglers vs a slow service
     assert densify_words(["box", "spill", "lamp", "shelf"], [{"box": .5}, {"shelf": .4, "box": .3}], ["spill", "ladder"]) == (["box", "spill", "shelf"], ["lamp"])
     import gzip  # pick chunks: 23 frames -> 10 + 10 + 3, each blob inflates to its frames' bytes, depth alike
     meta, blobs = pick_chunks([bytes([i]) * 4 for i in range(23)], [bytes([i]) * 2 for i in range(23)])

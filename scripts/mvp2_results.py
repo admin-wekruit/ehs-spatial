@@ -106,6 +106,10 @@ def physical_gt(gt):
             "shots": {r["report"]: r["shots"] for r in sc["reports"]},
             "end_to_end": [{k: (round(v, 4) if isinstance(v, float) else v) for k, v in r.items()} for r in ag.end_to_end(rows)],
             "bounds_hold": [sum(b["holds_a"] for r in sc["reports"] for b in r.get("bounds", [])), sum(len(r.get("bounds", [])) for r in sc["reports"])],
+            # per status and sequence, warm calls: 'at least' = cut by the frame edge / seen in parts, 'at most' = an unresolved size
+            "bounds": {f"{st}/{q}": [sum(b["holds_a"] for r in sc["reports"] if not r["first_call"] and r["seq"] == q for b in r.get("bounds", []) if b["status"] == st),
+                                     sum(1 for r in sc["reports"] if not r["first_call"] and r["seq"] == q for b in r.get("bounds", []) if b["status"] == st)]
+                       for st in ("at least", "at most") for q in ("arkit47", "arkit42", "tum")},
             "held_out": "k_geo was fitted on the two ARKit sequences (mvp2/accuracy); TUM is held out. The runs are new (this branch's code)."}
 
 
@@ -217,7 +221,7 @@ def md_tables(res):
                 cells = [e2e.get((fam, st, q)) for q in ("arkit47", "arkit42", "tum")]
                 if any(cells):
                     L.append(f"| {fam} / {st} | " + " | ".join(f"{c['coverage']:.2f} (n {c['n']})" if c else "—" for c in cells) + " |")
-        L.append(f"\nBounds ('at least' / 'at most') holding: {gt['bounds_hold'][0]} of {gt['bounds_hold'][1]}.")
+        L += ["", "Bounds holding against GT (warm calls): " + "; ".join(f"{k} {v[0]}/{v[1]}" for k, v in gt["bounds"].items() if v[1]) + "."]
     pdv = res.get("physical_delivered") or {}
     if pdv:
         L += ["", "## Physical values against the delivered reports (same-object pairs; agreement, not truth), warm call", "",
@@ -234,6 +238,45 @@ def md_tables(res):
         L.append("| person masks measured as pictures | " + " | ".join(str(((pdv.get(s) or {}).get("people") or {}).get("rejected_masks")) for s in SITES) + " |")
         L.append("| long objects: visible length shown / short side not measurable | " + " | ".join(
             (lambda x: f"{x.get('visible_length')} / {x.get('short_side_not_measurable')}")((pdv.get(s) or {}).get("long_objects") or {}) for s in SITES) + " |")
+    ca = res.get("click_audit")
+    if ca:
+        L += ["", "## Click audit (independent of SAM 3: random pixel on a random frame, the viewer's pick rule; held-out seed 2, agent-labelled)", "",
+              "| warm call | clicks | correct | wrong | miss | background | background-hit | resolved right | picked precision |", "|---|---|---|---|---|---|---|---|---|"]
+        for r in [r for r in ca if r["sample"] == "random"]:
+            L.append(f"| {NAME.get(r['site'], r['site'])} | {r['n']} | {r['correct']} | {r['wrong']} | {r['miss']} | {r['background']} | {r['background-hit']} | "
+                     f"{r['click_correct_share']:.2f} | {r['picked_precision']:.2f} |")
+        L += ["", "| person clicks (inside SAM 3 person references, seed 11) | real people | real person opens the person | pictures of people | pictures opened as a person |", "|---|---|---|---|---|"]
+        for r in [r for r in ca if r["sample"] == "person refs"]:
+            L.append(f"| {NAME.get(r['site'], r['site'])} | {r['real_people']} | {r['real_person_correct']:.2f} | {r['pictures']} | {r['pictures_as_person']} |")
+    ju = res.get("judgements")
+    if ju:
+        L += ["", "## Judgements (final judgements patch; audit labels agent-made, blind to verdicts)", "",
+              "| call | objects with a check | verdicts (rows) | PASS right / audited (+ unverifiable) | FAIL right / audited (+ unverifiable) |", "|---|---|---|---|---|"]
+        for site, calls_ in ju.items():
+            for kind, rep in calls_.items():
+                pr, pa, pu, fr, fa, fu = (sum(b[k] for b in rep["by_check"].values()) for k in
+                                          ("pass_right", "pass_audited", "pass_unverifiable", "fail_right", "fail_audited", "fail_unverifiable"))
+                L.append(f"| {kind} | {rep['objects_with_a_check']} / {rep['objects']} ({rep['coverage']:.0%}) | {json.dumps(rep['counts'])} | {pr} / {pa} (+{pu}) | {fr} / {fa} (+{fu}) |")
+        L += ["", "| check, warm call | " + " | ".join(NAME[s] for s in SITES) + " |", "|---|---|---|---|"]
+        warm = {s: next((rep for kind, rep in (ju.get(s) or {}).items() if kind.endswith("warm")), None) for s in SITES}
+        checks_ = sorted({c for rep in warm.values() if rep for c in rep["by_check"]})
+        for c in checks_:
+            def one(rep):
+                b = (rep or {}).get("by_check", {}).get(c)
+                if not b:
+                    return "—"
+                v = b["verdicts"]
+                n = sum(v.values())
+                dec = (v.get("PASS", 0) + v.get("FAIL", 0)) / n if n else 0
+                return f"{n} rows, decided {dec:.0%} ({json.dumps(v)}); PASS {b['pass_right']}/{b['pass_audited']}+{b['pass_unverifiable']}, FAIL {b['fail_right']}/{b['fail_audited']}+{b['fail_unverifiable']}"
+            L.append(f"| {c} | " + " | ".join(one(warm[s]) for s in SITES) + " |")
+    vw = res.get("viewer")
+    if vw:
+        L += ["", "## Viewer (headless Chromium, the recording replayed at recorded speed; screenshots in viewer/)", "",
+              "| report | click -> card p50 / p95 ms | pick decode ms | aimed clicks (screenshot: what the card says) |", "|---|---|---|---|"]
+        for v in vw:
+            shots = "; ".join(f"{Path(x['file']).name}: aimed {x['aimed']} -> '{x['title']}' [{', '.join(x['chips'])}]" for x in v["shots"])
+            L.append(f"| {v['report']} | {v['latencyMs']['p50']:.1f} / {v['latencyMs']['p95']:.1f} | {v['pickDecodeMs']} | {shots} |")
     return L
 
 
@@ -257,8 +300,10 @@ def main(a):
            "times": times(bench), "checks": checks(bench), "identity": identity(bench), "physical_gt": physical_gt(a.gt) if a.gt else None,
            "physical_delivered": physical_delivered(bench), "spend": spend(bench, a.gt, variants),
            "variant_times": {k: times(v) for k, v in variants.items()}}
-    for key, path, name in (("click_audit", a.clicks, "score.json"), ("judgements", a.judge, "judge.json"), ("viewer", a.viewer, "viewer.json")):
-        res[key] = json.loads((Path(path) / name).read_text()) if path and (Path(path) / name).exists() else None
+    res["click_audit"] = json.loads((Path(a.clicks) / "score.json").read_text()) if a.clicks else None
+    # judge_results_r2 per bench (DIR/<site>/run-results.json): the audit of each call against the agent labels
+    res["judgements"] = {Path(f).parent.name: json.loads(Path(f).read_text())["audit"] for f in sorted(glob.glob(f"{a.judge}/*/run-results.json"))} if a.judge else None
+    res["viewer"] = [v for f in sorted(glob.glob(f"{a.viewer}/*/click-check.json")) for v in json.loads(Path(f).read_text())["videos"]] if a.viewer else None
     (out / "summary.json").write_text(json.dumps(res, indent=1, default=str))
     (out / "tables.md").write_text("\n".join(md_tables(res)) + "\n")
     print("\n".join(md_times(res)))
