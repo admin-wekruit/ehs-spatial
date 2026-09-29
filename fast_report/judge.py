@@ -104,6 +104,11 @@ def name_of(card):
     return ((card.get("identity") or {}).get("name") or "").lower().strip()
 
 
+def class_of(card):
+    """What the rules read (mvp2/identity R1): the card's canonical class (cards.apply_name, from its final name), else its name."""
+    return ((card.get("identity") or {}).get("canonical") or name_of(card)).lower().strip()
+
+
 def is_a(name, words):
     return any(name == w or name.endswith(" " + w) for w in words)
 
@@ -112,7 +117,7 @@ def mobility(card):
     m = (card.get("class") or {}).get("mobility")
     if m:
         return m
-    n = name_of(card)
+    n = class_of(card)
     return "deformable" if is_a(n, DEFORMABLE) else "agent" if is_a(n, AGENT) else "fixed" if is_a(n, FIXED) else "movable rigid"
 
 
@@ -178,8 +183,8 @@ def follow_name(card):
     check re-run on the card's own box for the new class; 'needs review' marks left by the old class's size check are lifted
     when the new class finds the size plausible (fragmented support keeps them). Returns the card unchanged when the name's
     class word is the card's."""
-    if card.get("kind") == "person":
-        return card
+    if card.get("kind") == "person" or "canonical" in (card.get("identity") or {}):
+        return card  # mvp2/integrate: cards.apply_name already derived class and size check from the final name (one source)
     from fast_report import cards as A
     name, cls = name_of(card), card.get("class") or {}
     word = A.head_match(name, A.KIND)
@@ -584,7 +589,7 @@ def guards_of(ctx, cards, shot):
 
 
 def is_guard(card):
-    return (card.get("class") or {}).get("category", "").startswith("C") or is_a(name_of(card), GUARD)
+    return (card.get("class") or {}).get("category", "").startswith("C") or is_a(class_of(card), GUARD)
 
 
 def face_overhang(card, ctx):
@@ -788,7 +793,7 @@ def applicable(card):
     """-> [check id] for this card (spec 5.1's 'applies to' column)."""
     if card.get("kind") == "person":
         return ["J3a", "J8"]
-    n, mob, out = name_of(card), mobility(card), []
+    n, mob, out = class_of(card), mobility(card), []
     if is_a(n, STACK):
         out += ["J1", "J2"]
     if is_a(n, CLIMBABLE):
@@ -1378,7 +1383,12 @@ def contract_check():
     ctx = {"shots": [{"index": 0, "floor_frame": out["shots"][0]["floor_frame"], "u_pose_m": out["shots"][0]["u_pose_m"]}],
            "outlines": {"frames": []}, "walked": out["walked"]}
     got = {r["id"]: r["verdict"] for r in evaluate(out["cards"], ctx)}
-    assert got.get("J1:obj-0-0") == PASS and got.get("J4:obj-0-2") == REVIEW and got.get("J2:obj-0-0") == NO_DATA, got
+    assert got.get("J1:obj-0-0") == PASS and "J4:obj-0-2" not in got and got.get("J2:obj-0-0") == NO_DATA, got  # 'cable' unchecked: no J4
+    cable = next(c for c in out["cards"] if c["id"] == "obj-0-2")  # mvp2/identity: a VLM confirms it (cards.hazard_gate) -> J4
+    cable["identity"] = A.open_identity(cable["identity"], {"name": "power cord", "status": "object", "p": .9})
+    A.apply_name(cable)
+    got = {r["id"]: r["verdict"] for r in evaluate(out["cards"], ctx)}
+    assert got.get("J4:obj-0-2") == REVIEW, got
     return "A's cards: contract ok"
 
 

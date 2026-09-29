@@ -25,6 +25,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -59,12 +60,128 @@ class Poller(threading.Thread):
             self.halt.wait(.5)
 
 
-def call(fr, mirror, root, mp4, site, report, options, poller=None):
-    """One analysis: stream, mirror, keep the last run.json; local receive times per event (unix)."""
+class NamerRelay:
+    """mvp2/identity: the run's naming requests (fast_report.vlm.namer_requests, sent on the event stream) into the deployed
+    report container's GeminiAdapter (scripts/name_video_entities.py's mechanism: modal_apps.sam3_video_fal.container_command;
+    no key leaves that container), every request at once; each answer back on the modal.Queue partition named by the report.
+    Provider outputs (no images) are kept under OUT/namer/<report>/."""
+
+    def __init__(self, queue, out, workers=64):
+        from concurrent.futures import ThreadPoolExecutor
+        from review_video_object_semantics import REMOTE
+        self.queue, self.out, self.pool, self.lock, self.container = queue, out, ThreadPoolExecutor(workers), threading.Lock(), None
+        self.ready = threading.Event()
+        self.ready.set()
+        self.program = REMOTE.replace("'video.object_semantics'", "'video.entity_naming'").replace("max_output_tokens=2048", "max_output_tokens=8192")
+
+    def resolve(self):
+        """Wake the report container (its /health) and find it: sam3_video_fal.execute's steps, once per call."""
+        import modal
+        from modal_apps.sam3_video_fal import APP_NAME
+        with self.lock:
+            self.container = None
+            url = modal.Function.from_name(APP_NAME, "web").get_web_url()
+            try:
+                urllib.request.urlopen(url.rstrip("/") + "/health", timeout=50).close()
+            except urllib.error.HTTPError as error:
+                if error.code != 404:
+                    raise
+            apps = [x for x in json.loads(subprocess.check_output([MODAL, "app", "list", "--json"], timeout=30))
+                    if x["description"] == APP_NAME and x["state"] == "deployed"]
+            live = json.loads(subprocess.check_output([MODAL, "container", "list", "--app-id", apps[0]["app_id"], "--json"], timeout=30))
+            self.container = max(live, key=lambda x: str(x.get("start_time") or x.get("started_at") or ""))["container_id"]  # the newest
+            return self.container
+
+    def warm(self):
+        """At each call's start (the report container may have scaled down between calls): wake and find it in the background,
+        then keep it awake (its /health every 10 s) until stop(): Sam's Club's warm call found it gone 25 s after the wake
+        ('Task has already finished', every request)."""
+        self.ready, self.awake = threading.Event(), threading.Event()
+        threading.Thread(target=lambda: (self._try(self.resolve), self.ready.set()), daemon=True).start()
+
+        def ping(awake=self.awake):
+            import modal
+            from modal_apps.sam3_video_fal import APP_NAME
+            url = self._try(lambda: modal.Function.from_name(APP_NAME, "web").get_web_url())
+            while url and not awake.wait(10):
+                self._try(lambda: urllib.request.urlopen(url.rstrip("/") + "/health", timeout=20).close())
+        threading.Thread(target=ping, daemon=True).start()
+
+    def stop(self):
+        getattr(self, "awake", threading.Event()).set()
+
+    @staticmethod
+    def _try(fn):
+        try:
+            return fn()
+        except Exception:  # noqa: BLE001  a failed wake is retried by the first request
+            return None
+
+    def submit(self, event):
+        self.pool.submit(self.one, event)
+
+    def run_program(self, payload):
+        import base64
+        import gzip
+        from modal._utils.async_utils import synchronizer
+        from modal_apps.sam3_video_fal import container_command
+        chunks, meta = [], {}
+
+        def on_line(line):
+            e = json.loads(line)
+            if e["phase"] == "provider_output_meta":
+                meta.update(e["data"])
+            elif e["phase"] == "provider_output_chunk":
+                chunks.append(e["data"]["chunk"])
+        getattr(self, "ready", threading.Event()).wait(90)
+        try:
+            code, _ = synchronizer.create_blocking(container_command)(self.container or self.resolve(), payload, on_line, self.program)
+        except Exception as e:  # noqa: BLE001  the container scaled down under us: find (wake) it again, once
+            if "already finished" not in str(e) and "ConflictError" not in repr(e):
+                raise
+            chunks.clear()
+            meta.clear()
+            code, _ = synchronizer.create_blocking(container_command)(self.resolve(), payload, on_line, self.program)
+        raw = gzip.decompress(base64.b64decode("".join(chunks), validate=True))
+        if code or hashlib.sha256(raw).hexdigest() != meta.get("sha256"):
+            raise RuntimeError(f"provider exit {code}, output hash {'ok' if raw else 'missing'}")
+        return json.loads(raw)
+
+    def one(self, event):
+        t, provider, error = time.time(), None, None
+        payload = {"input": event["blocks"], "response_format": {"type": "text", "mime_type": "application/json", "schema": vlm_schema()}}
+        try:
+            provider = self.run_program(payload)
+        except Exception as e:  # noqa: BLE001  one failed request: its objects go to the Qwen decider in the container
+            error = repr(e)[:300]
+        rec = {"report": event["report"], "request": event["request"], "attempt": event.get("attempt", 1), "n": event.get("n"), "s": round(time.time() - t, 2),
+               "status": (provider or {}).get("status"), "usage": (provider or {}).get("usage"), "error": error}
+        try:
+            self.queue.put({**rec, "provider": provider}, partition=event["report"])
+        except Exception as e:  # noqa: BLE001  a late copy after the call (its queue closed): kept on disk only
+            rec["put_error"] = repr(e)[:200]
+        d = self.out / "namer" / event["report"]
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"request-{event['request']:02d}-a{event.get('attempt', 1)}.json").write_text(json.dumps({**rec, "provider": provider}, indent=1))
+
+
+def vlm_schema():
+    from fast_report import vlm
+    return vlm.NAMER_SCHEMA
+
+
+def call(fr, mirror, root, mp4, site, report, options, poller=None, relay=None):
+    """One analysis: stream, mirror, keep the last run.json; local receive times per event (unix); naming requests to the relay."""
     started, received, run_json = time.time(), [], None
     if poller:
         poller.start()
+    if relay:
+        relay.warm()
     for event in fr.run.remote_gen(mp4, site, report, options):  # fast_report.layers events, then {"type": "run", "run": run.json}
+        if event.get("type") == "namer_request" and relay:
+            relay.submit(event)
+        if event.get("type") == "run" and relay:
+            relay.stop()
         if event.get("type") in ("patch", "written", "run"):
             mirror(event, root)
         if event.get("type") == "run":
@@ -192,8 +309,9 @@ def bench(a):
                          daemon=True).start()
         meta["hazard"] = {"decider": "gemini via the report-workspace container (scripts/name_video_entities.py's exec mechanism)",
                           "relay": "two modal.Queue.ephemeral(), this CLI"}
-    with hazard_ctx, modal.enable_output(), app.run():
+    with hazard_ctx, modal.enable_output(), app.run(), modal.Queue.ephemeral() as namer_q:
         meta["app_id"] = app.app_id
+        relay = NamerRelay(namer_q, out) if a.namer == "gemini" else None
         fr = FastReport()
         submitted = time.time()
         boot = fr.boot_info.remote()  # waits for the container: cold start, recorded, never counted as analysis
@@ -207,13 +325,14 @@ def bench(a):
                 report = f"mvp-{site}-{sha[:8]}-{int(time.time())}"
                 fl.put_blob(mirror_root, mp4)  # the client's own MP4 is never sent back
                 options = {"vocab": a.vocab, "client_has": [sha], "background_s": a.background_s if last else 0, "window_s": span,
-                           "eval_holdout": [f - offset for f in ev.holdout_frames(site) if f - offset >= 0]}
+                           "eval_holdout": [f - offset for f in ev.holdout_frames(site) if f - offset >= 0], **({"namer": namer_q} if relay else {})}
                 if queues is not None:
                     hazard.workspace_container()  # awake before the call (the report service is up in production): off the analysis clock
                     options["hazard_queues"] = queues
                 rec = call(fr, lambda e, r: fl.mirror(e, r, int(a.mirror_max_mb * 1e6) if a.mirror_max_mb else None), mirror_root, mp4, site, report, options,
-                           Poller(report) if a.serve else None)
-                rec.update(site=site, call=i, kind=kind, window_s=span, frame_offset=offset, options=options)
+                           Poller(report) if a.serve else None, relay)
+                rec.update(site=site, call=i, kind=kind, window_s=span, frame_offset=offset, options={k: v for k, v in options.items() if k not in ("namer", "hazard_queues")} | ({"namer": "gemini relay"} if relay else {})
+                           | ({"hazard": "gemini relay"} if queues is not None else {}))
                 if kind != "shifted":  # the delivered report's frames are the base window's
                     quality(rec, mirror_root, out, gpu=False)
                 rec["mvp_latency"] = mvp_latency(rec, mirror_root, site, click_latency)
@@ -336,7 +455,8 @@ if __name__ == "__main__":
     p.add_argument("--background-s", type=int, default=0)
     p.add_argument("--mirror-max-mb", type=float, default=0., help="larger blobs stay on the Modal Volume (a nearly full disk)")
     p.add_argument("--vocab", default="qwen", choices=("qwen", "gemini"))
-    p.add_argument("--hazard", default="qwen", choices=("qwen", "gemini"), help="the hazard judge's decider (gemini: relayed by this CLI)")
+    p.add_argument("--hazard", default="gemini", choices=("qwen", "gemini"), help="the hazard judge's decider (gemini: relayed by this CLI)")
+    p.add_argument("--namer", default="gemini", choices=("gemini", "none"), help="mvp2/identity: object names from Gemini through the relay, or the Qwen decider only")
     p.add_argument("--serve", action="store_true")
     p.add_argument("--no-gpu-eval", dest="gpu_eval", action="store_false")
     p.add_argument("--billing", type=Path)

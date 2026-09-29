@@ -69,7 +69,7 @@ export function liveDocument(report: string, layers: Record<string, Patch>): Sce
     const reps: any[] = [box];
     if (glb) reps.push({ id: "model:" + o.id, kind: "generated_mesh", assetId: asset(glb), coordinateFrameId: frame,
       transform: { ...identity(frame), ...model.transform }, placementState: "confirmed", bounds: model.bounds });
-    doc.entities.push({ id: o.id, label: o.word, associationState: "association_pending", visible: true, observationRefs: [],
+    doc.entities.push({ id: o.id, label: o.label || o.word, associationState: "association_pending", visible: true, observationRefs: [],
       activeModelRepresentationId: glb ? "model:" + o.id : box.id, representations: reps, fast: { kind: "object", ...o, model: model || null } });
   }
   for (const t of people?.data.tracks || []) {
