@@ -276,6 +276,8 @@ def replay(src, report, root, as_report=None, speed=1.0):
     for t, _, event in sorted(timeline, key=lambda x: x[:2]):
         time.sleep(max(0., start + t / speed - time.time()))
         mirror(event, root)
+    if (run := _read_json(Path(src) / "reports" / report / "run.json", None)) is not None:  # the CLI mirrors run.json last
+        mirror({"type": "run", "report": as_report, "run": run}, root)
     return as_report
 
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { resolveAsset as apiAsset } from "./api";
 import { useI18n } from "./i18n";
 import type { SceneDocument } from "./types";
+import { clickClock, pointInPolygon } from "./live-report";
 
 /** Per-frame outlines of scene entities in source-video pixels, written by the video importer. */
 /** source: "segmented" (a mask on this frame) or "projected" (carried from 3D; the fast report's in-between frames), drawn dashed. */
@@ -32,9 +33,16 @@ function frameAt(frames: Frame[], time: number) {
   return frames[low];
 }
 
-/** The source video as a view of the report: every frame's entities can be picked, and a pick elsewhere finds its frame. */
-export function VideoView({ document, selectedId, onSelect, resolveAsset = apiAsset }: {
+/** A click on the video: time, source pixel, and the entities whose outline polygons on that frame contain the point. */
+export type VideoPick = { t: number; x: number; y: number; under: string[] };
+/** The selected entity's pixels on the current pick frame (1 = it), drawn over the video. */
+export type Highlight = { w: number; h: number; mask: Uint8Array } | null;
+
+/** The source video as a view of the report: every frame's entities can be picked, and a pick elsewhere finds its frame.
+ *  onPick (the live report's pick layer) replaces polygon clicks: the whole stage is clickable, the video pauses. */
+export function VideoView({ document, selectedId, onSelect, resolveAsset = apiAsset, onPick, highlight, marker }: {
   document: SceneDocument; selectedId: string | null; onSelect: (id: string) => void; resolveAsset?: Resolve;
+  onPick?: (pick: VideoPick) => void; highlight?: (time: number) => Highlight; marker?: { x: number; y: number } | null;
 }) {
   const { language } = useI18n(), replay = videoReplay(document), full = replay?.fullFrame, shownVideo = full?.videoAssetId ?? replay?.videoAssetId,
     [source, setSource] = useState<string>(), [analysis, setAnalysis] = useState<Analysis>(),
@@ -76,6 +84,33 @@ export function VideoView({ document, selectedId, onSelect, resolveAsset = apiAs
     return () => cancelAnimationFrame(handle);
   }, [playing]);
   const frame = useMemo(() => analysis?.frames.length ? frameAt(analysis.frames, time) : undefined, [analysis, time]);
+  const canvas = useRef<HTMLCanvasElement>(null), lit = useMemo(() => highlight?.(time) ?? null, [highlight, frame]);  // once per keyframe
+  useEffect(() => {  // the pick map's own pixels of the selection: what a click resolves, people included
+    const node = canvas.current;
+    if (!node) return;
+    if (!lit) { node.width = node.height = 1; return; }
+    node.width = lit.w; node.height = lit.h;
+    const g = node.getContext("2d")!, image = g.createImageData(lit.w, lit.h);
+    for (let i = 0; i < lit.mask.length; i++) if (lit.mask[i]) image.data.set([86, 214, 140, 110], 4 * i);
+    g.putImageData(image, 0, 0);
+  }, [lit]);
+  const toSource = (clientX: number, clientY: number) => {  // client point -> source pixel, through the same fit as the video
+    const element = video.current!, box = element.getBoundingClientRect(), vw = element.videoWidth || 1280, vh = element.videoHeight || 720;
+    const scale = (fill ? Math.max : Math.min)(box.width / vw, box.height / vh);
+    let x = (clientX - box.left - (box.width - vw * scale) / 2) / scale, y = (clientY - box.top - (box.height - vh * scale) / 2) / scale;
+    if (full && analysis) { x = (x - full.rasterInVideo[0]) * analysis.width / full.rasterInVideo[2]; y = (y - full.rasterInVideo[1]) * analysis.height / full.rasterInVideo[3]; }
+    return [x, y];
+  };
+  const pick = (event: React.PointerEvent) => {
+    const element = video.current;
+    if (!onPick || !element || event.button !== 0) return;
+    clickClock.t0 = performance.now();
+    element.pause();
+    const t = element.currentTime, [x, y] = toSource(event.clientX, event.clientY), at = analysis?.frames.length ? frameAt(analysis.frames, t) : undefined;
+    const under = [...new Set((at?.objects || []).filter((o) => o.entityId && o.polygons.some((p) => p.length > 2 && pointInPolygon([x, y], p))).map((o) => o.entityId!))];
+    setTime(t);
+    onPick({ t, x, y, under });
+  };
   useEffect(() => { announce(time); }, [frame]);  // once per sampled frame, not per animation frame
   useEffect(() => {  // a time picked elsewhere in the report (an event in the video memory) moves the video there
     const seek = (event: Event) => { const element = video.current, at = (event as CustomEvent<number>).detail; if (!element || !Number.isFinite(at)) return; element.pause(); element.currentTime = at; setTime(at); };
@@ -94,18 +129,20 @@ export function VideoView({ document, selectedId, onSelect, resolveAsset = apiAs
   if (error) return <div className="report-scene-plan-empty" role="status">{language === "zh" ? "视频或逐帧轮廓读取失败" : "The video or its per-frame outlines could not be read"}</div>;
   const duration = analysis?.frames.length ? analysis.frames[analysis.frames.length - 1].endTimeSec : length;
   return <div className="report-video">
-    <div className="report-video-stage" ref={stage}>
+    <div className="report-video-stage" ref={stage} onPointerDown={onPick ? pick : undefined} data-pickable={onPick ? true : undefined} data-has-selection={selectedId ? true : undefined}>
       <video ref={video} src={source} muted playsInline preload="auto" style={fill ? { objectFit: "cover" } : undefined} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
         onLoadedMetadata={(e) => setLength(e.currentTarget.duration)}
         onSeeked={(e) => setTime(e.currentTarget.currentTime)} aria-label={language === "zh" ? "来源视频" : "Source video"} />
+      {highlight && <canvas ref={canvas} className="report-video-highlight" style={fill ? { objectFit: "cover" } : undefined} />}
       {analysis && frame && <svg viewBox={full ? `0 0 ${full.width} ${full.height}` : `0 0 ${analysis.width} ${analysis.height}`} preserveAspectRatio={fill ? "xMidYMid slice" : "xMidYMid meet"}>
         {/* Uncropped video: the outlines stay on the reconstruction's raster, placed where the crop sits; the dashed frame marks it. */}
         {full && <rect className="report-video-raster" x={full.rasterInVideo[0]} y={full.rasterInVideo[1]} width={full.rasterInVideo[2]} height={full.rasterInVideo[3]} />}
         <g transform={full ? `translate(${full.rasterInVideo[0]} ${full.rasterInVideo[1]}) scale(${full.rasterInVideo[2] / analysis.width} ${full.rasterInVideo[3] / analysis.height})` : undefined}>
         {frame.objects.flatMap((object, n) => object.polygons.map((polygon, k) =>
           <polygon key={`${n}-${k}`} points={polygon.map((p) => p.join(",")).join(" ")} data-selected={object.entityId === selectedId || undefined} data-source={object.source}
-            data-pickable={object.entityId ? true : undefined} onClick={() => object.entityId && onSelect(object.entityId)}>
+            data-pickable={object.entityId && !onPick ? true : undefined} onClick={onPick ? undefined : () => object.entityId && onSelect(object.entityId)}>
             <title>{object.label}</title></polygon>))}
+        {marker && <g className="report-video-marker"><circle cx={marker.x} cy={marker.y} r={14} /><path d={`M${marker.x - 22} ${marker.y}h44M${marker.x} ${marker.y - 22}v44`} /></g>}
         </g>
       </svg>}
     </div>
