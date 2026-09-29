@@ -31,7 +31,7 @@ import numpy as np
 from ehs_spatial.video import BAND_M, FAIL, NO_DATA, PASS, REVIEW, banded_verdict, worst_verdict
 
 CALIBRATION = Path(__file__).with_name("calibration.json")
-SCALE_REL = .20  # spec 4.4: assumed 1.6 m camera height (-19%/+12% for 1.3-1.8 m) and 0.99-1.17 against the delivered scale
+from fast_report.cards import SCALE_REL  # noqa: E402  one scale term for cards and gaps (spec 4.4; mvp2 accuracy set it to 0.25)
 GRID_M, SCAN_M = .05, 5.  # J5: floor grid, how far each side is scanned
 # J5 rev. 2 (round-1 review R6): the camera's corridor (the operator, and a cart pushed ahead) is free; a surface cell needs
 # 3 TSDF points (a floater is one or two); an unseen floor run up to 0.3 m between seen cells is bridged (TSDF holes on
@@ -139,11 +139,10 @@ def observed(card, key):
 
 
 def u_rel(f):
-    """u without its scale part (a gap between two things does not carry their scale error from the origin); the
-    calibration factor k in u = k sqrt(sum parts^2) is kept by scaling u."""
-    parts = {k: v for k, v in (f.get("parts") or {}).items() if v is not None}
-    total = math.sqrt(sum(v * v for v in parts.values()))
-    return float(f["u"]) * math.sqrt(max(0., total ** 2 - parts.get("scale", 0.) ** 2)) / total if total > 0 else float(f["u"])
+    """u without its scale part (a gap between two things does not carry their scale error from the origin): exact for the
+    ground-truth u rule (u^2 = (k_geo geo)^2 + scale^2), a little above k x geo for the older u = k sqrt(sum parts^2)."""
+    scale = (f.get("parts") or {}).get("scale") or 0.
+    return math.sqrt(max(0., float(f["u"]) ** 2 - float(scale) ** 2))
 
 
 def doubts(card):

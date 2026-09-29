@@ -358,6 +358,12 @@ u = k_family · sqrt(Σ parts²).
 - The `parts` are stored, so the card can show the breakdown.
 - There is one k_family each for heights, extents, positions and angles. It is 1 until D's calibration (§8.3) sets it from coverage. D may only raise it; u never goes below its parts.
 
+**Against metric ground truth (mvp2/accuracy, `runs/mvp2-accuracy-results`).** When `calibration.json` has a `u_rule`, the cards use
+u = sqrt((k_geo · sqrt(Σ non-scale parts²))² + scale²), with k_geo per family and per view-set state (≥ 2 sets / one set),
+fitted on ARKitScenes sequences (height 1.0 / 1.41, extent 2.39 / 4.52, position 2.23 / 4.33) and tested on TUM fr1 room
+(held out: heights 98 % / 95 %, extents 95 % / 85 %, positions 100 % / 95 %). The scale term is 0.25 × |value| (a 1.2-1.8 m
+camera held for an assumed 1.6 m; ARKit's 1.23 m capture read 23 % large). A shot without a floor plane shows no metric value.
+
 **Evidence level** (the reuse memo's E0–E3, with the card's names):
 
 | level | meaning |

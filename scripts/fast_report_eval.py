@@ -981,6 +981,7 @@ def fact(x, k=1., angle=False):
     if angle:
         return v, float(u), float(u)
     parts = x.get("parts") or {}
+    k = 1. if isinstance(k, dict) else k  # a ground-truth u rule (cards.value): the scale part is not multiplied
     scale = k * float(parts["scale"]) if "scale" in parts else k * .2 * float(np.linalg.norm(v))
     return v, float(u), float(np.sqrt(max(float(u) ** 2 - scale ** 2, 0.)))
 

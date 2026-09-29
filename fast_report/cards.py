@@ -22,7 +22,7 @@ import sys
 
 import numpy as np
 
-SCALE_REL, POSE_MIN, DEPTH_REL = .20, .04, .05  # section 4.4: scale term, pose floor (ME340 ATE ~4 cm), DA3 depth ~5 %
+SCALE_REL, POSE_MIN, DEPTH_REL = .25, .04, .05  # section 4.4: scale term (mvp2 accuracy: 1.6 m assumed for a camera held at 1.2-1.8 m reads up to 25 % large; ARKit 1.23 m: 23 %), pose floor (ME340 ATE ~4 cm), DA3 depth ~5 %
 EPS_MIN, MIN_POINTS, MAIN_SHARE = .10, 10, .5    # section 4.2 step 3
 K_SIGMA, IOU_MIN = 3., .2                        # X6 association (timeline.sigma: sqrt(0.04^2 + (0.05 z)^2))
 AZ_DEPTH_DEG, SEP_DEG, BEST_VIEWS = 30., 15., 3  # section 4.3
@@ -495,13 +495,22 @@ def azimuth_spread(az):
 # ---------------------------------------------------------------- values with uncertainty
 
 ONE_SET = "one view set: uncertainty from model terms only (likely understated); no rule may PASS or FAIL on it"
+NO_FLOOR = "no floor plane in this shot: the scale and the floor are unknown (not metres)"
 
 
 def value(v, parts, family, k, subsets=None, unit="m", level="coarse", scale=SCALE, note=None, n_subsets=None, views_term=True, **extra):
     """Section 4.4: u = k_family x sqrt(sum parts^2); parts kept for the card's breakdown. Without a view-subset term the
-    value carries ONE_SET (views_term=False: a value that has no view-subset meaning, e.g. a path length)."""
+    value carries ONE_SET (views_term=False: a value that has no view-subset meaning, e.g. a path length).
+    With a ground-truth u rule (calibration.json 'u_rule', mvp2 accuracy: k[family] = {'sets', 'one_set'}) the geometry
+    parts (all but scale) take k_geo for the value's view-set state and the scale part stays apart:
+    u = sqrt((k_geo x sqrt(sum geometry parts^2))^2 + scale^2)."""
     parts = {a: round(float(b), 4) for a, b in parts.items() if b is not None}
-    u = k.get(family, 1.) * float(np.sqrt(sum(b ** 2 for b in parts.values())))
+    kf = k.get(family, 1.)
+    if isinstance(kf, dict):
+        geo = float(np.sqrt(sum(b ** 2 for a, b in parts.items() if a != "scale")))
+        u = float(np.hypot(kf["sets" if "views" in parts else "one_set"] * geo, parts.get("scale", 0.)))
+    else:
+        u = kf * float(np.sqrt(sum(b ** 2 for b in parts.values())))
     out = {"value": round(float(v), 3) if np.ndim(v) == 0 else np.round(np.asarray(v, float), 3).tolist(), "u": round(u, 3), "unit": unit,
            "level": level, "scale": scale, "n_subsets": n_subsets or (len(subsets) if subsets else 1), "parts": parts}
     if subsets:
@@ -976,13 +985,19 @@ def object_card(o, x, s, k, marking, merged_from, counts):
     phys["box"], lo, hi = box_world(pooled, axes, s["frame"])
     phys["box_min_m"], phys["box_max_m"] = np.round(lo, 3).tolist(), np.round(hi, 3).tolist()
     # mvp2 (R7): the drawn box and the footprint hull carry their u too (the extents' and the position's model terms)
-    ext_u = [k.get("extent", 1.) * float(np.sqrt((DEPTH_REL * v) ** 2 + res ** 2 + (SCALE_REL * v) ** 2 + ((spread(f) if f else 0.) or 0.) ** 2))
+    ext_u = [value(v, {"views": spread(f) if f else None, "depth": DEPTH_REL * v, "resolution": res, "scale": SCALE_REL * v}, "extent", k)["u"]
              for v, f in zip(phys["box"]["size_m"], [subs(lambda q, a=a: float(q["box"]["sides"][a])) for a in (0, 1)] +
                              [subs(lambda q: q["box"]["top"] - q["box"]["base"])])]
     phys["box"].update(u_m=np.round(ext_u, 3).tolist(), center_u_m=round(float(np.hypot(phys["position_xy"]["u"], phys["top_above_floor"]["u"] / 2)), 3),
                        scale=SCALE, level="coarse", note="the drawn box (box_min_m / box_max_m: its axis-aligned bounds, same u): display geometry")
     phys["footprint_xy"].update(u=round(float(np.hypot(phys["position_xy"]["u"], max(ext_u[:2]) / 2)), 3), level="coarse",
                                 note="corners of the footprint rectangle; each corner +- u")
+    no_floor = s.get("scale_status", "estimated") != "estimated"
+    if no_floor:  # no floor plane: DA3 units and a guessed floor, not metres
+        for name in (*METRIC, "visible_length"):  # mvp2 accuracy: TUM fr1 room's 9-keyframe shot read 1.67x off true scale as 'estimated' metres
+            if name in phys and "value" in phys[name]:
+                phys[name] = {"status": "not measurable", "reason": NO_FLOOR}
+        phys["size_check"] = {"status": "no data", "reason": NO_FLOOR}
     order = sorted(views, key=lambda v: -(meta.get(v, [1])[0] * (s["sharp"][v] if s.get("sharp") is not None else 1.)))
     best_views = []
     for v in order:  # X7's spread_views rule: >= 15 deg apart where possible
@@ -1012,7 +1027,7 @@ def object_card(o, x, s, k, marking, merged_from, counts):
             ext_change = "extents change by more than 2x between view subsets at a static place: " + " vs ".join(f"{e:.2f} m" for e in ext)
     # mvp2/identity (R1): everything a name decides is derived from these name-free measurements by apply_name, at build time
     # and on every identity update (class, size check, the review marks, deformable angles, primitive, time state)
-    card["raw"] = {"size": {"longest": longest, "footprint_longest": float(pooled["sides"].max()), "height": float(h), "base": float(pooled["base"]),
+    card["raw"] = {"size": None if no_floor else {"longest": longest, "footprint_longest": float(pooled["sides"].max()), "height": float(h), "base": float(pooled["base"]),
                             "observed_all": bool(not (top_cut or bottom_cut or lr_cut or long_part) and depth_seen)},
                    "size_u_m": round(max(ext_u), 3),  # mvp2/physical (R7): the size check's measured size carries its u
                    "angles": {n: phys[n] for n in ANGLES},
@@ -1952,6 +1967,12 @@ def self_check():
           "footprint_m2": value(1.2, {"views": .1}, "extent", {}, [1.2, 1.1], unit="m2")}
     assert not long_object(ph, {"sides": np.array([2., .6])}, sb([[2., .6], [1.95, .58]]), 0, 1, False, True, .05, {}) and "visible_length" not in ph
     assert "status" not in ph["width"] and "status" not in ph["depth"]
+    kg = {"height": {"sets": 2., "one_set": 3.}}  # the ground-truth u rule: geometry parts x k_geo[view-set state], scale apart
+    assert abs(value(1., {"views": .03, "depth": .04, "scale": .25}, "height", kg)["u"] - np.hypot(2 * .05, .25)) < 1e-3
+    assert abs(value(1., {"depth": .04, "scale": .25}, "height", kg)["u"] - np.hypot(3 * .04, .25)) < 1e-3
+    nf = build({"shots": [dict(shot, scale_status="uncalibrated")], "objects": objects[:1], "points": points[:1], "counts": lambda: counts,
+                "people": None, "calibration": {}})["cards"][0]["physical"]  # no floor plane: no metres, no angle, no size check
+    assert all(nf[f].get("status") == "not measurable" for f in METRIC if f in nf) and nf["size_check"]["status"] == "no data", nf
     # the same scene through a process pool (shot arrays via .npy files): box B detected on keyframes 0-2, then the camera
     # sees the far wall through its place on 3-5 -> 'disappeared' with before/after keyframes; box A stays 'last seen'
     import multiprocessing
