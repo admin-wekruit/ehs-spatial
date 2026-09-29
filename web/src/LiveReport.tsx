@@ -248,7 +248,8 @@ const Tag = ({ children }: { children: React.ReactNode }) => <small className="m
 
 /** value ± u unit, with its bound, scale tag and note; or a not-observed / not-measurable status with its reason. */
 function Quantity({ q, tr }: { q: any; tr: Tr }) {
-  if (!q || q.value === undefined || q.value === null) return <span className="mvp-status">{q?.status || tr("没有值", "no value")}{q?.reason ? ` (${q.reason})` : ""}</span>;
+  if (!q || q.value === undefined || q.value === null) return <span className="mvp-status">{q?.status || tr("没有值", "no value")}{q?.reason ? ` (${q.reason})` : ""}
+    {q?.visible && <> · {tr("这一侧看到的", "seen from this side")} <Quantity q={q.visible} tr={tr} /></>}</span>;  // r4: a one-side depth's lower bound
   const digits = q.unit === "deg" || q.unit === "°" ? 1 : 2, v = Array.isArray(q.value) ? `(${q.value.map((x: number) => fmt(x, digits)).join(", ")})` : fmt(q.value, digits);
   const st = q.bound || q.status, scale = String(q.scale || "");  // A: status "at least" | "at most" | "needs review" with a value
   // mvp2/integrate: a bound whose u is 0 (an unresolved size: the end of its interval) shows no '± 0.00'
@@ -318,7 +319,8 @@ const byRule = (rows: any[]) => Object.values(rows.reduce((m: Record<string, any
   return m;
 }, {})) as { rule: string; verdicts: string[]; reasons: Set<string>; n: number }[];
 
-const PERSON: [string, string, string][] = [["stature", "身高（估计）", "height (feet to head)"], ["foot_height", "脚离地", "feet above the floor"],
+const PERSON: [string, string, string][] = [["position_xy", "位置（地面坐标 x, y，轨迹中位）", "position (floor frame x, y; the track's median)"],
+  ["top_above_floor", "头顶离地", "head above floor"], ["stature", "身高（估计）", "height (feet to head)"], ["foot_height", "脚离地", "feet above the floor"],
   ["moved", "移动距离", "moved"]];
 
 function PersonFacts({ card, names, onSelect, tr }: { card: any; names: (id: string) => string; onSelect: (id: string) => void; tr: Tr }) {
