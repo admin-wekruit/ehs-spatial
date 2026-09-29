@@ -196,8 +196,8 @@ def aims(mirror, report, clicks_dir, base_mirror, base_report, cards_dir=None):
     before = ca.resolve(bpick[0], bpick[2], [dict(c) for c in meta["clicks"]], bpick[3])
     was = {c["k"]: c["entity"] for c in before}
     missed = [c for c in meta["clicks"] if lab[str(c["k"])]["label"] == "correct" and c.get("kind") == "object" and was.get(c["k"]) is None]
-    if missed:
-        c = max(missed, key=lambda c: area.get(c["entity"], 0))
+    if missed:  # a whole thing: not a coarse group, its name right when the audit says so
+        c = max(missed, key=lambda c: ("coarse" not in (lab[str(c["k"])].get("note") or ""), lab[str(c["k"])].get("name") == "right", area.get(c["entity"], 0)))
         out.append({"label": "3-formerly-missed-object", "t": c["frame"] / fps, "x": c["x"], "y": c["y"], "name": c["name"], "round3": "nothing picked"})
     if people:
         p = max(people, key=lambda c: area[c["id"]])
