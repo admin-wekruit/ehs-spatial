@@ -37,7 +37,9 @@ STAGES = {"decode", "cuts", "sam3.person", "vlm.vocab", "sam3.vocab.wave1", "sam
           "objects.boxes", "pick.maps", "pick.encode", "cards.inputs", "cards.v1", "cards.v3", "densify.sam3", "densify.lift",
           "outlines.polygons.v2", "vlm.identity", "vlm.identity.ehs", "vlm.identity.other", "identity.gemini", "identity.gemini.sheets",
           # the judgement engine (mvp/b-judge)
-          "judge.rules", "judge.som", "judge.vlm", "judge.evidence", "judge.gemini_send", "judge.gemini", "judge.qwen"}  # plus write.<layer>
+          "judge.rules", "judge.som", "judge.vlm", "judge.evidence", "judge.gemini_send", "judge.gemini", "judge.qwen",
+          # r4/naming: the cascade
+          "naming.signals", "naming.signals.densify", "naming.settle.first", "naming.settle.densify", "naming.vlm.first", "naming.vlm.densify"}  # plus write.<layer>
 PRICE = {"A100-80GB": .000694, "cpu_core": .0000131, "gib": .00000222}  # Modal list prices, $/s
 
 

@@ -1226,6 +1226,8 @@ ANGLES = ("principal_axis_tilt_deg", "planar_slope_deg")
 REVIEWED = ("top_above_floor", "base_above_floor", "height", "width", "depth", "visible_length", "footprint_m2", "position_xy", "nearest_walked_path", *ANGLES)
 TIME_RAW = ("state", "evidence", "last_seen_reason", "after_last_detection", "note")
 UNIDENTIFIED = "unidentified object"
+COPIED = "vlm copy (cluster medoid, SAM 3 word agrees)"  # r4/naming: a VLM answer on a look-alike, confirmed by this object's own word
+VLM_ROUTES = ("gemini open name", "vlm options", COPIED)  # the routes where a VLM named the object (the hazard gate's third check)
 NAMER_STATUS = {"object": None, "part": "a part of a bigger thing (named as the namer saw it)", "several": "several things under one outline",
                 "surface": "a surface", "unclear": "the namer could not tell"}
 
@@ -1247,7 +1249,7 @@ def hazard_gate(ident, raw):
     det = [w for w in words if canonical(w) is not None and (canonical(w) == H or FAMILY.get(canonical(w)) == FAMILY.get(H))]
     size = (raw or {}).get("size")
     sc = size_check(H, **size) if size else None
-    vlm = ident.get("decided_by") not in (None, "sam3 vote") and (ident.get("namer") or {}).get("status") != "unclear" \
+    vlm = ident.get("decided_by") in VLM_ROUTES and (ident.get("namer") or {}).get("status") != "unclear" \
         and (ident.get("confidence") is None or ident["confidence"] >= .5)
     failed = [why for ok, why in ((vlm, "no VLM named it (or it was unsure)"), (bool(det), "the detector's words do not include it"),
                                   (sc is not None and sc["status"] == "plausible", (sc or {}).get("reason") or "no measured size")) if not ok]
@@ -1256,7 +1258,8 @@ def hazard_gate(ident, raw):
            "rule": "shown only when the detector's word, the class's size and placement, and a VLM agree"}
     if not failed:
         return prop, rec
-    alt = next((w for w in words if hazard_of(w) is None and canonical(w) != NOT_OBJECT), None)
+    # r4/naming: a cascade identity never falls back to an unverified word (it is an object, unidentified)
+    alt = None if ident.get("naming") else next((w for w in words if hazard_of(w) is None and canonical(w) != NOT_OBJECT), None)
     return alt or UNIDENTIFIED, rec
 
 
