@@ -404,32 +404,46 @@ def merge(objs, shot_boxes):
     """Section 4.2 step 4, one pass, largest first: b joins a when (i) centroids within 3 sigma_pair or robust boxes
     overlap with IoU >= 0.2, (ii) they are never two kept masks on the same keyframe, (iii) the union passes the size
     check (for a's word). objs: [{P (a sample, floor frame), views, centroid, z_med, word, n}]. -> {kept: [absorbed]}.
-    ponytail: decided on the cleaned points before the main-cluster step (that runs per merged group, in parallel)."""
-    order = sorted(range(len(objs)), key=lambda i: -objs[i]["n"])
+    ponytail: decided on the cleaned points before the main-cluster step (that runs per merged group, in parallel); (i)
+    as matrices; (iii) from the union of the two boxes first (an upper bound), the union's robust box only past it."""
+    n = len(objs)
+    if not n:
+        return {}
+    C = np.stack([o["centroid"] for o in objs])
+    sg = sigma([o["z_med"] for o in objs])
+    lo = np.stack([shot_boxes[i][0] for i in range(n)])
+    hi = np.stack([shot_boxes[i][1] for i in range(n)])
+    close = np.linalg.norm(C[:, None] - C[None], axis=2) <= K_SIGMA * np.hypot(sg[:, None], sg[None])
+    ilo, ihi = np.maximum(lo[:, None], lo[None]), np.minimum(hi[:, None], hi[None])
+    inter = np.prod(np.clip(ihi - ilo, 0, None), axis=2)
+    vol = np.prod(hi - lo, axis=1)
+    cand = close | (inter / np.maximum(vol[:, None] + vol[None] - inter, 1e-12) >= IOU_MIN)
+    np.fill_diagonal(cand, False)
+    order = sorted(range(n), key=lambda i: -objs[i]["n"])
+    rank = np.empty(n, int)
+    rank[order] = np.arange(n)
     taken, groups, vs = set(), {}, [set(o["views"]) for o in objs]
     for a in order:
         if a in taken:
             continue
         taken.add(a)
         groups[a] = []
-        A = objs[a]
-        frames_a = set(vs[a])
-        for b in order:
+        frames_a, box_lo, box_hi = set(vs[a]), lo[a].copy(), hi[a].copy()
+        k = CLASS_SIZE.get(head_match(objs[a]["word"], CLASS_SIZE), (0., OTHER_MAX, {}))
+        for b in sorted(np.flatnonzero(cand[a]), key=lambda i: rank[i]):
             if b in taken or frames_a & vs[b]:
                 continue
-            Bo = objs[b]
-            s = float(np.hypot(sigma(A["z_med"]), sigma(Bo["z_med"])))
-            close = np.linalg.norm(A["centroid"] - Bo["centroid"]) <= K_SIGMA * s
-            if not close and aabb_iou(shot_boxes[a], shot_boxes[b]) < IOU_MIN:
-                continue
-            P = np.concatenate([A["P"]] + [objs[x]["P"] for x in groups[a]] + [Bo["P"]])
-            box, _ = robust_box(P)
-            if size_check(A["word"], max(box["sides"].max(), box["top"] - box["base"]), box["sides"].max(), box["top"] - box["base"],
-                          box["base"], False)["status"] == "implausible":
-                continue
+            ulo, uhi = np.minimum(box_lo, lo[b]), np.maximum(box_hi, hi[b])
+            if np.linalg.norm((uhi - ulo)[:2]) > k[1] or (uhi - ulo)[2] > k[1]:  # the union's diagonal may exceed the class: measure it
+                P = np.concatenate([objs[a]["P"]] + [objs[x]["P"] for x in groups[a]] + [objs[b]["P"]])
+                box, _ = robust_box(P)
+                if size_check(objs[a]["word"], max(box["sides"].max(), box["top"] - box["base"]), box["sides"].max(), box["top"] - box["base"],
+                              box["base"], False)["status"] == "implausible":
+                    continue
             groups[a].append(b)
             taken.add(b)
             frames_a |= vs[b]
+            box_lo, box_hi = ulo, uhi
     return groups
 
 
@@ -520,6 +534,9 @@ def build(inp, pool=None, chunks=12, shm_dir=None):
                     sp.append(float(np.median(np.linalg.norm(c - np.median(c, 0), axis=1))))
         s["view_centroid_spread_m"] = round(float(np.median(sp)), 4) if sp else None
         s["u_pose_m"] = max(POSE_MIN, k_pose * (s["view_centroid_spread_m"] or 0.))
+        # the plumb check (section 4.5) on the wall-level reading: the per-facet median of a 3 cm TSDF mesh read 5.8 / 7.0 deg
+        # on ME340's two shots (marching-cubes staircase) while its walls' mean normals read 0.9 / 1.1 deg (run mvp-a-cards-me340-004)
+        s["plumb_facets_deg"], s["plumb_deg"] = s.get("plumb_deg"), s.get("plumb_walls_deg", s.get("plumb_deg"))
         s["angles_usable"] = s.get("plumb_deg") is not None and s["plumb_deg"] <= PLUMB_MAX_DEG
         s["walked"] = walked_paths(s, inp.get("people"))
         if s.get("depth") is not None:
@@ -561,7 +578,8 @@ def build(inp, pool=None, chunks=12, shm_dir=None):
                                                "z": np.round(s["frame"]["R"][2], 5).tolist()},
                   "u_pose_m": round(s["u_pose_m"], 3), "view_centroid_spread_m": s["view_centroid_spread_m"], "u_floor_m": s.get("u_floor_m"),
                   "plumb_deg": None if s.get("plumb_deg") is None else round(s["plumb_deg"], 2), "angles_usable": s["angles_usable"],
-                  "plumb_walls_deg": None if s.get("plumb_walls_deg") is None else round(s["plumb_walls_deg"], 2),
+                  "plumb_facets_deg": None if s.get("plumb_facets_deg") is None else round(s["plumb_facets_deg"], 2),
+                  "plumb_rule": "area-weighted median over 10 deg azimuth bins of the near-vertical mesh triangles' mean normal",
                   "scale": {"status": s.get("scale_status", "estimated"), "source": "floor plane (SAM 3 'floor') + assumed camera height 1.6 m",
                             "u_rel": SCALE_REL}}
                  for si, s in shots.items()]

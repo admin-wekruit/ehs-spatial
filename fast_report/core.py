@@ -1102,10 +1102,10 @@ def analyse(m, mp4, opts, clock, writer, log):
                 e["endTimeSec"] = nxt["timeSec"] if nxt else round(e["timeSec"] + BLOCK / fps, 4)
             results["outlines_v2"] = {"width": W, "height": H, "frames": frames_out}
             analysis = json.dumps(results["outlines_v2"], separators=(",", ":")).encode()
+        pick_data, pick_blobs = pick2.result()
         writer.put("outlines", {"analysis": "blob", "frames": len(frames_out), "segmented": len(frames_out), "projected": 0, "densified": True},
                    {"analysis": (analysis, {"mediaType": "application/json", "format": "video-analysis"})}, "observed(segmented)",
                    ["every 5 fps keyframe segmented (SAM 3 masks): the densify pass", "labels as of the first objects version"])
-        pick_data, pick_blobs = pick2.result()
         writer.put("pick", {**pick_data, "version_note": "v2: every keyframe segmented"}, pick_blobs, "observed(segmented)",
                    ["segmented frames: SAM 3 masks (observed)", SCALE_LABEL])
         clock.mark("pick_v2_put")
@@ -1190,13 +1190,13 @@ def analyse(m, mp4, opts, clock, writer, log):
                 e["endTimeSec"] = nxt["timeSec"] if nxt else round(e["timeSec"] + BLOCK / fps, 4)
             results["outlines"] = {"width": W, "height": H, "frames": frames_out}
             analysis = json.dumps(results["outlines"], separators=(",", ":")).encode()
+        pick_data, pick_blobs = pick.result()  # outlines and pick back to back: one commit (section 3.3)
         writer.put("outlines", {"analysis": "blob", "frames": len(frames_out), "segmented": sum(e["source"] == "segmented" for e in frames_out),
                                 "projected": sum(e["source"] == "projected" for e in frames_out)},
                    {"analysis": (analysis, {"mediaType": "application/json", "format": "video-analysis"})}, "observed(segmented)/estimated(projected)",
                    ["'segmented' outlines are SAM 3 masks on keyframes; 'projected' ones are carried from 3D (E6b 'pair'): no accuracy claimed",
                     "labels as of the first objects version; the objects layer holds the latest"])
         clock.mark("outlines_put")
-        pick_data, pick_blobs = pick.result()
         writer.put("pick", pick_data, pick_blobs, "observed(segmented)/estimated(projected)",
                    ["segmented frames: SAM 3 masks (observed); projected frames: carried from 3D (estimated)", SCALE_LABEL])
         clock.mark("pick_put")
