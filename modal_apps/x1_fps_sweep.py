@@ -6,10 +6,12 @@ One Modal container per video (2 x A100-80GB), fb/a-core's own pieces, everythin
     Timed in nested phases (current object frames, then the rest of 5 fps, 10 fps, 15 fps, every frame).
   - The vocabulary is fixed per site: the Qwen v1 list of runs/fb-d-harness-gaps-001 (no VLM run-to-run spread).
   - Geometry: DA3-GIANT-1.1 any-view per shot at 5 fps (production: 'G5'), ~10 fps in one forward ('G10'), every
-    frame in 150-view chunks with evenly spread overlaps, chained by a Sim3 fitted on the shared frames' depth points
-    ('G30c'), the same chunks aligned to G5 instead ('G30a': G5's own frames kept as they are), and 5 fps plus extra
+    frame three ways: consecutive 150-view chunks with evenly spread overlaps chained by a Sim3 fitted on the shared
+    frames' depth points ('G30c', the naive chunking), interleaved chunks that each hold ALL the shot's 5 fps frames plus
+    every m-th other frame, each put onto G5 by the Sim3 of those shared frames' depth ('G30i': G5's own frames kept as
+    they are), and one forward over every frame of the longest shot ('G30single', feasibility); plus 5 fps and extra
     views where the camera moves fast ('Gmotion', the 10 fps view budget).
-  - Objects and people above 5 fps take their in-between frames' depth and pose from G30a, so the 5 fps frames keep the
+  - Objects and people above 5 fps take their in-between frames' depth and pose from G30i, so the 5 fps frames keep the
     production geometry exactly and every rate lifts into the same world.
   - Held-out frames (about 1 per second, frames that have the delivered DA3-posed depth) are never used by any
     configuration; they score the geometry.
@@ -43,6 +45,7 @@ SITES = {"me340": "me340-165", "samsclub-a2": "samsclub-337", "walmart": "walmar
 # the delivered DA3-posed depth (DROID-native units, same metres_per_native_unit as the harness reference): E1 used ME340's
 MONO = {"me340": "da3-posed-me340-223-shotc/mono", "samsclub-a2": "da3-posed-samsclub-a2-281/mono", "walmart": "da3-posed-walmart-251-shot383/mono"}
 CHUNK_VIEWS, MIN_OVERLAP = 150, 30  # every-frame DA3: views per forward (E1's 150-view timing), least shared frames
+INTERLEAVED_VIEWS = 300  # G30i: views per forward (5 fps anchors + every m-th other frame); ~G10's size
 EVAL_FRAMES, SAM_CHUNK, MIN_REF_PX = 60, 8, 184  # outline frames per video; SAM 3 frames per task; 1200 px at 1280x720 on the DA3 grid
 SMALL_M, THIN_RATIO, THIN_MIN_M = .3, 3., .3  # small: largest extent < 0.3 m; thin/long: longest >= 3 x middle and >= 0.3 m (estimated)
 NEW_SHARE = .1  # an object is 'new' when under 10 % of its voxels lie in any object of the current rate
@@ -109,6 +112,25 @@ def chunk_starts(n, size=CHUNK_VIEWS, overlap=MIN_OVERLAP):
     return [int(round(i * (n - size) / (k - 1))) for i in range(k)]
 
 
+def robust_extents(codes, voxel):
+    """An object's voxel codes (segment.lift's packing) -> extents along its principal axes, longest first: the 10-90 %
+    range / 0.8 (a uniform box's length) + one voxel, so a few flying-depth voxels do not stretch it. Metres, estimated."""
+    B, OFF = 1 << 21, 1 << 20
+    c = np.stack([codes // (B * B) - OFF, (codes // B) % B - OFF, codes % B - OFF], 1).astype(float) * voxel
+    if len(c) < 3:
+        return np.full(3, voxel)
+    x = c - c.mean(0)
+    p = x @ np.linalg.eigh(x.T @ x)[1][:, ::-1]
+    lo, hi = np.percentile(p, [10, 90], axis=0)
+    return (hi - lo) / .8 + voxel
+
+
+def interleaved(anchors, others, most=INTERLEAVED_VIEWS):
+    """Chunks that each hold every anchor plus every m-th other frame, m the fewest that keeps chunks <= most views."""
+    m = max(1, int(np.ceil(len(others) / max(1, most - len(anchors)))))
+    return [sorted(anchors + others[j::m]) for j in range(m)]
+
+
 def sim3_points(src, dst, iters=3, keep=.8):
     """dst ~ s R src + t (Umeyama, E1's), refitted on the best `keep` share of residuals `iters` times."""
     import m3_exp_geometry as geo
@@ -139,7 +161,13 @@ def self_check():
     dst[:50] += 5  # outliers the trimmed refit must ignore
     s, R, t, _ = sim3_points(src, dst)
     assert abs(s - 2.5) < 1e-6 and np.allclose(R, q, atol=1e-6) and np.allclose(t, [1, 2, 3], atol=1e-5)
-    print("x1 self-check ok (numpy): keysets, allocation, extras, chunks, trimmed Sim3")
+    B, OFF = 1 << 21, 1 << 20
+    ijk = np.array([[i, j, k] for i in range(20) for j in range(2) for k in range(2)]) + OFF
+    e = robust_extents((ijk[:, 0] * B + ijk[:, 1]) * B + ijk[:, 2], .05)
+    assert abs(e[0] - 1.0) < .03 and .09 < e[1] < .15 and .09 < e[2] < .15, e  # the 2 x 2 cross-section: its axes are free to turn
+    ch = interleaved(list(range(0, 60, 6)), [f for f in range(60) if f % 6], 30)
+    assert len(ch) == 3 and all(len(c) <= 30 and set(range(0, 60, 6)) <= set(c) for c in ch) and set().union(*ch) == set(range(60))
+    print("x1 self-check ok (numpy): keysets, allocation, extras, chunks, interleaved chunks, robust extents, trimmed Sim3")
 
 
 # ---------- torch helpers (checked in the container: gpu_self_check) ----------
@@ -161,7 +189,7 @@ def unpack(p, dev):
 def lift_big(m2, frame_of, depth_m, K, c2w_m, dyn2, rows=4096, batch=16384):
     """fast_report.segment.lift (E7/E9's rule, unchanged) for masks and people already at stride 2, with the voxel
     overlap product in row blocks (one product over 30 fps masks does not fit) -> (comp, arrays, stats, extra) where
-    extra: per lifted mask its index and 3D centroid, per component its voxel codes and PCA extents."""
+    extra: per lifted mask its index and 3D centroid, per component its voxel codes."""
     import torch
     from scipy.sparse import coo_matrix
     from scipy.sparse.csgraph import connected_components
@@ -215,7 +243,7 @@ def lift_big(m2, frame_of, depth_m, K, c2w_m, dyn2, rows=4096, batch=16384):
         eb.append(b[ok].cpu().numpy())
     a, b = np.concatenate(ea), np.concatenate(eb)
     ncomp, label = connected_components(coo_matrix((np.ones(len(a)), (a, b)), shape=(L, L)), directed=False)
-    lab = torch.from_numpy(label).to(dev)
+    lab = torch.from_numpy(label.astype(np.int64)).to(dev)  # scipy gives int32: lab * voxels overflows at 30 fps (segment.lift has the same limit)
     ov = torch.unique(lab[pm] * nv + pv)
     oc, ovid = ov // nv, ov % nv
     centre = torch.stack([vox // (B * B) - OFF, (vox // B) % B - OFF, vox % B - OFF], 1).float()[ovid] * sg.LIFT_VOXEL + sg.LIFT_VOXEL / 2
@@ -228,14 +256,11 @@ def lift_big(m2, frame_of, depth_m, K, c2w_m, dyn2, rows=4096, batch=16384):
     arrays = {k: x.cpu().numpy() for k, x in (("frames", nframes), ("voxels", nvox), ("centroid", cent), ("lo", lo), ("hi", hi))}
     stats.update(points=int(len(mid)), voxels=int(nv), edges=int(len(a)), components=int(ncomp), overlap_pairs=int(overlap_pairs))
     # extras for the sweep's measures (not part of the lift rule)
-    d = centre - cent[oc]
-    cov = torch.zeros(ncomp, 3, 3, device=dev).index_add_(0, oc, d[:, :, None] * d[:, None, :]) / nvox.clamp(min=1)[:, None, None]
-    ext = torch.sqrt(12 * torch.linalg.eigvalsh(cov).clamp(min=0)).flip(1) + sg.LIFT_VOXEL  # uniform-box extent per principal axis
     cnt = torch.bincount(mid, minlength=L).float().clamp(min=1)
     mask_cent = torch.zeros(L, 3, device=dev).index_add_(0, mid, world) / cnt[:, None]
     counts = torch.bincount(oc, minlength=ncomp).cpu().numpy()
     codes = np.split(vox[ovid].cpu().numpy(), np.cumsum(counts)[:-1])
-    extra = {"lifted": idx.cpu().numpy(), "mask_centroid": mask_cent.cpu().numpy(), "codes": codes, "extent_pca": ext.cpu().numpy()}
+    extra = {"lifted": idx.cpu().numpy(), "mask_centroid": mask_cent.cpu().numpy(), "codes": codes}
     return comp, arrays, stats, extra
 
 
@@ -293,7 +318,7 @@ def gpu_self_check():
     order = [int(comp2[np.flatnonzero(comp == c)[0]]) for c in range(len(arr["frames"]))]
     for k in ("frames", "voxels", "centroid", "lo", "hi"):
         assert np.allclose(arr[k], arr2[k][order]), k
-    assert len(extra["codes"]) == len(arr2["frames"]) and extra["extent_pca"].shape == (len(arr2["frames"]), 3)
+    assert len(extra["codes"]) == len(arr2["frames"])
     print("x1 gpu self-check ok: lift_big == segment.lift, pack/unpack")
 
 
@@ -358,6 +383,9 @@ def load_models():
                 sams[d].detect(v, 2, [f"word {i}" for i in range(57)], segment.VOCAB_SCORE)
                 torch.cuda.synchronize(d)
                 torch.cuda.empty_cache()
+    import m3_exp_geometry as geo  # Open3D CUDA's first integrate is slow (a-core warms it at boot too)
+    geo.fuse(torch.full((2, 280, 504), 2., device=d0), np.repeat(np.array([[[300., 0, 252], [0, 300, 140], [0, 0, 1]]]), 2, 0),
+             np.repeat(np.eye(4)[None], 2, 0), torch.full((2, 280, 504, 3), .5, device=d0))
     b.update(ready_s=round(time.perf_counter() - t, 1), gpus=fr.gpu_listing(), torch=str(torch.__version__), transformers=transformers.__version__,
              _models={"da3": da3s, "sam": sams, "d0": d0, "d1": d1})
     return b
@@ -543,7 +571,9 @@ def analyse(p, M, clock, rec, jpgs):
         return {"frames": list(fl), **{k: v.to(d0) for k, v in g.items()}}
 
     shot_frames = {si: [f for f in sets["b1"] if a <= f <= b] for si, (a, b) in enumerate(shots)}
-    chunks = [(si, ci, shot_frames[si][s:s + CHUNK_VIEWS]) for si in shot_frames for ci, s in enumerate(chunk_starts(len(shot_frames[si])))]
+    chunks = [("G30c", si, ci, shot_frames[si][s:s + CHUNK_VIEWS]) for si in shot_frames for ci, s in enumerate(chunk_starts(len(shot_frames[si])))]
+    inter = {si: interleaved([f for f in sets["b6"] if f in set(fl)], [f for f in fl if f not in set(sets["b6"])]) for si, fl in shot_frames.items()}
+    chunks += [("G30i", si, ci, fl) for si in inter for ci, fl in enumerate(inter[si])]
     cq = queue.Queue()
     for c in chunks:
         cq.put(c)
@@ -565,10 +595,10 @@ def analyse(p, M, clock, rec, jpgs):
                 job()
             while True:
                 try:
-                    si, ci, fl = cq.get_nowait()
+                    kind, si, ci, fl = cq.get_nowait()
                 except queue.Empty:
                     return
-                chunk_out[(si, ci)] = da3_run(dev, "G30", si, fl, f"G30 chunk {ci}")
+                chunk_out[(kind, si, ci)] = da3_run(dev, kind, si, fl, f"{kind} chunk {ci}")
         except BaseException:  # noqa: BLE001
             geo_err.append(traceback.format_exc())
 
@@ -606,7 +636,7 @@ def analyse(p, M, clock, rec, jpgs):
     if geo_err:
         raise RuntimeError(geo_err[0])
 
-    # chunks -> G30c (chained on shared frames) and G30a (each chunk onto G5)
+    # chunks -> G30c (consecutive, chained on shared frames) and G30i (interleaved, each onto G5 by its anchors)
     def pts(g, rows, step=8):
         """world points of rows on a step grid (DA3 units), and a validity mask; people and depth edges out."""
         dd = g["depth"][rows].clone()
@@ -640,7 +670,7 @@ def analyse(p, M, clock, rec, jpgs):
 
     rec["chunks"] = {}
     for si in shot_frames:
-        cs = [chunk_out[(si, ci)] for ci in range(len(chunk_starts(len(shot_frames[si]))))]
+        cs = [chunk_out[("G30c", si, ci)] for ci in range(len(chunk_starts(len(shot_frames[si]))))]
         chained, fits_c, fits_a = [cs[0]], [], []
         for g in cs[1:]:
             ref = {"frames": [f for c in chained for f in c["frames"]], **{k: torch.cat([c[k] for c in chained]) for k in ("depth", "K", "c2w")}}
@@ -649,15 +679,15 @@ def analyse(p, M, clock, rec, jpgs):
             fits_c.append(fit)
         g5 = geo_out[("G5", si)]
         anchored = []
-        for g in cs:
-            moved, fit = align_onto(g, g5)
+        for ci in range(len(inter[si])):
+            moved, fit = align_onto(chunk_out[("G30i", si, ci)], g5)
             anchored.append(moved)
             fits_a.append(fit)
-        for name, parts in (("G30c", chained), ("G30a", anchored)):
+        for name, parts in (("G30c", chained), ("G30i", anchored)):
             rows, taken = {}, set()
             for ci, c in enumerate(parts):
                 for r, f in enumerate(c["frames"]):
-                    if name == "G30a" and f in g5["frames"]:
+                    if name == "G30i" and f in g5["frames"]:
                         rows[f] = ("g5", g5["frames"].index(f))
                     elif f not in taken:
                         rows[f] = (ci, r)
@@ -665,8 +695,8 @@ def analyse(p, M, clock, rec, jpgs):
             fl = sorted(rows)
             src = lambda key, f: (g5 if rows[f][0] == "g5" else parts[rows[f][0]])[key][rows[f][1]]  # noqa: E731
             geo_out[(name, si)] = {"frames": fl, **{k: torch.stack([src(k, f) for f in fl]) for k in ("depth", "K", "c2w", "colors")}}
-        rec["chunks"][si] = {"starts": chunk_starts(len(shot_frames[si])), "views": [len(c["frames"]) for c in cs],
-                             "chained_fits": fits_c, "anchored_fits": fits_a}
+        rec["chunks"][si] = {"consecutive_starts": chunk_starts(len(shot_frames[si])), "consecutive_views": [len(c["frames"]) for c in cs],
+                             "consecutive_chained_fits": fits_c, "interleaved_views": [len(c) for c in inter[si]], "interleaved_onto_g5_fits": fits_a}
     chunk_out.clear()
 
     # per config and shot: floor-plane scale (a-core), metric cameras, TSDF
@@ -769,8 +799,8 @@ def analyse(p, M, clock, rec, jpgs):
                              "within_10pct": round(float((rel < .10).mean()), 4) if len(rel) else None, "sim3_scale_ours_to_droid_m": round(float(s), 4)}
     rec["held_out_depth"] = held_rec
 
-    # ---------- dense geometry for objects / people: G5 frames as they are, the rest from G30a (G5's world) ----------
-    dense_geo = {si: geo_out[("G30a", si)] for si in shot_frames}
+    # ---------- dense geometry for objects / people: G5 frames as they are, the rest from G30i (G5's world) ----------
+    dense_geo = {si: geo_out[("G30i", si)] for si in shot_frames}
     drow = {si: {f: i for i, f in enumerate(g["frames"])} for si, g in dense_geo.items()}
     g5scale = {si: scale[("G5", si)] for si in shot_frames}
 
@@ -869,13 +899,13 @@ def analyse(p, M, clock, rec, jpgs):
                         for w_, s_ in V["votes"].get(int(x), []):
                             vv[words[w_]] = vv.get(words[w_], 0.) + s_
                     best = gi[np.argmax(V["score"][gi] * np.sqrt(area[mem]))]
-                    e = ex["extent_pca"][c]
+                    e = robust_extents(ex["codes"][c], sg.LIFT_VOXEL)
                     mc = ex["mask_centroid"][[lifted_pos[int(m)] for m in mem]]
                     dev_ = np.linalg.norm(mc - np.median(mc, 0), axis=1)
                     nfr = len(set(V["frame"][gi].tolist()))
                     found.append({"id": f"{cfg}-{si}-{len(found)}", "shot": si, "word": sg.name(vv, words), "frames": int(arr["frames"][c]),
                                   "masks": int(len(mem)), "voxels": int(arr["voxels"][c]), "centroid_m": arr["centroid"][c].round(3).tolist(),
-                                  "extent_pca_m": e.round(3).tolist(), "aabb_m": [(arr["lo"][c] - sg.LIFT_VOXEL / 2).round(3).tolist(), (arr["hi"][c] + sg.LIFT_VOXEL / 2).round(3).tolist()],
+                                  "extent_m": e.round(3).tolist(), "aabb_m": [(arr["lo"][c] - sg.LIFT_VOXEL / 2).round(3).tolist(), (arr["hi"][c] + sg.LIFT_VOXEL / 2).round(3).tolist()],
                                   "best": [int(V["frame"][best]), int(best)], "first_frame": int(V["frame"][gi].min()),
                                   "view_centroid_spread_m": round(float(np.median(dev_)), 4) if nfr >= 3 else None,
                                   "small": bool(e[0] < SMALL_M), "thin_long": bool(e[0] >= THIN_MIN_M and e[0] >= THIN_RATIO * e[1])})
@@ -883,7 +913,7 @@ def analyse(p, M, clock, rec, jpgs):
                     codes.append(ex["codes"][c])
             objs[cfg], members_of[cfg], codes_of[cfg] = found, members, codes
             spread = [o["view_centroid_spread_m"] for o in found if o["view_centroid_spread_m"] is not None]
-            rel_spread = [o["view_centroid_spread_m"] / max(o["extent_pca_m"][0], 1e-6) for o in found if o["view_centroid_spread_m"] is not None]
+            rel_spread = [o["view_centroid_spread_m"] / max(o["extent_m"][0], 1e-6) for o in found if o["view_centroid_spread_m"] is not None]
             rec["objects"][cfg] = {"objects": len(found), "small": sum(o["small"] for o in found), "thin_long": sum(o["thin_long"] for o in found),
                                    "views_mean": round(float(np.mean([o["frames"] for o in found])), 2) if found else None,
                                    "views_median": float(np.median([o["frames"] for o in found])) if found else None,
@@ -908,11 +938,11 @@ def analyse(p, M, clock, rec, jpgs):
             words_new = {}
             for o in new:
                 words_new[o["word"]] = words_new.get(o["word"], 0) + 1
-            rec["objects"][cfg].update(new_vs_current=len(new), new_small=sum(o["small"] for o in new), new_thin_long=sum(o["thin_long"] for o in new),
+            rec["objects"].setdefault(cfg, {}).update(new_vs_current=len(new), new_small=sum(o["small"] for o in new), new_thin_long=sum(o["thin_long"] for o in new),
                                        new_with_3plus_views=sum(o["frames"] >= 3 for o in new),
                                        new_words_top=sorted(words_new.items(), key=lambda x: -x[1])[:15],
                                        spread_of_objects_shared_with_current_m=round(float(np.median(kept_)), 4) if kept_ else None)
-    rec["object_lists"] = {cfg: [{k: o[k] for k in ("id", "shot", "word", "centroid_m", "frames", "extent_pca_m", "small", "thin_long")} | {"share_in_current": o.get("share_in_current")}
+    rec["object_lists"] = {cfg: [{k: o[k] for k in ("id", "shot", "word", "centroid_m", "frames", "extent_m", "small", "thin_long")} | {"share_in_current": o.get("share_in_current")}
                                  for o in objs[cfg]] for cfg in obj_cfgs}
 
     # contact sheets: objects found at 30 fps (every frame) / 5 fps with no counterpart at the current rate
@@ -928,7 +958,7 @@ def analyse(p, M, clock, rec, jpgs):
         tile = cv2.resize(img[y0:y1, x0:x1], (180, 180), interpolation=cv2.INTER_AREA)
         tile = cv2.copyMakeBorder(tile, 0, 34, 0, 0, cv2.BORDER_CONSTANT, value=(255, 255, 255))
         cv2.putText(tile, (o["word"] or "?")[:22], (3, 194), cv2.FONT_HERSHEY_SIMPLEX, .42, (0, 0, 0), 1, cv2.LINE_AA)
-        cv2.putText(tile, f"{o['frames']}v {o['extent_pca_m'][0]:.2f}m est f{f}", (3, 209), cv2.FONT_HERSHEY_SIMPLEX, .38, (60, 60, 60), 1, cv2.LINE_AA)
+        cv2.putText(tile, f"{o['frames']}v {o['extent_m'][0]:.2f}m est f{f}", (3, 209), cv2.FONT_HERSHEY_SIMPLEX, .38, (60, 60, 60), 1, cv2.LINE_AA)
         return tile
 
     for cfg in ("b1", "b6"):
@@ -1072,7 +1102,7 @@ def analyse(p, M, clock, rec, jpgs):
                 used_o.add(o["id"])
             if len(chosen) == 4:
                 break
-        order_g = [c for c in ("G5", "G10", "Gmotion", "G30a", "G30c", "G30single") if c in meshes]
+        order_g = [c for c in ("G5", "G10", "Gmotion", "G30i", "G30c", "G30single") if c in meshes]
         scenes = {cfg: scene_of(meshes[cfg]) for cfg in order_g}
         vcol = {cfg: np.asarray(meshes[cfg].vertex_colors) for cfg in order_g}
         tri = {cfg: np.asarray(meshes[cfg].triangles) for cfg in order_g}
@@ -1294,7 +1324,7 @@ def evaluate(run_dir):
                 cam5 = ev.camera_rows({"cameras": {"shots": [x for x in sub if x["keyframes"]]}}, ref)[0]
             except Exception as e:  # noqa: BLE001
                 cam5 = {"error": repr(e)}
-            da3 = stage_rows(rec, lambda r, c=cfg: r["stage"].startswith("da3.") and (r["n"].get("config") == c or (c in ("G30c", "G30a") and str(r["n"].get("config", "")).startswith("G30 chunk"))))
+            da3 = stage_rows(rec, lambda r, c=cfg: r["stage"].startswith("da3.") and (r["n"].get("config") == c or str(r["n"].get("config", "")).startswith(f"{c} chunk")))
             tsdf = stage_rows(rec, lambda r, c=cfg: r["stage"].startswith("tsdf.") and r["n"].get("config") == c)
             g = (rec.get("geometry") or {}).get(cfg, {}).get(str(rec["main_shot"]), {})
             geo_rows_[cfg] = {"ate": cam, "ate_on_5fps_frames_only": cam5, "scale_vs_reference": scale, "views_all_shots": rec["geometry_sets"].get(cfg),
