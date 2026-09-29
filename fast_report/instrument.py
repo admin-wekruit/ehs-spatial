@@ -32,7 +32,9 @@ STAGES = {"decode", "cuts", "sam3.person", "vlm.vocab", "sam3.vocab.wave1", "sam
           # the core's finer stages (fb/a-core), fixed as well
           "vlm.vocab.frames", "vlm.events.frames", "gather.person_floor", "pack.room.shot", "people.shot", "dedupe",
           "outlines.segmented", "outlines.projected", "outlines.polygons", "cascade.embed", "cascade.decide", "vlm.name.crops",
-          "vlm.name", "frames.shared", "sam3d.inputs", "splat.setup", "splat.score", "da3.restore"}  # plus write.<layer>
+          "vlm.name", "frames.shared", "sam3d.inputs", "splat.setup", "splat.score", "da3.restore",
+          # the click MVP's judgement engine (mvp/b-judge) and its stand-in cards
+          "judge.rules", "judge.som", "judge.vlm", "cards.stub"}  # plus write.<layer>
 PRICE = {"A100-80GB": .000694, "cpu_core": .0000131, "gib": .00000222}  # Modal list prices, $/s
 
 

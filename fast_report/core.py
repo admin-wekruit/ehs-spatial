@@ -237,6 +237,7 @@ def person_masks(person, frames_local):
 def people_shot(si, keys, fps, g, depth_m, c2w_m, masks, plane, mpu):
     """PeopleLoop (the live rules, video.judge_frame) over the shot's 5 fps keyframes: tracks and rule rows."""
     from ehs_spatial.live_people import PeopleLoop
+    from fast_report import judge
     if plane:
         up, p0 = plane["normal"].cpu().numpy().astype(float), plane["point"].cpu().numpy().astype(float) * mpu
         scale = {"status": "model_estimated", "nativeToMeters": mpu,
@@ -254,6 +255,10 @@ def people_shot(si, keys, fps, g, depth_m, c2w_m, masks, plane, mpu):
     for j, f in enumerate(keys):
         r, fnd = loop.step({"t": f / fps, "frame": int(f), "local": j, "streamGap": None, "rgb": rgb[j], "depth": depth[j], "K": K[j],
                             "cameraToWorld": c2w[j], "trackingState": "normal", "trackingStateReason": None, "worldOriginEpoch": si})
+        by_source = {f"sam3-person-{i}": mk for mk, _, i in masks.get(j, [])}
+        for row in r:  # MVP J3a: the surface the feet rest on (footWorld is on the floor plane by construction)
+            mk = by_source.get(row.get("source"))
+            row["footSurface"] = judge.foot_surface(mk, depth[j], K[j], c2w[j], up, p0) if mk is not None and plane else None
         rows += r
         findings += fnd
     tracks = {}
@@ -262,7 +267,8 @@ def people_shot(si, keys, fps, g, depth_m, c2w_m, masks, plane, mpu):
             c = np.asarray(r["centroidWorld"])
             ground = c - ((c - p0) @ up) * up
             tracks.setdefault(r["track"], []).append({"t": r["t"], "frame": r["frame"], "xyz": np.round(ground, 3).tolist(),
-                                                      "foot": r["footWorld"], "accepted_foot": r["accepted"]})
+                                                      "foot": r["footWorld"], "accepted_foot": r["accepted"], "score": r.get("score"),
+                                                      "foot_surface": r.get("footSurface")})
     return tracks, rows, findings, up
 
 
@@ -583,6 +589,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                            for t, pts in tracks.items()]
             rules_out += [{**f, "shot": si} for f in findings]
             per_shot.append({"index": si, "frame_id": f"shot-{si}", "detections": len(rows), "tracks": len(tracks)})
+        results["people"] = {"tracks": tracks_out, "rules": rules_out}
         writer.put("people", {"tracks": tracks_out, "rules": rules_out, "shots": per_shot, "note": "the fast path tracks people only: no non-person movers"},
                    people_blobs, "observed+estimated", [*lab, "rules that need metres say NEEDS_REVIEW: the scale is not measured"])
         clock.mark("geometry_layers_put")
@@ -747,6 +754,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                                     for v, poly in sorted(found.items())]
                 frames_out.append(entry)
             frames_out.sort(key=lambda e: e["timeSec"])
+            results["outline_frames"] = frames_out
             for e, nxt in zip(frames_out, frames_out[1:] + [None]):
                 e["endTimeSec"] = nxt["timeSec"] if nxt else round(e["timeSec"] + BLOCK / fps, 4)
             analysis = json.dumps({"width": W, "height": H, "frames": frames_out}, separators=(",", ":")).encode()
@@ -758,6 +766,18 @@ def analyse(m, mp4, opts, clock, writer, log):
         clock.mark("outlines_put")
 
     outlines_future = m.cpu_pool.submit(outlines_job)
+
+    def judge_job(objs):
+        """MVP B: stand-in cards (fast_report.cards_stub, until A's cards land) -> judgements v1 (geometry), v2 (VLM answers)."""
+        from fast_report import cards_stub, judge
+        outlines_future.result()
+        people_future.result()
+        with clock.stage("cards.stub", n={"objects": len(objs)}):
+            ctx = judge.context(cam_rows, results.get("outline_frames") or [], results.get("people"), frames,
+                                {gg["index"]: gg["seeds"]["xyz"] for gg in geo if "seeds" in gg}, fps, (W, H), version_of={"objects": 1, "cards": "stub"})
+            cards = cards_stub.cards(objs, cam_rows, results.get("outline_frames") or [], results.get("people"), ctx)
+        return judge.run(cards, ctx, writer, clock, vlm_on=opts.get("judge_vlm", True))
+    judge_future = m.cpu_pool.submit(judge_job, copy.deepcopy(objects)) if opts.get("judge", True) else None
 
     # cascade: every member mask -> masked crop -> SigLIP 2 (GPU 0); object = mean of its masks
     obj_kf = sorted(by_frame)
@@ -859,6 +879,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     ev = vocab_future.result()
     if esc is not None:
         esc.result()
+    summary["judge"] = judge_future.result() if judge_future is not None else None
     summary["sam3d"] = models_future.result()
     summary["splat"] = splat_future.result() if splat_future is not None else None
     Path(shared.result()).unlink(missing_ok=True)
