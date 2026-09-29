@@ -1260,6 +1260,11 @@ def person_geometry(mask, depth, K, c2w, up, p0, u_floor=.02, up_deg=1., floor_m
     return out
 
 
+def people_frame(items, depth, K, c2w, up, p0, u_floor, up_deg, floor_mask):
+    """Worker (the core's process pool): person_geometry for one keyframe's masks [(index, mask)] -> [(index, record)]."""
+    return [(i, person_geometry(mk, depth, K, c2w, up, p0, u_floor, up_deg, floor_mask)) for i, mk in items]
+
+
 def people_cards(people, shots, object_cards, k=None):
     """kind person: track time, path length, the R1-R3 rows of its track, its nearest objects (section 4.9); person:untracked;
     mvp2 (R4, R7): stature and feet height (medians over the detections whose whole body was in view), how far it moved (a
