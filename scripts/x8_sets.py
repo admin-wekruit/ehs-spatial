@@ -363,6 +363,14 @@ D_ITEMS = [
     ("agv", 120, "q2=N"), ("agv", 480, "q2=N"), ("agv", 1019, "q2=N"), ("agv", 1203, "q2=n"),
     ("tum", "1305031942.771708", "q1=y"), ("tum", "1305031926.769141", "q1=y"), ("tum", "1305031934.769124", "q1=N"), ("tum", "1305031913.433081", "q1=N"),
     ("tum", "1305031937.438211", "q3=N"),
+    # second pass (run 001, after the first metrics): more positives where the footage has them, and look-alike negatives
+    ("tum", "1305031928.133202", "q1=Y"), ("tum", "1305031927.169161", "q1=y"), ("tum", "1305031941.636822", "q1=y"), ("tum", "1305031943.570021", "q1=y"),
+    ("tum", "1305031926.201141", "q1=y"), ("tum", "1305031910.765238", "q1=N"), ("tum", "1305031914.597122", "q1=N"), ("tum", "1305031946.468964", "q1=N"),
+    ("tum", "1305031937.768919", "q1=N q3=N"),
+    ("nasa", 2950, "q5=Y"), ("nasa", 3040, "q5=Y"), ("nasa", 3130, "q5=Y"), ("nasa", 3220, "q5=Y"), ("nasa", 3580, "q5=N"), ("nasa", 3310, "q5=N"),
+    ("samsclub", 300, "q4=Y"), ("samsclub", 350, "q4=Y"), ("samsclub", 400, "q4=Y"), ("samsclub", 450, "q4=y"), ("samsclub", 600, "q4=n"),
+    ("samsclub", 700, "q4=n"), ("lightning", 360, "q4=Y"), ("lightning", 420, "q4=Y"), ("lightning", 540, "q4=y"), ("lightning", 600, "q4=y"),
+    ("lightning", 660, "q4=n"), ("agv", 1300, "q4=y"), ("walmart", 650, "q4=y"), ("walmart", 600, "q4=N"), ("walmart", 700, "q4=N"),
 ]
 
 

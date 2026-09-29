@@ -127,11 +127,15 @@ class Jev:
         self.mod, self.torch = jev_omni, torch
         self.clf = jev_omni.load_jev_omni()
         self.path = path
+        self.full = {}  # the whole last hidden state, for per-row gathering under right padding
+        _, decoder = jev_omni._find_backbone(self.clf.model)
+        decoder.register_forward_hook(lambda _m, _a, out: self.full.__setitem__(
+            "h", out.last_hidden_state if hasattr(out, "last_hidden_state") else out[0]))
 
     def _inputs(self, convs):
         torch = self.torch
         proc = self.clf.processor
-        proc.tokenizer.padding_side = "left"
+        proc.tokenizer.padding_side = "right"  # left padding shifted the rows' positions (plain forward, no position ids): run 001's smoke test
         inputs = proc.apply_chat_template(convs, add_generation_prompt=True, tokenize=True, return_dict=True, return_tensors="pt",
                                           padding=True, enable_thinking=False)
         return {k: v.to("cuda", dtype=torch.bfloat16) if torch.is_floating_point(v) else v.to("cuda") for k, v in inputs.items()}
@@ -142,11 +146,14 @@ class Jev:
         convs = [[{"role": "user", "content": [{"type": "image", "image": im} for im in ims] +
                    [{"type": "text", "text": self.mod._prompt(st, q, opts)}]}] for ims, st, q, opts in reqs]
         inputs = self._inputs(convs)
+        last = inputs["attention_mask"].sum(1) - 1  # right padding: each row's last real token
         clf._capture.clear()
+        extra = clf._extra  # logits_to_keep=1 trims only the LM head; the decoder hook still sees every position
         with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
-            clf.model(**inputs, use_cache=False, **clf._extra)
+            clf.model(**inputs, use_cache=False, **extra)
+            hidden = self.full["h"][torch.arange(len(reqs), device=last.device), last].float()
             counts = torch.tensor([len(r[3]) for r in reqs], device="cuda")
-            logits = clf.head(clf._capture["hidden"], counts)
+            logits = clf.head(hidden, counts)
         return [logits[i, :len(r[3])].float().softmax(-1).cpu().tolist() for i, r in enumerate(reqs)]
 
     def one(self, ims, st, q, opts):
@@ -161,6 +168,13 @@ class Jev:
                     r = self.clf.predict(state=st, question=q, options=opts)
             return [r["probabilities"][o] for o in opts] if len(set(opts)) == len(opts) else None
         return self.batch([(ims, st, q, opts)])[0]
+
+
+def laya_predict(agent, state, questions):
+    try:
+        return agent.predict(state, questions)
+    except Exception as error:  # an option budget overflow must show in the record, not stop the other deciders
+        return {"error": repr(error)[:300], "answers": {q: {"probabilities": {k: float("nan") for k in d["criteria"]}} for q, d in questions.items()}}
 
 
 def pil(raw):
@@ -233,7 +247,10 @@ def run(sets, crops, videos, opts):
     lap("siglip_loaded_s")
     import laya
     agent = laya.load(LAYA)
-    agent.cfg["max_len"], agent.cfg["head_max_len"] = 1024, 640  # 20 rule descriptions do not fit the default 192-token option budget
+    cfg = getattr(agent, "cfg", None) or getattr(getattr(agent, "agent", None), "cfg", None)
+    if cfg is not None:  # 20 rule descriptions do not fit the default 192-token option budget (Laya's README: raise both)
+        cfg["max_len"], cfg["head_max_len"] = 1024, 640
+    boot["laya_budget_raised"] = cfg is not None
     lap("laya_loaded_s")
     vlm.wait(proc)
     lap("vllm_ready_s")
@@ -345,7 +362,7 @@ def run(sets, crops, videos, opts):
         with clock.stage("laya.e", gpu=0, n={"facts": len(e["items"])}, sync=True):
             for x in e["items"]:
                 t = time.perf_counter()
-                a = agent.predict(E_STATE_PREFIX + x["fact"], {
+                a = laya_predict(agent, E_STATE_PREFIX + x["fact"], {
                     "rule": {"type": "choice", "instructions": E_Q_RULE, "criteria": {r: e["rules"][r]["text"] for r in rule_ids}},
                     "severity": {"type": "choice", "instructions": E_Q_SEV, "criteria": e["severity_levels"]}})
                 lat.append(time.perf_counter() - t)
@@ -386,6 +403,11 @@ def run(sets, crops, videos, opts):
             r = jev.clf.predict(state=D_STATE.replace("a frame", "16 frames"), question=sets["d"][0]["question"] if sets.get("d") else "Is the aisle blocked?",
                                 options=YN, media=p, modality="video")
         res.setdefault("video", {})[name] = {"s": round(time.perf_counter() - t, 3), "probabilities": r["probabilities"]}
+    # the card's own verification cases (verification.json): does this load reproduce the published probabilities?
+    ver = json.loads(Path(jev.path, "verification.json").read_text())
+    got = [jev.clf.predict(**c)["probabilities"] for c in ver["cases"]]
+    res["card_verification"] = {"published_worst_abs_diff": ver["worst_abs_diff"], "ours": got,
+                                "worst_abs_diff_vs_reference": round(max(abs(g[k] - r[k]) for g, r in zip(got, ver["reference"]) for k in r), 5)}
     run_json = clock.report(vram, price_per_s=None, boot=boot)
     run_json["flags"] = [f for f in run_json["flags"] if not f.startswith("unknown stage")]  # x8's own stage names
     run_json["torch_peaks_gb"] = torch_peaks()
@@ -400,7 +422,7 @@ def io_jpeg(img):
 
 
 @app.local_entrypoint()
-def main(run_dir: str, only: str = "a,b,c,d,e", limit: int = 0, videos: bool = True):
+def main(run_dir: str, only: str = "a,b,c,d,e", limit: int = 0, videos: bool = True, tag: str = ""):
     rd = Path(run_dir)
     want = only.split(",")
     sets = {}
@@ -424,7 +446,7 @@ def main(run_dir: str, only: str = "a,b,c,d,e", limit: int = 0, videos: bool = T
     t = time.time()
     out = run.remote(sets, crops, vids, {"limit": limit or None})
     out["client_wall_s"] = round(time.time() - t, 1)
-    name = f"decisions{'-' + only.replace(',', '') if only != 'a,b,c,d,e' else ''}{'-limit' + str(limit) if limit else ''}.json"
+    name = f"decisions{'-' + only.replace(',', '') if only != 'a,b,c,d,e' else ''}{'-limit' + str(limit) if limit else ''}{'-' + tag if tag else ''}.json"
     (rd / name).write_text(json.dumps(out))
     print(json.dumps({"saved": str(rd / name), "boot": out["run"].get("boot"), "latency": out["res"]["latency"], "flags": out["run"]["flags"],
                       "gpu_peak": out["run"]["gpu_peak"]}, indent=1)[:6000])

@@ -110,12 +110,24 @@ def metrics(run_dir, decisions=None):
     rd = Path(run_dir)
     D = json.loads(Path(decisions or rd / "decisions.json").read_text())
     res = D["res"]
-    out, curves = {"sets": {}}, {}
+    pass2 = rd / "decisions-d-pass2.json"  # set d grown after the first run (x8_sets.D_ITEMS second pass): its d answers replace run 1's
+    if pass2.exists():
+        P2 = json.loads(pass2.read_text())
+        for src in ("jev", "jev_batched", "qwen"):
+            res[src] = {k: v for k, v in res[src].items() if not k.startswith("d|")} | {k: v for k, v in P2["res"][src].items() if k.startswith("d|")}
+        res["latency"] = res["latency"] | {f"pass2_{k}": v for k, v in P2["res"]["latency"].items() if "d" in k.split("_")[-1] or k.startswith("qwen_unbatched")}
+        res["card_verification"] = P2["res"].get("card_verification")
+    out, curves, B_aud = {"sets": {}}, {}, []
+
+    preds = {}
+    res["jevb"] = {k: {"probs": v} for k, v in res.get("jev_batched", {}).items()}
 
     def add(name, decider, probs, truth, positive=None):
         m, curve = score(probs, truth, positive)
         out["sets"].setdefault(name, {})[decider] = m
-        curves.setdefault(name, {})[decider] = curve
+        if "batched" not in decider:
+            curves.setdefault(name, {})[decider] = curve
+        preds.setdefault(name, {})[decider] = ([int(np.argmax(q)) for q in probs], curve[0], truth)
 
     # ---- a: same object?
     A = json.loads((rd / "sets/a.json").read_text())["items"]
@@ -123,9 +135,10 @@ def metrics(run_dir, decisions=None):
     for variant, keep in (("reference", lambda x: True), ("audited", lambda x: x["id"] not in audit["unsure"])):
         xs = [x for x in A if keep(x)]
         truth = [{0} if (x["truth"] and not (variant == "audited" and x["id"] in audit["flip_to_0"])) else {1} for x in xs]
-        for dec, key in (("jev-two-images", "multi"), ("jev-side-by-side", "pair")):
-            if all(f"a|{key}|{x['id']}" in res["jev"] for x in xs):
-                add(f"a:{variant}", dec, [res["jev"][f"a|{key}|{x['id']}"]["probs"] for x in xs], truth, 0)
+        for dec, key, src in (("jev-two-images", "multi", "jev"), ("jev-side-by-side", "pair", "jev"),
+                              ("jev-two-images-batched", "multi", "jevb"), ("jev-side-by-side-batched", "pair", "jevb")):
+            if all(f"a|{key}|{x['id']}" in res[src] for x in xs):
+                add(f"a:{variant}", dec, [res[src][f"a|{key}|{x['id']}"]["probs"] for x in xs], truth, 0)
         if all(f"a|multi|{x['id']}" in res["qwen"] for x in xs):
             add(f"a:{variant}", "qwen3-vl", [res["qwen"][f"a|multi|{x['id']}"]["probs"] for x in xs], truth, 0)
         if all(x["id"] in res["siglip"] for x in xs):
@@ -137,6 +150,10 @@ def metrics(run_dir, decisions=None):
             out["sets"][f"a:{variant}"]["siglip-cos raw"] = {"auroc_cos": auroc(cos, y), "accuracy_at_core_threshold_0.9858": round(float(np.mean((cos >= core_th) == (y > 0))), 4),
                                                              "same_share_at_core_threshold": round(float(np.mean(cos >= core_th)), 4)}
         out["sets"][f"a:{variant}"]["_by_kind"] = {k: sum(1 for x in xs if x["kind"] == k) for k in sorted({x["kind"] for x in xs})}
+        for dec, src, key in (("jev-two-images", "jev", "multi"), ("qwen3-vl", "qwen", "multi")):
+            ok = [int(np.argmax(res[src][f"a|{key}|{x['id']}"]["probs"])) in t for x, t in zip(xs, truth)]
+            out["sets"][f"a:{variant}"].setdefault("_accuracy_by_kind", {})[dec] = {
+                k: round(float(np.mean([o for o, x in zip(ok, xs) if x["kind"] == k])), 4) for k in sorted({x["kind"] for x in xs})}
 
     # ---- b: which label? truth = options that name-match the reference name, else 'none of these'
     B = json.loads((rd / "sets/b.json").read_text())["items"]
@@ -150,7 +167,8 @@ def metrics(run_dir, decisions=None):
                                  ("audited-best-view", [x for x in B if x["view"] == 0 and x["id"] not in baud["drop"]],
                                   lambda x: baud["rename"].get(x["id"], x["delivered_category"]))):
         key = f"b:{variant}"
-        for dec, src, var in (("jev-shortlist", "jev", "short"), ("jev-full-vocabulary", "jev", "full"), ("qwen3-vl-shortlist", "qwen", "short")):
+        for dec, src, var in (("jev-shortlist", "jev", "short"), ("jev-full-vocabulary", "jev", "full"), ("qwen3-vl-shortlist", "qwen", "short"),
+                              ("jev-shortlist-batched", "jevb", "short"), ("jev-full-vocabulary-batched", "jevb", "full")):
             if all(f"b|{var}|{x['id']}" in res[src] for x in xs):
                 opts = [res["jev"][f"b|{var}|{x['id']}"]["options"] for x in xs]
                 add(key, dec, [res[src][f"b|{var}|{x['id']}"]["probs"] for x in xs], [truth_b(o, name_of(x)) for o, x in zip(opts, xs)])
@@ -168,6 +186,8 @@ def metrics(run_dir, decisions=None):
             corr = curves[key]["siglip-zero-shot-full-vocabulary"][1]
             m["core_rule_p0.5_margin0.25"] = {"decided_share": round(float(np.mean(dec_ok)), 4),
                                               "accuracy_decided": round(float(np.mean([c for c, d in zip(corr, dec_ok) if d])), 4) if any(dec_ok) else None}
+        if variant.startswith("audited"):
+            B_aud = xs
         sl = [res["shortlist"][x["id"]] for x in xs]
         out["sets"][key]["_shortlist_recall"] = round(float(np.mean([any(name_match(w, name_of(x)) for w in s) for s, x in zip(sl, xs)])), 4)
         out["sets"][key]["_vocabulary_recall"] = round(float(np.mean([any(name_match(w, name_of(x)) for w in x["vocabulary"]) for x in xs])), 4)
@@ -179,29 +199,50 @@ def metrics(run_dir, decisions=None):
     C = json.loads((rd / "sets/c.json").read_text())["items"]
     lab = json.loads((rd / "sets/c-labels.json").read_text())["labels"]
     truth = [{"ABCD".index(lab[x["id"]])} for x in C]
-    for dec, src in (("jev", "jev"), ("qwen3-vl", "qwen")):
+    for dec, src in (("jev", "jev"), ("qwen3-vl", "qwen"), ("jev-batched", "jevb")):
         if all(f"c|abcd|{x['id']}" in res[src] for x in C):
             add("c", dec, [res[src][f"c|abcd|{x['id']}"]["probs"] for x in C], truth)
+    yA = [t == {0} for t in truth]  # the discovery gate's real question: one whole object (A) or not
+    for dec, src in (("jev", "jev"), ("qwen3-vl", "qwen")):
+        pA = [res[src][f"c|abcd|{x['id']}"]["probs"][0] for x in C]
+        m, _ = score([[a, 1 - a] for a in pA], [{0} if y else {1} for y in yA], 0)
+        out["sets"]["c"].setdefault("_whole_object_vs_rest", {})[dec] = {k: m[k] for k in ("accuracy", "balanced_accuracy", "auroc_p_yes", "ece_10", "in_sample", "cross_fitted_2fold")}
     x2 = [x["x2_qwen_judge"] for x in C]
     out["sets"]["c"]["_x2_generated_qwen_judge_accuracy"] = round(float(np.mean([j is not None and "ABCD".find(j) in t for j, t in zip(x2, truth)])), 4)
     out["sets"]["c"]["_labels"] = {k: sum(1 for t in truth if t == {i}) for i, k in enumerate("ABCD")}
 
     # ---- d: EHS yes/no
     Dd = json.loads((rd / "sets/d.json").read_text())["items"]
+    gem = json.loads((rd / "gemini-d.json").read_text())["answers"] if (rd / "gemini-d.json").exists() else {}
+    if gem:  # a stated probability, not a token probability
+        res["gemini"] = {f"d|yn|{i}": {"probs": [min(max(float(a["p_yes"]), 0.), 1.), 1 - min(max(float(a["p_yes"]), 0.), 1.)]} for i, a in gem.items()}
     for variant, xs in (("all", Dd), ("clear-labels", [x for x in Dd if x["clear"]])):
         truth = [{0} if x["truth"] else {1} for x in xs]
-        for dec, src in (("jev", "jev"), ("qwen3-vl", "qwen")):
+        for dec, src in (("jev", "jev"), ("qwen3-vl", "qwen"), ("gemini-stated-p", "gemini"), ("jev-batched", "jevb")):
+            if src not in res:
+                continue
             if all(f"d|yn|{x['id']}" in res[src] for x in xs):
                 add(f"d:{variant}", dec, [res[src][f"d|yn|{x['id']}"]["probs"] for x in xs], truth, 0)
         for q in sorted({x["question_id"] for x in xs}):
             qx = [x for x in xs if x["question_id"] == q]
             row = {"n": len(qx), "yes": sum(x["truth"] for x in qx)}
-            for dec, src in (("jev", "jev"), ("qwen3-vl", "qwen")):
-                if all(f"d|yn|{x['id']}" in res[src] for x in qx):
+            for dec, src in (("jev", "jev"), ("qwen3-vl", "qwen"), ("gemini-stated-p", "gemini")):
+                if src in res and all(f"d|yn|{x['id']}" in res[src] for x in qx):
                     p = [res[src][f"d|yn|{x['id']}"]["probs"][0] for x in qx]
                     row[dec] = {"accuracy": round(float(np.mean([(pp >= .5) == bool(x["truth"]) for pp, x in zip(p, qx)])), 4),
                                 "auroc_p_yes": auroc(p, [x["truth"] for x in qx]), "mean_p_yes_on_no": round(float(np.mean([pp for pp, x in zip(p, qx) if not x["truth"]] or [np.nan])), 4)}
             out["sets"][f"d:{variant}"].setdefault("_per_question", {})[q] = row
+        y = np.array([x["truth"] for x in xs], bool)
+        for dec, src in (("jev", "jev"), ("qwen3-vl", "qwen"), ("gemini-stated-p", "gemini")):
+            if src in res and all(f"d|yn|{x['id']}" in res[src] for x in xs):
+                p = np.array([res[src][f"d|yn|{x['id']}"]["probs"][0] for x in xs])
+                ths = np.sort(np.unique(p))[::-1]
+                rec = [(t, (p[y] >= t).mean(), (p[~y] >= t).mean()) for t in ths]
+                r80 = next(((t, r, f) for t, r, f in rec if r >= .8), None)
+                f10 = max(((t, r, f) for t, r, f in rec if f <= .1), key=lambda z: z[1], default=None)
+                out["sets"][f"d:{variant}"].setdefault("_screening", {})[dec] = {
+                    "p_yes_threshold_for_recall_0.8": None if r80 is None else {"threshold": round(float(r80[0]), 5), "false_alarm_rate": round(float(r80[2]), 4)},
+                    "recall_at_false_alarm_0.1": None if f10 is None else {"threshold": round(float(f10[0]), 5), "recall": round(float(f10[1]), 4)}}
 
     # ---- e: text routing (rule id, severity)
     if res.get("laya"):
@@ -215,6 +256,27 @@ def metrics(run_dir, decisions=None):
             add("e:rule", dec, [res[src][x["id"]]["rule"] for x in items], tr)
             add("e:severity", dec, [res[src][x["id"]]["severity"] for x in sv], ts)
 
+    # two deciders agree -> accept, else escalate (the ladder's cheapest check); SigLIP is excluded (never says 'none'/'no')
+    for name, ds in preds.items():
+        jev = next((d for d in ds if d.startswith("jev") and "batched" not in d and "side-by-side" not in d and "full" not in d), None)
+        for other in [d for d in ds if d.startswith("qwen") or d.startswith("gemini")]:
+            if jev:
+                (pj, cj, t), (po, co, _) = ds[jev], ds[other]
+                agree = [a == b for a, b in zip(pj, po)]
+                ok = [a in tt for a, tt in zip(pj, t)]
+                out["sets"][name][f"_agree_{jev}+{other}"] = {"agree_share": round(float(np.mean(agree)), 4),
+                                                            "accuracy_when_agree": round(float(np.mean([o for o, g in zip(ok, agree) if g])), 4) if any(agree) else None}
+    if "b:audited-best-view" in preds:  # the 'none of these' rows: vocabulary without the object's name
+        for d, (pr, _, t) in preds["b:audited-best-view"].items():
+            if "siglip" in d:
+                continue
+            kind = "full" if "full" in d else "short"
+            none_rows = [i for i, x in enumerate(B_aud) if t[i] == {res["jev"][f"b|{kind}|{x['id']}"]["options"].index(NONE)}]
+            word_rows = [i for i in range(len(t)) if i not in none_rows]
+            out["sets"]["b:audited-best-view"].setdefault("_by_truth_kind", {})[d] = {
+                "correct_word_exists": f"{sum(pr[i] in t[i] for i in word_rows)}/{len(word_rows)}",
+                "only_none_correct": f"{sum(pr[i] in t[i] for i in none_rows)}/{len(none_rows)}"}
+    out["card_verification"] = res.get("card_verification")
     out["latency"] = res["latency"]
     out["video_16_frames"] = res.get("video")
     run = D["run"]
@@ -231,31 +293,39 @@ def metrics(run_dir, decisions=None):
     return out
 
 
-COLORS = {"jev": "#2a78d6", "qwen": "#eb6834", "siglip": "#1baf7a", "laya": "#eda100"}
+COLORS = {"jev": "#2a78d6", "qwen": "#eb6834", "siglip": "#1baf7a", "laya": "#eda100", "gemini": "#e87ba4"}  # dataviz categorical slots 1-5
 
 
-def plot(curves, path):
-    """One small reliability diagram per set: bin accuracy vs mean confidence, the diagonal = perfect calibration."""
+def plot(curves, path, min_bin=5):
+    """One reliability diagram per set: bin accuracy vs mean confidence (bins with < min_bin items left out), the diagonal =
+    perfect calibration; marker area follows the bin's item count."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     names = [n for n in curves if not n.startswith("a:reference") and not n.startswith("b:reference")]
-    fig, axes = plt.subplots(1, len(names), figsize=(3.1 * len(names), 3.3), squeeze=False)
-    for ax, n in zip(axes[0], names):
+    cols = 4
+    rows = (len(names) + cols - 1) // cols
+    fig, axes = plt.subplots(rows, cols, figsize=(3.4 * cols, 3.5 * rows), squeeze=False)
+    for ax in axes.flat[len(names):]:
+        ax.axis("off")
+    for ax, n in zip(axes.flat, names):
         ax.plot([0, 1], [0, 1], color="#b0afa6", lw=1, ls="--")
         for dec, (conf, corr) in curves[n].items():
             col = next((c for k, c in COLORS.items() if dec.startswith(k)), "#666")
-            r = reliability(conf, corr)
+            r = [b for b in reliability(conf, corr) if b["n"] >= min_bin]
             ls = ":" if "side-by-side" in dec or "full" in dec else "-"
-            ax.plot([b["mean_conf"] for b in r], [b["accuracy"] for b in r], color=col, lw=2, ls=ls, marker="o", ms=4, label=dec[:24])
+            ax.plot([b["mean_conf"] for b in r], [b["accuracy"] for b in r], color=col, lw=2, ls=ls, label=dec[:26])
+            ax.scatter([b["mean_conf"] for b in r], [b["accuracy"] for b in r], s=[8 + b["n"] / 2 for b in r], color=col, edgecolors="white", linewidths=1, zorder=3)
         ax.set_title(n, fontsize=9, color="#222")
-        ax.set_xlim(0, 1), ax.set_ylim(0, 1)
+        ax.set_xlim(0, 1.02), ax.set_ylim(0, 1.02)
         ax.set_xlabel("confidence (bin mean)", fontsize=8, color="#555")
+        ax.set_ylabel("accuracy in bin", fontsize=8, color="#555")
         ax.tick_params(labelsize=7, colors="#555")
-        for s in ("top", "right"):
-            ax.spines[s].set_visible(False)
-        ax.legend(fontsize=6, frameon=False, loc="upper left")
-    axes[0][0].set_ylabel("accuracy in bin", fontsize=8, color="#555")
+        ax.grid(color="#eeeeea", lw=.6)
+        for sp in ("top", "right"):
+            ax.spines[sp].set_visible(False)
+        ax.legend(fontsize=6.5, frameon=False, loc="upper left")
+    fig.suptitle(f"X8 reliability (10 bins, bins with >= {min_bin} items; marker area = items)", fontsize=10, color="#222")
     fig.tight_layout()
     fig.savefig(path, dpi=110)
     plt.close(fig)

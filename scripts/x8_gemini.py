@@ -27,15 +27,18 @@ INTRO = ("Each image below is a frame from a video of a workplace (a shop floor,
 def run(rd, per):
     rd = Path(rd)
     items = json.loads((rd / "sets/d.json").read_text())["items"]
+    prev = json.loads((rd / "gemini-d.json").read_text()) if (rd / "gemini-d.json").exists() else {"answers": {}, "requests": []}
+    answers, record = dict(prev["answers"]), list(prev["requests"])
     frames = {}
     for x in items:
-        frames.setdefault(x["crop"], []).append(x)
+        if x["id"] not in answers:  # asked once; a later pass asks only the new items, in new request folders
+            frames.setdefault(x["crop"], []).append(x)
     keys = list(frames)
     out_dir = rd / "gemini-d"
     out_dir.mkdir(exist_ok=True)
-    answers, record = {}, []
+    first = len(list(out_dir.glob("request-*")))
     for start in range(0, len(keys), per):
-        folder = out_dir / f"request-{start // per:02d}"
+        folder = out_dir / f"request-{first + start // per:02d}"
         if (folder / "provider-output.json").exists():
             provider = json.loads((folder / "provider-output.json").read_text())
         else:
