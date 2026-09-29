@@ -9,6 +9,15 @@ motion analysis (R14); events (R24); splat package (R31). No run path is written
     python scripts/fast_report_eval.py --gaps OUT_DIR    # the review's gaps, 3 videos: fixed list vs per-video list, word match, person cut
     python scripts/fast_report_eval.py --self-check      # no GPU, no network
 
+Click MVP (CLICK-MVP-SPEC section 8; section 'click MVP' below): clicks against SAM 3 references on X1's 60 evaluation
+frames (the references run once per video on one Modal A100 and are kept as OUT/refs-<site>.npz), identity and physical
+info against the delivered report, repeatability between calls, judgements from agent labels, latency against spec 7,
+the spec 10 acceptance table. Default runs: fb/integrate's warm calls (D1's baseline).
+
+    python scripts/fast_report_eval.py --mvp OUT [--runs site=RUN_DIR:REPORT,...] [--repeat site=RUN_DIR:REPORT:OFFSET:NAME,...]
+        [--labels OUT] [--no-gpu] [--write-calibration]
+    python scripts/mvp_sheets.py clicks|boxes OUT --site SITE [--run RUN_DIR:REPORT]   # agent audit sheets + label templates
+
 Layer fields read (latest version of each layer; shots are in their own frame, metres 'estimated'):
     cameras.shots[]      {index, frames: [a, b], keyframes: [source frame], c2w_m: [4x4]}
     objects.objects[]    {id, shot, word, centroid_m};  objects.vocabulary: [every word SAM 3 ran, waves merged]
@@ -1475,6 +1484,18 @@ def mvp(out, runs, repeats, gpu=True, labels_dir=None, decisions=None, write_cal
     return summary
 
 
+def decider_acceptance(deciders):
+    """Spec 10: the deployed decider's cross-fitted ECE <= 0.10 on set d, per question that has >= 3 yes and >= 3 no
+    (binned p(yes), B's gate); questions without positives measure false alarms only and are listed apart."""
+    name = "qwen deployed (B)" if "qwen deployed (B)" in deciders else "qwen" if "qwen" in deciders else None
+    if not name:
+        return {"pass": None}
+    qs = deciders[name]["questions"]
+    judged = {q: v["calibrated_cv"]["ece_p_yes"] for q, v in qs.items() if v["positives"] >= 3 and v["n"] - v["positives"] >= 3}
+    return {"pass": all(e <= .1 for e in judged.values()) if judged else None, "decider": name, "ece_p_yes_cv": judged,
+            "false_alarm_only": {q: v["calibrated_cv"]["false_yes"] for q, v in qs.items() if q not in judged}}
+
+
 CARD_META = {"box", "dropped_share", "merged_from", "size_check", "footprint_xy", "walkway", "nearest_walked_path", "primitive"}
 
 
@@ -1510,11 +1531,15 @@ def acceptance(summary):
     for site, r in summary["sites"].items():
         lat = (r.get("latency") or {}).get("layers") or {}
         timed = {k: v["ok"] for k, v in lat.items() if v.get("ok") is not None}
+        mvp_layers = [n for n, *_ in MVP_TARGETS]
+        missing = [n for n in mvp_layers if n in lat and lat[n]["written_s"] is None]
+        is_mvp = len(missing) < len(mvp_layers)  # a run with none of the MVP layers is a baseline: its times are not judged
         inf = r["physical"]["inflation"]
         clicks = r.get("clicks") or {}
         v1 = next((c for n, c in clicks.items() if n.startswith("pick v1")), None)
         v2 = clicks.get("pick v2")
-        a = {"times": {"pass": all(timed.values()) if timed else None, "missed": sorted(k for k, ok in timed.items() if not ok)},
+        a = {"times": {"pass": (all(timed.values()) and not missing) if timed and is_mvp else None,
+                       "missed": sorted(k for k, ok in timed.items() if not ok), "not written": missing if is_mvp else "baseline: no MVP layers"},
              "memory": {"pass": None if "latency" not in r else max(r["latency"]["gpu_peak_gib"] or [0]) <= 72, "peaks_gib": (r.get("latency") or {}).get("gpu_peak_gib")},
              "L1_shown_non_large_over_3m": {"pass": None if inf["shown_non_large_over_3m_share"] is None else inf["shown_non_large_over_3m_share"] <= .05,
                                            "share": inf["shown_non_large_over_3m_share"]},
@@ -1528,8 +1553,7 @@ def acceptance(summary):
     k = summary.get("k_family") or {}
     out["all"] = {"repeat_coverage_k_le_2": {"pass": None if not k else all(v["k"] <= 2 and (v["coverage_after"] or 0) >= .9 for v in k.values() if v["n"]),
                                              "k": {f: v["k"] for f, v in k.items()}, "source": summary.get("k_source")},
-                  "decider_ece_le_0.10": {"pass": None if "qwen" not in (summary.get("decider") or {}) else summary["decider"]["qwen"]["all"]["calibrated_cv"]["ece"] <= .1,
-                                          "ece": ((summary.get("decider") or {}).get("qwen") or {}).get("all", {}).get("calibrated_cv", {}).get("ece")},
+                  "decider_ece_le_0.10": decider_acceptance(summary.get("decider") or {}),
                   "judgements_zero_false_pass": {"pass": (summary.get("judgements") or {}).get("pass"),
                                                  "false_pass": (summary.get("judgements") or {}).get("false_pass_total")}}
     return out
@@ -1541,7 +1565,13 @@ def click_audit(labels):
     rows = [v for v in labels.values() if v.get("label") in ("same object", "part of it", "different")]
     agree = [bool(v["auto"]) == (v["label"] != "different") for v in rows]
     count = {k: sum(v.get("label") == k for v in labels.values()) for k in ("same object", "part of it", "different", "unclear")}
-    return {"tiles": len(labels), "labels": count, "agreement_with_auto_rule": round(float(np.mean(agree)), 4) if agree else None,
+    rules = {}  # the spec's rule against simpler ones, where the tiles carry iou / cover (mvp_sheets writes them)
+    if rows and all("iou" in v for v in rows):
+        for name, rule in (("spec: iou >= 0.3 or cover >= 0.5", lambda v: v["iou"] >= PICK_IOU or v["cover"] >= PICK_COVER),
+                           ("iou >= 0.3", lambda v: v["iou"] >= PICK_IOU), ("iou >= 0.2", lambda v: v["iou"] >= .2)):
+            rules[name] = {"vs same-or-part": round(float(np.mean([rule(v) == (v["label"] != "different") for v in rows])), 4),
+                           "vs same only": round(float(np.mean([rule(v) == (v["label"] == "same object") for v in rows])), 4)}
+    return {"tiles": len(labels), "labels": count, "agreement_with_auto_rule": round(float(np.mean(agree)), 4) if agree else None, "rules": rules,
             "auto_correct_but_labelled_different": sum(bool(v["auto"]) and v["label"] == "different" for v in rows),
             "auto_wrong_but_labelled_right": sum(not v["auto"] and v["label"] != "different" for v in rows), "labeller": "agent"}
 

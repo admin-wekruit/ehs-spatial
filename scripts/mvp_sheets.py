@@ -158,7 +158,7 @@ def clicks(out, site, run_dir, report, variant="v1", n=60, mp4=None):
         cap = (f"{tid} ref:{refs['words'][refs['word'][r['ref']]] if refs['word'][r['ref']] >= 0 else 'person'} f{r['frame']} | "
                f"auto {auto} iou {r['iou']} | {r['entity']} '{names.get(r['entity'], '')}' key f{r['pick_frame']} {f['source'] if f else ''}")
         tiles.append((np.hstack(panels), cap))
-        labels[tid] = {"auto": bool(r["correct"]), "entity": r["entity"], "frame": r["frame"], "label": ""}
+        labels[tid] = {"auto": bool(r["correct"]), "entity": r["entity"], "frame": r["frame"], "iou": r["iou"], "cover": r["cover"], "label": ""}
     (out / "sheets").mkdir(exist_ok=True)
     for s in range(0, len(tiles), PER_SHEET):
         sheet(tiles[s:s + PER_SHEET], out / "sheets" / f"clicks-{site}-{variant}-{s // PER_SHEET}.jpg")
