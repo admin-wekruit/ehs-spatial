@@ -115,11 +115,7 @@ class FastReport:
         self.vllm = vlm.start(1, mps=VLLM_MPS)  # first: its load overlaps everything below; GPU 1 stays empty until it has profiled
         b["vllm_mps"] = VLLM_MPS
         lap("vllm_spawned_s")
-        spawn = multiprocessing.get_context("spawn")
-        self.dec_jobs, self.dec_results = spawn.Queue(), spawn.Queue()
-        self.decoder = spawn.Process(target=core.decoder_loop, args=(self.dec_jobs, self.dec_results), daemon=True)
-        self.decoder.start()
-        self.proc_pool = ProcessPoolExecutor(PROCS, mp_context=spawn)
+        self.proc_pool = ProcessPoolExecutor(PROCS, mp_context=multiprocessing.get_context("spawn"))
         self.proc_pool.map(core.warm_worker, range(PROCS))
         import torch
         import open3d  # noqa: F401
