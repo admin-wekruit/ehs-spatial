@@ -269,7 +269,7 @@ def lift_big(m2, frame_of, depth_m, K, c2w_m, dyn2, rows=4096, batch=16384):
     mu = torch.zeros(L, 3, device=dev).index_add_(0, m_, w_) / n_.clamp(min=1)[:, None]
     dm = w_ - mu[m_]
     cov = torch.zeros(L, 9, device=dev).index_add_(0, m_, (dm[:, :, None] * dm[:, None, :]).reshape(-1, 9)).reshape(L, 3, 3) / n_.clamp(min=1)[:, None, None]
-    view_ext = torch.sqrt(12 * torch.linalg.eigvalsh(cov).clamp(min=0)).flip(1)
+    view_ext = torch.sqrt(12 * torch.linalg.eigvalsh(cov.double().cpu()).clamp(min=0)).flip(1).float()  # CPU: cusolver's batched syevd failed on 180k matrices
     view_ext[n_ < 8] = float("nan")
     counts = torch.bincount(oc, minlength=ncomp).cpu().numpy()
     codes = np.split(vox[ovid].cpu().numpy(), np.cumsum(counts)[:-1])
@@ -584,6 +584,7 @@ def analyse(p, M, clock, rec, jpgs):
         return {"frames": list(fl), **{k: v.to(d0) for k, v in g.items()}}
 
     shot_frames = {si: [f for f in sets["b1"] if a <= f <= b] for si, (a, b) in enumerate(shots)}
+    main = max(range(len(shots)), key=lambda si: len(set(range(shots[si][0], shots[si][1] + 1)) & set(p["ref_frames"])))
     chunks = [("G30c", si, ci, shot_frames[si][s:s + CHUNK_VIEWS]) for si in shot_frames for ci, s in enumerate(chunk_starts(len(shot_frames[si])))]
     inter = {si: interleaved([f for f in sets["b6"] if f in set(fl)], [f for f in fl if f not in set(sets["b6"])]) for si, fl in shot_frames.items()}
     chunks += [("G30i", si, ci, fl) for si in inter for ci, fl in enumerate(inter[si])]
@@ -632,7 +633,7 @@ def analyse(p, M, clock, rec, jpgs):
     def g30_single():  # feasibility: every frame of the longest shot in ONE forward (GPU 1, before its share of chunks)
         if not p.get("g30_single"):
             return
-        si = max(shot_frames, key=lambda s: len(shot_frames[s]))
+        si = main  # the reference shot (Walmart's longest shot is not the one DROID covers)
         try:
             geo_out[("G30single", si)] = da3_run(d1, "G30single", si, shot_frames[si])
             rec["g30_single"] = {"shot": si, "views": len(shot_frames[si]), "ok": True}
@@ -717,7 +718,6 @@ def analyse(p, M, clock, rec, jpgs):
     ref_K = np.array(p["raster_K"], float)
     K_ref = np.array([[ref_K[0] * 1.5, 0, 160 + (ref_K[2] + .5) * 1.5 - .5], [0, ref_K[1] * 1.5, (ref_K[3] + .5) * 1.5 - .5], [0, 0, 1]])
     cams, geo_rec, meshes, scale = {}, {}, {}, {}
-    main = max(range(len(shots)), key=lambda si: len(set(range(shots[si][0], shots[si][1] + 1)) & set(p["ref_frames"])))
     rec["main_shot"] = main
     for cfg in configs_geo:
         cams[cfg], geo_rec[cfg] = [], {}
