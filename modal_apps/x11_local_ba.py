@@ -55,11 +55,57 @@ image = (modal.Image.from_registry("nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04"
 
 # ---------- spot finding, vectorised ----------
 
+def fit_plane_fast(P, thr, rng, iters=300, up=None):
+    """x4.fit_plane with the same rng draws, every hypothesis scored in one matrix product."""
+    tri = np.stack([rng.choice(len(P), 3, replace=False) for _ in range(iters)])
+    a, b, c = P[tri[:, 0]], P[tri[:, 1]], P[tri[:, 2]]
+    n = np.cross(b - a, c - a)
+    nn = np.linalg.norm(n, axis=1)
+    ok = nn >= 1e-12
+    n = n / np.where(ok, nn, 1)[:, None]
+    if up is not None:
+        ok &= np.abs(n @ up) <= .5
+    cnt = np.where(ok, (np.abs(P @ n.T - (a * n).sum(1)) <= thr).sum(0), -1)
+    best = None
+    if ok.any():
+        k = int(np.argmax(cnt))
+        best = np.flatnonzero(np.abs((P - a[k]) @ n[k]) <= thr)
+    nrm, cen = x4.ls_normal(P[best if best is not None else np.arange(len(P))])
+    inl = np.flatnonzero(np.abs((P - cen) @ nrm) <= thr)
+    nrm, cen = x4.ls_normal(P[inl])
+    return nrm, cen, inl, float(np.sqrt((((P[inl] - cen) @ nrm) ** 2).mean()))
+
+def plane_tilt_fast(P, up, thr, seed=0, boot=200, cap=4000, vertical=True):
+    """x4.plane_tilt, same result (same rng draws; the RANSAC hypotheses and the bootstrap fits batched)."""
+    if P is None or len(P) < 50:
+        return None
+    rng = np.random.default_rng(seed)
+    n, c, inl, rms = fit_plane_fast(P, thr, rng, up=up if vertical else None)
+    if len(inl) < 30:
+        return None
+    kind, deg = x4.tilt(n, up)
+    pool = P[inl] if len(inl) <= cap else P[rng.choice(inl, cap, replace=False)]
+    idx = np.stack([rng.integers(0, len(pool), len(pool)) for _ in range(boot)])
+    Q = pool[idx]
+    Q = Q - Q.mean(1, keepdims=True)
+    nb = np.linalg.eigh(np.matmul(Q.transpose(0, 2, 1), Q))[1][:, :, 0]
+    th = np.degrees(np.arccos(np.clip(np.abs(nb @ np.asarray(up)), 0, 1)))
+    d = np.where(th > 45, 90 - th, th)
+    kb = np.where(th > 45, "vertical", "horizontal")
+    boots = np.where(kb == kind, d, 90 - d)
+    lo, hi = np.percentile(boots, [2.5, 97.5])
+    return {"kind": kind, "tilt_deg": round(deg, 3), "ci95_deg": [round(float(lo), 3), round(float(hi), 3)],
+            "ci_width_deg": round(float(hi - lo), 3), "inliers": int(len(inl)), "points": int(len(P)), "rms_mm": round(rms * 1000, 2),
+            "normal": np.round(n, 5).tolist(), "centre": np.round(c, 4).tolist()}
+
+
 def find_spots_fast(c, max_spots):
     """x4.find_spots, same picks: leader clustering per (group, shot) against an array of leaders, negatives per keyframe
     as one matrix product, and the per-cluster work (ball counts, coarse tilt) only where a cluster can be picked
     (>= 2 keyframes; the tilt only past the view-spread gate). The shared rng is advanced for skipped capped clusters
-    exactly as find_spots does, so the capped clusters that count see the same random subset. -> spots, sub-step times."""
+    exactly as find_spots does, so the capped clusters that count see the same random subset. The coarse tilt (only a
+    ranking trigger) is computed lazily: the rest is taken from a heap keyed by the best trigger count a cluster could
+    still reach, a tilt computed only when a cluster reaches the top. -> spots, sub-step times."""
     from scipy.spatial import cKDTree
     t0 = time.perf_counter()
     rng = np.random.default_rng(0)
@@ -106,7 +152,7 @@ def find_spots_fast(c, max_spots):
         g = c.G[cl["si"]]
         mem = cl["members"]
         keyframes = sorted({d["q"] for d in mem})
-        pts = x4.voxel_down(np.concatenate([d["pts"] for d in mem]), .02)
+        pts = voxel_down_fast(np.concatenate([d["pts"] for d in mem]), .02)
         ext = np.percentile(pts, 95, 0) - np.percentile(pts, 5, 0)
         capped = False
         if ext.max() > x4.SPOT_CAP_M:
@@ -145,28 +191,55 @@ def find_spots_fast(c, max_spots):
             tr.append(f"quality: mean DA3 confidence {sp['mean_conf']:.2f} < the video's 25th percentile {c.conf_p25:.2f}")
         if sp["holes"] > .15:
             tr.append(f"quality: {sp['holes']:.0%} of the mask's depth dropped as flying pixels (holes)")
-        if cl["group"] in x4.SURFACE and g["plane_ok"]:
-            t = x4.plane_tilt(pts, g["up"], .03, boot=60)
+        sp["triggers"], sp["_tilt_due"] = tr, cl["group"] in x4.SURFACE and g["plane_ok"]
+        out.append(sp)
+    t3 = time.perf_counter()
+
+    def settle(sp):  # the coarse tilt and its rule trigger, once
+        nonlocal n_tilt
+        if sp.pop("_tilt_due", False):
+            t = plane_tilt_fast(sp["pts"], c.G[sp["si"]]["up"], .03, boot=60)
             n_tilt += 1
             sp["coarse_tilt"] = t
             if t and (t["ci95_deg"][0] <= x4.TILT_RULE <= t["ci95_deg"][1] or abs(t["tilt_deg"] - x4.TILT_RULE) <= 2):
-                tr.append(f"rule-borderline: coarse tilt {t['tilt_deg']:.1f} deg, CI {t['ci95_deg']} vs an assumed {x4.TILT_RULE:g} deg rule")
-        sp["triggers"] = tr
-        out.append(sp)
-    t3 = time.perf_counter()
+                sp["triggers"].append(f"rule-borderline: coarse tilt {t['tilt_deg']:.1f} deg, CI {t['ci95_deg']} vs an assumed {x4.TILT_RULE:g} deg rule")
+        return -sum(t.startswith(("quality", "rule")) for t in sp["triggers"])
     picked = []
     for grp in x4.GROUPS:
         cand = sorted([s for s in out if s["group"] == grp], key=lambda s: -s["rank"])
         if cand:
             picked.append(cand[0])
+    for s_ in picked:
+        settle(s_)
     taken = {s["id"] for s in picked}
-    rest = sorted([s for s in out if s["id"] not in taken], key=lambda s: (-sum(t.startswith(("quality", "rule")) for t in s["triggers"]), -s["rank"]))
-    picked = (picked + rest[:max(0, max_spots - len(picked))])[:max_spots]
+    import heapq
+    heap = [(-(sum(t.startswith(("quality", "rule")) for t in s["triggers"]) + bool(s.get("_tilt_due"))), -s["rank"], k, not s.get("_tilt_due"))
+            for k, s in enumerate(out) if s["id"] not in taken]
+    heapq.heapify(heap)
+    rest = []
+    while heap and len(rest) < max_spots - len(picked):
+        key, nr, k, exact = heapq.heappop(heap)
+        if exact:
+            rest.append(out[k])
+        else:
+            heapq.heappush(heap, (settle(out[k]), nr, k, True))
+    picked = (picked + rest)[:max_spots]
     for i, s in enumerate(picked):
         s["id"] = f"s{i}"
     c.clusters, c.candidates = clusters, out
     return picked, {"cluster_s": round(t1 - t0, 4), "negatives_s": round(t2 - t1, 4), "per_cluster_s": round(t3 - t2, 4),
                     "pick_s": round(time.perf_counter() - t3, 4), "clusters": len(clusters), "pickable": len(out), "coarse_tilts": n_tilt}
+
+
+def voxel_down_fast(P, s):
+    """x4.voxel_down, same points in the same order: one int64 key per voxel instead of a row-wise unique."""
+    if len(P) == 0:
+        return P
+    q = np.floor(P / s).astype(np.int64)
+    q -= q.min(0)
+    span = q.max(0) + 1
+    _, i = np.unique((q[:, 0] * span[1] + q[:, 1]) * span[2] + q[:, 2], return_index=True)
+    return P[np.sort(i)]
 
 
 def spot_key(s):
@@ -295,7 +368,12 @@ def analyse(m, clip, mp4, opts, clock):
     ref_keys, n_cand_ref = [spot_key(s) for s in ref], len(c.candidates)
     t = time.perf_counter()
     with clock.stage("refine.spots.fast"):
-        spots, sub = find_spots_fast(c, ns)
+        try:  # one BLAS thread for the small matrices (as in the BA)
+            from threadpoolctl import threadpool_limits
+            with threadpool_limits(1):
+                spots, sub = find_spots_fast(c, ns)
+        except ImportError:
+            spots, sub = find_spots_fast(c, ns)
     t_fast = time.perf_counter() - t
     same = [spot_key(s) for s in spots] == ref_keys
     if not same:  # X4's picks stay the product; the mismatch is reported
@@ -304,7 +382,7 @@ def analyse(m, clip, mp4, opts, clock):
               "x4_candidates": n_cand_ref, "detections": len(c.dets), "picks": ref_keys}
     methods = opts.get("methods", METHODS)
     recs, rows = [], []
-    for sp in spots:
+    for sp in ([] if opts.get("finder_only") else spots):
         head = {k: sp[k] for k in ("id", "group", "word", "si", "extent_m", "capped_to_1_5_m", "n_keyframes", "view_spread_deg", "max_score",
                                    "mean_conf", "holes", "planarity", "triggers")}
         head.update(centre_m=np.round(sp["centre"], 3).tolist(), box_m=[np.round(b, 3).tolist() for b in sp["box"]], coarse_tilt=sp.get("coarse_tilt"))
@@ -368,7 +446,7 @@ def plain(o):
 
 @app.local_entrypoint()
 def main(out: str, clips: str = ",".join(CLIPS), spots: int = 8, methods: str = ",".join(METHODS), repeat: bool = True,
-         methods_b: str = "anchor,anchor+ba,anchor+ba+mvs"):
+         methods_b: str = "anchor,anchor+ba,anchor+ba+mvs", finder_only: bool = False):
     import shutil
     out = Path(out)
     out.mkdir(parents=True, exist_ok=False)
@@ -380,7 +458,8 @@ def main(out: str, clips: str = ",".join(CLIPS), spots: int = 8, methods: str = 
     for clip in clips.split(","):
         mp4 = (x4.PHASE2 / "data/clips" / clip / CLIPS[clip]).read_bytes()
         t = time.time()
-        res = r.run.remote(clip, mp4, {"spots": spots, "methods": tuple(methods.split(",")), "repeat": repeat, "methods_b": tuple(methods_b.split(","))})
+        res = r.run.remote(clip, mp4, {"spots": spots, "methods": tuple(methods.split(",")), "repeat": repeat, "methods_b": tuple(methods_b.split(",")),
+                                        "finder_only": finder_only})
         res["client_wall_s"] = round(time.time() - t, 2)
         res["source_file"] = f"data/clips/{clip}/{CLIPS[clip]}"
         jpg = res.pop("jpg", None)
@@ -424,6 +503,17 @@ def self_check():
     thr_ref = c.identity_threshold
     fast, sub = find_spots_fast(c, 8)
     assert [spot_key(s) for s in fast] == [spot_key(s) for s in ref] and len(ref) >= 5, ([spot_key(s) for s in ref], [spot_key(s) for s in fast])
+    assert [s["triggers"] for s in fast] == [s["triggers"] for s in ref] and sub["coarse_tilts"] < 30, sub
+    for k in range(10):
+        P = rng.normal(0, 1, (int(rng.integers(1, 3000)), 3)) * rng.uniform(.01, 3)
+        assert np.array_equal(voxel_down_fast(P, .02), x4.voxel_down(P, .02)), k
+    up = np.array([0., -1, 0])
+    for k in range(20):  # the batched plane tilt is the same function
+        m = int(rng.integers(60, 2000))
+        a = np.radians(rng.uniform(0, 20))
+        yy, xx = rng.uniform(-1, 1, (2, m))
+        P = np.stack([xx, yy, 3 + yy * np.tan(a)], 1) + rng.normal(0, rng.uniform(.002, .05), (m, 3))
+        assert x4.plane_tilt(P, up, .03, boot=60) == plane_tilt_fast(P, up, .03, boot=60), k
     assert abs(c.identity_threshold - thr_ref) < 1e-9 and sub["pickable"] <= sub["clusters"]
     print("x11 self-check ok", {"picks": len(ref), **sub})
 
