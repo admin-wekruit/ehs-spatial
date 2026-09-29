@@ -163,6 +163,24 @@ def along(ys, xs, k=5):
     return p[order[np.linspace(0, len(p) - 1, k).round().astype(int)]]
 
 
+def straightness(ys, xs):
+    """RMS distance of a component's pixels from its principal line, over its length: ~0 for a straight edge."""
+    p = np.stack([xs, ys], 1).astype(float)
+    c = p - p.mean(0)
+    _, sv, vt = np.linalg.svd(c, full_matrices=False)
+    proj = c @ vt[0]
+    return float(np.sqrt(np.mean((c @ vt[1]) ** 2)) / max(proj.max() - proj.min(), 1.))
+
+
+def thinnest(masks, scores, min_score=.5):
+    """(n, 3, H, W) multimask output -> per prompt the smallest mask with score >= min_score (else the best)."""
+    area = masks.reshape(*masks.shape[:2], -1).sum(-1)
+    ok = scores >= min_score
+    area = np.where(ok, area, np.inf)
+    pick = np.where(ok.any(1), area.argmin(1), scores.argmax(1))
+    return pick
+
+
 def self_check_cpu():
     assert tiles(1280, 720) == [(0, 0, 768, 432), (512, 0, 1280, 432), (0, 288, 768, 720), (512, 288, 1280, 720)]
     assert clean_words(["Floor", "power cord", "store", "cord", "white", "pallet jack", "Power Cord"]) == ["power cord", "cord", "pallet jack"]
@@ -178,6 +196,13 @@ def self_check_cpu():
     assert len(comps) == 1 and abs(comps[0][2] - np.hypot(160, 1)) < 1, [(c[2]) for c in comps]
     pts = along(comps[0][0], comps[0][1], 5)
     assert pts[0][0] == 20 and pts[-1][0] == 179 and (pts[:, 1] == 50).all(), pts
+    yy = np.arange(100.)
+    assert straightness(yy, 2 * yy) < 1e-9 and straightness(yy, 20 * np.sin(yy / 15)) > .02
+    ms = np.zeros((1, 3, 4, 4), bool)
+    ms[0, 0, :2, :2] = True
+    ms[0, 1] = True
+    ms[0, 2, 0, 0] = True
+    assert thinnest(ms, np.array([[.9, .95, .3]]))[0] == 0 and thinnest(ms, np.array([[.1, .2, .3]]))[0] == 2
     print("x10 cpu self-check ok")
 
 
@@ -765,6 +790,302 @@ class X10:
                          for m in ["aux", "vocab", "generic", "ram", "owlw", "owlbox", "ridge", "geo", "geosam", "listing", *AMG]}
         return out, rec
 
+    @modal.method()
+    def stack_time(self, name: str, mp4: bytes, keys: list, keys_5fps: list, components: list, tag_list: list):
+        """A discovery stack on every given keyframe of a video, both GPUs (frames alternate), timed as the fast core
+        would add it: keyframes already decoded and on their GPU, SAM 3 vision features, person/floor masks and DA3
+        depth already computed (the core's own work: timed here, reported apart, before t0). t0 -> both GPUs done =
+        added seconds. -> record (per component seconds, masks per frame, per-GPU peaks)."""
+        import cv2
+        import torch
+        from fast_report import segment
+        from fast_report.stubs import Clock, Vram
+        from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
+        from sam2.sam2_image_predictor import SAM2ImagePredictor
+        tmp = Path(f"/tmp/{name}-stack.mp4")
+        tmp.write_bytes(mp4)
+        cap, frames = cv2.VideoCapture(str(tmp)), []
+        while True:
+            ok, bgr = cap.read()
+            if not ok:
+                break
+            frames.append(bgr)
+        H, W = frames[0].shape[:2]
+        hw = (H // 2, W // 2) if W >= 1280 else (H, W)
+        segment.DA3_HW = hw
+        if any(c == "owlw" for c in components) and (self.tag_queries is None or self.tag_queries[0] != len(tag_list)):
+            self.tag_queries = (len(tag_list), {d: self.owl[d].encode(tag_list) for d in self.devs})
+        dev_of = {f: self.devs[i % 2] for i, f in enumerate(keys)}
+        pre = {}
+        t = time.perf_counter()
+        gpu_frames, feats, aux = {}, {}, {}
+        for f in keys:  # the core's state: keyframes on their GPU, SAM 3 features, person/floor masks
+            d = dev_of[f]
+            gpu_frames[f] = torch.from_numpy(frames[f]).to(d)
+            with torch.cuda.device(d), torch.inference_mode():
+                feats[f] = self.sam3[d].vision(gpu_frames[f][None])
+                r = self.sam3[d].detect(feats[f], 1, tuple(AUX), SAVE_SCORE, top=PERSON_TOP_AUX)
+                aux[f] = (r["mask"].cpu().numpy(), r["score"].float().cpu().numpy(), np.array([AUX[i] for i in r["word"].tolist()]))
+        for d in self.devs:
+            torch.cuda.synchronize(d)
+        pre["core_state_s"] = round(time.perf_counter() - t, 2)
+        clock = Clock()
+        vram = Vram(self.devs, clock)
+        vram.start()
+        preds = {d: SAM2ImagePredictor(self.sam2[d]) for d in self.devs}
+        comp_s = {}
+        counts = {}
+        lock = __import__("threading").Lock()
+
+        def add(k, t0, n=0):
+            with lock:
+                comp_s[k] = comp_s.get(k, 0.) + time.perf_counter() - t0
+                counts[k] = counts.get(k, 0) + n
+
+        def one(d, f):
+            rgb_gpu = gpu_frames[f].flip(-1)
+            rgb = None
+            need_embed = any(c in ("owlbox", "ridge", "ridge2", "geosam") for c in components)
+            if "generic" in components:
+                t0 = time.perf_counter()
+                with torch.inference_mode():
+                    r = self.sam3[d].detect(feats[f], 1, tuple(GENERIC), VOCAB_SCORE)
+                torch.cuda.synchronize(d)
+                add("generic", t0, len(r["score"]))
+            if "labelw" in components:
+                t0 = time.perf_counter()
+                with torch.inference_mode():
+                    r = self.sam3[d].detect(feats[f], 1, tuple(LABEL_WORDS), VOCAB_SCORE)
+                torch.cuda.synchronize(d)
+                add("labelw", t0, len(r["score"]))
+            owl_out = None
+            if "owlbox" in components or "owlw" in components:
+                t0 = time.perf_counter()
+                q = self.tag_queries[1][d] if self.tag_queries else self.owl[d].encode(["object"])
+                owl_out = self.owl[d].detect(rgb_gpu, q)
+                torch.cuda.synchronize(d)
+                add("owl", t0)
+            if "owlw" in components:
+                t0 = time.perf_counter()
+                boxes, obj, word, sc = owl_out
+                keep = obj >= OWL_MIN_OBJ
+                ws = clean_words([tag_list[i] for i, x in sorted(zip(word[keep].tolist(), sc[keep].tolist()), key=lambda z: -z[1]) if x >= OWL_WORD_MIN], OWL_WORDS)
+                if ws:
+                    with torch.inference_mode():
+                        r = self.sam3[d].detect(feats[f], 1, tuple(ws), VOCAB_SCORE)
+                    torch.cuda.synchronize(d)
+                    add("owlw_sam3", t0, len(r["score"]))
+            if need_embed:
+                t0 = time.perf_counter()
+                rgb = np.ascontiguousarray(frames[f][..., ::-1])
+                with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
+                    preds[d].set_image(rgb)
+                torch.cuda.synchronize(d)
+                add("sam2_embed", t0)
+            p = preds[d]
+
+            def decode(pts=None, labels=None, boxes=None):
+                hw0 = p._orig_hw[-1]
+                pc = p._transforms.transform_coords(torch.as_tensor(pts, dtype=torch.float32, device=d), normalize=True, orig_hw=hw0) if pts is not None else None
+                pl = torch.as_tensor(labels, dtype=torch.int, device=d) if labels is not None else None
+                bx = p._transforms.transform_boxes(torch.as_tensor(boxes, dtype=torch.float32, device=d), normalize=True, orig_hw=hw0) if boxes is not None else None
+                n, k = (len(pts) if pts is not None else len(boxes)), 0
+                for i in range(0, n, 64):
+                    sl = slice(i, i + 64)
+                    m, _, _ = p._predict(pc[sl] if pc is not None else None, pl[sl] if pl is not None else None, bx[sl] if bx is not None else None, multimask_output=False)
+                    small = torch.nn.functional.interpolate(m[:, :1].half(), size=hw, mode="area")[:, 0] > .3
+                    k += int(small.shape[0])
+                return k
+            if "owlbox" in components:
+                t0 = time.perf_counter()
+                with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
+                    k = decode(boxes=owl_out[0]) if len(owl_out[0]) else 0
+                torch.cuda.synchronize(d)
+                add("owlbox_decode", t0, k)
+            if "ridge" in components:
+                t0 = time.perf_counter()
+                g = cv2.cvtColor(frames[f], cv2.COLOR_BGR2GRAY)
+                strength = ridge_map(torch.from_numpy(g).to(d).float() / 255).cpu().numpy()
+                sc = W / 1280
+                comps = thin_components(strength, RIDGE_MIN, RIDGE_LEN * sc, RIDGE_WIDTH * sc, RIDGE_TOP)
+                k = 0
+                if comps:
+                    pts = np.stack([along(ys, xs, 5) for ys, xs, _, _ in comps])
+                    with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
+                        k = decode(pts=pts, labels=np.ones(pts.shape[:2]))
+                torch.cuda.synchronize(d)
+                add("ridge", t0, k)
+            if "ridge2" in components:
+                t0 = time.perf_counter()
+                g = cv2.cvtColor(frames[f], cv2.COLOR_BGR2GRAY)
+                strength = ridge_map(torch.from_numpy(g).to(d).float() / 255).cpu().numpy()
+                sc = W / 1280
+                comps = [c for c in thin_components(strength, RIDGE_MIN, RIDGE_LEN * sc, RIDGE_WIDTH * sc, 4 * 60) if straightness(c[0], c[1]) >= .012][:60]
+                k = 0
+                if comps:
+                    pts = np.stack([along(ys, xs, 5) for ys, xs, _, _ in comps])
+                    hw0 = p._orig_hw[-1]
+                    pc = p._transforms.transform_coords(torch.as_tensor(pts, dtype=torch.float32, device=d), normalize=True, orig_hw=hw0)
+                    pl = torch.ones(pts.shape[:2], dtype=torch.int, device=d)
+                    with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
+                        for i in range(0, len(pts), 64):
+                            m, sco, _ = p._predict(pc[i:i + 64], pl[i:i + 64], None, multimask_output=True)
+                            small = (torch.nn.functional.interpolate(m.flatten(0, 1)[:, None].float(), size=hw, mode="area")[:, 0] > 0).view(m.shape[0], m.shape[1], *hw).cpu().numpy()
+                            thinnest(small, sco.float().cpu().numpy())
+                            k += len(m)
+                torch.cuda.synchronize(d)
+                add("ridge2", t0, k)
+            for c in components:
+                if c in AMG:
+                    t0 = time.perf_counter()
+                    side, crops = AMG[c]
+                    rgb = rgb if rgb is not None else np.ascontiguousarray(frames[f][..., ::-1])
+                    gen = SAM2AutomaticMaskGenerator(self.sam2[d], points_per_side=side, crop_n_layers=crops, **AMG_SETTINGS)
+                    with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
+                        found = gen.generate(rgb)
+                    if found:
+                        mk = torch.from_numpy(np.stack([x["segmentation"] for x in found])).to(d)
+                        (torch.nn.functional.interpolate(mk[:, None].half(), size=hw, mode="area")[:, 0] > .3).cpu()
+                    torch.cuda.synchronize(d)
+                    add(c, t0, len(found))
+            return f
+
+        def worker(d, part):
+            with torch.cuda.device(d):
+                return [one(d, f) for f in part]
+        t0 = time.perf_counter()
+        with ThreadPoolExecutor(2) as pool:
+            jobs = [pool.submit(worker, dv, [f for f in keys if dev_of[f] == dv]) for dv in self.devs]
+            [j.result() for j in jobs]
+        added = time.perf_counter() - t0
+        vram.stop()
+        rep = clock.report(vram)
+        for d in self.devs:
+            with torch.cuda.device(d):
+                torch.cuda.empty_cache()
+        return {"video": name, "components": components, "keyframes": len(keys), "added_s": round(added, 2), "pre_core_state_s_not_added": pre,
+                "component_gpu_s_sum": {k: round(v, 2) for k, v in comp_s.items()}, "masks_per_frame": {k: round(v / len(keys), 1) for k, v in counts.items()},
+                "gpu_peak": rep["gpu_peak"], "flags": rep["flags"],
+                "note": "added_s: wall from t0 (core state ready) until both GPUs finish; component sums are GPU-thread seconds (two threads)"}
+
+    @modal.method()
+    def ridge2(self, name: str, mp4: bytes, frames_idx: list, straight_max: float = .012, top: int = 60):
+        """(e) v2 on the given frames: dark and bright ridges, straight components dropped (shelf edges, lights, floor
+        lines: straightness < straight_max), 5 points along each, SAM 2.1 multimask -> the thinnest mask with score
+        >= 0.5. -> (npz bytes of masks at the evaluation grid, per-frame seconds)."""
+        import cv2
+        import torch
+        import torch.nn.functional as F
+        from sam2.sam2_image_predictor import SAM2ImagePredictor
+        tmp = Path(f"/tmp/{name}-r2.mp4")
+        tmp.write_bytes(mp4)
+        cap, frames = cv2.VideoCapture(str(tmp)), []
+        while True:
+            ok, bgr = cap.read()
+            if not ok:
+                break
+            frames.append(bgr)
+        H, W = frames[0].shape[:2]
+        hw = (H // 2, W // 2) if W >= 1280 else (H, W)
+        out, times = {}, {}
+        preds = {d: SAM2ImagePredictor(self.sam2[d]) for d in self.devs}
+
+        def one(d, f):
+            t = time.perf_counter()
+            p = preds[d]
+            with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
+                p.set_image(np.ascontiguousarray(frames[f][..., ::-1]))
+                g = torch.from_numpy(cv2.cvtColor(frames[f], cv2.COLOR_BGR2GRAY)).to(d).float() / 255
+                strength = ridge_map(g).cpu().numpy()
+                sc = W / 1280
+                comps = [c for c in thin_components(strength, RIDGE_MIN, RIDGE_LEN * sc, RIDGE_WIDTH * sc, 4 * top)
+                         if straightness(c[0], c[1]) >= straight_max][:top]
+                masks, scores = np.zeros((0, *hw), bool), np.zeros(0, np.float32)
+                if comps:
+                    pts = np.stack([along(ys, xs, 5) for ys, xs, _, _ in comps])
+                    hw0 = p._orig_hw[-1]
+                    pc = p._transforms.transform_coords(torch.as_tensor(pts, dtype=torch.float32, device=d), normalize=True, orig_hw=hw0)
+                    pl = torch.ones(pts.shape[:2], dtype=torch.int, device=d)
+                    ms, ss = [], []
+                    for i in range(0, len(pts), 64):
+                        m, sco, _ = p._predict(pc[i:i + 64], pl[i:i + 64], None, multimask_output=True)
+                        small = (F.interpolate(m.flatten(0, 1)[:, None].float(), size=hw, mode="area")[:, 0] > 0).view(m.shape[0], m.shape[1], *hw).cpu().numpy()
+                        sco = sco.float().cpu().numpy()
+                        pick = thinnest(small, sco)
+                        ms.append(small[np.arange(len(pick)), pick])
+                        ss.append(sco[np.arange(len(pick)), pick])
+                    masks, scores = np.concatenate(ms), np.concatenate(ss)
+            torch.cuda.synchronize(d)
+            times[f] = round(time.perf_counter() - t, 4)
+            out[f"{f}/ridge2/bits"], out[f"{f}/ridge2/score"] = pack(masks), scores.astype(np.float32)
+            out[f"{f}/ridge2/label"] = np.array([""] * len(scores), "U64")
+
+        def worker(d, part):
+            with torch.cuda.device(d):
+                for f in part:
+                    one(d, f)
+        with ThreadPoolExecutor(2) as pool:
+            [j.result() for j in [pool.submit(worker, self.devs[i], frames_idx[i::2]) for i in range(2)]]
+        buf = io.BytesIO()
+        np.savez_compressed(buf, **out)
+        return buf.getvalue(), times
+
+    @modal.method()
+    def words_run(self, name: str, mp4: bytes, frames_idx: list, sets: dict):
+        """SAM 3 word sets on the given frames, whole frame or on 2 x 2 upscaled tiles (tiles(): 60% of the frame each,
+        each tile through SAM 3's own 1008 px resize, masks pasted back). sets: {method: [words, tiled]}. -> (npz bytes
+        at the evaluation grid, per method per-frame seconds (vision included: tiles need their own features))."""
+        import cv2
+        import torch
+        from fast_report import segment
+        tmp = Path(f"/tmp/{name}-w.mp4")
+        tmp.write_bytes(mp4)
+        cap, frames = cv2.VideoCapture(str(tmp)), []
+        while True:
+            ok, bgr = cap.read()
+            if not ok:
+                break
+            frames.append(bgr)
+        H, W = frames[0].shape[:2]
+        hw = (H // 2, W // 2) if W >= 1280 else (H, W)
+        out, times = {}, {}
+        tl = tiles(hw[1], hw[0])  # tile boxes on the evaluation grid
+        src = tiles(W, H)         # the same tiles in source pixels
+        for method, (words, tiled) in sets.items():
+            segment.DA3_HW = (tl[0][3] - tl[0][1], tl[0][2] - tl[0][0]) if tiled else hw
+
+            def one(d, f):
+                t = time.perf_counter()
+                with torch.inference_mode():
+                    if tiled:
+                        x = torch.stack([torch.from_numpy(np.ascontiguousarray(frames[f][y0:y1, x0:x1])) for x0, y0, x1, y1 in src]).to(d)
+                        v = self.sam3[d].vision(x)
+                        r = self.sam3[d].detect(v, len(src), tuple(words), SAVE_SCORE)
+                        m = r["mask"].cpu().numpy()
+                        full = np.zeros((len(m), *hw), bool)
+                        for i, k in enumerate(r["frame"].tolist()):
+                            x0, y0, x1, y1 = tl[k]
+                            full[i, y0:y1, x0:x1] = m[i]
+                        masks = full
+                    else:
+                        v = self.sam3[d].vision(torch.from_numpy(frames[f]).to(d)[None])
+                        r = self.sam3[d].detect(v, 1, tuple(words), SAVE_SCORE)
+                        masks = r["mask"].cpu().numpy()
+                torch.cuda.synchronize(d)
+                times.setdefault(method, {})[f] = round(time.perf_counter() - t, 4)
+                out[f"{f}/{method}/bits"], out[f"{f}/{method}/score"] = pack(masks), r["score"].float().cpu().numpy()
+                out[f"{f}/{method}/label"] = np.array([words[i] for i in r["word"].tolist()], "U64")
+
+            def worker(d, part):
+                with torch.cuda.device(d):
+                    for f in part:
+                        one(d, f)
+            with ThreadPoolExecutor(2) as pool:
+                [j.result() for j in [pool.submit(worker, self.devs[i], frames_idx[i::2]) for i in range(2)]]
+        buf = io.BytesIO()
+        np.savez_compressed(buf, **out)
+        return buf.getvalue(), times
+
     def geometry(self, frames, keys, f, out, hw):
         """(d) for reference frame f: DA3 on the 9 5-fps keyframes around it (one forward, the core's model and grid),
         metric scale from the floor plane (SAM 3 'floor' on f) + 1.6 m camera height (estimated), large planes by
@@ -886,6 +1207,65 @@ def main(frames: str, jpg: str, out: str, videos: str = "me340,samsclub,walmart,
     meta["usd_upper"] = round((meta["finished_unix"] - t_boot) * (2 * PRICE["A100-80GB"] + CPU * PRICE["cpu_core"] + MEMORY_GIB * PRICE["gib"])
                               + sum(ram["per_frame_s"]) * PRICE["A100-80GB"] + (ram["load_s"] + 120) * PRICE["A100-80GB"], 3)
     (out / "meta.json").write_text(json.dumps(meta, indent=1, default=str))
+
+
+@app.local_entrypoint()
+def stack(frames: str, out: str, jpg: str = "", videos: str = "me340,samsclub,walmart,lightning", stacks: str = "generic+owlbox;generic+owlbox+ridge;generic+owlbox+ridge+amg16;generic+owlbox+amg32",
+          fps5: str = "generic+owlbox"):
+    """Added seconds of discovery stacks on every object keyframe (and, for `fps5`, every 5 fps keyframe) of each
+    video, both GPUs, core state ready first (not counted) + ridge v2 masks on the reference frames (and their
+    neighbours) for scoring. -> OUT/stack-time.json, OUT/<video>-ridge2.npz."""
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=True)
+    plan = json.loads(Path(frames).read_text())
+    x10 = X10()
+    t0 = time.time()
+    boot = x10.boot_info.remote()
+    rows = {"boot": boot, "runs": []}
+    tag_list = json.loads((Path(frames).parent / "run001" / "ram.json").read_text())["tag_list"] if (Path(frames).parent / "run001" / "ram.json").exists() else []
+    for v in videos.split(","):
+        p = plan[v]
+        mp4 = Path(p["video"]).read_bytes()
+        ref_nb = sorted(set(p["reference"]) | {x for pair in p["neighbours"].values() for x in pair if x is not None})
+        npz, rt = x10.ridge2.remote(v, mp4, ref_nb)
+        (out / f"{v}-ridge2.npz").write_bytes(npz)
+        rows["runs"].append({"video": v, "ridge2_per_frame_s": rt})
+        for st in stacks.split(";"):
+            r = x10.stack_time.remote(v, mp4, p["object_keys"], p["keys_5fps"], st.split("+"), tag_list)
+            r["keyframes_kind"] = "object keyframes (every 3rd 5 fps keyframe)"
+            rows["runs"].append(r)
+            print(v, st, "object keys", r["keyframes"], "added_s", r["added_s"], r["component_gpu_s_sum"], r["flags"], flush=True)
+        if fps5:
+            r = x10.stack_time.remote(v, mp4, p["keys_5fps"], p["keys_5fps"], fps5.split("+"), tag_list)
+            r["keyframes_kind"] = "every 5 fps keyframe"
+            rows["runs"].append(r)
+            print(v, fps5, "5 fps keys", r["keyframes"], "added_s", r["added_s"], flush=True)
+        (out / "stack-time.json").write_text(json.dumps(rows, indent=1, default=str))
+    rows["usd_upper"] = round((time.time() - t0) * (2 * PRICE["A100-80GB"] + CPU * PRICE["cpu_core"] + MEMORY_GIB * PRICE["gib"]), 3)
+    (out / "stack-time.json").write_text(json.dumps(rows, indent=1, default=str))
+
+
+LABEL_WORDS = ["label", "sticker", "tag", "sign", "placard", "price tag", "warning label"]
+
+
+@app.local_entrypoint()
+def words(frames: str, out: str, videos: str = "me340,samsclub,walmart,lightning"):
+    """Word-set follow-ups on the reference frames: a label/sign word set (whole frame and tiled) and the generic
+    words on tiles -> OUT/<video>-words.npz + OUT/words-time.json."""
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=True)
+    plan = json.loads(Path(frames).read_text())
+    x10 = X10()
+    t0 = time.time()
+    rows = {"boot": x10.boot_info.remote(), "sets": {"labelw": [LABEL_WORDS, False], "labelw_t": [LABEL_WORDS, True], "generic_t": [GENERIC, True]}, "videos": {}}
+    for v in videos.split(","):
+        p = plan[v]
+        npz, t = x10.words_run.remote(v, Path(p["video"]).read_bytes(), p["reference"], rows["sets"])
+        (out / f"{v}-words.npz").write_bytes(npz)
+        rows["videos"][v] = t
+        print(v, {k: round(float(np.median(list(x.values()))), 3) for k, x in t.items()}, flush=True)
+    rows["usd_upper"] = round((time.time() - t0) * (2 * PRICE["A100-80GB"] + CPU * PRICE["cpu_core"] + MEMORY_GIB * PRICE["gib"]), 3)
+    (out / "words-time.json").write_text(json.dumps(rows, indent=1, default=str))
 
 
 if __name__ == "__main__":
