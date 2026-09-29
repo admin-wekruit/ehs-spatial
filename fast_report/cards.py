@@ -855,6 +855,14 @@ def unresolved(phys):
                                                               "resolution and depth at this distance (seen from further than it is big)"}
 
 
+def unresolved_distance(f, floor_m=1.):
+    """A distance whose +-u is at least max(the distance, 1 m) says nothing at the checks' scales (0.3-1 m): 'not measurable'.
+    mvp2/integrate: small or far figures read 'nearest object 0.00 +- 20 m' (a person's position u of 5 m x k 4.3)."""
+    if isinstance(f, dict) and "value" in f and f["u"] >= max(abs(f["value"]), floor_m):
+        return {"status": "not measurable", "reason": "its uncertainty is larger than the distance and than 1 m: the positions are too uncertain here"}
+    return f
+
+
 def rim(x, vs, cam_h, ref, which):
     """mvp2 (R3): the un-eroded edges' height over views vs: p90 of the top edges (p10 of the bottom edges) from the views
     whose camera does not look onto that face (camera height <= ref + LOOK_MARGIN_M for the top, >= ref - LOOK_MARGIN_M for
@@ -985,9 +993,9 @@ def object_card(o, x, s, k, marking, merged_from, counts):
             best = (name, d)
     if best:
         up = phys["position_xy"]["parts"]
-        phys["nearest_walked_path"] = value(best[1], {"views": up.get("views"), "depth": up.get("depth"), "pose": up.get("pose"),
-                                                      "scale": SCALE_REL * best[1]}, "position", k, None, path=best[0], n_subsets=len(sub) or 1,
-                                            note="footprint to the nearest walked path (camera or person) on the floor")
+        phys["nearest_walked_path"] = unresolved_distance(value(best[1], {"views": up.get("views"), "depth": up.get("depth"), "pose": up.get("pose"),
+                                                                          "scale": SCALE_REL * best[1]}, "position", k, None, path=best[0], n_subsets=len(sub) or 1,
+                                                                note="footprint to the nearest walked path (camera or person) on the floor"))
     phys["walkway"] = ({"status": "floor marking detected in this shot", "reason": "not interpreted as a walkway"} if marking else
                        {"status": "no marked walkway detected", "reason": "no floor-marking object in this shot"})
     # angles (section 4.5)
@@ -1657,10 +1665,10 @@ def people_cards(people, shots, object_cards, k=None):
                                            for q, p_, u_ in zip(t["points"], xy, u_xy)]},
                     "physical": phys,
                     "rules": [r for r in people.get("rules", []) if r.get("shot") == t["shot"] and local in [str(x) for x in r.get("tracks", [])]],
-                    "nearest_objects": [{"id": c["id"], "distance": value(d, {"footprint": c["physical"]["footprint_xy"].get("u", 0.),
-                                                                              "person": float(np.median(u_xy)), "scale": SCALE_REL * d},
-                                                                    "position", k, None, views_term=False,
-                                                                    note="footprint to the track's path on the floor")} for c, d in near[:3]],
+                    "nearest_objects": [{"id": c["id"], "distance": unresolved_distance(value(d, {"footprint": c["physical"]["footprint_xy"].get("u", 0.),
+                                                                                                  "person": float(np.median(u_xy)), "scale": SCALE_REL * d},
+                                                                                        "position", k, None, views_term=False,
+                                                                                        note="footprint to the track's path on the floor"))} for c, d in near[:3]],
                     "ppe": None, "observed": ["masks", "track"], "estimated": ["physical", "positions"], "inferred": [] if moving else ["unconfirmed"]})
     out.append({"id": "person:untracked", "kind": "person", "identity": {"name": "person, not tracked", "label": "observed"},
                 "class": {"category": "other", "mobility": "agent", "mobility_source": "class prior"},
@@ -1868,7 +1876,8 @@ def self_check():
     assert people_cards({"tracks": [dict(people["tracks"][0], points=[{"t": i * .2, "xyz": [.2 + .01 * i, 1.6, 3.6]} for i in range(5)])]},
                         {0: dict(shot, frame=f0, cam_floor=to_floor(cams[:, :3, 3], f0), u_pose_m=.04)}, [])[0]["physical"]["path_length"]["status"] \
         == "not measurable", "1 cm steps 3.6 m away: noise"
-    assert pc["nearest_objects"][0]["distance"]["u"] > 0 and all(q["u_m"] > 0 for q in pc["time"]["positions"])
+    d0 = pc["nearest_objects"][0]["distance"]  # a number with u, or 'not measurable' when u >= max(value, 1 m)
+    assert (d0.get("u", 0) > 0 or d0.get("status") == "not measurable") and all(q["u_m"] > 0 for q in pc["time"]["positions"])
     assert pc["physical"]["stature"]["status"] == "not observed" and pc["identity"]["confirmed_by"] is None  # 0.6 m walked: not confirmed
     assert "person:untracked" in by and out["walked"][0]["person:0-1"]
     a = by["obj-0-0"]["physical"]
@@ -1987,6 +1996,8 @@ def self_check():
           "top_above_floor": value(.02, {"floor": .05}, "height", {})}  # mvp2/integrate: 0.04 +- 0.14 m is no size; 0.02 +- 0.05 m up is a value
     unresolved(ph)
     assert ph["width"]["status"] == "not measurable" and "value" in ph["height"] and "value" in ph["top_above_floor"], ph
+    assert unresolved_distance(value(0., {"person": 5.}, "position", {}))["status"] == "not measurable"  # 0 +- 5 m
+    assert "value" in unresolved_distance(value(0., {"person": .4}, "position", {})) and "value" in unresolved_distance(value(12., {"person": 1.5}, "position", {}))
     kg = {"height": {"sets": 2., "one_set": 3.}}  # the ground-truth u rule: geometry parts x k_geo[view-set state], scale apart
     assert abs(value(1., {"views": .03, "depth": .04, "scale": .25}, "height", kg)["u"] - np.hypot(2 * .05, .25)) < 1e-3
     assert abs(value(1., {"depth": .04, "scale": .25}, "height", kg)["u"] - np.hypot(3 * .04, .25)) < 1e-3
