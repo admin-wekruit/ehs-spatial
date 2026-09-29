@@ -7,7 +7,7 @@ The shot's DA3 keyframes are the cameras. train="all" (the default) trains on ev
 interpolated (rotation slerp, centre linear) and corrected by the pose knots, a frame's person mask the union of its two
 keyframes' masks; train="keyframes" trains on the keyframes only (exact poses and masks). ME340, A100, 120 s, E5b's 84
 held-out frames: all 26.94 dB, keyframes 25.88 dB. Either way the presenter (dilated DILATE px) and the burnt-in caption box
-stay out of the loss. A 140 s budget scored 27.46 dB (E5b with DROID cameras: 27.48 at 120 s).
+stay out of the loss. The preview needs PREVIEW_S = 150 s to stay above 27.0 dB (E5b with DROID cameras: 27.48 at 120 s).
 
 Venv /opt/splat: splat_train's pins (Python 3.10, torch 2.4.1 cu124, gsplat 1.5.3 prebuilt), plus modal because splat_train
 and fast_splat import it at module level (nothing here calls it).
@@ -24,6 +24,7 @@ import numpy as np
 from fast_report.sam3d import ROOT, caption_box, frames_path, host, log_tail, recv, send, serve, worker_env
 
 SPLAT_PY = "/opt/splat/bin/python"
+PREVIEW_S = 150  # ME340, A100, DA3 cameras, all frames: 120 s 26.94 dB; 140 s 26.94-27.46 (4 runs); 150 s 27.37 / 27.43 (2 runs, splat alone)
 PREVIEW_CAP, FULL_CAP = 500_000, 2_500_000  # E5b: 500k is best at 120-180 s, 2.5M for the long run (31.0 dB at 1200 s on an H100)
 SEED_VOXEL_M, SEED_SIZE_M = .02 * 2.8591949, .03  # E5b's pick: DA3 points one per .02 native voxel (ME340: 2.859 m/native), 3 cm TSDF samples
 SNAPSHOTS = (300, 600, 1200, 1800)  # full snapshots at these total training seconds
@@ -221,7 +222,7 @@ class Worker:
             self.boot = self._recv()
         return self.boot
 
-    def start(self, frames_host, shot, seeds, budget_s, background_s=0, train="all", held=(), held_excluded=None, hold=False):
+    def start(self, frames_host, shot, seeds, budget_s=PREVIEW_S, background_s=0, train="all", held=(), held_excluded=None, hold=False):
         """{"kind": "preview" | "full" | "score", "seconds", "steps", "splat32", "count", ...} as they are made. shot: A's Shot (keys,
         frames (a, b), c2w_m, K, person); seeds: {"xyz" (m, 3) metres, "rgb" (m, 3)}; held/held_excluded: frames kept out of
         training and scored after it, with the exclusion masks to score them by ((m, H, W) bool). With hold, the process sets up
