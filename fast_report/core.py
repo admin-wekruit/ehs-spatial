@@ -150,12 +150,22 @@ class Da3:
         self.mean = torch.tensor([.485, .456, .406], device=dev).view(1, 3, 1, 1)
         self.std = torch.tensor([.229, .224, .225], device=dev).view(1, 3, 1, 1)
 
+    def keep_host_copy(self):
+        """Pinned host copies of every weight, made once at boot, so offload() is a pointer swap: a 5 GB copy off GPU 0
+        at the end of DA3 stalled SAM 3's wave 2 there (runs fb-integrate-me340-002/003: 0.53 s a task against 0.36)."""
+        import itertools
+        self.host = [(t, t.detach().to("cpu").pin_memory()) for t in itertools.chain(self.model.parameters(), self.model.buffers())]
+
     def offload(self):
-        """The weights to host memory (after the run's last shot); restore() brings them back."""
-        self.model.to("cpu")
+        """GPU 0's DA3 weights freed after the run's last shot (spec section 5 lever 3, for SAM 3D beside the core)."""
+        for t, h in self.host:
+            t.data = h
 
     def restore(self):
-        self.model.to(self.dev)
+        import torch
+        for t, h in self.host:
+            t.data = h.to(self.dev, non_blocking=True)
+        torch.cuda.synchronize(self.dev)
 
     def shot(self, kf):
         """(k,720,1280,3) uint8 BGR on this GPU -> colors (k,H,W,3) [0,1], depth (k,H,W), c2w (k,4,4), K (k,3,3); DA3 units."""
@@ -478,12 +488,13 @@ def analyse(m, mp4, opts, clock, writer, log):
         with clock.stage(f"da3.shot{si}", gpu=dev_geo, n={"views": len(pos)}):
             shots_gpu.append(m.da3.shot(kf[pos]))
     clock.mark("da3_done")
-    da3_off = m.cpu_pool.submit(m.da3.offload)  # spec section 5 lever 3: ~5 GB of GPU 0 for SAM 3D; run() puts it back
+    m.da3.offload()  # spec section 5 lever 3: ~5 GB of GPU 0 for SAM 3D (a pointer swap); run() puts it back
     if dev_geo != dev_seg:
         work.worker(dev_geo, "geo", until=work.person_ready)
     work.wait(work.person_ready)
     with torch.inference_mode(), clock.stage("gather.person_floor", gpu=dev_geo):
         person = work.gathered("person")
+        work.person.clear()  # gathered: the per-task pieces are copies
         is_person = person["word"] == 0
         people_u = union_by_frame(person["frame"][is_person], person["mask"][is_person], len(keys))
         dyn = F.max_pool2d(people_u[:, None].float(), 5, 1, 2)[:, 0] > 0
@@ -533,8 +544,9 @@ def analyse(m, mp4, opts, clock, writer, log):
         gg["seeds"] = {"xyz": tsdf["points"], "rgb": tsdf["colors"]}
         room_rows.append({"index": si, "frame_id": f"shot-{si}", "triangles": tsdf["n_triangles"], "points": tsdf["n_points"], "tsdf_voxel_m": .03})
         light_rows.append({"index": si, "frame_id": f"shot-{si}", "triangles": len(quick[3]), "points": 0, "light_cell_m": .06})
-    writer.put("room", {"shots": light_rows, "kind": "light"}, light_blobs, "estimated", lab)  # both in one commit
-    writer.put("room", {"shots": room_rows, "kind": "full"}, room_blobs, "estimated", lab)
+    # the light room at once, in a commit of its own; the full one (77 MB on ME340: a 4 s commit) after the people layer,
+    # which would otherwise wait for that commit (run fb-integrate-me340-003: room and people written 7.6 and 7.5 s after put)
+    writer.put("room", {"shots": light_rows, "kind": "light"}, light_blobs, "estimated", lab)
     clock.mark("room_put")
     # the splat (GPU 1): set up now, while SAM 3 still runs there; trains once the SAM 3 queue is empty (released below)
     longest = max(range(len(geo)), key=lambda i: len(geo[i]["pos"])) if geo else None
@@ -543,6 +555,13 @@ def analyse(m, mp4, opts, clock, writer, log):
         if longest is not None else None
 
     def people_layer():  # CPU work: runs beside GPU 0's share of the SAM 3 queue
+        try:
+            people_tracks()
+        finally:
+            writer.put("room", {"shots": room_rows, "kind": "full"}, room_blobs, "estimated", lab)
+            clock.mark("room_full_put")
+
+    def people_tracks():
         tracks_out, rules_out, per_shot = [], [], []
         for si, (gg, g) in enumerate(zip(geo, shots_gpu)):
             pos = gg["pos"]
@@ -574,10 +593,14 @@ def analyse(m, mp4, opts, clock, writer, log):
     clock.mark("sam3_done")
     words = work.words
     work.cache.clear()
+    for d in work.chunks:  # the keyframes on each GPU (kf is GPU 0's own copy)
+        work.chunks[d] = []
 
     # ---------- objects: flood handling, lift, naming, cascade ----------
     with torch.inference_mode(), clock.stage("dedupe", gpu=dev_geo):
         voc = work.gathered("vocab")
+        work.vocab.clear()  # gathered: the per-task pieces were a second copy on GPU 0 (6 GB on ME340) until the run's end
+        voc_count = int(len(voc["frame"])) if voc is not None else 0
         kept, votes = segment.dedupe(voc["frame"], voc["word"], voc["score"], voc["mask"]) if voc is not None else (np.zeros(0, int), [])
         vf = voc["frame"].cpu().numpy() if voc is not None else np.zeros(0, int)
     objects, members, obj_masks_on = [], [], []
@@ -631,6 +654,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     casc = {"objects": len(objects)}
     writer.put("objects", copy.deepcopy({"objects": objects, "cascade": casc, "vocabulary": words}), None, "estimated+inferred", obj_labels)
     clock.mark("objects_v1_put")
+
     def sam3d_inputs():
         """B's Obj: every object's SAM 3 logits on each keyframe it was seen in (the max over its masks there, B's fixture rule)."""
         with torch.inference_mode(), clock.stage("sam3d.inputs", gpu=dev_geo, n={"objects": len(objects)}):
@@ -643,10 +667,24 @@ def analyse(m, mp4, opts, clock, writer, log):
             if rows:
                 lr.index_reduce_(0, torch.tensor(owner, device=dev_geo), voc["logits"][torch.tensor(rows, device=dev_geo)], "amax")
             lr = lr.cpu().numpy()
+        inputs_taken.set()
         objs = [{"id": o["id"], "shot": o["shot"], "word": o["word"], "box_min_m": o["box_min_m"], "box_max_m": o["box_max_m"], "masks_lr": {}} for o in objects]
         for (oi, f), r in pair.items():
             objs[oi]["masks_lr"][f] = lr[r]
         return objs
+
+    inputs_taken = threading.Event()
+
+    def release_voc():
+        """The SAM 3 masks and logits off GPU 0 after their last reader (SAM 3D inputs, outlines, cascade, VLM crops), and this
+        process's cache with them: SAM 3D's two processes peak at ~28 GiB each beside it (Sam's Club: GPU 0 at 75 GiB)."""
+        inputs_taken.wait(300)  # ponytail: a failed models job never blocks the report
+        maps_ready.wait()
+        if voc is not None:
+            voc.clear()
+        with torch.cuda.device(dev_geo):
+            torch.cuda.empty_cache()
+
     # complete models: SAM 3D + the fit gate on GPU 0's two processes, beside the outlines and the naming cascade
     models_future = m.cpu_pool.submit(models_job, m, sam3d_inputs, geo, shared, words, clock, writer, dev_geo)
     v1_labels = {o["id"]: o["label"] for o in objects}
@@ -726,6 +764,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         best_masks = np.array([gi for _, gi in obj_masks_on])
         with torch.inference_mode(), clock.stage("cascade.embed", gpu=dev_geo, n={"crops": int(len(all_mem)), "frames": len(obj_kf)}):
             frames_obj = kf[torch.tensor(obj_kf, device=dev_geo)]
+            kf = None  # its last reader
             mt = torch.from_numpy(all_mem).to(dev_geo)
             fo = torch.tensor([kf_index[int(q)] for q in vf[all_mem]], device=dev_geo)
             emb = m.emb.crops(frames_obj, fo, voc["mask"][mt])
@@ -787,8 +826,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         reps = list(groups)
         with clock.stage("vlm.name.crops", n={"crops": len(reps)}):
             items = list(m.cpu_pool.map(lambda r: vlm_crop(obj_masks_on[r][1]), reps))
-            with torch.cuda.device(dev_geo):
-                torch.cuda.empty_cache()  # this process's last GPU 0 work of the run: its cache back for SAM 3D
+        release_voc()  # the crops were this process's last GPU 0 work of the run
         with clock.stage("vlm.name", n={"crops": len(items)}):
             names, rec = vlm.name_crops(items)
         answered = []
@@ -809,19 +847,20 @@ def analyse(m, mp4, opts, clock, writer, log):
         writer.put("objects", copy.deepcopy({"objects": objects, "cascade": casc, "vocabulary": words}), blobs_obj, "estimated+inferred", obj_labels)
         clock.mark("objects_v2_put")
     esc = m.vlm_pool.submit(escalate) if objects and groups else None
+    if esc is None:
+        release_voc()
 
     outlines_future.result()
     ev = vocab_future.result()
     if esc is not None:
         esc.result()
-    da3_off.result()
     summary["sam3d"] = models_future.result()
     summary["splat"] = splat_future.result() if splat_future is not None else None
     Path(shared.result()).unlink(missing_ok=True)
     summary.update(frames=n, fps=fps, wh=[W, H], cuts=cuts, keyframes=len(keys), object_keyframes=len(range(0, len(keys), segment.OBJECT_EVERY)),
                    words=len(words), wave2_words=len(work.wave2 or []), vocab=results.get("vocab"), sam3_tasks_by_worker=work.by_worker,
                    vocab_frames_equal_decoded=[bool(img is not None and np.array_equal(img, frames[f])) for img, f in zip(seeked, vlm_frames)],
-                   detections={"person": int(is_person.sum()), "floor": int((~is_person).sum()), "vocabulary_masks": int(len(voc["frame"])) if voc else 0,
+                   detections={"person": int(is_person.sum()), "floor": int((~is_person).sum()), "vocabulary_masks": voc_count,
                                "vocabulary_masks_kept": int(len(kept))},
                    objects=len(objects), cascade=casc, events_windows=len(ev), vllm_engine_stats=vlm.throughput(),
                    cut_chunks={"submitted_s": chunk_at, "done_s": [chunk_done.get(i) for i in range(len(futures))],

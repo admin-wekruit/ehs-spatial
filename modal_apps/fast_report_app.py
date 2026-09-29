@@ -140,6 +140,7 @@ class FastReport:
         self.dev_geo, self.dev_seg = torch.device("cuda:0"), torch.device("cuda:1")
         da3 = DepthAnything3.from_pretrained(DA3_MODEL, revision=DA3_REV, cache_dir="/v/da3/huggingface/hub").eval()
         self.da3 = core.Da3(da3.to(self.dev_geo), self.dev_geo)
+        self.da3.keep_host_copy()
         lap("da3_gpu0_s")
         proc = Sam3Processor.from_pretrained(sam3_app.MODEL_ID, revision=sam3_app.REVISION, cache_dir="/v/sam3/huggingface/hub")
         sam = Sam3Model.from_pretrained(sam3_app.MODEL_ID, revision=sam3_app.REVISION, cache_dir="/v/sam3/huggingface/hub",
@@ -293,7 +294,8 @@ def cut(video, start, end, out_path, max_width=1280):
 
 
 MILESTONES = {  # name -> (layer, which version): the report's moments, each at its patch's written time
-    "cameras": ("cameras", lambda d: True), "first_3d": ("room", lambda d: True), "people": ("people", lambda d: True),
+    "cameras": ("cameras", lambda d: True), "first_3d": ("room", lambda d: True), "room_full": ("room", lambda d: d.get("kind") == "full"),
+    "people": ("people", lambda d: True),
     "events": ("events", lambda d: True), "objects": ("objects", lambda d: True), "outlines": ("outlines", lambda d: True),
     "first_model": ("models", lambda d: bool(d.get("models"))), "all_models": ("models", lambda d: d.get("final")),
     "splat_preview": ("splat", lambda d: d.get("kind") == "preview")}
