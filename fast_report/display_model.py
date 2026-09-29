@@ -408,6 +408,12 @@ def self_check():
     assert well_observed(card) == (2.0, None)
     assert well_observed({**card, "physical": {"top_above_floor": {"status": "at least"}}})[1] == "cut by the frame edge"
     assert "views within 15 deg" in well_observed({**card, "views": {**card["views"], "azimuth_spread_deg": 5}})[1]
+    # degenerate clouds (8 points, one point, flat, a vertical line, sub-millimetre; no camera) give finite poses for every kind
+    for t in range(60):
+        D = rng.normal(size=(8 + t % 20, 3)) * rng.uniform(0, 1, 3)
+        D = [D, D * 0 + D[0], D * [1, 1, 0], D * [0, 0, 1], D * 1e-4][t % 5]
+        fsd = fits(D, rng.normal(size=(t % 3, 3)) * 3)
+        assert all(np.isfinite(record(fsd, k, "t", fr, n=len(D))["quaternion"]).all() for k in fsd)
     print("display_model self-check ok: box (yaw, sizes, visible depth, faces), cylinder (radius, axis, arc), plane (tilted normal), "
           "open frame (levels, members), choice by type and residual, shot-frame pose")
 
