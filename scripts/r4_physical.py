@@ -108,13 +108,84 @@ def sheet(mirror, report, mp4, out_dir, n=30, seed=4, per=10):
     return rows
 
 
+FIELD_ORDER = ("position_xy", "top_above_floor", "base_above_floor", "height", "width", "depth", "principal_axis_tilt_deg", "planar_slope_deg")
+
+
+def completeness_table(req, title):
+    """Markdown: per card kind / identity state, complete share, and per REQUIRED field the share carried as a number
+    (value or bound) vs a status with its reason (never missing)."""
+    md = f"\n{title}\n\n| cards | n | complete | " + " | ".join(FIELD_ORDER) + " |\n|---|---|---|" + "---|" * len(FIELD_ORDER) + "\n"
+    for key, r in req.items():
+        cells = []
+        for f in FIELD_ORDER:
+            t = r["fields"][f]
+            num = sum(v for k, v in t.items() if k in ("value", "at least", "at most", "needs review"))
+            why = sum(v for k, v in t.items() if k in ("not observed", "not measurable"))
+            bad = sum(v for k, v in t.items() if k in ("missing", "broken"))
+            cells.append(f"{num / r['cards']:.2f} / {why / r['cards']:.2f}" + (f" / **{bad} missing**" if bad else ""))
+        md += f"| {key} | {r['cards']} | {r['complete_share']:.2f} | " + " | ".join(cells) + " |\n"
+    return md
+
+
+def gt_tables(score):
+    """Markdown: per sequence and field, median |error| as delivered (assumed 1.6 m camera height) and at the true camera
+    height, coverage within +-u, n; the true camera heights; bounds holding."""
+    md = "\n| sequence | field | n | median abs err (a) assumed 1.6 m | (b) true height | cov (a) | cov (b) | u median |\n|---|---|---|---|---|---|---|---|\n"
+    for t in score["table"]:
+        cm = "deg" if t["field"].endswith("_deg") else "cm"
+        k = 1. if cm == "deg" else 100.
+        md += (f"| {t['seq']} | {t['field']} | {t['n']} | {k * t['a_med']:.1f} {cm} | {k * t['b_med']:.1f} {cm} | {t['a_cov']:.2f} | {t['b_cov']:.2f} | "
+               f"{k * t['u_med']:.1f} {cm} |\n")
+    hs = {}
+    for r in score["reports"]:
+        for x in r["shots"].values():
+            hs.setdefault(r["seq"], []).append(x["gt_camera_height_m"])
+    md += "\nTrue camera height over the floor (the delivered scale assumes 1.6 m): " + "; ".join(
+        f"{q} {min(v):.2f}-{max(v):.2f} m" for q, v in sorted(hs.items())) + "\n"
+    b = {}
+    for r in score["reports"]:
+        if r.get("first_call"):
+            continue
+        for x in r["bounds"]:
+            if x["gt_cover"] < .5:
+                continue
+            key = (x["seq"], x["field"], x["status"])
+            a = b.setdefault(key, [0, 0, 0])
+            a[0] += 1
+            a[1] += x["holds_a"]
+            a[2] += x.get("holds_b", x["holds_a"])
+    md += "\n| bounds (warm calls, GT on >= 50 % of the mask) | n | hold (a) | hold (b) |\n|---|---|---|---|\n"
+    for (q, f, st), (n_, ha, hb) in sorted(b.items()):
+        md += f"| {q} {f} {st} | {n_} | {ha} | {hb} |\n"
+    return md
+
+
+def audit_table(labels):
+    """{video: labels.json} -> markdown counts of the agent's labels."""
+    md = "\n| video | cards looked at | plausible | implausible | unclear |\n|---|---|---|---|---|\n"
+    for v, d in labels.items():
+        c = [r.get("label") for r in d["rows"]]
+        md += f"| {v} | {len(c)} | {c.count('plausible')} | {c.count('implausible')} | {c.count('unclear')} |\n"
+    return md
+
+
 def self_check():
     assert short({"value": 1.234, "u": .1, "status": "at least"}) == ">=1.23+-0.10"
     assert short({"value": .5, "u": 0., "bound": "at most", "status": "needs review"}) == "<=0.50?"
     assert short({"status": "not observed", "reason": "x"}) == "n/o" and short(None) == "-"
     assert short({"status": "not observed", "reason": "x", "visible": {"value": .4, "u": .1, "status": "at least"}}) == "n/o (>=0.40+-0.10)"
     assert short({"value": [1., 2.], "u": .3}) == "(1.0, 2.0) +-0.3"
-    print("r4_physical self-check ok: sheet field format")
+    req = {"object": {"cards": 2, "complete_share": 1., "fields": {f: {"value": 1, "not observed": 1} for f in FIELD_ORDER}}}
+    assert "| object | 2 | 1.00 | 0.50 / 0.50 |" in completeness_table(req, "t")
+    req["object"]["fields"]["depth"] = {"missing": 2}
+    assert "0.00 / 0.00 / **2 missing**" in completeness_table(req, "t")
+    sc = {"table": [{"seq": "tum", "field": "height", "n": 3, "a_med": .05, "b_med": .02, "a_cov": 1., "b_cov": .9, "u_med": .1}],
+          "reports": [{"seq": "tum", "first_call": False, "shots": {"0": {"gt_camera_height_m": 1.5}},
+                       "bounds": [{"seq": "tum", "field": "depth", "status": "at least", "gt_cover": .8, "holds_a": True, "holds_b": False}]}]}
+    md = gt_tables(sc)
+    assert "| tum | height | 3 | 5.0 cm | 2.0 cm |" in md and "tum 1.50-1.50 m" in md and "| tum depth at least | 1 | 1 | 0 |" in md, md
+    assert "| v | 2 | 1 | 0 | 1 |" in audit_table({"v": {"rows": [{"label": "plausible"}, {"label": "unclear"}]}})
+    print("r4_physical self-check ok: sheet field format, completeness / GT / audit tables")
 
 
 if __name__ == "__main__":
