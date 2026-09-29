@@ -769,14 +769,18 @@ def analyse(m, mp4, opts, clock, writer, log):
 
     def judge_job(objs):
         """MVP B: stand-in cards (fast_report.cards_stub, until A's cards land) -> judgements v1 (geometry), v2 (VLM answers)."""
+        import traceback
         from fast_report import cards_stub, judge
-        outlines_future.result()
-        people_future.result()
-        with clock.stage("cards.stub", n={"objects": len(objs)}):
-            ctx = judge.context(cam_rows, results.get("outline_frames") or [], results.get("people"), frames,
-                                {gg["index"]: gg["seeds"]["xyz"] for gg in geo if "seeds" in gg}, fps, (W, H), version_of={"objects": 1, "cards": "stub"})
-            cards = cards_stub.cards(objs, cam_rows, results.get("outline_frames") or [], results.get("people"), ctx)
-        return judge.run(cards, ctx, writer, clock, vlm_on=opts.get("judge_vlm", True))
+        try:
+            outlines_future.result()
+            people_future.result()
+            with clock.stage("cards.stub", n={"objects": len(objs)}):
+                ctx = judge.context(cam_rows, results.get("outline_frames") or [], results.get("people"), frames,
+                                    {gg["index"]: gg["seeds"]["xyz"] for gg in geo if "seeds" in gg}, fps, (W, H), version_of={"objects": 1, "cards": "stub"})
+                cards = cards_stub.cards(objs, cam_rows, results.get("outline_frames") or [], results.get("people"), ctx)
+            return judge.run(cards, ctx, writer, clock, vlm_on=opts.get("judge_vlm", True))
+        except Exception:  # noqa: BLE001  the judgements are one layer: their failure is recorded, the report's other layers stand
+            return {"error": traceback.format_exc()[-3000:]}
     judge_future = m.cpu_pool.submit(judge_job, copy.deepcopy(objects)) if opts.get("judge", True) else None
 
     # cascade: every member mask -> masked crop -> SigLIP 2 (GPU 0); object = mean of its masks

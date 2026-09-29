@@ -298,7 +298,8 @@ MILESTONES = {  # name -> (layer, which version): the report's moments, each at 
     "people": ("people", lambda d: True),
     "events": ("events", lambda d: True), "objects": ("objects", lambda d: True), "outlines": ("outlines", lambda d: True),
     "first_model": ("models", lambda d: bool(d.get("models"))), "all_models": ("models", lambda d: d.get("final")),
-    "splat_preview": ("splat", lambda d: d.get("kind") == "preview")}
+    "splat_preview": ("splat", lambda d: d.get("kind") == "preview"),
+    "judgements_v1": ("judgements", lambda d: not d.get("vlm_answers")), "judgements_v2": ("judgements", lambda d: bool(d.get("vlm_answers")))}
 
 
 def milestones(root, report, t0_unix):

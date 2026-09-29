@@ -27,7 +27,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ehs_spatial.video import BAND_M, FAIL, NO_DATA, PASS, REVIEW, banded_verdict, worst_verdict
+from ehs_spatial.video import BAND_M, FAIL, NO_DATA, PASS, PERSON_HEIGHT_M, REVIEW, banded_verdict, worst_verdict
 
 CALIBRATION = Path(__file__).with_name("calibration.json")
 SCALE_REL = .20  # spec 4.4: assumed 1.6 m camera height (-19%/+12% for 1.3-1.8 m) and 0.99-1.17 against the delivered scale
@@ -125,7 +125,7 @@ def observed(card, key):
 def u_rel(f):
     """u without its scale part (a gap between two things does not carry their scale error from the origin); the
     calibration factor k in u = k sqrt(sum parts^2) is kept by scaling u."""
-    parts = f.get("parts") or {}
+    parts = {k: v for k, v in (f.get("parts") or {}).items() if v is not None}
     total = math.sqrt(sum(v * v for v in parts.values()))
     return float(f["u"]) * math.sqrt(max(0., total ** 2 - parts.get("scale", 0.) ** 2)) / total if total > 0 else float(f["u"])
 
@@ -136,7 +136,7 @@ def doubts(card):
     size = ph.get("size_check") or {}
     if size.get("status") == "implausible":
         out.append("implausible size for its class: no rule uses it (needs review)")
-    if "fragmented support" in (ph.get("flags") or []):
+    if ph.get("fragmented_support") or "fragmented support" in (ph.get("flags") or []):
         out.append("fragmented support: its sizes need review")
     return out
 
@@ -185,7 +185,20 @@ def numeric(card, key, threshold, direction, quantity, unit):
     word = {PASS: "clears", FAIL: "breaks", REVIEW: "straddles"}[r]
     g = geo(quantity, v, u, unit, threshold, direction, r, [f"{quantity} {v:.2f} +- {u:.2f} {unit} {word} {threshold:g} {unit}"],
             f.get("scale"), n_subsets=f.get("n_subsets"))
-    return forced(g, doubts(card) + ([ONE_SET] if (f.get("n_subsets") or 0) < 2 else []))
+    return forced(g, doubts(card) + fact_doubts(f, r, direction))
+
+
+def fact_doubts(f, r, direction="max"):
+    """One view subset; a value A marked 'needs review'; a bound on the wrong side ('at least' cannot PASS a maximum or FAIL a
+    minimum: the true value may be larger; 'at most' the reverse)."""
+    out = [ONE_SET] if (f.get("n_subsets") or 0) < 2 else []
+    st = f.get("status")
+    if st == "needs review":
+        out.append(f"needs review ({f.get('reason')})")
+    lower = (st == "at least" and (r, direction) in ((PASS, "max"), (FAIL, "min"))) or (st == "at most" and (r, direction) in ((FAIL, "max"), (PASS, "min")))
+    if lower:
+        out.append(f"only a bound ({st}: {f.get('reason')})")
+    return out
 
 
 def to_floor(frame, pts):
@@ -206,7 +219,7 @@ def path_distance(card, ctx):
     best = None
     for pid, xy in walked.items():
         xy = np.asarray(xy, float)
-        if len(xy) == 0:
+        if len(xy) == 0 or path_length(xy) < WALKED_M:
             continue
         line = LineString(xy) if len(xy) > 1 else Point(xy[0])
         d = poly.distance(line)
@@ -244,14 +257,17 @@ def g_j4(card, ctx, cards):
         r = REVIEW
     g = geo("distance to walked path", d, u, "m", TRIP_PATH_M, "min", r, reasons, path=pid)
     gap = ["footprint seen from one side: the gap may be smaller"] if r == PASS and on != FAIL and not observed(card, "depth") else []
-    return forced(g, doubts(card) + gap + ([ONE_SET] if (base.get("n_subsets") or 0) < 2 else []))
+    return forced(g, doubts(card) + gap + fact_doubts(base, on, "max"))
 
 
 def floor_grid(shot, cards):
     """J5's 5 cm floor grid for one shot: seen (a room point there), occupied (a room point 0.1-1.8 m up), owner (1 + the index
     of a usable card whose footprint covers the cell, cards on the floor only)."""
     from shapely import contains_xy
-    pts = np.asarray(shot.get("room_floor") if shot.get("room_floor") is not None else np.zeros((0, 3)), float)
+    pts = shot.get("room_floor")
+    if pts is None and shot.get("room_points") is not None and shot.get("floor_frame"):
+        pts = to_floor(shot["floor_frame"], shot["room_points"])
+    pts = np.asarray(pts if pts is not None else np.zeros((0, 3)), float)
     if len(pts) < 100:
         return None
     lo = pts[:, :2].min(0) - 1.
@@ -390,7 +406,10 @@ def foot_surface(mask, depth, K, c2w, up, p0, u_floor=.02):
     """J3a's physical cue, per person detection: the height above the floor of the surface the feet rest on (the median 3D
     point of the mask's lowest pixels) and whether they rest on what is below them (the patch just below the feet is not
     nearer than them by more than max(0.3 m, 10%): else something in front hides the feet). People's footWorld cannot serve:
-    live_people puts it on the floor plane by construction. -> {h_m, u_m, contact, bbox (0-1)} or None (feet not seen)."""
+    live_people puts it on the floor plane by construction. The lowest pixels are feet only when the visible body spans a
+    standing height (video.PERSON_HEIGHT_M, 1.3-2.1 m, from those pixels to the mask's p98 height): run mvp-b-judge-me340-001
+    read people behind benches at 0.5-1.5 m with the patch below at their own depth. -> {h_m, u_m, contact, span_m,
+    feet_visible, bbox (0-1)}; h_m None when the feet are not seen at all."""
     ys, xs = np.nonzero(mask)
     if not len(ys):
         return None
@@ -409,20 +428,34 @@ def foot_surface(mask, depth, K, c2w, up, p0, u_floor=.02):
     world = cam @ c2w[:3, :3].T + c2w[:3, 3]
     h = float(np.median((world - p0) @ up))
     dz = float(abs(np.median((c2w[:3, 3] - world) @ up)))
+    zm = depth[ys, xs]
+    body = (zm > 0) & (np.abs(zm - np.median(zm[zm > 0])) <= max(.5, .15 * np.median(zm[zm > 0]))) if (zm > 0).any() else zm > 0
+    pts = (np.c_[xs[body], ys[body], np.ones(body.sum())] @ kinv.T) * zm[body, None]
+    span = float(np.percentile((pts @ c2w[:3, :3].T + c2w[:3, 3] - p0) @ up, 98) - h) if body.sum() >= 10 else None
     u = math.sqrt((.05 * dz) ** 2 + u_floor ** 2 + (SCALE_REL * h) ** 2)
     rows = slice(ys.max() + 1, min(H, ys.max() + 4))
     cols = slice(max(0, int(np.median(fx)) - 6), min(W, int(np.median(fx)) + 7))
     below = depth[rows, cols][(depth[rows, cols] > 0) & ~mask[rows, cols]]
     zf = float(np.median(z[ok]))
     contact = bool(len(below) >= 3 and np.median(below) >= zf - max(.3, .1 * zf))  # the floor in front slopes ~5 cm a row at 4.5 m
-    return {"h_m": round(h, 3), "u_m": round(u, 3), "contact": contact, "bbox": bbox}
+    visible = span is not None and PERSON_HEIGHT_M[0] <= span <= PERSON_HEIGHT_M[1]
+    return {"h_m": round(h, 3), "u_m": round(u, 3), "contact": contact, "span_m": None if span is None else round(span, 3),
+            "feet_visible": bool(visible), "bbox": bbox}
+
+
+def person_points(card, ctx):
+    """A person card's detections: its own 'points', else its track's in ctx['people'] (A's cards carry no points)."""
+    if card.get("points"):
+        return card["points"]
+    track = card.get("track") or (card.get("identity") or {}).get("track") or card["id"].split(":", 1)[-1]
+    return next((t["points"] for t in ((ctx.get("people") or {}).get("tracks") or []) if t["id"] == track), [])
 
 
 def g_j3a(card, ctx, cards):
     """Per detection: FAIL cue when the feet rest on a surface more than 0.30 m +- u up and over an object's footprint + 0.1 m;
     PASS when they rest within 0.30 m -+ u of the floor; over the track: any FAIL fails, PASS needs every detection to pass."""
     from shapely.geometry import Point
-    pts = card.get("points") or []
+    pts = person_points(card, ctx)
     polys = [(c, footprint(c)) for c in cards if c.get("kind") != "person" and c.get("shot") == card.get("shot") and usable(c)]
     frame = shot_of(ctx, card.get("shot")).get("floor_frame")
     per, worst = [], None
@@ -432,6 +465,9 @@ def g_j3a(card, ctx, cards):
             per.append(NO_DATA)
             continue
         h, u = fs["h_m"], fs["u_m"]
+        if fs.get("feet_visible") is False:  # legs hidden (or crouching): the lowest pixels are not feet
+            per.append(NO_DATA)
+            continue
         if not fs.get("contact"):
             per.append(REVIEW)
             continue
@@ -542,9 +578,9 @@ def combine(geo_result, vlm, visual_ok):
     return PASS if vlm == "clear" else NO_DATA
 
 
-def identity_confirmed(card):
+def identity_confirmed(card, ctx=None):
     if card.get("kind") == "person":
-        return max([p.get("score") or 0 for p in card.get("points") or []] + [0]) >= PERSON_SCORE
+        return max([p.get("score") or 0 for p in person_points(card, ctx or {})] + [0]) >= PERSON_SCORE
     ident = card.get("identity") or {}
     return bool(ident.get("calibrated")) and (ident.get("confidence") or 0) >= IDENTITY_P
 
@@ -595,10 +631,10 @@ def thumb(jpeg, side=320, max_bytes=30000):
     return out
 
 
-def view_sets(card):
+def view_sets(card, ctx=None):
     """-> [[keyframe]] : two sets (independent answers) when two best views are >= 15 deg apart, else one."""
     if card.get("kind") == "person":
-        pts = sorted((p for p in card.get("points") or [] if (p.get("foot_surface") or {}).get("bbox")),
+        pts = sorted((p for p in person_points(card, ctx or {}) if (p.get("foot_surface") or {}).get("bbox")),
                      key=lambda p: -(lambda b: (b[2] - b[0]) * (b[3] - b[1]))(p["foot_surface"]["bbox"]))
         best = [pts[0]] if pts else []
         best += [p for p in pts[1:] if abs(p["t"] - pts[0]["t"]) >= 1.][:1]  # ponytail: 1 s apart stands in for 15 deg for people
@@ -614,7 +650,7 @@ def marks_on(ctx, key, card):
     """{1: the subject's polygons, 2..: the other entities on that keyframe} (source px), or None if the subject is not there."""
     entries = (ctx.get("outlines_by_frame") or {}).get(key) or []
     if card.get("kind") == "person":
-        p = next((p for p in card.get("points") or [] if p["frame"] == key), None)
+        p = next((p for p in person_points(card, ctx) if p["frame"] == key), None)
         b = (p or {}).get("foot_surface", {}).get("bbox")
         if not b:
             return None
@@ -677,7 +713,7 @@ def evaluate(cards, ctx):
             rows.append({"id": f"{check}:{card['id']}", "check": check, "title": title, "subject": card["id"],
                          "subject_name": name_of(card) or card.get("kind"), "mobility": mobility(card), "object": g.get("path"),
                          "verdict": g["result"], "severity": severity, "geometry": g, "vlm": None, "questions": list(questions),
-                         "reasons": list(g["reasons"]), "evidence": [{"key": k[0], "t": key_time(ctx, k[0])} for k in view_sets(card)],
+                         "reasons": list(g["reasons"]), "evidence": [{"key": k[0], "t": key_time(ctx, k[0])} for k in view_sets(card, ctx)],
                          "rule_source": source, "interval_s": [t.get("first_seen_s"), t.get("last_seen_s")]})
     return rows
 
@@ -723,6 +759,8 @@ def layer(rows, cal, extra=None):
         by_check.setdefault(r["check"], {v: 0 for v in (FAIL, REVIEW, PASS, NO_DATA)})[r["verdict"]] += 1
     status = {q: (c or {}).get("status") for q, c in (cal.get("questions") or {}).items()}
     return {"schema": "panoptes-judgements-v1", "checks_version": "mvp-1",
+            "vlm_note": "per_view: probs = raw option probabilities; p_hazard_raw = the hazard options' sum; calibrated = Platt's "
+                        "p(hazard), null when the question is not calibrated (then the VLM is shown, never decides)",
             "calibration": {"file_sha256": cal.get("file_sha256"), "questions": status, "fitted_on": cal.get("fitted_on")},
             "rows": rows, "by_object": {k: worst_verdict(v) for k, v in by_object.items()}, "counts": counts, "by_check": by_check,
             **(extra or {})}
@@ -732,7 +770,9 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None):
     """Judgements v1 (geometry) at once, then every question on every view set through vlm.options (priority 'judgement', J0
     'screen'), then v2. ask: a stand-in for vlm.submit, cal: for fast_report/calibration.json (tests). Returns counts and times."""
     cal = load_calibration() if cal is None else cal
-    ctx = {**ctx, "outlines_by_frame": ctx.get("outlines_by_frame") or {f["sourceFrame"]: f["objects"] for f in ctx.get("outlines", [])}}
+    outl = ctx.get("outlines") or []
+    outl = outl.get("frames", []) if isinstance(outl, dict) else outl  # A passes the outlines analysis, the stub its frames
+    ctx = {**ctx, "outlines_by_frame": ctx.get("outlines_by_frame") or {f["sourceFrame"]: f["objects"] for f in outl}}
     with clock.stage("judge.rules", n={"cards": len(cards)}):
         rows = evaluate(cards, ctx)
     writer.put("judgements", layer(rows, cal, {"version_of": ctx.get("version_of"), "vlm_answers": False}), None, "estimated+inferred", LABELS)
@@ -754,7 +794,7 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None):
     def images(row):
         card = by_id[row["subject"]]
         out = []
-        for keys in view_sets(card):
+        for keys in view_sets(card, ctx):
             k = keys[0]
             marks, frame = marks_on(ctx, k, card), frame_at(ctx, k)
             if marks is None or frame is None:
@@ -798,7 +838,8 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None):
             flagged = [(QUESTIONS["J0"][1][max(QUESTIONS["J0"][2], key=lambda i: a["probs"][i])], sum(a["probs"][i] for i in QUESTIONS["J0"][2]))
                        for a in got["J0"] if a.get("probs")]
             hits = [f for f in flagged if f[1] >= SCREEN_P]
-            row["vlm"] = {"question": "J0", "options": QUESTIONS["J0"][1], "decider": decider, "per_view": per_q["J0"][1], "answer": "advisory"}
+            row["vlm"] = {"question": "J0", "text": QUESTIONS["J0"][0], "options": QUESTIONS["J0"][1], "decider": decider, "per_view": per_q["J0"][1],
+                          "answer": "advisory", "also": []}
             if hits:
                 row["verdict"] = REVIEW
                 row["reasons"] = [f"screen hint (uncalibrated, advisory): '{hits[0][0]}', p = {hits[0][1]:.2f}"]
@@ -807,10 +848,10 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None):
         vlm_ans = "hazard" if "hazard" in verdicts else "clear" if verdicts and all(v == "clear" for v in verdicts) else "unsure"
         both = all(len(a) >= 2 for a in got.values())
         before = row["verdict"]
-        row["verdict"] = combine(before, vlm_ans, identity_confirmed(card) and both)
-        row["vlm"] = {"questions": {q: {"text": QUESTIONS[q][0], "options": QUESTIONS[q][1], "per_view": pv, "answer": a,
-                                        "calibration": ((cal.get("questions") or {}).get(q) or {}).get("status") or "none"}
-                                    for q, (a, pv) in per_q.items()}, "decider": decider, "answer": vlm_ans}
+        row["verdict"] = combine(before, vlm_ans, identity_confirmed(card, ctx) and both)
+        asked = [{"question": q, "text": QUESTIONS[q][0], "options": QUESTIONS[q][1], "per_view": pv, "answer": a,
+                  "calibration": ((cal.get("questions") or {}).get(q) or {}).get("status") or "none"} for q, (a, pv) in per_q.items()]
+        row["vlm"] = {**asked[0], "decider": decider, "answer": vlm_ans, "also": asked[1:]}  # spec 5.6's shape; J3a asks two questions
         raw = [f"{q}: " + ", ".join(f"p(hazard) raw {v.get('p_hazard_raw')}" + (f" -> {v['calibrated']:.2f} calibrated" if v.get("calibrated") is not None else " (uncalibrated)")
                                     for v in pv) for q, (_, pv) in per_q.items()]
         row["reasons"] = row["geometry"]["reasons"] + [f"picture: {vlm_ans} ({'; '.join(raw)})"] + (
@@ -979,6 +1020,15 @@ def self_check():
     assert applicable(stack) == ["J1", "J2", "J3b", "J5", "J6"] and applicable({"identity": {"name": "power cable"}}) == ["J4"]
     # u without its scale part keeps the calibration factor: parts views .6, scale .8 of u=1 -> .6
     assert abs(u_rel({"u": 1., "parts": {"views": .6, "scale": .8}}) - .6) < 1e-9
+    # A's shapes: parts holding None, 'at least' (cut by the frame edge) cannot PASS a maximum but can FAIL it,
+    # fragmented_support, a person card without points (its track's points come from ctx['people'])
+    assert abs(u_rel({"u": .5, "parts": {"views": None, "depth": .3, "scale": .4}}) - .3) < 1e-9
+    cut = {"physical": {"top_above_floor": {**_val(1.2, .3), "status": "at least", "reason": "cut by the frame edge"}}}
+    assert numeric(cut, "top_above_floor", 2.5, "max", "top", "m")["result"] == REVIEW
+    cut["physical"]["top_above_floor"]["value"] = 3.5
+    assert numeric(cut, "top_above_floor", 2.5, "max", "top", "m")["result"] == FAIL
+    assert doubts({"physical": {"fragmented_support": True}}) and not doubts({"physical": {"size_check": {"status": "plausible"}}})
+    assert person_points({"id": "person:0-person-0", "kind": "person"}, {"people": {"tracks": [{"id": "0-person-0", "points": [1]}]}}) == [1]
     # a synthetic shot: walked along +x at y = 0; floor seen on y in [-3, 3]; a wall (mesh) at y = +1.5; a box at y in [-0.9, -0.4]
     xs, ys = np.meshgrid(np.arange(-1, 9, .04), np.arange(-3, 3, .04))
     floor = np.c_[xs.ravel(), ys.ravel(), np.zeros(xs.size)]
@@ -1030,11 +1080,18 @@ def self_check():
     K = np.array([[200., 0, 100], [0, 200, 100], [0, 0, 1]])
     depth = np.full((200, 200), 4.)
     mask = np.zeros((200, 200), bool)
-    mask[60:150, 90:110] = True
+    mask[74:150, 90:110] = True  # a 1.7 m person standing 4.49 m away on the 0.5 m surface: head at row 74, feet at row 149
     yy = np.arange(200)[:, None]
     depth[:] = np.where(yy > 100, 1.1 * 200 / np.maximum(yy - 100, 1), 8.)  # a floor 1.1 m below the camera (1.6 - 0.5)
+    depth[mask] = 4.49
     fs = foot_surface(mask, depth, K, np.eye(4), np.array([0., -1, 0]), np.array([0., 1.6, 0]))
-    assert fs["contact"] and abs(fs["h_m"] - .5) < .05, fs
+    assert fs["contact"] and fs["feet_visible"] and abs(fs["h_m"] - .5) < .05 and 1.5 < fs["span_m"] < 1.8, fs
+    upper = mask.copy()
+    upper[112:] = False  # legs hidden: the lowest visible pixels are the waist
+    fs = foot_surface(upper, depth, K, np.eye(4), np.array([0., -1, 0]), np.array([0., 1.6, 0]))
+    assert not fs["feet_visible"], fs
+    person["points"][0]["foot_surface"].update(contact=True, feet_visible=False, h_m=.6)
+    assert g_j3a(person, ctx, [person, tall])["result"] == NO_DATA
     # the whole run with a fake decider: v1 then v2, set-of-marks images, the combined verdict
     frame_img = np.full((720, 1280, 3), 90, np.uint8)
     cable.update(physical={**cable["physical"], "footprint_xy": [[2, .2], [3, .2], [3, .25], [2, .25]], "base_above_floor": _val(0., .02)},

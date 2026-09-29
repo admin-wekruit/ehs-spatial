@@ -21,8 +21,9 @@ F_PX = 262.  # DA3's focal length at 504 x 280 (spec 4.4's resolution term)
 
 
 def _area(poly):
-    p = np.asarray(poly, float).reshape(-1, 2)
-    return .5 * abs(np.dot(p[:, 0], np.roll(p[:, 1], 1)) - np.dot(p[:, 1], np.roll(p[:, 0], 1)))
+    """Shoelace in plain Python: thousands of tiny numpy calls took 12-16 s beside the cascade's thread (GIL; run
+    mvp-b-judge-me340-001's cards.stub) against 0.4 s alone."""
+    return .5 * abs(sum(x0 * y1 - x1 * y0 for (x0, y0), (x1, y1) in zip(poly, poly[1:] + poly[:1])))
 
 
 def _val(value, parts, unit="m", scale="estimated"):
@@ -34,6 +35,7 @@ def cards(objects, cam_rows, outline_frames, people, ctx):
     from shapely.geometry import MultiPoint
     frames = {s["index"]: s["floor_frame"] for s in ctx["shots"]}
     cams = {s["index"]: s for s in cam_rows}
+    cam_floor = {i: dict(zip(cams[i]["keys"], to_floor(fr, np.asarray(cams[i]["c2w"], float)[:, :3, 3]))) for i, fr in frames.items()}
     seen = {}
     for f in outline_frames:
         for e in f["objects"]:
@@ -50,8 +52,7 @@ def cards(objects, cam_rows, outline_frames, people, ctx):
         ring = np.asarray(rect.exterior.coords)[:4] if rect.geom_type == "Polygon" else corners[:4, :2]
         views = sorted(seen.get(o["id"], []), key=lambda v: -v[3])
         detected = [v for v in views if v[2] == "segmented"]
-        key_pos = {k: i for i, k in enumerate(cam["keys"])}
-        cam_xyz = {k: to_floor(fr, np.asarray(cam["c2w"][key_pos[k]])[:3, 3])[0] for k, *_ in views if k in key_pos}
+        cam_xyz = {k: cam_floor[o["shot"]][k] for k, *_ in views if k in cam_floor[o["shot"]]}
         az = {k: math.degrees(math.atan2(*(centre[:2] - c[:2])[::-1])) for k, c in cam_xyz.items()}
         dist = float(np.median([np.linalg.norm(centre - c) for c in cam_xyz.values()])) if cam_xyz else 5.
         dz = float(np.median([abs(c[2] - centre[2]) for c in cam_xyz.values()])) if cam_xyz else 1.6
@@ -148,6 +149,19 @@ def replay(run_dir, report, with_frames=False):
                 return img
         frames = Frames()
     ctx = judge.context(cams["shots"], outlines["frames"], lay["people"][0], frames, room, cams["fps"], (outlines["width"], outlines["height"]))
+    if "object_cards" in lay:  # A's cards (mvp/a-cards) when the report has them: the judge on the real contract
+        data, blobs = lay["object_cards"]
+        got = data if data.get("cards") is not None else json.loads(blob(blobs["cards"]))
+        for s in ctx["shots"]:  # A's floor frames, so the room points and paths share the cards' frame
+            a = next((x for x in got.get("shots", []) if x["index"] == s["index"]), None)
+            if a and a.get("floor_frame"):
+                world = room.get(s["index"])
+                s.update(floor_frame=a["floor_frame"], u_pose_m=a.get("u_pose_m", s["u_pose_m"]), room_floor=None, room_points=world)
+                cam = np.asarray(next(c for c in cams["shots"] if c["index"] == s["index"])["c2w"], float)[:, :3, 3]
+                ctx["walked"][s["index"]] = {"camera": judge.to_floor(a["floor_frame"], cam)[:, :2],
+                                             **{f"person:{t['id']}": judge.to_floor(a["floor_frame"], [q["xyz"] for q in t["points"]])[:, :2]
+                                                for t in lay["people"][0].get("tracks", []) if t["shot"] == s["index"] and t["points"]}}
+        return got["cards"], ctx
     return cards(objs["objects"], cams["shots"], outlines["frames"], lay["people"][0], ctx), ctx
 
 
