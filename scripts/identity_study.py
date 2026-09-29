@@ -389,6 +389,35 @@ def consistency(run_dir, report):
     return out
 
 
+def score(out):
+    """The dev study: every namer's names on the study items against labels-heldout.json (agent-labelled, blind). Scored with
+    the current taxonomy (its dev-set words were added after the first scoring: in-sample for these outputs). -> metrics-dev.json"""
+    rows = json.loads((out / "items.json").read_text())["items"]
+    lab = json.loads((out / "labels-heldout.json").read_text())
+    methods = {"A: lettered Qwen decider (round 1, deployed)": {r["id"]: (r["round1"]["name"], False) for r in rows}}
+    for v, what in (("pair", "6 a request, context + close crop as 2 images"), ("pair2", "2 a sheet, 28 a request"), ("tile4", "4 context tiles a sheet"),
+                    ("sheet", "16 context tiles a sheet")):
+        f = out / f"gemini-heldout-{v}.json"
+        if f.exists():
+            g = json.loads(f.read_text())["answers"]
+            methods[f"D: Gemini open name, {what}"] = {k: (a.get("name"), a.get("status") == "surface") for k, a in g.items()}
+    q = out / "qwen-heldout.json"
+    if q.exists():
+        qa = json.loads(q.read_text())["answers"]
+        methods["B1: Qwen open name, context + close crop"] = {k: (a["b1"]["name"], a["b1"]["not_object"]) for k, a in qa.items()}
+        methods["B2: Qwen open name, set-of-marks pair"] = {k: (a["b2"]["name"], a["b2"]["not_object"]) for k, a in qa.items()}
+        methods["C: decider, 'none of these' or p < 0.5 -> B1"] = {
+            r["id"]: ((qa[r["id"]]["b1"]["name"], qa[r["id"]]["b1"]["not_object"]) if (r["round1"].get("answer") in (cards.OPT_OTHER, cards.OPT_NOT_ONE)
+                      or (r["round1"].get("probs") and max(r["round1"]["probs"]) < .5)) else (r["round1"]["name"], False)) for r in rows}
+    res = {}
+    for m, got in methods.items():
+        g = [(r["site"], grade(*(lambda n, no: (n, lab[r["id"]], no))(*(got.get(r["id"]) or (None, False))))) for r in rows]
+        hz = [x for x, r in zip(g, rows) if r["why"] == "hazard"]
+        res[m] = {**table(g), "hazard_items": table(hz).get("all")}
+    (out / "metrics-dev.json").write_text(json.dumps(res, indent=1))
+    return res
+
+
 def score_final(out):
     """The final runs' shown names on the fresh held-out items (labels-final.json, agent-labelled blind), beside round 1's
     names for the same card id when its box centre is within 0.5 m (same pipeline up to objects v1); hazard names shown /
@@ -445,6 +474,8 @@ if __name__ == "__main__":
         self_check()
     elif a.what == "items":
         items(a.out)
+    elif a.what == "score":
+        print(json.dumps(score(a.out), indent=1))
     elif a.what == "score-final":
         print(json.dumps({k: v for k, v in score_final(a.out).items() if k != "per_item"}, indent=1, default=str)[:6000])
     elif a.what == "consistency":  # OUT = RUN_DIR, --runs REPORT

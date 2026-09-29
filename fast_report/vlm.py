@@ -320,10 +320,10 @@ def namer_sheet(tiles, first=1):
     return cv2.imencode(".jpg", out, [cv2.IMWRITE_JPEG_QUALITY, 88])[1].tobytes()
 
 
-def namer_requests(ids, tiles):
-    """-> [{"request": k, "ids": {"1": id, ...}, "blocks": the adapter's input (intro, then 'tiles i to j' + a sheet)}]."""
+def namer_requests(ids, tiles, first=0):
+    """-> [{"request": first + k, "ids": {"1": id, ...}, "blocks": the adapter's input (intro, then 'tiles i to j' + a sheet)}]."""
     out = []
-    for k, r0 in enumerate(range(0, len(ids), NAMER_PER_REQUEST)):
+    for k, r0 in enumerate(range(0, len(ids), NAMER_PER_REQUEST), first):
         part_ids, part = ids[r0:r0 + NAMER_PER_REQUEST], tiles[r0:r0 + NAMER_PER_REQUEST]
         blocks = [{"type": "text", "text": NAMER_INTRO}]
         for s0 in range(0, len(part), NAMER_PER_IMAGE):

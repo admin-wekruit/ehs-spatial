@@ -136,7 +136,10 @@ class NamerRelay:
             error = repr(e)[:300]
         rec = {"report": event["report"], "request": event["request"], "attempt": event.get("attempt", 1), "n": event.get("n"), "s": round(time.time() - t, 2),
                "status": (provider or {}).get("status"), "usage": (provider or {}).get("usage"), "error": error}
-        self.queue.put({**rec, "provider": provider}, partition=event["report"])
+        try:
+            self.queue.put({**rec, "provider": provider}, partition=event["report"])
+        except Exception as e:  # noqa: BLE001  a late copy after the call (its queue closed): kept on disk only
+            rec["put_error"] = repr(e)[:200]
         d = self.out / "namer" / event["report"]
         d.mkdir(parents=True, exist_ok=True)
         (d / f"request-{event['request']:02d}-a{event.get('attempt', 1)}.json").write_text(json.dumps({**rec, "provider": provider}, indent=1))

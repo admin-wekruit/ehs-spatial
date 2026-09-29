@@ -942,10 +942,10 @@ def analyse(m, mp4, opts, clock, writer, log):
                 publish({c["id"]: c["identity"] for c in rest}, f"qwen_{which}")
         return rec
 
-    def views_for_identity():
+    def views_for_identity(key="outlines"):
         """{entity: (keyframe, marks {1: its polygons, 2..: the others'})} on segmented outlines: the card's first best view
         that was segmented, else its largest segmented outline."""
-        outl = {f["sourceFrame"]: f for f in (results.get("outlines") or {}).get("frames", []) if f["source"] == "segmented"}
+        outl = {f["sourceFrame"]: f for f in (results.get(key) or {}).get("frames", []) if f["source"] == "segmented"}
         area = {}
         for q, f in outl.items():
             for o in f["objects"]:
@@ -997,27 +997,29 @@ def analyse(m, mp4, opts, clock, writer, log):
         threading.Thread(target=run, name="namer", daemon=True).start()
         namer["started"].set()
 
-    def gemini_names():
-        """mvp2/identity (R2): open names from Gemini (cloud) for every first-pass object seen on >= 3 keyframes (pick counts)
-        or carrying an EHS word, on its largest segmented outline; two a sheet (the thing in its surroundings | a close crop),
-        14 a request, every request at once. The requests go out on the event stream (writer.send), the bench relays them into
-        the deployed report container and puts each answer on opts['namer'] (a modal.Queue, this report's partition).
-        -> ({object id: {name, status, p}}, record); what is unanswered after NAMER_WAIT_S goes to the Qwen decider."""
+    def gemini_names(rows=None, key="outlines", counts=None, ready=None, first=0, tag="gemini"):
+        """mvp2/identity (R2): open names from Gemini (cloud) for every object seen on >= 3 keyframes (pick counts) or carrying
+        an EHS word (the first-pass objects; densify's new ones on its outlines in a second pass), on its largest segmented
+        outline; two a sheet (the thing in its surroundings | a close crop), 14 a request, every request at once. The requests
+        go out on the event stream (writer.send), the bench relays them into the deployed report container and puts each answer
+        on opts['namer'] (a modal.Queue, this report's partition). -> ({object id: {name, status, p}}, record); what is
+        unanswered after NAMER_WAIT_S keeps its detected word (first pass: goes to the Qwen decider)."""
         import queue as _queue
-        relay, view = opts["namer"], views_for_identity()
-        pick_ready.wait(60)
+        relay, view = opts["namer"], views_for_identity(key)
+        counts = pick_counts if counts is None else counts
+        (ready or pick_ready).wait(60)
 
         def wanted(o):
             i = cards.identity_v1(o)
-            seen = sum(1 for c in (pick_counts.get(o["id"]) or {}).values() if max(c) >= cards.MIN_PX)
+            seen = sum(1 for c in (counts.get(o["id"]) or {}).values() if max(c) >= cards.MIN_PX)
             return seen >= 3 or cards.kind_of(i["proposed"])["category"] != "other" or cards.head_match(i["proposed"], cards.CLASS_SIZE) is not None \
                 or any(cards.hazard_of(w) for w in i["detector_words"])
-        todo = [o for o in list(objects) if wanted(o)]
+        todo = [o for o in list(objects if rows is None else rows) if wanted(o)]
         with clock.stage("identity.gemini.sheets", n={"objects": len(todo)}):
             with ThreadPoolExecutor(8) as pool:
                 tiles = list(pool.map(lambda o: (lambda v: v and vlm.namer_tile(frames[v[0]], v[1][1]))(view({"id": o["id"], "views": {}})), todo))
             ids = [o["id"] for o, t in zip(todo, tiles) if t is not None]
-            reqs = vlm.namer_requests(ids, [t for t in tiles if t is not None])
+            reqs = vlm.namer_requests(ids, [t for t in tiles if t is not None], first)
 
         def send(r, attempt):
             writer.send({"type": "namer_request", "report": writer.report_id, "request": r["request"], "attempt": attempt, "n": len(r["ids"]),
@@ -1025,7 +1027,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         sent = time.time()
         for r in reqs:
             send(r, 1)
-        clock.mark("identity_gemini_sent")
+        clock.mark(f"identity_{tag}_sent")
         got, pending, again = {}, {r["request"]: r for r in reqs}, set()
         rec = {"namer": "gemini via the bench relay", "asked": len(ids), "requests": len(reqs), "answers": []}
         with clock.stage("identity.gemini", n={"objects": len(ids), "requests": len(reqs)}):
@@ -1321,6 +1323,23 @@ def analyse(m, mp4, opts, clock, writer, log):
             cards_put(3, out)
         start_display()  # facts before display (section 7): the gate's CPU processes slowed cards v3 by 2-3x beside it (run 005)
         judge_hook(out, 3)
+        new_rows = [o for o in objects if o.get("source") == "densify" and o["id"] not in cards_out.get("identities", {})]
+        if new_rows and opts.get("namer") is not None:  # mvp2/identity: densify's own objects named too (a second, smaller pass)
+            from concurrent.futures import Future
+            namer["densify"] = fut = Future()
+
+            def name_densified():
+                try:
+                    got, rec = gemini_names(new_rows, "outlines_v2", counts_v2, ready_v2, first=100, tag="gemini_densify")
+                    by = {c["id"]: c for c in out["cards"] if c["kind"] == "object"}
+                    idents = {i: cards.open_identity(by[i]["identity"], a) for i, a in got.items() if i in by}
+                    if idents:
+                        publish(idents, "gemini_densify")
+                    fut.set_result(rec)
+                except Exception:  # noqa: BLE001  those objects keep their detected words
+                    import traceback
+                    fut.set_result({"error": traceback.format_exc()[-2000:]})
+            threading.Thread(target=name_densified, name="namer-densify", daemon=True).start()
         return {**st, "cards": out["stats"]}
     densify_future = m.cpu_pool.submit(densify_job) if densify_on and objects else None
 
@@ -1528,6 +1547,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     summary["cards"] = cards_future.result()
     summary["boxes"] = box_stats(objects[:len(members)], cards_out.get("v1"))
     summary["densify"] = densify_future.result() if densify_future is not None else None
+    summary["identity_densify"] = namer["densify"].result() if namer.get("densify") else None  # before the judge futures: it adds one
     summary["judge"] = [f.result() for f in judge_futures]  # after densify: it adds the v3 judgements' future
     summary["cards"] = {"v1": summary["cards"], "v3": cards_out.get("v3", {}).get("stats")}
     summary["boxes_v3"] = box_stats(objects, cards_out.get("v3"))
