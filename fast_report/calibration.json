@@ -93,5 +93,36 @@
    "status": "advisory (n 15, 6 positives: too few to calibrate)"
   }
  },
- "note": "Platt per question on the deployed prompt's p(hazard); CV = leave one source clip out; labels agent-made (X8 set d). Transfer from whole frames to set-of-marks crops is untested."
+ "note": "labels are agent-made; see each section's source",
+ "k": {
+  "height": {
+   "k": 1.071,
+   "n": 2122,
+   "coverage_before": 0.8916,
+   "coverage_after": 0.9001,
+   "source": "warm vs +5 s shifted window, pooled over ME340/Sam's Club/Walmart (runs mvp-integrate-me340-002, -samsclub-001, -walmart-001); pairs: 1:1 centroids <= 0.5 m, part/whole excluded"
+  },
+  "extent": {
+   "k": 1.345,
+   "n": 1118,
+   "coverage_before": 0.8614,
+   "coverage_after": 0.9007,
+   "source": "warm vs +5 s shifted window, pooled over ME340/Sam's Club/Walmart (runs mvp-integrate-me340-002, -samsclub-001, -walmart-001); pairs: 1:1 centroids <= 0.5 m, part/whole excluded"
+  },
+  "position": {
+   "k": 1.024,
+   "n": 1078,
+   "coverage_before": 0.8952,
+   "coverage_after": 0.9007,
+   "source": "warm vs +5 s shifted window, pooled over ME340/Sam's Club/Walmart (runs mvp-integrate-me340-002, -samsclub-001, -walmart-001); pairs: 1:1 centroids <= 0.5 m, part/whole excluded"
+  },
+  "angle": {
+   "k": 1.0,
+   "n": 74,
+   "coverage_before": 1.0,
+   "coverage_after": 1.0,
+   "source": "warm vs +5 s shifted window, pooled over ME340/Sam's Club/Walmart (runs mvp-integrate-me340-002, -samsclub-001, -walmart-001); pairs: 1:1 centroids <= 0.5 m, part/whole excluded"
+  }
+ },
+ "written_unix": 1790664801.184086
 }

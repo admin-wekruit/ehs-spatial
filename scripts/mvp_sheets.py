@@ -7,6 +7,8 @@ The agent (not a person, not ground truth) fills the 'label' fields; fast_report
                mill's table and the mill, a label on a cabinet) | different (another thing, e.g. the bench under a board) | unclear
   boxes:       30 flagged (implausible) boxes and the 30 largest unflagged a video, on their best view with the outline.
                labels: size right | inflated | unclear
+  identity:    40 object cards a video seen on >= 3 keyframes (seed 0) on their best view, with the card's name and route.
+               labels: right | close (the right family, or a part / the whole of it) | wrong | unclear
   judgements:  every FAIL, then PASS / NEEDS_REVIEW rows per check (>= 60 over the videos): evidence images + the geometry line.
                labels: present | absent | cannot tell
 
@@ -239,6 +241,40 @@ def judgements(out, runs, n=60):
     return len(tiles)
 
 
+def identity(out, site, run_dir, report, n=40, mp4=None):
+    """The identity audit (mvp/integrate): n object cards seen on >= 3 keyframes (seeded), each on its best view with the
+    outline and the card's name, route and probability. labels: right | close (the right family, or a part / the whole of
+    it) | wrong | unclear."""
+    out = Path(out)
+    layers = ev.load_layers(run_dir, report)
+    cards = [c for c in (layers.get("object_cards") or {}).get("cards", []) if c.get("kind") == "object"
+             and len((c.get("time") or {}).get("detected_keyframes") or []) >= 3]
+    polys = entity_polys(layers.get("outlines") or {})
+    objects = {c["id"]: c for c in cards}
+    views = {c["id"]: best_view(c["id"], objects, polys) for c in cards}
+    cards = [c for c in cards if views[c["id"]][1]]
+    cards = [cards[i] for i in sorted(np.random.default_rng(0).permutation(len(cards))[:n])]
+    imgs = frames_bgr(mp4 or ev.PHASE2 / "data/clips" / ev.CLIPS[site] / "source-full.mp4", {views[c["id"]][0] for c in cards})
+    tiles, labels = [], {}
+    for c in cards:
+        key, ps = views[c["id"]]
+        m = poly_mask(ps)
+        idn = c["identity"]
+        img = crop(outline(imgs[key], m, CYAN), bbox(m), side=PANEL * 2) if key in imgs and m.any() else np.full((PANEL * 2, PANEL * 2, 3), 235, np.uint8)
+        tid = f"{site}-id-{c['id']}"
+        p = idn.get("confidence")
+        tiles.append((img, f"{c['id']} '{idn.get('name')}' by {idn.get('decided_by')}" + (f" p {p:.2f}" if p is not None else "") + f" f{key}"))
+        labels[tid] = {"id": c["id"], "name": idn.get("name"), "route": idn.get("decided_by"), "p": p, "label": ""}
+    (out / "sheets").mkdir(parents=True, exist_ok=True)
+    per = 12
+    for s in range(0, len(tiles), per):
+        sheet(tiles[s:s + per], out / "sheets" / f"identity-{site}-{s // per}.jpg", cols=4, tile=PANEL * 2)
+    path = out / f"labels-identity-{site}.json"
+    if not path.exists():
+        path.write_text(json.dumps(labels, indent=1))
+    return len(tiles)
+
+
 def self_check():
     import tempfile
     img = np.full((720, 1280, 3), 90, np.uint8)
@@ -257,7 +293,7 @@ def self_check():
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("what", nargs="?", choices=("clicks", "boxes", "judgements"))
+    p.add_argument("what", nargs="?", choices=("clicks", "boxes", "judgements", "identity"))
     p.add_argument("out", nargs="?", type=Path)
     p.add_argument("--site", choices=sorted(ev.CLIPS))
     p.add_argument("--run", default="", help="RUN_DIR:REPORT (default: fb/integrate's warm call of the site)")
@@ -273,5 +309,7 @@ if __name__ == "__main__":
         print(clicks(a.out, a.site, *run, variant=a.variant), "tiles")
     elif a.what == "boxes":
         print(boxes(a.out, a.site, *run), "tiles")
+    elif a.what == "identity":
+        print(identity(a.out, a.site, *run), "tiles")
     elif a.what == "judgements":
         print(judgements(a.out, {s: (Path(v.rsplit(":", 1)[0]), v.rsplit(":", 1)[1]) for s, v in (x.split("=", 1) for x in a.runs.split(","))}), "tiles")

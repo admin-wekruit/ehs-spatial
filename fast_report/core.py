@@ -346,7 +346,8 @@ def cards_calibration():
     if path.exists():
         raw = path.read_bytes()
         d = json.loads(raw)
-        out.update(file_sha256=sha256(raw), k={**out["k"], **(d.get("k") or {})}, k_pose=float(d.get("k_pose", 1.)))
+        ks = {f: float(v["k"] if isinstance(v, dict) else v) for f, v in (d.get("k") or {}).items()}  # D writes {family: {k, n, coverage}}
+        out.update(file_sha256=sha256(raw), k={**out["k"], **ks}, k_pose=float(d.get("k_pose", 1.)))
     return out
 
 
@@ -794,7 +795,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     clock.mark("objects_v1_put")
 
     # ---------- click MVP: object cards (section 4) and the judgement hook (B's fast_report.judge, when present) ----------
-    cards_out, cards_ready, pick_ready, judge_futures, v2_ready = {}, threading.Event(), threading.Event(), [], threading.Event()
+    cards_out, cards_ready, pick_ready, judge_futures, cards_lock = {}, threading.Event(), threading.Event(), [], threading.Lock()
     card_labels = ["physical values are estimated (floor plane + assumed 1.6 m camera height) with +-u from view-subset disagreement plus depth, "
                    "pose, floor, resolution and scale terms; 'not observed' / 'not measurable' carry their reason",
                    "identity and class are inferred: a detected word until a calibrated decider answers",
@@ -802,6 +803,8 @@ def analyse(m, mp4, opts, clock, writer, log):
 
     def cards_put(version, out):
         data = {"schema": "panoptes-object-cards-v1", "version": version, "version_of": {"objects": {1: 1, 2: 2}.get(version, 3), "pick": 1 if version < 3 else 2},
+                "note": {1: "geometry; names are detected words", 2: "identity from the decider", 3: "after densify",
+                         4: "after densify, identity from the decider"}.get(version),
                 "calibration": cards_calibration(), "shots": out["shots"], "aliases": out["aliases"], "stats": out["stats"]}
         body = json.dumps(out["cards"], separators=(",", ":"), default=layers._plain).encode()
         blobs = None
@@ -876,17 +879,33 @@ def analyse(m, mp4, opts, clock, writer, log):
             if o["id"] in out["aliases"]:
                 o["merged_into"] = out["aliases"][o["id"]]
 
+    def with_identity(out, idents):
+        """A cards version with the decider's identities (by object id; the size veto re-read on this version's box)."""
+        new = copy.deepcopy(out)
+        for c in new["cards"]:
+            if c["kind"] == "object" and c["id"] in idents:
+                i = idents[c["id"]]
+                c["identity"] = {**i, "candidates_struck": cards.strike(i["candidates"], c["physical"].get("size_check", {}).get("measured_m"))}
+        return new
+
     def cards_v2():
-        """Identity once the cascade and the free-text namer answered (section 4.7; the decider is B's)."""
-        if "v1" not in cards_out:
+        """Identity once the cascade answered (section 4.7: the decider's options replace the free-text naming). Put as v2,
+        or, when densify's cards v3 is already out, merged into it as v4 (the viewer shows the newest version)."""
+        if not cards_ready.wait(120):
             return
         by = {o["id"]: o for o in objects}
         new = [{**c, "identity": cards.identity_v2(c["identity"], by[c["id"]], c["physical"].get("size_check") or {})} if c["kind"] == "object" else c
                for c in cards_out["v1"]["cards"]]
         ask_identity(new)
-        cards_out["v2"] = {**cards_out["v1"], "cards": new}
-        cards_put(2, cards_out["v2"])
-        v2_ready.set()
+        idents = {c["id"]: c["identity"] for c in new if c["kind"] == "object"}
+        with cards_lock:
+            cards_out["identities"] = idents
+            if "v3" in cards_out:
+                cards_out["v4"] = with_identity(cards_out["v3"], idents)
+                cards_put(4, cards_out["v4"])
+            else:
+                cards_out["v2"] = {**cards_out["v1"], "cards": new}
+                cards_put(2, cards_out["v2"])
 
     def ask_identity(card_list):
         """Section 4.7 step 3 through B's decider (vlm.options + judge.som, when both exist): the best view with the outlines
@@ -924,11 +943,14 @@ def analyse(m, mp4, opts, clock, writer, log):
             # integration fix: the options go into the prompt as letters (vlm.qwen_prompt); A's bare question listed none
             p = vlm.qwen_prompt(" ".join([judge.SCENE, judge.MARKS]), "What is the object marked [1]?", opts)
             return opts, [som(frames[best], marks, subject=1), som(frames[best], marks, subject=1, marks=False)], p
-        todo = [c for c in card_list if c["kind"] == "object" and (c["class"]["category"] != "other" or cards.head_match(c["identity"]["name"], cards.CLASS_SIZE))]
-        with clock.stage("vlm.identity", n={"objects": len(todo)}):
+        ehs = lambda c: c["class"]["category"] != "other" or cards.head_match(c["identity"]["name"], cards.CLASS_SIZE)  # noqa: E731
+        # integration: every object seen on >= 3 views is asked (spec 5.3's 'identity for the other objects', after the
+        # judgement questions): the SAM 3 word alone named a floor drain 'metal part' and a flammables cabinet 'machine'
+        todo = [c for c in card_list if c["kind"] == "object" and (ehs(c) or (c.get("views") or {}).get("n", 0) >= 3)]
+        with clock.stage("vlm.identity", n={"objects": len(todo), "ehs": sum(map(ehs, todo))}):
             with ThreadPoolExecutor(8) as pool:  # never the core's cpu_pool: its threads would wait on vLLM (the judge's queue)
                 built = list(pool.map(build, todo))
-            asked = [(c, b[0], vlm.submit(b[1], b[2], len(b[0]), "identity")) for c, b in zip(todo, built) if b is not None]
+            asked = [(c, b[0], vlm.submit(b[1], b[2], len(b[0]), "identity" if ehs(c) else "identity_other")) for c, b in zip(todo, built) if b is not None]
             for c, opts, fut in asked:
                 try:
                     c["identity"] = cards.decide_identity(c["identity"], opts, fut.result(), cal)
@@ -1160,14 +1182,11 @@ def analyse(m, mp4, opts, clock, writer, log):
             shots_in = cards_out.get("shots_in")
             out = cards.build({"shots": shots_in, "objects": copy.deepcopy(objects), "points": points_v3, "counts": counts_v2,
                                "people": results.get("people"), "calibration": cards_calibration()}, m.proc_pool, 16)
-        v2_ready.wait(90)  # the decider's identities (cards v2) carry into v3 (ponytail: a failed namer never holds v3 longer)
-        prev = {c["id"]: c["identity"] for c in (cards_out.get("v2") or cards_out.get("v1") or {}).get("cards", [])}
-        for c in out["cards"]:
-            if c["id"] in prev and c["kind"] == "object":
-                c["identity"] = {**prev[c["id"]], "candidates_struck": cards.strike(prev[c["id"]]["candidates"],
-                                                                                    c["physical"].get("size_check", {}).get("measured_m"))}
-        cards_out["v3"] = out
-        cards_put(3, out)
+        with cards_lock:  # the identities known now (v2's, else v1's words); a later decider pass merges in as v4
+            prev = cards_out.get("identities") or {c["id"]: c["identity"] for c in cards_out.get("v1", {}).get("cards", []) if c["kind"] == "object"}
+            out = with_identity(out, prev)
+            cards_out["v3"] = out
+            cards_put(3, out)
         start_display()  # facts before display (section 7): the gate's CPU processes slowed cards v3 by 2-3x beside it (run 005)
         judge_hook(out, 3)
         return {**st, "cards": out["stats"]}
@@ -1359,62 +1378,15 @@ def analyse(m, mp4, opts, clock, writer, log):
                     zero_shot_accepted=sum(r["source"] == "zero-shot" for r in recs), in_video_hits=sum(r["source"] == "cache:in-video" for r in recs),
                     uncertain=len(unsure), vlm_requests_objects=len(groups))
     cascade_done.set()
-    if objects and not groups:
+    if objects:
+        # integration: section 4.7's options question replaces the free-text naming of the uncertain clusters (it held
+        # vLLM 34 s on Sam's Club, 360 crops, before the decider could start)
+        casc.update(vlm="replaced by the decider's options (click MVP 4.7)", vlm_requests_objects=0, uncertain_clusters=len(groups))
         sync_objects()
         writer.put("objects", copy.deepcopy({"objects": objects, "cascade": casc, "vocabulary": words}), blobs_obj, "estimated+inferred", obj_labels)
         clock.mark("objects_v2_put")
-        cards_v2()
-
-    def vlm_crop(gi):
-        """The object's best view, full resolution: SAM 3's own mask outlined white over black (never red: X2 saw Qwen name
-        red-outlined crops 'fire extinguisher'), 1.5 x its box, long side 448 px."""
-        q = int(vf[gi])
-        img = frames[keys[q]].copy()
-        mk = (F.interpolate(voc["logits"][gi][None, None].float(), size=(H, W), mode="bilinear", align_corners=False)[0, 0] > 0).cpu().numpy()
-        if not mk.any():
-            mk = cv2.resize(voc["mask"][gi].cpu().numpy().astype(np.uint8), (W, H), interpolation=cv2.INTER_NEAREST) > 0
-        ys, xs = np.nonzero(mk)
-        cy, cx = (ys.min() + ys.max()) / 2, (xs.min() + xs.max()) / 2
-        half = max(ys.max() - ys.min(), xs.max() - xs.min(), 128) * .75
-        y0, y1, x0, x1 = int(max(0, cy - half)), int(min(H, cy + half)), int(max(0, cx - half)), int(min(W, cx + half))
-        contours, _ = cv2.findContours(mk.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        cv2.drawContours(img, contours, -1, (0, 0, 0), 4)
-        cv2.drawContours(img, contours, -1, (255, 255, 255), 2)
-        crop = img[y0:y1, x0:x1]
-        sc = 448 / max(crop.shape[:2])
-        crop = cv2.resize(crop, (max(1, int(crop.shape[1] * sc)), max(1, int(crop.shape[0] * sc))), interpolation=cv2.INTER_AREA if sc < 1 else cv2.INTER_CUBIC)
-        return cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, 90])[1].tobytes()
-
-    # VLM for what the cascade could not settle: one crop per cluster, in the background while outlines are drawn
-    def escalate():
-        reps = list(groups)
-        with clock.stage("vlm.name.crops", n={"crops": len(reps)}):
-            items = list(m.cpu_pool.map(lambda r: vlm_crop(obj_masks_on[r][1]), reps))
-        release_voc()  # the crops were this process's last GPU 0 work of the run
-        with clock.stage("vlm.name", n={"crops": len(items)}):
-            names, rec = vlm.name_crops(items)
-        answered = []
-        for r, nm in zip(reps, names):
-            for i in groups[r]:
-                c = objects[i]["cascade"]
-                if nm and nm != "none":
-                    c.update(label=nm, source="vlm" if i == r else "cache:in-video(vlm)")
-                else:
-                    c.update(label=None, source="vlm:none" if nm == "none" else "vlm:no answer")
-                c["vlm_answer"] = nm
-            if nm and nm != "none":
-                answered.append(r)
-        if use_cache and answered:
-            cache.add(e_np[answered], [objects[r]["cascade"]["label"] for r in answered], video_sha, site, "vlm")
-            cache.save()
-        casc.update(vlm={k: v for k, v in rec.items() if k != "texts"}, vlm_answered=len(answered), cache_entries_after=len(cache))
-        sync_objects()
-        writer.put("objects", copy.deepcopy({"objects": objects, "cascade": casc, "vocabulary": words}), blobs_obj, "estimated+inferred", obj_labels)
-        clock.mark("objects_v2_put")
-        cards_v2()
-    esc = m.vlm_pool.submit(escalate) if objects and groups else None
-    if esc is None:
-        release_voc()
+    esc = m.vlm_pool.submit(cards_v2) if objects else None
+    release_voc()
 
     outlines_future.result()
     ev = vocab_future.result()

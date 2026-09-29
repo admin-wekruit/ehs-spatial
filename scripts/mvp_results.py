@@ -38,7 +38,7 @@ def layer_s(call, row):
 
 def video_rows(site, bench, mvp, base):
     cs = calls(bench)
-    first, warm, shifted = cs.get("first"), cs.get("warm"), cs.get("shifted")
+    first, warm = cs.get("first"), cs.get("warm")
     s, b = get(mvp, "sites", site) or {}, get(base, "sites", site) or {}
     out = {"times_s": {}, "gpu_peak_gib": {}, "clicks": {}, "identity": {}, "physical": {}, "repeat": {}, "cards": {}, "judgements": {}}
     for label, row in LAYERS:
@@ -111,6 +111,11 @@ def md(summary):
     lines += ["", "## Identity (1:1 match ≤ 0.5 m to the delivered report's clear objects, after the camera Sim3; agreement with its model-made names)", "", head.rstrip("\n")]
     lines.append("| matched | " + " | ".join(str(v[s]["identity"]["matched"]) for s in sites) + " |")
     lines.append("| name agreement, MVP | " + " | ".join(pct(v[s]["identity"]["agreement"]) for s in sites) + " |")
+    lines.append("| agent audit: name right / right or close (n decided) | " + " | ".join(
+        (lambda a: f"{pct(a['right'])} / {pct(a['right_or_close'])} ({a['n']})" if a else "—")(v[s]["identity"].get("audit")) for s in sites) + " |")
+    for route in sorted({r for s in sites for r in ((v[s]["identity"].get("audit") or {}).get("by_route") or {})}):
+        lines.append(f"| audit, route '{route}': right / right or close (n) | " + " | ".join(
+            (lambda a: f"{pct(a['right'])} / {pct(a['right_or_close'])} ({a['n']})" if a else "—")(get(v[s]["identity"], "audit", "by_route", route)) for s in sites) + " |")
     lines.append("| name agreement, fb/integrate (D1) | " + " | ".join(pct(v[s]["identity"]["baseline_agreement"]) for s in sites) + " |")
     lines += ["", "## Physical info vs the delivered report (median / p90 |Δ| m, same definitions, after the camera Sim3; coverage = share with |Δ| ≤ u without its scale part)", "", head.rstrip("\n")]
     for q in ("top", "base", "long_side", "short_side"):
@@ -176,6 +181,8 @@ def build(out, bench_dirs, viewer_dir=None, plugged=None):
         bench = json.loads((d / "summary.json").read_text())
         mvp = json.loads((d / "mvp/summary.json").read_text()) if (d / "mvp/summary.json").exists() else {}
         videos[site] = video_rows(site, bench, mvp, base)
+        lab = d / "mvp" / f"labels-identity-{site}.json"
+        videos[site]["identity"]["audit"] = identity_audit(json.loads(lab.read_text())) if lab.exists() else None
         videos[site]["bench_dir"] = str(d)
         k_family[site] = mvp.get("k_family")
     viewer = None
@@ -198,6 +205,18 @@ def build(out, bench_dirs, viewer_dir=None, plugged=None):
     (out / "summary.json").write_text(json.dumps(summary, indent=1, default=str))
     (out / "summary.md").write_text(md(summary))
     return summary
+
+
+def identity_audit(labels):
+    """labels-identity-<site>.json (agent-made) -> right / right-or-close shares over the decided tiles, per route."""
+    def share(xs):
+        dec = [x for x in xs if x["label"] in ("right", "close", "wrong")]
+        return {"n": len(dec), "right": round(sum(x["label"] == "right" for x in dec) / len(dec), 3) if dec else None,
+                "right_or_close": round(sum(x["label"] in ("right", "close") for x in dec) / len(dec), 3) if dec else None}
+    xs = [x for x in labels.values() if x.get("label")]
+    routes = sorted({x["route"] for x in xs})
+    return {**share(xs), "unclear": sum(x["label"] == "unclear" for x in xs), "by_route": {r: share([x for x in xs if x["route"] == r]) for r in routes},
+            "labeller": "agent (contact sheets): right | close (right family, or a part / the whole) | wrong | unclear"}
 
 
 def merge_judgements(parts):
@@ -232,6 +251,9 @@ def self_check():
     rows = video_rows("me340", {"calls": [call]}, {}, {})
     assert rows["times_s"]["pick v1"] == {"warm": 40., "first_call": None, "target_ok_warm": True} and rows["gpu_peak_gib"]["warm"] == [60., 50.]
     assert shift_of({"warm call 1": 1, "shifted call 2": 2}) == 2
+    a = identity_audit({"a": {"route": "vlm options", "label": "right"}, "b": {"route": "sam3 vote", "label": "close"},
+                        "c": {"route": "sam3 vote", "label": "wrong"}, "d": {"route": "sam3 vote", "label": "unclear"}})
+    assert a["n"] == 3 and a["right"] == .333 and a["right_or_close"] == .667 and a["by_route"]["sam3 vote"]["n"] == 2 and a["unclear"] == 1
     print("mvp_results self-check ok")
 
 

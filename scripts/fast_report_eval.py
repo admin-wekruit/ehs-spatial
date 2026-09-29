@@ -703,6 +703,7 @@ FB_RUNS = {"me340": ("fb-integrate-me340-006", "fb-me340-e84efffd-1790649860"), 
            "walmart": ("fb-integrate-walmart-001", "fb-walmart-c0761a2a-1790651216")}
 REF_MIN_PX, REF_ON_PERSON, CLICK_ERODE, BG_MARGIN, CLICKS_PER_REF, BG_PER_FRAME = 1200, .5, 3, 5, 2, 5
 PICK_IOU, PICK_COVER, PERSON_IOU, MATCH_DELIVERED_M, LONG_M = .3, .5, .5, .5, 3.
+PART_WHOLE_RATIO = 4.  # repeatability: a box >= 4x longer that holds the other's centre is its whole (a stack vs one box of it)
 MIN_PATH_M = .5  # repeatability: a shot whose aligned cameras moved less cannot be Sim3-aligned (ME340 shot 0: 2 cm, scale 0.80)
 # ponytail: spec 4.2's seed size table, used for today's boxes (the baseline) and for 'large class' in the L1 acceptance. The
 # MVP's cards carry their own size_check (A's cards.CLASS_SIZE); the rows read that when it is there.
@@ -1016,7 +1017,8 @@ def ours_objects(layers):
                         "top": fact(ph.get("top_above_floor"), k.get("height", 1)), "base": fact(ph.get("base_above_floor"), k.get("height", 1)),
                         "height": fact(ph.get("height"), k.get("extent", 1)), "sides": sorted([w, d], key=lambda f: -f[0]) if w and d else None,
                         "position": fact(ph.get("position_xy"), k.get("position", 1)), "floor_frame": ff,
-                        "slope": fact(ph.get("planar_slope_deg"), angle=True), "tilt": fact(ph.get("principal_axis_tilt_deg"), angle=True)})
+                        "slope": fact(ph.get("planar_slope_deg"), angle=True), "tilt": fact(ph.get("principal_axis_tilt_deg"), angle=True),
+                        "aabb": (ph["box_min_m"], ph["box_max_m"]) if ph.get("box_min_m") else None})
         return out
     for o in objs:
         lo, hi = np.asarray(o["box_min_m"], float), np.asarray(o["box_max_m"], float)
@@ -1038,7 +1040,7 @@ def ours_objects(layers):
                     "p": None if named else round(votes[word] / sum(votes.values()), 4) if word in votes and sum(votes.values()) else None,
                     "calibrated": False, "plausible": None, "longest": float((hi - lo).max()), "top": top, "base": base,
                     "height": None if top is None else (top[0] - base[0], None, None), "sides": sides, "position": None, "floor_frame": None,
-                    "slope": None, "tilt": None})
+                    "slope": None, "tilt": None, "aabb": (o["box_min_m"], o["box_max_m"])})
     for o in out:  # today's boxes: plausibility from the seed table on SAM 3's word (longest side only; no placement rules)
         _, lo, hi, _ = size_class(o["word"])
         o["plausible"] = lo <= o["longest"] <= hi
@@ -1178,6 +1180,24 @@ def interp_cameras(keys, c2w, want):
     return out
 
 
+def part_whole(a, b, margin=.1):
+    """True when one box's longest side is >= PART_WHOLE_RATIO x the other's and holds the other's centre (+ margin m)."""
+    la, lb = float(np.max(np.asarray(a[1]) - a[0])), float(np.max(np.asarray(b[1]) - b[0]))
+    big, small = (a, b) if la >= lb else (b, a)
+    if max(la, lb) < PART_WHOLE_RATIO * max(min(la, lb), 1e-3):
+        return False
+    c = (np.asarray(small[0]) + small[1]) / 2
+    return bool(np.all(c >= np.asarray(big[0]) - margin) and np.all(c <= np.asarray(big[1]) + margin))
+
+
+def sim3_aabb(box, s, R, t):
+    """An axis-aligned box through x -> s R x + t, as the axis-aligned box of its 8 corners."""
+    lo, hi = np.asarray(box[0], float), np.asarray(box[1], float)
+    c = np.array([[x, y, z] for x in (lo[0], hi[0]) for y in (lo[1], hi[1]) for z in (lo[2], hi[2])])
+    w = (s * (R @ c.T)).T + t
+    return w.min(0), w.max(0)
+
+
 def repeat_row(layers_a, layers_b, offset, min_keys=5):
     """Spec 8.3: two calls (B's frame f is A's f + offset), each A shot aligned to the B shot covering it by a Sim3 on A's
     keyframes (B's cameras interpolated there); objects matched 1:1 (Hungarian, <= 0.5 m); per family |delta| against
@@ -1188,7 +1208,7 @@ def repeat_row(layers_a, layers_b, offset, min_keys=5):
     A, B = ours_objects(layers_a), ours_objects(layers_b)
     fam = {"height": [], "extent": [], "position": [], "angle": []}
     deltas = {q: [] for q in ("top", "base", "height", "long_side", "short_side", "position", "slope", "tilt")}
-    shots, matched, angle_seen = [], 0, {"both": 0, "one": 0, "neither": 0}
+    shots, matched, angle_seen, other_entity = [], 0, {"both": 0, "one": 0, "neither": 0}, 0
     for sa in layers_a["cameras"]["shots"]:
         ka = sa["keyframes"]
         sb = max(layers_b["cameras"]["shots"], key=lambda s: sum(ka[0] <= k + offset <= ka[-1] for k in s["keyframes"]))
@@ -1217,6 +1237,9 @@ def repeat_row(layers_a, layers_b, offset, min_keys=5):
             if D[i, j] > MATCH_DELIVERED_M:
                 continue
             a, b = oa[i], ob[j]
+            if a.get("aabb") and b.get("aabb") and part_whole(a["aabb"], sim3_aabb(b["aabb"], s, R, t)):
+                other_entity += 1  # e.g. a 2 m stack in one call, one box of it in the other: part and whole, not a repeat
+                continue
             matched += 1
             for q, f in (("top", "height"), ("base", "height"), ("height", "extent")):
                 if a[q] and b[q]:
@@ -1245,10 +1268,11 @@ def repeat_row(layers_a, layers_b, offset, min_keys=5):
                     deltas[q].append(abs(a[q][0] - b[q][0]))
                     fam["angle"].append((deltas[q][-1], float(np.hypot(a[q][1], b[q][1]))))
     cov = {f: {"n": len(x), "coverage": round(float(np.mean([d <= u for d, u in x])), 4) if x else None} for f, x in fam.items()}
-    return {"shots": shots, "matched": matched, "objects": [len(A), len(B)], "delta": {q: dist(v) for q, v in deltas.items()},
+    return {"shots": shots, "matched": matched, "not_same_space": other_entity, "objects": [len(A), len(B)], "delta": {q: dist(v) for q, v in deltas.items()},
             "coverage_k1": cov, "angles_shown": angle_seen,
             "not_measurable_share": round((angle_seen["one"] + angle_seen["neither"]) / max(sum(angle_seen.values()), 1), 4),
-            "rule": "coverage: |delta| <= sqrt(u1^2 + u2^2), scale parts removed, B's lengths x the Sim3 scale"}, fam
+            "rule": "coverage: |delta| <= sqrt(u1^2 + u2^2), scale parts removed, B's lengths x the Sim3 scale; pairs: 1:1 centroids <= 0.5 m "
+                    "that are not part and whole (a box >= 4x longer holding the other's centre; counted in not_same_space)"}, fam
 
 
 # ---------- judgements (spec 8.4) ----------
@@ -1340,6 +1364,8 @@ def latency_row(run, patches, fb_run, click_latency=None):
                           "ok": None if lift is None or gap is None else lift <= lift_fb + .5 and gap <= gap_fb + .5}
     for name, layer, version, target in MVP_TARGETS:
         w = first_written(run, layer, version)
+        if layer == "object_cards" and patches:  # the cards' own version (identity may land after densify's v3, as v4)
+            w = first_written(run, layer, want=lambda d, v=version: d.get("version") in ((2, 4) if v == 2 else (v,)), patches=patches)
         base = first_written(run, target[0], target[1])
         limit = None if base is None else base + target[2]
         rows[name] = {"written_s": w, "target_s": None if limit is None else round(limit, 3), "target": f"{target[0]} v{target[1]} + {target[2]:g} s",
@@ -1716,6 +1742,9 @@ def self_check():
     assert reference("me340")["nodes"]["camera"] == "S03K" and reference("samsclub-a2")["nodes"]["camera"] == "N30", "lens-K camera, not the old one"
     assert len(holdout_frames("me340")) == 86, "E5b's held-out frames of run 232"
     mvp_self_check()
+    assert part_whole(([0, 0, 0], [1, 1, 2]), ([.4, .4, .4], [.5, .5, .5])) and not part_whole(([0, 0, 0], [1, 1, 1]), ([0, 0, 0], [.5, .5, .5]))
+    assert not part_whole(([0, 0, 0], [1, 1, 2]), ([3, 3, 3], [3.1, 3.1, 3.1]))
+    assert np.allclose(sim3_aabb(([0, 0, 0], [1, 1, 1]), 2., np.eye(3), np.ones(3))[1], [3, 3, 3])
     print("fast_report_eval self-check passed: names, recalls, rule ticks, interpolation, rasterising, fixture graph, MVP rows")
 
 

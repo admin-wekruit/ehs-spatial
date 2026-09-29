@@ -410,7 +410,10 @@ def is_guard(card):
 def g_j2(card, ctx, cards):
     parts = [numeric(card, "overhang", OVERHANG_MAX_M, "max", "overhang", "m")]
     h, w = fact(card, "height"), fact(card, "width")
-    if h and w and h["value"] > 1.5 * w["value"]:  # a principal axis is a lean only on a tall stack (a wide one lies flat: 90 deg)
+    tilt = fact(card, "principal_axis_tilt_deg")
+    # a principal axis is a lean only on a tall stack (a wide one lies flat: 90 deg), and only below 45 deg: a standing stack
+    # whose axis reads 89 deg (Sam's Club, a pallet seen from one side) is measuring its visible face, not a lean
+    if h and w and h["value"] > 1.5 * w["value"] and (tilt is None or tilt["value"] < 45.):
         parts.append(numeric(card, "principal_axis_tilt_deg", STACK_TILT_DEG, "max", "principal-axis tilt", "deg"))
     got = [p for p in parts if p["result"] != NO_DATA]
     if not got:
@@ -542,6 +545,9 @@ def geometry(check, card, ctx, cards):
     """-> the geometry record, or None when the check does not apply here (J3b without a finding, J5 far from any path, J6
     without a guard)."""
     if check == "J1":
+        base = fact(card, "base_above_floor")
+        if base is not None and base["value"] - base["u"] > FLOOR_BASE_M:  # on a rack beam or shelf: the stack's own height
+            return numeric(card, "height", STACK_MAX_M, "max", "stack height (off the floor: its own height)", "m")
         return numeric(card, "top_above_floor", STACK_MAX_M, "max", "top above the floor", "m")
     if check == "J7":
         return numeric(card, "principal_axis_tilt_deg", LADDER_TILT_DEG, "max", "principal-axis tilt from vertical", "deg")
