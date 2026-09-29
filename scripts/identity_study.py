@@ -358,13 +358,13 @@ def consistency(run_dir, report):
     run_dir = Path(run_dir)
     patches = [json.loads(p.read_text()) for p in sorted((run_dir / "mirror/reports" / report / "patches").glob("*.json"))]
     out = {}
-    cards_by_version = {}
+    puts = []  # (cards version, cards): each put starts one judge run (chained), which writes two judgements patches (geometry, VLM)
     for p in patches:
         if p["layer"] != "object_cards":
             continue
         d = p["data"]
         cs = d["cards"] if d.get("cards") != "blob" else json.loads(next(run_dir.rglob(p["blobs"]["cards"]["sha256"])).read_bytes())
-        cards_by_version[d["version"]] = cs
+        puts.append([d["version"], cs, 0])
         objs = [c for c in cs if c["kind"] == "object"]
         bad_kind, bad_size, not_derived = [], [], 0
         for c in objs:
@@ -387,7 +387,10 @@ def consistency(run_dir, report):
         d = p["data"]
         rows = d["rows"] if isinstance(d.get("rows"), list) else json.loads(next(run_dir.rglob(p["blobs"]["rows"]["sha256"])).read_bytes()) if p.get("blobs", {}).get("rows") else []
         v = (d.get("version_of") or {}).get("object_cards") or d.get("cards_version")
-        cs = {c["id"]: c for c in cards_by_version.get(v, [])}
+        put = next((x for x in puts if x[0] == v and x[2] < 2), None)  # the earliest put of that version whose run is still writing
+        if put is not None:
+            put[2] += 1
+        cs = {c["id"]: c for c in (put[1] if put else [])}
         wrong = [r["id"] for r in rows if r.get("check") not in ("J0", "J8", "J3a") and r.get("subject") in cs
                  and r["check"] not in judge.applicable(cs[r["subject"]])]
         out[f"judgements seq {p['seq']} (cards v{v})"] = {"rows": len(rows), "on_a_check_the_final_class_does_not_apply": len(wrong), "examples": wrong[:5]}
@@ -519,7 +522,7 @@ def timing(run_dir):
         row["gemini_tokens"] = {"input": sum(((a.get("usage") or {}).get("prompt_token_count") or 0) for a in ident.get("answers", []) + dens.get("answers", [])),
                                 "output": sum(((a.get("usage") or {}).get("candidates_token_count") or 0) for a in ident.get("answers", []) + dens.get("answers", []))}
         row["gpu_peak_gib"] = [g["peak_gb"] for g in run.get("gpu_peak", [])]
-        row["stages_over_72_gib"] = [(x["stage"], x.get("peak_gb")) for x in run.get("stages", []) if any(v > 72 for v in (x.get("peak_gb") or []))]
+        row["stages_over_72_gib"] = [(x["stage"], x.get("peak_gb")) for x in run.get("stages", []) if any((v or 0) > 72 for v in (x.get("peak_gb") or []))]
         row["identity_stage_peaks_gib"] = {x["stage"]: x.get("peak_gb") for x in run.get("stages", []) if "identity" in x["stage"]}
         row["usd_estimate"] = run.get("usd_estimate")
         row["error"] = run.get("error")
@@ -531,9 +534,55 @@ ROUND1_TIMES = {"me340": {"objects v1": 36.3, "identity complete": 60.3}, "samsc
                 "walmart": {"objects v1": 20.2, "identity complete": 69.5}}  # runs/mvp-results (warm calls, written s)
 
 
-def results(out, bench, final_dir, study_dir):
+HEADER = """# mvp2/identity: results (R1, R2)
+
+Branch `mvp2/identity` (worktree `/Users/adam/.codex/worktrees/panoptes-phase2-video-mvp2-identity`), from `mvp/integrate`.
+
+## What was built
+
+- R1, one source of truth: `fast_report/cards.py` keeps each card's name-free measurements (`card.raw`: the size inputs, the
+  angles, the un-reviewed statuses, the fitted primitive, the kind-free time state, observed extent change) and `apply_name(card)`
+  derives everything a name decides from the final name: canonical class, kind/mobility, size check and its 'needs review' marks,
+  the deformable no-angle rule, the primitive (kept only when the name is box/plane-like), the agent/deformable time state, the
+  struck candidates. Called when a card is built and on every identity update (idempotent; self-check). Every identity update
+  republishes the newest cards version (v2, or v4 after densify's v3) and re-runs its judgements; the judge's rules read the
+  canonical class (`judge.class_of`); the objects layer's labels (the viewer's 3D labels) follow and pass the hazard gate.
+- R2, naming: a canonical EHS/object taxonomy (`cards.TAXONOMY`, 17 families, ~120 classes, head-noun synonyms, 'X of Y' and
+  'X with Y' rules, 'not an object'); open names from Gemini (cloud) for every object seen on >= 3 keyframes or carrying an EHS
+  word, started as soon as the outlines exist, two objects a sheet (the thing outlined in its surroundings | a close crop), 14 a
+  request, every request at once through the bench's relay into the deployed report container (the existing
+  `name_video_entities` mechanism; no key leaves that container), stragglers and errors re-sent at 15 s, 36 s deadline; a second
+  pass names densify's own cards; the Qwen lettered decider only when Gemini named nothing.
+- Hazard-class names (spill, ladder, guard/fence/barrier/railing, fire extinguisher, cable, hose, forklift, pallet jack, exit and
+  safety signs, e-stop, eyewash, first aid, fire alarm) are shown only when the detector's words include the class or its family,
+  the class's size and placement rules pass on the measured box, and a VLM named it (not an 'unclear' or p < 0.5 answer);
+  otherwise the top non-hazard detector word (or 'unidentified object') is shown with the reason.
+- Study harness: `scripts/identity_study.py` (items, blind sheets, Gemini variants, scoring, R1 checker, timing, this page),
+  `modal_apps/identity_study_app.py` (Qwen open naming, one A100).
+
+## Caveats
+
+- The relay runs in the local bench process (research harness): a product needs the Gemini call server-side (key in ATM/Infisical).
+- Gemini's p is a stated probability (uncalibrated), so `judge.identity_confirmed` stays false for its names: a VLM answer still
+  never makes a FAIL. Names are 'inferred'.
+- Labels: one agent labeller, blind to the methods' outputs, from contact sheets; 'unclear' items excluded. The dev table is
+  partly in-sample (the method, the packing and the taxonomy's extra words were chosen on it). The held-out items were drawn after
+  that (seed 1, none of the dev items), labelled on one run's crops and matched to the final run's cards by id or nearest box
+  centre (<= 0.3 m); round 1's names by nearest box centre. n is small on the retail videos (27 / 29).
+- Run-to-run spread is large on the workshop video: the same held-out ME340 items scored 0.66 / 0.75 on run 004 and 0.80 / 0.84 on
+  run 005 (Gemini's answers and the chosen views change between runs).
+- No spill, ladder, fire extinguisher or forklift is truly present in the three clips: for those classes the gate was only tested
+  against false names (floor patterns, pallets, slippers called 'spill' / 'guard' / 'ladder' in round 1). The detector-word
+  condition fails when the site's vocabulary lacks the class: Sam's Club's 21 words have no 'pallet jack', so a real one was held back.
+- Judgements: J4 now runs on confirmed cables/hoses and PASSes ones whose segment is off the floor; a hanging hose whose floor run is
+  a separate segment can PASS (for the judge's owner). The last judgements land at 94 / 104 / 84 s warm (round 1: 82 / 117 / 56 s):
+  densify's own names are re-judged.
+"""
+
+
+def results(out, bench, final_dir, study_dir, repeat=None):
     """runs/mvp2-identity-results: summary.json + summary.md from the final benches ({site: run dir name}), the fresh held-out
-    items (final_dir) and the dev study (study_dir)."""
+    items (final_dir), a repeat run's names on them ({site: (run dir, report)}) and the dev study (study_dir)."""
     out.mkdir(parents=True, exist_ok=True)
     tim = {site: timing(PHASE2 / "runs" / d) for site, d in bench.items()}
     warm = {site: next((r["report"] for r in rows if r["call"] == "warm"), None) for site, rows in tim.items()}
@@ -542,14 +591,16 @@ def results(out, bench, final_dir, study_dir):
                                                                                          "on_a_check_the_final_class_does_not_apply")
                       if isinstance(v.get(k, 0), int)) + sum(v["not_derived_by_apply_name"] for c in per.values() for v in c.values()
                                                              if isinstance(v.get("not_derived_by_apply_name"), int)) for site, per in cons.items()}
+    rep_fin = score_final(final_dir, repeat) if repeat else None
     fin = score_final(final_dir, {site: (bench[site], warm[site]) for site in bench if warm.get(site)})
     dev = score(study_dir)
     res = {"schema": "mvp2-identity-results-v1", "bench": bench, "timing": tim, "r1_violations": viol, "r1_detail": cons,
-           "heldout_final": {k: v for k, v in fin.items() if k != "per_item"}, "dev_study": dev}
+           "heldout_final": {k: v for k, v in fin.items() if k != "per_item"}, "dev_study": dev,
+           "heldout_repeat": {k: v for k, v in (rep_fin or {}).items() if k != "per_item"}}
     (out / "summary.json").write_text(json.dumps(res, indent=1, default=str))
-    md = ["# mvp2/identity: results", "",
+    md = [HEADER,
           "Labels are agent-made by looking at blind contact sheets (not ground truth). Times: s from the MP4 bytes in the container "
-          "to the layer committed on the Volume (written); cold start apart.", "",
+          "to the layer committed on the Volume (written); cold start apart. Final runs: " + ", ".join(f"runs/{v}" for v in bench.values()) + ".", "",
           "## Identity timing (first-pass names, warm call; first call after boot in brackets)", "",
           "| | objects v1 | Gemini sent | identity written | identity - objects | densify's names written | last judgements | request s (median / max) | GPU peaks GiB |",
           "|---|---|---|---|---|---|---|---|---|"]
@@ -574,15 +625,42 @@ def results(out, bench, final_dir, study_dir):
         if a_:
             md.append(f"| {site} | {a_['n']} | {a_['right']:.2f} | {a_['right_or_close']:.2f} | " +
                       (f"{b_['n']} / {b_['right']:.2f} / {b_['right_or_close']:.2f} |" if b_ else "— |"))
+    if rep_fin:
+        md += ["", "Repeat (runs " + ", ".join(f"{v[0]}" for v in repeat.values()) + "): " + ", ".join(
+            f"{k} {v['right']:.2f} / {v['right_or_close']:.2f} (n {v['n']})" for k, v in rep_fin["final_names"].items())]
     h = fin["hazard_names"]
     md += ["", f"Hazard-class names on these items: {h['shown']} shown ({h['shown_right']} right or same family, {h['shown_unclear_truth']} "
                f"on items labelled unclear), {h['held_back']} held back by the second check ({h['held_back_but_true']} of them were true). "
-               f"Items not matched between the labelled run and the final run: {len(fin['not_matched'])}.", "",
+               f"Items not matched between the labelled run and the final run: {len(fin['not_matched'])}. Dev set (Gemini's answers "
+               "with the gate applied offline): 17 hazard names shown, 15 right, 2 held back (both false); round 1 showed 35, 20 right "
+               "('spill' on floor patterns, bags and slippers; 'guard' / 'ladder' / 'spill' on pallets).", "",
            "## Dev study (runs/mvp2-identity-study-001: 181 labelled items from round 1's runs; the method and the taxonomy were chosen on it)", "",
            "| method | ME340 | Sam's Club | Walmart | all | hazard-class items |", "|---|---|---|---|---|---|"]
     for m, v in dev.items():
         md.append(f"| {m} | " + " | ".join(f"{v[s]['right']:.2f} / {v[s]['right_or_close']:.2f}" if s in v else "—" for s in (*RUNS, "all")) +
                   f" | {v['hazard_items']['right']:.2f} / {v['hazard_items']['right_or_close']:.2f} (n {v['hazard_items']['n']}) |")
+    # spend: every mvp2-identity bench's list-price upper bound (container life incl. queue), Gemini tokens (relay records + study)
+    benches = sorted((PHASE2 / "runs").glob("mvp2-identity-*-0*"))
+    modal_usd = {b.name: json.loads((b / "summary.json").read_text()).get("usd_estimate_upper") for b in benches if (b / "summary.json").exists()}
+    tok = [0, 0]
+    for f in (PHASE2 / "runs").glob("mvp2-identity-*/namer/*/*.json"):
+        u = json.loads(f.read_text()).get("usage") or {}
+        tok[0] += u.get("prompt_token_count") or 0
+        tok[1] += (u.get("candidates_token_count") or 0) + (u.get("thoughts_token_count") or 0)
+    for f in study_dir.glob("gemini-heldout-*.json"):
+        for r in json.loads(f.read_text())["requests"]:
+            u = r.get("usage") or {}
+            tok[0] += u.get("prompt_token_count") or 0
+            tok[1] += (u.get("candidates_token_count") or 0) + (u.get("thoughts_token_count") or 0)
+    res["spend"] = {"modal_usd_upper_by_bench": modal_usd, "modal_usd_upper_sum": round(sum(v or 0 for v in modal_usd.values()), 2),
+                    "gemini_tokens_in_out": tok}
+    md += ["", "## Spend", "",
+           f"Modal, list-price upper bound over each bench container's life (queue included): ${res['spend']['modal_usd_upper_sum']} for "
+           f"{len(modal_usd)} benches ({', '.join(f'{k} ${v}' for k, v in modal_usd.items())}); benches stopped early and the one-A100 naming "
+           "study app are not in it. Gemini (gemini-3.5-flash through the deployed report container): "
+           f"{tok[0] / 1e6:.2f} M input and {tok[1] / 1e6:.2f} M output tokens (relayed pipeline requests incl. re-sent copies, and the study); "
+           "the repo records no price for it. The cost ledger was not edited."]
+    (out / "summary.json").write_text(json.dumps(res, indent=1, default=str))
     (out / "summary.md").write_text("\n".join(md) + "\n")
     return res
 
@@ -593,6 +671,7 @@ if __name__ == "__main__":
     ap.add_argument("out", nargs="?", type=Path)
     ap.add_argument("--variant", default="pair", choices=("pair", "sheet", "pair2", "tile4"))
     ap.add_argument("--runs", default="", help="final: site=RUN_DIR_NAME:REPORT,... (fresh held-out items from these runs)")
+    ap.add_argument("--repeat", default="", help="results: site=RUN_DIR_NAME:REPORT,... a repeat run's names on the held-out items")
     ap.add_argument("--self-check", action="store_true")
     a = ap.parse_args()
     if a.self_check:
@@ -601,7 +680,8 @@ if __name__ == "__main__":
         items(a.out)
     elif a.what == "results":  # OUT = runs/mvp2-identity-results; --runs site=BENCH_DIR,...
         bench = dict(x.split("=", 1) for x in a.runs.split(","))
-        results(a.out, bench, PHASE2 / "runs/mvp2-identity-final-001", PHASE2 / "runs/mvp2-identity-study-001")
+        repeat = {k: tuple(v.rsplit(":", 1)) for k, v in (x.split("=", 1) for x in a.repeat.split(","))} if a.repeat else None
+        results(a.out, bench, PHASE2 / "runs/mvp2-identity-final-001", PHASE2 / "runs/mvp2-identity-study-001", repeat)
         print((a.out / "summary.md").read_text())
     elif a.what == "timing":
         print(json.dumps(timing(a.out), indent=1))
