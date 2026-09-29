@@ -1244,7 +1244,9 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, c
         row["reasons"] = list(g.get("reasons") or row["reasons"]) + [
             f"picture ({a['decider']}): p(yes) {'n/a' if a['p'] is None else format(a['p'], '.2f')} -> {verdict}{why}"]
         if row["verdict"] != before:
-            row["reasons"].append({(PASS, REVIEW): "the picture disagrees with the geometry's PASS",
+            one_face = before == PASS and verdict not in ("hazard", "likely") and g.get("needs_clear_picture")
+            row["reasons"].append(f"{g['needs_clear_picture']}: a PASS needs a calibrated 'clear' picture" if one_face else {
+                                   (PASS, REVIEW): "the picture disagrees with the geometry's PASS",
                                    (FAIL, REVIEW): "the picture disagrees with the geometry's FAIL",
                                    (REVIEW, FAIL): "measured value past the threshold and a calibrated 'likely hazard' picture",
                                    (NO_DATA, REVIEW): "not measured; the picture hints at a hazard"}.get((before, row["verdict"]), f"{before} -> {row['verdict']}"))
