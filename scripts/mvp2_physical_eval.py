@@ -174,14 +174,14 @@ def sheet(tiles, path, cols=6, h=320, w=220):
     cv2.imwrite(str(path), np.concatenate(rows, 0), [cv2.IMWRITE_JPEG_QUALITY, 85])
 
 
-def people_sheets(out, site, run_dir, report, n=40, seed=0):
+def people_sheets(out, site, run_dir, report, video=None, n=40, seed=0, tag=""):
     """Agent-label sheets for people: (a) detections whose true bottom is in view (feet on the floor? the new and old feet
     heights under each crop, a red line at the mask's bottom), (b) masks measured as pictures. Frames from the clip's
     source-full.mp4 (the warm call's window). Writes people-<site>.jpg / rejected-<site>.jpg and their tile lists."""
     import cv2
     vs = ev.patch_versions(run_dir, report, "people")
     ppl = ev.patch_data(run_dir, vs[-1])
-    cap = cv2.VideoCapture(str(ev.PHASE2 / "data/clips" / ev.CLIPS[site] / "source-full.mp4"))
+    cap = cv2.VideoCapture(str(video or ev.PHASE2 / "data/clips" / ev.CLIPS[site] / "source-full.mp4"))  # a shifted call: its own input MP4
     W, H = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     def crop(frame, bbox):
@@ -209,11 +209,11 @@ def people_sheets(out, site, run_dir, report, n=40, seed=0):
         rows.append({"tile": i, "track": tid, "t": q["t"], "frame": q["frame"], "foot_h_m": g["foot_h_m"], "u_m": g["u_m"], "h_pixels_m": g.get("h_pixels_m"),
                      "feet_visible": g.get("feet_visible"), "stature_m": g.get("stature_m"), "label": None})
     if tiles:
-        sheet(tiles, Path(out) / f"people-{site}.jpg")
-    (Path(out) / f"people-{site}.json").write_text(json.dumps({"labels": "on floor | raised | feet hidden | not a person | unclear", "tiles": rows}, indent=1))
+        sheet(tiles, Path(out) / f"people-{site}{tag}.jpg")
+    (Path(out) / f"people-{site}{tag}.json").write_text(json.dumps({"labels": "on floor | raised | feet hidden | not a person | unclear", "tiles": rows}, indent=1))
     rej = ppl.get("rejected") or []
     tiles, rows = [], []
-    for i, r in enumerate(rej[:n]):
+    for i, r in enumerate([rej[j] for j in np.unique(np.linspace(0, len(rej) - 1, min(n, len(rej))).astype(int))] if rej else []):  # spread over the call
         g = r["geometry"]
         img = crop(r["frame"], g["bbox"])
         if img is None:
@@ -221,8 +221,8 @@ def people_sheets(out, site, run_dir, report, n=40, seed=0):
         tiles.append((img, [f"#{i} t{r['t']:.1f} s{r['score']:.2f}", f"h {g['stature_m']:.2f}+-{g['u_stature_m']:.2f}", f"foot {g['foot_h_m']:+.2f}"]))
         rows.append({"tile": i, "t": r["t"], "frame": r["frame"], "reason": r["reason"], "label": None})
     if tiles:
-        sheet(tiles, Path(out) / f"rejected-{site}.jpg")
-    (Path(out) / f"rejected-{site}.json").write_text(json.dumps({"labels": "picture | real person | unclear", "tiles": rows}, indent=1))
+        sheet(tiles, Path(out) / f"rejected-{site}{tag}.jpg")
+    (Path(out) / f"rejected-{site}{tag}.json").write_text(json.dumps({"labels": "picture | real person | unclear", "tiles": rows}, indent=1))
     return len(pick), len(rej)
 
 
@@ -276,6 +276,7 @@ if __name__ == "__main__":
     elif sys.argv[1:2] == ["--sheets"]:
         for a in sys.argv[3:]:
             site_, rest = a.split("=", 1)
-            print(site_, people_sheets(sys.argv[2], site_, *rest.split(":")[:2]))
+            parts = rest.split(":")
+            print(site_, people_sheets(sys.argv[2], site_, *parts[:2], video=parts[2] if len(parts) > 2 else None, tag="-shifted" if len(parts) > 2 else ""))
     else:
         main(sys.argv[1:])

@@ -1260,9 +1260,26 @@ def person_geometry(mask, depth, K, c2w, up, p0, u_floor=.02, up_deg=1., floor_m
     return out
 
 
-def people_frame(items, depth, K, c2w, up, p0, u_floor, up_deg, floor_mask):
-    """Worker (the core's process pool): person_geometry for one keyframe's masks [(index, mask)] -> [(index, record)]."""
-    return [(i, person_geometry(mk, depth, K, c2w, up, p0, u_floor, up_deg, floor_mask)) for i, mk in items]
+def person_crop(mask, depth, floor_mask=None):
+    """The part of the rasters person_geometry reads (the mask's box, 4 rows below it, 3 box widths each side for the floor
+    beside the feet): (y0, x0, mask, depth, floor) crops, so a process pool task carries kilobytes, not whole rasters."""
+    ys, xs = np.nonzero(mask)
+    if not len(ys):
+        return 0, 0, mask[:1, :1], depth[:1, :1], None if floor_mask is None else floor_mask[:1, :1]
+    H, W = mask.shape
+    bw = xs.max() - xs.min() + 1
+    y0, y1, x0, x1 = max(0, ys.min() - 2), min(H, ys.max() + 5), max(0, xs.min() - 3 * bw - 7), min(W, xs.max() + 3 * bw + 8)
+    return y0, x0, mask[y0:y1, x0:x1], depth[y0:y1, x0:x1], None if floor_mask is None else floor_mask[y0:y1, x0:x1]
+
+
+def people_frame(items, hw, K, c2w, up, p0, u_floor, up_deg):
+    """Worker (the core's process pool): person_geometry for one keyframe's person crops [(index, person_crop(...))] on
+    rasters of size hw rebuilt around them (zero depth elsewhere: nothing there is read) -> [(index, record)]."""
+    out = []
+    for i, (y0, x0, mk, d, fl) in items:
+        full = lambda a, dt: np.zeros(hw, dt) if a is None else np.pad(a, ((y0, hw[0] - y0 - a.shape[0]), (x0, hw[1] - x0 - a.shape[1])))  # noqa: E731
+        out.append((i, person_geometry(full(mk, bool), full(d, np.float32), K, c2w, up, p0, u_floor, up_deg, None if fl is None else full(fl, bool))))
+    return out
 
 
 def people_cards(people, shots, object_cards, k=None):
@@ -1317,6 +1334,18 @@ def people_cards(people, shots, object_cards, k=None):
                  "confirmed_by": "motion" if moving else None,
                  "note": None if moving else f"not confirmed by motion (moved {moved:.2f} +- {phys['moved']['u']:.2f} m, under {MOVED_M:g} m + u): "
                                              "a person standing still, or a life-size picture"}
+        # across the track (every measured detection, feet seen or not): a figure smaller than a head and shoulders, or under a
+        # standing height with its lowest point above the floor, is a picture or a part of someone (Walmart's figures printed on
+        # boxes 1.5 m up read 'moved' from depth noise alone, run 007): named so, never dropped from the rules
+        allg = [g_ for g_ in geo if g_.get("stature_m") is not None]
+        if allg:
+            st_, ust_ = float(np.median([g_["stature_m"] for g_ in allg])), float(np.median([g_["u_stature_m"] for g_ in allg]))
+            lo_, ulo_ = float(np.median([g_["foot_h_m"] for g_ in allg])), float(np.median([g_["u_m"] for g_ in allg]))
+            why_ = (f"it spans {st_:.2f} +- {ust_:.2f} m across its detections: less than a head and shoulders" if st_ + ust_ < HEAD_MIN_M else
+                    f"it spans {st_:.2f} +- {ust_:.2f} m with its lowest point {lo_:.2f} +- {ulo_:.2f} m above the floor"
+                    if st_ + ust_ < PERSON_H_M[0] and lo_ - ulo_ > STAND_M else None)
+            if why_:
+                ident.update(name="person? (small: a picture, or a part of someone)", note=why_ + " (a picture, or someone mostly hidden: needs review)")
         # standing on the floor or on something: a figure whose true bottom floats above the floor over no object is a picture on
         # a wall (a Walmart poster tracked 15 m); kept as a person to review, never dropped from the rules
         low = [g_ for g_ in geo if g_.get("contact") and g_.get("foot_h_m") is not None and not (g_.get("cut") or {}).get("bottom")]
@@ -1594,6 +1623,7 @@ def self_check():
     tilt = np.radians(2.)
     up_t, fl = np.array([0., -np.cos(tilt), np.sin(tilt)]), (d1 < 29) & ~m1 & (rows_ > 100.5)
     gp, gf = person_geometry(m1, d1, Kp, np.eye(4), up_t, p0_), person_geometry(m1, d1, Kp, np.eye(4), up_t, p0_, floor_mask=fl)
+    assert people_frame([(0, person_crop(m1, d1, fl))], m1.shape, Kp, np.eye(4), up_t, p0_, .02, 1.)[0][1] == gf, "a crop measures the same"
     assert gp["foot_h_m"] > .1 and abs(gf["h_m"]) < .02 and gf["u_m"] < gp["u_m"] and gf["floor_ref"].startswith("the floor beside"), (gp, gf)
     assert abs(g1["stature_m"] - 1.7) < .03 and g1["u_stature_m"] < .45 and g1["contact"]
     d2, m2 = floor_d.copy(), np.zeros((200, 200), bool)
@@ -1750,6 +1780,11 @@ def self_check():
     by2 = {c["id"]: c for c in pc2}
     assert by2["person:0-9"]["identity"]["name"].startswith("person?") and by2["person:0-9"]["identity"]["support"]["status"] == "on nothing seen"
     assert by2["person:not-a-person"]["kind"] == "not a person" and not [v for c in pc2 for v in contract(c)]
+    tiny = {**fl, "stature_m": .6, "u_stature_m": .13, "u_m": .4}  # a 0.6 m figure 1.6 m up, feet hidden: small and floating across the track
+    pc3 = people_cards({"tracks": [{"id": "0-8", "shot": 0, "t0": 0., "t1": .8, "detections": 2,
+                                    "points": [{"t": i * .4, "frame": 6 * i, "xyz": [.2 + 2 * i, 1.6, 3.6], "foot_surface": dict(tiny, contact=False)} for i in range(2)]}]},
+                       {0: dict(shot, frame=fr, cam_floor=to_floor(cams[:, :3, 3], fr), u_pose_m=.04)}, [])
+    assert pc3[0]["identity"]["name"].startswith("person? (small") and "lowest point" in pc3[0]["identity"]["note"], pc3[0]["identity"]
     print(f"cards self-check ok: robust extents within 5 % with flying pixels, fragment merge + cannot-link, depth not observed from one side, "
           f"subset u > 0, size plausibility, angle gates, grid DBSCAN, plumb, floor frame ({out['stats']['s']})")
 

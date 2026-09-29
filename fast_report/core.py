@@ -263,11 +263,13 @@ def people_shot(si, keys, fps, g, depth_m, c2w_m, masks, plane, mpu, floor=None,
     depth = depth_m.cpu().numpy()
     K, c2w = g["K"].cpu().numpy().astype(float), c2w_m.cpu().numpy().astype(float)
     u_floor = plane["residual_p90_units"] * mpu if plane else .02
+    t0 = time.perf_counter()
     body = {i: None for kept in masks.values() for _, _, i in kept}
     if plane and body:
         fr = [j for j in masks if masks[j]]
-        args = ([[(i, mk) for mk, _, i in masks[j]] for j in fr], [depth[j] for j in fr], [K[j] for j in fr], [c2w[j] for j in fr], [up] * len(fr),
-                [p0] * len(fr), [u_floor] * len(fr), [PEOPLE_UP_DEG] * len(fr), [None if floor is None else floor[j] for j in fr])
+        args = ([[(i, cards.person_crop(mk, depth[j], None if floor is None else floor[j])) for mk, _, i in masks[j]] for j in fr],
+                [depth.shape[1:]] * len(fr), [K[j] for j in fr], [c2w[j] for j in fr], [up] * len(fr), [p0] * len(fr), [u_floor] * len(fr),
+                [PEOPLE_UP_DEG] * len(fr))
         for part in (pool.map(cards.people_frame, *args) if pool is not None else map(cards.people_frame, *args)):
             body.update(part)
     rejected = [{"t": round(keys[j] / fps, 4), "frame": int(keys[j]), "source": f"sam3-person-{i}", "score": round(sc, 3), "reason": body[i]["reason"],
@@ -277,6 +279,7 @@ def people_shot(si, keys, fps, g, depth_m, c2w_m, masks, plane, mpu, floor=None,
     def detector(frame):
         return [{"label": "person", "source": f"sam3-person-{j}", "score": s, "mask": m} for m, s, j in masks.get(frame["local"], [])
                 if f"sam3-person-{j}" not in out_]
+    t1 = time.perf_counter()
     loop = PeopleLoop(p0, up, scale, detector, None, world_epoch=si, max_speed_mps=PEOPLE_GATE_MPS, fast_window_s=PEOPLE_GATE_WINDOW_S)
     rows, findings = [], []
     for j, f in enumerate(keys):
@@ -295,7 +298,7 @@ def people_shot(si, keys, fps, g, depth_m, c2w_m, masks, plane, mpu, floor=None,
             tracks.setdefault(r["track"], []).append({"t": r["t"], "frame": r["frame"], "xyz": np.round(ground, 3).tolist(),
                                                       "foot": r["footWorld"], "accepted_foot": r["accepted"], "score": r.get("score"),
                                                       "foot_surface": r.get("footSurface")})
-    return tracks, rows, findings, up, rejected
+    return tracks, rows, findings, up, rejected, {"measure_s": round(t1 - t0, 3), "loop_s": round(time.perf_counter() - t1, 3), "masks": len(body)}
 
 
 def object_points(pts, frame_of_lifted, conf, cap=20000):
@@ -719,7 +722,7 @@ def analyse(m, mp4, opts, clock, writer, log):
             with clock.stage(f"people.shot{si}", n={"keyframes": len(pos)}):
                 local = {q: j for j, q in enumerate(pos)}
                 pm = person_masks(person, local)
-                tracks, rows, findings, up, rejected = people_shot(si, [keys[q] for q in pos], fps, g, gg["depth_m"], gg["c2w_m"], pm, gg["plane"],
+                tracks, rows, findings, up, rejected, timing = people_shot(si, [keys[q] for q in pos], fps, g, gg["depth_m"], gg["c2w_m"], pm, gg["plane"],
                                                                     gg["mpu"], floor[torch.tensor(pos, device=floor.device)].cpu().numpy(), m.proc_pool)
                 for j, kept in pm.items():  # the pick layer's people: each kept mask with its track (section 3.2)
                     person_kept[pos[j]] = [(gi, mk) for mk, _, gi in kept]
@@ -737,7 +740,7 @@ def analyse(m, mp4, opts, clock, writer, log):
             tracks_out += [{"id": f"{si}-{t}", "shot": si, "t0": pts[0]["t"], "t1": pts[-1]["t"], "detections": len(pts), "points": pts}
                            for t, pts in tracks.items()]
             rules_out += [{**f, "shot": si} for f in findings]
-            per_shot.append({"index": si, "frame_id": f"shot-{si}", "detections": len(rows), "tracks": len(tracks)})
+            per_shot.append({"index": si, "frame_id": f"shot-{si}", "detections": len(rows), "tracks": len(tracks), "timing": timing})
         results["people"] = {"tracks": tracks_out, "rules": rules_out, "shots": per_shot, "rejected": rejected_out,
                              "association_gate_mps": PEOPLE_GATE_MPS, "note": "the fast path tracks people only: no non-person movers"}
         writer.put("people", results["people"], people_blobs, "observed+estimated", [*lab, "rules that need metres say NEEDS_REVIEW: the scale is not measured"])
