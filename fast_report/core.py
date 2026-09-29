@@ -31,6 +31,20 @@ NAMER_WAIT_MAX_S = 60.  # a pass with more than half of its requests out keeps w
 # lost (Walmart 006: every request of a warm call took 32-34 s; at 30 s the pass gave up on all and the Qwen decider named 538 objects)
 
 
+def densify_rows(objects, asked, known):
+    """Densify's naming pass (mvp3/speed: asked before cards v3): every object the first pass did not ask and nothing has named,
+    i.e. densify's new objects and first-pass objects seen on >= 3 keyframes only now; gemini_names keeps those it wants."""
+    return [o for o in objects if o["id"] not in asked and o["id"] not in known]
+
+
+def onto_v3(got, v3, wait_s=120.):
+    """Names asked before cards v3 existed, put on v3 once it does: -> {id: (its v3 identity, the answer)}, ids that v3 merged
+    away dropped; None when v3 never came (v3['done'] set with no 'by': densify failed, or wait_s passed)."""
+    if not v3["done"].wait(wait_s) or v3.get("by") is None:
+        return None
+    return {i: (v3["by"][i]["identity"], a) for i, a in got.items() if i in v3["by"]}
+
+
 def still_waiting(elapsed, n_pending, n_reqs):
     """The naming pass waits until NAMER_WAIT_S, or until NAMER_WAIT_MAX_S while more than half of its requests are out."""
     return elapsed < NAMER_WAIT_S or (n_pending > n_reqs / 2 and elapsed < NAMER_WAIT_MAX_S)
@@ -1182,6 +1196,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     # asked: the first pass's object ids, known once its sheets are built (asked_ready): densify's pass leaves them out and starts
     # at cards v3 instead of after the first pass's names are in (mvp2/integrate: Walmart's densify names waited 15 s for them)
     namer = {"started": threading.Event(), "published": threading.Event(), "asked": set(), "asked_ready": threading.Event()}
+    v3 = {"done": threading.Event()}  # mvp3/speed: cards v3 by object id ('by') once put; densify's names, asked before it, go onto it
 
     def start_namer():
         """mvp2/identity: the Gemini naming starts as soon as the outlines and pick counts exist (3-4 s before cards v1)."""
@@ -1424,6 +1439,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         try:
             return densify()
         finally:
+            v3["done"].set()  # cards v3 put, or never will be: densify's naming pass stops waiting for it
             start_display()
             for d in work.chunks:
                 work.chunks[d] = []
@@ -1538,6 +1554,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                 e["endTimeSec"] = nxt["timeSec"] if nxt else round(e["timeSec"] + BLOCK / fps, 4)
             results["outlines_v2"] = {"width": W, "height": H, "frames": frames_out}
             analysis = json.dumps(results["outlines_v2"], separators=(",", ":")).encode()
+        start_densify_names(counts_v2, ready_v2)  # mvp3/speed: its requests go out now, not after cards v3 (expected ~5 s earlier on ME340; unmeasured)
         pick_data, pick_blobs = pick2.result()
         writer.put("outlines", {"analysis": "blob", "frames": len(frames_out), "segmented": len(frames_out), "projected": 0, "densified": True},
                    {"analysis": (analysis, {"mediaType": "application/json", "format": "video-analysis"})}, "observed(segmented)",
@@ -1557,45 +1574,54 @@ def analyse(m, mp4, opts, clock, writer, log):
             out = with_identity(out, prev)
             cards_out["v3"] = out
             cards_put(3, out)
+        v3["by"] = {c["id"]: c for c in out["cards"] if c["kind"] == "object"}  # densify's objects that are cards (the rest merged away)
+        v3["done"].set()
         start_display()  # facts before display (section 7): the gate's CPU processes slowed cards v3 by 2-3x beside it (run 005)
         judge_hook(out, 3)
-        v3_ids = {c["id"] for c in out["cards"] if c["kind"] == "object"}  # densify's objects that are cards (the rest merged away)
-        new_rows = [o for o in objects if o["id"] in v3_ids and o["id"] not in cards_out.get("identities", {})]
-        if new_rows and opts.get("namer") is not None:  # mvp2/identity: densify's own objects named too (a second, smaller pass)
-            from concurrent.futures import Future
-            namer["densify"] = fut = Future()
-
-            def name_and_publish(rows_now, by, first, tag):
-                got, rec = gemini_names(rows_now, "outlines_v2", counts_v2, ready_v2, first=first, tag=tag)
-                idents = {i: cards.open_identity(by[i]["identity"], a) for i, a in got.items() if i in by}
-                if idents:
-                    publish(idents, tag)
-                return rec
-
-            def name_densified():
-                try:  # what the first pass does not ask (Sam's Club asked 623 twice when v3 came first), at once; then what the
-                    namer["asked_ready"].wait(120)  # first pass asked but got no answer for in time, once its names are in
-                    by = {c["id"]: c for c in out["cards"] if c["kind"] == "object"}
-                    known = lambda: cards_out.get("identities", {})  # noqa: E731
-                    rows_now = [o for o in new_rows if o["id"] not in namer["asked"] and o["id"] not in known()]
-                    rec = {}
-
-                    def leftovers():  # beside the densify pass, as soon as the first pass's names are in
-                        namer["published"].wait(120)
-                        left = [o for o in objects if o["id"] in namer["asked"] and o["id"] in by and o["id"] not in known()]
-                        if left:
-                            rec["left"] = name_and_publish(left, by, 200, "gemini_densify_left")
-                    side = threading.Thread(target=leftovers, name="namer-left", daemon=True)
-                    side.start()
-                    if rows_now:
-                        rec.update(name_and_publish(rows_now, by, 100, "gemini_densify"))
-                    side.join(160)
-                    fut.set_result(rec)
-                except Exception:  # noqa: BLE001  those objects keep their detected words
-                    import traceback
-                    fut.set_result({"error": traceback.format_exc()[-2000:]})
-            threading.Thread(target=name_densified, name="namer-densify", daemon=True).start()
         return {**st, "cards": out["stats"]}
+
+    def start_densify_names(counts_v2, ready_v2):
+        """mvp2/identity: densify's own objects named too (a second, smaller pass). mvp3/speed: asked as soon as outlines v2 and
+        its pick counts exist, beside the objects/pick puts and cards v3 (ME340 run 007: v3 was put at 68 s and the requests went
+        out at 69 s; outlines v2 existed at 63 s). An object that cards v3 merges away is asked too; its answer is dropped."""
+        if opts.get("namer") is None:
+            return
+        from concurrent.futures import Future
+        namer["densify"] = fut = Future()
+        known = lambda: cards_out.get("identities", {})  # noqa: E731
+
+        def name_and_publish(rows_now, first, tag):
+            got, rec = gemini_names(rows_now, "outlines_v2", counts_v2, ready_v2, first=first, tag=tag)
+            pairs = onto_v3(got, v3)
+            if pairs is None:  # densify failed before cards v3: nothing to put the names on
+                return {**rec, "dropped": "no cards v3"}
+            idents = {i: cards.open_identity(ident, a) for i, (ident, a) in pairs.items()}
+            if idents:
+                publish(idents, tag)
+            return rec
+
+        def name_densified():
+            try:  # what the first pass does not ask (Sam's Club asked 623 twice when v3 came first), at once; then what the
+                namer["asked_ready"].wait(120)  # first pass asked but got no answer for in time, once its names are in
+                rows_now = densify_rows(objects, namer["asked"], known())
+                rec = {}
+
+                def leftovers():  # beside the densify pass, as soon as the first pass's names are in (and cards v3 exists)
+                    namer["published"].wait(120)
+                    v3["done"].wait(120)
+                    left = [o for o in objects if o["id"] in namer["asked"] and o["id"] in v3.get("by", {}) and o["id"] not in known()]
+                    if left:
+                        rec["left"] = name_and_publish(left, 200, "gemini_densify_left")
+                side = threading.Thread(target=leftovers, name="namer-left", daemon=True)
+                side.start()
+                if rows_now:
+                    rec.update(name_and_publish(rows_now, 100, "gemini_densify"))
+                side.join(160)
+                fut.set_result(rec)
+            except Exception:  # noqa: BLE001  those objects keep their detected words
+                import traceback
+                fut.set_result({"error": traceback.format_exc()[-2000:]})
+        threading.Thread(target=name_densified, name="namer-densify", daemon=True).start()
     densify_future = m.cpu_pool.submit(densify_job) if densify_on and objects else None
 
     maps_ready = threading.Event()
@@ -1846,6 +1872,16 @@ def self_check():
     assert hedge_due(15., 2, 4) and not hedge_due(14., 2, 4)  # a small pass: every request still out at 15 s
     assert not hedge_due(25., 39, 39) and hedge_due(24., 38, 39)  # nothing back: slow, no copies; a pass under way copies at 24 s
     assert not still_waiting(30., 10, 39) and still_waiting(30., 39, 39) and not still_waiting(60., 39, 39)  # stragglers vs a slow service
+    # mvp3/speed: densify's names are asked before cards v3 and wait for it; merged-away ids dropped; a failed densify never hangs
+    rows = densify_rows([{"id": "a"}, {"id": "b"}, {"id": "n1"}, {"id": "n2"}], {"a"}, {"b": {}})
+    assert [o["id"] for o in rows] == ["n1", "n2"]
+    v3_ = {"done": threading.Event()}
+    threading.Timer(.2, lambda: (v3_.update(by={"n1": {"identity": {"name": "box"}}}), v3_["done"].set())).start()
+    t_ = time.time()
+    assert onto_v3({"n1": {"name": "tote"}, "n2": {"name": "lid"}}, v3_) == {"n1": ({"name": "box"}, {"name": "tote"})} and time.time() - t_ >= .15
+    failed = {"done": threading.Event()}
+    failed["done"].set()
+    assert onto_v3({"n1": {}}, failed) is None and onto_v3({"n1": {}}, {"done": threading.Event()}, wait_s=.05) is None
     assert densify_words(["box", "spill", "lamp", "shelf"], [{"box": .5}, {"shelf": .4, "box": .3}], ["spill", "ladder"]) == (["box", "spill", "shelf"], ["lamp"])
     import gzip  # pick chunks: 23 frames -> 10 + 10 + 3, each blob inflates to its frames' bytes, depth alike
     meta, blobs = pick_chunks([bytes([i]) * 4 for i in range(23)], [bytes([i]) * 2 for i in range(23)])
