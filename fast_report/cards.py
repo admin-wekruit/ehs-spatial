@@ -1979,6 +1979,14 @@ def self_check():
     c = by["obj-0-2"]["physical"]
     assert c["depth"]["status"] == "not observed" and "one side" in c["depth"]["reason"], c["depth"]
     assert c["planar_slope_deg"]["status"] == "not measurable", c["planar_slope_deg"]
+    # r4: seen from one side, the depth seen stays beside 'not observed' as a lower bound when it is resolved: box A from keyframes
+    # 0-1 only (8 deg apart) keeps its 0.5 m as 'at least'; the cable's 3 cm is not resolved and shows none
+    one = {**points[0], "frame": points[0]["frame"] % 2, "views": {0: [500, 0, 0, 0, 0], 1: [500, 0, 0, 0, 0]}}
+    c1 = build({"shots": [shot], "objects": objects[:1], "points": [one], "counts": None, "people": None, "calibration": {}})["cards"][0]
+    d1 = c1["physical"]["depth"]
+    assert d1["status"] == "not observed" and d1["visible"]["status"] == "at least" and abs(d1["visible"]["value"] - .5) < .05 and not contract(c1), d1
+    assert "visible" not in c["depth"], c["depth"]
+    assert contract({**c1, "physical": {**c1["physical"], "depth": {**d1, "visible": {"value": .5}}}}) == [f"{c1['id']}.depth.visible: broken"]
     assert by["obj-0-0"]["class"]["category"] == "F payload"
     # mvp2/identity R2: the SAM 3 word 'cable' alone is a hazard name no VLM has checked: not shown, no class prior
     c2 = by["obj-0-2"]
