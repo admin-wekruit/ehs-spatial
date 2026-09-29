@@ -2,6 +2,7 @@
 
     python scripts/r4_models.py sheet MIRROR REPORT OUT_DIR [--n 30 --seed 4]   # contact sheets for the audit by eye
     python scripts/r4_models.py table RUN_DIR [...]                              # per report: models, residuals, SAM 3D, time, GPU
+    python scripts/r4_models.py results RUN_DIR OUT [--baseline RUN_DIR] [--audit DIR ...]   # the tables as markdown
     python scripts/r4_models.py --self-check
 
 sheet: n object cards drawn at random (seeded) among the final cards with a pick region, each on the keyframe (with a camera)
@@ -252,10 +253,11 @@ def table(run_dir):
         models = ev.patch_versions(Path(run_dir) / "mirror", rep, "models")
         sam = sam_by_card(L, models[-1] if models else None)
         run = json.loads((Path(run_dir) / "mirror" / "reports" / rep / "run.json").read_text()) if (Path(run_dir) / "mirror" / "reports" / rep / "run.json").exists() else {}
-        marks = {k: (v or {}).get("t") if isinstance(v, dict) else v for k, v in (run.get("marks") or {}).items()}
-        stages = run.get("stages") or []
-        cards_s = {s["name"]: round(s["end"] - s["start"], 2) for s in stages if isinstance(s, dict) and str(s.get("name", "")).startswith("cards.")} \
-            if stages and isinstance(stages, list) else {}
+        marks = run.get("marks") or {}
+        cards_s = {}
+        for st in run.get("stages") or []:  # every cards build and its writes (a stage can run more than once: summed)
+            if st["stage"].startswith("cards.") or st["stage"] == "write.object_cards":
+                cards_s[st["stage"]] = round(cards_s.get(st["stage"], 0) + st["s"], 3)
         fp = ((run.get("summary") or {}).get("sam3d") or {})
         out[rep] = {"object_cards": len(cs), "with_primitive": len(have), "share": round(len(have) / max(len(cs), 1), 4),
                     "kinds": {k: sum(m["kind"] == k for m in have) for k in ("box", "cylinder", "plane", "open frame")},
@@ -268,9 +270,56 @@ def table(run_dir):
                     "sam3d": {"tried_on_cards": sum(1 for c in cs if c["id"] in sam), "accepted_on_cards": sum(bool(sam.get(c["id"], {}).get("accepted")) for c in cs),
                               "attempted": fp.get("attempted"), "accepted": fp.get("accepted"), "ranked": fp.get("ranked"),
                               "prepare_rejected": fp.get("prepare_rejected"), "eligible": fp.get("eligible")},
-                    "model_cpu_s": (L["object_cards"].get("stats") or {}).get("s", {}).get("models"),
-                    "cards_stage_s": cards_s, "marks_s": {k: v for k, v in marks.items() if k and ("cards" in k or "model" in k or "display" in k)},
-                    "gpu_peak_gib": [g.get("peak_gb") for g in run.get("gpu_peak") or []]}
+                    "model_cpu_s": (L["object_cards"].get("stats") or {}).get("s", {}).get("models_cpu"),
+                    "cards_stage_s": cards_s, "marks_s": {k: v for k, v in marks.items() if "cards" in k or "model" in k or "display" in k or "splat" in k},
+                    "cards_bytes": sum(st["n"].get("bytes", 0) for st in run.get("stages") or [] if st["stage"] == "write.object_cards"),
+                    "elapsed_s": run.get("elapsed_s"), "gpu_peak_gib": [g.get("peak_gb") for g in run.get("gpu_peak") or []],
+                    "over_72": [g.get("peak_gb", 0) > 72 for g in run.get("gpu_peak") or []]}
+    return out
+
+
+def site_of(report):
+    return report.split("-")[1] if not report.startswith("mvp-samsclub") else "samsclub-a2"
+
+
+def results_md(t, base=None, audits=()):
+    """Markdown from table() of the run (and of a baseline run: the cards' time without the models), plus audit labels."""
+    rows = "| video | call | object cards | with a model | box / cylinder / plane / open frame | by type (overruled) | residual median / p90 cm " \
+           "| seen share (median) | one side | SAM 3D eligible / tried / accepted | first model / final models s (display start) | analysis s | GPU peaks GiB |\n|" + "---|" * 13 + "\n"
+    calls = {}
+    for rep, r in sorted(t.items(), key=lambda kv: (site_of(kv[0]), kv[0].rsplit("-", 1)[1])):
+        site = site_of(rep)
+        calls[site] = calls.get(site, 0) + 1
+        k, s3, mk = r["kinds"], r["sam3d"], r["marks_s"]
+        rows += (f"| {site} | {'first' if calls[site] == 1 else 'warm'} | {r['object_cards']} | {r['with_primitive']} ({r['share']:.0%}) | "
+                 f"{k['box']} / {k['cylinder']} / {k['plane']} / {k['open frame']} | {r['chosen_by_type']} ({r['type_overruled']}) | "
+                 f"{r['residual_cm']['median']} / {r['residual_cm']['p90']} | {r['seen_share_median']} | {r['one_sided']} | "
+                 f"{s3['eligible']} / {s3['attempted']} / {s3['accepted']} | {mk.get('first_model_put', '-')} / {mk.get('models_final_put', '-')} "
+                 f"({mk.get('display_started', '-')}) | {r['elapsed_s']} | {r['gpu_peak_gib']}{' FLAG > 72' if any(r['over_72']) else ''} |\n")
+    out = "## Models per call\n\n" + rows
+    if base:
+        out += "\n## Time added to the cards (this run vs the baseline run, same videos and calls; s)\n\n| video | call | cards.v1 | cards.v3 | " \
+               "cards write | model fits CPU s (all processes) | cards v1 put | cards v3 put | cards bytes |\n|" + "---|" * 9 + "\n"
+        by = {}
+        for rep, r in base.items():
+            by.setdefault(site_of(rep), []).append(r)
+        seen = {}
+        for rep, r in sorted(t.items(), key=lambda kv: (site_of(kv[0]), kv[0].rsplit("-", 1)[1])):
+            site = site_of(rep)
+            i = seen[site] = seen.get(site, -1) + 1
+            b = (by.get(site) or [None] * 2)[min(i, len(by.get(site) or [0]) - 1)] or {}
+            f = lambda d, k: d.get(k, "-")  # noqa: E731
+            cs, bs = r["cards_stage_s"], b.get("cards_stage_s", {})
+            out += (f"| {site} | {'first' if i == 0 else 'warm'} | {f(cs, 'cards.v1')} (base {f(bs, 'cards.v1')}) | {f(cs, 'cards.v3')} (base {f(bs, 'cards.v3')}) | "
+                    f"{f(cs, 'write.object_cards')} (base {f(bs, 'write.object_cards')}) | {r['model_cpu_s']} | {f(r['marks_s'], 'cards_v1_put')} "
+                    f"(base {f(b.get('marks_s', {}), 'cards_v1_put')}) | {f(r['marks_s'], 'cards_v3_put')} (base {f(b.get('marks_s', {}), 'cards_v3_put')}) | "
+                    f"{r['cards_bytes'] / 1e6:.1f} MB (base {b.get('cards_bytes', 0) / 1e6:.1f}) |\n")
+    if audits:
+        out += "\n## Audit by eye: 30 random models per video (agent-labelled; crop | model from the same camera)\n\n| video | looked at | plausible | implausible | unclear |\n|---|---|---|---|---|\n"
+        for a in audits:
+            lab = json.loads(Path(a, "labels.json").read_text())
+            ls = [r["label"] for r in lab["rows"]]
+            out += f"| {site_of(lab['report'])} | {len(ls)} | {ls.count('plausible')} | {ls.count('implausible')} | {ls.count('unclear')} |\n"
     return out
 
 
@@ -303,6 +352,12 @@ def self_check():
     assert got == {"b": {"object": "a", "accepted": False, "reasons": ["x"]}}
     assert model_line({"model": dm.record(fs, "cylinder", "type (drum)", fr)}, None).startswith("cylinder; type (drum)")
     assert Rotation.from_quat(dm.record(fs, "box", "t", fr)["quaternion"]).as_matrix()[2, 2] > .999  # a gravity box stays upright
+    tab = {"mvp-me340-a-2": {"kinds": {"box": 3, "cylinder": 1, "plane": 0, "open frame": 1}, "sam3d": {"eligible": 5, "attempted": 4, "accepted": 1},
+                             "marks_s": {"first_model_put": 99.}, "object_cards": 5, "with_primitive": 5, "share": 1., "chosen_by_type": 2, "type_overruled": 0,
+                             "residual_cm": {"median": 1.2, "p90": 3.}, "seen_share_median": .5, "one_sided": 2, "elapsed_s": 200., "gpu_peak_gib": [60., 50.],
+                             "over_72": [False, False], "cards_stage_s": {"cards.v1": 2.}, "model_cpu_s": 1.5, "cards_bytes": 2e6}}
+    md = results_md(tab, {"mvp-me340-b-1": {**tab["mvp-me340-a-2"], "cards_stage_s": {"cards.v1": 1.5}}})
+    assert "| me340 | first | 5 | 5 (100%) | 3 / 1 / 0 / 1 |" in md and "2.0 (base 1.5)" in md, md
     print("r4_models self-check ok: box / cylinder / frame / plane triangles, projection, painter's draw, SAM 3D links, model line")
 
 
@@ -321,8 +376,19 @@ if __name__ == "__main__":
     s.add_argument("--seed", type=int, default=4)
     t = sub.add_parser("table")
     t.add_argument("runs", nargs="+", type=Path)
+    r = sub.add_parser("results")
+    r.add_argument("run", type=Path)
+    r.add_argument("out", type=Path, help="a new results folder: table.json, results-tables.md")
+    r.add_argument("--baseline", type=Path)
+    r.add_argument("--audit", nargs="*", default=[])
     a = p.parse_args()
     if a.cmd == "sheet":
         sheet(a.mirror, a.report, a.out, a.n, a.seed)
-    else:
+    elif a.cmd == "table":
         print(json.dumps({str(r): table(r) for r in a.runs}, indent=1, default=str))
+    else:
+        a.out.mkdir(parents=True, exist_ok=True)
+        t, b = table(a.run), table(a.baseline) if a.baseline else None
+        (a.out / "table.json").write_text(json.dumps({"run": t, "baseline": b}, indent=1, default=str))
+        (a.out / "results-tables.md").write_text(results_md(t, b, a.audit))
+        print((a.out / "results-tables.md").read_text())
