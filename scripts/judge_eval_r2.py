@@ -171,10 +171,12 @@ def audit_run(run, report, site, lab, extra=None):
     rows = data["rows"]
     m = id_map(site, d)
     usable = {k: v for k, v in lab.items() if k[0] == site and k[1] in m}
-    usable.update({k: v for k, v in (extra or {}).items() if k[0] == site})
+    usable.update({(site, x["id"], x["q"]): x for x in (extra or {}).values() if x.get("report") == report})  # this call's own sheets
     objects = [c for c in d["cards"] if c.get("kind") == "object"]
     checked = {r["subject"] for r in rows if not r["subject"].startswith("person")}
+    by_obj = Counter(v for k, v in (data.get("by_object") or {}).items() if not k.startswith("person"))
     rep = {"report": report, "objects": len(objects), "objects_with_a_check": len(checked), "coverage": round(len(checked) / max(1, len(objects)), 3),
+           "objects_by_summary": dict(by_obj), "objects_decided": by_obj.get("PASS", 0) + by_obj.get("FAIL", 0),
            "rows": len(rows), "counts": dict(Counter(r["verdict"] for r in rows)), "vlm": data.get("vlm"),
            "by_check": {k: {**v, "verdicts": dict(v["verdicts"])} for k, v in audit(rows, usable, site).items()},
            "id_kept": len(m)}
@@ -222,7 +224,8 @@ def sheets(todo, d, out, site, per=4):
             cv2.putText(cap, f"#{k + j} {site} {r['subject']} '{r.get('subject_name')}'", (6, 24), cv2.FONT_HERSHEY_SIMPLEX, .6, (0, 0, 0), 1, cv2.LINE_AA)
             cv2.putText(cap, QTEXT[q][:80], (6, 52), cv2.FONT_HERSHEY_SIMPLEX, .5, (0, 0, 160), 1, cv2.LINE_AA)
             panels.append(np.vstack([cap, cv2.resize(img, (560, 560), interpolation=cv2.INTER_AREA)]))
-            index.append({"n": k + j, "site": site, "id": r["subject"], "q": q, "check": r["check"], "sheet": f"{site}-{k // per:03d}"})
+            index.append({"n": k + j, "site": site.split("-")[0], "call": site, "report": d["report"], "id": r["subject"], "q": q, "check": r["check"],
+                          "sheet": f"{site}-{k // per:03d}"})
         while len(panels) < per:
             panels.append(np.full_like(panels[0], 255))
         cv2.imwrite(str(out / f"{site}-{k // per:03d}.jpg"), np.vstack([np.hstack(panels[:2]), np.hstack(panels[2:])]), [cv2.IMWRITE_JPEG_QUALITY, 80])

@@ -1230,6 +1230,8 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, c
             continue
         cut = hazard_cut(cal, a["decider"], q)
         verdict = hazard.verdict(a["p"], cut)
+        if a["decider"] == "qwen" and verdict == "hazard":  # the fallback vetoes a PASS but never joins a FAIL: its q1 cut (0.77, fitted
+            verdict = "likely"  # on 14 positives) put a hose hung on a bench (p 0.78) into a FAIL (eval-qwen-all, ME340 obj-1-95)
         g = row["geometry"] or {}
         before = row["verdict"]
         row["verdict"] = combine(before, verdict, hazard_side=bool(g.get("hazard_side")) and row["check"] != "J3a",
@@ -1589,11 +1591,12 @@ def self_check():
     run([cable, hose], ctx, w, _Clock(), ask=fake, cal=cal, hazard_ask=fake_gemini)
     rows = {r["subject"]: r["verdict"] for r in w.puts[1][1]["rows"] if r["check"] == "J4"}
     assert rows == {cable["id"]: REVIEW, hose["id"]: REVIEW}, rows
-    gem.update(fail=True)  # the relay fails: Qwen answers (p 0.9 >= its fitted cut 0.18 -> hazard), one question per row
-    w = _Writer()
+    gem.update(fail=True)  # the relay fails: Qwen answers (p 0.9 >= its fitted cut 0.18), one question per row; the fallback only
+    w = _Writer()          # vetoes: the hose stays NEEDS_REVIEW, the cable's geometry FAIL stands
     out = run([cable, hose], ctx, w, _Clock(), ask=fake, cal=cal, hazard_ask=fake_gemini)
     rows = {r["subject"]: r for r in w.puts[1][1]["rows"] if r["check"] == "J4"}
-    assert len(calls) == 2 and out["gemini_unanswered"] == 2 and rows[hose["id"]]["verdict"] == FAIL and "fallback" in rows[hose["id"]]["vlm"]["decider"]
+    assert len(calls) == 2 and out["gemini_unanswered"] == 2 and rows[hose["id"]]["verdict"] == REVIEW and rows[cable["id"]]["verdict"] == FAIL
+    assert "fallback" in rows[hose["id"]]["vlm"]["decider"] and rows[hose["id"]]["vlm"]["answer"] == "likely"
     calls.clear()
     gem.update(fail=False, p=.9, reqs=0)  # answers carried between the runs of one analysis: the second run asks nothing new
     carried = {}

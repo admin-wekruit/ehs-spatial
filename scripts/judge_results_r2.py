@@ -68,7 +68,7 @@ def load_extra(path):
     if path and path.exists():
         for line in path.read_text().splitlines():
             x = json.loads(line)
-            out[(x["site"], x["id"], x["q"])] = x
+            out[(x["report"], x["id"], x["q"])] = x
     return out
 
 
@@ -77,7 +77,7 @@ if __name__ == "__main__":
     ap.add_argument("--bench", type=Path, required=True)
     ap.add_argument("--fallback", type=Path)
     ap.add_argument("--out", type=Path, required=True)
-    ap.add_argument("--sheets", action="store_true", help="write blind contact sheets for the unlabelled PASS / FAIL rows of the warm calls")
+    ap.add_argument("--sheets", action="store_true", help="write blind contact sheets for the unlabelled PASS / FAIL rows of every call")
     a = ap.parse_args()
     a.out.mkdir(parents=True, exist_ok=True)
     extra = load_extra(a.out / "labels-run.jsonl")
@@ -85,9 +85,8 @@ if __name__ == "__main__":
     res["audit"], todo = audits(a.bench, extra)
     if a.sheets:
         index = []
-        for k, (rows, d, site) in todo.items():
-            if k.endswith("warm"):
-                index += je.sheets(rows, d, a.out / "sheets-run", site)
+        for k, (rows, d, site) in todo.items():  # both calls: a first-call FAIL needs its label too
+            index += je.sheets(rows, d, a.out / "sheets-run", f"{site}-{k.split()[-1]}")
         (a.out / "sheets-run-index.json").write_text(json.dumps(index, indent=0))
         print("sheets", len(index))
     (a.out / "run-results.json").write_text(json.dumps(res, indent=1, default=str))
