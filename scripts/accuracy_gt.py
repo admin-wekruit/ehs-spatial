@@ -540,7 +540,22 @@ def timing_table(recs):
     return out
 
 
-def results(out, run_dirs, droid_files, inputs):
+def end_to_end(rows):
+    """Coverage of the as-delivered errors by the u the cards carry (a run made with the calibrated rule), per family,
+    view-set state and sequence, on shown values."""
+    use = [r for r in rows if r["gt_cover"] >= MIN_GT_COVER and r["scale_status"] == "estimated" and not r["first_call"] and shown(r)]
+    out = []
+    for fam in ("height", "extent", "position", "angle"):
+        for st in ("sets", "one_set"):
+            for sq in sorted({r["seq"] for r in use}):
+                x = [r for r in use if r["family"] == fam and r["seq"] == sq and one_set(r) == (st == "one_set")]
+                if x:
+                    out.append({"family": fam, "view_sets": st, "seq": sq, "n": len(x), "coverage": float(np.mean([r["cov_a"] for r in x])),
+                                "u_med": float(np.median([r["u"] for r in x])), "err_med": float(np.median([r["err_a"] for r in x]))})
+    return out
+
+
+def results(out, run_dirs, droid_files, inputs, e2e_dir=None):
     """summary.json + summary.md from scored run folders (score first), the DROID timings and the u rule calibration."""
     from fast_report.core import umeyama
     rows, recs = [], []
@@ -562,11 +577,67 @@ def results(out, run_dirs, droid_files, inputs):
     a_rows = [r for r in rows if r["geometry"] == "shot"]
     summary = {"options": options_table(rows, recs), "timing": timing_table(recs), "droid": droid,
                "u_rule": {"arkit_to_tum": calibrate(a_rows, ["arkit47", "arkit42"], ["tum"]), "tum_to_arkit": calibrate(a_rows, ["tum"], ["arkit47", "arkit42"])},
-               "bounds": [b for r in recs for b in r.get("bounds", [])], "floors": {n: Seq(inputs / n).floor for n in SEQUENCES},
+               "bounds": [b for r in recs if r["geometry"] == "shot" and not r["first_call"] for b in r.get("bounds", [])], "floors": {n: Seq(inputs / n).floor for n in SEQUENCES},
                "gate": {"min_gt_points": MIN_GT_POINTS, "min_gt_cover": MIN_GT_COVER, "shown_only": True, "warm_calls_only": True}}
+    if e2e_dir:
+        e2e = json.loads((Path(e2e_dir) / "accuracy" / "score.json").read_text())
+        summary["end_to_end"] = {"run": str(e2e_dir), "rows": end_to_end(json.loads((Path(e2e_dir) / "accuracy" / "rows.json").read_text())),
+                                 "timing": timing_table(e2e["reports"])}
     out.mkdir(parents=True, exist_ok=True)
     (out / "summary.json").write_text(json.dumps(summary, indent=1, default=float))
     return summary
+
+
+def fmt(x, nd=3):
+    return "-" if x is None else f"{x:.{nd}f}"
+
+
+def summary_tables(summary):
+    """The markdown tables of summary.md (the prose around them is written by hand in notes)."""
+    out = ["## Geometry options (warm calls; errors on shown values with GT cover >= 0.5)", "",
+           "median |error| in m: (a) as delivered (assumed 1.6 m camera height) / (b) at the true camera height; cov = share of (a) inside the ±u the cards carried in these runs (the u before this change). posed-droid / posed-gt timings exclude DROID itself (table below).", "",
+           "| sequence | option | camera ATE (Sim3) | s = true h / 1.6 | top (a)/(b), cov | base (a)/(b), cov | height (a)/(b), cov | width (a)/(b), cov | position (a)/(b), cov |",
+           "|---|---|---|---|---|---|---|---|---|"]
+    for t in summary["options"]:
+        f = t["fields"]
+        cell = lambda k: f"{fmt(f[k]['a_med'])} / {fmt(f[k]['b_med'])}, {f[k]['cov_R0']:.0%} (n {f[k]['n']})" if k in f else "-"  # noqa: E731
+        out.append(f"| {t['seq']} | {t['geometry']} | {fmt(t['ate_sim3_m'])} | {', '.join(f'{s:.2f}' for s in t['s_true_height'])} | {cell('top_above_floor')} | "
+                   f"{cell('base_above_floor')} | {cell('height')} | {cell('width')} | {cell('position_xy')} |")
+    out += ["", "## Timing (s from the MP4 bytes in the container; display layers off)", "",
+            "| sequence | window | option | call | cameras | objects | cards v1 | cards v3 | judgements v3 | DA3 stage | GPU peaks GiB |", "|---|---|---|---|---|---|---|---|---|---|---|"]
+    for t in sorted(summary["timing"], key=lambda t: (t["geometry"], t["seq"], t["window"], not t["first_call"])):
+        out.append(f"| {t['seq']} | {t['window']} | {t['geometry']} | {'first' if t['first_call'] else 'warm'} | {fmt(t['cameras'], 1)} | {fmt(t['objects'], 1)} | "
+                   f"{fmt(t['cards_v1'], 1)} | {fmt(t['cards_v3'], 1)} | {fmt(t['judgements_v3'], 1)} | {t['da3_s']} | {'/'.join(f'{p:.1f}' for p in t['gpu_peak_gib'])} |")
+    out += ["", "## DROID-SLAM on the same frames (A100-80GB, DA3's intrinsics, 384x216)", "",
+            "| job | frames | seconds (track + terminate) | ATE vs GT (Sim3, m) | peak GiB |", "|---|---|---|---|---|"]
+    for d in summary["droid"]:
+        out.append(f"| {d['job']} | {d['frames']} | {d['seconds']} ({d['track_s']} + {d['terminate_s']}) | {d['ate_sim3_m']:.3f} | {d['peak_gib']} |")
+    for key, title in (("arkit_to_tum", "fitted on ARKit (47333932 x2 windows, 42445448), tested on TUM fr1 room (held out)"),
+                       ("tum_to_arkit", "reverse check: fitted on TUM, tested on ARKit")):
+        c = summary["u_rule"][key]
+        out += ["", f"## u rule, {title}", "",
+                f"k_geo = {json.dumps(c['k_geo'])}; scale part {c['r_scale']} x |value| (largest |1 - s| on the fit set {c['calib_max_scale_error']:.3f}, on the test set {c['held_max_scale_error']:.3f}).", "",
+                "| family | view sets | split | n | coverage, today's u | coverage, new u | median u today / new (m) | geometry-only coverage at true height, new |", "|---|---|---|---|---|---|---|---|"]
+        for fam, rows in c["families"].items():
+            for k, v in rows.items():
+                st, split = k.split("/")
+                pct = lambda x: "-" if x is None else f"{x:.0%}"  # noqa: E731
+                out.append(f"| {fam} | {st} | {split} | {v['n']} | {pct(v['R0'])} | {pct(v.get('new'))} | {fmt(v['R0_u_med'])} / {fmt(v.get('new_u_med'))} | "
+                           f"{pct(v.get('new_geometry_only_b'))} |")
+    if summary.get("end_to_end"):
+        e = summary["end_to_end"]
+        out += ["", "## End to end: cards made with the calibrated u (run " + Path(e["run"]).name + "); TUM held out, ARKit in-sample", "",
+                "| family | view sets | sequence | n | coverage by the card's u | median u (m or deg) | median error |", "|---|---|---|---|---|---|---|"]
+        for r in e["rows"]:
+            out.append(f"| {r['family']} | {r['view_sets']} | {r['seq']} | {r['n']} | {r['coverage']:.0%} | {fmt(r['u_med'])} | {fmt(r['err_med'])} |")
+        out += ["", "| sequence | window | call | cameras | objects | cards v1 | cards v3 | judgements v3 | DA3 stage | GPU peaks GiB |", "|---|---|---|---|---|---|---|---|---|---|"]
+        for t in sorted(e["timing"], key=lambda t: (t["seq"], t["window"], not t["first_call"])):
+            out.append(f"| {t['seq']} | {t['window']} | {'first' if t['first_call'] else 'warm'} | {fmt(t['cameras'], 1)} | {fmt(t['objects'], 1)} | {fmt(t['cards_v1'], 1)} | "
+                       f"{fmt(t['cards_v3'], 1)} | {fmt(t['judgements_v3'], 1)} | {t['da3_s']} | {'/'.join(f'{p:.1f}' for p in t['gpu_peak_gib'])} |")
+    b = summary["bounds"]
+    if b:
+        out += ["", f"Bounds ('at least' / 'at most', cut by the frame edge): {sum(x['holds_a'] for x in b)} of {len(b)} hold within u against GT."]
+    return "\n".join(out) + "\n"
 
 
 def decides(r):
@@ -753,12 +824,23 @@ def self_check():
     assert abs(np.degrees(np.arccos(np.asarray(f["normal"]) @ R[:, 2])) ) < .5 and abs(f["camera_height_m"] - 1.65) < .05, f
     y0, sc = crop_params(1920, 1440)
     assert (y0, sc) == (180., 2 / 3)
-    print("accuracy_gt self-check passed: floor fit (tilted, with a table above it), 16:9 crop")
+    assert smallest_k([1, 2, 3, 4, 5, 6, 7, 8, 9, 30], [1] * 10) == 9. and smallest_k([.1] * 10, [1] * 10) == 1.
+    R2 = np.array([[0., -1], [1, 0]])
+    Rf, tf = rigid2(np.array([[0., 0], [1, 0], [0, 2]]), np.array([[0., 0], [1, 0], [0, 2]]) @ R2.T + [3, 4])
+    assert np.allclose(Rf, R2) and np.allclose(tf, [3, 4])
+    z = np.r_[np.full(50, 2.), [9.]]
+    assert not tail_trim(z)[-1] and tail_trim(z)[:50].all()
+    r = {"family": "height", "value": 1., "parts": {"views": .03, "depth": .04, "scale": .25}, "err_a": .2, "err_b": .1, "s": 1.}
+    assert abs(geo_raw(r) - .05) < 1e-9 and magnitude(r) == 1. and not one_set(r)
+    print("accuracy_gt self-check passed: floor fit (tilted, with a table above it), 16:9 crop, smallest k, floor-plane rigid fit, depth-tail trim, u parts")
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", nargs="?", choices=("prepare", "floor", "score", "droid-jobs", "posed-plan"))
+    ap.add_argument("cmd", nargs="?", choices=("prepare", "floor", "score", "droid-jobs", "posed-plan", "results"))
+    ap.add_argument("--runs", nargs="*", type=Path, default=[])
+    ap.add_argument("--droid", nargs="*", type=Path, default=[])
+    ap.add_argument("--e2e", type=Path)
     ap.add_argument("path", nargs="?", type=Path)
     ap.add_argument("--out", type=Path)
     ap.add_argument("--inputs", type=Path, default=RUNS / "mvp2-accuracy-inputs")
@@ -779,3 +861,7 @@ if __name__ == "__main__":
         droid_jobs(a.path, a.inputs, a.out, a.jpegs)
     elif a.cmd == "posed-plan":
         posed_plan(a.jobs, a.path, a.out)
+    elif a.cmd == "results":
+        sm = results(a.out, a.runs, a.droid, a.inputs, a.e2e)
+        (a.out / "tables.md").write_text(summary_tables(sm))
+        print((a.out / "tables.md").read_text())
