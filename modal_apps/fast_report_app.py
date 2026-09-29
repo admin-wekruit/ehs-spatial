@@ -237,8 +237,14 @@ class FastReport:
         price = usd_per_s(2, CPU, MEMORY_GIB)
         writer = Writer(VOLUMES["/v/layers"], report_id, clock, root="/v/layers", client_has=options.get("client_has", ()),
                         report=lambda: clock.report(vram, price))
-        job = self.run_pool.submit(core.analyse, self, mp4, {**options, "site": site}, clock, writer, None)
+        asker = None
+        if options.get("hazard_queues"):  # round 2: the hazard judge's Gemini questions go out through the CLI's relay
+            from fast_report import hazard
+            asker = hazard.Asker(*options["hazard_queues"])
+        job = self.run_pool.submit(core.analyse, self, mp4, {**options, "site": site, "hazard_ask": asker.ask if asker else None}, clock, writer, None)
         job.add_done_callback(lambda _: writer.close())
+        if asker is not None:
+            job.add_done_callback(lambda _: asker.close())
         yield from writer.events()
         vram.stop()
         try:

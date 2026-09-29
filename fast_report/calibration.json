@@ -124,5 +124,247 @@
    "source": "warm vs +5 s shifted window, pooled over ME340/Sam's Club/Walmart (runs mvp-integrate-me340-002, -samsclub-001, -walmart-001); pairs: 1:1 centroids <= 0.5 m, part/whole excluded"
   }
  },
- "written_unix": 1790664801.184086
+ "written_unix": 1790664801.184086,
+ "hazard": {
+  "gemini": {
+   "q1": {
+    "hazard": {
+     "t": 0.5,
+     "n": 18,
+     "hits": 11
+    },
+    "clear": null,
+    "veto": {
+     "t": 0.5,
+     "calibrated": true
+    },
+    "n": 60,
+    "positives": 16,
+    "sources": [
+     "me340",
+     "samsclub",
+     "setd-lightning",
+     "setd-me340",
+     "setd-nasa",
+     "setd-samsclub",
+     "setd-tum",
+     "setd-walmart"
+    ]
+   },
+   "q2": {
+    "hazard": null,
+    "clear": null,
+    "veto": {
+     "t": 0.8,
+     "calibrated": false
+    },
+    "n": 169,
+    "positives": 0,
+    "sources": [
+     "samsclub",
+     "setd-agv",
+     "setd-lightning",
+     "setd-samsclub",
+     "setd-walmart",
+     "walmart"
+    ]
+   },
+   "q3": {
+    "hazard": null,
+    "clear": null,
+    "veto": {
+     "t": 0.8,
+     "calibrated": false
+    },
+    "n": 13,
+    "positives": 0,
+    "sources": [
+     "setd-lightning",
+     "setd-me340",
+     "setd-nasa",
+     "setd-samsclub",
+     "setd-tum"
+    ]
+   },
+   "q4": {
+    "hazard": {
+     "t": 0.5,
+     "n": 29,
+     "hits": 24
+    },
+    "clear": {
+     "t": 0.1,
+     "n": 122,
+     "hits": 120
+    },
+    "veto": {
+     "t": 0.5,
+     "calibrated": true
+    },
+    "n": 175,
+    "positives": 28,
+    "sources": [
+     "me340",
+     "samsclub",
+     "setd-agv",
+     "setd-lightning",
+     "setd-me340",
+     "setd-samsclub",
+     "setd-tank",
+     "setd-walmart",
+     "walmart"
+    ]
+   },
+   "q5": {
+    "hazard": {
+     "t": 0.5,
+     "n": 10,
+     "hits": 6
+    },
+    "clear": null,
+    "veto": {
+     "t": 0.5,
+     "calibrated": true
+    },
+    "n": 15,
+    "positives": 6,
+    "sources": [
+     "setd-nasa"
+    ]
+   },
+   "q6": {
+    "hazard": null,
+    "clear": null,
+    "veto": {
+     "t": 0.8,
+     "calibrated": false
+    },
+    "n": 40,
+    "positives": 0,
+    "sources": [
+     "samsclub"
+    ]
+   },
+   "q7": {
+    "hazard": null,
+    "clear": null,
+    "veto": {
+     "t": 0.8,
+     "calibrated": false
+    },
+    "n": 1,
+    "positives": 0,
+    "sources": [
+     "samsclub"
+    ]
+   }
+  },
+  "qwen": {
+   "q1": {
+    "hazard": {
+     "t": 0.177231,
+     "n": 15,
+     "hits": 12
+    },
+    "clear": {
+     "t": 0.0017,
+     "n": 29,
+     "hits": 29
+    },
+    "veto": {
+     "t": 0.177231,
+     "calibrated": true
+    },
+    "n": 57,
+    "positives": 15,
+    "sources": [
+     "me340",
+     "samsclub",
+     "setd-lightning",
+     "setd-me340",
+     "setd-nasa",
+     "setd-samsclub",
+     "setd-tum",
+     "setd-walmart"
+    ]
+   },
+   "q2": {
+    "hazard": null,
+    "clear": null,
+    "veto": {
+     "t": 0.8,
+     "calibrated": false
+    },
+    "n": 158,
+    "positives": 0,
+    "sources": [
+     "samsclub",
+     "setd-agv",
+     "setd-lightning",
+     "setd-samsclub",
+     "setd-walmart"
+    ]
+   },
+   "q3": {
+    "hazard": null,
+    "clear": null,
+    "veto": {
+     "t": 0.8,
+     "calibrated": false
+    },
+    "n": 13,
+    "positives": 0,
+    "sources": [
+     "setd-lightning",
+     "setd-me340",
+     "setd-nasa",
+     "setd-samsclub",
+     "setd-tum"
+    ]
+   },
+   "q4": {
+    "hazard": null,
+    "clear": {
+     "t": 3e-06,
+     "n": 10,
+     "hits": 10
+    },
+    "veto": {
+     "t": 0.8,
+     "calibrated": false
+    },
+    "n": 169,
+    "positives": 28,
+    "sources": [
+     "me340",
+     "samsclub",
+     "setd-agv",
+     "setd-lightning",
+     "setd-me340",
+     "setd-samsclub",
+     "setd-tank",
+     "setd-walmart",
+     "walmart"
+    ]
+   },
+   "q5": {
+    "hazard": {
+     "t": 0.00217,
+     "n": 7,
+     "hits": 6
+    },
+    "clear": null,
+    "veto": {
+     "t": 0.00217,
+     "calibrated": true
+    },
+    "n": 15,
+    "positives": 6,
+    "sources": [
+     "setd-nasa"
+    ]
+   }
+  }
+ },
+ "hazard_note": "hazard judge thresholds (fast_report.hazard.fit): 'hazard' = calibrated precision >= 0.8 (may join a measured value to make a FAIL), 'clear' = NPV >= 0.97, 'veto' = the p at which a PASS becomes NEEDS_REVIEW (uncalibrated 0.8 where no positives exist). Fitted on X8 set d + agent-labelled object items (hazard-001 labels, Gemini v2 answers hazard-002, Qwen round-1 answers); scripts/hazard_calibrate.py"
 }

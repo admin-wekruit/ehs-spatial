@@ -798,6 +798,7 @@ def analyse(m, mp4, opts, clock, writer, log):
 
     # ---------- click MVP: object cards (section 4) and the judgement hook (B's fast_report.judge, when present) ----------
     cards_out, cards_ready, pick_ready, judge_futures, cards_lock = {}, threading.Event(), threading.Event(), [], threading.Lock()
+    judge_lock = threading.Lock()
     carried = {}  # the judge's VLM answers by (row, question, keyframes), shared by its runs on cards v1 and v3
     card_labels = ["physical values are estimated (floor plane + assumed 1.6 m camera height) with +-u from view-subset disagreement plus depth, "
                    "pose, floor, resolution and scale terms; 'not observed' / 'not measurable' carry their reason",
@@ -849,24 +850,26 @@ def analyse(m, mp4, opts, clock, writer, log):
             return
         if not opts.get("judge", True):
             return
-        outl = results.get("outlines_v2" if version == 3 else "outlines") or {}
+        outl = results.get("outlines_v2" if version >= 3 else "outlines") or {}
         ctx = judge.context(cam_rows, outl.get("frames", []), results.get("people"), frames,
                             {gg["index"]: gg["seeds"]["xyz"] for gg in geo if "seeds" in gg}, fps, (W, H), version_of={"object_cards": version})
         by = {x["index"]: x for x in out["shots"]}
         for x in ctx["shots"]:  # the cards' own pose, floor and plumb readings (B's context has constants)
             a_ = by.get(x["index"]) or {}
-            x.update(u_pose_m=a_.get("u_pose_m", x["u_pose_m"]), u_floor_m=a_.get("u_floor_m") or x["u_floor_m"], angles_usable=a_.get("angles_usable"))
-        prev = judge_futures[-1] if judge_futures else None
+            x.update(u_pose_m=a_.get("u_pose_m", x["u_pose_m"]), u_floor_m=a_.get("u_floor_m") or x["u_floor_m"], angles_usable=a_.get("angles_usable"),
+                     plumb_u_deg=a_.get("plumb_u_deg"), plumb_deg=a_.get("plumb_deg"))
 
-        def job():
+        def job(prev):
             if prev is not None:
                 prev.result()
             try:
-                return judge.run(out["cards"], ctx, writer, clock, vlm_on=opts.get("judge_vlm", True), pool=m.proc_pool, carried=carried)
+                return judge.run(out["cards"], ctx, writer, clock, vlm_on=opts.get("judge_vlm", True), pool=m.proc_pool, carried=carried,
+                                 hazard_ask=opts.get("hazard_ask"))
             except Exception:  # noqa: BLE001  the judgements are one layer: their failure is recorded, the others stand
                 import traceback
                 return {"error": traceback.format_exc()[-3000:]}
-        judge_futures.append(m.cpu_pool.submit(job))
+        with judge_lock:  # the runs chain in call order (identity and densify call from two threads)
+            judge_futures.append(m.cpu_pool.submit(job, judge_futures[-1] if judge_futures else None))
 
     def sync_objects():
         """objects v2 carries the cards' boxes (main cluster, fragments merged) and size checks once they exist."""
@@ -916,9 +919,12 @@ def analyse(m, mp4, opts, clock, writer, log):
                 if "v3" in cards_out:
                     cards_out["v4"] = with_identity(cards_out["v3"], idents)
                     cards_put(4, cards_out["v4"])
+                    judged = (cards_out["v4"], 4)
                 else:
                     cards_out["v2"] = {**cards_out["v1"], "cards": copy.deepcopy(new)}
                     cards_put(2, cards_out["v2"])
+                    judged = (cards_out["v2"], 2)
+        judge_hook(*judged)  # round 2 (review R1): the checks follow the decider's final names; answers already given are carried
 
     def ask_identity(card_list, which="ehs"):
         """Section 4.7 step 3 through B's decider (vlm.options + judge.som, when both exist): the best view with the outlines

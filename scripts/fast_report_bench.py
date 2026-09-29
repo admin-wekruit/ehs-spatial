@@ -113,7 +113,7 @@ def summarize(out, records, boot, meta):
         rows.append({"site": rec["site"], "call": rec["call"], "kind": rec.get("kind", "warm"), "report": run.get("report"),
                      "window_s": rec.get("window_s"), "first_call_after_boot": bool((run.get("boot") or {}).get("first_call_after_boot", rec["call"] == 0)),
                      "mvp_latency": rec.get("mvp_latency"),
-                     "options": {k: v for k, v in rec["options"].items() if k != "eval_holdout"},
+                     "options": {k: v for k, v in rec["options"].items() if k not in ("eval_holdout", "hazard_queues")},
                      "upload_and_dispatch_s": round(run["t0_unix"] - rec["client_call_unix"], 3),
                      "analysis_elapsed_s": run.get("elapsed_s"), "layers": layers,
                      "acceptance": acceptance(layers) if rec.get("kind", "warm") == "warm" else f"{rec.get('kind')} call: reported, not judged",
@@ -180,7 +180,19 @@ def bench(a):
     click_latency = json.loads(a.click_latency.read_text()) if a.click_latency else None
     records, meta = [], {"sites": sites, "plan": plan, "shift_s": a.shift_s, "background_s": a.background_s, "started_unix": time.time(),
                          "container": {"gpu": "A100-80GB:2", "cpu": 32, "memory_gib": 160}, "usd_per_s_list": usd_per_s()}
-    with modal.enable_output(), app.run():
+    import contextlib
+    hazard_ctx = contextlib.ExitStack()
+    queues = None
+    if a.hazard == "gemini":  # round 2: the hazard judge's Gemini questions through two ephemeral queues and this CLI's relay
+        from fast_report import hazard
+        queues = (hazard_ctx.enter_context(modal.Queue.ephemeral()), hazard_ctx.enter_context(modal.Queue.ephemeral()))
+        stop = threading.Event()
+        hazard_ctx.callback(stop.set)
+        threading.Thread(target=hazard.relay, args=(*queues, stop, hazard_ctx.enter_context(open(out / "hazard-relay-events.jsonl", "a"))),
+                         daemon=True).start()
+        meta["hazard"] = {"decider": "gemini via the report-workspace container (scripts/name_video_entities.py's exec mechanism)",
+                          "relay": "two modal.Queue.ephemeral(), this CLI"}
+    with hazard_ctx, modal.enable_output(), app.run():
         meta["app_id"] = app.app_id
         fr = FastReport()
         submitted = time.time()
@@ -196,6 +208,9 @@ def bench(a):
                 fl.put_blob(mirror_root, mp4)  # the client's own MP4 is never sent back
                 options = {"vocab": a.vocab, "client_has": [sha], "background_s": a.background_s if last else 0, "window_s": span,
                            "eval_holdout": [f - offset for f in ev.holdout_frames(site) if f - offset >= 0]}
+                if queues is not None:
+                    hazard.workspace_container()  # awake before the call (the report service is up in production): off the analysis clock
+                    options["hazard_queues"] = queues
                 rec = call(fr, lambda e, r: fl.mirror(e, r, int(a.mirror_max_mb * 1e6) if a.mirror_max_mb else None), mirror_root, mp4, site, report, options,
                            Poller(report) if a.serve else None)
                 rec.update(site=site, call=i, kind=kind, window_s=span, frame_offset=offset, options=options)
@@ -321,6 +336,7 @@ if __name__ == "__main__":
     p.add_argument("--background-s", type=int, default=0)
     p.add_argument("--mirror-max-mb", type=float, default=0., help="larger blobs stay on the Modal Volume (a nearly full disk)")
     p.add_argument("--vocab", default="qwen", choices=("qwen", "gemini"))
+    p.add_argument("--hazard", default="qwen", choices=("qwen", "gemini"), help="the hazard judge's decider (gemini: relayed by this CLI)")
     p.add_argument("--serve", action="store_true")
     p.add_argument("--no-gpu-eval", dest="gpu_eval", action="store_false")
     p.add_argument("--billing", type=Path)
