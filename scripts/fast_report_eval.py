@@ -799,7 +799,7 @@ class Pick:
     def at(self, t, x, y):
         """(entity id or None, frame index, code) for a click at video time t, source pixel (x, y)."""
         i = self.frame_at(t)
-        if i < 0:
+        if i < 0 or (self.frames[i].get("t_end") is not None and t >= self.frames[i]["t_end"]):  # past a cut: no map (as pickAt)
             return None, -1, 0
         f = self.frames[i]
         code = int(self.map(i)[min(int(y * f["h"] / self.sh), f["h"] - 1), min(int(x * f["w"] / self.sw), f["w"] - 1)])

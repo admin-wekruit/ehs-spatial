@@ -137,6 +137,7 @@ export function frameIndexAt(frames: { t: number }[], time: number) {
 /** Source pixel (x, y) at video time t -> the entity there. O(pairs of that frame); ponytail: no frame cache, a scan is < 0.1 ms. */
 export function pickAt(pick: Pick, t: number, x: number, y: number) {
   const index = frameIndexAt(pick.data.frames, t), f = pick.data.frames[index], [W, H] = pick.data.source_wh;
+  if (f.t_end != null && t >= f.t_end) return { index, frame: f, id: null as string | null, gap: true };  // past a cut: no map
   const col = Math.min(f.w - 1, Math.max(0, Math.floor(x * f.w / W))), row = Math.min(f.h - 1, Math.max(0, Math.floor(y * f.h / H)));
   let rest = row * f.w + col;
   const o = f.offset / pick.unit;
@@ -227,7 +228,9 @@ export const footprintDistance = (p: number[], poly: number[][]) =>
  *  nearest carded entity. u: depth 5% of distance (height: times the ray's vertical share) + floor residual, and the 20%
  *  scale term of spec 4.4 in quadrature (the scale is estimated). */
 export function unknownRegion(pick: Pick, cameras: any, cardsLayer: any, t: number, x: number, y: number) {
-  const index = frameIndexAt(pick.data.frames, t), frame = pick.data.frames[index], cam = cameraOf(cameras, frame), hit = depthAt(pick, index, x, y);
+  const index = frameIndexAt(pick.data.frames, t), frame = pick.data.frames[index];
+  if (frame.t_end != null && t >= frame.t_end) return { status: "no pick map at this moment (past a shot change)" as const, t: frame.t, x, y };
+  const cam = cameraOf(cameras, frame), hit = depthAt(pick, index, x, y);
   if (!cam || !hit) return { status: "no 3D point here" as const, t: frame.t, x, y };
   const camShot = cameras.shots.find((s: any) => s.keys.includes(frame.frame)), cardsShot = cardsLayer?.shots?.find((s: any) => s.index === camShot.index);
   const F = floorFrame(camShot, cardsShot), P = unproject(cam, x, y, hit.m), c = [cam.c2w[0][3], cam.c2w[1][3], cam.c2w[2][3]];

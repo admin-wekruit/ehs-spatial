@@ -196,7 +196,8 @@ def bench(a):
                 fl.put_blob(mirror_root, mp4)  # the client's own MP4 is never sent back
                 options = {"vocab": a.vocab, "client_has": [sha], "background_s": a.background_s if last else 0, "window_s": span,
                            "eval_holdout": [f - offset for f in ev.holdout_frames(site) if f - offset >= 0]}
-                rec = call(fr, fl.mirror, mirror_root, mp4, site, report, options, Poller(report) if a.serve else None)
+                rec = call(fr, lambda e, r: fl.mirror(e, r, int(a.mirror_max_mb * 1e6) if a.mirror_max_mb else None), mirror_root, mp4, site, report, options,
+                           Poller(report) if a.serve else None)
                 rec.update(site=site, call=i, kind=kind, window_s=span, frame_offset=offset, options=options)
                 if kind != "shifted":  # the delivered report's frames are the base window's
                     quality(rec, mirror_root, out, gpu=False)
@@ -318,6 +319,7 @@ if __name__ == "__main__":
     p.add_argument("--shift-s", type=float, default=5.)
     p.add_argument("--click-latency", type=Path, help="C's headless click check result {p50_ms, p95_ms, n}")
     p.add_argument("--background-s", type=int, default=0)
+    p.add_argument("--mirror-max-mb", type=float, default=0., help="larger blobs stay on the Modal Volume (a nearly full disk)")
     p.add_argument("--vocab", default="qwen", choices=("qwen", "gemini"))
     p.add_argument("--serve", action="store_true")
     p.add_argument("--no-gpu-eval", dest="gpu_eval", action="store_false")

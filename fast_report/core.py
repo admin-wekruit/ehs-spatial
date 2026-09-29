@@ -5,6 +5,7 @@ every stage together and hands each layer to the writer the moment it exists.
 Everything heavy is imported inside functions: the cut workers are spawned processes that import this module.
 """
 import copy
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import io
 import json
@@ -793,7 +794,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     clock.mark("objects_v1_put")
 
     # ---------- click MVP: object cards (section 4) and the judgement hook (B's fast_report.judge, when present) ----------
-    cards_out, cards_ready, pick_ready, judge_futures = {}, threading.Event(), threading.Event(), []
+    cards_out, cards_ready, pick_ready, judge_futures, v2_ready = {}, threading.Event(), threading.Event(), [], threading.Event()
     card_labels = ["physical values are estimated (floor plane + assumed 1.6 m camera height) with +-u from view-subset disagreement plus depth, "
                    "pose, floor, resolution and scale terms; 'not observed' / 'not measurable' carry their reason",
                    "identity and class are inferred: a detected word until a calibrated decider answers",
@@ -885,25 +886,23 @@ def analyse(m, mp4, opts, clock, writer, log):
         ask_identity(new)
         cards_out["v2"] = {**cards_out["v1"], "cards": new}
         cards_put(2, cards_out["v2"])
+        v2_ready.set()
 
     def ask_identity(card_list):
         """Section 4.7 step 3 through B's decider (vlm.options + judge.som, when both exist): the best view with the outlines
         as numbered white-over-black marks, the subject [1]; EHS-relevant classes only (ponytail: the rest wait for B's queue)."""
-        options_fn = getattr(vlm, "options", None)
         try:
             from fast_report import judge
-            som = getattr(judge, "som", None)
+            som = judge.som
         except ImportError:
-            som = None
-        if options_fn is None or som is None:
             return
         outl = {f["sourceFrame"]: f for f in (results.get("outlines") or {}).get("frames", []) if f["source"] == "segmented"}
         cal = cards_calibration()
 
-        def one(c):
+        def build(c):  # CPU: the set-of-marks pair and the lettered prompt
             best = next((k for k in c["views"].get("best", []) if k in outl), None)
             if best is None:
-                return
+                return None
             marks, n = {}, 2
             for o in outl[best]["objects"]:
                 if o["entityId"] == c["id"]:
@@ -911,15 +910,21 @@ def analyse(m, mp4, opts, clock, writer, log):
                 else:
                     marks[n], n = o["polygons"], n + 1
             if 1 not in marks:
-                return
+                return None
             opts = cards.identity_options(c["identity"])
             # integration fix: the options go into the prompt as letters (vlm.qwen_prompt); A's bare question listed none
             p = vlm.qwen_prompt(" ".join([judge.SCENE, judge.MARKS]), "What is the object marked [1]?", opts)
-            jp = [som(frames[best], marks, subject=1), som(frames[best], marks, subject=1, marks=False)]
-            c["identity"] = cards.decide_identity(c["identity"], opts, options_fn(jp, p, opts, "identity"), cal)
+            return opts, [som(frames[best], marks, subject=1), som(frames[best], marks, subject=1, marks=False)], p
         todo = [c for c in card_list if c["kind"] == "object" and (c["class"]["category"] != "other" or cards.head_match(c["identity"]["name"], cards.CLASS_SIZE))]
         with clock.stage("vlm.identity", n={"objects": len(todo)}):
-            list(m.cpu_pool.map(one, todo))
+            with ThreadPoolExecutor(8) as pool:  # never the core's cpu_pool: its threads would wait on vLLM (the judge's queue)
+                built = list(pool.map(build, todo))
+            asked = [(c, b[0], vlm.submit(b[1], b[2], len(b[0]), "identity")) for c, b in zip(todo, built) if b is not None]
+            for c, opts, fut in asked:
+                try:
+                    c["identity"] = cards.decide_identity(c["identity"], opts, fut.result(), cal)
+                except Exception as error:  # noqa: BLE001  one unanswered question leaves that card's detected word
+                    c["identity"] = {**c["identity"], "decider": {"question": "identity", "answer": "unanswered", "error": repr(error)[:200]}}
 
     cards_future = m.cpu_pool.submit(cards_job)
 
@@ -1146,6 +1151,7 @@ def analyse(m, mp4, opts, clock, writer, log):
             shots_in = cards_out.get("shots_in")
             out = cards.build({"shots": shots_in, "objects": copy.deepcopy(objects), "points": points_v3, "counts": counts_v2,
                                "people": results.get("people"), "calibration": cards_calibration()}, m.proc_pool, 16)
+        v2_ready.wait(90)  # the decider's identities (cards v2) carry into v3 (ponytail: a failed namer never holds v3 longer)
         prev = {c["id"]: c["identity"] for c in (cards_out.get("v2") or cards_out.get("v1") or {}).get("cards", [])}
         for c in out["cards"]:
             if c["id"] in prev and c["kind"] == "object":
@@ -1281,6 +1287,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                             counts.setdefault(objects[v - 1]["id"], {}).setdefault(j, [0, 0])[source != "segmented"] += int(round(c * sc))
                 for e, nxt in zip(frames_pk, frames_pk[1:] + [None]):
                     e["t_end"] = nxt["t"] if nxt and nxt["t"] - e["t"] <= 2 * BLOCK / fps + 1e-6 else round(e["t"] + BLOCK / fps, 4)
+                    e["t_end"] = min(e["t_end"], round((shots[e["shot"]][1] + 1) / fps, 4))  # never past the shot's last frame (a cut)
                 data = {"format": "panoptes-pick-v1", "source_wh": [W, H], "entities": ent, "frames": frames_pk,
                         "depth": {"w": DA3_HW[1] // 4, "h": DA3_HW[0] // 4, "unit": "mm", "scale": "estimated", "grid": "DA3 504x280 / 4, min per block"},
                         "note": "segmented frames: SAM 3 masks (observed); projected frames: carried from 3D (estimated); 'people only': no object map"}
@@ -1406,8 +1413,8 @@ def analyse(m, mp4, opts, clock, writer, log):
         esc.result()
     summary["cards"] = cards_future.result()
     summary["boxes"] = box_stats(objects[:len(members)], cards_out.get("v1"))
-    summary["judge"] = [f.result() for f in judge_futures]
     summary["densify"] = densify_future.result() if densify_future is not None else None
+    summary["judge"] = [f.result() for f in judge_futures]  # after densify: it adds the v3 judgements' future
     summary["cards"] = {"v1": summary["cards"], "v3": cards_out.get("v3", {}).get("stats")}
     summary["boxes_v3"] = box_stats(objects, cards_out.get("v3"))
     summary["sam3d"] = display["models"].result()
