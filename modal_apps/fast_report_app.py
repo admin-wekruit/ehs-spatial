@@ -307,9 +307,11 @@ MILESTONES = {  # name -> (layer, which version): the report's moments, each at 
     "first_model": ("models", lambda d: bool(d.get("models"))), "all_models": ("models", lambda d: d.get("final")),
     "splat_preview": ("splat", lambda d: d.get("kind") == "preview"),
     "pick": ("pick", lambda d: True), "cards_v1": ("object_cards", lambda d: d.get("version") == 1),
-    "cards_v2": ("object_cards", lambda d: d.get("version") == 2), "judgements": ("judgements", lambda d: True),
+    "cards_v2": ("object_cards", lambda d: d.get("version") == 2), "judgements_v1": ("judgements", lambda d: not d.get("vlm_answers")),
+    "judgements_v2": ("judgements", lambda d: bool(d.get("vlm_answers"))),
     "outlines_v2": ("outlines", lambda d: bool(d.get("densified"))), "pick_v2": ("pick", lambda d: "version_note" in d),
-    "objects_v3": ("objects", lambda d: "densify" in d), "cards_v3": ("object_cards", lambda d: d.get("version") == 3)}
+    "objects_v3": ("objects", lambda d: "densify" in d), "cards_v3": ("object_cards", lambda d: d.get("version") == 3),
+    "judgements_v3": ("judgements", lambda d: bool(d.get("vlm_answers")) and (d.get("version_of") or {}).get("object_cards") == 3)}
 
 
 def milestones(root, report, t0_unix):

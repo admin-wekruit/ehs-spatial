@@ -62,6 +62,7 @@ def measure_chunk(gray, a, b, a0, b1):
 
 def warm_worker(_):
     import cv2
+    from fast_report import cards, judge  # noqa: F401  the cards' and the judge's work runs in these processes (MVP A, B)
     cv2.setNumThreads(1)
     time.sleep(.2)
     return __import__("os").getpid()
@@ -240,6 +241,7 @@ def person_masks(person, frames_local):
 def people_shot(si, keys, fps, g, depth_m, c2w_m, masks, plane, mpu):
     """PeopleLoop (the live rules, video.judge_frame) over the shot's 5 fps keyframes: tracks and rule rows."""
     from ehs_spatial.live_people import PeopleLoop
+    from fast_report import judge
     if plane:
         up, p0 = plane["normal"].cpu().numpy().astype(float), plane["point"].cpu().numpy().astype(float) * mpu
         scale = {"status": "model_estimated", "nativeToMeters": mpu,
@@ -257,6 +259,10 @@ def people_shot(si, keys, fps, g, depth_m, c2w_m, masks, plane, mpu):
     for j, f in enumerate(keys):
         r, fnd = loop.step({"t": f / fps, "frame": int(f), "local": j, "streamGap": None, "rgb": rgb[j], "depth": depth[j], "K": K[j],
                             "cameraToWorld": c2w[j], "trackingState": "normal", "trackingStateReason": None, "worldOriginEpoch": si})
+        by_source = {f"sam3-person-{i}": mk for mk, _, i in masks.get(j, [])}
+        for row in r:  # MVP J3a: the surface the feet rest on (footWorld is on the floor plane by construction)
+            mk = by_source.get(row.get("source"))
+            row["footSurface"] = judge.foot_surface(mk, depth[j], K[j], c2w[j], up, p0) if mk is not None and plane else None
         rows += r
         findings += fnd
     tracks = {}
@@ -265,7 +271,8 @@ def people_shot(si, keys, fps, g, depth_m, c2w_m, masks, plane, mpu):
             c = np.asarray(r["centroidWorld"])
             ground = c - ((c - p0) @ up) * up
             tracks.setdefault(r["track"], []).append({"t": r["t"], "frame": r["frame"], "xyz": np.round(ground, 3).tolist(),
-                                                      "foot": r["footWorld"], "accepted_foot": r["accepted"]})
+                                                      "foot": r["footWorld"], "accepted_foot": r["accepted"], "score": r.get("score"),
+                                                      "foot_surface": r.get("footSurface")})
     return tracks, rows, findings, up
 
 
@@ -823,21 +830,36 @@ def analyse(m, mp4, opts, clock, writer, log):
         cards_out["v1"], cards_out["shots_in"] = out, shots_in
         cards_ready.set()
         cards_put(1, out)
-        judge_hook(out, shots_in)
+        judge_hook(out, 1)
         return out["stats"]
 
-    def judge_hook(out, shots_in):
-        """B's entry point (spec section 9 A's contract out): judge.run(cards, ctx, writer, clock), when fast_report.judge exists."""
+    def judge_hook(out, version):
+        """B's entry point (spec section 9 A's contract out): judge.run(cards, ctx, writer, clock) on each cards version, one
+        after the other (a later version's judgements are never overwritten by an earlier one's VLM pass)."""
         try:
             from fast_report import judge
         except ImportError:
             return
+        if not opts.get("judge", True):
+            return
+        outl = results.get("outlines_v2" if version == 3 else "outlines") or {}
+        ctx = judge.context(cam_rows, outl.get("frames", []), results.get("people"), frames,
+                            {gg["index"]: gg["seeds"]["xyz"] for gg in geo if "seeds" in gg}, fps, (W, H), version_of={"object_cards": version})
         by = {x["index"]: x for x in out["shots"]}
-        ctx = {"shots": [{"index": x["index"], "keys": x["keys"], "times": x["times"], "c2w_m": x["c2w"], "K": x["K"],
-                          "floor": {"normal": x["normal"], "point_m": x["point_m"]}, "floor_frame": by[x["index"]]["floor_frame"],
-                          "u_pose_m": by[x["index"]]["u_pose_m"], "angles_usable": by[x["index"]]["angles_usable"]} for x in shots_in],
-               "frames": frames, "outlines": results.get("outlines"), "people": results.get("people"), "walked": out["walked"]}
-        judge_futures.append(m.cpu_pool.submit(judge.run, out["cards"], ctx, writer, clock))
+        for x in ctx["shots"]:  # the cards' own pose, floor and plumb readings (B's context has constants)
+            a_ = by.get(x["index"]) or {}
+            x.update(u_pose_m=a_.get("u_pose_m", x["u_pose_m"]), u_floor_m=a_.get("u_floor_m") or x["u_floor_m"], angles_usable=a_.get("angles_usable"))
+        prev = judge_futures[-1] if judge_futures else None
+
+        def job():
+            if prev is not None:
+                prev.result()
+            try:
+                return judge.run(out["cards"], ctx, writer, clock, vlm_on=opts.get("judge_vlm", True), pool=m.proc_pool)
+            except Exception:  # noqa: BLE001  the judgements are one layer: their failure is recorded, the others stand
+                import traceback
+                return {"error": traceback.format_exc()[-3000:]}
+        judge_futures.append(m.cpu_pool.submit(job))
 
     def sync_objects():
         """objects v2 carries the cards' boxes (main cluster, fragments merged) and size checks once they exist."""
@@ -891,7 +913,10 @@ def analyse(m, mp4, opts, clock, writer, log):
             if 1 not in marks:
                 return
             opts = cards.identity_options(c["identity"])
-            c["identity"] = cards.decide_identity(c["identity"], opts, options_fn([som(frames[best], marks, subject=1)], cards.IDENTITY_PROMPT, opts), cal)
+            # integration fix: the options go into the prompt as letters (vlm.qwen_prompt); A's bare question listed none
+            p = vlm.qwen_prompt(" ".join([judge.SCENE, judge.MARKS]), "What is the object marked [1]?", opts)
+            jp = [som(frames[best], marks, subject=1), som(frames[best], marks, subject=1, marks=False)]
+            c["identity"] = cards.decide_identity(c["identity"], opts, options_fn(jp, p, opts, "identity"), cal)
         todo = [c for c in card_list if c["kind"] == "object" and (c["class"]["category"] != "other" or cards.head_match(c["identity"]["name"], cards.CLASS_SIZE))]
         with clock.stage("vlm.identity", n={"objects": len(todo)}):
             list(m.cpu_pool.map(one, todo))
@@ -1129,7 +1154,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         cards_out["v3"] = out
         cards_put(3, out)
         start_display()  # facts before display (section 7): the gate's CPU processes slowed cards v3 by 2-3x beside it (run 005)
-        judge_hook(out, shots_in)
+        judge_hook(out, 3)
         return {**st, "cards": out["stats"]}
     densify_future = m.cpu_pool.submit(densify_job) if densify_on and objects else None
 
@@ -1192,6 +1217,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                                     for v, poly in sorted(found.items())]
                 frames_out.append(entry)
             frames_out.sort(key=lambda e: e["timeSec"])
+            results["outline_frames"] = frames_out
             for e, nxt in zip(frames_out, frames_out[1:] + [None]):
                 e["endTimeSec"] = nxt["timeSec"] if nxt else round(e["timeSec"] + BLOCK / fps, 4)
             results["outlines"] = {"width": W, "height": H, "frames": frames_out}
@@ -1264,6 +1290,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         return m.cpu_pool.submit(finish)
 
     outlines_future = m.cpu_pool.submit(outlines_job)
+
 
     # cascade: every member mask -> masked crop -> SigLIP 2 (GPU 0); object = mean of its masks
     obj_kf = sorted(by_frame)
