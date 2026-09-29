@@ -72,7 +72,7 @@ export default function LiveReport({ reportId }: { reportId: string }) {
         const t3 = performance.now();
         older.current = stats.pick; stats.pick = got; setPick(got);
         stats.pickDecodeMs = t3 - t0; stats.pickSteps = { fetch: t2 - tf, wait: tf - t0, inflate_index: t3 - t2 };
-        stats.pickDecodes.push({ seq: p.seq, ms: t3 - t0, fetch: t2 - tf, chunks: chunks.length });
+        stats.pickDecodes.push({ seq: p.seq, ms: t3 - t0, fetch: t2 - tf, chunks: chunks.length, at: t0, first: p.blobs[c.pick].sha256.slice(0, 12) } as any);
       }
       if (done === chunks.length) Object.assign(stats.pickDecodes[stats.pickDecodes.length - 1], { all_ms: performance.now() - t0, reused });
     };

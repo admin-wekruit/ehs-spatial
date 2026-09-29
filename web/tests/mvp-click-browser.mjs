@@ -124,8 +124,12 @@ async function video(name){
     await page.screenshot({path:path.join(out,`${name}-list-${which}.png`)});
   }
   const timing=await page.evaluate(()=>[...document.querySelectorAll('.live-report-timing table')[0].querySelectorAll('tbody tr')].map(r=>[...r.cells].map(c=>c.textContent)));
+  // where a pick version's wait goes (mvp2): resource timing of every request in flight around each version's first chunk
+  const network=await page.evaluate(()=>{const e=performance.getEntriesByType('resource'),r=x=>Math.round(x);
+    return e.map(x=>({url:x.name.split('/').slice(-2).join('/').slice(0,40),start:r(x.startTime),queued:r((x.requestStart||x.fetchStart)-x.startTime),
+      server:r(x.responseStart-(x.requestStart||x.fetchStart)),body:r(x.responseEnd-x.responseStart),kb:r((x.encodedBodySize||0)/1024)}));});
   server.kill();await page.close();
-  const row={report:name,replay:as,pickDecodeMs:info.decodeMs,pickDecodeSteps:info.decodeSteps,pickDecodes:info.decodes,pickFrames:info.frames,clicks:ms.length,hits,unknown:misses,
+  const row={report:name,replay:as,pickDecodeMs:info.decodeMs,pickDecodeSteps:info.decodeSteps,pickDecodes:info.decodes,pickFrames:info.frames,clicks:ms.length,hits,unknown:misses,network,
     latencyMs:{p50:q(.5),p95:q(.95),max:Math.max(...ms),mean:ms.reduce((a,b)=>a+b,0)/ms.length},shots,evidence,filter,counts,timing,errors};
   console.log(JSON.stringify({report:name,latencyMs:row.latencyMs,decodeMs:row.pickDecodeMs,decodeSteps:row.pickDecodeSteps,hits,unknown:misses,filter,evidence,errors:errors.length}));
   return row;

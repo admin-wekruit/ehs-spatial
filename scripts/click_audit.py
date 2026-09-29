@@ -253,6 +253,7 @@ def main():
         print(json.dumps(score(a.dirs), indent=1))
         return
     pick, patch, cards, fps, video = load_run(a.mirror, a.report, a.version)
+    src = {}
     if a.mode == "render":
         src = json.loads(a.clicks.read_text())
         clicks, stem = [{k: c[k] for k in ("k", "frame", "x", "y", "sample", "ref", "ref_px") if k in c} for c in src["clicks"]], a.clicks.stem
@@ -261,7 +262,8 @@ def main():
         stem = f"clicks-{a.site}-{'persons' if a.persons else 'random'}-s{a.seed}"
     clicks = resolve(pick, cards, clicks, fps, a.rule)
     meta = {"report": a.report, "mirror": str(a.mirror), "site": a.site, "pick_version": patch["version"], "fps": fps, "rule": a.rule,
-            "sample": "person refs" if a.persons else "random", "seed": a.seed, "labels_by": "agent (contact sheets)"}
+            "sample": src.get("sample") if a.mode == "render" else "person refs" if a.persons else "random",
+            "seed": src.get("seed") if a.mode == "render" else a.seed, "labels_by": "agent (contact sheets)"}
     save(a.out, clicks, meta, stem)
     print(json.dumps({"clicks": len(clicks), "picked": sum(1 for c in clicks if c["entity"]),
                       "sheets": sheets(video, pick, clicks, a.out, stem.replace("clicks", "sheet"))}, indent=1))
