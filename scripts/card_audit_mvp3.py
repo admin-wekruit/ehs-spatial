@@ -1,7 +1,7 @@
 """mvp3 integrate: fresh audit of random object cards (a new seed): each card's best view with its outline beside what the card
 says (name, the physical values with +-u and their scale label, its judgement rows), for the agent to label by eye:
 name right | close | wrong | unclear; physical plausible | implausible | unclear (against the picture, at the stated u);
-judgement right | wrong | none (no row) | unclear. Labels are agent-made, not ground truth.
+judgement right | wrong (its PASS / FAIL rows) | undecided (NEEDS_REVIEW / NO_DATA only) | none (no row) | unclear. Labels are agent-made.
 
   python scripts/card_audit_mvp3.py sheets --run RUN --out DIR [--kind warm] [--n 20] [--seed 4242]
   python scripts/card_audit_mvp3.py score --out DIR [DIR ...]
@@ -20,9 +20,9 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(REPO), str(REPO / "scripts")]
 import judge_offline as jo  # noqa: E402
 
-FIELDS = ("top_above_floor", "base_above_floor", "height", "width", "depth")
+FIELDS = ("top_above_floor", "base_above_floor", "height", "width", "depth", "visible_length")
 LABELS = {"name": ("right", "close", "wrong", "unclear"), "physical": ("plausible", "implausible", "unclear"),
-          "judgement": ("right", "wrong", "none", "unclear")}
+          "judgement": ("right", "wrong", "undecided", "none", "unclear")}  # right / wrong: a PASS or FAIL row; undecided: NEEDS_REVIEW / NO_DATA only
 
 
 def value(f):
@@ -30,6 +30,8 @@ def value(f):
         return "-"
     if f.get("value") is None:
         return f"{f.get('status', '-')}" + (f" ({str(f.get('reason'))[:34]})" if f.get("reason") else "")
+    if f.get("bound") or f.get("status") in ("at most", "at least"):
+        return f"{f.get('bound') or f['status']} {f['value']:.2f} {f.get('unit', '')}"
     st = f" [{f['status']}]" if f.get("status") else ""
     return f"{f['value']:.2f} +- {f.get('u', 0):.2f} {f.get('unit', '')}{st}"
 
@@ -37,7 +39,7 @@ def value(f):
 def lines(card, rows):
     idn = card.get("identity") or {}
     out = [f"{card['id']}", f"name: {idn.get('name')}", f"  by {idn.get('decided_by') or '-'}", f"class: {(card.get('class') or {}).get('category')}"]
-    out += [f"{k.replace('_above_floor', '')}: {value((card.get('physical') or {}).get(k))}" for k in FIELDS]
+    out += [f"{k.replace('_above_floor', '')}: {value((card.get('physical') or {}).get(k))}" for k in FIELDS if k != "visible_length" or (card.get("physical") or {}).get(k)]
     out.append("scale: estimated (floor + 1.6 m camera)")
     for r in rows[:4]:
         g = r.get("geometry") or {}
@@ -49,18 +51,31 @@ def lines(card, rows):
 
 
 def tile(frame, polys, text, w=640, h=360, tw=420):
+    """The frame with the outline, a zoom around it (the outline's box, 1.6 x, at least 160 source px), the card's text."""
     import cv2
     s = w / frame.shape[1]
     img = cv2.resize(frame, (w, round(frame.shape[0] * s)))
     img = np.pad(img, ((0, max(0, h - img.shape[0])), (0, 0), (0, 0)))[:h]
+    full = frame.copy()
     for p in polys or []:
-        q = np.round(np.asarray(p, float).reshape(-1, 2) * s).astype(np.int32)
-        cv2.polylines(img, [q], True, (0, 0, 0), 4, cv2.LINE_AA)
-        cv2.polylines(img, [q], True, (0, 255, 255), 2, cv2.LINE_AA)
+        q = np.asarray(p, float).reshape(-1, 2)
+        for im, k in ((img, s), (full, 1.)):
+            cv2.polylines(im, [np.round(q * k).astype(np.int32)], True, (0, 0, 0), 4, cv2.LINE_AA)
+            cv2.polylines(im, [np.round(q * k).astype(np.int32)], True, (0, 255, 255), 2, cv2.LINE_AA)
+    zoom = np.zeros((h, h, 3), np.uint8)
+    if polys:
+        xy = np.concatenate([np.asarray(p, float).reshape(-1, 2) for p in polys])
+        c, r = (xy.min(0) + xy.max(0)) / 2, max(80., .8 * float((xy.max(0) - xy.min(0)).max()))
+        x0, y0 = int(max(0, c[0] - r)), int(max(0, c[1] - r))
+        crop = full[y0:int(c[1] + r), x0:int(c[0] + r)]
+        if crop.size:
+            k = h / max(crop.shape[:2])
+            crop = cv2.resize(crop, (max(1, round(crop.shape[1] * k)), max(1, round(crop.shape[0] * k))))
+            zoom[:crop.shape[0], :crop.shape[1]] = crop
     pane = np.full((h, tw, 3), 245, np.uint8)
     for i, t in enumerate(text):
         cv2.putText(pane, t[:52], (6, 20 + 22 * i), cv2.FONT_HERSHEY_SIMPLEX, .5, (0, 0, 0), 1, cv2.LINE_AA)
-    return np.hstack([img, pane])
+    return np.hstack([img, zoom, pane])
 
 
 def sheets(a):

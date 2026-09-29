@@ -154,10 +154,10 @@ def md(res):
                                             f"FAIL {v['all'].get('fail_right', 0)}/{v['all'].get('fail_audited', 0)} (of {v['of_fail']})")
         L.append(f"| judgement audit ({kind}): right / audited | " + " | ".join(cells) + " |")
     cd = res.get("cards_audit") or {}
-    L.append("| card audit (20 random, warm): name right/close/wrong/unclear; physical plausible/implausible/unclear; judgement right/wrong/none | " + " | ".join(
+    L.append("| card audit (20 random, warm): name right/close/wrong/unclear; physical plausible/implausible/unclear; judgement right/wrong/undecided/none | " + " | ".join(
         (lambda v: "{}; {}; {}".format(*("/".join(str(v[k].get(x, 0)) for x in xs) for k, xs in (("name", ("right", "close", "wrong", "unclear")),
                                                                                           ("physical", ("plausible", "implausible", "unclear")),
-                                                                                          ("judgement", ("right", "wrong", "none"))))) if v else "—")(cd.get(s)) for s in SITES) + " |")
+                                                                                          ("judgement", ("right", "wrong", "undecided", "none"))))) if v else "—")(cd.get(s)) for s in SITES) + " |")
     L.append("| Modal list-price upper bound per bench, $ | " + " | ".join(mr.cell(res["spend"].get(s), "{}") for s in SITES) + " |")
     ra, r2, now = res.get("replay_asks") or {}, res.get("round2_asks") or {}, res.get("asks_now") or {}
     if ra:
