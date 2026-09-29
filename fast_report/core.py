@@ -548,6 +548,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     import video_events
     from fast_report import cards, cascade, layers, segment, vlm
     dev_geo, dev_seg = m.dev_geo, m.dev_seg
+    t_call = time.perf_counter()  # this call's decider questions (vlm.log_stats)
     video_sha = sha256(mp4)
     site = opts.get("site") or "unknown"
     use_cache = opts.get("cache", True)  # the cross-video label cache (and remembering this video's words)
@@ -1515,7 +1516,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                    vocab_frames_equal_decoded=[bool(img is not None and np.array_equal(img, frames[f])) for img, f in zip(seeked, vlm_frames)],
                    detections={"person": int(is_person.sum()), "floor": int((~is_person).sum()), "vocabulary_masks": voc_count,
                                "vocabulary_masks_kept": int(len(kept))},
-                   objects=len(objects), cascade=casc, events_windows=len(ev), vllm_engine_stats=vlm.throughput(),
+                   objects=len(objects), cascade=casc, events_windows=len(ev), vllm_engine_stats=vlm.throughput(), vlm_questions=vlm.log_stats(t_call),
                    cut_chunks={"submitted_s": chunk_at, "done_s": [chunk_done.get(i) for i in range(len(futures))],
                                "work_s": [round(f.result()["s"], 3) for f in futures]})
     return summary

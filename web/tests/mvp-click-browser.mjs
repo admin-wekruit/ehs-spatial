@@ -18,7 +18,7 @@ const [root,out]=argv,reports=option('--reports','me340-mvp-fixture,samsclub-mvp
 // --judged N: N aimed clicks on judged objects (one per check first, the biggest in the video), before the plain object / miss / person;
 // --height: a taller viewport keeps the whole card (identity to judgements) in the screenshot
 const nJudged=Number(option('--judged','1')),height=Number(option('--height','1100')),finalLayers=argv.includes('--final');
-const python='/Users/adam/Desktop/Tesla/panoptes-platform/.venv/bin/python',VITE=5183,FAST=8803;
+const python='/Users/adam/Desktop/Tesla/panoptes-platform/.venv/bin/python',VITE=Number(option('--vite-port','5183')),FAST=Number(option('--fast-port','8803'));
 const {chromium}=createRequire(process.env.PLAYWRIGHT_FROM||'/Users/adam/Desktop/ontab/package.json')('playwright');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 fs.mkdirSync(out,{recursive:true});

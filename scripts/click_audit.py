@@ -28,7 +28,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(REPO), str(REPO / "scripts")]
 import fast_report_eval as ev  # noqa: E402
 
-LABELS = ("correct", "wrong", "miss", "background", "background-hit")
+LABELS = ("correct", "wrong", "miss", "background", "background-hit", "not-person", "unclear")  # the last two: person-reference clicks
 PERSON_MIN_PX, TILE_W, TILE_H, ZOOM = 400, 480, 270, 110  # zoom: +-110 source px around the click
 
 
@@ -60,9 +60,19 @@ def name_of(cards, eid):
     return (c.get("identity") or {}).get("name") or c["kind"]
 
 
-def resolve(pick, cards, clicks, fps):
+def last_rule(pick, t, x, y):
+    """Round 1's lookup (the last keyframe with t_key <= t, none before the first or past a cut), for the baseline."""
+    i = int(np.searchsorted(pick.times, t + 1e-6, side="right")) - 1
+    if i < 0 or (pick.frames[i].get("t_end") is not None and t >= pick.frames[i]["t_end"]):
+        return None, -1, 0
+    f = pick.frames[i]
+    code = int(pick.map(i)[min(int(y * f["h"] / pick.sh), f["h"] - 1), min(int(x * f["w"] / pick.sw), f["w"] - 1)])
+    return pick.data["entities"][code] if code else None, i, code
+
+
+def resolve(pick, cards, clicks, fps, rule="nearest"):
     for c in clicks:
-        eid, i, code = pick.at(c["frame"] / fps, c["x"], c["y"])
+        eid, i, code = (last_rule if rule == "last" else type(pick).at)(pick, c["frame"] / fps, c["x"], c["y"])
         f = pick.frames[i] if i >= 0 else {}
         c.update(entity=eid, name=name_of(cards, eid), kind=(cards.get(eid) or {}).get("kind"), pick_frame=f.get("frame"),
                  pick_source=f.get("source"), pick_index=i, code=code)
@@ -188,6 +198,11 @@ def score(dirs):
                          "picked_precision": round(cnt["correct"] / len(hit), 3) if hit else None,
                          "coarse": sum("coarse" in (g.get("note") or "") for g in got),
                          "person_clicks": sum(1 for c in clicks if c.get("kind") == "person")})
+            if meta.get("sample") == "person refs":  # clicks inside SAM 3 'person' masks: real people vs pictures of people
+                real = [g for g in got if g["label"] in ("correct", "wrong", "miss")]
+                pics = [c for g, c in zip(got, clicks) if g["label"] == "not-person"]
+                rows[-1].update(real_people=len(real), real_person_correct=round(cnt["correct"] / len(real), 3) if real else None,
+                                pictures=len(pics), pictures_as_person=sum(c.get("kind") == "person" for c in pics), unclear=cnt["unclear"])
     return rows
 
 
@@ -203,6 +218,8 @@ def self_check():
     cl = resolve(pk, cards, [{"k": 0, "frame": 1, "x": 100, "y": 100}, {"k": 1, "frame": 1, "x": 1000, "y": 600},
                              {"k": 2, "frame": 6, "x": 5, "y": 5}], 25.)
     assert [c["entity"] for c in cl] == ["obj-a", None, "person:x"] and cl[0]["name"] == "box" and cl[1]["name"] == "UNKNOWN REGION"
+    assert [c["entity"] for c in resolve(pk, cards, [{"k": 0, "frame": 4, "x": 5, "y": 5}], 25.)] == ["person:x"]  # 0.16 s: nearer frame 1
+    assert [c["entity"] for c in resolve(pk, cards, [{"k": 0, "frame": 4, "x": 5, "y": 5}], 25., "last")] == ["obj-a"]  # round 1: frame 0
     rc = random_clicks(pk, 25., 50, 0)
     assert all(0 <= c["frame"] < 10 and 0 <= c["x"] < 1280 and 0 <= c["y"] < 720 for c in rc), rc[:3]
     with tempfile.TemporaryDirectory() as d:
@@ -227,6 +244,7 @@ def main():
     p.add_argument("--version", type=int)
     p.add_argument("--persons", action="store_true")
     p.add_argument("--clicks", type=Path)
+    p.add_argument("--rule", choices=("nearest", "last"), default="nearest", help="pick frame rule: mvp2's nearest keyframe, or round 1's last")
     p.add_argument("--self-check", action="store_true")
     a = p.parse_args()
     if a.self_check:
@@ -241,8 +259,8 @@ def main():
     else:
         clicks = person_clicks(a.site, a.seed) if a.persons else random_clicks(pick, fps, a.n, a.seed)
         stem = f"clicks-{a.site}-{'persons' if a.persons else 'random'}-s{a.seed}"
-    clicks = resolve(pick, cards, clicks, fps)
-    meta = {"report": a.report, "mirror": str(a.mirror), "site": a.site, "pick_version": patch["version"], "fps": fps,
+    clicks = resolve(pick, cards, clicks, fps, a.rule)
+    meta = {"report": a.report, "mirror": str(a.mirror), "site": a.site, "pick_version": patch["version"], "fps": fps, "rule": a.rule,
             "sample": "person refs" if a.persons else "random", "seed": a.seed, "labels_by": "agent (contact sheets)"}
     save(a.out, clicks, meta, stem)
     print(json.dumps({"clicks": len(clicks), "picked": sum(1 for c in clicks if c["entity"]),

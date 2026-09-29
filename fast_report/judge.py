@@ -844,7 +844,7 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, c
                      "rule_source": CHECKS["J0"][3], "interval_s": [(c.get("time") or {}).get("first_seen_s"), (c.get("time") or {}).get("last_seen_s")]})
     blobs, jobs = {}, []
 
-    img, img_lock = shared.setdefault("_img", {}), threading.Lock()
+    img, img_lock, stats_cancelled = shared.setdefault("_img", {}), threading.Lock(), []
 
     def images(row):
         """The subject's view sets, rendered once per (subject, keyframe) for every row and run of the analysis (mvp2: J1/J2/J5 on
@@ -891,7 +891,14 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, c
                     fut, reused = shared.get(key), key in shared  # an earlier run's question, answered or still in flight (mvp2)
                     if fut is None:
                         fut = shared[key] = ask([marked, plain], p, n, "screen" if q == "J0" else "judgement")
+                        shared.setdefault("_asked", {}).setdefault(version, []).append(key)
                     jobs.append((row, q, keys, fut, reused))
+        mine = {(row["id"], q, tuple(keys)) for row, q, keys, _, _ in jobs}
+        for v in [v for v in shared.get("_asked", {}) if v < version]:  # an older cards version's questions this run does not need:
+            for key in shared["_asked"][v]:                              # dropped if still queued (its judgements are superseded)
+                if key not in mine and shared[key].cancel():
+                    del shared[key]
+                    stats_cancelled.append(key)
         answers = {}
         for row, q, keys, fut, reused in jobs:
             try:
@@ -930,7 +937,7 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, c
         row["reasons"] = row["geometry"]["reasons"] + [f"picture: {vlm_ans} ({'; '.join(raw)})"] + (
             [f"geometry {before} and picture {vlm_ans} disagree"] if row["verdict"] == REVIEW and before in (PASS, FAIL) else [])
     rows = [r for r in rows if r["check"] != "J0" or r["verdict"] == REVIEW]
-    stats = {"questions": len(jobs), "carried": sum(1 for *_, reused in jobs if reused), "ask_s": ask_s, "unanswered": sum(1 for r in answers.values() for a in r.values() for v in a if v.get("probs") is None),
+    stats = {"questions": len(jobs), "carried": sum(1 for *_, reused in jobs if reused), "cancelled_older": len(stats_cancelled), "ask_s": ask_s, "unanswered": sum(1 for r in answers.values() for a in r.values() for v in a if v.get("probs") is None),
              "prompt_tokens": sum(v.get("prompt_tokens") or 0 for r in answers.values() for a in r.values() for v in a),
              "evidence_images": len(blobs), "screened": len(screen)}
     if put(layer(rows, cal, {"version_of": ctx.get("version_of"), "vlm_answers": True, "vlm": stats}), blobs):
@@ -1231,6 +1238,10 @@ def self_check():
     out = run([cable], ctx, w, _Clock(), ask=fake, cal={"questions": {}}, carried=carried)
     assert len(calls) == 1 and out["carried"] == 1 and next(r for r in w.puts[1][1]["rows"] if r["check"] == "J4")["verdict"] == FAIL, out
     assert len(carried["_img"]) == 2, "one render per (subject, keyframe) across the runs"
+    pending = Future()  # an older (v1) run's question still queued, not needed by the v3 run: cancelled, and its key forgotten
+    shared_ = {("J9:x", "q1", (1,)): pending, "_asked": {1: [("J9:x", "q1", (1,))]}}
+    out = run([cable], {**ctx, "version_of": {"object_cards": 3}}, _Writer(), _Clock(), ask=fake, cal={"questions": {}}, carried=shared_)
+    assert pending.cancelled() and ("J9:x", "q1", (1,)) not in shared_ and out["cancelled_older"] == 1, out
     w = _Writer()  # a run on an older cards version after a newer one was put: nothing of it is put (mvp2: the runs overlap)
     carried["_put"] = 3
     out = run([cable], {**ctx, "version_of": {"object_cards": 1}}, w, _Clock(), ask=fake, cal={"questions": {}}, carried=carried)

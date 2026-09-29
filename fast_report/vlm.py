@@ -268,15 +268,21 @@ def _ask(jpegs, prompt, n):
 
 
 _queue, _workers, _lock, _order = queue.PriorityQueue(), [], threading.Lock(), itertools.count()
+LOG = []  # mvp2: per question (priority, submitted, started, ended (perf_counter), prompt tokens or None when cancelled/failed)
 
 
 def _work():
     while True:
-        _, _, fut, args = _queue.get()
+        pr, _, fut, args = _queue.get()
+        submitted = args[-1]
         if fut.set_running_or_notify_cancel():
+            t = time.perf_counter()
             try:
-                fut.set_result(_ask(*args))
+                r = _ask(*args[:-1])
+                fut.set_result(r)
+                LOG.append((pr, submitted, t, time.perf_counter(), r.get("prompt_tokens")))
             except Exception as error:  # noqa: BLE001  one failed question is that question's 'unanswered', not the run's
+                LOG.append((pr, submitted, t, time.perf_counter(), None))
                 fut.set_exception(error)
 
 
@@ -289,8 +295,25 @@ def submit(jpegs, prompt, n, priority="judgement"):
             for th in _workers:
                 th.start()
     fut = Future()
-    _queue.put((PRIORITY[priority], next(_order), fut, (list(jpegs), prompt, n)))
+    _queue.put((PRIORITY[priority], next(_order), fut, (list(jpegs), prompt, n, time.perf_counter())))
     return fut
+
+
+def log_stats(since=0.):
+    """The questions' queue wait and request time per priority since perf_counter `since` (mvp2: where the decider's time goes;
+    a request's time is vLLM's front end + scheduler + prefill, with MAX_SEQS in flight)."""
+    inv = {v: k for k, v in PRIORITY.items()}
+    rows = [x for x in list(LOG) if x[1] >= since]
+    out = {}
+    for pr in sorted({x[0] for x in rows}):
+        r = [x for x in rows if x[0] == pr]
+        wait, req = sorted(x[2] - x[1] for x in r), sorted(x[3] - x[2] for x in r)
+        q = lambda a, f: round(a[min(len(a) - 1, int(f * len(a)))], 3)  # noqa: E731
+        span = max(x[3] for x in r) - min(x[2] for x in r)
+        out[inv[pr]] = {"n": len(r), "failed": sum(x[4] is None for x in r), "wait_p50_s": q(wait, .5), "wait_p90_s": q(wait, .9),
+                        "request_p50_s": q(req, .5), "request_p90_s": q(req, .9), "per_s": round(len(r) / span, 2) if span > 0 else None,
+                        "prompt_tokens_mean": round(float(sum(x[4] or 0 for x in r)) / max(1, sum(x[4] is not None for x in r)), 1)}
+    return out
 
 
 def options(jpegs, prompt, options, priority="judgement"):
@@ -326,8 +349,11 @@ def self_check():
     real, seen = _ask, []
     _ask = lambda j, p, n: seen.append(p) or {"probs": [1. / n] * n, "mass": 1., "s": 0., "prompt_tokens": 0}  # noqa: E731
     try:
+        t0 = time.perf_counter()
         futs = [submit([], f"x{i}", 3, pr) for i, pr in enumerate(["screen", "judgement", "identity"])]
         assert all(f.result(5)["probs"] == [1 / 3] * 3 for f in futs) and sorted(seen) == ["x0", "x1", "x2"]
+        st = log_stats(t0)
+        assert set(st) == {"screen", "judgement", "identity"} and all(v["n"] == 1 and v["failed"] == 0 for v in st.values()), st
     finally:
         _ask = real
     assert parse_name('"Tool Cabinet."\nIt is grey.') == "tool cabinet" and parse_name("  ") is None and parse_name("None") == "none"
