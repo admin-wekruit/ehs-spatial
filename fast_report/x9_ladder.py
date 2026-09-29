@@ -27,7 +27,7 @@ MIN_PX, MIN_CHECK, MIN_BOX = 30, 40, 40  # DA3-grid pixels: a mask at all / chec
 MATCH_MIN, MATCH_MAX, VOX_MATCH, REID_COS, REID_WINDOW = .5, .2, .5, .85, 10
 COVER_FRAMES, OPEN_PX = 3, 2
 THETA_BAD = .3  # rejected predictions mostly mark what SAM 3 would not segment on this frame either (probe rows)
-MEM_MIN_VOX = 6
+MEM_MIN_VOX, MEM_CAP = 6, 3000
 FEATURES = ["cos", "depth_ok", "vis_share", "edge_rel", "log_area", "age", "margin", "memory"]
 LIFT_VOXEL = .05
 
@@ -284,7 +284,7 @@ class Ladder:
             for si, frames in self.S.shots.items():
                 self.vox_code = torch.zeros(0, dtype=torch.long, device=self.dev)
                 self.vox_owner = torch.zeros(0, dtype=torch.long, device=self.dev)
-                self.cover_src, self.prev = [], []
+                self.cover_src, self.prev, self.obj_codes = [], [], {}
                 for i, t in enumerate(frames):
                     self.step(si, i, t, frames)
         return self
@@ -472,29 +472,36 @@ class Ladder:
         ids = [o for o, k_ in zip(ids, keep.tolist()) if k_]
         M = M[keep]
         # memory: known objects of this shot missing from both outputs, from their 5 cm voxels
-        missing = [o for o, d in self.objs.items() if d["shot"] == si and o not in set(ids) and d["fresh"] > 0]
+        inside = set(ids)
+        missing = [o for o in self.obj_codes if o not in inside]
+        if missing:  # frustum cull on the last fresh centroid first (the voxels of the whole shot are many)
+            cen = torch.tensor([self.objs[o]["cents"][-1][1] for o in missing], device=dev)
+            cc = cen @ w2c[:3, :3].T + w2c[:3, 3]
+            xx = cc[:, 0] / cc[:, 2].clamp(min=1e-3) * K_t[0, 0] + K_t[0, 2]
+            yy = cc[:, 1] / cc[:, 2].clamp(min=1e-3) * K_t[1, 1] + K_t[1, 2]
+            ok_c = (cc[:, 2] > .1) & (xx > -.25 * HW[1]) & (xx < 1.25 * HW[1]) & (yy > -.25 * HW[0]) & (yy < 1.25 * HW[0])
+            missing = [o for o, k_ in zip(missing, ok_c.tolist()) if k_]
         Mm, zm, mem_ids = None, None, []
-        if missing and len(self.vox_code):
-            sel = torch.isin(self.vox_owner, torch.tensor(missing, device=dev))
-            if sel.any():
-                world = code_centres(self.vox_code[sel])
-                own = self.vox_owner[sel]
-                cam = world @ w2c[:3, :3].T + w2c[:3, 3]
-                zc = cam[:, 2]
-                x = (cam[:, 0] / zc.clamp(min=1e-3) * K_t[0, 0] + K_t[0, 2]).round().long()
-                y = (cam[:, 1] / zc.clamp(min=1e-3) * K_t[1, 1] + K_t[1, 2]).round().long()
-                ins = (zc > .1) & (x >= 0) & (x < HW[1]) & (y >= 0) & (y < HW[0])
-                zo = torch.where(ins, z_t[y.clamp(0, HW[0] - 1), x.clamp(0, HW[1] - 1)], torch.zeros_like(zc))
-                vis = ins & (zo > 0) & ((zc - zo).abs() <= TOL_REL * zo + TOL_ABS + LIFT_VOXEL)
-                cnt = torch.bincount(own[vis], minlength=self.next_id)
-                mem_ids = [o for o in missing if cnt[o] >= MEM_MIN_VOX]
-                if mem_ids:
-                    kv = vis & torch.isin(own, torch.tensor(mem_ids, device=dev))
-                    mlab, zm = finish_with_z(splat(world[kv], own[kv] + 1, K_t, w2c))
-                    Mm = mlab[None] == (torch.tensor(mem_ids, device=dev)[:, None, None] + 1)
-                    keepm = Mm.flatten(1).sum(1) >= MIN_PX
-                    mem_ids = [o for o, k_ in zip(mem_ids, keepm.tolist()) if k_]
-                    Mm = Mm[keepm]
+        if missing:
+            codes_m = [self.obj_codes[o] for o in missing]
+            world = code_centres(torch.cat(codes_m))
+            own = torch.repeat_interleave(torch.tensor(missing, device=dev), torch.tensor([len(c) for c in codes_m], device=dev))
+            cam = world @ w2c[:3, :3].T + w2c[:3, 3]
+            zc = cam[:, 2]
+            x = (cam[:, 0] / zc.clamp(min=1e-3) * K_t[0, 0] + K_t[0, 2]).round().long()
+            y = (cam[:, 1] / zc.clamp(min=1e-3) * K_t[1, 1] + K_t[1, 2]).round().long()
+            ins = (zc > .1) & (x >= 0) & (x < HW[1]) & (y >= 0) & (y < HW[0])
+            zo = torch.where(ins, z_t[y.clamp(0, HW[0] - 1), x.clamp(0, HW[1] - 1)], torch.zeros_like(zc))
+            vis = ins & (zo > 0) & ((zc - zo).abs() <= TOL_REL * zo + TOL_ABS + LIFT_VOXEL)
+            cnt = torch.bincount(own[vis], minlength=self.next_id).tolist()
+            mem_ids = [o for o in missing if cnt[o] >= MEM_MIN_VOX]
+            if mem_ids:
+                kv = vis & torch.isin(own, torch.tensor(mem_ids, device=dev))
+                mlab, zm = finish_with_z(splat(world[kv], own[kv] + 1, K_t, w2c))
+                Mm = mlab[None] == (torch.tensor(mem_ids, device=dev)[:, None, None] + 1)
+                keepm = Mm.flatten(1).sum(1) >= MIN_PX
+                mem_ids = [o for o, k_ in zip(mem_ids, keepm.tolist()) if k_]
+                Mm = Mm[keepm]
         tol = TOL_REL * z_t + TOL_ABS
 
         def test(masks, z):
@@ -697,6 +704,14 @@ class Ladder:
                     d["votes"][w] = d["votes"].get(w, 0.) + s_
             key = torch.unique(torch.cat([torch.stack([self.vox_code, self.vox_owner], 1), torch.stack([codes, oid[pown]], 1)]), dim=0)
             self.vox_code, self.vox_owner = key[:, 0].contiguous(), key[:, 1].contiguous()
+            order = torch.argsort(pown, stable=True)
+            for j, c in enumerate(torch.split(codes[order], torch.bincount(pown, minlength=len(owners)).tolist())):
+                if not len(c):
+                    continue
+                o = owners[j]
+                u = torch.unique(torch.cat([self.obj_codes[o], c]) if o in self.obj_codes else c)
+                # ponytail: at most MEM_CAP voxels per object for the memory projection (a coarse mask is all it gives)
+                self.obj_codes[o] = u[::int(math.ceil(len(u) / MEM_CAP))] if len(u) > MEM_CAP else u
         return taken
 
     # --- 3. one box prompt per reused object ---
