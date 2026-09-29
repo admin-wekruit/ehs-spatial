@@ -407,74 +407,128 @@ def in_box(P, box, margin=0.):
     return np.all((P >= np.asarray(box[0]) - margin) & (P <= np.asarray(box[1]) + margin), 1)
 
 
-MVS_OFFSETS_M, MVS_WIN, MVS_NCC_MIN, MVS_PEAK_MIN, MVS_TEX_MIN = np.linspace(-.06, .06, 25), 7, .5, .05, .02
+MVS_PASSES = ((np.linspace(-.06, .06, 25), 7), (np.linspace(-.02, .02, 21), 9))  # (offsets m, NCC window px): coarse, then fine
+MVS_NCC_MIN, MVS_PEAK_MIN, MVS_TEX_MIN, MVS_FIELD_PX = .5, .05, .02, 12.
+
+
+def sweep(g, i, src, D, K, c2w, offsets, win):
+    """Plane sweep of view i's depth D (torch H x W) over offsets against the source views' grey images -> accepted
+    mask, offset (m), best NCC (the mean of the best two sources, parabolic sub-step)."""
+    import torch
+    import torch.nn.functional as F
+    dev = g.device
+    H, W = D.shape
+    pool = lambda x: F.avg_pool2d(x[None], win, 1, win // 2, count_include_pad=False)[0]  # noqa: E731
+    v, u = torch.meshgrid(torch.arange(H, device=dev, dtype=torch.float32), torch.arange(W, device=dev, dtype=torch.float32), indexing="ij")
+    Ki = torch.tensor(K[i], dtype=torch.float32, device=dev)
+    ray = torch.stack([(u - Ki[0, 2]) / Ki[0, 0], (v - Ki[1, 2]) / Ki[1, 1], torch.ones_like(u)], -1)
+    ref = g[i]
+    mr = pool(ref[None])[0]
+    vr = (pool((ref * ref)[None])[0] - mr * mr).clamp_min(0)
+    maps = []
+    for j in src:
+        w2c = np.linalg.inv(c2w[j])
+        M = torch.tensor(K[j] @ w2c[:3, :3] @ c2w[i][:3, :3], dtype=torch.float32, device=dev)
+        B = torch.tensor(K[j] @ (w2c[:3, :3] @ c2w[i][:3, 3] + w2c[:3, 3]), dtype=torch.float32, device=dev)
+        maps.append((ray @ M.T, B))
+    cost = []
+    for o in offsets:
+        d = (D + float(o)).clamp_min(.05)[..., None]
+        nccs = []
+        for (a, B), j in zip(maps, src):
+            x = a * d + B
+            z = x[..., 2]
+            uj, vj = x[..., 0] / z.clamp_min(1e-3), x[..., 1] / z.clamp_min(1e-3)
+            w_ = F.grid_sample(g[j][None, None], torch.stack([uj / (W - 1) * 2 - 1, vj / (H - 1) * 2 - 1], -1)[None],
+                               align_corners=True, padding_mode="border")[0, 0]
+            ok = (z > .05) & (uj >= 0) & (uj <= W - 1) & (vj >= 0) & (vj <= H - 1)
+            mw = pool(w_[None])[0]
+            vw = (pool((w_ * w_)[None])[0] - mw * mw).clamp_min(0)
+            cv = pool((ref * w_)[None])[0] - mr * mw
+            nccs.append(torch.where(ok, cv / torch.sqrt(vr * vw + 1e-6), torch.full_like(cv, -1.)))
+        cost.append(torch.stack(nccs).topk(min(2, len(src)), 0).values.mean(0))
+    C = torch.stack(cost)
+    best, k = C.max(0)
+    med = C.median(0).values
+    kc = k.clamp(1, len(offsets) - 2)
+    c0, c1, c2 = (C.gather(0, (kc + a)[None])[0] for a in (-1, 0, 1))
+    den = c0 - 2 * c1 + c2
+    sub = torch.where(den < -1e-6, .5 * (c0 - c2) / den, torch.zeros_like(den)).clamp(-.5, .5)
+    off = float(offsets[0]) + (kc.float() + sub) * float(offsets[1] - offsets[0])
+    acc = (best >= MVS_NCC_MIN) & (best - med >= MVS_PEAK_MIN) & (k > 0) & (k < len(offsets) - 1) & (vr.sqrt() >= MVS_TEX_MIN) & (D > 0)
+    return acc, off, best
 
 
 def mvs_refine(dev, imgs, depth, K, c2w, kept, box, margin=.15):
-    """'+mvs': each kept view's depth near the spot re-chosen by photometric agreement with the other kept views through
-    the solved cameras (plane sweep of +-6 cm around the current depth in 5 mm steps, 7x7 NCC on the warped grey image,
-    the mean of the best two sources, parabolic sub-step). A pixel changes only where the best NCC >= 0.5, it beats the
-    sweep's median by >= 0.05, the peak is inside the range and the reference patch has texture (grey std >= 0.02);
-    elsewhere DA3's (scaled) depth stays. -> new depth (n,R,R) float32, per-view stats."""
+    """'+mvs': depth near the spot from multi-view photometric triangulation through the solved cameras, DA3 only as the
+    starting surface. Per kept view, two plane sweeps (+-6 cm in 5 mm, then +-2 cm in 2 mm around the result) against
+    the other kept views' grey images: a pixel is accepted where the NCC peak >= 0.5, beats the sweep's median by
+    >= 0.05, lies inside the range and the reference patch has texture (grey std >= 0.02). The accepted offsets are
+    spread as a Gaussian-weighted field (12 px, shrunk to 0 away from them) over the spot region: the textured pixels
+    set the depth, DA3's shape carries it across the textureless ones. -> new depth (n,R,R) float32, per-view stats."""
     import torch
-    import torch.nn.functional as F
     g = torch.from_numpy(np.stack([im[..., ::-1].astype(np.float32).mean(-1) / 255 for im in imgs])).to(dev)
     n, H, W = g.shape
     out = np.array(depth, np.float32, copy=True)
-    pool = lambda x: F.avg_pool2d(x[None], MVS_WIN, 1, MVS_WIN // 2, count_include_pad=False)[0]  # noqa: E731
-    v, u = torch.meshgrid(torch.arange(H, device=dev, dtype=torch.float32), torch.arange(W, device=dev, dtype=torch.float32), indexing="ij")
     stats = []
     for i in kept:
-        D = torch.from_numpy(np.ascontiguousarray(depth[i])).to(dev)
         P, (vv, uu) = backproject_np(depth[i], K[i], c2w[i])
         region = np.zeros((H, W), bool)
         region[vv, uu] = in_box(P, box, margin)
         src = [j for j in kept if j != i]
+        st = {"view": i, "region_px": int(region.sum())}
         if region.sum() < 50 or not src:
-            stats.append({"view": i, "region_px": int(region.sum()), "changed_share": 0.})
+            stats.append({**st, "accepted_share": [0.]})
             continue
-        Ki = torch.tensor(K[i], dtype=torch.float32, device=dev)
-        ray = torch.stack([(u - Ki[0, 2]) / Ki[0, 0], (v - Ki[1, 2]) / Ki[1, 1], torch.ones_like(u)], -1)  # (H,W,3)
-        ref = g[i]
-        mr = pool(ref[None])[0]
-        vr = (pool((ref * ref)[None])[0] - mr * mr).clamp_min(0)
-        cost = []
-        for o in MVS_OFFSETS_M:
-            d = (D + float(o)).clamp_min(.05)
-            nccs = []
-            for j in src:
-                M = torch.tensor(K[j] @ np.linalg.inv(c2w[j])[:3, :3] @ c2w[i][:3, :3], dtype=torch.float32, device=dev)
-                B = torch.tensor(K[j] @ (np.linalg.inv(c2w[j])[:3, :3] @ c2w[i][:3, 3] + np.linalg.inv(c2w[j])[:3, 3]), dtype=torch.float32, device=dev)
-                x = (ray @ M.T) * d[..., None] + B
-                z = x[..., 2]
-                uj, vj = x[..., 0] / z.clamp_min(1e-3), x[..., 1] / z.clamp_min(1e-3)
-                grid = torch.stack([uj / (W - 1) * 2 - 1, vj / (H - 1) * 2 - 1], -1)[None]
-                w_ = F.grid_sample(g[j][None, None], grid, align_corners=True, padding_mode="border")[0, 0]
-                ok = (z > .05) & (uj >= 0) & (uj <= W - 1) & (vj >= 0) & (vj <= H - 1)
-                mw = pool(w_[None])[0]
-                vw = (pool((w_ * w_)[None])[0] - mw * mw).clamp_min(0)
-                cv = pool((ref * w_)[None])[0] - mr * mw
-                nccs.append(torch.where(ok, cv / torch.sqrt(vr * vw + 1e-6), torch.full_like(cv, -1.)))
-            S = torch.stack(nccs)
-            cost.append(S.topk(min(2, len(src)), 0).values.mean(0))
-        C = torch.stack(cost)  # (K,H,W) NCC per offset
-        best, k = C.max(0)
-        med = C.median(0).values
-        kc = k.clamp(1, len(MVS_OFFSETS_M) - 2)
-        c0, c1, c2 = (C.gather(0, (kc + a)[None])[0] for a in (-1, 0, 1))
-        den = c0 - 2 * c1 + c2
-        sub = torch.where(den < -1e-6, .5 * (c0 - c2) / den, torch.zeros_like(den)).clamp(-.5, .5)
-        step = float(MVS_OFFSETS_M[1] - MVS_OFFSETS_M[0])
-        off = (float(MVS_OFFSETS_M[0]) + (kc.float() + sub) * step)
-        acc = (best >= MVS_NCC_MIN) & (best - med >= MVS_PEAK_MIN) & (k > 0) & (k < len(MVS_OFFSETS_M) - 1) & (vr.sqrt() >= MVS_TEX_MIN) & (D > 0)
-        acc &= torch.from_numpy(region).to(dev)
-        newD = torch.where(acc, D + off, D)
-        out[i] = newD.cpu().numpy()
-        a = acc.cpu().numpy()
-        stats.append({"view": i, "region_px": int(region.sum()), "changed_share": round(float(a.sum() / region.sum()), 4),
-                      "offset_median_abs_m": round(float(np.median(np.abs(off.cpu().numpy()[a]))), 4) if a.any() else None,
-                      "best_ncc_median": round(float(np.median(best.cpu().numpy()[region])), 3)})
+        D = torch.from_numpy(np.ascontiguousarray(depth[i])).to(dev)
+        reg = torch.from_numpy(region).to(dev)
+        st["accepted_share"], st["field_abs_median_m"], st["best_ncc_median"] = [], [], []
+        for offsets, win in MVS_PASSES:
+            acc, off, best = sweep(g, i, src, D, K, c2w, offsets, win)
+            acc &= reg
+            a = acc.cpu().numpy()
+            f = field((H, W), *np.nonzero(a)[::-1], off.cpu().numpy()[a], sigma=MVS_FIELD_PX) if a.any() else np.zeros((H, W))
+            D = torch.where(reg & (D > 0), D + torch.from_numpy(f.astype(np.float32)).to(dev), D)
+            st["accepted_share"].append(round(float(a.sum() / region.sum()), 4))
+            st["field_abs_median_m"].append(round(float(np.median(np.abs(f[region]))), 4))
+            st["best_ncc_median"].append(round(float(np.median(best.cpu().numpy()[region])), 3))
+        out[i] = D.cpu().numpy()
+        stats.append(st)
     return out, stats
+
+
+def consistency(depth, K, c2w, kept, box, cap=20000):
+    """Signed disagreement per ordered pair (i -> j): view i's in-box points re-projected into view j, z - depth_j
+    there (> 0: behind j's surface); within 10 cm. -> per pair median / MAD, and the median of |median| over pairs
+    (a systematic offset between views) against the median |dz| (everything)."""
+    rows, allabs = [], []
+    for i in kept:
+        P, _ = backproject_np(depth[i], K[i], c2w[i])
+        P = P[in_box(P, box)]
+        if len(P) > cap:
+            P = P[np.random.default_rng(i).choice(len(P), cap, replace=False)]
+        for j in kept:
+            if i == j or not len(P):
+                continue
+            w2c = np.linalg.inv(c2w[j])
+            X = P @ w2c[:3, :3].T + w2c[:3, 3]
+            z = X[:, 2]
+            u, v = K[j][0, 0] * X[:, 0] / np.maximum(z, 1e-6) + K[j][0, 2], K[j][1, 1] * X[:, 1] / np.maximum(z, 1e-6) + K[j][1, 2]
+            h, w = depth[j].shape
+            ok = (z > .05) & (u >= 0) & (u <= w - 1) & (v >= 0) & (v <= h - 1)
+            dj = depth[j][np.round(v[ok]).astype(int), np.round(u[ok]).astype(int)]
+            dz = (z[ok] - dj)[dj > 0]
+            dz = dz[np.abs(dz) <= .10]
+            if len(dz) < 50:
+                continue
+            med = float(np.median(dz))
+            rows.append({"pair": [int(i), int(j)], "signed_median_m": round(med, 4), "mad_m": round(float(np.median(np.abs(dz - med))), 4), "n": int(len(dz))})
+            allabs.append(np.abs(dz))
+    if not rows:
+        return None
+    return {"pairs": rows, "median_abs_pair_offset_m": round(float(np.median([abs(r["signed_median_m"]) for r in rows])), 4),
+            "median_pair_mad_m": round(float(np.median([r["mad_m"] for r in rows])), 4),
+            "median_abs_dz_m": round(float(np.median(np.concatenate(allabs))), 4)}
 
 
 def mvs_self_check(dev):
@@ -500,8 +554,8 @@ def mvs_self_check(dev):
     out, st = mvs_refine(dev, imgs, depth, np.repeat(K[None], 3, 0), c2w, [0, 1, 2], [np.array([-3, -3, 1.]), np.array([3, 3, 3.])])
     inner = out[0][100:-100, 100:-100]
     err = float(np.median(np.abs(inner - 2)))
-    assert err < .005 and st[0]["changed_share"] > .5, (err, st[0])
-    return {"median_abs_err_m": round(err, 4), "changed_share": st[0]["changed_share"]}
+    assert err < .005 and st[0]["accepted_share"][0] > .5, (err, st[0])
+    return {"median_abs_err_m": round(err, 4), "accepted_share": st[0]["accepted_share"]}
 
 
 def backproject_np(depth, K, c2w):
@@ -657,6 +711,9 @@ def local_ba(m, imgs, depth, K, c2w, kept, box, resect_view=None, tri=False, rer
         out_d, ms = mvs_refine(m.dev, imgs, out_d, np.asarray(K, np.float64), out_c2w, V, box)
         info["mvs"] = {"views": ms, "s": round(time.perf_counter() - t_m, 3)}
     t6 = time.perf_counter()
+    info["consistency_before"] = consistency(depth, np.asarray(K, np.float64), np.asarray(c2w, np.float64), V, box)  # diagnostics
+    info["consistency_after"] = consistency(out_d, np.asarray(K, np.float64), out_c2w, V, box)
+    t6b = time.perf_counter()
     if resect_view is not None:  # the held-out crop: matched to the kept crops, its pose from the solved track points
         img_h, K_h, c2w_h = resect_view
         tk = [dict() for _ in range(n)]
@@ -682,8 +739,8 @@ def local_ba(m, imgs, depth, K, c2w, kept, box, resect_view=None, tri=False, rer
         info["resect"] = rs
     t7 = time.perf_counter()
     info["time_s"] = {"features": round(t1 - t0, 3), "match_verify": round(t2 - t1, 3), "tracks": round(t3 - t2, 3), "solve": round(t4 - t3, 3),
-                      "apply_depth": round(t6 - t5, 3), "resect": round(t7 - t6, 3), "before_diagnostic": round(t5 - t4, 3),
-                      "product": round((t4 - t0) + (t6 - t5) + (t7 - t6), 3)}
+                      "apply_depth": round(t6 - t5, 3), "resect": round(t7 - t6b, 3), "before_diagnostic": round(t5 - t4, 3),
+                      "consistency_diagnostic": round(t6b - t6, 3), "product": round((t4 - t0) + (t6 - t5) + (t7 - t6b), 3)}
     return out_d, out_c2w, info
 
 
@@ -751,6 +808,14 @@ def self_check():
     # field: a lone residual of 5 cm keeps 1/(1+shrink) at its pixel, ~0 far away
     f = field((100, 100), np.array([50.]), np.array([50.]), np.array([.05]), sigma=5)
     assert abs(f[50, 50] - .05 / (1 + FIELD_SHRINK)) < 5e-3 and abs(f[5, 5]) < 1e-6, (f[50, 50], f[5, 5])
+    # consistency: a plane seen twice, the second view's depth 2 cm long -> the pair offsets are -+2 cm, no spread
+    Kp = np.repeat(np.array([[400., 0, 99.5], [0, 400, 99.5], [0, 0, 1]])[None], 2, 0)
+    cp = np.repeat(np.eye(4)[None], 2, 0)
+    cp[1, 0, 3] = .2
+    dp = np.full((2, 200, 200), 2., np.float32)
+    dp[1] += .02
+    cons = consistency(dp, Kp, cp, [0, 1], [np.array([-5, -5, 0.]), np.array([5, 5, 5.])])
+    assert [r["signed_median_m"] for r in cons["pairs"]] == [-.02, .02] and cons["median_pair_mad_m"] == 0, cons
     D = np.full((10, 10), 2.)
     D[:, 6:] = 3.
     assert abs(sample_depth(D, np.array([2.5]), np.array([2.5]))[0] - 2) < 1e-9 and np.isnan(sample_depth(D, np.array([5.5]), np.array([2.]))[0])
