@@ -510,7 +510,7 @@ class Refine:
 
 # ---------- LingBot-Map (option ii), its own image and card ----------
 
-@app.cls(image=lb_image, gpu="A100-80GB", cpu=4, memory=32768, timeout=1800, retries=0, max_containers=1, scaledown_window=20,
+@app.cls(image=lb_image, gpu="A100-80GB", cpu=4, memory=32768, timeout=1800, retries=0, max_containers=1, scaledown_window=120,
          volumes={"/artifact": lingbot_room.volume})
 class LingBot:
     @modal.enter()
@@ -534,6 +534,11 @@ class LingBot:
             self.calls = 0
         except Exception:  # noqa: BLE001
             self.error = traceback.format_exc()[-1500:]
+
+    @modal.method()
+    def ping(self):
+        """Boot it beside the refine container (cold start, never part of a spot's time)."""
+        return {"load_s": getattr(self, "load_s", None), "error": self.error}
 
     @modal.method()
     def run(self, jpegs):
@@ -1084,11 +1089,15 @@ def pairwise(fp, box):
             ok = (z > .05) & (u >= 0) & (u <= w - 1) & (v >= 0) & (v <= h - 1)
             dj = fp["depth"][j][np.round(v[ok]).astype(int), np.round(u[ok]).astype(int)]
             good = dj > 0
-            dz = np.abs(dj[good] - z[ok][good])
-            diffs.append(dz[dz < .5])  # beyond 0.5 m: occlusion, not disagreement
+            dz = z[ok][good] - dj[good]  # > 0: the point lies behind view j's surface (occluded there)
+            diffs.append(dz[np.abs(dz) < .5])  # beyond 0.5 m: another object, not disagreement
     d = np.concatenate(diffs) if diffs else np.zeros(0)
-    return {"median_m": round(float(np.median(d)), 5) if len(d) else None, "within_1cm": round(float((d <= .01).mean()), 4) if len(d) else None,
-            "within_2cm": round(float((d <= .02).mean()), 4) if len(d) else None, "pairs": n * (n - 1), "samples": int(len(d))}
+    a, e = np.abs(d), np.abs(d[d <= .10])  # e: points more than 10 cm behind view j's surface counted as occluded there
+    f = lambda x, q: round(float(x), q)  # noqa: E731
+    return {"median_m": f(np.median(a), 5) if len(a) else None, "within_1cm": f((a <= .01).mean(), 4) if len(a) else None,
+            "within_2cm": f((a <= .02).mean(), 4) if len(a) else None, "pairs": n * (n - 1), "samples": int(len(a)),
+            "occlusion_cut_10cm": {"median_m": f(np.median(e), 5) if len(e) else None, "within_2cm": f((e <= .02).mean(), 4) if len(e) else None,
+                                   "samples": int(len(e))}}
 
 
 def object_points(fp, masks, skip=None):
@@ -1205,10 +1214,18 @@ def lingbot_points(c, sp, views, res, frames):
     P = P @ T[:3, :3].T + T[:3, 3]
     region = P[in_box(P, sp["box"], .5)]
     d = nn(region, target)
+    sel = [idx[vw["frame"]] for vw in views]  # LingBot's own multi-view consistency, same measure as the DA3 crops
+    C = lb_c2w[sel].copy()
+    C[:, :3, :3] = Rm @ C[:, :3, :3]
+    C[:, :3, 3] = s * (Rm @ C[:, :3, 3].T).T + t
+    C = T @ C
+    D = np.stack([np.where(np.asarray(res["conf"][i], np.float32) >= np.percentile(np.asarray(res["conf"][i], np.float32), 40),
+                           np.asarray(res["depth"][i], np.float32) * s, 0) for i in sel])
+    mv = pairwise({"depth": D, "depth_box": D, "K": np.asarray(res["K"], np.float64)[sel], "c2w": C}, sp["box"])
     gate = float((d <= .25).mean()) if d is not None else None
     return {"pts": P[in_box(P, sp["box"])], "sim3_scale": round(float(s), 5), "camera_ate_after_sim3_m": round(ate, 4), "icp": icp,
             "display_gate_share_within_25cm": None if gate is None else round(gate, 4),
-            "display_gate_pass": None if gate is None else gate >= .45, "align_s": round(time.perf_counter() - t0, 3)}
+            "display_gate_pass": None if gate is None else gate >= .45, "align_s": round(time.perf_counter() - t0, 3), "multi_view": mv}
 
 
 def vlm_check(jpg, word):
@@ -1420,12 +1437,14 @@ def propagate(c, sp, fp, op, row, confirmed):
     keep = ~inner
     keep[np.flatnonzero(band)[~band_keep]] = False
     new_pts, new_rgb = np.concatenate([pts[keep], fine]), np.concatenate([rgb[keep], frgb])
-    out = {"replaced_coarse_points": int(inner.sum()), "added_fine_points": int(len(fine)), "band_coarse_points": int(band.sum()),
+    out = {"patch_status": "confirmed" if confirmed else "NEEDS_REVIEW: written, flagged", "replaced_coarse_points": int(inner.sum()),
+           "added_fine_points": int(len(fine)), "band_coarse_points": int(band.sum()),
            "band_dropped_as_duplicate": int((~band_keep).sum()),
            "seam_gap_median_m": None if d is None or not band_keep.any() else round(float(np.median(d[band_keep])), 4)}
     # grow along a confirmed plane
     pl = (row.get("plane") or {}).get("fine")
-    if pl and confirmed:
+    plane_ok = bool(pl) and pl["ci_width_deg"] <= PASS["plane_ci_width_deg"]
+    if plane_ok:
         n, c0 = np.asarray(pl["normal"]), np.asarray(pl["centre"])
         near = np.abs((new_pts - c0) @ n) <= .03
         vox = np.floor(new_pts / .06).astype(np.int64)
@@ -1438,9 +1457,10 @@ def propagate(c, sp, fp, op, row, confirmed):
         gp = new_pts[grown]
         out["grow_along_plane"] = {"points": int(grown.sum()), "area_m2_estimated": round(float(grown.sum() * .03 ** 2), 3),
                                    "extent_m": round(float(np.ptp(gp @ np.linalg.svd(gp - gp.mean(0), full_matrices=False)[2][0])), 3) if len(gp) > 3 else 0.,
-                                   "rule": "coarse points within 3 cm of the confirmed plane, 6 cm voxels connected to the spot"}
+                                   "rule": "coarse points within 3 cm of the plane, 6 cm voxels connected to the spot",
+                                   "applied_to_map": bool(confirmed), "status": "confirmed" if confirmed else "pending: the spot is NEEDS_REVIEW"}
     else:
-        out["grow_along_plane"] = {"skipped": "no confirmed plane" if pl else "not a surface spot"}
+        out["grow_along_plane"] = {"skipped": "plane CI wider than the rule" if pl else "not a surface spot or no plane"}
     # re-project the refined object to every keyframe of the shot that sees it
     rng = np.random.default_rng(0)
     obj = op if len(op) else fine
@@ -1590,8 +1610,11 @@ def main(out: str, clips: str = ",".join(CLIPS), spots: int = 5, lingbot: bool =
     out.mkdir(parents=True, exist_ok=False)  # never reuse a run folder
     assert shutil.disk_usage(out).free > 8 * 2 ** 30, "under 8 GB free: stop"
     r = Refine()
+    lb_boot = LingBot().ping.spawn() if lingbot else None  # both cold starts at once
     submitted = time.time()
     boot = r.boot_info.remote()
+    if lb_boot is not None:
+        boot["lingbot_container"] = lb_boot.get(timeout=1200)
     boot["client_submitted_unix"] = submitted
     (out / "boot.json").write_text(json.dumps(boot, indent=1, default=plain))
     print("ready:", json.dumps({k: v for k, v in boot.items() if k.endswith("_s") or k == "resident_gib"}), flush=True)
@@ -1648,16 +1671,19 @@ def summarise(run_dir, extra=None):
                 "confirmation": {"verdict": s["verdict"], "holdout": v0["holdout"], "multi_view": v0["multi_view"],
                                  "agreement_with_coarse": v0["agreement_with_coarse"], "vlm": s["vlm"]},
                 "lingbot_ii": lb, "propagation": s["propagation"], "gpu0_peak_gib_during_spot": max(peaks) if peaks else None,
-                "variants": [{k: x.get(k) for k in ("res", "views", "time_s", "sam3_masks_found", "points_in_box", "spacing_m", "multi_view",
-                                                     "agreement_with_coarse", "plane", "thin", "holdout")} for x in s["variants"]]})
+                "variants": [{k: x.get(k) for k in ("crop", "method", "res", "views", "time_s", "anchor", "pose_refine", "da3_camera_check",
+                                                     "sam3_masks_found", "points_in_box", "spacing_m", "multi_view", "agreement_with_coarse",
+                                                     "plane", "thin", "holdout")} for x in s["variants"]]})
             for x in s["variants"]:
-                key = f"res{x['res']}-views{x['views'] if x['views'] in (3, 5) and x['views'] < len(s['views']) else 'all'}"
+                key = f"{x['crop']}-{x['method']}-res{x['res']}-views{x['views'] if x['views'] in (3, 5) and x['views'] < len(s['views']) else 'all'}"
                 sweep.setdefault(key, []).append({"clip": clip, "spot": s["id"], "group": s["group"], "views": x["views"], "time_s": x["time_s"],
                                                   "plane_ci_width_deg": ((x.get("plane") or {}).get("fine") or {}).get("ci_width_deg"),
                                                   "thin_visible": ((x.get("thin") or {}).get("fine_map") or {}).get("thin_object_visible"),
-                                                  "photometric_ratio": x["holdout"]["photometric_l1"]["ratio_fine_over_coarse"],
-                                                  "outline_iou_fine": x["holdout"]["outline_iou"]["fine"],
-                                                  "outline_iou_coarse": x["holdout"]["outline_iou"]["coarse"],
+                                                  "photometric_ratio": (x["holdout"].get("photometric_l1") or {}).get("ratio_fine_over_coarse"),
+                                                  "outline_iou_fine": (x["holdout"].get("outline_iou") or {}).get("fine"),
+                                                  "outline_iou_coarse": (x["holdout"].get("outline_iou") or {}).get("coarse"),
+                                                  "multi_view_within_2cm": x["multi_view"]["within_2cm"],
+                                                  "fine_points_in_box": x["points_in_box"]["fine_tsdf_1cm"],
                                                   "multi_view_median_m": x["multi_view"]["median_m"],
                                                   "coarse_nn_median_m": x["agreement_with_coarse"]["fine_to_coarse_nn_median_m"]})
         videos[clip] = {"error": r.get("error"), "coarse": r.get("coarse"), "coarse_pass_s": coarse_s, "analysis_wall_s": t["elapsed_s"],
@@ -1674,6 +1700,8 @@ def summarise(run_dir, extra=None):
                "thin_visible": f"{sum(bool(x['thin_visible']) for x in v if x['thin_visible'] is not None)}/{sum(x['thin_visible'] is not None for x in v)}",
                "median_photometric_ratio": med([x["photometric_ratio"] for x in v]), "median_outline_iou_fine": med([x["outline_iou_fine"] for x in v]),
                "median_outline_iou_coarse": med([x["outline_iou_coarse"] for x in v]), "median_multi_view_m": med([x["multi_view_median_m"] for x in v]),
+               "median_multi_view_within_2cm": med([x["multi_view_within_2cm"] for x in v]),
+               "median_coarse_nn_m": med([x["coarse_nn_median_m"] for x in v]), "median_fine_points_in_box": med([x["fine_points_in_box"] for x in v]),
                "rows": v} for k, v in sorted(sweep.items())}
     out = {"schema": "panoptes-x4-refine-results-v1", "run": run_dir.name, "boot": boot, "units": {
         "*_s": "seconds of wall time inside the container (perf_counter), models resident, cold start excluded",
