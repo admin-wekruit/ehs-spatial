@@ -156,6 +156,34 @@ def collect(a):
     return res
 
 
+def acceptance(res):
+    """The user's four acceptance items per video, first in summary.json (warm call; 'first' = the first call after boot)."""
+    out = {}
+    for s, v in res["videos"].items():
+        w, f = v["calls"].get("warm", {}), v["calls"].get("first", {})
+        ck, ca_ = (res.get("clicks") or {}).get(s, {}), (res.get("cards_audit") or {}).get(s, {})
+        ho = {k: ((res.get("heldout_types") or {}).get(k) or {}).get("by_site", {}).get(s) for k in ("warm", "first", "round 3 warm")}
+        on = ck.get("correct", 0) + ck.get("miss", 0) + ck.get("wrong", 0)
+        out[s] = {
+            "1_types": {"family_typed_share": {"warm": w.get("share", {}).get("family_typed"), "first": f.get("share", {}).get("family_typed")},
+                        "specific_name_share": {"warm": w.get("share", {}).get("specific_name"), "first": f.get("share", {}).get("specific_name")},
+                        "fresh_audit_type": ca_.get("type"),
+                        "heldout_family_right": {k: (g and {"right": g["family_right"], "n": g["n"]}) for k, g in ho.items()}},
+            "2_segmentation_clicks": {"clickable_share": w.get("share", {}).get("clickable"), "fresh_audit_outline": ca_.get("outline"),
+                                      "clicks": {k: ck.get(k) for k in ("correct", "miss", "wrong", "background", "background-hit")},
+                                      "on_object_right": round(ck["correct"] / on, 3) if on else None,
+                                      "right_now_nothing_in_round3": (res.get("clicks_vs_round3") or {}).get(s, {}).get("correct / round3 nothing"),
+                                      "delivered_clean": {k: (x.get("clean") or {}) and {kk: x["clean"][kk] for kk in ("delivered", "covered", "in_pieces", "wrong_merge_cards")}
+                                                          for k, x in (v.get("instances") or {}).items()}},
+            "3_physical": {"complete_share_object_cards": (w.get("physical") or {}).get("complete_share", {}).get("object"),
+                           "contract_violations_both_calls": sum((c.get("physical") or {}).get("contract_violations", 0) for c in v["calls"].values()),
+                           "fresh_audit_physical": ca_.get("physical"), "gt": "see gt (TUM and ARKit sequences, not per video)"},
+            "4_models": {"display_model_share": w.get("share", {}).get("model"), "model_kinds": w.get("share", {}).get("model_kinds"),
+                         "sam3d_accepted": (w.get("models") or {}).get("sam3d_accepted"), "sam3d_attempted": (w.get("models") or {}).get("attempted"),
+                         "fresh_audit_model": ca_.get("model")}}
+    return out
+
+
 def pct(x):
     return "-" if x is None else f"{100 * x:.0f}%"
 
@@ -260,6 +288,7 @@ if __name__ == "__main__":
     a = p.parse_args()
     Path(a.out).mkdir(parents=True, exist_ok=True)
     r = collect(a)
+    r = {"acceptance": acceptance(r), **r}
     (Path(a.out) / "summary.json").write_text(json.dumps(r, indent=1, default=str))
     (Path(a.out) / "tables.md").write_text(md(r))
     print(md(r))
