@@ -303,9 +303,11 @@ def self_check():
     maps = [({"f": 3}, lab, 2., 2., 3), ({"f": 4}, lab, 2., 2., 4)]
     n = fill_maps(maps, {0: ("yoloe", "box", np.packbits(small, axis=1)), 1: ("yoloe", None, np.packbits(big, axis=1))}, np.array([5, 0]), np.array([3, 3]))
     assert n == 4 and maps[0][1][3, 2] == 5 and maps[0][1][0, 4] == 0 and maps[1][1] is lab, (n, maps[0][1])
+    i = cards.identity_v1({"word": cards.UNIDENTIFIED, "votes": {}, "label_source": "no word the detectors were sure of"})
+    assert i["detector_words"] == [] and i["decided_by"] == "sam3 vote" and cards.hazard_gate(i, None)[0] == cards.UNIDENTIFIED  # no VLM claim
     b = to_1008([[0, 0, 1280, 720]], hw)
     assert np.allclose(b, [[0, 0, 1008, 1008]])
-    print("coverage self-check ok: word mapping, box and mask gates, gap-fill painting, box scaling")
+    print("coverage self-check ok: word mapping, box and mask gates, gap-fill painting (maps), unidentified identity, box scaling")
 
 
 if __name__ == "__main__":
