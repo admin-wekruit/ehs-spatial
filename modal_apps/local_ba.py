@@ -596,6 +596,14 @@ def local_ba(m, imgs, depth, K, c2w, kept, box, resect_view=None, tri=False, rer
     info["pose_change"] = {"rot_deg": np.round(after["rot_deg"], 3).tolist(), "move_cm": np.round(after["move_cm"], 2).tolist(),
                            "move_vec_cm": np.round(after["move_vec_cm"], 2).tolist(), "at_bound": after["at_bound"],
                            "gauge_removed": after["gauge"], "note": "after the rigid gauge fit back onto the coarse cameras"}
+    # the physical floor: two-view triangulation depth noise at the spot for 0.5 px of matching error, z^2 dpx / (f B)
+    ctr = (np.asarray(box[0]) + np.asarray(box[1])) / 2
+    Cs = after["c2w"][:, :3, 3]
+    zc = float(np.median(np.linalg.norm(Cs - ctr, axis=1)))
+    B = float(np.max(np.linalg.norm(Cs[:, None] - Cs[None], axis=-1)))
+    f = float(np.median(Kv[:, 0, 0]))
+    info["geometry"] = {"distance_m": round(zc, 3), "baseline_max_m": round(B, 3), "focal_px_504": round(f, 1),
+                        "tri_sigma_m_at_0_5px": round(zc ** 2 * .5 / (f * max(B, 1e-6)), 4)}
     info["depth_scale"] = np.round(np.exp(after["ls"]), 4).tolist()
     info["baseline_scale"] = round(after["baseline_scale"], 4)  # > 1: the coarse trajectory is too short for this depth
     info["depth_shift_m"] = np.round(after["b"], 4).tolist()

@@ -225,8 +225,8 @@ class LocalBA:
                 self.sam.detect(v, 5, ("cable",), .25, logits=True)
                 f = self.matcher.features([rng.integers(0, 255, (r, r, 3), np.uint8) for _ in range(2)])
                 self.matcher.match(f[0], f[1])
-            b["mvs_self_check"] = local_ba.mvs_self_check(self.dev)  # also warms the sweep
                 torch.cuda.synchronize()
+            b["mvs_self_check"] = local_ba.mvs_self_check(self.dev)  # also warms the sweep
             jpg = cv2.imencode(".jpg", rng.integers(0, 255, (504, 504, 3), np.uint8))[1].tobytes()
             vlm.chat([vlm.image_block(jpg), {"type": "text", "text": "Describe."}], max_tokens=8)
         except Exception:  # noqa: BLE001
