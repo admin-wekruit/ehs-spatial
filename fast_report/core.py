@@ -294,15 +294,15 @@ PICK_CHUNK = 10  # keyframes per pick blob (2 s at 5 fps): the viewer fetches th
 
 def pick_chunks(runs, depth, per=PICK_CHUNK):
     """Per-frame RLE bytes and depth bytes -> (data['chunks'], blobs): one gzip per frame range, frame offsets stay global (pairs).
-    An unchanged range (depth, pick v1 -> v2) is the same blob, fetched once by the viewer. Round 1 sent one 0.84 MB pick + 1.7 MB
+    An unchanged range (depth, pick v1 -> v2) is the same blob (mtime 0: gzip stamps the time otherwise), stored and fetched once. Round 1 sent one 0.84 MB pick + 1.7 MB
     depth blob per version; the browser waited 0.7-2.6 s for pick v2 behind the densify burst."""
     import gzip
     meta, blobs = [], {}
     for k, lo in enumerate(range(0, len(runs), per)):
         hi = min(lo + per, len(runs))
         meta.append({"frames": [lo, hi], "blob": f"pick-{k}", "depth_blob": f"depth-{k}"})
-        blobs[f"pick-{k}"] = (gzip.compress(b"".join(runs[lo:hi]), 5), {"mediaType": "application/gzip", "format": "panoptes-pick-v1 uint16 (value, run) pairs", "frames": [lo, hi]})
-        blobs[f"depth-{k}"] = (gzip.compress(b"".join(depth[lo:hi]), 5), {"mediaType": "application/gzip", "format": "panoptes-pick-v1 depth uint16 mm", "frames": [lo, hi]})
+        blobs[f"pick-{k}"] = (gzip.compress(b"".join(runs[lo:hi]), 5, mtime=0), {"mediaType": "application/gzip", "format": "panoptes-pick-v1 uint16 (value, run) pairs", "frames": [lo, hi]})
+        blobs[f"depth-{k}"] = (gzip.compress(b"".join(depth[lo:hi]), 5, mtime=0), {"mediaType": "application/gzip", "format": "panoptes-pick-v1 depth uint16 mm", "frames": [lo, hi]})
     return meta, blobs
 
 
@@ -1561,6 +1561,8 @@ def self_check():
     import gzip  # pick chunks: 23 frames -> 10 + 10 + 3, each blob inflates to its frames' bytes, depth alike
     meta, blobs = pick_chunks([bytes([i]) * 4 for i in range(23)], [bytes([i]) * 2 for i in range(23)])
     assert [c["frames"] for c in meta] == [[0, 10], [10, 20], [20, 23]] and len(blobs) == 6
+    time.sleep(1.1)  # gzip's header time: an unchanged chunk must be the same bytes a second later (content-addressed blobs)
+    assert pick_chunks([bytes([i]) * 4 for i in range(23)], [bytes([i]) * 2 for i in range(23)])[1]["depth-0"][0] == blobs["depth-0"][0]
     assert gzip.decompress(blobs["pick-1"][0]) == b"".join(bytes([i]) * 4 for i in range(10, 20)) and gzip.decompress(blobs["depth-2"][0]) == bytes([20, 20, 21, 21, 22, 22])
     try:
         import torch
