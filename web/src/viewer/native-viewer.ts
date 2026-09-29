@@ -121,10 +121,17 @@ export function readGLB(buffer:ArrayBuffer):Mesh[] {
   const scene=doc.scenes?.[doc.scene??0];if(!scene)throw Error('missing_glb_scene');for(const id of scene.nodes||[])walk(id,identity());return result;
 }
 
-function primitive(spec:any):Mesh {
+export function primitive(spec:any):Mesh {
   const p=spec.parameters||spec,type=spec.kind||spec.primitiveType||spec.type;const vertices:number[]=[],indices:number[]=[];
   if(type==='box'){const dims=p.dimensions;if(!Array.isArray(dims)||dims.length!==3)throw Error('invalid_primitive');if(!dims.every(v=>Number.isFinite(v)&&v>0))throw Error('invalid_primitive');for(const c of boundsCorners({min:dims.map(v=>-v/2),max:dims.map(v=>v/2)}))vertices.push(...c,0,0,1,1,1,1,0,0,1);indices.push(0,2,1,1,2,3,4,5,6,5,7,6,0,1,4,1,5,4,2,6,3,3,6,7,0,4,2,2,4,6,1,3,5,3,7,5);}
   else if(type==='cylinder'){const r=p.radius,h=p.height,n=p.segments??64;if(!(Number.isFinite(r)&&r>0&&Number.isFinite(h)&&h>0&&Number.isInteger(n)&&n>=8&&n<=256))throw Error('invalid_primitive');for(let z=0;z<2;z++)for(let i=0;i<n;i++){const a=i*2*Math.PI/n;vertices.push(r*Math.cos(a),r*Math.sin(a),(z-.5)*h,Math.cos(a),Math.sin(a),0,1,1,1,0,0,1);}vertices.push(0,0,-h/2,0,0,-1,1,1,1,0,0,1,0,0,h/2,0,0,1,1,1,1,0,0,1);for(let i=0;i<n;i++){const j=(i+1)%n;indices.push(i,j,n+j,i,n+j,n+i,2*n,j,i,2*n+1,n+i,n+j);}}
+  // r4 (models): a card's display model: boxes (one, or an open frame's parts) and cylinders whose unseen faces are fainter
+  else if(type==='faces'){const ok=(a:any,n:number)=>Array.isArray(a)&&a.length===n&&a.every((v:any)=>Number.isFinite(v));const parts=p.parts;if(!Array.isArray(parts)||!parts.length||parts.length>64)throw Error('invalid_primitive');
+    for(const q of parts){if(!ok(q.center,3)||!ok(q.size,3)||!q.size.every((v:number)=>v>0)||!ok(q.alpha,6))throw Error('invalid_primitive');for(let f=0;f<6;f++){const k=f>>1,s=f&1?1:-1,[a,b]=[0,1,2].filter(i=>i!==k),base=vertices.length/12;
+      for(const [x,y] of [[-1,-1],[1,-1],[1,1],[-1,1]]){const v=[...q.center],n=[0,0,0];v[k]+=s*q.size[k]/2;v[a]+=x*q.size[a]/2;v[b]+=y*q.size[b]/2;n[k]=s;vertices.push(...v,...n,1,1,1,0,0,q.alpha[f]);}indices.push(base,base+1,base+2,base,base+2,base+3);}}}
+  else if(type==='sectors'){const r=p.radius,h=p.height,arc=p.arc;if(!(Number.isFinite(r)&&r>0&&Number.isFinite(h)&&h>0&&typeof arc==='string'&&arc.length>=8&&arc.length<=256&&Array.isArray(p.alpha)&&Array.isArray(p.capAlpha)))throw Error('invalid_primitive');const n=arc.length;
+    for(let i=0;i<n;i++){const al=arc[i]==='1'?p.alpha[0]:p.alpha[1],base=vertices.length/12;for(const [j,z] of [[i,-1],[i+1,-1],[i+1,1],[i,1]]){const t=j*2*Math.PI/n;vertices.push(r*Math.cos(t),r*Math.sin(t),z*h/2,Math.cos(t),Math.sin(t),0,1,1,1,0,0,al);}indices.push(base,base+1,base+2,base,base+2,base+3);
+      for(const [z,al2] of [[-1,p.capAlpha[0]],[1,p.capAlpha[1]]]){const b2=vertices.length/12;for(const j of [i,i+1])vertices.push(r*Math.cos(j*2*Math.PI/n),r*Math.sin(j*2*Math.PI/n),z*h/2,0,0,z,1,1,1,0,0,al2);vertices.push(0,0,z*h/2,0,0,z,1,1,1,0,0,al2);indices.push(b2,b2+1,b2+2);}}}
   else throw Error('unsupported_primitive');
   const min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity];for(let i=0;i<vertices.length;i+=12)for(let k=0;k<3;k++){min[k]=Math.min(min[k],vertices[i+k]);max[k]=Math.max(max[k],vertices[i+k]);}
   return {vertices:new Float32Array(vertices),indices:new Uint32Array(indices),mode:4,matrix:identity(),bounds:{min,max}};
@@ -223,7 +230,7 @@ export function mountSceneViewer(container:HTMLElement,options:ViewerOptions){
     // Unequal sampling would need source-mask area; nearer depth always wins.
     const pickRank=(g:GPU)=>entity(g.entityId)?.sourceContext?0:g.mesh.mode===4&&g.representation.kind==='observed_surface'&&g.representation.placementState==='confirmed'?2:1;
     const selectedIds=new Set(selection.entityId?modelPreviewEntities(doc,selection.entityId).map(e=>e.id):[]),isSelected=(g:GPU)=>['generated_mesh','primitive'].includes(g.representation.kind)?selectedIds.has(g.entityId):g.entityId===selection.entityId;
-    const materialFor=(g:GPU)=>({...g.mesh.material,...(['generated_mesh','primitive'].includes(g.representation.kind)?g.representation.material:{})});
+    const materialFor=(g:GPU)=>{const m={...g.mesh.material,...(['generated_mesh','primitive'].includes(g.representation.kind)?g.representation.material:{})};return m.selectedFactor&&(isSelected(g)||layers.studio)?{...m,baseColorFactor:m.selectedFactor}:m;};  // r4: a model shows in full when its object is selected (and in its preview)
     const blended=(g:GPU)=>materialFor(g).alphaMode==='BLEND';
     const depth=(g:GPU)=>dot(add(point(model(g),g.mesh.bounds.min.map((n,k)=>(n+g.mesh.bounds.max[k])/2)),scale(camera!.eye,-1)),unit(add(camera!.target,scale(camera!.eye,-1))));
     // ponytail: primitive-depth sorting covers separate sheets; intersecting translucent geometry needs per-triangle sorting or order-independent transparency.

@@ -308,3 +308,9 @@ span.report-memory-actor { cursor: default; }
 .mvp-list li button small { grid-column: 2; color: #66786b; }
 .mvp-list li button .mvp-chip { grid-row: span 2; align-self: center; justify-self: start; }
 .mvp-list li button[aria-current] { background: #e4f3ea; }
+
+/* r4 (models): the selected object's model, alone, in the 3D pane's corner */
+.live-report-3d { position: relative; }
+.live-report-model-inset { position: absolute; right: 8px; bottom: 8px; width: 200px; margin: 0; border: 1px solid var(--scene-border); border-radius: 4px; background: #edf0ee; overflow: hidden; pointer-events: none; }
+.live-report-model-inset img { display: block; width: 100%; height: auto; }
+.live-report-model-inset figcaption { padding: 2px 6px; font-size: 11px; color: #34454d; }

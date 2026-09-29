@@ -604,16 +604,21 @@ class GatePool(Pool):
 
 
 # ---------------------------------------------------------------- main side
-def rank(objs, vocab=()):
+def rank(objs, vocab=(), eligible=None):
     """First-pass order (spec 12 B): core words and EHS equipment first, then the VLM's own order, then views seen. Excluded
     labels (floor, wall, person, lights ...) and objects seen in fewer views than the gate needs to agree never go; an object
-    whose 3D box overlaps one already taken (IoU >= 0.25) is the same thing again (complete_video_objects' selection rule)."""
+    whose 3D box overlaps one already taken (IoU >= 0.25) is the same thing again (complete_video_objects' selection rule).
+    r4 (models): eligible {id: score} (the cards' well-observed objects, display_model.well_observed): only those go, best
+    observed first."""
     import complete_video_objects as cvo
     order, terms = {w: i for i, w in enumerate(vocab)}, [t for ts in cvo.RELEVANT.values() for t in ts]
     ehs = lambda w: w in CORE or cvo.matches(w, terms) is not None
-    keep = [o for o in objs if not cvo.matches(o["word"], cvo.EXCLUDED) and len(o["masks_lr"]) >= cvo.FIT_GATE["min_agreeing_views"]]
+    keep = [o for o in objs if not cvo.matches(o["word"], cvo.EXCLUDED) and len(o["masks_lr"]) >= cvo.FIT_GATE["min_agreeing_views"]
+            and (eligible is None or o["id"] in eligible)]
+    key = (lambda o: (-eligible[o["id"]], str(o["id"]))) if eligible is not None else \
+        (lambda o: (not ehs(o["word"]), order.get(o["word"], len(order)), -len(o["masks_lr"]), str(o["id"])))
     taken = []
-    for o in sorted(keep, key=lambda o: (not ehs(o["word"]), order.get(o["word"], len(order)), -len(o["masks_lr"]), str(o["id"]))):
+    for o in sorted(keep, key=key):
         box = np.array([o["box_min_m"], o["box_max_m"]], float)
         if all(t["shot"] != o["shot"] or cvo.box_iou(box, np.array([t["box_min_m"], t["box_max_m"]], float)) < .25 for t in taken):
             taken.append(o)
@@ -648,7 +653,8 @@ def _external(clock, name, gpu, start, end, **n):
         clock.external(name, gpu=gpu, start_unix=start, end_unix=end, n=n)
 
 
-def gate(objs, shots, frames_host, clock, workers, pool, vocab=(), first=FIRST_PASS, background=False, deadline=None, records=None):
+def gate(objs, shots, frames_host, clock, workers, pool, vocab=(), first=FIRST_PASS, background=False, deadline=None, records=None,
+         eligible=None):
     """Accepted complete models, one dict each as soon as the gate passes it: {"object", "glb", "transform", "bounds", "gate"}.
 
     First pass: one try each (the best view, seed 42) for the first `first` ranked objects that have a usable view; objects are
@@ -657,7 +663,7 @@ def gate(objs, shots, frames_host, clock, workers, pool, vocab=(), first=FIRST_P
     nothing new is started: the other views and seed 43 of the first pass's rejected ones (runner order), then the rest of the
     ranked objects. Every object's outcome and every try's gate record go to `records` (a list) if given."""
     import complete_video_objects as cvo
-    ranked = rank(objs, vocab)
+    ranked = rank(objs, vocab, eligible)
     src, keys = stage(objs, shots, frames_host)
     todo, slots, fed, preparing = ranked, 0, 0, 0
     events, pending, prepared = queue.Queue(), 0, {}
@@ -843,6 +849,7 @@ def self_check():
                 {"id": "again", "shot": 1, "word": "box", "box_min_m": [-.3, -.2, 2], "box_max_m": [.3, .2, 2.2], "masks_lr": {f: logits for f in keys}},
                 {"id": "floor", "shot": 1, "word": "floor", "box_min_m": [0] * 3, "box_max_m": [1] * 3, "masks_lr": {f: logits for f in keys}}]
         assert [o["id"] for o in rank(objs)] == ["again"], "one of the two boxes (a tie goes by id); the same box again and the floor never go"
+        assert [o["id"] for o in rank(objs, eligible={"box": 2.})] == ["box"] and rank(objs, eligible={}) == [], "r4: only the well-observed"
         spec, names = stage(objs, [shot], str(tmp / "frames.npy"), tmp / "staged")
         src = FastSource(spec, 1)
         out = prepare_object(src, names["box"])

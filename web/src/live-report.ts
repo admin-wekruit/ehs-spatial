@@ -28,7 +28,18 @@ export function latest(patches: Patch[]) {
 const identity = (frame: string) => ({ coordinateFrameId: frame, position: [0, 0, 0], quaternion: [0, 0, 0, 1], scale: [1, 1, 1] });
 const dot = (a: number[], b: number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
-export function liveDocument(report: string, layers: Record<string, Patch>): SceneDocument {
+const SEEN_ALPHA = .9, GUESSED_ALPHA = .3, FACES = ["-x", "+x", "-y", "+y", "-z", "+z"];
+/** r4 (models): a card's display model (fast_report/display_model.py, 'generated, display only') as the viewer's primitive: the faces
+ *  a camera saw solid, the guessed ones faint. Local to the model's pose (position, quaternion in the shot frame). */
+export function modelPrimitive(m: any) {
+  const a = (seen: boolean) => seen ? SEEN_ALPHA : GUESSED_ALPHA, pos = (v: number) => Math.max(v, .005);
+  if (m.kind === "cylinder") return { kind: "sectors", radius: pos(m.radius_m), height: pos(m.length_m), arc: m.arc_seen, alpha: [SEEN_ALPHA, GUESSED_ALPHA],
+    capAlpha: ["bottom", "top"].map(k => a(m.caps?.[k] === "seen")) };
+  if (m.kind === "open frame") return { kind: "faces", parts: m.parts.map((q: number[]) => ({ center: q.slice(0, 3), size: q.slice(3, 6).map(pos), alpha: Array(6).fill(a(!!q[6])) })) };
+  return { kind: "faces", parts: [{ center: [0, 0, 0], size: m.size_m.map(pos), alpha: FACES.map(f => a(m.faces?.[f] === "seen")) }] };
+}
+
+export function liveDocument(report: string, layers: Record<string, Patch>, cards?: any[] | null): SceneDocument {
   const doc: any = { schemaVersion: 2, target: "scene", captureId: report, coordinateFrames: [], cameras: [], observations: [], entities: [],
     assets: [], annotations: [], geometryBindings: {} };
   const asset = (ref: BlobRef) => {
@@ -60,17 +71,25 @@ export function liveDocument(report: string, layers: Record<string, Patch>): Sce
       ].filter(Boolean) });
   }
   const accepted = new Map<string, any>((models?.data.models || []).map((m: any) => [m.object, m]));
+  const drawn = new Map<string, any>((cards || []).filter((c: any) => c.kind === "object" && c.model?.kind).map((c: any) => [c.id, c.model]));
   for (const o of objects?.data.objects || []) {
     const frame = frameOf(o.shot), min = o.box_min_m, max = o.box_max_m, model = accepted.get(o.id), glb = model && models.blobs["model-" + o.id];
+    const dm = drawn.get(o.id);  // r4: the card's display model; SAM 3D's mesh replaces it when its gate accepted one
     // Detected words are names to check, never verified: a see-through box, the model when SAM 3D's gate took one.
     const box = { id: "box:" + o.id, kind: "primitive", primitive: { kind: "box", dimensions: [0, 1, 2].map(k => Math.max(max[k] - min[k], .01)) },
       coordinateFrameId: frame, transform: { ...identity(frame), position: [0, 1, 2].map(k => (min[k] + max[k]) / 2) }, placementState: "confirmed",
       material: { alphaMode: "BLEND", baseColorFactor: [1, 1, 1, .05], color: [.45, .9, .8] } };
-    const reps: any[] = [box];
-    if (glb) reps.push({ id: "model:" + o.id, kind: "generated_mesh", assetId: asset(glb), coordinateFrameId: frame,
-      transform: { ...identity(frame), ...model.transform }, placementState: "confirmed", bounds: model.bounds });
+    // one model per object (the viewer's preview and bounds read every model representation): SAM 3D's accepted mesh, else the card's
+    // display model, else the see-through box
+    const half = dm && (dm.kind === "cylinder" ? [dm.radius_m, dm.radius_m, dm.length_m / 2] : dm.size_m.map((v: number) => v / 2));
+    const rep: any = glb ? { id: "model:" + o.id, kind: "generated_mesh", assetId: asset(glb), coordinateFrameId: frame,
+      transform: { ...identity(frame), ...model.transform }, placementState: "confirmed", bounds: model.bounds }
+      : dm ? { id: "prim:" + o.id, kind: "primitive", primitive: modelPrimitive(dm), coordinateFrameId: frame,
+        transform: { ...identity(frame), position: dm.position, quaternion: dm.quaternion }, placementState: "confirmed",
+        bounds: { min: half.map((v: number) => -Math.max(v, .0025)), max: half.map((v: number) => Math.max(v, .0025)) },
+        material: { alphaMode: "BLEND", baseColorFactor: [1, 1, 1, .1], selectedFactor: [1, 1, 1, 1], color: [1, .72, .3] } } : box;
     doc.entities.push({ id: o.id, label: o.label || o.word, associationState: "association_pending", visible: true, observationRefs: [],
-      activeModelRepresentationId: glb ? "model:" + o.id : box.id, representations: reps, fast: { kind: "object", ...o, model: model || null } });
+      activeModelRepresentationId: rep.id, representations: [rep], fast: { kind: "object", ...o, model: model || null, display_model: dm || null } });
   }
   for (const t of people?.data.tracks || []) {
     const ref = people.blobs["track-" + t.id];
