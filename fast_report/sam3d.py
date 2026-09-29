@@ -39,9 +39,10 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 SAM3D_PY, GATE_PY = "/opt/sam3d/bin/python", "/opt/gate/bin/python"
 WEIGHTS = "/weights"  # the panoptes-sam3d-weights volume, as modal_apps/sam3d_research.py mounts it
+TORCH_HUB = "/opt/torch-hub"  # DINOv2 (code + weights) for SAM 3D's embedders, baked into the image
 S1CFG12 = {"stage1_inference_steps": 12, "use_stage2_distillation": True, "stage2_inference_steps": 4}  # E4: 3.49 s a call, gate rate kept
 VOXEL_M = .01399 * 2.8591949  # ME340's delivered gate: its fused voxel (fuse-metrics voxel_native) x its metres per native unit
-DISPLAY_FACES, FIRST_PASS = 40_000, 30
+DISPLAY_FACES, FIRST_PASS, PREPARING, NICE = 40_000, 30, 8, 10
 CORE = ("fire extinguisher", "exit sign", "forklift", "ladder", "spill", "cable", "hose", "guard")  # E2b's EHS core words
 SHARED = Path("/dev/shm") if Path("/dev/shm").is_dir() else Path("/tmp")
 for _p in (ROOT / "scripts", ROOT / "modal_apps"):  # complete_video_objects and the pinned recipes, in every venv
@@ -278,8 +279,11 @@ def sam3d_worker():
         t = time.time()
         run_once(state["pipeline"], *plane_input(), 42, S1CFG12)  # the decoder's one-off set-up (~14 s in E4) happens here
         torch.cuda.synchronize()
+        warm_reserved = torch.cuda.memory_reserved()
+        torch.cuda.empty_cache()  # idle through the core's 25 s beside DA3 and SAM 3 on the same GPU: hold the weights only
         return {"ready": True, "load_s": round(loaded, 1), "warm_s": round(time.time() - t, 1), "gpu": torch.cuda.get_device_name(0),
-                "reserved_gb": round(torch.cuda.memory_reserved() / 1e9, 2), "max_reserved_gb": round(torch.cuda.max_memory_reserved() / 1e9, 2)}
+                "reserved_after_warm_gb": round(warm_reserved / 1e9, 2), "idle_reserved_gb": round(torch.cuda.memory_reserved() / 1e9, 2),
+                "allocated_gb": round(torch.cuda.memory_allocated() / 1e9, 2)}
 
     def handle(message, _):
         torch.cuda.reset_peak_memory_stats()
@@ -295,7 +299,7 @@ class Workers:
 
     def __init__(self, gpu=0, n=2, python=SAM3D_PY):
         from complete_video_objects import SAM3D
-        env = worker_env(python, CUDA_VISIBLE_DEVICES=gpu, HF_HOME=f"{WEIGHTS}/huggingface", HF_HUB_OFFLINE=1, LIDRA_SKIP_INIT="true",
+        env = worker_env(python, CUDA_VISIBLE_DEVICES=gpu, HF_HOME=f"{WEIGHTS}/huggingface", HF_HUB_OFFLINE=1, LIDRA_SKIP_INIT="true", TORCH_HOME=TORCH_HUB,
                          CUDA_HOME="/usr/local/cuda", SAM3D_MODEL_REVISION=SAM3D["modelRevision"])
         self.gpu, self.pool = gpu, Pool([python, "-c", "from fast_report.sam3d import sam3d_worker; sam3d_worker()"], n, env, "sam3d")
 
@@ -437,12 +441,14 @@ class E4Source:
 
 
 def view_metrics(src, entity, cache):
-    """complete_video_objects.view_metrics on any grid: its 640x480 limits become the grid's size, and the raster's own edge counts
-    only where the raster is undistorted (the DA3 raster is the whole frame, so its edge is the frame's)."""
+    """complete_video_objects.view_metrics on any grid: its 640x480 limits become the grid's size, the area is counted in that
+    raster's pixels (so failing()'s 1500 px stays the same share of the source frame), and the raster's own edge counts only where
+    the raster is undistorted (the DA3 raster is the whole frame, so its edge is the frame's)."""
     import cv2
     import complete_video_objects as cvo
     clip, args, (w, h) = src.clip, src.args, src.clip.clip_size
     border, out = cvo.BORDER, []
+    unit = clip.clip_to_full[0, 0] * clip.clip_to_full[1, 1] / 1.5 ** 2  # source pixels a raster pixel covers, over the 640x480 raster's 1.5^2
     for observation in entity["observations"]:
         frame = int(observation.rsplit(":", 2)[1])
         path = cvo.mask_path(args.masks, observation)
@@ -461,7 +467,7 @@ def view_metrics(src, entity, cache):
         ry, rx = np.nonzero(raster)
         py, px = np.nonzero(cvo.main_parts(clip_mask))
         edge = src.undistorted and (rx.min() < 2 or ry.min() < 2 or rx.max() >= raster.shape[1] - 2 or ry.max() >= raster.shape[0] - 2)
-        out.append({"observation": observation, "frame": frame, "mask": str(path), "area": int(raster.sum()),
+        out.append({"observation": observation, "frame": frame, "mask": str(path), "area": int(round(raster.sum() * unit)),  # failing()'s 1500 px
                     "clipBox": [int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())],
                     "sourceShortSide": float(min((np.ptp(px) + 1) * clip.clip_to_full[0, 0], (np.ptp(py) + 1) * clip.clip_to_full[1, 1])),
                     "solidity": float(raster.sum() / max(cv2.contourArea(cv2.convexHull(np.column_stack([rx, ry]).astype(np.int32))), 1)),
@@ -557,7 +563,9 @@ def judge(src, key, view, c2w, generated):
 
 
 def gate_worker():
-    """One gate process: sources cached per (staged report, shot); 'prepare' and 'assess' messages."""
+    """One gate process: sources cached per (staged report, shot); 'prepare' and 'assess' messages. Niced: the splat's step loop,
+    the SAM 3D processes and the main process come first on the CPU (a busy pool cost the splat 8% of its steps)."""
+    os.nice(NICE)
     import complete_video_objects as cvo
     sources = {}
 
@@ -635,26 +643,33 @@ def _external(clock, name, gpu, start, end, **n):
 def gate(objs, shots, frames_host, clock, workers, pool, vocab=(), first=FIRST_PASS, background=False, deadline=None, records=None):
     """Accepted complete models, one dict each as soon as the gate passes it: {"object", "glb", "transform", "gate"}.
 
-    First pass: the first `first` ranked objects, one try each (the best view, seed 42), every prepare at once, SAM 3D calls in
-    rank order. With `background`, until `deadline` (unix) nothing new is started: the other views and seed 43 of the rejected
-    ones (runner order), then the rest of the ranked objects. Every try's gate record goes to `records` (a list) if given."""
+    First pass: one try each (the best view, seed 42) for the first `first` ranked objects that have a usable view; objects are
+    prepared in rank order, PREPARING at a time (1-4 s each), so first-pass assesses never queue behind a flood of prepares;
+    SAM 3D calls go in rank order. With `background`, until `deadline` (unix)
+    nothing new is started: the other views and seed 43 of the first pass's rejected ones (runner order), then the rest of the
+    ranked objects. Every object's outcome and every try's gate record go to `records` (a list) if given."""
     import complete_video_objects as cvo
     ranked = rank(objs, vocab)
     src, keys = stage(objs, shots, frames_host)
-    todo = ranked if background else ranked[:first]
+    todo, slots, fed, preparing = ranked, 0, 0, 0
     events, pending, prepared = queue.Queue(), 0, {}
     records = [] if records is None else records
     late = lambda: deadline is not None and time.time() > deadline
-    for r, o in enumerate(todo):
-        pool.submit({"op": "prepare", "src": src, "shot": int(o["shot"]), "key": keys[o["id"]]}, (0 if r < first else 2, r)) \
-            .add_done_callback(lambda f, r=r: events.put(("prepared", r, 0, f)))
-        pending += 1
+
+    def feed():
+        """The next prepares in rank order: only as many as can still fill the first pass, unless `background`."""
+        nonlocal fed, preparing, pending
+        while fed < len(todo) and preparing < PREPARING and (background or slots + preparing < first) and not late():
+            pool.submit({"op": "prepare", "src": src, "shot": int(todo[fed]["shot"]), "key": keys[todo[fed]["id"]]}, (0, fed)) \
+                .add_done_callback(lambda f, r=fed: events.put(("prepared", r, 0, f)))
+            fed, preparing, pending = fed + 1, preparing + 1, pending + 1
+    feed()
 
     def generate(r, n):
         """Try n (0-based, runner order: views best first, then the best view with seed 43) of ranked object r."""
         p, extra = prepared[r], n == len(prepared[r]["tries"])
         job, seed = p["jobs"][0 if extra else n], cvo.EXTRA_SEED if extra else cvo.SEED
-        priority = (0 if n == 0 and r < first else 1 if r < first else 3, n, r)
+        priority = (0 if n == 0 and p["first"] else 1 if p["first"] else 2, n, r)
         workers.submit({"rgb": job["rgb"], "mask": job["mask"], "pointmap": job["pointmap"], "seed": seed}, priority) \
             .add_done_callback(lambda f: events.put(("generated", r, n, f)))
 
@@ -662,20 +677,30 @@ def gate(objs, shots, frames_host, clock, workers, pool, vocab=(), first=FIRST_P
         kind, r, n, future = events.get()
         o = todo[r]
         base = {"object": o["id"], "word": o["word"], "rank": r, "attempt": n + 1}
+        if kind == "prepared":
+            preparing -= 1
         try:
             result = future.result()
         except Exception as error:
             records.append({**base, "stage": kind, "error": str(error)[-2000:]})
             pending -= 1
+            feed()
             continue
         if kind == "prepared":
             _external(clock, "sam3d.prepare", None, result["start_unix"], result["end_unix"], object=o["id"])
             if "rejected" in result or late():
                 records.append({**base, "stage": "prepare", "rejected": result.get("rejected", "deadline")})
                 pending -= 1
+                feed()
                 continue
-            prepared[r] = result
-            generate(r, 0)
+            prepared[r] = {**result, "first": slots < first}
+            slots += prepared[r]["first"]
+            if prepared[r]["first"] or background:
+                generate(r, 0)
+            else:
+                records.append({**base, "stage": "prepare", "untried": "the first pass is full"})
+                pending -= 1
+            feed()
         elif kind == "generated":
             _external(clock, "sam3d.generate", workers.gpu, result["start_unix"], result["end_unix"], object=o["id"], attempt=n + 1)
             p, extra = prepared[r], n == len(prepared[r]["tries"])
@@ -683,7 +708,8 @@ def gate(objs, shots, frames_host, clock, workers, pool, vocab=(), first=FIRST_P
             message = {"op": "assess", "src": src, "shot": int(o["shot"]), "key": keys[o["id"]], "view": view,
                        "c2w": p["jobs"][0 if extra else n]["c2w"], "mesh": {k: result[k] for k in ("vertices", "faces", "colors", "objectToCamera", "seconds", "gpu")}}
             prepared[r]["generated"] = {k: result[k] for k in ("seconds", "start_unix", "end_unix", "max_reserved_gb")}
-            pool.submit(message, (0, r, n)).add_done_callback(lambda f, r=r, n=n: events.put(("assessed", r, n, f)))
+            phase = 0 if n == 0 and p["first"] else 1 if p["first"] else 2
+            pool.submit(message, (phase, n, r)).add_done_callback(lambda f, r=r, n=n: events.put(("assessed", r, n, f)))
         else:
             _external(clock, "sam3d.assess", None, result["assess_start_unix"], result["assess_end_unix"], object=o["id"], attempt=n + 1)
             if "glb" in result:
@@ -691,7 +717,7 @@ def gate(objs, shots, frames_host, clock, workers, pool, vocab=(), first=FIRST_P
             p, extra = prepared[r], n == len(prepared[r]["tries"])
             seed = cvo.EXTRA_SEED if extra else cvo.SEED
             g = result["gate"]
-            records.append({**base, "stage": "assess", "seed": seed, "view": p["tries"][0 if extra else n]["frame"],
+            records.append({**base, "stage": "assess", "first": p["first"], "seed": seed, "view": p["tries"][0 if extra else n]["frame"],
                             "accepted": g["accepted_source_consistency"], "reasons": g["rejectionReasons"], "iou": g["silhouette_iou"],
                             "fitCm": g["fitResidualCm"], "generate_s": p["generated"]["seconds"], "generated_unix": p["generated"]["end_unix"],
                             "assessed_unix": result["end_unix"], "max_reserved_gb": p["generated"]["max_reserved_gb"],
@@ -738,6 +764,9 @@ def with_envs(image):
             .add_local_file(ROOT / "scripts/prepare_sam3d_mesh_source.py", "/opt/prep/scripts/prepare_sam3d_mesh_source.py", copy=True)
             .add_local_file(ROOT / "modal_apps/sam3d_mesh_only.patch", "/opt/prep/modal_apps/sam3d_mesh_only.patch", copy=True)
             .run_commands(f"{py} /opt/prep/scripts/prepare_sam3d_mesh_source.py")  # the reviewed mesh-only patch, with its receipt
+            # SAM 3D's image and mask embedders torch.hub.load DINOv2 from GitHub (code and 1.2 GB of weights) on every start into a
+            # per-container cache, and two processes starting together race on unpacking it: fetched once here instead
+            .run_commands(f"TORCH_HOME={TORCH_HUB} {py} -c \"import torch; torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14_reg', source='github', verbose=False)\"")
             # the gate: E4's gate image pins (the Mac venv's versions of what the gate imports), Python 3.12 as they need
             .run_commands("python -m pip install uv==0.8.22", "uv venv --python 3.12 /opt/gate",
                           "uv pip install --python /opt/gate/bin/python numpy==2.5.1 opencv-python-headless==5.0.0.93 scipy==1.18.0 "

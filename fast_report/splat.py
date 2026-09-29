@@ -3,10 +3,11 @@ elongation cap 4, with the sync-free pose and separable SSIM: 36.5 -> 11.5 ms a 
 seeded from the shot's DA3/TSDF points. A preview after `budget_s` of training, then, if asked, the same process goes on from
 it and hands out `full` snapshots. Generated display layers: never used for measurement.
 
-The shot's DA3 keyframes are the cameras. train="keyframes" trains on them only (exact poses and person masks);
-train="all" trains on every frame of the shot, poses in between interpolated (rotation slerp, centre linear) and corrected
-by the pose knots, a frame's person mask the union of its two keyframes' masks. Either way the presenter (dilated DILATE px)
-and the burnt-in caption box stay out of the loss.
+The shot's DA3 keyframes are the cameras. train="all" (the default) trains on every frame of the shot, poses in between
+interpolated (rotation slerp, centre linear) and corrected by the pose knots, a frame's person mask the union of its two
+keyframes' masks; train="keyframes" trains on the keyframes only (exact poses and masks). ME340, A100, 120 s, E5b's 84
+held-out frames: all 26.94 dB, keyframes 25.88 dB. Either way the presenter (dilated DILATE px) and the burnt-in caption box
+stay out of the loss. A 140 s budget scored 27.46 dB (E5b with DROID cameras: 27.48 at 120 s).
 
 Venv /opt/splat: splat_train's pins (Python 3.10, torch 2.4.1 cu124, gsplat 1.5.3 prebuilt), plus modal because splat_train
 and fast_splat import it at module level (nothing here calls it).
@@ -125,17 +126,27 @@ def train(message, emit, torch, fs, st):
     c2w = poses(keys, shot["c2w"], n)
     use = [k for k in keys if k not in set(held)] if message["train"] == "keyframes" else [i for i in range(a, b + 1) if i not in set(held)]
     boxes = {i: caption_box(frames[i]) for i in range(max(a, min(use) - CAPTION_WINDOW), min(b, max(use) + CAPTION_WINDOW) + 1)}
+    box_of = lambda i: union_box([boxes.get(j) for j in range(i - CAPTION_WINDOW, i + CAPTION_WINDOW + 1)])
+    span = sorted(set(use) | set(held))
     gpu_frames = torch.zeros((n, H, W, 3), dtype=torch.uint8, device="cuda")
+    for s in range(span[0], span[-1] + 1, 64):  # the whole span in blocks: one copy each, colour order flipped on the GPU
+        block = torch.from_numpy(np.ascontiguousarray(frames[s:min(s + 64, span[-1] + 1)])).cuda()
+        gpu_frames[s:s + len(block)] = block.flip(-1)
     out_mask = torch.zeros((n, H, W), dtype=torch.bool, device="cuda")
+    ellipse = torch.from_numpy(cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * DILATE + 1,) * 2)).half().cuda()[None, None]
+    for s in range(0, len(use), 32):  # excluded() on the GPU: nearest upsampling, then the ellipse dilation as a convolution
+        part = use[s:s + 32]
+        raster = torch.from_numpy(np.stack([person_of(keys, person, i) for i in part])).cuda()
+        full = torch.nn.functional.interpolate(raster[:, None].half(), size=(H, W), mode="nearest")
+        out_mask[part] = (torch.nn.functional.conv2d(full, ellipse, padding=DILATE) > 0)[:, 0]
     for i in use:
-        gpu_frames[i] = torch.from_numpy(np.ascontiguousarray(frames[i][..., ::-1]))
-        box = union_box([boxes.get(j) for j in range(i - CAPTION_WINDOW, i + CAPTION_WINDOW + 1)])
-        out_mask[i] = torch.from_numpy(excluded(frames[i], person_of(keys, person, i), box))
-    if held:  # scoring only (D's eval_holdout): the frames and their exclusion as the reference scored them
+        box = box_of(i)
+        if box is not None:
+            out_mask[i, max(box[1], 0):box[3] + 1, max(box[0], 0):box[2] + 1] = True
+    check = [int((out_mask[i].cpu().numpy() != excluded(frames[i], person_of(keys, person, i), box_of(i))).sum()) for i in use[::max(1, len(use) // 4)]]
+    if held:  # scoring only (D's eval_holdout): the frames' exclusion as the reference scored them
         scored = np.unpackbits(message["held_excluded"], axis=1)[:, :H * W].reshape(len(held), H, W).astype(bool)
-        for j, i in enumerate(held):
-            gpu_frames[i] = torch.from_numpy(np.ascontiguousarray(frames[i][..., ::-1]))
-            out_mask[i] = torch.from_numpy(scored[j])
+        out_mask[held] = torch.from_numpy(scored).cuda()
     rgb = np.asarray(message["seeds"]["rgb"], np.float32)
     rgb = rgb / 255 if rgb.max() > 1 else rgb
     xyz, rgb, scale = st.voxel_seeds(np.asarray(message["seeds"]["xyz"], np.float32), rgb, np.full(len(rgb), SEED_SIZE_M, np.float32), SEED_VOXEL_M, .5)
@@ -145,10 +156,15 @@ def train(message, emit, torch, fs, st):
             "K": cuda(k + [[0, 0, .5], [0, 0, .5], [0, 0, 0]]), "depth": None}  # gsplat's pixel centres, as splat_train.load
     fs.check_equivalence(data["c2w"][use[0]])
     setup_s = time.time() - started
+    if message.get("hold"):  # set up while the GPU is still busy (A: SAM 3's queue); train only once released
+        emit({"kind": "ready", "setup_s": round(setup_s, 2), "end_unix": time.time()})
+        released = recv(sys.stdin.buffer)
+        assert released.get("go"), released
     budget, background = float(message["budget_s"]), float(message.get("background_s") or 0)
     cfg = {"gpus": 1, "cap": max(PREVIEW_CAP, len(xyz)), "pose": True, "max_elongation": 4., "fast": True, "schedule": [(1, 1.)],
            "seconds": budget, "steps": None, "snapshots": ()}
-    base = {"train": message["train"], "trained_frames": len(use), "seeds": len(xyz), "setup_s": round(setup_s, 2)}
+    base = {"train": message["train"], "trained_frames": len(use), "seeds": len(xyz), "setup_s": round(setup_s, 2),
+            "exclusion_pixels_off_cpu_rule": check}  # the GPU exclusion against excluded() on a few frames (expected all 0)
     params, knots, stats, _ = fs.fit(cfg, data)
     scored = []
 
@@ -205,12 +221,13 @@ class Worker:
             self.boot = self._recv()
         return self.boot
 
-    def start(self, frames_host, shot, seeds, budget_s, background_s=0, train="keyframes", held=(), held_excluded=None):
+    def start(self, frames_host, shot, seeds, budget_s, background_s=0, train="all", held=(), held_excluded=None, hold=False):
         """{"kind": "preview" | "full" | "score", "seconds", "steps", "splat32", "count", ...} as they are made. shot: A's Shot (keys,
         frames (a, b), c2w_m, K, person); seeds: {"xyz" (m, 3) metres, "rgb" (m, 3)}; held/held_excluded: frames kept out of
-        training and scored after it, with the exclusion masks to score them by ((m, H, W) bool)."""
+        training and scored after it, with the exclusion masks to score them by ((m, H, W) bool). With hold, the process sets up
+        (frames and masks onto the GPU, 8-16 s), yields {"kind": "ready"} and trains only after release()."""
         self.ready()
-        message = {"frames": frames_path(frames_host), "budget_s": budget_s, "background_s": background_s, "train": train, "held": list(held),
+        message = {"frames": frames_path(frames_host), "budget_s": budget_s, "background_s": background_s, "train": train, "held": list(held), "hold": hold,
                    "shot": {"keys": [int(k) for k in shot["keys"]], "frames": [int(x) for x in shot["frames"]], "c2w": host(shot["c2w_m"]).astype(np.float64),
                             "K": host(shot["K"]).astype(np.float64), "person": host(shot["person"]).astype(bool)},
                    "seeds": {"xyz": host(seeds["xyz"]).astype(np.float32), "rgb": host(seeds["rgb"])}}
@@ -224,6 +241,10 @@ class Worker:
                     self.last = reply
                     return
                 yield reply
+
+    def release(self):
+        """Start training after start(hold=True) has yielded "ready" (any thread; start() only reads the process's stdout)."""
+        send(self.proc.stdin, {"go": True})
 
     def close(self):
         try:
@@ -239,7 +260,7 @@ def with_envs(image):
     return image.run_commands("python -m pip install uv==0.8.22", "uv venv --python 3.10 /opt/splat",
                               "uv pip install --python /opt/splat/bin/python torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu124",
                               f"uv pip install --python /opt/splat/bin/python numpy==1.26.4 opencv-python-headless==4.10.0.84 scipy==1.13.1 lpips==0.1.4 "
-                              f"packaging==24.2 modal {wheel}")
+                              f"packaging==24.2 setuptools==75.8.0 modal {wheel}")  # gsplat loads its kernels through torch.utils.cpp_extension, which imports setuptools
 
 
 def self_check():
