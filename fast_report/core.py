@@ -308,6 +308,36 @@ def person_masks(person, frames_local):
     return masks
 
 
+SPLAT_LATEST_S = 72.  # analysis s: the splat waits for the facts until here at most (150 s preview + write: by ~226 s)
+DENSIFY_WORDS_RULE = ("densify runs the EHS core words and every word with a detection on the object keyframes (every 3rd 5 fps keyframe, "
+                      "0.6 s apart); a word with none there is listed in words_not_run (round 1: 0-4 of 149-568 new objects carried such a word)")
+
+
+def densify_words(words, votes, core):
+    """(words densify runs, words it does not): SAM 3 cost on the 5 fps keyframes grows with every word (58 words: 88 GPU s on
+    Sam's Club vs 53 s for 21), and a word no object keyframe detected rarely finds a new object 0.2 s away. Never silent: the
+    rest go into the objects layer's densify record."""
+    seen = {w for v in votes for w in v} | set(core)
+    return [w for w in words if w in seen], [w for w in words if w not in seen]
+
+
+PICK_CHUNK = 10  # keyframes per pick blob (2 s at 5 fps): the viewer fetches the chunk at the video's time first (mvp2)
+
+
+def pick_chunks(runs, depth, per=PICK_CHUNK):
+    """Per-frame RLE bytes and depth bytes -> (data['chunks'], blobs): one gzip per frame range, frame offsets stay global (pairs).
+    An unchanged range (depth, pick v1 -> v2) is the same blob (mtime 0: gzip stamps the time otherwise), stored and fetched once. Round 1 sent one 0.84 MB pick + 1.7 MB
+    depth blob per version; the browser waited 0.7-2.6 s for pick v2 behind the densify burst."""
+    import gzip
+    meta, blobs = [], {}
+    for k, lo in enumerate(range(0, len(runs), per)):
+        hi = min(lo + per, len(runs))
+        meta.append({"frames": [lo, hi], "blob": f"pick-{k}", "depth_blob": f"depth-{k}"})
+        blobs[f"pick-{k}"] = (gzip.compress(b"".join(runs[lo:hi]), 5, mtime=0), {"mediaType": "application/gzip", "format": "panoptes-pick-v1 uint16 (value, run) pairs", "frames": [lo, hi]})
+        blobs[f"depth-{k}"] = (gzip.compress(b"".join(depth[lo:hi]), 5, mtime=0), {"mediaType": "application/gzip", "format": "panoptes-pick-v1 depth uint16 mm", "frames": [lo, hi]})
+    return meta, blobs
+
+
 # mvp2: X12's association gate at 5 fps (4 m/s split fast movers; 12 m/s cost nothing on walkers, VERIFY.md) over one keyframe
 # step only; longer gaps keep 4 m/s (12 m/s over a 3 s gap joined Sam's Club's man on a cart to a shopper 45 m away, run 004)
 PEOPLE_GATE_MPS, PEOPLE_GATE_WINDOW_S = 12., .2
@@ -586,6 +616,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     import video_events
     from fast_report import cards, cascade, layers, segment, vlm
     dev_geo, dev_seg = m.dev_geo, m.dev_seg
+    t_call = time.perf_counter()  # this call's decider questions (vlm.log_stats)
     video_sha = sha256(mp4)
     site = opts.get("site") or "unknown"
     use_cache = opts.get("cache", True)  # the cross-video label cache (and remembering this video's words)
@@ -925,6 +956,11 @@ def analyse(m, mp4, opts, clock, writer, log):
     # ---------- click MVP: object cards (section 4) and the judgement hook (B's fast_report.judge, when present) ----------
     cards_out, cards_ready, pick_ready, judge_futures, cards_lock = {}, threading.Event(), threading.Event(), [], threading.Lock()
     judge_lock = threading.Lock()
+    facts_done = {"identity": threading.Event(), "judge3": threading.Event()}  # the decider's last work: the splat waits for it (mvp2)
+    if not opts.get("densify", True) or not objects:
+        facts_done["judge3"].set()
+    if not objects:
+        facts_done["identity"].set()
     carried = {}  # the judge's VLM answers by (row, question, keyframes), shared by its runs on cards v1 and v3
     card_labels = ["physical values are estimated (floor plane + assumed 1.6 m camera height) with +-u from view-subset disagreement plus depth, "
                    "pose, floor, resolution and scale terms; 'not observed' / 'not measurable' carry their reason",
@@ -971,8 +1007,8 @@ def analyse(m, mp4, opts, clock, writer, log):
         return out["stats"]
 
     def judge_hook(out, version):
-        """B's entry point (spec section 9 A's contract out): judge.run(cards, ctx, writer, clock) on each cards version, one
-        after the other (a later version's judgements are never overwritten by an earlier one's VLM pass)."""
+        """B's entry point (spec section 9 A's contract out): judge.run(cards, ctx, writer, clock) on each cards version (a later
+        version's judgements are never overwritten by an earlier one's VLM pass: judge.run's version guard)."""
         try:
             from fast_report import judge
         except ImportError:
@@ -987,22 +1023,18 @@ def analyse(m, mp4, opts, clock, writer, log):
             a_ = by.get(x["index"]) or {}
             x.update(u_pose_m=a_.get("u_pose_m", x["u_pose_m"]), u_floor_m=a_.get("u_floor_m") or x["u_floor_m"], angles_usable=a_.get("angles_usable"),
                      plumb_u_deg=a_.get("plumb_u_deg"), plumb_deg=a_.get("plumb_deg"))
-
-        def job(prev):
-            try:  # round 2: the rules and the hazard judge's questions go out now, beside the previous run's wait
-                rows = judge.ahead(out["cards"], ctx, clock, carried, opts.get("hazard_ask"), m.proc_pool) if opts.get("judge_vlm", True) else None
-            except Exception:  # noqa: BLE001  run() redoes the rules and asks what is missing
-                rows = None
-            if prev is not None:
-                prev.result()
-            try:
+        def job():  # mvp2: runs overlap (v3 no longer waits for v1's questions: Sam's Club final judgements 76 -> 117 s, mvp2/click);
+            try:     # judge.run shares their answers and evidence through `carried` and never puts an older version over a newer one
                 return judge.run(out["cards"], ctx, writer, clock, vlm_on=opts.get("judge_vlm", True), pool=m.proc_pool, carried=carried,
-                                 hazard_ask=opts.get("hazard_ask"), rows=rows)
+                                 hazard_ask=opts.get("hazard_ask"), provisional=version < 3 and densify_on and bool(objects))
             except Exception:  # noqa: BLE001  the judgements are one layer: their failure is recorded, the others stand
                 import traceback
                 return {"error": traceback.format_exc()[-3000:]}
-        with judge_lock:  # the runs chain in call order (identity and densify call from two threads)
-            judge_futures.append(m.cpu_pool.submit(job, judge_futures[-1] if judge_futures else None))
+            finally:
+                if version == 3:
+                    facts_done["judge3"].set()
+        with judge_lock:
+            judge_futures.append(m.cpu_pool.submit(job))
 
     def sync_objects():
         """objects v2 carries the cards' boxes (main cluster, fragments merged) and size checks once they exist."""
@@ -1053,6 +1085,8 @@ def analyse(m, mp4, opts, clock, writer, log):
         except Exception:  # noqa: BLE001
             import traceback
             return {"error": traceback.format_exc()[-3000:]}
+        finally:
+            facts_done["identity"].set()
 
     def identity_pass():
         if not cards_ready.wait(120):
@@ -1199,7 +1233,6 @@ def analyse(m, mp4, opts, clock, writer, log):
         as numbered white-over-black marks, the subject [1]. -> the number of questions asked."""
         try:
             from fast_report import judge
-            som = judge.som
         except ImportError:
             return 0
         cal, view = cards_calibration(), views_for_identity()
@@ -1212,8 +1245,10 @@ def analyse(m, mp4, opts, clock, writer, log):
             opts_ = cards.identity_options(c["identity"])
             # integration fix: the options go into the prompt as letters (vlm.qwen_prompt); A's bare question listed none
             p = vlm.qwen_prompt(" ".join([judge.SCENE, judge.MARKS]), "What is the object marked [1]?", opts_)
-            # 336 px crops: ~144 image tokens each instead of 256 (the identity pass is prefill-bound: Sam's Club 413 questions, 87 s)
-            return opts_, [som(frames[best], marks, subject=1, side=336), som(frames[best], marks, subject=1, marks=False, side=336)], p
+            # 336 px crops: ~144 image tokens each instead of 256 (the identity pass is prefill-bound: Sam's Club 413 questions, 87 s);
+            # rendered in the process pool (mvp2/click: GIL-bound in threads beside the rest of the run)
+            crop, local = judge.som_crop(frames[best], marks)
+            return opts_, m.proc_pool.submit(judge.som_pair, np.ascontiguousarray(crop), local, 1, 336), p
         # integration: every object seen on >= 3 views is asked (spec 5.3's 'identity for the other objects', after the
         # judgement questions): the SAM 3 word alone named a floor drain 'metal part' and a flammables cabinet 'machine'
         todo = [c for c in card_list if to_name(c, which)]
@@ -1222,7 +1257,13 @@ def analyse(m, mp4, opts, clock, writer, log):
         with clock.stage(f"vlm.identity.{which}", n={"objects": len(todo)}):
             with ThreadPoolExecutor(8) as pool:  # never the core's cpu_pool: its threads would wait on vLLM (the judge's queue)
                 built = list(pool.map(build, todo))
-            asked = [(c, b[0], vlm.submit(b[1], b[2], len(b[0]), "identity" if ehs(c) else "identity_other")) for c, b in zip(todo, built) if b is not None]
+            asked = []
+            for c, b in zip(todo, built):
+                try:
+                    if b is not None:
+                        asked.append((c, b[0], vlm.submit(list(b[1].result()), b[2], len(b[0]), "identity" if ehs(c) else "identity_other")))
+                except Exception:  # noqa: BLE001  a crop that cannot be drawn leaves that card's detected word
+                    pass
             for c, opts_, fut in asked:
                 try:
                     c["identity"] = cards.decide_identity(c["identity"], opts_, fut.result(), cal)
@@ -1267,16 +1308,30 @@ def analyse(m, mp4, opts, clock, writer, log):
     # complete models: SAM 3D + the fit gate on GPU 0's two processes; its inputs are gathered now, the generation waits for
     # the facts (click MVP section 7: densify, cards and judgements before the display layers)
     sam3d_objs = m.cpu_pool.submit(sam3d_inputs)
-    display = {}
+    display = {}  # 'models': SAM 3D's future; 'splat_wait': the splat's release is scheduled
 
     def release_splat():
         if not release.is_set():
             release.set()  # the splat trains on GPU 1 from here
             clock.mark("splat_started")
 
+    def splat_after_facts():
+        """mvp2: the splat trains on GPU 1 beside vLLM's decider and roughly halves its throughput (Sam's Club: identity and the
+        final judgements at 88 / 117 s). It starts once the identity pass and the final judgements are done, or at SPLAT_LATEST_S
+        (its 150 s preview then still lands by 230 s, spec 7's display target), whichever is first."""
+        if display.get("splat_wait"):
+            return
+        display["splat_wait"] = True
+
+        def wait():
+            while clock.now() < SPLAT_LATEST_S and not all(e.is_set() for e in facts_done.values()):
+                time.sleep(.1)
+            release_splat()
+        m.cpu_pool.submit(wait)
+
     def start_display():
-        release_splat()
-        if display or not display_on:
+        splat_after_facts()
+        if display.get("models") or not display_on:
             return
         display["models"] = m.cpu_pool.submit(models_job, m, sam3d_objs.result, geo, shared, words, clock, writer, dev_geo)
         clock.mark("display_started")
@@ -1289,7 +1344,8 @@ def analyse(m, mp4, opts, clock, writer, log):
         """Section 7: SAM 3 with every word on the 5 fps keyframes the objects skipped, from one queue both GPUs take from;
         per batch the flood dedupe, a label map per frame at 640x360 from the kept masks' logits (the smaller wins), and the
         kept masks bit-packed on the CPU (X1's layout)."""
-        sam, words_t, oh, ow = m.sams[dev], tuple(words), H // 2, W // 2
+        sam, words_t, oh, ow = m.sams[dev], tuple(dens_words), H // 2, W // 2
+        widx = torch.tensor([words.index(w) for w in words_t], device=dev)  # densify's word subset -> the vocabulary's indices
         with torch.cuda.device(dev), torch.inference_mode():
             while True:
                 try:
@@ -1300,7 +1356,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                 with clock.stage(f"densify.sam3@gpu{dev.index}", gpu=dev, n={"frames": len(batch), "words": len(words_t)}):
                     x = torch.stack([work.chunks[dev][q // segment.PERSON_FRAMES][q % segment.PERSON_FRAMES] for q in batch])
                     r = sam.detect(sam.vision(x), len(batch), words_t, segment.VOCAB_SCORE, logits=True)
-                    r["frame"] = torch.tensor(batch, device=dev)[r["frame"]]
+                    r["frame"], r["word"] = torch.tensor(batch, device=dev)[r["frame"]], widx[r["word"]]
                     kd, vd = segment.dedupe(r["frame"], r["word"], r["score"], r["mask"]) if len(r["frame"]) else (np.zeros(0, int), [])
                     kt = torch.from_numpy(kd).to(dev)
                     fk = r["frame"][kt]
@@ -1325,6 +1381,8 @@ def analyse(m, mp4, opts, clock, writer, log):
                     for q, (lab, sel) in maps_d.items():
                         dens["maps"][q] = (lab, base + sel)
 
+    dens_words = list(words)  # densify's words (densify_words), set when it starts
+
     def densify_job():
         try:
             return densify()
@@ -1339,6 +1397,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         >= 2 keyframes); existing ids never change. Then outlines v2, pick v2, objects v3 and cards v3; SAM 3D and the splat
         start after its GPU part."""
         frames_d = [q for gg in geo for q in gg["pos"] if q not in by_frame]
+        dens_words[:], skipped = densify_words(words, [o.get("votes") or {} for o in objects], vlm.CORE)
         batches = queue.Queue()
         for b in range(0, len(frames_d), DENSIFY_BATCH):
             batches.put(frames_d[b:b + DENSIFY_BATCH])
@@ -1357,7 +1416,8 @@ def analyse(m, mp4, opts, clock, writer, log):
         for g_, w_, s_ in dens["votes"]:
             vote_d.setdefault(g_, []).append((w_, s_))
         n_old = len(members)
-        added, new_objs, new_points, st = {}, [], [], {"frames": len(frames_d), "masks_kept": n_d, "joined": 0, "new_objects": 0}
+        added, new_objs, new_points, st = {}, [], [], {"frames": len(frames_d), "masks_kept": n_d, "joined": 0, "new_objects": 0,
+                                                        "words": len(dens_words), "words_not_run": skipped, "words_rule": DENSIFY_WORDS_RULE}
         with torch.inference_mode(), clock.stage("densify.lift", gpu=dev_geo, n={"masks": n_d}):
             for si, gg in enumerate(geo):
                 pos = gg["pos"]
@@ -1419,7 +1479,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                                 H / (H // 2), q))
         st.update(joined=int((ent[:] > 0).sum() - sum(new_o["masks"] for new_o in new_objs)), new_objects=len(new_objs),
                   objects_gaining_views=len(added))
-        release_splat()  # densify's GPU 1 share is done: the splat trains; SAM 3D (GPU 0, and 16 CPU processes) after cards v3
+        splat_after_facts()  # densify's GPU 1 share is done: the splat trains after the decider (or at SPLAT_LATEST_S); SAM 3D after cards v3
         points_v3 = list(obj_points)
         for oi, ds in added.items():
             points_v3[oi] = merge_points([obj_points[oi]] + ds)
@@ -1567,7 +1627,6 @@ def analyse(m, mp4, opts, clock, writer, log):
         """panoptes-pick-v1 (section 3.3): one id map per 5 fps keyframe of every geometry shot (objects as outlined, people
         painted last with their tracks, the smaller person on top), RLE per frame in the process pool; nearest depth per
         4 x 4 block. -> future of (data, blobs); fills pick_counts for the cards' time (section 4.6)."""
-        import gzip
         n_objects = len(objects)  # objects added later (densify) are not on these maps
         with clock.stage("pick.maps"):
             people_ids = sorted(set(person_entity.values()) | {"person:untracked"})
@@ -1613,8 +1672,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                 data = {"format": "panoptes-pick-v1", "source_wh": [W, H], "entities": ent, "frames": frames_pk,
                         "depth": {"w": DA3_HW[1] // 4, "h": DA3_HW[0] // 4, "unit": "mm", "scale": "estimated", "grid": "DA3 504x280 / 4, min per block"},
                         "note": "segmented frames: SAM 3 masks (observed); projected frames: carried from 3D (estimated); 'people only': no object map"}
-                blobs = {"pick": (gzip.compress(b"".join(chunks), 5), {"mediaType": "application/gzip", "format": "panoptes-pick-v1 uint16 (value, run) pairs"}),
-                         "depth": (gzip.compress(b"".join(depth), 5), {"mediaType": "application/gzip", "format": "panoptes-pick-v1 depth uint16 mm"})}
+                data["chunks"], blobs = pick_chunks(chunks, depth)
             return data, blobs
         return m.cpu_pool.submit(finish)
 
@@ -1701,7 +1759,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                    vocab_frames_equal_decoded=[bool(img is not None and np.array_equal(img, frames[f])) for img, f in zip(seeked, vlm_frames)],
                    detections={"person": int(is_person.sum()), "floor": int((~is_person).sum()), "vocabulary_masks": voc_count,
                                "vocabulary_masks_kept": int(len(kept))},
-                   objects=len(objects), cascade=casc, events_windows=len(ev), vllm_engine_stats=vlm.throughput(),
+                   objects=len(objects), cascade=casc, events_windows=len(ev), vllm_engine_stats=vlm.throughput(), vlm_questions=vlm.log_stats(t_call),
                    cut_chunks={"submitted_s": chunk_at, "done_s": [chunk_done.get(i) for i in range(len(futures))],
                                "work_s": [round(f.result()["s"], 3) for f in futures]})
     return summary
@@ -1731,6 +1789,13 @@ def self_check():
     Rq = cv2.Rodrigues(np.array([.3, -.2, .5]))[0]
     s_, R_, t_ = umeyama(A, 2.5 * A @ Rq.T + [1., 2, 3])
     assert abs(s_ - 2.5) < 1e-9 and np.allclose(R_, Rq) and np.allclose(t_, [1, 2, 3])
+    assert densify_words(["box", "spill", "lamp", "shelf"], [{"box": .5}, {"shelf": .4, "box": .3}], ["spill", "ladder"]) == (["box", "spill", "shelf"], ["lamp"])
+    import gzip  # pick chunks: 23 frames -> 10 + 10 + 3, each blob inflates to its frames' bytes, depth alike
+    meta, blobs = pick_chunks([bytes([i]) * 4 for i in range(23)], [bytes([i]) * 2 for i in range(23)])
+    assert [c["frames"] for c in meta] == [[0, 10], [10, 20], [20, 23]] and len(blobs) == 6
+    time.sleep(1.1)  # gzip's header time: an unchanged chunk must be the same bytes a second later (content-addressed blobs)
+    assert pick_chunks([bytes([i]) * 4 for i in range(23)], [bytes([i]) * 2 for i in range(23)])[1]["depth-0"][0] == blobs["depth-0"][0]
+    assert gzip.decompress(blobs["pick-1"][0]) == b"".join(bytes([i]) * 4 for i in range(10, 20)) and gzip.decompress(blobs["depth-2"][0]) == bytes([20, 20, 21, 21, 22, 22])
     try:
         import torch
     except ImportError:

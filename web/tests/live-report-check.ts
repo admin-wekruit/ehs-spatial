@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import {latest,liveDocument,frameOf,type Patch} from '../src/live-report.ts';
-import {readPick,gunzip,pickAt,pickMask,frameIndexAt,unknownRegion,entityInfo,worstVerdict,pointInPolygon} from '../src/live-report.ts';
+import {readPick,gunzip,pickAt,pickMask,frameIndexAt,pickIndexAt,pickChunks,emptyPick,fillChunk,chunkOrder,unknownRegion,entityInfo,worstVerdict,pointInPolygon} from '../src/live-report.ts';
 
 // ---------------- click MVP: a synthetic pick layer (CLICK-MVP-SPEC 3.3)
 const rle=(m:Uint16Array)=>{const o:number[]=[];let v=m[0],n=0;for(const x of m){if(x===v&&n<65535){n++;continue;}o.push(v,n);v=x;n=1;}o.push(v,n);return o;};
@@ -26,10 +26,28 @@ const data:any={format:'panoptes-pick-v1',source_wh:[1280,720],entities,frames,d
 const pick=readPick(data,await gunzip(zlib.gzipSync(Buffer.from(Uint16Array.from(pairs.flat()).buffer))),await gunzip(zlib.gzipSync(Buffer.from(depth.buffer))));
 const at=(t:number,col:number,row:number,w=64)=>pickAt(pick,t,(col+.5)*1280/w,(row+.5)*720/(w===64?36:360)).id;
 assert.equal(at(0,5,5),'obj-0-big');assert.equal(at(0,12,12),'obj-0-small','the smaller mask wins');assert.equal(at(0,17,15),'person:0-p','a person beats objects');
-assert.equal(at(0,50,5),null,'a miss');assert.equal(at(.99,5,5),'obj-0-big');assert.equal(at(-3,5,5),'obj-0-big','before the first keyframe: the first');
+assert.equal(at(0,50,5),null,'a miss');assert.equal(at(.49,5,5),'obj-0-big');assert.equal(at(-.2,5,5),'obj-0-big','just before the first keyframe: the first');
+assert.equal(at(-3,5,5),null,'long before the first keyframe: no map');assert.equal(at(.51,55,55,640),null,'past half the gap: the next keyframe (frame 1 has only its last pixel)');
 assert.equal(at(1,0,0,640),null);assert.equal(at(1.5,639,359,640),'obj-0-big','the last pixel after split runs');
 assert.equal(pickMask(pick,0,'obj-0-small')!.mask.reduce((a,b)=>a+b,0),50,'mask: 10x10 minus the person over it');
 assert.deepEqual([-1,.99,1,5].map(t=>frameIndexAt(frames,t)),[0,0,1,1]);
+// the nearest keyframe within a shot, never across a cut (shot 0: t 0 and .4, map until .6; cut; shot 1 starts at .8, next map 1.0)
+const fr2:any=[{t:0,t_end:.4,shot:0},{t:.4,t_end:.6,shot:0},{t:.8,t_end:1,shot:1},{t:1,t_end:1.2,shot:1}];
+assert.deepEqual([-.3,-.1,.1,.25,.55,.6,.62,.7,.85,.95,1.25].map(t=>pickIndexAt(fr2,t)),[-1,0,0,1,1,2,2,2,2,3,-1]);
+assert.equal(pickIndexAt([{t:0,t_end:.4,shot:0},{t:.4,t_end:.8,shot:1}] as any,.3),0,'the nearer map is in the next shot: never across the cut');
+// chunks (mvp2): one blob per frame range; a frame is pending until its chunk is in, then reads as the one-blob layer
+const chunked:any={...data,chunks:[{frames:[0,1],blob:'pick-0',depth_blob:'depth-0'},{frames:[1,2],blob:'pick-1',depth_blob:'depth-1'}]};
+assert.deepEqual(pickChunks(chunked,{}).map(c=>[c.lo,c.hi,c.pick,c.depth]),[[0,1,'pick-0','depth-0'],[1,2,'pick-1','depth-1']]);
+assert.deepEqual(pickChunks(data,{depth:{}}),[{lo:0,hi:2,pick:'pick',depth:'depth'}],'a one-blob layer is one chunk');
+const cp=emptyPick(chunked),u16=(a:number[])=>Uint16Array.from(a).buffer as ArrayBuffer;
+assert.deepEqual(chunkOrder(cp,pickChunks(chunked,{}),1.3).map(c=>c.lo),[1,0],'the chunk at the video time first');
+assert.ok(pickAt(cp,0,110,110).pending&&pickMask(cp,0,'obj-0-big')===null,'pending before its chunk');
+fillChunk(cp,pickChunks(chunked,{})[1],u16(pairs[1]),depth.buffer.slice(8820*2,2*8820*2));
+assert.equal(pickAt(cp,1.5,1279,719).id,'obj-0-big');assert.ok(pickAt(cp,.2,110,110).pending,'frame 0 still pending');
+assert.throws(()=>fillChunk(cp,pickChunks(chunked,{})[0],u16(pairs[0].slice(2)),null),/pick_layout/,'runs that do not add up to w*h');
+fillChunk(cp,pickChunks(chunked,{})[0],u16(pairs[0]),depth.buffer.slice(0,8820*2));
+for(const [t,c,r] of [[0,5,5],[0,12,12],[0,17,15],[0,50,5]])assert.equal(pickAt(cp,t,(c+.5)*20,(r+.5)*20).id,at(t,c,r),`chunked == one blob at ${c},${r}`);
+assert.equal((unknownRegion(cp,{shots:[]},null,0,640,300) as any).status,'no 3D point here');
 const byBytes=readPick({...data,frames:frames.map(f=>({...f,offset:f.offset*4}))},pick.runs.buffer as ArrayBuffer,depth.buffer);
 assert.equal(byBytes.unit,4);assert.equal(pickAt(byBytes,0,(17.5)*20,15.5*20).id,'person:0-p','byte offsets read the same');
 const cameras={shots:[{index:0,keys:[0,30],times:[0,1],K:[K,K],c2w:[I4,I4],wh:[504,280],source_wh:[1280,720],floor:{normal:[0,1,0],point_m:[0,1.6,0]}}]};
@@ -58,10 +76,12 @@ if(mvp>=0){
   const [mroot,mreport]=args.slice(mvp+1,mvp+3),dir=path.join(mroot,'reports',mreport,'patches');
   const L=latest(fs.readdirSync(dir).sort().map(n=>JSON.parse(fs.readFileSync(path.join(dir,n),'utf8'))));
   const b=(r:any)=>fs.readFileSync(path.join(mroot,'blobs/sha256',r.sha256));
-  const p=readPick(L.pick.data,await gunzip(b(L.pick.blobs.pick)),L.pick.blobs.depth?await gunzip(b(L.pick.blobs.depth)):null);
+  let p:any;
+  if(L.pick.data.chunks){p=emptyPick(L.pick.data);for(const c of pickChunks(L.pick.data,L.pick.blobs))fillChunk(p,c,await gunzip(b(L.pick.blobs[c.pick])),c.depth?await gunzip(b(L.pick.blobs[c.depth])):null);}
+  else p=readPick(L.pick.data,await gunzip(b(L.pick.blobs.pick)),L.pick.blobs.depth?await gunzip(b(L.pick.blobs.depth)):null);
   const analysis=JSON.parse(b(L.outlines.blobs.analysis).toString());let seed=7,agree=0,n=0;const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
   for(let i=0;i<4000;i++){
-    const f=analysis.frames[Math.floor(rnd()*analysis.frames.length)],x=rnd()*1280,y=rnd()*720,id=pickAt(p,(f.timeSec+f.endTimeSec)/2,x,y).id;
+    const f=analysis.frames[Math.floor(rnd()*analysis.frames.length)],x=rnd()*1280,y=rnd()*720,id=pickAt(p,f.timeSec+.25*(f.endTimeSec-f.timeSec),x,y).id;  // nearer its own keyframe than the next
     if(id?.startsWith('person:'))continue;
     const inside=f.objects.filter((o:any)=>o.polygons.some((q:number[][])=>q.length>2&&pointInPolygon([x,y],q))).map((o:any)=>o.entityId);
     n++;if(id?inside.includes(id):!inside.length)agree++;

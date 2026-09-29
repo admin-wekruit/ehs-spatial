@@ -206,6 +206,13 @@ class FastReport:
             jobs = [pool.submit(vlm.chat, [vlm.image_block(png, "image/png")] * 5 + [{"type": "text", "text": "List objects."}], max_tokens=8)]
             jobs += [pool.submit(vlm.chat, [vlm.image_block(noise)] * k + [{"type": "text", "text": "Describe."}], max_tokens=8) for k in (24, 36)]
             [j.result() for j in jobs]
+        # mvp2: the decider's own shape (two 336 / 448 px crops, one token, log-probs), 64 at MAX_SEQS in flight: the first call's
+        # identity and judgement passes ran 1.2-1.4x slower than the warm call's (Sam's Club 24 / 31 s vs 20 / 22 s)
+        crops = {side: cv2.imencode(".jpg", np.random.default_rng(side).integers(0, 255, (side, side, 3), np.uint8), [cv2.IMWRITE_JPEG_QUALITY, 90])[1].tobytes()
+                 for side in (336, 448)}
+        p = vlm.qwen_prompt("These are crops.", "What is the object marked [1]?", ["box", "shelf", "another kind of object"])
+        futs = [vlm.submit([crops[(336, 448)[i % 2]]] * 2, p, 3, "identity") for i in range(64)]
+        [f.result() for f in futs]
         warm_s = round(time.perf_counter() - t, 2)
         t = time.perf_counter()  # idle decode speed, one sequence, 256 new tokens: the reference for the runs' vLLM numbers
         _, usage = vlm.chat([{"type": "text", "text": "Count from 1 to 500, separated by commas."}], max_tokens=256, ignore_eos=True)

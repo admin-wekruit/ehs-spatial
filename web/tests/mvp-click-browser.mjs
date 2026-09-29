@@ -18,7 +18,7 @@ const [root,out]=argv,reports=option('--reports','me340-mvp-fixture,samsclub-mvp
 // --judged N: N aimed clicks on judged objects (one per check first, the biggest in the video), before the plain object / miss / person;
 // --height: a taller viewport keeps the whole card (identity to judgements) in the screenshot
 const nJudged=Number(option('--judged','1')),height=Number(option('--height','1100')),finalLayers=argv.includes('--final');
-const python='/Users/adam/Desktop/Tesla/panoptes-platform/.venv/bin/python',VITE=5183,FAST=8803;
+const python='/Users/adam/Desktop/Tesla/panoptes-platform/.venv/bin/python',VITE=Number(option('--vite-port','5183')),FAST=Number(option('--fast-port','8803'));
 const {chromium}=createRequire(process.env.PLAYWRIGHT_FROM||'/Users/adam/Desktop/ontab/package.json')('playwright');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 fs.mkdirSync(out,{recursive:true});
@@ -60,7 +60,7 @@ async function video(name){
   const box=await page.evaluate(()=>{const b=document.querySelector('.report-video-stage').getBoundingClientRect();return [b.left,b.top,b.width,b.height];});
   const click=async (x,y)=>{const [cx,cy]=await page.evaluate(toClient,[x,y]);
     assert.ok(cx>=box[0]&&cy>=box[1]&&cx<box[0]+box[2]&&cy<box[1]+box[3],'aimed point is off the visible video (object-fit cover crops it)');await page.mouse.click(cx,cy);};
-  const info=await page.evaluate(()=>({decodeMs:window.__live.pickDecodeMs,decodeSteps:window.__live.pickSteps,decodes:window.__live.pickDecodes,duration:document.querySelector('.report-video-stage video').duration,frames:window.__live.pick.data.frames.length}));
+  const info=await page.evaluate(()=>({pageErrors:window.__live.errors,readyFrames:[...window.__live.pick.ready].reduce((a,b)=>a+b,0),decodeMs:window.__live.pickDecodeMs,decodeSteps:window.__live.pickSteps,decodes:window.__live.pickDecodes,duration:document.querySelector('.report-video-stage video').duration,frames:window.__live.pick.data.frames.length}));
 
   // 200 seeded clicks: uniform time and a uniform point of the visible video (misses open the unknown-region card)
   let seed=1;const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
@@ -124,9 +124,13 @@ async function video(name){
     await page.screenshot({path:path.join(out,`${name}-list-${which}.png`)});
   }
   const timing=await page.evaluate(()=>[...document.querySelectorAll('.live-report-timing table')[0].querySelectorAll('tbody tr')].map(r=>[...r.cells].map(c=>c.textContent)));
+  // where a pick version's wait goes (mvp2): resource timing of every request in flight around each version's first chunk
+  const network=await page.evaluate(()=>{const e=performance.getEntriesByType('resource'),r=x=>Math.round(x);
+    return e.map(x=>({url:x.name.split('/').slice(-2).join('/').slice(0,40),start:r(x.startTime),queued:r((x.requestStart||x.fetchStart)-x.startTime),
+      server:r(x.responseStart-(x.requestStart||x.fetchStart)),body:r(x.responseEnd-x.responseStart),kb:r((x.encodedBodySize||0)/1024)}));});
   server.kill();await page.close();
-  const row={report:name,replay:as,pickDecodeMs:info.decodeMs,pickDecodeSteps:info.decodeSteps,pickDecodes:info.decodes,pickFrames:info.frames,clicks:ms.length,hits,unknown:misses,
-    latencyMs:{p50:q(.5),p95:q(.95),max:Math.max(...ms),mean:ms.reduce((a,b)=>a+b,0)/ms.length},shots,evidence,filter,counts,timing,errors};
+  const row={report:name,replay:as,pickDecodeMs:info.decodeMs,pickDecodeSteps:info.decodeSteps,pickDecodes:info.decodes,pickFrames:info.frames,pickReadyFrames:info.readyFrames,clicks:ms.length,hits,unknown:misses,network,
+    latencyMs:{p50:q(.5),p95:q(.95),max:Math.max(...ms),mean:ms.reduce((a,b)=>a+b,0)/ms.length},shots,evidence,filter,counts,timing,errors:[...errors,...(info.pageErrors||[])]};
   console.log(JSON.stringify({report:name,latencyMs:row.latencyMs,decodeMs:row.pickDecodeMs,decodeSteps:row.pickDecodeSteps,hits,unknown:misses,filter,evidence,errors:errors.length}));
   return row;
 }
@@ -135,7 +139,9 @@ for(const r of reports)results.videos.push(await video(r));
 fs.writeFileSync(path.join(out,'click-check.json'),JSON.stringify(results,null,1));
 await browser.close();vite.kill();
 for(const v of results.videos){
-  assert.ok(v.latencyMs.p95<100,`${v.report}: click p95 ${v.latencyMs.p95} ms`);assert.ok(v.pickDecodeMs<300,`${v.report}: pick decode ${v.pickDecodeMs} ms`);
+  assert.ok(v.latencyMs.p95<100,`${v.report}: click p95 ${v.latencyMs.p95} ms`);
+  // mvp2: every pick version serves clicks at the video's time < 300 ms after it lands (its first chunk); the rest follows
+  for(const d of v.pickDecodes||[])assert.ok(d.ms<300,`${v.report}: pick seq ${d.seq} first chunk ${d.ms} ms (all ${d.all_ms} ms)`);
   assert.deepEqual(v.errors,[],`${v.report}: console errors`);
 }
 console.log('mvp click browser check passed');

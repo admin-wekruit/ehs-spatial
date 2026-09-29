@@ -17,13 +17,12 @@ per-shot 'room_floor' points for J5's scan).
   python -m fast_report.judge --self-check                  # no GPU: the verdict table, gap asymmetry, NO_DATA paths, J5
   python -m fast_report.judge --calibrate ANSWERS.json      # set-d answers (modal_apps/judge_decider.py) -> calibration.json
 """
-import io
 import json
 import math
 import sys
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, Future
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -836,17 +835,44 @@ def combine(geo_result, vlm, visual_ok=False, hazard_side=False, clear_needed=Fa
 
 # ---------- set-of-marks ----------
 
-def som(frame, polygons_by_mark, subject=1, marks=True, side=448, scale=1.6, encode=True):
-    """BGR frame + {mark: [polygon (source px)]} -> JPEG of 1.6 x the subject's box, long side `side` px; with marks, every
-    polygon as a 2 px white-over-black stroke and its number in a black tag (never red: X2's red outlines read as 'fire
-    extinguisher')."""
-    import cv2
+def _done(value):
+    f = Future()
+    f.set_result(value)
+    return f
+
+
+def som_crop(frame, polygons_by_mark, subject=1, scale=1.6):
+    """-> (crop of 1.6 x the subject's box (a view of the frame), {mark: polygons in crop px} for the marks that reach the crop)."""
     pts = np.concatenate([np.asarray(p, float).reshape(-1, 2) for p in polygons_by_mark[subject]])
     (x0, y0), (x1, y1) = pts.min(0), pts.max(0)
     H, W = frame.shape[:2]
     half = max(x1 - x0, y1 - y0, 48) * scale / 2
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
     a, b, c, d = int(max(0, cx - half)), int(min(W, cx + half)), int(max(0, cy - half)), int(min(H, cy + half))
+    local = {}
+    for mark, polys in polygons_by_mark.items():
+        arr = [np.asarray(p, float).reshape(-1, 2) - [a, c] for p in polys]
+        allp = np.concatenate(arr) if arr else np.zeros((0, 2))
+        e = 12  # source px: a 5 px stroke at the smallest scale (448 / 1280) reaches ~7 px past its polygon
+        if mark == subject or (len(allp) and allp[:, 0].max() >= -e and allp[:, 0].min() < b - a + e and allp[:, 1].max() >= -e and allp[:, 1].min() < d - c + e):
+            local[mark] = arr
+    return frame[c:d, a:b], local
+
+
+def som_pair(crop, local, subject=1, side=448):
+    """(marked, plain) JPEGs from som_crop's output: a top-level function, so the core's process pool can render them (mvp2:
+    in threads of the main process the judge's 430 rows took 5-17 s, GIL-bound beside everything else)."""
+    return som(crop, local, subject, True, side, crop_done=True), som(crop, local, subject, False, side, crop_done=True)
+
+
+def som(frame, polygons_by_mark, subject=1, marks=True, side=448, scale=1.6, crop_done=False, encode=True):
+    """BGR frame + {mark: [polygon (source px)]} -> JPEG of 1.6 x the subject's box, long side `side` px; with marks, every
+    polygon as a 2 px white-over-black stroke and its number in a black tag (never red: X2's red outlines read as 'fire
+    extinguisher'). crop_done: frame and polygons are som_crop's (crop px)."""
+    import cv2
+    if not crop_done:
+        frame, polygons_by_mark = som_crop(frame, polygons_by_mark, subject, scale)
+    a, c, b, d = 0, 0, frame.shape[1], frame.shape[0]
     s = side / max(b - a, d - c)
     img = cv2.resize(frame[c:d, a:b], (max(1, round((b - a) * s)), max(1, round((d - c) * s))), interpolation=cv2.INTER_AREA if s < 1 else cv2.INTER_CUBIC)
     if marks:
@@ -1116,7 +1142,7 @@ def gather(want, carried, stats):
     return got
 
 
-def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, carried=None, hazard_ask=None, rows=None):
+def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, carried=None, hazard_ask=None, rows=None, provisional=False):
     """Judgements v1 (geometry) at once; then the hazard judge (round 2): per object with a check, its check's question(s) to
     Gemini on one 2 x 2 evidence image (fast_report.hazard, 10 objects a request, all requests at once: ahead(), which the core
     calls as soon as the cards version exists), Qwen's letter probabilities (vlm.options, priority 'judgement') for what Gemini
@@ -1124,8 +1150,9 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, c
     geometry by combine(); then v2. ask: a stand-in for vlm.submit; hazard_ask: reqs -> {key: Future of the provider output}
     (hazard.Asker.ask), None = no Gemini (Qwen alone); cal: for fast_report/calibration.json (tests); carried: a dict shared by
     the runs of one analysis (answers, pending questions, evidence): a later cards version asks only what is new; rows: ahead()'s
-    (rows, send future).
-    pool: a process pool for the rules. Returns counts and times."""
+    (rows, send future). provisional: a later cards version will replace these (densify): Qwen's questions queue after the other
+    objects' identity (mvp2/click). Runs of one analysis may overlap: a run never puts over a newer cards version's judgements.
+    pool: a process pool for the rules and the set-of-marks renders. Returns counts and times."""
     cal = load_calibration() if cal is None else cal
     carried = {} if carried is None else carried
     ctx = with_marks(ctx)
@@ -1133,7 +1160,16 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, c
     if rows is None:
         rows = ahead(cards, ctx, clock, carried, hazard_ask, pool) if vlm_on else (rules(cards, ctx, clock, pool), None)
     rows, sent = rows
-    writer.put("judgements", layer(rows, cal, {"version_of": ctx.get("version_of"), "vlm_answers": False}), None, "estimated+inferred", LABELS)
+    version = (ctx.get("version_of") or {}).get("object_cards") or 0
+
+    def put(data, blobs):
+        """Never over a newer cards version's judgements (mvp2/click: the runs overlap)."""
+        if carried.get("_put", -1) > version:
+            return False
+        carried["_put"] = version
+        writer.put("judgements", data, blobs, "estimated+inferred", LABELS)
+        return True
+    put(layer(rows, cal, {"version_of": ctx.get("version_of"), "vlm_answers": False}), None)
     clock.mark("judgements_v1_put")
     rec = {"rows": len(rows), "counts_v1": layer(rows, cal)["counts"]}
     if not vlm_on:
@@ -1162,7 +1198,7 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, c
             blobs[f"ev-hz-{oid}".replace(":", "_")] = (carried[("thumb", oid)], {"mediaType": "image/jpeg", "format": "jpeg",
                                                                                 "note": "hazard-judge evidence (2 x 2), 320 px"})
     # Qwen: what Gemini did not answer (the fallback), and people (J3a's q3 / q5 on the person's views)
-    jobs = []
+    jobs, renders = [], []
     for row in rows:
         card = by_id[row["subject"]]
         qs = [q for q in ([hazard.CHECK_Q.get(row["check"])] if card.get("kind") != "person" else row["questions"])
@@ -1177,7 +1213,13 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, c
                 marks, frame = marks_on(ctx, keys[0], card), frame_at(ctx, keys[0])
                 if marks is None or frame is None:
                     continue
-                jobs.append((row, q, keys, ask([som(frame, marks), som(frame, marks, marks=False)], prompt(card, row, q), len(QUESTIONS[q][1]), "judgement")))
+                crop, local = som_crop(frame, marks)  # mvp2/click: rendered in the process pool, not GIL-bound in this thread
+                pair = pool.submit(som_pair, np.ascontiguousarray(crop), local) if pool is not None else _done(som_pair(crop, local))
+                renders.append((len(jobs), pair, prompt(card, row, q), len(QUESTIONS[q][1])))
+                jobs.append((row, q, keys, None))
+    for i, pair, p_, n_ in renders:  # 'judgement_provisional' (a version densify replaces) queues behind the identity questions
+        row, q, keys, _ = jobs[i]
+        jobs[i] = (row, q, keys, ask(list(pair.result()), p_, n_, "judgement_provisional" if provisional else "judgement"))
     stats["qwen_questions"] = sum(1 for j in jobs if j[2] is not None)
     with clock.stage("judge.qwen", gpu=1, sync=False, n={"questions": stats["qwen_questions"]}):
         qwen = {}
@@ -1226,9 +1268,10 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, c
             row["evidence"][0]["image"] = name
     stats["ask_s"] = round(time.perf_counter() - t0, 3)
     stats["evidence_images"] = len(blobs)
-    writer.put("judgements", layer(rows, cal, {"version_of": ctx.get("version_of"), "vlm_answers": True, "vlm": stats}), blobs,
-               "estimated+inferred", LABELS)
-    clock.mark("judgements_v2_put")
+    if put(layer(rows, cal, {"version_of": ctx.get("version_of"), "vlm_answers": True, "vlm": stats}), blobs):
+        clock.mark("judgements_v2_put")
+    else:
+        stats["superseded"] = "a newer cards version's judgements were already put: this run's are not"
     return {**rec, **stats, "counts_v2": layer(rows, cal)["counts"], "by_check_v2": layer(rows, cal)["by_check"]}
 
 
@@ -1587,6 +1630,16 @@ def self_check():
     w = _Writer()
     run([far], ctx, w, _Clock(), ask=fake, cal=cal, hazard_ask=fake_gemini)
     assert next(r for r in w.puts[1][1]["rows"] if r["check"] == "J4")["verdict"] == REVIEW
+    calls.clear()  # mvp2/integrate: a provisional run (densify will replace its cards) asks Qwen at the low priority, the renders
+    run([cable], ctx, _Writer(), _Clock(), ask=fake, cal={"questions": {}}, provisional=True)  # through a pool when there is one
+    assert calls and all(c[1] == "judgement_provisional" and c[0] == 2 for c in calls), calls
+    w = _Writer()  # a run on an older cards version after a newer one was put: nothing of it is put (mvp2: the runs overlap)
+    carried["_put"] = 3
+    out = run([cable], {**ctx, "version_of": {"object_cards": 1}}, w, _Clock(), ask=fake, cal={"questions": {}}, carried=carried)
+    assert w.puts == [] and out.get("superseded"), out
+    far = {1: poly, 2: [[[710, 300], [800, 300], [800, 400]]], 3: [[[1200, 650], [1270, 650], [1270, 710]]]}  # mark 3 is off the crop
+    crop, local = som_crop(frame_img, far)
+    assert sorted(local) == [1, 2] and som_pair(np.ascontiguousarray(crop), local) == (som(frame_img, far), som(frame_img, far, marks=False))
     jpg = som(frame_img, {1: poly, 2: [[[710, 300], [800, 300], [800, 400]]]})
     import cv2
     img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
