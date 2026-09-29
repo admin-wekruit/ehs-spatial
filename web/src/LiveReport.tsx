@@ -393,7 +393,7 @@ function OnDemand({ od, tr }: { od: any; tr: Tr }) {
   if (od.pending) return <section className="mvp-block"><p><small>{tr("按需：正在分割并命名这个点…", "On demand: segmenting and naming this point…")}</small></p></section>;
   if (od.error) return <section className="mvp-block"><p><small>{tr("按需不可用", "On demand unavailable")}: {od.error}</small></p></section>;
   const idn = od.identity || {}, ph = od.physical || {}, took = <small>{tr("点击到卡片", "click → card")} {fmt(od.ms, 0)} ms · {tr("关键帧", "keyframe")} {od.frame}</small>;
-  if (od.status !== "card") return <section className="mvp-block"><p>{tr("按需", "On demand")} <Tag>{tr("按需", "on demand")}</Tag>: {idn.covers || idn.namer?.name || "—"} · {tr("一个表面，不是对象", "a surface, not an object")}</p><p>{took}</p></section>;
+  if (od.status !== "card") return <section className="mvp-block"><p>{tr("按需", "On demand")} <Tag>{tr("按需", "on demand")}</Tag>: {od.surface || idn.covers || idn.namer?.name || "—"} · {tr("一个表面，不是对象", "a surface, not an object")}{od.surface_reason ? <small> ({od.surface_reason})</small> : null}</p><p>{took}</p></section>;
   return <section className="mvp-block mvp-ondemand">
     <h3>{idn.name} <Tag>{tr("按需", "on demand")}</Tag> <Chip v={null} tr={tr} /></h3>
     <p>{idn.confidence == null ? tr("没有置信度", "no confidence") : `${Math.round(idn.confidence * 100)}%`} <Tag>{tr("未校准", "uncalibrated")}</Tag> · {tr("由", "decided by")} {idn.decided_by}{idn.status ? ` · ${idn.status}` : ""}</p>

@@ -116,10 +116,10 @@ def owl_probe(requests: dict):
     return {"clicks": out, "timing": timing, "boot_s": boot_s, "gpu_peak_gib": [round(torch.cuda.max_memory_reserved(d) / 2 ** 30, 2) for d in devs]}
 
 
-def audit_clicks(audit, site):
+def audit_clicks(audit, site, seed=29):
     import fast_report_eval as ev
     from click_audit import load_run
-    path = Path(audit) / site / f"clicks-{site}-random-s29.json"
+    path = Path(audit) / site / f"clicks-{site}-random-s{seed}.json"
     meta = json.loads(path.read_text())
     pick, _, _, fps, _ = load_run(meta["mirror"], meta["report"])
     for c in meta["clicks"]:
@@ -128,38 +128,53 @@ def audit_clicks(audit, site):
 
 
 @app.local_entrypoint()
-def measure(audit: str, out: str, sites: str = "me340,samsclub-a2,walmart", owl_from: str = ""):
+def measure(audit: str, out: str, sites: str = "me340,samsclub-a2,walmart", owl_from: str = "", runs: str = "29:outline",
+            hold_s: int = 0, mirror: str = "", port: int = 8793):
+    """runs: 'seed:style+style,...' (e.g. '29:dim,37:outline+dim'): the audit's clicks of that seed that open no entity, on demand,
+    once per naming style. owl_from: an earlier box probe ('skip': none). hold_s: then serve `mirror` with on-demand clicks
+    (the viewer check) for that long, the container kept up by the viewer's heartbeat."""
     outd = Path(out)
     outd.mkdir(parents=True, exist_ok=False)
     fr = FastReport()
-    reqs, metas = {}, {}
-    for site in sites.split(","):
-        meta, *_ = audit_clicks(audit, site)
-        metas[site] = meta
-        reqs[meta["report"]] = [[c["i"], c["x"], c["y"]] for c in meta["clicks"] if c["entity"] is None and c["i"] >= 0]
-    # its own 2-GPU container first, then the report container's (never 4 GPUs at once); owl_from: an earlier probe's result
-    owl = json.loads(Path(owl_from).read_text()) if owl_from else owl_probe.remote(reqs)
-    (outd / "owl.json").write_text(json.dumps(owl, indent=1, default=str))
+    plan = [(int(r.split(":")[0]), r.split(":")[1].split("+")) for r in runs.split(",")]
+    metas = {(seed, site): audit_clicks(audit, site, seed)[0] for seed, _ in plan for site in sites.split(",")}
+    if owl_from != "skip":  # its own 2-GPU container first, then the report container's (never 4 GPUs at once)
+        reqs = {}
+        for (seed, site), meta in metas.items():
+            reqs.setdefault(meta["report"], []).extend([c["i"], c["x"], c["y"]] for c in meta["clicks"] if c["entity"] is None and c["i"] >= 0)
+        owl = json.loads(Path(owl_from).read_text()) if owl_from else owl_probe.remote(reqs)
+        (outd / "owl.json").write_text(json.dumps(owl, indent=1, default=str))
     t = time.time()
     boot = fr.boot_info.remote()
     boot["client_submit_to_ready_s"] = round(time.time() - t, 1)
     (outd / "boot.json").write_text(json.dumps(boot, indent=1, default=str))
     rows = []
-    for site, meta in metas.items():
-        for c in meta["clicks"]:
-            if c["entity"] is not None or c["i"] < 0:
-                continue
-            t0 = time.perf_counter()
-            try:
-                card, err = fr.click.remote(meta["report"], c["i"], c["x"], c["y"]), None
-            except Exception as e:  # noqa: BLE001  recorded, never retried
-                card, err = None, repr(e)[:400]
-            rows.append({"site": site, "k": c["k"], "frame": c["frame"], "x": c["x"], "y": c["y"], "i": c["i"],
-                         "round_trip_s": round(time.perf_counter() - t0, 3), "card": card, "error": err})
-            print(site, c["k"], rows[-1]["round_trip_s"], (card or {}).get("status"), ((card or {}).get("identity") or {}).get("name"), err or "", flush=True)
-    (outd / "ondemand.json").write_text(json.dumps({"boot": boot, "rows": rows}, indent=1, default=str))
+    for seed, styles in plan:
+        for site in sites.split(","):
+            meta = metas[(seed, site)]
+            for c in meta["clicks"]:
+                if c["entity"] is not None or c["i"] < 0:
+                    continue
+                for style in styles:
+                    t0 = time.perf_counter()
+                    try:
+                        card, err = fr.click.remote(meta["report"], c["i"], c["x"], c["y"], style), None
+                    except Exception as e:  # noqa: BLE001  recorded, never retried
+                        card, err = None, repr(e)[:400]
+                    rows.append({"seed": seed, "style": style, "site": site, "k": c["k"], "frame": c["frame"], "x": c["x"], "y": c["y"], "i": c["i"],
+                                 "round_trip_s": round(time.perf_counter() - t0, 3), "card": card, "error": err})
+                    print(seed, style, site, c["k"], rows[-1]["round_trip_s"], (card or {}).get("status"), ((card or {}).get("identity") or {}).get("name"),
+                          err or "", flush=True)
+            (outd / "ondemand.json").write_text(json.dumps({"boot": boot, "rows": rows}, indent=1, default=str))
     print(json.dumps({"clicks": len(rows), "errors": sum(r["error"] is not None for r in rows),
-                      "round_trip_p50_s": float(np.median([r["round_trip_s"] for r in rows])), "owl_keyframes": len(owl["timing"])}), flush=True)
+                      "round_trip_p50_s": float(np.median([r["round_trip_s"] for r in rows]))}), flush=True)
+    if hold_s:
+        from fast_report import layers as fl
+        fl.serve(mirror, port, click=lambda r, i, x, y: fr.click.remote(r, i, x, y), alive=lambda: fr.alive.remote())
+        (outd / "HOLDING").write_text(str(time.time()))
+        print(f"holding {hold_s} s: {mirror} on :{port} with on-demand clicks", flush=True)
+        time.sleep(hold_s)
+        (outd / "HOLDING").unlink()
 
 
 @app.local_entrypoint()
@@ -208,19 +223,20 @@ def tile(img, mask, c, caption):
     return o
 
 
-def sheets(run, audit, per=10):
+def sheets(run, audit, per=10, seed=29, style="outline"):
     import cv2
     import click_audit as ca
-    od = json.loads((Path(run) / "ondemand.json").read_text())["rows"]
-    owl = json.loads((Path(run) / "owl.json").read_text())["clicks"]
+    od = [r for r in json.loads((Path(run) / "ondemand.json").read_text())["rows"] if r.get("seed", 29) == seed and r.get("style", "outline") == style]
+    owl = json.loads((Path(run) / "owl.json").read_text())["clicks"] if (Path(run) / "owl.json").exists() else None
     for site in SITES:
-        meta, pick, fps, ev = audit_clicks(audit, site)
+        meta, pick, fps, ev = audit_clicks(audit, site, seed)
         rows = [r for r in od if r["site"] == site]
         if not rows:
             continue
         video = Path(meta["mirror"]) / "blobs/sha256" / ev.patch_versions(meta["mirror"], meta["report"], "video")[0]["blobs"]["video"]["sha256"]
+        cards = ca.load_run(meta["mirror"], meta["report"])[2]
         imgs = ca.frames_of(video, [r["frame"] for r in rows])
-        for kind in ("b", "a"):
+        for kind in ("b", "a") if owl is not None else ("b",):
             tiles = []
             for r in rows:
                 cd = r["card"] or {}
@@ -228,11 +244,13 @@ def sheets(run, audit, per=10):
                     m = decode(cd["mask"]) if cd.get("mask") else None
                     idn = cd.get("identity") or {}
                     cap = f"#{r['k']:02d} f{r['frame']} {cd.get('status') or r['error']}: " + (
-                        cd.get("entity") if cd.get("status") == "entity" else f"{idn.get('name')} [{(idn.get('namer') or {}).get('status')}]")
+                        f"{ca.name_of(cards, cd['entity'])} ({cd['entity']})" if cd.get("status") == "entity" else
+                        f"floor ({(cd.get('identity') or {}).get('namer', {}).get('name')})" if cd.get("surface") == "floor" else
+                        f"{idn.get('name')} [{(idn.get('namer') or {}).get('status')}]")
                 else:
                     a = owl.get(f"{meta['report']}|{r['i']}|{r['x']}|{r['y']}") or {}
                     m = decode(a["mask"]) if a.get("mask") else None
-                    cap = f"#{r['k']:02d} f{r['frame']} OWL box mask" + (f" (joins {a['joins']})" if a.get("joins") else "") + ("" if m is not None else ": none")
+                    cap = f"#{r['k']:02d} f{r['frame']} OWL box mask" + (f" joins {ca.name_of(cards, a['joins'])}" if a.get("joins") else "") + ("" if m is not None else ": none")
                 tiles.append(tile(imgs[r["frame"]], m, r, cap))
             for s0 in range(0, len(tiles), per):
                 part = tiles[s0:s0 + per]
@@ -242,7 +260,7 @@ def sheets(run, audit, per=10):
                 for q, tl in enumerate(part):
                     rr, cc = divmod(q, 2)
                     sheet[rr * (th + 8):rr * (th + 8) + th, cc * (tw + 8):cc * (tw + 8) + tw] = tl
-                p = Path(run) / site / f"sheet-{kind}-{s0 // per}.jpg"
+                p = Path(run) / site / (f"sheet-{kind}-{s0 // per}.jpg" if (seed, style) == (29, "outline") else f"sheet-{kind}-s{seed}-{style}-{s0 // per}.jpg")
                 p.parent.mkdir(exist_ok=True)
                 cv2.imwrite(str(p), sheet, [cv2.IMWRITE_JPEG_QUALITY, 85])
                 print(p)
@@ -298,11 +316,13 @@ if __name__ == "__main__":
     p.add_argument("mode", nargs="?", choices=("sheets", "score"))
     p.add_argument("run", nargs="?")
     p.add_argument("--audit")
+    p.add_argument("--seed", type=int, default=29)
+    p.add_argument("--style", default="outline")
     p.add_argument("--self-check", action="store_true")
     a = p.parse_args()
     if a.self_check:
         self_check()
     elif a.mode == "sheets":
-        sheets(a.run, a.audit)
+        sheets(a.run, a.audit, seed=a.seed, style=a.style)
     elif a.mode == "score":
         print(json.dumps(score(a.run, a.audit), indent=1))

@@ -20,6 +20,12 @@ from fast_report import cards
 LAYERS = ("video", "cameras", "pick", "object_cards")
 INTERIOR, LOOSE, MIN_CELLS = .75, .4, 3  # depth cells: share of the cell inside the mask (interior first, then the looser cut)
 ENTITY_SHARE = .5  # a mask this much on one existing entity opens that entity
+# mvp3 dev round (runs/mvp3-click-ondemand-002, seed 29): a click on the floor gets the floor's mask, and Qwen names the thing
+# beside it ('shopping cart', 'workbench', 'pallet of paper towels': 13 false objects). A mask whose lifted points lie mostly on
+# the floor plane is the floor, when the namer says 'surface' or the mask is a region (>= 5 % of the frame) not named as a flat
+# floor thing: a cable, a mat or a spill lies on the floor too, and keeps its card (every real object there read <= 21 % on it)
+ON_FLOOR, FLOOR_TOL_M, FLOOR_TOL_REL, REGION_SHARE = .5, .05, .02, .05
+FLAT = ("mat", "rug", "tape", "marking", "drain", "grate", "cover", "cord", "wire", "sheet", "board")
 QWEN_BY = "Qwen3-VL-8B on demand (stated probability, uncalibrated)"
 PROMPT = ("This image comes from a video of a workplace (a machine shop, warehouse, store, lab or office). The left half shows one "
           "thing outlined in yellow in its surroundings, the right half a close crop of it. Name the outlined thing with its most "
@@ -193,8 +199,18 @@ def lift(mask, depth, K, c2w, wh, fr, step=2):
     K, M = np.asarray(K, float), np.asarray(c2w, float)
     u, v = (xs + .5) * wh[0] / W, (ys + .5) * wh[1] / H
     pc = np.stack([(u - K[0, 2]) / K[0, 0] * zz, (v - K[1, 2]) / K[1, 1] * zz, zz], 1)
-    return {"P": cards.to_floor(pc @ M[:3, :3].T + M[:3, 3], fr), "cells": int(keep.sum()), "z_med": med,
-            "cam": cards.to_floor(M[:3, 3], fr), "fx": float(K[0, 0])}
+    P, cam = cards.to_floor(pc @ M[:3, :3].T + M[:3, 3], fr), cards.to_floor(M[:3, 3], fr)
+    on = np.abs(P[:, 2]) <= np.maximum(FLOOR_TOL_M, FLOOR_TOL_REL * np.linalg.norm(P - cam, axis=1))
+    return {"P": P, "cells": int(keep.sum()), "z_med": med, "cam": cam, "fx": float(K[0, 0]), "on_floor": round(float(on.mean()), 3)}
+
+
+def is_floor(L, share, ans):
+    """The floor rule (ON_FLOOR above): the mask lies on the floor plane, and the namer said surface or it is a region not
+    named as a flat floor thing."""
+    if L is None or L["on_floor"] < ON_FLOOR:
+        return False
+    nm = str(ans.get("name") or "").lower()
+    return ans.get("status") == "surface" or (share >= REGION_SHARE and cards.hazard_of(nm) is None and not any(w in nm for w in FLAT))
 
 
 def physical(L, mask, shot, k):
@@ -267,11 +283,18 @@ def parse(text):
     return got if isinstance(got, dict) and got.get("name") else {"name": "unclear", "status": "unclear", "p": None, "raw": (text or "")[:200]}
 
 
-def name(frame, mask):
-    """The mask's outline (vlm.namer_tile: context | close crop) -> Qwen3-VL-8B -> (answer, seconds)."""
+DIM = .45  # style 'dim': the frame outside the mask at this brightness in both halves of the tile
+
+
+def name(frame, mask, style="outline"):
+    """The mask's outline (vlm.namer_tile: context | close crop; style 'dim' darkens everything outside the mask) -> Qwen3-VL-8B
+    -> (answer, seconds)."""
     import cv2
     from fast_report import vlm
     t = time.perf_counter()
+    if style == "dim":
+        frame = frame.copy()
+        frame[~mask] = (frame[~mask] * DIM).astype(np.uint8)
     cs, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     polys = [c.reshape(-1, 2).tolist() for c in sorted(cs, key=cv2.contourArea, reverse=True)[:8] if len(c) >= 3]
     jpg = cv2.imencode(".jpg", vlm.namer_tile(frame, polys), [cv2.IMWRITE_JPEG_QUALITY, 90])[1].tobytes()
@@ -279,7 +302,7 @@ def name(frame, mask):
     return parse(text), round(time.perf_counter() - t, 3)
 
 
-def card(st, point, i, x, y, namer=name):
+def card(st, point, i, x, y, namer=name, style="outline"):
     """Pick frame i (the viewer's nearest keyframe), source pixel (x, y) -> the on-demand card (or the existing entity a mask
     mostly covers). Every number with +-u, its level and scale label (cards.contract)."""
     import cv2
@@ -300,7 +323,8 @@ def card(st, point, i, x, y, namer=name):
     under = ids[small]
     code, n = np.unique(under[under > 0], return_counts=True) if (under > 0).any() else (np.zeros(0, int), np.zeros(0, int))
     base = {"on_demand": True, "frame": int(f["frame"]), "pick_index": i, "t": f["t"], "click": [x, y], "mask_px": int(mask.sum()),
-            "mask_score": round(float(scores[0, j]), 3), "mask_choice": "highest predicted IoU of SAM 3 tracker's 3 masks",
+            "mask_share": round(float(mask.mean()), 4), "mask_score": round(float(scores[0, j]), 3),
+            "mask_choice": "highest predicted IoU of SAM 3 tracker's 3 masks",
             "mask": rle(small), "overlaps": {ents[c]: round(int(m) / max(1, int(small.sum())), 3) for c, m in zip(code, n)}}
     if len(n) and n.max() >= ENTITY_SHARE * small.sum():
         tm["total_s"] = round(time.perf_counter() - t0, 3)
@@ -312,7 +336,7 @@ def card(st, point, i, x, y, namer=name):
     fr = floor_of(st, f["shot"])
     L = lift(mask, depth, cam["K"][key], cam["c2w"][key], cam["wh"], fr) if fr is not None else None
     lap("lift_s")
-    ans, tm["name_s"] = namer(frame, mask)
+    ans, tm["name_s"] = namer(frame, mask, style) if namer is name else namer(frame, mask)
     out = assemble(base, f, L, mask, shot, st["k"], ans)
     tm["total_s"] = round(time.perf_counter() - t0, 3)
     out["timing"] = tm
@@ -339,8 +363,12 @@ def assemble(base, f, L, mask, shot, k, ans):
     out = cards.apply_name(out)
     if L is not None:
         phys["level"] = "coarse (one view)"  # apply_name sets 'coarse'
-    if ident.get("proposed") == cards.NOT_OBJECT:
-        out.update(kind="surface", status="surface")  # the viewer keeps the unknown region's card: nothing is claimed as an object
+        out["on_floor"] = L["on_floor"]
+    if is_floor(L, base.get("mask_share", 0.), ans):
+        out.update(kind="surface", status="surface", surface="floor",
+                   surface_reason=f"{L['on_floor']:.0%} of the mask lies on the floor plane (the namer said '{ans.get('name')}', {ans.get('status')})")
+    elif ident.get("proposed") == cards.NOT_OBJECT:
+        out.update(kind="surface", status="surface", surface=ident.get("covers"))  # the viewer keeps the unknown region's card
     out.pop("raw")
     return out
 
@@ -384,6 +412,16 @@ def self_check():
     assert got["status"] == "card" and got["identity"]["name"] == "screwdriver" and got["physical"]["size_check"]["status"] == "implausible"
     assert got["physical"]["height"]["status"] == "needs review" and cards.contract(got) == [] and got["physical"]["level"] == "coarse (one view)"
     assert assemble(base, f, None, mask, {}, k, {"name": "floor", "status": "surface", "p": 0.9})["kind"] == "surface"
+    # the floor rule: a floor region Qwen names after the cart beside it is the floor; a cable on the floor keeps its card
+    Lf = {**L, "on_floor": .9}
+    region = {**base, "mask_share": .12}
+    assert assemble(region, f, Lf, mask, {}, k, {"name": "shopping cart", "status": "object", "p": 0.9})["surface"] == "floor"
+    assert assemble({**base, "mask_share": .01}, f, Lf, mask, {}, k, {"name": "shopping cart", "status": "object", "p": 0.9})["kind"] == "object"
+    assert assemble(region, f, Lf, mask, {}, k, {"name": "extension cord", "status": "object", "p": 0.9})["kind"] == "object"
+    assert assemble(region, f, Lf, mask, {}, k, {"name": "anti-fatigue mat", "status": "object", "p": 0.9})["kind"] == "object"
+    assert assemble({**base, "mask_share": .01}, f, Lf, mask, {}, k, {"name": "floor drain", "status": "surface", "p": 0.9})["surface"] == "floor"
+    assert assemble(region, f, {**L, "on_floor": .2}, mask, {}, k, {"name": "pallet", "status": "object", "p": 0.9})["kind"] == "object"
+    assert L["on_floor"] == 0. and lift(mask, depth, K, c2w, (504, 280), fr)["on_floor"] == 0.  # the board stands 0.5 m above the floor
     # rle round trip, parsing
     r = rle(mask[::10, ::10])
     back = np.repeat(np.arange(len(r["runs"])) % 2, r["runs"]).reshape(r["h"], r["w"]).astype(bool)

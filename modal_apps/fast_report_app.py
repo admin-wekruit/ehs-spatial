@@ -240,7 +240,7 @@ class FastReport:
         return self.boot_record
 
     @modal.method()
-    def click(self, report_id: str, i: int, x: float, y: float):
+    def click(self, report_id: str, i: int, x: float, y: float, style: str = "outline"):
         """mvp3 D4 (b): the on-demand card for a click on no entity (fast_report.ondemand): pick frame i, source pixel (x, y).
         Not analysis time: nothing is written to the report."""
         from fast_report import ondemand
@@ -250,7 +250,7 @@ class FastReport:
         except (LookupError, FileNotFoundError):
             VOLUMES["/v/layers"].reload()  # a report another container wrote
             st = ondemand.state("/v/layers", report_id)
-        out = ondemand.card(st, self.point, int(i), float(x), float(y))
+        out = ondemand.card(st, self.point, int(i), float(x), float(y), style=style)
         out["timing"]["container_s"] = round(time.perf_counter() - t, 3)
         return out
 
