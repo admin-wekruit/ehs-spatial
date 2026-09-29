@@ -31,9 +31,10 @@ HELDOUT = PHASE2 / "runs/mvp2-results/identity-heldout"
 N_AUDIT, SEED, OVER_GIB = 30, 4, 72.
 
 
-def calls(bench):
+def calls(bench, site):
+    """{kind: call record} of one video (a bench folder may hold several videos)."""
     out = [json.loads(Path(f).read_text()) for f in sorted(glob.glob(str(Path(bench) / "call-*.json")))]
-    return {c["kind"]: c for c in sorted(out, key=lambda c: c["call"])}
+    return {c["kind"]: c for c in sorted(out, key=lambda c: c["call"]) if c.get("site", site) == site}
 
 
 def final_cards(bench, report):
@@ -98,7 +99,7 @@ def times(run):
 
 def round2(site):
     out = {}
-    for kind, c in calls(ROUND2[site]).items():
+    for kind, c in calls(ROUND2[site], site).items():
         s = c["run"]["summary"]
         out[kind] = {"objects_sent_to_gemini": (s.get("identity") or {}).get("asked", 0) + (s.get("identity_densify") or {}).get("asked", 0),
                      "gemini_requests": (s.get("identity") or {}).get("requests", 0) + (s.get("identity_densify") or {}).get("requests", 0),
@@ -112,7 +113,7 @@ def heldout(runs, work, kind):
     work.mkdir(parents=True, exist_ok=True)
     for f in ("items.json", "labels-final.json"):
         shutil.copy(HELDOUT / f, work / f)
-    now = {s: (str(Path(d).relative_to(PHASE2 / "runs")), calls(d)[kind]["run"]["report"]) for s, d in runs.items() if kind in calls(d)}
+    now = {s: (str(Path(d).relative_to(PHASE2 / "runs")), calls(d, s)[kind]["run"]["report"]) for s, d in runs.items() if kind in calls(d, s)}
     if not now:  # score_final would grade the items' own round-2 runs instead
         return {}, [], []
     r = ids.score_final(work, now)
@@ -144,9 +145,9 @@ def sheets(runs, out):
     from mvp_sheets import frames_bgr, sheet
     dest = out / "audit"
     (dest / "sheets").mkdir(parents=True, exist_ok=True)
-    rng, items = np.random.default_rng(SEED), []
+    rng, items, tiles = np.random.default_rng(SEED), [], []
     for site, d in runs.items():
-        rep = calls(d)["warm"]["run"]["report"]
+        rep = calls(d, site)["warm"]["run"]["report"]
         L = ev.load_layers(Path(d), rep)
         outl = {}
         for f in L["outlines"]["frames"]:
@@ -166,7 +167,6 @@ def sheets(runs, out):
                 q = max(per, key=lambda k: np.prod(np.ptp(np.concatenate([np.asarray(p, float).reshape(-1, 2) for p in per[k]]), 0)))
             chosen.append((c, q, per[q]))
         imgs = frames_bgr(PHASE2 / "data/clips" / CLIP[site] / "source-full.mp4", {q for _, q, _ in chosen})
-        tiles = []
         for c, q, polys in chosen:
             k = len(items)
             som = judge.som(imgs[q], {1: polys}, subject=1, side=420, encode=False)
@@ -195,7 +195,7 @@ def fresh_audit(runs, out):
     lab = json.loads((dest / "labels-agent.json").read_text())
     by = {}
     for site, d in runs.items():
-        rep = calls(d)["warm"]["run"]["report"]
+        rep = calls(d, site)["warm"]["run"]["report"]
         by[site] = {c["id"]: c for c in final_cards(d, rep)}
     res, rows = {}, []
     for it in items:
@@ -232,7 +232,7 @@ def fresh_audit(runs, out):
 def score(runs, out):
     res = {"videos": {}, "round2": {s: round2(s) for s in runs}}
     for site, d in runs.items():
-        for kind, c in calls(d).items():
+        for kind, c in calls(d, site).items():
             run, s = c["run"], c["run"]["summary"] or {}
             cs = final_cards(d, run["report"])
             rt = collections.Counter(route(x) for x in cs)
@@ -267,7 +267,7 @@ def vector_check(runs, npz_dir, x13_dir):
     import fast_report_eval as ev
     out = {}
     for site, d in runs.items():
-        rep = calls(d)["warm"]["run"]["report"]
+        rep = calls(d, site)["warm"]["run"]["report"]
         f = Path(npz_dir) / rep / "naming-first.npz"
         if not f.exists():
             continue
@@ -275,7 +275,7 @@ def vector_check(runs, npz_dir, x13_dir):
         vec = {i: v.astype(np.float32) for i, v in zip(z["ids"], z["dino"]) if np.any(v)}
         ctr = lambda c: np.mean([c["physical"]["box_min_m"], c["physical"]["box_max_m"]], 0) if "box_min_m" in c["physical"] else None  # noqa: E731
         now = {c["id"]: ctr(c) for c in final_cards(d, rep) if c["id"] in vec}
-        r2 = {c["id"]: ctr(c) for c in ev.load_layers(ROUND2[site], calls(ROUND2[site])["warm"]["run"]["report"])["object_cards"]["cards"] if c["kind"] == "object"}
+        r2 = {c["id"]: ctr(c) for c in ev.load_layers(ROUND2[site], calls(ROUND2[site], site)["warm"]["run"]["report"])["object_cards"]["cards"] if c["kind"] == "object"}
         at = {D.meta[i]["card"]: i for i in range(D.n) if D.site[i] == site}
         same, other, top1 = [], [], []
         for cid, c in now.items():
