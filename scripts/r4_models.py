@@ -323,7 +323,7 @@ def results_md(t, base=None, audits=()):
     out = "## Models per call\n\n" + rows
     if base:
         out += "\n## Time added to the cards (this run vs the baseline run, same videos and calls; s)\n\n| video | call | cards.v1 | cards.v3 | " \
-               "cards write | model fits CPU s (all processes) | cards v1 put | cards v3 put | cards bytes |\n|" + "---|" * 9 + "\n"
+               "cards write | model fits CPU s (all processes) | cards v1 put | cards v3 put | cards bytes written (all versions) |\n|" + "---|" * 9 + "\n"
         by = {}
         for rep, r in base.items():
             by.setdefault(site_of(rep), []).append(r)
