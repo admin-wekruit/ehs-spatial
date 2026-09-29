@@ -368,7 +368,7 @@ def mask_points(masks, frame_of, depth_m, K, c2w_m, dyn, stride=2):
     mid, vy, vx, z = mid[t], vy[t], vx[t], z[t]
     stats["points_trimmed"] = int((~t).sum())
     mk = masks[idx]
-    border = torch.stack([mk[:, :2].any((1, 2)), mk[:, -2:].any((1, 2)), mk[:, :, :2].any((1, 2)), mk[:, :, -2:].any((1, 2))], 1)
+    border = torch.stack([mk[:, :2].flatten(1).any(1), mk[:, -2:].flatten(1).any(1), mk[:, :, :2].flatten(1).any(1), mk[:, :, -2:].flatten(1).any(1)], 1)
     return {"lifted": idx, "mid": mid, "world": backproject(depth_m, K, c2w_m, fr[mid], vy, vx, stride), "z": z, "fr": fr,
             "border": border, "pixels": raw[idx].sum((1, 2))}, stats
 

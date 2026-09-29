@@ -956,6 +956,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                     batch = batches.get_nowait()
                 except queue.Empty:
                     return
+                print(f"densify gpu{dev.index} frames {batch} t={clock.now():.2f}", flush=True)  # a breadcrumb in the container log
                 with clock.stage(f"densify.sam3@gpu{dev.index}", gpu=dev, n={"frames": len(batch), "words": len(words_t)}):
                     x = torch.stack([work.chunks[dev][q // segment.PERSON_FRAMES][q % segment.PERSON_FRAMES] for q in batch])
                     r = sam.detect(sam.vision(x), len(batch), words_t, segment.VOCAB_SCORE, logits=True)

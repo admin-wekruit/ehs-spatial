@@ -247,8 +247,11 @@ class FastReport:
             summary, error = None, traceback.format_exc()[-4000:]
             if getattr(self, "release", None) is not None:
                 self.release.set()  # a splat still holding for the SAM 3 queue trains and ends instead of waiting forever
-        with clock.stage("da3.restore", gpu=self.dev_geo):  # after every layer (off the clock): the core offloaded DA3 for SAM 3D
-            self.da3.restore()
+        try:
+            with clock.stage("da3.restore", gpu=self.dev_geo):  # after every layer (off the clock): the core offloaded DA3 for SAM 3D
+                self.da3.restore()
+        except Exception:  # noqa: BLE001  a dead CUDA context (a GPU fault) still returns this call's run.json
+            error = (error or "") + "\nda3.restore failed: " + traceback.format_exc()[-1500:]
         run = {**clock.report(vram, price), "report": report_id, "site": site, "error": error,
                "video": {"sha256": core.sha256(mp4), "bytes": len(mp4), "window_s": options.get("window_s")},
                "hardware": {"gpus": self.listing, "cpu": CPU, "memory_gib": MEMORY_GIB, "mps": self.boot_record.get("mps")},
@@ -257,9 +260,12 @@ class FastReport:
         path = Path("/v/layers/reports") / report_id / "run.json"
         path.write_text(json.dumps(run, indent=1, default=plain))
         VOLUMES["/v/layers"].commit()
-        for d in (self.dev_geo, self.dev_seg):
-            with torch.cuda.device(d):
-                torch.cuda.empty_cache()
+        try:
+            for d in (self.dev_geo, self.dev_seg):
+                with torch.cuda.device(d):
+                    torch.cuda.empty_cache()
+        except Exception:  # noqa: BLE001
+            pass
         yield {"type": "run", "report": report_id, "run": run}
 
 
