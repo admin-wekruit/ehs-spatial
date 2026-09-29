@@ -52,7 +52,7 @@ async function video(name){
   const errors=[];page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});page.on('pageerror',e=>errors.push(String(e)));
   await page.addInitScript(()=>localStorage.setItem('panoptes.language','en'));
   await page.goto(`http://127.0.0.1:${VITE}/app.html#/live/${as}`);await page.waitForSelector('.live-report');
-  await page.waitForFunction(()=>window.__live?.pick&&document.querySelector('.live-report-head span')?.textContent.includes('judgements v2'),null,{timeout:300000});
+  await page.waitForFunction(()=>window.__live?.pick&&/judgements v\d/.test(document.querySelector('.live-report-head span')?.textContent||''),null,{timeout:300000});
   // --final: every judgements patch of the recording is in (mvp2/integrate: the last judge run is on the final names, cards v4)
   const nJudgements=fs.readdirSync(path.join(root,'reports',name,'patches')).filter(f=>f.endsWith('-judgements.json')).length;
   if(finalLayers)for(let i=0;;i++){
@@ -84,7 +84,7 @@ async function video(name){
   const rank={FAIL:0,NEEDS_REVIEW:1,NO_DATA:2,PASS:3};
   // the aims: the most severe checked object, a plausible object with every side observed, a miss on the floor, a person;
   // among candidates, the one the video shows biggest
-  const judged=layers.rows.filter(r=>r.subject.startsWith('obj-')&&r.evidence.some(e=>e.image)).sort((a,b)=>rank[a.verdict]-rank[b.verdict]);
+  const judged=layers.rows.filter(r=>r.subject.startsWith('obj-')&&(noServer||r.evidence.some(e=>e.image))).sort((a,b)=>rank[a.verdict]-rank[b.verdict]);  // mvp3: Qwen-only runs draw no evidence images
   const biggest=async ids=>{let best=null;for(const id of ids.slice(0,25)){const a=await page.evaluate(aim,[id,false]);if(a&&(!best||a.count>best.count))best={...a,id};}return best?.id;};
   const plain=layers.cards.filter(c=>c.kind==='object'&&c.physical?.size_check?.status==='plausible'&&c.physical?.depth?.value!==undefined&&(c.views?.n||0)>=4).map(c=>c.id);
   const persons=layers.cards.filter(c=>c.kind==='person'&&c.rules?.length).map(c=>c.id);
@@ -121,7 +121,7 @@ async function video(name){
 
   // Evidence thumbnail seeks the video to its keyframe
   let evidence=null;
-  if(judged.length){
+  if(judged.length&&judged[0].evidence.some(e=>e.image)){
     await page.getByRole('tab',{name:/Objects/}).click();await page.locator('.mvp-filters input').fill(layers.cards.find(c=>c.id===judged[0].subject).identity.name);
     await page.locator('.mvp-list li button').first().click();await sleep(300);
     const thumb=page.locator('.mvp-judgements .mvp-thumb').first(),label=await thumb.locator('span').textContent();
