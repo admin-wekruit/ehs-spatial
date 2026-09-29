@@ -51,9 +51,11 @@ async function video(name){
   await page.addInitScript(()=>localStorage.setItem('panoptes.language','en'));
   await page.goto(`http://127.0.0.1:${VITE}/app.html#/live/${as}`);await page.waitForSelector('.live-report');
   await page.waitForFunction(()=>window.__live?.pick&&document.querySelector('.live-report-head span')?.textContent.includes('judgements v2'),null,{timeout:300000});
-  if(finalLayers)for(let i=0;;i++){  // --final: the densified layers (pick v2, cards v3) and their judgements with VLM answers are in
-    const done=await page.evaluate(async()=>{const r=await fetch(location.hash.replace('#/live/','/fast/reports/')+'/patches?after=0').then(r=>r.json());
-      return r.patches.some(p=>p.layer==='judgements'&&p.data?.vlm_answers&&p.data?.version_of?.object_cards===3);});
+  // --final: every judgements patch of the recording is in (mvp2/integrate: the last judge run is on the final names, cards v4)
+  const nJudgements=fs.readdirSync(path.join(root,'reports',name,'patches')).filter(f=>f.endsWith('-judgements.json')).length;
+  if(finalLayers)for(let i=0;;i++){
+    const done=await page.evaluate(async n=>{const r=await fetch(location.hash.replace('#/live/','/fast/reports/')+'/patches?after=0').then(r=>r.json());
+      return r.patches.filter(p=>p.layer==='judgements').length>=n;},nJudgements);
     if(done)break;assert.ok(i<600,'the final judgements never arrived');await sleep(1000);}
   await page.waitForFunction(()=>document.querySelector('.report-video-stage video')?.readyState>=2,null,{timeout:60000});
   const seekTo=async t=>{await page.evaluate(t=>window.dispatchEvent(new CustomEvent('panoptes:seek',{detail:t})),t);await sleep(30);};

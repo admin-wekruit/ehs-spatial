@@ -840,6 +840,21 @@ def long_object(phys, pooled, subs, wi, di, lr_cut, depth_seen, res, k):
     return not whole
 
 
+UNRESOLVED = ("height", "width", "depth", "visible_length", "footprint_m2")
+
+
+def unresolved(phys):
+    """A size whose +-u reaches zero says nothing about the size: 'not measurable' with the reason (the policy: a number is shown
+    only when it is accurate at its u). mvp2/integrate: under the ground-truth u rule (extents k 2.39 on the geometry parts)
+    small tools and goods 2-5 m away (2-5 cm of resolution against sizes of 4-30 cm) read e.g. 'width 0.04 +- 0.07 m' on
+    51-70 % of the retail and workshop cards' widths. Heights above the floor and positions are not sizes (zero is a value)."""
+    for n in UNRESOLVED:
+        f = phys.get(n)
+        if isinstance(f, dict) and "value" in f and f["u"] >= abs(f["value"]):
+            phys[n] = {"status": "not measurable", "reason": "its uncertainty is as large as the size itself: too small for the "
+                                                              "resolution and depth at this distance (seen from further than it is big)"}
+
+
 def rim(x, vs, cam_h, ref, which):
     """mvp2 (R3): the un-eroded edges' height over views vs: p90 of the top edges (p10 of the bottom edges) from the views
     whose camera does not look onto that face (camera height <= ref + LOOK_MARGIN_M for the top, >= ref - LOOK_MARGIN_M for
@@ -954,6 +969,7 @@ def object_card(o, x, s, k, marking, merged_from, counts):
     if not depth_seen:
         phys["footprint_m2"].update(status="at least", reason="depth not observed: width x visible depth")
     long_part = long_object(phys, pooled, subs, wi, di, lr_cut, depth_seen, res, k)
+    unresolved(phys)
     corners = corners_xy(pooled, axes)
     phys["footprint_xy"] = {"value": np.round(corners, 3).tolist(), "unit": "m", "frame": f"floor frame of shot {o['shot']}", "scale": SCALE}
     pc_fn = lambda q: q["box"]["centre_xy"]  # noqa: E731
@@ -1967,6 +1983,10 @@ def self_check():
           "footprint_m2": value(1.2, {"views": .1}, "extent", {}, [1.2, 1.1], unit="m2")}
     assert not long_object(ph, {"sides": np.array([2., .6])}, sb([[2., .6], [1.95, .58]]), 0, 1, False, True, .05, {}) and "visible_length" not in ph
     assert "status" not in ph["width"] and "status" not in ph["depth"]
+    ph = {"width": value(.04, {"resolution": .03}, "extent", {"extent": {"sets": 2.4, "one_set": 4.5}}), "height": value(.3, {"views": .02}, "extent", {}),
+          "top_above_floor": value(.02, {"floor": .05}, "height", {})}  # mvp2/integrate: 0.04 +- 0.14 m is no size; 0.02 +- 0.05 m up is a value
+    unresolved(ph)
+    assert ph["width"]["status"] == "not measurable" and "value" in ph["height"] and "value" in ph["top_above_floor"], ph
     kg = {"height": {"sets": 2., "one_set": 3.}}  # the ground-truth u rule: geometry parts x k_geo[view-set state], scale apart
     assert abs(value(1., {"views": .03, "depth": .04, "scale": .25}, "height", kg)["u"] - np.hypot(2 * .05, .25)) < 1e-3
     assert abs(value(1., {"depth": .04, "scale": .25}, "height", kg)["u"] - np.hypot(3 * .04, .25)) < 1e-3
