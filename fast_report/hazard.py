@@ -255,11 +255,13 @@ def workspace_container():
     except urllib.error.HTTPError as error:
         if error.code != 404:
             raise
+    except OSError:  # a cold start can outlast the ping (relay probe 2: 51 s): the container list below waits for it
+        pass
     cli = str(Path(sys.executable).with_name("modal"))
     apps = [a for a in json.loads(subprocess.check_output([cli, "app", "list", "--json"], timeout=20)) if a["description"] == APP_NAME and a["state"] == "deployed"]
     if len(apps) != 1:
         raise RuntimeError("expected one deployed report-workspace app")
-    for _ in range(30):
+    for _ in range(60):
         cs = json.loads(subprocess.check_output([cli, "container", "list", "--app-id", apps[0]["app_id"], "--json"], timeout=20))
         if len(cs) == 1:
             return cs[0]["container_id"]
@@ -327,13 +329,45 @@ def relay(requests_q, answers_q, stop, log=None):
             container[0] = None  # the next wave looks the container up again (it may have scaled down)
             for r in reqs:
                 out.put({"key": r["key"], "provider": None, "error": repr(error)[:300], "t_unix": time.time()})
+    def warm():
+        try:
+            container[0] = container[0] or workspace_container()
+        except Exception:  # noqa: BLE001  the first wave looks it up again
+            pass
+    threading.Thread(target=warm, daemon=True).start()  # the lookup (~11 s) before the first wave, not in it
+    waves = {}  # wave tag -> {key: [parts]}, and the number of requests it holds
     while not stop.is_set():
         try:
-            reqs = requests_q.get(timeout=1)
+            item = requests_q.get(timeout=1)
         except Exception:  # noqa: BLE001  queue.Empty (modal raises its own)
             continue
+        reqs = unchunk(waves, item)
         if reqs:
             threading.Thread(target=wave, args=(reqs,), daemon=True).start()
+
+
+QUEUE_ITEM = 800_000  # a modal.Queue item holds at most 1 MiB; ten evidence images in base64 are ~1.3 MB
+
+
+def chunks(tag, reqs, size=QUEUE_ITEM):
+    """One wave of requests -> queue items of at most `size` characters (unchunk() puts them back together)."""
+    out = []
+    for r in reqs:
+        blob = json.dumps({k: r[k] for k in ("key", "input", "response_format")})
+        parts = [blob[i:i + size] for i in range(0, len(blob), size)] or [""]
+        out += [{"wave": tag, "requests": len(reqs), "key": r["key"], "i": i, "n": len(parts), "part": part} for i, part in enumerate(parts)]
+    return out
+
+
+def unchunk(waves, item):
+    """Collect one queue item; -> the wave's requests once every part of every request is in, else None."""
+    w = waves.setdefault(item["wave"], {"requests": item["requests"], "parts": {}})
+    w["parts"].setdefault(item["key"], [None] * item["n"])[item["i"]] = item["part"]
+    done = [k for k, ps in w["parts"].items() if all(x is not None for x in ps)]
+    if len(done) < w["requests"]:
+        return None
+    del waves[item["wave"]]
+    return [json.loads("".join(ps)) for ps in w["parts"].values()]
 
 
 class Asker:
@@ -352,7 +386,8 @@ class Asker:
             tag = f"a{len(self.sent_unix)}-"
             futs = {r["key"]: self.futures.setdefault(tag + r["key"], Future()) for r in reqs}
             self.sent_unix.append(time.time())
-        self.rq.put([{"key": tag + r["key"], "input": r["input"], "response_format": r["response_format"]} for r in reqs])
+        for item in chunks(tag, [{**r, "key": tag + r["key"]} for r in reqs]):
+            self.rq.put(item)
         return futs
 
     def close(self):
@@ -504,8 +539,16 @@ def self_check():
     rq, aq = _q.Queue(), _q.Queue()
     asker = Asker(rq, aq)
     f1, f2 = asker.ask(reqs[:1]), asker.ask(reqs[:1])  # two judge runs, the same batch key: two questions on the queue
-    sent = [rq.get(timeout=1)[0]["key"], rq.get(timeout=1)[0]["key"]]
-    assert sent == ["a0-req-000", "a1-req-000"], sent
+    waves, got = {}, []
+    while not rq.empty():
+        got += unchunk(waves, rq.get(timeout=1)) or []
+    assert [r["key"] for r in got] == ["a0-req-000", "a1-req-000"] and got[0]["input"] == reqs[0]["input"], got
+    big = [{"key": f"k{i}", "input": [{"type": "text", "text": "x" * 1_900_000}], "response_format": {}} for i in range(2)]
+    items = chunks("w", big)  # two 1.9 MB requests -> 3 parts each, every part under the queue's limit, back in one piece
+    assert len(items) == 6 and all(len(json.dumps(x)) < 1 << 20 for x in items)
+    w2 = {}
+    back = [r for x in items[::-1] for r in (unchunk(w2, x) or [])]
+    assert sorted(r["key"] for r in back) == ["k0", "k1"] and back[0]["input"][0]["text"] == "x" * 1_900_000 and not w2
     aq.put({"key": "a1-req-000", "provider": {"status": "completed", "output_text": "{}"}})
     aq.put({"key": "a0-req-000", "provider": None, "error": "late"})
     assert f2["req-000"].result(timeout=5)["status"] == "completed" and isinstance(f1["req-000"].exception(timeout=5), RuntimeError)
