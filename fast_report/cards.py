@@ -173,7 +173,7 @@ TAXONOMY = {
               "pallet": ("wooden pallet", "plastic pallet", "skid"), "crate": ("plastic crate", "milk crate"),
               "bin": ("tote", "storage bin", "parts bin", "tub", "basket", "shopping basket"),
               "bag": ("sack", "plastic bag", "shopping bag", "pouch"),
-              "container": ("plastic container", "jar", "canister", "jerry can", "gas can"), "drum": ("barrel", "oil drum", "keg"),
+              "container": ("plastic container", "jar", "canister", "jerry can", "gas can", "jug"), "drum": ("barrel", "oil drum", "keg"),
               "bucket": ("pail",), "trash can": ("garbage can", "waste bin", "recycling bin", "dustbin", "trash bin"),
               "bottle": ("spray bottle", "water bottle"), "can": ("aerosol can", "tin"),
               "merchandise": ("product", "goods", "item", "toilet paper", "paper towel", "tissue", "diaper", "wipe", "snack", "chip",
@@ -260,6 +260,10 @@ HAZARD = ("spill", "ladder", "guard", "fence", "barrier", "railing", "fire extin
 CANON = {**{c: c for fam in TAXONOMY.values() for c in fam}, **{w: c for fam in TAXONOMY.values() for c, ws in fam.items() for w in ws},
          **{w: NOT_OBJECT for w in (*NOT_OBJECT_WORDS, NOT_OBJECT)}}
 FAMILY = {c: f for f, fam in TAXONOMY.items() for c in fam}
+# a name whose head is one of these and maps to no class is a part of what the words before it name (round 2's run 007 and
+# mvp3's benches: 'workbench leg', 'gondola shelf support', 'shopping cart caster wheel', 'pallet rack braces' had no class)
+PART_WORDS = ("leg", "top", "foot", "base", "support", "brace", "frame", "edge", "strip", "channel", "wheel", "caster", "cover", "hook",
+              "graphic", "bracket", "arm", "rail", "stand")
 
 
 def canonical(name):
@@ -277,7 +281,12 @@ def canonical(name):
         if c is not None:
             return c
     k = head_match(n, CANON)
-    return CANON[k] if k else None
+    if k:
+        return CANON[k]
+    w = n.split()
+    if len(w) > 1 and w[-1] in PART_WORDS:  # mvp3/judge: 'workbench leg', 'shelf edge strip', 'cart caster wheel': a part of its thing
+        return canonical(" ".join(w[:-1]))
+    return None
 
 
 def hazard_of(name):
@@ -2016,7 +2025,9 @@ def self_check():
     # mvp3/judge (D3): round 2's wrong map entries and a few names that mapped to no class
     for n_, want in (("waterjet cutter", "cnc machine"), ("end mill", "hand tool"), ("face mill", "hand tool"), ("digital readout display", "control panel"),
                      ("work table and tools", "workbench"), ("gantry cnc waterjet", "cnc machine"), ("bellows cover", "machine"), ("stretch wrap", "wrap"),
-                     ("pallet racking upright", "rack"), ("shelf talker", "sign"), ("product display", "display rack"), ("box cutter", "hand tool")):
+                     ("pallet racking upright", "rack"), ("shelf talker", "sign"), ("product display", "display rack"), ("box cutter", "hand tool"),
+                     ("workbench leg", "workbench"), ("gondola shelf support", "shelf"), ("shopping cart caster wheel", "cart"),
+                     ("jug of windshield washer fluid", "container"), ("cabinet door", "door")):
         assert canonical(n_) == want, (n_, canonical(n_))
     # the gate: 'spill' named by a VLM on a 0.6 m high box (a spill is flat, on the floor) with no detector word -> not shown
     a2 = copy.deepcopy(by["obj-0-0"])
