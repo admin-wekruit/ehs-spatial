@@ -302,7 +302,8 @@ const byRule = (rows: any[]) => Object.values(rows.reduce((m: Record<string, any
   return m;
 }, {})) as { rule: string; verdicts: string[]; reasons: Set<string>; n: number }[];
 
-const PERSON: [string, string, string][] = [["stature", "身高（估计）", "height (feet to head)"], ["foot_height", "脚离地", "feet above the floor"],
+const PERSON: [string, string, string][] = [["position_xy", "位置（地面坐标 x, y，轨迹中位）", "position (floor frame x, y; the track's median)"],
+  ["top_above_floor", "头顶离地", "head above floor"], ["stature", "身高（估计）", "height (feet to head)"], ["foot_height", "脚离地", "feet above the floor"],
   ["moved", "移动距离", "moved"]];
 
 function PersonFacts({ card, names, onSelect, tr }: { card: any; names: (id: string) => string; onSelect: (id: string) => void; tr: Tr }) {
