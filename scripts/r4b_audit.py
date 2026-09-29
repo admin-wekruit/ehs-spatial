@@ -6,8 +6,8 @@
     python scripts/r4b_audit.py --self-check
 
 cards: n object cards drawn at random (seeded) among the final object cards with a pick region (with or without a model), each on
-the keyframe where its region is largest (its own best views first, r4_models.sheet's rule). Left: the crop with the region outlined;
-right: the same crop dimmed with the card's display model drawn from that camera (SAM 3D's accepted mesh, else the primitive: seen
+the keyframe where its region is largest (its own best views first, r4_models.sheet's rule). Left: the whole frame with the crop's box
+(context); middle: the crop with the region outlined; right: the same crop dimmed with the card's display model drawn from that camera (SAM 3D's accepted mesh, else the primitive: seen
 faces solid, guessed faint). Above: the shown name, the type (family or shape, and whose votes gave it), the physical values (+-u;
 '>=' / '<=' bounds; n/o not observed; n/m not measurable), the model line. Labels (agent-labelled, by looking):
   type      right | close | wrong | unclear       (the family, or the specific name when one is shown)
@@ -34,7 +34,7 @@ def type_line(c):
     import r4_naming_results as nr
     i = c.get("identity") or {}
     t = i.get("type") or {}
-    return f"type: {t.get('label')} [{t.get('family')}] by {str(t.get('source'))[:34]}; route {nr.route(c)}"[:92]
+    return f"type: {t.get('label')} [{t.get('family')}] by {str(t.get('source'))[:40]}; route {nr.route(c)}"[:130]
 
 
 def cards(mirror, report, out_dir, n=30, seed=29, per=10):
@@ -101,14 +101,18 @@ def cards(mirror, report, out_dir, n=30, seed=29, per=10):
         cv2.drawContours(left, cs, -1, (0, 160, 255), 1)
         ch = int(round(320 * (y1 - y0) / max(x1 - x0, 1)))
         pair = np.hstack([cv2.resize(a[y0:y1, x0:x1], (320, max(ch, 1))) for a in (left, right)])
-        pair = cv2.resize(pair, (640, 360)) if pair.shape[0] > 360 else np.vstack([pair, np.zeros((360 - pair.shape[0], 640, 3), np.uint8)])
+        pair = cv2.resize(pair, (640, 320)) if pair.shape[0] > 320 else np.vstack([pair, np.zeros((320 - pair.shape[0], 640, 3), np.uint8)])
+        ctx = left.copy()  # the whole frame with the crop's box: the context a type is judged in
+        cv2.rectangle(ctx, (x0, y0), (x1, y1), (0, 255, 255), 5)
+        ctx = np.vstack([cv2.resize(ctx, (320, 180)), np.zeros((140, 320, 3), np.uint8)])
+        pair = np.hstack([ctx, pair])
         ph, ident = c.get("physical") or {}, c.get("identity") or {}
         pos = ph.get("position_xy") or {}
-        lines = [f"#{k} {c['id']}  {str(ident.get('name'))[:44]}", type_line(c),
+        lines = [f"#{k} {c['id']}  {str(ident.get('name'))[:60]}  [frame {f['frame']}]", type_line(c),
                  "  ".join(f"{lab} {short(ph.get(fld))}" for fld, lab in PHYS[:4]),
                  "  ".join(f"{lab} {short(ph.get(fld))}" for fld, lab in PHYS[4:]) + f"  pos {short(pos)}  @{(c.get('views') or {}).get('distance_m', ['?'])[0]} m",
-                 rm.model_line(c, s)[:92]]
-        band = np.zeros((6 + 20 * len(lines), 640, 3), np.uint8)
+                 rm.model_line(c, s)[:130]]
+        band = np.zeros((6 + 20 * len(lines), 960, 3), np.uint8)
         for j, t in enumerate(lines):
             cv2.putText(band, t, (6, 18 + 20 * j), cv2.FONT_HERSHEY_SIMPLEX, .44, (255, 255, 255), 1, cv2.LINE_AA)
         tiles.append(np.vstack([band, pair]))
