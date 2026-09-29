@@ -48,7 +48,9 @@ VOLUMES = {"/v/da3": modal.Volume.from_name("moge3-hf-cache"), "/v/sam3": modal.
            "/v/models": modal.Volume.from_name("panoptes-fb-models", create_if_missing=True),
            "/v/layers": modal.Volume.from_name("panoptes-fb-layers", create_if_missing=True),
            "/weights": modal.Volume.from_name("panoptes-sam3d-weights"),  # SAM 3D (sam3d_research's volume)
-           "/ckpt": modal.Volume.from_name("panoptes-splat-train")}  # LPIPS' AlexNet for the splat's held-out score (torch hub cache)
+           "/ckpt": modal.Volume.from_name("panoptes-splat-train"),  # LPIPS' AlexNet for the splat's held-out score (torch hub cache)
+           "/v/x13": modal.Volume.from_name("panoptes-x13-models"),  # r4/naming: DINOv2-L and PE-Core-L (x13's weights, read only)
+           "/v/r4": modal.Volume.from_name("panoptes-r4-naming")}  # r4/naming: YOLOE-26L with the taxonomy baked in (modal_apps/r4_naming.py)
 
 
 def build_image():
@@ -63,6 +65,10 @@ def build_image():
                          f"git+https://github.com/ByteDance-Seed/Depth-Anything-3.git@{DA3_CODE}")
             .run_commands("python -m venv /opt/vllm && PIP_EXTRA_INDEX_URL= /opt/vllm/bin/pip install -q vllm==0.11.0 transformers==4.57.1 pillow"))
     out = splat.with_envs(sam3d.with_envs(base)).env({"HF_HUB_OFFLINE": "1", "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
+    # r4/naming: PE-Core-L (open_clip, x13's version) and YOLOE (Ultralytics, AGPL-3.0: accepted by the user for now); ultralytics
+    # without its opencv-python dependency (the image has opencv-python-headless: two cv2 packages would overwrite each other)
+    out = (out.pip_install("open_clip_torch==3.3.0", "matplotlib", "pyyaml", "requests", "psutil", "polars", "ultralytics-thop")
+           .run_commands("python -m pip install --no-deps ultralytics==8.4.165"))
     for d in ("fast_report", "scripts", "modal_apps", "ehs_spatial"):
         out = out.add_local_dir(REPO / d, f"/repo/{d}", ignore=["**/__pycache__/**", "**/*.pyc"])
     return out
@@ -77,26 +83,31 @@ def gpu_listing():
 
 @app.function(image=image, gpu="A100-80GB", timeout=1200, retries=0, volumes=VOLUMES)
 def setup():
-    """The image imports and sees CUDA; SigLIP 2 goes to the models volume (public weights, no token)."""
-    os.environ["HF_HUB_OFFLINE"] = "0"  # before huggingface_hub is imported: only this function downloads
+    """The image imports and sees CUDA; r4/naming: the cascade's encoders load from their volumes and give the signals of a
+    synthetic object, the bank loads (no download: x13's and r4_naming's volumes hold the weights)."""
     import open3d.core as o3c
     import torch
     import transformers
-    from huggingface_hub import snapshot_download
     from fast_report import cascade
     t = time.time()
-    snapshot_download(cascade.SIGLIP, cache_dir="/v/models/hf")
-    VOLUMES["/v/models"].commit()
     from depth_anything_3.api import DepthAnything3  # noqa: F401
     from transformers import Sam3Model  # noqa: F401
     from ehs_spatial.live_people import PeopleLoop  # noqa: F401
     from fast_report import segment
     segment.self_check()  # the flood rules need torch
-    emb = cascade.Embedder(torch.device("cuda:0"), "/v/models/hf")
-    probs = emb.zero_shot(emb.text(["cat"]), emb.text(["a cat", "a lathe"]))
+    enc = cascade.Encoders(torch.device("cuda:0"))
+    enc.warm()
+    frames = torch.randint(0, 255, (3, 720, 1280, 3), dtype=torch.uint8, device="cuda:0")
+    masks = torch.zeros((6, 280, 504), dtype=torch.bool, device="cuda:0")
+    masks[:, 50:150, 100:300] = True
+    masks[3:, 0:40, 0:60] = True
+    sig = cascade.signals(enc, frames, [0, 1, 2, 0, 1, 2], masks, [0, 0, 0, 1, 1, 1], 2, lambda i: frames[i].cpu().numpy())
+    bank = cascade.Bank()
+    probs = bank.zero_shot(sig["pe"])
     vllm = subprocess.run(["/opt/vllm/bin/python", "-c", "import vllm, torch; print(vllm.__version__, torch.__version__)"], capture_output=True, text=True)
     out = {"torch": str(torch.__version__), "cuda": torch.cuda.is_available(), "transformers": transformers.__version__, "o3d_cuda": o3c.cuda.is_available(),
-            "siglip_model_type": emb.model.config.model_type, "siglip_dim": emb.dim, "siglip_scale": emb.scale, "probe_probs": probs.tolist(),
+            "signals": sig["record"], "dino_norms": [float(np.linalg.norm(x)) for x in sig["dino"]], "zero_shot_top": [cascade.CLASSES[int(i)] for i in probs.argmax(1)],
+            "bank_rows": len(bank.meta), "vram_gib": round(torch.cuda.max_memory_allocated() / 2 ** 30, 2),
             "vllm": (vllm.stdout + vllm.stderr)[-300:], "gpus": gpu_listing(), "s": round(time.time() - t, 1)}
     print(json.dumps(out))
     return out
@@ -150,10 +161,11 @@ class FastReport:
         sam = Sam3Model.from_pretrained(sam3_app.MODEL_ID, revision=sam3_app.REVISION, cache_dir="/v/sam3/huggingface/hub",
                                         torch_dtype=torch.bfloat16).eval()
         sam0 = copy.deepcopy(sam).to(self.dev_geo)
-        self.emb = cascade.Embedder(self.dev_geo, "/v/models/hf")
-        lap("sam3_siglip_gpu0_s")
+        lap("sam3_gpu0_s")
         vlm.wait(self.vllm)
         lap("vllm_ready_s")
+        self.namer_enc = cascade.Encoders(self.dev_seg)  # r4/naming: DINOv2-L, PE-Core-L, YOLOE on GPU 1, after vLLM sized its share
+        lap("naming_encoders_gpu1_s")
         self.splat = splat.Worker(gpu=1, torch_home="/ckpt/torch")  # after vLLM sized its cache from GPU 1's free memory (B)
         b["sam3d"] = self.sam3d.ready()  # before this process warms up on GPU 0: SAM 3D's warm-up holds ~20 GB a process until it is done
         lap("sam3d_ready_s")
@@ -195,10 +207,8 @@ class FastReport:
             frames = torch.randint(0, 255, (4, 720, 1280, 3), dtype=torch.uint8, device=self.dev_geo)
             masks = torch.zeros((600, 280, 504), dtype=torch.bool, device=self.dev_geo)
             masks[:, 50:150, 100:300] = True
-            self.emb.crops(frames, torch.randint(0, 4, (600,), device=self.dev_geo), masks)
-            self.emb.release()
-            self.emb.text(filler)
-            lap("warm_siglip_s")
+            cascade.signals(self.namer_enc, frames, np.arange(600) % 4, masks, np.arange(600) // 5, 120, lambda i: frames[i].cpu().numpy())
+            lap("warm_naming_s")
         import m3_exp_geometry as geo
         geo.fuse(torch.full((2, 280, 504), 2., device=self.dev_geo), np.repeat(np.array([[[300., 0, 252], [0, 300, 140], [0, 0, 1]]]), 2, 0),
                  np.repeat(np.eye(4)[None], 2, 0), torch.full((2, 280, 504, 3), .5, device=self.dev_geo))

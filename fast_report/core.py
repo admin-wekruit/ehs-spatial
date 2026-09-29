@@ -1019,8 +1019,8 @@ def analyse(m, mp4, opts, clock, writer, log):
     cards_out, cards_ready, pick_ready, judge_futures, cards_lock = {}, threading.Event(), threading.Event(), [], threading.Lock()
     judge_lock = threading.Lock()
     facts_done = {"identity": threading.Event(), "judge3": threading.Event(), "densify_names": threading.Event()}  # the decider's last
-    if not opts.get("densify", True) or not objects:  # work: the splat waits for it (mvp2); densify_names: the Qwen decider on
-        facts_done["judge3"].set()                     # densify's objects (mvp3 integrate, no Gemini namer)
+    if not opts.get("densify", True) or not objects or not opts.get("judge", True):  # work: the splat waits for it (mvp2);
+        facts_done["judge3"].set()  # densify_names: the namer on densify's objects (mvp3 integrate; r4: the cascade); r4: judge off
     if not opts.get("densify", True) or not objects or opts.get("namer") is not None:
         facts_done["densify_names"].set()
     if not objects:
@@ -1161,6 +1161,14 @@ def analyse(m, mp4, opts, clock, writer, log):
         if not cards_ready.wait(120):
             namer["published"].set()
             return
+        if naming_on:  # r4/naming: the cascade, the VLM last (fast_report.cascade)
+            try:
+                new = [c for c in copy.deepcopy(cards_out["v1"]["cards"]) if c["kind"] == "object"]
+                idents, rec = naming_pass(new, "outlines", "first")
+                publish(idents, "cascade")
+                return rec
+            finally:
+                naming["first_done"].set()
         by = {o["id"]: o for o in objects}
         new = copy.deepcopy(cards_out["v1"]["cards"])
         for c in new:
@@ -1224,6 +1232,124 @@ def analyse(m, mp4, opts, clock, writer, log):
     # at cards v3 instead of after the first pass's names are in (mvp2/integrate: Walmart's densify names waited 15 s for them)
     namer = {"started": threading.Event(), "published": threading.Event(), "asked": set(), "asked_ready": threading.Event()}
     v3 = {"done": threading.Event()}  # mvp3/speed: cards v3 by object id ('by') once put; densify's names, asked before it, go onto it
+
+    # r4/naming: the cascade (fast_report.cascade; the VLM last). sig: object id -> its naming signals (cascade.signals)
+    naming = {"first_done": threading.Event(), "in_video": [], "passes": [], "bank": None, "lock": threading.Lock(), "error": None}
+    naming_on = opts.get("naming", "cascade") == "cascade" and getattr(m, "namer_enc", None) is not None
+    family = json.loads(cascade.CALIBRATION.read_text()).get("site_family", {}).get(site, "unknown") if naming_on else None
+    sig = {}
+    if naming_on:
+        try:
+            naming["bank"] = cascade.Bank()
+        except Exception:  # noqa: BLE001  no bank (or no text embeddings): the round-3 path (the Qwen decider for every object)
+            import traceback
+            naming_on, naming["error"] = False, traceback.format_exc()[-1500:]
+    if not naming_on:
+        naming["first_done"].set()
+
+    def naming_pass(card_list, key, tag):
+        """r4/naming: the cascade over these object cards -> ({card id: identity}, record). The votes and groups on the CPU,
+        one Qwen question per group medoid (vlm.submit at the identity priority), the VLM's answers written to the bank."""
+        import collections
+        t0 = time.perf_counter()
+        th = cascade.calibration(site, family)
+        view = views_for_identity(key)
+        by_obj = {o["id"]: o for o in objects}
+        items, cmap = [], {}
+        for c in card_list:
+            mem = [c["id"], *[x for x in (c["physical"].get("merged_from") or []) if isinstance(x, str)]]
+            ss = [sig[x] for x in mem if x in sig]
+            votes, yolo = {}, {}
+            for x in mem:
+                for w_, s_ in ((by_obj.get(x) or {}).get("votes") or {}).items():
+                    votes[w_] = votes.get(w_, 0.) + s_
+            for s_ in ss:
+                for k_, v_ in s_["yolo"].items():
+                    yolo[k_] = max(yolo.get(k_, 0.), v_)
+            zero = np.zeros(1024, np.float32)
+            items.append({"id": c["id"], "votes": votes, "yolo": yolo, "askable": view(c) is not None,
+                          "dino": cascade.unit(np.sum([s_["dino"] for s_ in ss], 0)) if ss else zero,
+                          "pe": cascade.unit(np.sum([s_["pe"] for s_ in ss], 0)) if ss else zero,
+                          "measured_m": (c["physical"].get("size_check") or {}).get("measured_m")})
+            cmap[c["id"]] = c
+        with clock.stage(f"naming.settle.{tag}", n={"cards": len(items)}):
+            with naming["lock"]:
+                in_video = list(naming["in_video"])
+            recs, qs, own = cascade.settle(items, naming["bank"], th, video_sha, family, in_video)
+        by_item = {it["id"]: it for it in items}
+        with clock.stage(f"naming.vlm.{tag}", n={"questions": len(qs)}):
+            answers, decided = ask_options([(cmap[med], o_) for med, _, o_ in qs], view)
+            # the VLM asks cluster medoids only (the user, r4); opts['naming_escalate']: members a group's answer contradicts are asked
+            # on their own too (off: they keep their family type)
+            recs, rows, esc = cascade.resolve(recs, qs, answers, by_item, video_sha, site, family, own if opts.get("naming_escalate") else None)
+            answers2, decided2 = ask_options([(cmap[i], o_) for i, _, o_ in esc], view)
+            recs, rows2, _ = cascade.resolve(recs, esc, answers2, by_item, video_sha, site, family)
+        rows += rows2
+        n_group_q = len(decided)
+        decided.update(decided2)
+        with naming["lock"]:
+            naming["in_video"] += rows
+        naming["bank"].add([r[0] for r in rows], [r[1] for r in rows])
+        try:
+            naming["bank"].save()
+            saved = True
+        except Exception as error:  # noqa: BLE001  the names stand; the bank misses this pass's rows
+            saved = repr(error)[:300]
+        idents = {cid: cascade.identity(cmap[cid]["identity"], r, decided.get(cid)) for cid, r in recs.items()}
+        try:  # the pass's inputs beside the report (offline analysis: the vectors against the bank's, other operating points)
+            d_ = Path(f"/v/layers/reports/{writer.report_id}")
+            d_.mkdir(parents=True, exist_ok=True)
+            np.savez_compressed(d_ / f"naming-{tag}.npz", ids=np.array([it["id"] for it in items]), dino=np.stack([it["dino"] for it in items]).astype(np.float16),
+                                pe=np.stack([it["pe"] for it in items]).astype(np.float16),
+                                meta=json.dumps([{k: it[k] for k in ("votes", "yolo", "askable", "measured_m")} for it in items]))
+        except Exception:  # noqa: BLE001  a record only
+            pass
+        rec = {"pass": tag, "cards": len(items), "with_signals": int(sum(bool(np.any(it["dino"])) for it in items)),
+               "routes": dict(collections.Counter(r["route"] for r in recs.values())),
+               "cheap_rules": dict(collections.Counter(r.get("rule") for r in recs.values() if r["route"] == "cheap")),
+               "groups": len({r.get("group") for r in recs.values() if r.get("group") is not None}), "vlm_questions": len(decided),
+               "vlm_questions_groups": n_group_q, "vlm_questions_escalated": len(decided2),
+               "vlm_named": sum(1 for a in [*answers.values(), *answers2.values()] if a), "medoids_without_a_question": len(qs) - n_group_q,
+               "bank_rows_added": len(rows), "bank_saved": saved, "bank_rows_at_load": naming["bank"].rows_at_load, "family": family,
+               "calibration": {k: (None if v == float("inf") else v) for k, v in th.items()}, "s": round(time.perf_counter() - t0, 3),
+               "records": recs}
+        naming["passes"].append(rec)
+        return idents, {k: v for k, v in rec.items() if k != "records"}
+
+    def ask_options(pairs, view):
+        """r4/naming: one Qwen decider question per (card, options): section 4.7's set-of-marks pair, the options as letters
+        plus the two escapes -> ({card id: the chosen candidate, or None for an escape or no answer}, {card id: its identity
+        from cards.decide_identity (the decider's record)})."""
+        from fast_report import judge
+        cal = cards_calibration()
+
+        def build(c, o):
+            v = view(c)
+            if v is None or not o:
+                return None
+            full = list(o) + [cards.OPT_OTHER, cards.OPT_NOT_ONE]
+            p = vlm.qwen_prompt(" ".join([judge.SCENE, judge.MARKS]), "What is the object marked [1]?", full)
+            crop, local = judge.som_crop(frames[v[0]], v[1])
+            return full, m.proc_pool.submit(judge.som_pair, np.ascontiguousarray(crop), local, 1, 336), p
+        with ThreadPoolExecutor(8) as pool:  # never the core's cpu_pool: its threads would wait on vLLM
+            built = list(pool.map(lambda x: build(*x), pairs))
+        asked = []
+        for (c, _), b in zip(pairs, built):
+            try:
+                if b is not None:
+                    asked.append((c, b[0], vlm.submit(list(b[1].result()), b[2], len(b[0]), "identity")))
+            except Exception:  # noqa: BLE001  a crop that cannot be drawn: that group stays unidentified
+                pass
+        answers, decided = {}, {}
+        for c, full, fut in asked:
+            try:
+                d = cards.decide_identity(c["identity"], full, fut.result(), cal)
+            except Exception:  # noqa: BLE001  one unanswered question: that group stays unidentified
+                continue
+            a = (d.get("decider") or {}).get("answer")
+            answers[c["id"]] = None if a in (None, "unanswered", cards.OPT_OTHER, cards.OPT_NOT_ONE) else a
+            decided[c["id"]] = d
+        return answers, decided
 
     def start_namer():
         """mvp2/identity: the Gemini naming starts as soon as the outlines and pick counts exist (3-4 s before cards v1)."""
@@ -1618,7 +1744,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         for g_, w_, s_ in dens["votes"]:
             vote_d.setdefault(g_, []).append((w_, s_))
         n_old = len(members)
-        added, new_objs, new_points, st = {}, [], [], {"frames": len(frames_d), "masks_kept": n_d, "joined": 0, "new_objects": 0,
+        added, new_objs, new_points, new_members, st = {}, [], [], [], {"frames": len(frames_d), "masks_kept": n_d, "joined": 0, "new_objects": 0,
                                                         "words": len(dens_words), "words_not_run": skipped, "words_rule": DENSIFY_WORDS_RULE}
         is_box = np.zeros(n_d, bool)
         is_box[list(dens["box"])] = True
@@ -1685,6 +1811,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                                              "source": "densify" if not nb else "boxes" if nb == len(mem) else "densify+boxes",
                                              "box_masks": nb, "status": "estimated box; name is a detected word, unverified"})
                             new_points.append(pp)
+                            new_members.append(um[mem])
                             ent[um[mem]] = oi + 1
             maps_v2 = [e for e in results.get("maps_v1", []) if e[0]["source"] == "segmented"]
             for q, (lab, gidx) in dens["maps"].items():
@@ -1704,6 +1831,26 @@ def analyse(m, mp4, opts, clock, writer, log):
                               "new_objects_unidentified": sum(o["word"] == cards.UNIDENTIFIED for o in new_objs),
                               "pick_pixels_filled_640x360": int(filled), "rule": coverage.RULE, "debug": debug_fates(dens["debug"], ent, n_old, new_objs, maps_v2),
                               "licences": {k: coverage.LICENCES[k] for k in [d.src for d in m.cov[dev_geo]["dets"]] + ["sam3 tracker"]}}
+        if new_objs and naming_on:  # r4/naming: densify's new objects get their naming signals beside cards v3
+            idx_n = np.concatenate(new_members)
+            uq = sorted(set(qs[idx_n].tolist()))
+            at_q = {q: j for j, q in enumerate(uq)}
+            fr_t = torch.stack([work.chunks[dev_geo][q // segment.PERSON_FRAMES][q % segment.PERSON_FRAMES] for q in uq])  # a copy: the
+            mk_t = segment.unpack(packed[idx_n], dev_geo)  # keyframe chunks are cleared when densify ends
+            own = np.repeat(np.arange(len(new_objs)), [len(x) for x in new_members])
+            objs_n = list(new_objs)
+
+            def dens_signals():
+                try:
+                    with torch.inference_mode(), clock.stage("naming.signals.densify", gpu=m.namer_enc.dev, n={"masks": int(len(idx_n)), "frames": len(uq)}):
+                        s2 = cascade.signals(m.namer_enc, fr_t, [at_q[int(q)] for q in qs[idx_n]], mk_t, own, len(objs_n), lambda j: frames[keys[uq[j]]])
+                    for i, o in enumerate(objs_n):
+                        sig[o["id"]] = {"dino": s2["dino"][i], "pe": s2["pe"][i], "yolo": s2["yolo"][i]}
+                    return s2["record"]
+                except Exception:  # noqa: BLE001  no signals for densify's objects: each is its own group (recorded)
+                    import traceback
+                    return {"error": traceback.format_exc()[-2000:]}
+            naming["densify_signals"] = m.cpu_pool.submit(dens_signals)
         splat_after_facts()  # densify's GPU 1 share is done: the splat trains after the decider (or at SPLAT_LATEST_S); SAM 3D after cards v3
         points_v3 = list(obj_points)
         for oi, ds in added.items():
@@ -1762,6 +1909,30 @@ def analyse(m, mp4, opts, clock, writer, log):
         its pick counts exist, beside the objects/pick puts and cards v3 (ME340 run 007: v3 was put at 68 s and the requests went
         out at 69 s; outlines v2 existed at 63 s). An object that cards v3 merges away is asked too; its answer is dropped."""
         from concurrent.futures import Future
+        if naming_on:  # r4/naming: densify's own objects through the cascade (a second, smaller pass), on cards v3 like the decider below
+            namer["densify"] = fut = Future()
+
+            def cascade_densified():
+                try:
+                    rec = {"signals": naming["densify_signals"].result() if naming.get("densify_signals") else None}
+                    if not v3["done"].wait(240) or "v3" not in cards_out:
+                        return fut.set_result({**rec, "error": "no cards v3"})
+                    naming["first_done"].wait(180)  # the first pass's VLM answers are this video's rows for this pass
+                    with cards_lock:
+                        known = set(cards_out.get("identities") or {})
+                        rest = [copy.deepcopy(c) for c in cards_out["v3"]["cards"] if c["kind"] == "object" and c["id"] not in known]
+                    idents, r2 = naming_pass(rest, "outlines_v2", "densify") if rest else ({}, {"cards": 0})
+                    if idents:
+                        publish(idents, "cascade_densify")
+                    fut.set_result({**rec, **r2})
+                except Exception:  # noqa: BLE001  those objects keep their detected words (recorded)
+                    import traceback
+                    fut.set_result({"error": traceback.format_exc()[-2000:]})
+                finally:
+                    facts_done["densify_names"].set()
+                    start_display()
+            threading.Thread(target=cascade_densified, name="namer-densify-cascade", daemon=True).start()
+            return
         if opts.get("namer") is None:  # mvp3 integrate: no Gemini: densify's own objects kept their SAM 3 word (ME340 held-out
             namer["densify"] = fut = Future()  # items: 13 of 18 such names wrong); the Qwen decider names them once cards v3 is out
 
@@ -1958,63 +2129,30 @@ def analyse(m, mp4, opts, clock, writer, log):
     outlines_future = m.cpu_pool.submit(outlines_job)
 
 
-    # cascade: every member mask -> masked crop -> SigLIP 2 (GPU 0); object = mean of its masks
+    # r4/naming: every first-pass object's views -> DINOv2-L, PE-Core-L and YOLOE (fast_report.cascade.signals): the crops cut
+    # on GPU 0 beside densify's SAM 3 (it starts now on both GPUs), the encoders and YOLOE on GPU 1
     obj_kf = sorted(by_frame)
-    blobs_obj, groups = {}, {}
-    maps_ready.wait()  # the outlines are a spec layer (<= 30 s); the cascade only feeds objects v2
-    if objects:
-        kf_index = {q: j for j, q in enumerate(obj_kf)}
-        all_mem = np.concatenate(members)
-        best_masks = np.array([gi for _, gi in obj_masks_on])
-        with torch.inference_mode(), clock.stage("cascade.embed", gpu=dev_geo, n={"crops": int(len(all_mem)), "frames": len(obj_kf)}):
-            frames_obj = kf[torch.tensor(obj_kf, device=dev_geo)]
-            kf = None  # its last reader
-            mt = torch.from_numpy(all_mem).to(dev_geo)
-            fo = torch.tensor([kf_index[int(q)] for q in vf[all_mem]], device=dev_geo)
-            emb = m.emb.crops(frames_obj, fo, voc["mask"][mt])
-            owner = torch.from_numpy(np.repeat(np.arange(len(members)), [len(x) for x in members])).to(dev_geo)
-            obj_emb = torch.zeros((len(members), emb.shape[1]), device=dev_geo).index_add_(0, owner, emb)
-            obj_emb = torch.nn.functional.normalize(obj_emb, dim=1)
-            txt = m.emb.text(words)
-            probs = m.emb.zero_shot(obj_emb, txt)
-            bt = torch.from_numpy(best_masks).to(dev_geo)  # a record only: the best view without the mask, for comparison
-            ctx = m.emb.zero_shot(m.emb.crops(frames_obj, torch.tensor([kf_index[int(q)] for q in vf[best_masks]], device=dev_geo),
-                                              voc["mask"][bt], masked=False), txt)
-            m.emb.release()
-            if not densify_on:
-                # torch.cuda.empty_cache() empties every device's cache: called here while densify's SAM 3 ran on GPU 1 it
-                # faulted that GPU (XID 31, illegal address, runs mvp-a-cards-me340-002/003, both at the second GPU 1 batch)
-                with torch.cuda.device(dev_geo):
-                    torch.cuda.empty_cache()
-    gpu0_free.set()  # densify's GPU 0 share starts after the objects' own GPU work (section 7)
-    if objects:
-        with clock.stage("cascade.decide", n={"objects": len(objects)}):
-            cache = cascade.LabelCache("/v/layers/label-cache/siglip2-base-p16-224-v3.npz")
-            e_np, p_np, c_np = obj_emb.cpu().numpy(), probs.cpu().numpy(), ctx.cpu().numpy()
-            tau, calib = cascade.calibrate(e_np, [list(objs) for objs in by_frame.values()])
-            recs, unsure = cascade.decide(e_np, p_np, words, [o["word"] for o in objects], cache, video_sha, tau,
-                                          lambda w: segment.is_generic(w, words), use_cache)
-            groups = cascade.clusters(e_np, unsure, tau)
-            for i, r in enumerate(recs):
-                r["zero_shot_context_top3"] = [(words[j], round(float(c_np[i, j]), 4)) for j in np.argsort(-c_np[i])[:3]]
-            buf = io.BytesIO()
-            np.savez(buf, ids=np.array([o["id"] for o in objects]), embedding=e_np.astype(np.float16), probs=p_np.astype(np.float16),
-                     probs_context=c_np.astype(np.float16), words=np.array(words))
-            blobs_obj = {"embeddings": (buf.getvalue(), {"mediaType": "application/octet-stream", "format": "npz",
-                                                         "note": "SigLIP 2 object embeddings and zero-shot probabilities, for analysis"})}
-        for o, r in zip(objects, recs):
-            o["cascade"] = {**{k: v for k, v in r.items() if k != "sam3"}, "source": r["source"] or "uncertain: to the VLM"}
-        casc.update(crops=int(len(all_mem)), calibration=calib, cache_entries_before=len(cache), cache_used=use_cache,
-                    cross_video_hits=sum(r["source"] == "cache:cross-video" for r in recs),
-                    zero_shot_accepted=sum(r["source"] == "zero-shot" for r in recs), in_video_hits=sum(r["source"] == "cache:in-video" for r in recs),
-                    uncertain=len(unsure), vlm_requests_objects=len(groups))
+    maps_ready.wait()  # the outlines are a spec layer (<= 30 s); the naming signals only feed the identities
+    gpu0_free.set()
+    if objects and naming_on:
+        try:
+            kf_index = {q: j for j, q in enumerate(obj_kf)}
+            all_mem = np.concatenate(members)
+            with torch.inference_mode(), clock.stage("naming.signals", gpu=m.namer_enc.dev, n={"masks": int(len(all_mem)), "frames": len(obj_kf)}):
+                s1 = cascade.signals(m.namer_enc, kf[torch.tensor(obj_kf, device=dev_geo)], [kf_index[int(q)] for q in vf[all_mem]],
+                                     voc["mask"][torch.from_numpy(all_mem).to(dev_geo)], np.repeat(np.arange(len(members)), [len(x) for x in members]),
+                                     len(members), lambda j: frames[keys[obj_kf[j]]])
+            for i, o in enumerate(objects[:len(members)]):
+                sig[o["id"]] = {"dino": s1["dino"][i], "pe": s1["pe"][i], "yolo": s1["yolo"][i]}
+            casc.update(signals=s1["record"])
+        except Exception:  # noqa: BLE001  no signals: no cheap acceptance, every card alone in its group (recorded)
+            import traceback
+            casc["signals_error"] = traceback.format_exc()[-2000:]
+    kf = None  # its last reader
     cascade_done.set()
     if objects:
-        # integration: section 4.7's options question replaces the free-text naming of the uncertain clusters (it held
-        # vLLM 34 s on Sam's Club, 360 crops, before the decider could start)
-        casc.update(vlm="replaced by the decider's options (click MVP 4.7)", vlm_requests_objects=0, uncertain_clusters=len(groups))
         sync_objects()
-        writer.put("objects", copy.deepcopy({"objects": objects, "cascade": casc, "vocabulary": words}), blobs_obj, "estimated+inferred", obj_labels)
+        writer.put("objects", copy.deepcopy({"objects": objects, "cascade": casc, "vocabulary": words}), None, "estimated+inferred", obj_labels)
         clock.mark("objects_v2_put")
     identity_on = opts.get("identity", True)  # r4: False = no identity pass at all (names stay SAM 3's detected words; no VLM)
     esc = m.vlm_pool.submit(cards_v2) if objects and identity_on else None
@@ -2030,6 +2168,9 @@ def analyse(m, mp4, opts, clock, writer, log):
     summary["boxes"] = box_stats(objects[:len(members)], cards_out.get("v1"))
     summary["densify"] = densify_future.result() if densify_future is not None else None
     summary["identity_densify"] = namer["densify"].result() if namer.get("densify") else None  # before the judge futures: it adds one
+    summary["naming"] = {"on": naming_on, "error": naming["error"], "family": family, "passes": [{k: v for k, v in r.items() if k != "records"} for r in naming["passes"]],
+                         "bank_rows_at_load": naming["bank"].rows_at_load if naming["bank"] else None,
+                         "bank_rows_now": len(naming["bank"].meta) if naming["bank"] else None}
     summary["judge"] = [f.result() for f in judge_futures]  # after densify: it adds the v3 judgements' future
     summary["cards"] = {"v1": summary["cards"], "v3": cards_out.get("v3", {}).get("stats")}
     summary["boxes_v3"] = box_stats(objects, cards_out.get("v3"))
