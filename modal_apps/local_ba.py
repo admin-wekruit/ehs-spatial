@@ -20,7 +20,9 @@ import numpy as np
 SIGMA_PX, SIGMA_R_DEG, SIGMA_T_M = 1., 1.5, .05
 MAX_R_DEG, MAX_T_M = 3., .10  # X4's per-view ICP refusal limits
 SIGMA_LS, SIGMA_B_M, MAX_LS, MAX_B_M = .1, .05, .5, .2  # per-view depth scale / shift
-SIGMA_LS_MEAN, SIGMA_LSIG, MAX_LSIG = .005, 1., .7  # the mean depth scale held at the coarse map's; the baseline scale free
+SIGMA_LS_MEAN, SIGMA_LSIG, MAX_LSIG = .005, 1., .3  # the mean depth scale (views with depth data) held at the coarse map's;
+# the baseline scale free within x0.74..1.35 (a solve at that bound is refused: the coarse cameras are kept)
+MIN_DEPTH_OBS, OUTLIER_LS = 10, .2  # a view's depth scale counts with >= 10 observations; > 0.2 off the median: its depth is dropped
 MAX_TRACKS = 800  # all tracks near the spot, then the longest others
 DEPTH_SIG = (.01, .01)  # DA3 depth at a track: 1 cm + 1 % of the depth
 REGION_M, F_SCALE, RANSAC_PX = .3, 2., 1.
@@ -168,6 +170,10 @@ def solve(view, uv, track, K, c2w0, dobs, dsel, X0, cams=True, max_nfev=60, fns=
     cbar = C0.mean(0)
     di = np.flatnonzero(dsel)
     Nd = len(di)
+    dview = np.bincount(view[di], minlength=n) >= MIN_DEPTH_OBS  # the views whose depth scale is measured
+    if not dview.any():
+        dview[:] = True
+    wmean = dview / dview.sum()
     dval = dobs[di]
     dsig = DEPTH_SIG[0] + DEPTH_SIG[1] * dval
     sr = np.radians(SIGMA_R_DEG)
@@ -191,7 +197,7 @@ def solve(view, uv, track, K, c2w0, dobs, dsel, X0, cams=True, max_nfev=60, fns=
         u, v = K[view, 0, 0] * Xc[:, 0] / zs + K[view, 0, 2], K[view, 1, 1] * Xc[:, 1] / zs + K[view, 1, 2]
         pred = np.exp(ls[view[di]]) * dval + b[view[di]]
         return np.concatenate([(u - uv[:, 0]) / SIGMA_PX, (v - uv[:, 1]) / SIGMA_PX, (z[di] - pred) / dsig, p[:8 * n] / prior_sig,
-                               [ls.mean() / SIGMA_LS_MEAN, lsig / SIGMA_LSIG]])
+                               [ls @ wmean / SIGMA_LS_MEAN, lsig / SIGMA_LSIG]])
 
     cam = lambda k, vs: np.stack([3 * k * n + 3 * vs + a for a in range(3)], 1)  # noqa: E731  block k (w, t): 3 columns per view
     Xcol = lambda ts: nc + 3 * ts[:, None] + np.arange(3)  # noqa: E731
@@ -218,7 +224,7 @@ def solve(view, uv, track, K, c2w0, dobs, dsel, X0, cams=True, max_nfev=60, fns=
         Ju, Jv = np.einsum("nk,nkj->nj", du, blocks), np.einsum("nk,nkj->nj", dv, blocks)
         bz = blocks[di, 2] / dsig[:, None]
         Jd = np.concatenate([bz[:, :6], (-np.exp(ls[view[di]]) * dval / dsig)[:, None], (-1 / dsig)[:, None], bz[:, 6:]], 1)
-        vals = np.concatenate([Ju.ravel(), Jv.ravel(), Jd.ravel(), 1 / prior_sig, np.full(n, 1 / (n * SIGMA_LS_MEAN)), [1 / SIGMA_LSIG]])
+        vals = np.concatenate([Ju.ravel(), Jv.ravel(), Jd.ravel(), 1 / prior_sig, wmean / SIGMA_LS_MEAN, [1 / SIGMA_LSIG]])
         return coo_matrix((vals, (rows, cols)), shape=shape).tocsr()
     p0 = np.concatenate([np.zeros(nc), np.asarray(X0, np.float64).ravel()])
     if fns:  # the self-check compares the Jacobian with finite differences
@@ -248,7 +254,8 @@ def solve(view, uv, track, K, c2w0, dobs, dsel, X0, cams=True, max_nfev=60, fns=
     rot = [float(np.degrees(np.arccos(np.clip((np.trace(a[:3, :3].T @ q[:3, :3]) - 1) / 2, -1, 1)))) for a, q in zip(c2w, c2w0)]
     mv = c2w[:, :3, 3] - C0
     return {"c2w": c2w, "ls": ls, "b": b, "X": X, "err_px": e, "depth_res_m": dres, "z": z, "s": time.perf_counter() - t0,
-            "iterations": it, **lm_info, "at_bound": at_bound, "baseline_scale": float(np.exp(lsig)),
+            "iterations": it, **lm_info, "at_bound": at_bound, "baseline_scale": float(np.exp(lsig)), "depth_views": dview,
+            "scale_at_bound": bool(cams and abs(lsig) >= .999 * MAX_LSIG),
             "rot_deg": np.asarray(rot), "move_cm": 100 * np.linalg.norm(mv, axis=1), "move_vec_cm": 100 * mv,
             "gauge": {"rot_deg": round(float(np.degrees(np.arccos(np.clip((np.trace(Rg) - 1) / 2, -1, 1)))), 3),
                       "move_cm": round(float(100 * np.linalg.norm(tg + (Rg - np.eye(3)) @ C0.mean(0))), 2)}}
@@ -566,6 +573,11 @@ def backproject_np(depth, K, c2w):
     return X @ np.asarray(c2w)[:3, :3].T + np.asarray(c2w)[:3, 3], (v, u)
 
 
+def outlier_views(ls, dview, thr=OUTLIER_LS):
+    """Views with measured depth whose log depth scale is > thr from their median: the DA3 crop disagrees in scale."""
+    return np.flatnonzero(dview & (np.abs(ls - np.median(ls[dview])) > thr))
+
+
 def fit_line(z, d, iters=5):
     """Robust z = s d + b (Huber IRLS, 1 cm knee) -> s, b."""
     s_, b_ = float(np.median(z / d)), 0.
@@ -639,10 +651,18 @@ def local_ba(m, imgs, depth, K, c2w, kept, box, resect_view=None, tri=False, rer
         info["time_s"] = {"features": round(t1 - t0, 3), "match_verify": round(t2 - t1, 3), "tracks": round(t3 - t2, 3), "total": round(t3 - t0, 3)}
         return depth, np.asarray(c2w, np.float64), info
     after = solve(view, uv, track, Kv, C0, dobs, dsel, X0, cams=True)
+    dv = after["depth_views"]
+    bad = outlier_views(after["ls"], dv)
+    if len(bad) and len(bad) < dv.sum():
+        dsel = dsel & ~np.isin(view, bad)
+        after = solve(view, uv, track, Kv, C0, dobs, dsel, X0, cams=True)
+    info["depth_dropped_views"] = [V[k] for k in bad] if len(bad) < dv.sum() else []
     t4 = time.perf_counter()
     before = solve(view, uv, track, Kv, C0, dobs, dsel, X0, cams=False)  # diagnostic: outside the product time
     t5 = time.perf_counter()
     info["status"] = "solved"
+    if after["scale_at_bound"]:
+        info["status"] = f"refused: baseline scale {after['baseline_scale']:.3f} at the x{np.exp(-MAX_LSIG):.2f}..{np.exp(MAX_LSIG):.2f} bound"
     info["reprojection_px_at_504_crop"] = {"before": stats(before["err_px"]), "after": stats(after["err_px"]),
                                            "within_2px_before": round(float((before["err_px"] <= 2).mean()), 4),
                                            "within_2px_after": round(float((after["err_px"] <= 2).mean()), 4)}
@@ -665,10 +685,16 @@ def local_ba(m, imgs, depth, K, c2w, kept, box, resect_view=None, tri=False, rer
                       "before_iterations": before["iterations"], "before_s": round(before["s"], 3)}
     out_c2w = np.asarray(c2w, np.float64).copy()
     out_d = np.array(depth, np.float32, copy=True)
+    if info["status"] != "solved":  # refused: the numbers above are reported, the coarse cameras and anchor depth kept
+        info["time_s"] = {"features": round(t1 - t0, 3), "match_verify": round(t2 - t1, 3), "tracks": round(t3 - t2, 3), "solve": round(t4 - t3, 3),
+                          "product": round(t4 - t0, 3)}
+        return depth, np.asarray(c2w, np.float64), info
     for k, i in enumerate(V):
         out_c2w[i] = after["c2w"][k]
         on = out_d[i] > 0
         out_d[i][on] = np.exp(after["ls"][k]) * out_d[i][on] + after["b"][k]
+        if i in info["depth_dropped_views"]:
+            out_d[i][:] = 0  # its pose stays solved (from its matches); its depth goes into no map
     if rerun_da3 is not None:
         t_d = time.perf_counter()
         D2 = rerun_da3(out_c2w)
@@ -802,6 +828,12 @@ def self_check():
     s = float(np.median(dist(af["c2w"])[iu] / dist(c2w)[iu]))
     assert np.abs(dist(af["c2w"])[iu] / s - dist(c2w)[iu]).max() < .01 and 1 <= s <= 1.08, (s, np.abs(dist(af["c2w"])[iu] / s - dist(c2w)[iu]).max())
     assert np.allclose(np.exp(af["ls"]) * 1.07 / s, 1, atol=.01), (np.exp(af["ls"]), s)
+    # a view without depth data is not the slack of the mean-scale hold; a view 1.35x off the others is the outlier
+    d2 = dobs.copy()
+    d2[view == 3] *= 1.35
+    ds2 = dsel & (view != 4)
+    af2 = solve(view, uv, track, Ks, coarse, d2, ds2, X0, cams=True)
+    assert abs(af2["ls"][4]) < .02 and list(outlier_views(af2["ls"], af2["depth_views"])) == [3], (af2["ls"], af2["depth_views"])
     # resect: a camera 2 deg / 6 cm off comes back from its 2D-3D pairs
     c_new, e0, e1, _ = resect(uv[view == 2], Kc, coarse[2], X)
     assert np.median(e1) < .6 < np.median(e0) and np.linalg.norm(c_new[:3, 3] - c2w[2, :3, 3]) < .01

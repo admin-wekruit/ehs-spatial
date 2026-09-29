@@ -34,6 +34,7 @@ CLIPS = {"me340-165": "source-full.mp4", "samsclub-337": "source-full.mp4", "wal
          "lightning-3585": "source-rgb.mp4"}  # the factory clip has no 1280x720 cut: its 640x480 playback file
 METHODS = ("anchor", "anchor+ba", "anchor+ba+tri", "anchor+ba+da3", "anchor+ba+mvs")
 CPU, MEM_GIB = 16, 64
+FACE_M = .03  # tilt repeatability: points within 3 cm of frames A's plane
 PRICE_S = fra.PRICE["A100-80GB"] + CPU * fra.PRICE["cpu_core"] + MEM_GIB * fra.PRICE["gib"]
 
 app = modal.App("panoptes-x11-local-ba")
@@ -407,6 +408,21 @@ def analyse(m, clip, mp4, opts, clock):
                 if fs == "A":
                     tiles[meth] = tl
                 runs[f"{fs}:{meth}"] = slim(r)
+        g = c.G[sp["si"]]
+        for mi, meth in enumerate(methods):  # the same face in A and B: frames A's fine plane (+-3 cm), refitted in each map
+            ra, rb = runs.get(f"A:{meth}"), runs.get(f"B:{meth}")
+            pa = ((((ra or {}).get("variants") or [{}])[0].get("plane")) or {}).get("fine")
+            if not pa or rb is None:
+                continue
+            nrm, ctr = np.asarray(pa["normal"]), np.asarray(pa["centre"])
+            fm = {}
+            for fs, P in (("A", c.store.get(f"{sp['id']}A{mi}-fine")), ("B", c.store.get(f"{sp['id']}B{mi}-fine")), ("coarse", g["pts"])):
+                if P is None or not len(P):
+                    continue
+                P = P[x4.in_box(P, sp["box"])]
+                t = x4.plane_tilt(P[np.abs((P - ctr) @ nrm) <= FACE_M], g["up"], .03 if fs == "coarse" else .01)
+                fm[fs] = None if t is None else {k: t[k] for k in ("tilt_deg", "ci95_deg", "inliers")}
+            rb["face_matched_tilt"] = fm
         recs.append({**head, "frames_A": [v["frame"] for v in sel["A"]["views"]], "frames_B": [v["frame"] for v in sel["B"]["views"]], "runs": runs})
         rows.append((sp, runs, tiles))
     return {"coarse": {**c.cuts, "trigger_detections": len(c.dets), "clusters": len(c.clusters)}, "spot_finding": finder,
@@ -572,6 +588,9 @@ def spot_row(s, stages, methods):
                                    "da3_crops_sam3": round(v["time_s"]["fine_i_iii"] - v["time_s"]["anchor_icp"] - v["time_s"]["tsdf_1cm"], 3)}
         out["methods"][key] = row
     for meth in methods:
+        fm = (s["runs"].get(f"B:{meth}") or {}).get("face_matched_tilt") or {}
+        if (fm.get("A") or {}).get("tilt_deg") is not None and (fm.get("B") or {}).get("tilt_deg") is not None:
+            out.setdefault("face_matched_tilt", {})[meth] = {**fm, "abs_diff_deg": round(abs(fm["A"]["tilt_deg"] - fm["B"]["tilt_deg"]), 3)}
         a, b = (out["methods"].get(f"{f}:{meth}") or {} for f in "AB")
         ta, tb = (a.get("plane_fine") or {}).get("tilt_deg"), (b.get("plane_fine") or {}).get("tilt_deg")
         if ta is not None and tb is not None:
@@ -672,6 +691,11 @@ def summarise(run_dir, extra=None, x4_run="fx-x4-refine-006"):
         if d:
             rep[meth] = {"surface_spots": len(d), "median_abs_diff_deg": _med(d, 3), "max_abs_diff_deg": round(max(d), 3),
                          "within_1deg": sum(v <= 1 for v in d), "cis_overlap": sum(x["tilt_repeatability"][meth]["cis_overlap"] for x in allrows if meth in x["tilt_repeatability"])}
+    for meth in METHODS:
+        d = [x["face_matched_tilt"][meth]["abs_diff_deg"] for x in allrows if meth in x.get("face_matched_tilt", {})]
+        if d:
+            rep.setdefault(meth, {})["face_matched"] = {"surface_spots": len(d), "median_abs_diff_deg": _med(d, 3), "max_abs_diff_deg": round(max(d), 3),
+                                                        "within_1deg": sum(v <= 1 for v in d), "within_2deg": sum(v <= 2 for v in d)}
     out = {"schema": "panoptes-x11-local-ba-results-v1", "run": run_dir.name, "boot": boot, "units": {
         "*_s": "seconds of wall time inside the container (perf_counter), models resident, cold start excluded",
         "*_m / *_cm / *_mm": "estimated: floor plane + an assumed 1.6 m camera height; never measured",
