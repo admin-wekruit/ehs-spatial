@@ -60,7 +60,7 @@ async function video(name){
   const box=await page.evaluate(()=>{const b=document.querySelector('.report-video-stage').getBoundingClientRect();return [b.left,b.top,b.width,b.height];});
   const click=async (x,y)=>{const [cx,cy]=await page.evaluate(toClient,[x,y]);
     assert.ok(cx>=box[0]&&cy>=box[1]&&cx<box[0]+box[2]&&cy<box[1]+box[3],'aimed point is off the visible video (object-fit cover crops it)');await page.mouse.click(cx,cy);};
-  const info=await page.evaluate(()=>({decodeMs:window.__live.pickDecodeMs,decodeSteps:window.__live.pickSteps,duration:document.querySelector('.report-video-stage video').duration,frames:window.__live.pick.data.frames.length}));
+  const info=await page.evaluate(()=>({decodeMs:window.__live.pickDecodeMs,decodeSteps:window.__live.pickSteps,decodes:window.__live.pickDecodes,duration:document.querySelector('.report-video-stage video').duration,frames:window.__live.pick.data.frames.length}));
 
   // 200 seeded clicks: uniform time and a uniform point of the visible video (misses open the unknown-region card)
   let seed=1;const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
@@ -125,7 +125,7 @@ async function video(name){
   }
   const timing=await page.evaluate(()=>[...document.querySelectorAll('.live-report-timing table')[0].querySelectorAll('tbody tr')].map(r=>[...r.cells].map(c=>c.textContent)));
   server.kill();await page.close();
-  const row={report:name,replay:as,pickDecodeMs:info.decodeMs,pickDecodeSteps:info.decodeSteps,pickFrames:info.frames,clicks:ms.length,hits,unknown:misses,
+  const row={report:name,replay:as,pickDecodeMs:info.decodeMs,pickDecodeSteps:info.decodeSteps,pickDecodes:info.decodes,pickFrames:info.frames,clicks:ms.length,hits,unknown:misses,
     latencyMs:{p50:q(.5),p95:q(.95),max:Math.max(...ms),mean:ms.reduce((a,b)=>a+b,0)/ms.length},shots,evidence,filter,counts,timing,errors};
   console.log(JSON.stringify({report:name,latencyMs:row.latencyMs,decodeMs:row.pickDecodeMs,decodeSteps:row.pickDecodeSteps,hits,unknown:misses,filter,evidence,errors:errors.length}));
   return row;

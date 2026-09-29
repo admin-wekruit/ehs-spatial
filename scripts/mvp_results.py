@@ -88,7 +88,7 @@ def md(summary):
     sites = list(summary["videos"])
     head = "| | " + " | ".join(NAMES.get(s, s) for s in sites) + " |\n|---|" + "---|" * len(sites) + "\n"
     v = summary["videos"]
-    lines = ["# Click MVP (mvp/integrate): results", "", summary["note"], ""]
+    lines = ["# Click MVP (mvp/integrate): results", "", summary["note"], ""] + ([summary["notes_md"], ""] if summary.get("notes_md") else [])
     lines += ["## Analysis time to each layer (s from the MP4 bytes in the container; warm call, first call after boot in brackets)", "", head.rstrip("\n")]
     for label, _ in LAYERS:
         cells = []
@@ -155,11 +155,29 @@ def md(summary):
         vw = summary["viewer"]
         lines.append("| click → card p50 / p95 ms (200 clicks) | " + " | ".join(
             (lambda r: f"{num(get(r, 'latencyMs', 'p50'))} / {num(get(r, 'latencyMs', 'p95'))}" if r else "—")(vw.get(s)) for s in sites) + " |")
-        lines.append("| pick decode ms | " + " | ".join((lambda r: num(get(r, "pickDecodeMs")) if r else "—")(vw.get(s)) for s in sites) + " |")
+        lines.append("| pick decode ms, v1 at load / v2 after densify (fetch + inflate + index) | " + " | ".join(
+            (lambda r: " / ".join(num(x["ms"]) for x in (r.get("pickDecodes") or [])) or num(get(r, "pickDecodeMs")) if r else "—")(vw.get(s)) for s in sites) + " |")
+        lines.append("| clicks on an entity / unknown region (200 random) | " + " | ".join(
+            (lambda r: f"{r['hits']} / {r['unknown']}" if r else "—")(vw.get(s)) for s in sites) + " |")
         lines += ["", "Screenshots:"]
         for s in sites:
             for shot in (vw.get(s) or {}).get("shots", []):
-                lines.append(f"- {NAMES.get(s, s)}: `{Path(shot['file']).name}`: aimed {shot['aimed']} → {shot.get('title')} {' '.join(shot.get('chips') or [])}")
+                lines.append(f"- {NAMES.get(s, s)}: `{s}/{Path(shot['file']).name}`: aimed {shot['aimed']} → card '{shot.get('title')}', "
+                             f"verdict chips {', '.join(dict.fromkeys(shot.get('chips') or [])) or 'none'}")
+    acc = [(s, v[s].get("acceptance") or {}) for s in sites]
+    if any(a for _, a in acc):
+        lines += ["", "## Acceptance (CLICK-MVP-SPEC 10, D's harness; ✓ pass, ✗ fail, — not judged)", "", head.rstrip("\n")]
+        mark = lambda x: {True: "✓", False: "✗", None: "—"}[x.get("pass") if isinstance(x, dict) else None]  # noqa: E731
+        for key in sorted({k for _, a in acc for k in a}):
+            cells = []
+            for _, a in acc:
+                x = a.get(key)
+                extra = f" (missed: {', '.join(x['missed'])})" if isinstance(x, dict) and x.get("missed") else ""
+                cells.append(mark(x) + extra if x is not None else "—")
+            lines.append(f"| {key} | " + " | ".join(cells) + " |")
+        for key, x in ((summary.get("acceptance_all") or {}).items()):  # the pooled criteria (one value for the three videos)
+            detail = {k: v for k, v in x.items() if k not in ("pass", "source")} if isinstance(x, dict) else x
+            lines.append(f"| {key} (all videos) | {mark(x)} {json.dumps(detail)[:160]} | | |")
     if summary.get("plugged"):
         lines += ["", "## Experiments plugged in, and not", ""] + [f"- **{k}**: {x}" for k, x in summary["plugged"].items()]
     lines += ["", f"Spend: {summary.get('spend')}", ""]
@@ -173,33 +191,43 @@ def shift_of(repeat):
     return next(iter((repeat or {}).values()), None)
 
 
-def build(out, bench_dirs, viewer_dir=None, plugged=None):
+def build(out, bench_dirs, viewer_dir=None, plugged=None, eval_dir=None, notes=None, spend=None):
+    """eval_dir: fast_report_eval --mvp over the three videos at once (one pooled k, one judgement table); else each bench's mvp/."""
     base = json.loads(BASELINE.read_text()) if BASELINE.exists() else {}
+    pooled = json.loads((Path(eval_dir) / "summary.json").read_text()) if eval_dir else None
     videos, k_family = {}, {}
     for site, d in bench_dirs.items():
         d = Path(d)
         bench = json.loads((d / "summary.json").read_text())
-        mvp = json.loads((d / "mvp/summary.json").read_text()) if (d / "mvp/summary.json").exists() else {}
+        mvp = pooled or (json.loads((d / "mvp/summary.json").read_text()) if (d / "mvp/summary.json").exists() else {})
         videos[site] = video_rows(site, bench, mvp, base)
-        lab = d / "mvp" / f"labels-identity-{site}.json"
+        lab = (Path(eval_dir) if eval_dir else d / "mvp") / f"labels-identity-{site}.json"
         videos[site]["identity"]["audit"] = identity_audit(json.loads(lab.read_text())) if lab.exists() else None
         videos[site]["bench_dir"] = str(d)
         k_family[site] = mvp.get("k_family")
     viewer = None
-    if viewer_dir and (Path(viewer_dir) / "click-check.json").exists():
-        chk = json.loads((Path(viewer_dir) / "click-check.json").read_text())
+    if viewer_dir:  # C's click-check.json: one for all videos, or one per video in <viewer_dir>/<site>/
         viewer = {}
-        for r in chk["videos"]:
-            site = next((s for s in bench_dirs if s in r["report"]), r["report"])
-            viewer[site] = r
+        for path in [Path(viewer_dir) / "click-check.json", *sorted(Path(viewer_dir).glob("*/click-check.json"))]:
+            if path.exists():
+                for r in json.loads(path.read_text())["videos"]:
+                    viewer[next((s for s in bench_dirs if s in r["report"]), r["report"])] = r
     summary = {"schema": "panoptes-mvp-results-v1", "note": "All numbers measured on 2 x A100-SXM4-80GB (MPS), ephemeral Modal runs, analysis time "
                "only (cold start apart). Physical values are at estimated scale (floor plane + assumed 1.6 m camera height); 'agreement' is with the "
                "delivered report, itself model-made and at estimated scale, not ground truth. Labels on clicks, boxes and judgements are agent-made.",
-               "videos": videos, "k_family": k_family, "viewer": viewer, "plugged": plugged, "baseline": str(BASELINE)}
-    judged = [json.loads((Path(d) / "mvp/summary.json").read_text()).get("judgements") for d in bench_dirs.values() if (Path(d) / "mvp/summary.json").exists()]
-    summary["judgement_accuracy"] = merge_judgements([j for j in judged if j])
+               "videos": videos, "k_family": k_family, "viewer": viewer, "plugged": plugged, "baseline": str(BASELINE),
+               "notes_md": Path(notes).read_text() if notes else None}
+    if pooled:
+        summary["judgement_accuracy"] = pooled.get("judgements")
+        summary["k_family"] = {"pooled": pooled.get("k_family"), "source": pooled.get("k_source")}
+        summary["decider"], summary["jev_swap"] = pooled.get("decider"), pooled.get("jev_swap")
+        summary["eval_dir"] = str(eval_dir)
+        summary["acceptance_all"] = (pooled.get("acceptance") or {}).get("all")
+    else:
+        judged = [json.loads((Path(d) / "mvp/summary.json").read_text()).get("judgements") for d in bench_dirs.values() if (Path(d) / "mvp/summary.json").exists()]
+        summary["judgement_accuracy"] = merge_judgements([j for j in judged if j])
     usd = sum((v.get("usd_upper_container_life") or 0) for v in videos.values())
-    summary["spend"] = f"about ${usd:.2f} at list price over the three containers' lives (upper bound; boot included); reconcile with `modal billing report`"
+    summary["spend"] = spend or f"about ${usd:.2f} at list price over the three containers' lives (upper bound; boot included); reconcile with `modal billing report`"
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     (out / "summary.json").write_text(json.dumps(summary, indent=1, default=str))
@@ -266,7 +294,10 @@ if __name__ == "__main__":
     ap.add_argument("--bench", required=True, help="site=RUN_DIR,...")
     ap.add_argument("--viewer", type=Path)
     ap.add_argument("--plugged", type=Path)
+    ap.add_argument("--eval", type=Path, help="fast_report_eval --mvp output over the three videos (pooled)")
+    ap.add_argument("--spend", help="the spend line (e.g. billed + estimated over every run of the work)")
+    ap.add_argument("--notes", type=Path, help="a hand-written markdown section (findings, how to open the viewer) put after the title")
     a = ap.parse_args()
     b = dict(x.split("=", 1) for x in a.bench.split(","))
-    s = build(a.out, b, a.viewer, json.loads(a.plugged.read_text()) if a.plugged else None)
+    s = build(a.out, b, a.viewer, json.loads(a.plugged.read_text()) if a.plugged else None, a.eval, a.notes, a.spend)
     print((a.out / "summary.md").read_text())

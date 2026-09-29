@@ -43,19 +43,21 @@ export default function LiveReport({ reportId }: { reportId: string }) {
   // For the headless checks: an asset fetched twice was reloaded; ready = when each asset was first on the GPU (unix s); clicks = ms
   // from pointer-down to the card in the DOM; pickDecodeMs = pick + depth fetched, inflated and indexed.
   const stats = useRef({ uploads: {} as Record<string, number>, ready: {} as Record<string, number>, scenes: 0, errors: [] as string[],
-    clicks: [] as number[], pickDecodeMs: null as number | null, pickSteps: null as Record<string, number> | null, pick: null as Pick | null }).current;
+    clicks: [] as number[], pickDecodeMs: null as number | null, pickSteps: null as Record<string, number> | null, pick: null as Pick | null,
+    pickDecodes: [] as { seq: number; ms: number; fetch: number }[] }).current;
   const [pick, setPick] = useState<Pick | null>(null), [cardsLayer, setCardsLayer] = useState<any>(null), [clickMs, setClickMs] = useState<number[]>([]);
   useEffect(() => {  // pick + depth: fetched and inflated once per version
     const p = layers.pick;
     if (!p) return;
     let live = true;
     (async () => {
-      const t0 = performance.now(), raw = await Promise.all(["pick", "depth"].map(role => p.blobs[role] ? fetch(blobURL(p, role)!).then(r => r.arrayBuffer()) : null));
+      const t0 = performance.now(), raw = await Promise.all(["pick", "depth"].map(role => p.blobs[role] ? fetch(blobURL(p, role)!, { priority: "high" } as RequestInit).then(r => r.arrayBuffer()) : null));
       const t1 = performance.now(), [runs, depth] = await Promise.all(raw.map(b => b && gunzip(b))), t2 = performance.now();
       if (!live) return;
       stats.pick = readPick(p.data, runs!, depth);
       const t3 = performance.now();
       stats.pickDecodeMs = t3 - t0; stats.pickSteps = { fetch: t1 - t0, inflate: t2 - t1, index: t3 - t2 }; setPick(stats.pick);
+      stats.pickDecodes.push({ seq: p.seq, ms: t3 - t0, fetch: t1 - t0 });  // every version (v1 at load, v2 after densify)
     })().catch((e: Error) => { if (live) setError("pick: " + e.message); });
     return () => { live = false; };
   }, [layers.pick?.seq]);
