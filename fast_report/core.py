@@ -112,7 +112,9 @@ def single_threaded():
 
 def warm_worker(_):
     import cv2
-    from fast_report import cards, judge  # noqa: F401  the cards' and the judge's work runs in these processes (MVP A, B)
+    import open3d  # noqa: F401  r5: the planar parts and the surfaces job use it; its import (~1 s) is cold start, not a cards build's
+    from scipy.sparse.csgraph import connected_components  # noqa: F401
+    from fast_report import cards, judge, surface  # noqa: F401  the cards' and the judge's work runs in these processes (MVP A, B)
     cv2.setNumThreads(1)
     time.sleep(.2)
     return __import__("os").getpid()
@@ -1125,7 +1127,8 @@ def analyse(m, mp4, opts, clock, writer, log):
                                  "depth": gg["depth_m"].cpu().numpy(), "person": gg["person"].cpu().numpy()})
         with clock.stage("cards.v1", n={"objects": len(objects)}):  # the pick maps' counts are read only for the time fields
             out = cards.build({"shots": shots_in, "objects": copy.deepcopy(objects), "points": obj_points,
-                               "counts": lambda: (pick_ready.wait(120), pick_counts)[1], "surface_parts": opts.get("surface", False),
+                               "counts": lambda: (pick_ready.wait(120), pick_counts)[1],
+                               "surface_parts": opts.get("surface", False) and not opts.get("densify", True),  # r5: on the last build only
                                "people": results.get("people"), "calibration": cards_calibration()}, m.proc_pool, 16)
         cards_out["v1"], cards_out["shots_in"] = out, shots_in
         cards_ready.set()

@@ -38,7 +38,7 @@ STAGES = {"decode", "cuts", "sam3.person", "vlm.vocab", "sam3.vocab.wave1", "sam
           "outlines.polygons.v2", "vlm.identity", "vlm.identity.ehs", "vlm.identity.other", "vlm.identity.all_densify", "identity.gemini", "identity.gemini.sheets",
           # the judgement engine (mvp/b-judge)
           "judge.rules", "judge.som", "judge.vlm", "judge.evidence", "judge.gemini_send", "judge.gemini", "judge.qwen",
-          "surfaces"}  # r5 (models): the observed-surface display models; plus write.<layer>
+          "surfaces", "recgen.select", "recgen.generate", "recgen.gate"}  # r5 (models): the observed surfaces, the internal profile; plus write.<layer>
 PRICE = {"A100-80GB": .000694, "cpu_core": .0000131, "gib": .00000222}  # Modal list prices, $/s
 
 
