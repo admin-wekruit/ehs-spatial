@@ -75,7 +75,7 @@ def audit(audit_dir):
 
 
 def fmt(e):
-    return f"{e['covered']}/{e['delivered']} | {e['in_pieces']} | {e['wrong_merge_cards']} ({e['delivered_in_wrong_merges']})"
+    return f"{e['covered']}/{e['delivered']}, {e['in_pieces']}, {e['wrong_merge_cards']} ({e['delivered_in_wrong_merges']})"
 
 
 def main():
@@ -100,7 +100,7 @@ def main():
                                       for k, v in m.items()} for s, m in matrix.items()},
            "audit": aud, "spend_usd_upper": {tag: b.get("usd_estimate_upper") for tag, b in bench.items()}}
     (a.out / "summary.json").write_text(json.dumps(out, indent=1, default=str))
-    lines = ["| video | run | call | cards (parts, contents) | models: covered, in pieces, wrong merges | clean | all | lift s | cards v1 at s | cards v3 at s | peak GiB (GPU0, GPU1) |",
+    lines = ["| video | run | call | cards (parts, contents) | models: covered, in pieces, wrong merges (delivered in them) | clean: same | all: same | lift s | cards v1 at s | cards v3 at s | peak GiB (GPU0, GPU1) |",
              "|---|---|---|---|---|---|---|---|---|---|---|"]
     for s in SITES:
         for tag in ("before", "after"):
