@@ -7,7 +7,8 @@ Core (A): video, cameras, room, people, events, objects, outlines; SAM 3D models
 patch store, local mirror and loopback endpoint (C, fast_report.layers); clock and memory (D, fast_report.instrument).
 
   modal run modal_apps/fast_report_app.py --video PATH --start S --end E --site NAME --out RUNS/fb-NNN \
-      [--serve] [--eval-site me340|samsclub-a2|walmart] [--windows "S-E[:nocache|:site],S-E,..."] [--background-s 0]
+      [--serve] [--eval-site me340|samsclub-a2|walmart] [--windows "S-E[:nocache|:site|:nodensify],S-E,..."] [--background-s 0]
+      [--mirror-max-mb 8]
       # --serve: the viewer's endpoint on 127.0.0.1:8793 (web: npm run dev, then #/live/<report>), polled like the viewer;
       # --eval-site: the delivered splat's held-out frames stay out of training, and the quality table runs after the call;
       # windows of the same video share one boot (the first = the first call); nocache: no label cache; site: the
@@ -298,7 +299,9 @@ MILESTONES = {  # name -> (layer, which version): the report's moments, each at 
     "people": ("people", lambda d: True),
     "events": ("events", lambda d: True), "objects": ("objects", lambda d: True), "outlines": ("outlines", lambda d: True),
     "first_model": ("models", lambda d: bool(d.get("models"))), "all_models": ("models", lambda d: d.get("final")),
-    "splat_preview": ("splat", lambda d: d.get("kind") == "preview")}
+    "splat_preview": ("splat", lambda d: d.get("kind") == "preview"),
+    "pick": ("pick", lambda d: True), "cards_v1": ("object_cards", lambda d: d.get("version") == 1),
+    "cards_v2": ("object_cards", lambda d: d.get("version") == 2), "judgements": ("judgements", lambda d: True)}
 
 
 def milestones(root, report, t0_unix):
@@ -333,7 +336,8 @@ def poll_like_the_viewer(report, stop, port=8793):
 
 @app.local_entrypoint()
 def main(video: str, start: float = 0., end: float = 0., site: str = "site", out: str = "", windows: str = "", vocab: str = "qwen",
-         serve: bool = False, eval_site: str = "", splat_preview_s: float = 0., background_s: float = 0., vram_source: str = "auto"):
+         serve: bool = False, eval_site: str = "", splat_preview_s: float = 0., background_s: float = 0., vram_source: str = "auto",
+         mirror_max_mb: float = 0.):
     import hashlib
     import threading
     from fast_report import layers
@@ -368,6 +372,7 @@ def main(video: str, start: float = 0., end: float = 0., site: str = "site", out
         report_id = f"fb-{site}-{digest[:8]}-{int(time.time())}"
         layers.put_blob(out, mp4)  # the client holds its own MP4: it is never sent back
         options = {"cache": use_cache, "site_vocab": flag == "site", "window_s": [a, b], "client_has": [digest], "background_s": background_s,
+                   "densify": flag != "nodensify",
                    "vram_source": vram_source,
                    "splat_preview_s": splat_preview_s or None, "eval_holdout": ev.holdout_frames(eval_site) if ev else None}
         if serve:
@@ -380,7 +385,7 @@ def main(video: str, start: float = 0., end: float = 0., site: str = "site", out
         for e in fr.run.remote_gen(mp4, site, report_id, options):
             now = time.time()
             if e["type"] in ("patch", "written", "run"):
-                layers.mirror(e, out)
+                layers.mirror(e, out, int(mirror_max_mb * 1e6) if mirror_max_mb else None)
             if e["type"] == "patch":
                 received[e["patch"]["seq"]] = now
                 print(f"  [{i}] {e['patch']['layer']} v{e['patch']['version']}: sent {e['patch']['sent_s']} s", flush=True)
