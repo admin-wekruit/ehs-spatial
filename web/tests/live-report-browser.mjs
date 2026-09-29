@@ -63,7 +63,7 @@ assert.deepEqual(first.stats.errors,[],'viewer load errors');
 const box=await first.page.locator('.live-report-viewer canvas').boundingBox();let picked=null;
 for(let gy=.35;gy<=.75&&!picked;gy+=.1)for(let gx=.2;gx<=.8&&!picked;gx+=.1){
   await first.page.mouse.click(box.x+box.width*gx,box.y+box.height*gy);await sleep(250);
-  const h=await first.page.locator('.live-report-card h3').count()?await first.page.locator('.live-report-card h3').textContent():null;if(h)picked={h,gx,gy};
+  const card=first.page.locator('.live-report-card h3, .mvp-card h3'),h=await card.count()?await card.first().textContent():null;if(h)picked={h,gx,gy};
 }
 assert.ok(picked,'a click in 3D selects something with a card');
 await first.page.screenshot({path:path.join(out,`${report}-picked.png`)});
