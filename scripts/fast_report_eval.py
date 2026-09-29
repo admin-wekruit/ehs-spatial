@@ -1624,6 +1624,8 @@ def summary_md(summary):
         row(f"{name}: person clicks correct (n)", lambda r, c=c: f"{pct(c(r)['person'].get('correct_rate'))} ({c(r)['person']['n']})")
         row(f"{name}: background false hits (<= 10%)", lambda r, c=c: pct(c(r)["background"]["false_hit_rate"]))
     row("click audit: auto rule agrees with the agent", lambda r: f"{pct(r['click_audit']['agreement_with_auto_rule'])} {r['click_audit']['labels']}")
+    row("click audit, agent 'same object' only: spec rule / IoU >= 0.3 / IoU >= 0.2 agree", lambda r: " / ".join(
+        pct(v["vs same only"]) for v in r["click_audit"]["rules"].values()) or None)
     row("L1 audit: flagged boxes truly inflated (inflated / size right / unclear)", lambda r: "{} ({} / {} / {})".format(
         pct(r["box_audit"]["flagged"]["inflated_share_of_decided"]), *(r["box_audit"]["flagged"][k] for k in ("inflated", "size right", "unclear"))))
     row("L1 audit: 30 largest unflagged boxes inflated (inflated / size right / unclear)", lambda r: "{} ({} / {} / {})".format(
