@@ -50,9 +50,10 @@ app = modal.App("panoptes-x6-windows")
 
 # ---------- per-window pieces (inside the container) ----------
 
-def instances(dev, voc, kept, votes_of, words, g, local_of, dyn, times, keys_frames, depth_m, K, c2w_m):
+def instances(dev, voc, kept, votes_of, words, local_of, dyn, times, keys_frames, depth_m, K, c2w_m):
     """Lift (E7/E9) on this window's geometry -> per confirmed component: points (<= 400, 5 cm voxel centres), median
-    centroid, p10/p90 box, camera range, keyframes seen, word vote, member mask indices."""
+    centroid, p10/p90 box, camera range, keyframes seen, word vote, member mask indices. One GPU pass for all members'
+    pixels, then numpy per component (a per-component GPU loop held the GIL for 0.3-2.5 s a window, run 003)."""
     import torch
     from fast_report import segment
     kept_t = torch.as_tensor(kept, device=dev)
@@ -60,38 +61,46 @@ def instances(dev, voc, kept, votes_of, words, g, local_of, dyn, times, keys_fra
         return [], {}
     frame_local = local_of[voc["frame"][kept_t]]
     comp, arr, stats = segment.lift(voc["mask"][kept_t], frame_local, depth_m, K, c2w_m, dyn)
-    out = []
     if arr is None:
-        return out, stats
-    rng = np.random.default_rng(0)
-    for c in np.flatnonzero(arr["frames"] >= segment.CONFIRMED):
-        mem = np.flatnonzero(comp == c)
-        gi = kept[mem]
-        m = voc["mask"][torch.as_tensor(gi, device=dev)][:, ::STRIDE, ::STRIDE]
-        fl = frame_local[torch.as_tensor(mem, device=dev)]
-        m = m & (depth_m[:, ::STRIDE, ::STRIDE][fl] > 0) & ~dyn[:, ::STRIDE, ::STRIDE][fl]
-        mid, vy, vx = torch.nonzero(m, as_tuple=True)
-        if len(mid) < 20:
+        return [], stats
+    conf = np.flatnonzero(arr["frames"] >= segment.CONFIRMED)
+    sel = np.flatnonzero(np.isin(comp, conf))
+    if not len(sel):
+        return [], stats
+    cid, gi = comp[sel], kept[sel]
+    gi_t = torch.as_tensor(gi, device=dev)
+    fl = frame_local[torch.as_tensor(sel, device=dev)]
+    m = voc["mask"][gi_t][:, ::STRIDE, ::STRIDE] & (depth_m[:, ::STRIDE, ::STRIDE][fl] > 0) & ~dyn[:, ::STRIDE, ::STRIDE][fl]
+    mid, vy, vx = torch.nonzero(m, as_tuple=True)
+    pts = segment.backproject(depth_m, K, c2w_m, fl[mid], vy, vx, STRIDE).cpu().numpy()
+    cam = c2w_m[fl[mid], :3, 3].cpu().numpy()
+    pc = cid[mid.cpu().numpy()]
+    order = np.argsort(pc, kind="stable")
+    pc, pts, cam = pc[order], pts[order], cam[order]
+    score = voc["score"][gi_t].float().cpu().numpy() * np.sqrt(voc["mask"][gi_t].sum((1, 2)).cpu().numpy())
+    fl_np = fl.cpu().numpy()
+    rng, out = np.random.default_rng(0), []
+    for c in conf:
+        a, b = np.searchsorted(pc, c, "left"), np.searchsorted(pc, c, "right")
+        if b - a < 20:
             continue
-        pts = segment.backproject(depth_m, K, c2w_m, fl[mid], vy, vx, STRIDE)
-        vox = torch.unique(torch.floor(pts / .05).long(), dim=0)
-        p = ((vox.float() + .5) * .05).cpu().numpy()
+        P = pts[a:b]
+        p = (np.unique(np.floor(P / .05).astype(np.int64), axis=0) + .5) * .05
         if len(p) > 400:
             p = p[rng.choice(len(p), 400, replace=False)]
-        allp = pts.cpu().numpy()
-        cam = c2w_m[fl[mid], :3, 3].cpu().numpy()
+        own = cid == c
+        members, f_own = gi[own], fl_np[own]
         vv = {}
-        for q in gi:
+        for q in members:
             for w_, s_ in votes_of.get(int(q), []):
                 vv[words[w_]] = vv.get(words[w_], 0.) + s_
-        f_loc = sorted(set(fl.cpu().numpy().tolist()))
-        area = voc["mask"][torch.as_tensor(gi, device=dev)].sum((1, 2)).cpu().numpy()
-        best = int(gi[np.argmax(voc["score"][torch.as_tensor(gi, device=dev)].float().cpu().numpy() * np.sqrt(area))])
-        out.append({"points": p.astype(np.float64), "centroid": np.median(allp, 0), "lo": np.percentile(allp, 10, 0), "hi": np.percentile(allp, 90, 0),
-                    "range_m": float(np.median(np.linalg.norm(allp - cam, axis=1))), "label": segment.name(vv, words) or "object",
+        best = int(np.argmax(score[own]))
+        f_loc = sorted(set(f_own.tolist()))
+        out.append({"points": p.astype(np.float64), "centroid": np.median(P, 0), "lo": np.percentile(P, 10, 0), "hi": np.percentile(P, 90, 0),
+                    "range_m": float(np.median(np.linalg.norm(P - cam[a:b], axis=1))), "label": segment.name(vv, words) or "object",
                     "votes": {k: round(v, 3) for k, v in sorted(vv.items(), key=lambda x: -x[1])[:5]},
                     "keys": [int(keys_frames[j]) for j in f_loc], "times": [float(times[j]) for j in f_loc],
-                    "best_key": int(keys_frames[int(local_of[voc["frame"][best]])]), "members": gi, "best_member": best})
+                    "best_key": int(keys_frames[int(f_own[best])]), "members": members, "best_member": int(members[best])})
     return out, stats
 
 
@@ -161,7 +170,7 @@ def objects_window(m, dev, w, kf, person, voc, geo, words, clock, tag):
         vote_of = {}
         for a_, w_, s_ in votes:
             vote_of.setdefault(int(a_), []).append((int(w_), float(s_)))
-        insts, stats = instances(dev, voc, kept, vote_of, words, None, local, dyn, w["times"], w["keys"], depth_m, K, c2w_m) if voc else ([], {})
+        insts, stats = instances(dev, voc, kept, vote_of, words, local, dyn, w["times"], w["keys"], depth_m, K, c2w_m) if voc else ([], {})
     with clock.stage("embed", gpu=gi, n={"window": tag, "instances": len(insts)}, sync=True):
         if insts:
             mem = np.concatenate([x["members"] for x in insts])
@@ -644,9 +653,11 @@ def analyse(m, mp4, words, opts, clock):
                 st = stitch(prev["raw"], w) if prev is not None and w["carried"] else None
                 if st and st["accepted"] and prev["frame"] == comp:
                     T = compose(T, (st["s"], st["R"], st["t"]))
+                    w["chain"] = prev["chain"] + abs(float(np.log(st["s"])))
                 else:
                     comp += 1
                     T = (1., np.eye(3), np.zeros(3))
+                    w["chain"] = 0.
                 w["frame"] = comp
                 stitches.append({"window": i, **({k: v for k, v in st.items() if k not in ("R", "t")} if st else
                                                  {"accepted": None, "why": "no carried keys" if not w["carried"] else "no shared depth"})})
@@ -845,7 +856,7 @@ def export(out):
         changes.append(c)
     fact_points = {f["object"]: np.round(np.concatenate([i["points"] for _, i in objs[f["object"]]["obs"]])[::6], 3).tolist() for f in out["facts"]}
     keep = ("index", "keys", "carried", "reason", "t", "dispatched_s", "started_s", "done_s", "facts_s", "gpu", "frame", "mpu", "scale_status",
-            "frame_note", "lift", "skipped", "foreign_keys", "covis", "chunks")
+            "frame_note", "lift", "skipped", "foreign_keys", "covis", "chunks", "chain")
     return {"windows": [{k: w.get(k) for k in keep} | {"instances": len(w.get("instances", []))} for w in wins], "cameras": cams,
             "objects": tracker.timelines() if tracker else [], "changes": changes, "facts": out["facts"], "fact_points": fact_points,
             "per_window_instances": out["per_window_instances"], "summary": out["summary"], "fps": out["fps"], "frames": out["frames"],
@@ -910,7 +921,7 @@ def words_for(site):
 
 
 @app.local_entrypoint()
-def main(out: str, plan: str = "me340:b:0.4", per_gpu: int = 2):
+def main(out: str, plan: str = "me340:b:0.4", per_gpu: int = 2, video_dir: str = ""):
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     x = X6()
@@ -920,11 +931,13 @@ def main(out: str, plan: str = "me340:b:0.4", per_gpu: int = 2):
     (out / "boot.json").write_text(json.dumps(boot, indent=1, default=plain))
     print("ready:", json.dumps({k: v for k, v in boot.items() if k.endswith("_s") or k in ("mps", "resident_gb")}), flush=True)
     for item in plan.split(","):
-        site, geo, thr = item.split(":")
-        mp4 = (PHASE2 / "data/clips" / CLIPS[site] / "source-full.mp4").read_bytes()
+        site, geo, thr, *flags = item.split(":")  # flags: 'planted' (VIDEO_DIR/planted-SITE.mp4), 'p1' (one worker per card)
+        planted = "planted" in flags
+        mp4 = (Path(video_dir) / f"planted-{site}.mp4" if planted else PHASE2 / "data/clips" / CLIPS[site] / "source-full.mp4").read_bytes()
         words, src = words_for(site)
-        run_id = f"x6-{site}-{geo}-{thr}-{int(time.time())}"
-        opts = {"geometry": geo, "threshold": float(thr), "run_id": run_id, "per_gpu": per_gpu, "words_source": src, "site": site}
+        run_id = f"x6-{site}-{geo}-{thr}{''.join('-' + f for f in flags)}-{int(time.time())}"
+        opts = {"geometry": geo, "threshold": float(thr), "run_id": run_id, "per_gpu": 1 if "p1" in flags else per_gpu, "words_source": src,
+                "site": site, "planted": planted}
         t = time.time()
         r = x.run.remote(mp4, words, opts)
         r["client_wall_s"] = round(time.time() - t, 2)

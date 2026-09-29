@@ -24,6 +24,8 @@ it was observed on >= MIN_OBS_KEYS keyframes and covers >= MIN_PIX grid pixels t
   out-of-view / unjudged (< MIN_JUDGED points, or an object under MIN_EXTENT) -> 'not-observed'.
 A new instance is 'appeared' only when an earlier window of its frame saw its place free by the same rule; otherwise
 it is first seen (new content), not a change. Every change carries before/after keyframes: the evidence frames.
+Two windows are compared only when the stitches between them changed the scale by <= CHAIN_MAX in all (w['chain'], the
+running sum of |log s|; 0 when one DA3 run holds the whole shot): the windows' own floor-plane scales then agree.
 
     python -m fast_report.timeline --self-check
 """
@@ -36,6 +38,7 @@ K_SIGMA, IOU_MIN = 3., .2
 FREE_SHARE, MIN_VIEWS, MIN_JUDGED, SEEN_SHARE, MIN_EXTENT = .6, 2, 30, .5, .1
 BORDER, MAX_RANGE, NEIGH, MIN_PIX, MIN_OBS_KEYS = .05, 5., 2, 25, 3  # run fx-x6-windows-time-002: 10 of 10 ME340 claims false without them
 REL_MARGIN, PERSON_GROW = .2, 2  # run 003: 5 of 5 claims left were far/edge places seen < 20 % past the object, or a person's rim
+CHAIN_MAX = .1  # stitched windows: sum of |log Sim3 scale| between the two windows compared (runs 003/004: Walmart's 0.87 link)
 SIZE_RATIO = 2.  # a moved object keeps its size within this factor (robust box diagonal)
 LOOKBACK = 6     # windows an 'appeared' test looks back (the ones that could have seen the place)
 
@@ -167,6 +170,9 @@ class Tracker:
             if len({k for _, x in o["obs"] for k in x["keys"]}) < MIN_OBS_KEYS:
                 o["states"][w["index"]] = {"state": "not-observed", "reason": "too few observations to judge"}
                 continue
+            if abs(w.get("chain", 0.) - self.windows_by(o["obs"][-1][0]).get("chain", 0.)) > CHAIN_MAX:
+                o["states"][w["index"]] = {"state": "not-observed", "reason": "loose stitch chain"}
+                continue
             p = place(last["points"], w)
             if p["state"] == "free":
                 free.append((o, p))
@@ -202,7 +208,7 @@ class Tracker:
             a = insts[i]
             how = {"state": "first-seen"}
             if diag(a) >= MIN_EXTENT and len(a["keys"]) >= MIN_OBS_KEYS:
-                for prev in [x for x in self.windows[:-1] if x["frame"] == w["frame"]][::-1][:LOOKBACK]:
+                for prev in [x for x in self.windows[:-1] if x["frame"] == w["frame"] and abs(x.get("chain", 0.) - w.get("chain", 0.)) <= CHAIN_MAX][::-1][:LOOKBACK]:
                     p = place(a["points"], prev)
                     if p["state"] == "free":
                         how = {"state": "appeared", "change": {"kind": "appeared", "window": w["index"], "t_before": prev["t"][1], "t_after": w["t"][0],
@@ -325,6 +331,10 @@ def self_check():
     t.add(w2)
     assert by["C"]["gone"] is None and by["C"]["states"][2]["state"] == "static" and "withdrawn_in_window" in by["C"]["states"][1]["change"]
     # a missed detection with the object still there is not a change
+    t4 = Tracker(tau_move=.9)  # the same disappearance across a stitch that changed the scale by 15 %: not judged
+    t4.add(window(0, "AC", "AC", [0., .1, .2]))
+    t4.add(dict(window(1, "A", "A", [0., .1, .2]), chain=.14))
+    assert not t4.changes() and t4.objects[1]["states"][1]["reason"] == "loose stitch chain"
     t2 = Tracker(tau_move=.9)
     t2.add(window(0, "AB", "AB", [0., .1, .2]))
     t2.add(window(1, "AB", "A", [0., .1, .2]))

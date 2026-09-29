@@ -291,3 +291,27 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def sweep_table(sweep_dir, runs_dir):
+    """Per sweep config and run: objects, cross-window split candidates, delivered objects in pieces, change claims."""
+    out = {}
+    for p in sorted(Path(sweep_dir).glob("sweep-x6-*.json")):
+        rid = p.stem[len("sweep-"):]
+        run = json.loads(next(Path(runs_dir).glob(f"{rid}.json")).read_text())
+        site = run["opts"]["site"]
+        ref = fe.reference(site)
+        dl = delivered(site, ref)
+        a = align(run, ref)
+        sim = a.pop("sim3")
+        rows = []
+        for r in json.loads(p.read_text()):
+            objs = [dict(o, positions=o["positions"]) for o in r["timelines"]]
+            inframe = [o for o in objs if o["frame"] == a["frame"]]
+            ch = r["changes"]
+            rows.append({"cfg": r["cfg"], "objects": len(objs), "split_candidates": split_candidates(objs),
+                         "pieces": fragments([o["positions"][0]["centroid"] for o in inframe], dl, sim),
+                         "claims": {k: sum(c["kind"] == k for c in ch) for k in ("disappeared", "appeared", "moved")},
+                         "claims_withdrawn": sum(c.get("withdrawn_in_window") is not None for c in ch), "s": r["s"]})
+        out[rid] = rows
+    return out
