@@ -233,7 +233,9 @@ def name_crops(items, parallel=MAX_SEQS):
 # ---------- fixed-option questions (X8's decider: option letters, first-token log-probs) ----------
 
 LETTERS = [chr(65 + i) for i in range(26)]
-PRIORITY = {"events": 0, "identity": 1, "judgement": 2, "identity_other": 3, "screen": 4}  # MVP spec 5.3, lower first
+# MVP spec 5.3, lower first; mvp2: a cards version that densify will replace asks 'provisional' judgement questions, after the
+# other objects' identity (on Sam's Club its 166 questions ran ahead of identity and were then superseded by cards v3's)
+PRIORITY = {"events": 0, "identity": 1, "judgement": 2, "identity_other": 3, "judgement_provisional": 4, "screen": 5}
 
 
 def qwen_prompt(state, question, options):

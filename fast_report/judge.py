@@ -830,12 +830,14 @@ def layer(rows, cal, extra=None):
             **(extra or {})}
 
 
-def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, carried=None):
+def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, carried=None, provisional=False):
     """Judgements v1 (geometry) at once, then every question on every view set through vlm.options (priority 'judgement', J0
     'screen'), then v2. ask: a stand-in for vlm.submit, cal: for fast_report/calibration.json (tests). carried: a dict shared by
     the runs of one analysis, (row id, question, keyframes) -> answer: a later cards version asks only what is new (on Sam's
     Club the v3 run re-asked every question beside the identity pass and slowed it 1.3x). pool: a process pool for
     the rules (in the core's main process they took 0.5-10.9 s for the same 0.2 s of work, by what else held the GIL).
+    provisional: a later cards version will replace these (densify): its questions queue after the other objects' identity, and
+    the later run re-asks at its own priority what is still queued.
     Returns counts and times."""
     cal = load_calibration() if cal is None else cal
     outl = ctx.get("outlines") or []
@@ -923,8 +925,12 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, c
                 for keys, marked, plain in vs if decides else vs[:1]:  # an advisory question never decides: one view set shows it
                     key = (row["id"], q, tuple(keys))
                     fut, reused = shared.get(key), key in shared  # an earlier run's question, answered or still in flight (mvp2)
+                    prov = shared.setdefault("_prov", set())
+                    if fut is not None and not provisional and key in prov and fut.cancel():  # still queued at the low priority:
+                        fut, reused = None, False                                                # asked again at this run's
                     if fut is None:
-                        fut = shared[key] = ask([marked, plain], p, n, "screen" if q == "J0" else "judgement")
+                        fut = shared[key] = ask([marked, plain], p, n, "screen" if q == "J0" else "judgement_provisional" if provisional else "judgement")
+                        (prov.add if provisional else prov.discard)(key)
                         shared.setdefault("_asked", {}).setdefault(version, []).append(key)
                     jobs.append((row, q, keys, fut, reused))
         mine = {(row["id"], q, tuple(keys)) for row, q, keys, _, _ in jobs}
@@ -1272,6 +1278,23 @@ def self_check():
     out = run([cable], ctx, w, _Clock(), ask=fake, cal={"questions": {}}, carried=carried)
     assert len(calls) == 1 and out["carried"] == 1 and next(r for r in w.puts[1][1]["rows"] if r["check"] == "J4")["verdict"] == FAIL, out
     assert len(carried["_img"]) == 2, "one render per (subject, keyframe) across the runs"
+    calls.clear()  # a provisional run asks at the low priority; the final run re-asks what is still queued, at 'judgement'
+    queued, shared_p = [], {}
+
+    def holding(jpegs, p, n, priority):
+        calls.append(priority)
+        queued.append(Future())
+        return queued[-1]
+    prov = threading.Thread(target=run, args=([cable], ctx, _Writer(), _Clock()), kwargs=dict(ask=holding, cal={"questions": {}}, carried=shared_p,
+                                                                                            provisional=True))
+    prov.start()
+    for _ in range(200):
+        if queued:
+            break
+        time.sleep(.01)
+    run([cable], {**ctx, "version_of": {"object_cards": 3}}, _Writer(), _Clock(), ask=fake, cal={"questions": {}}, carried=shared_p)
+    prov.join(5)
+    assert calls[0] == "judgement_provisional" and calls[1][1] == "judgement" and len(calls) == 2 and queued[0].cancelled(), calls
     pending = Future()  # an older (v1) run's question still queued, not needed by the v3 run: cancelled, and its key forgotten
     shared_ = {("J9:x", "q1", (1,)): pending, "_asked": {1: [("J9:x", "q1", (1,))]}}
     out = run([cable], {**ctx, "version_of": {"object_cards": 3}}, _Writer(), _Clock(), ask=fake, cal={"questions": {}}, carried=shared_)

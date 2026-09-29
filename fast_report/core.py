@@ -936,7 +936,8 @@ def analyse(m, mp4, opts, clock, writer, log):
             x.update(u_pose_m=a_.get("u_pose_m", x["u_pose_m"]), u_floor_m=a_.get("u_floor_m") or x["u_floor_m"], angles_usable=a_.get("angles_usable"))
         def job():  # mvp2: runs overlap (v3 no longer waits for v1's questions: Sam's Club final judgements 76 -> 117 s); judge.run
             try:     # shares their questions and renders through `carried` and never puts an older version over a newer one
-                return judge.run(out["cards"], ctx, writer, clock, vlm_on=opts.get("judge_vlm", True), pool=m.proc_pool, carried=carried)
+                return judge.run(out["cards"], ctx, writer, clock, vlm_on=opts.get("judge_vlm", True), pool=m.proc_pool, carried=carried,
+                                 provisional=version < 3 and densify_on and bool(objects))  # densify's cards v3 will replace them
             except Exception:  # noqa: BLE001  the judgements are one layer: their failure is recorded, the others stand
                 import traceback
                 return {"error": traceback.format_exc()[-3000:]}
