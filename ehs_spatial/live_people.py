@@ -116,11 +116,13 @@ class PeopleLoop:
 
     def __init__(self, floor_point, floor_up, scale_record: dict, detector: Callable,
                  zone: Polygon | None = None, person_labels=("person",), world_epoch: int = 0,
-                 max_speed_mps: float = MAX_HUMAN_SPEED_MPS) -> None:
+                 max_speed_mps: float = MAX_HUMAN_SPEED_MPS, fast_window_s: float | None = None) -> None:
         """floor_point, floor_up and zone are in world metres of world_epoch, the frame cameraToWorld maps into;
-        scale_record says whether those metres were measured (device) or assumed, for the scale gate; max_speed_mps is the
-        association gate (a detection further than 2 bands + this speed x the time since a track was seen starts a new one)."""
-        self.max_speed_mps = max_speed_mps
+        scale_record says whether those metres were measured (device) or assumed, for the scale gate. The association gate:
+        a detection further than 2 bands + max_speed_mps x the time since a track was seen starts a new track; with
+        fast_window_s, max_speed_mps covers only that much of the gap and MAX_HUMAN_SPEED_MPS the rest (a fast mover between
+        consecutive frames, not a 12 m/s jump over a 3 s gap)."""
+        self.max_speed_mps, self.fast_window_s = max_speed_mps, fast_window_s
         self.p0 = np.asarray(floor_point, float)
         self.up = np.asarray(floor_up, float) / np.linalg.norm(floor_up)
         axis = np.eye(3)[np.argmin(np.abs(self.up))]
@@ -153,7 +155,9 @@ class PeopleLoop:
             if track["kind"] != kind or track_id in taken:
                 continue
             distance = np.hypot(xy[0] - track["last_xy"][0], xy[1] - track["last_xy"][1])
-            if distance <= 2 * BAND_M + self.max_speed_mps * (t - track["last_t"]) and (
+            dt = t - track["last_t"]
+            fast = dt if self.fast_window_s is None else min(dt, self.fast_window_s)
+            if distance <= 2 * BAND_M + self.max_speed_mps * fast + MAX_HUMAN_SPEED_MPS * (dt - fast) and (
                     best_distance is None or distance < best_distance):
                 best, best_distance = track_id, distance
         if best is None:
@@ -507,6 +511,10 @@ def self_check() -> None:
         slow.step(decode_frame(_message(float(t), rng)[0]))
     spent = latency_summary(slow)
     assert spent["detector"]["p50"] >= 0.05 > spent["covered_frames_without_detector"]["p95"], spent
+    # the fast-mover gate over one step only: 3 m in 0.2 s joins the track, 23 m over 3.2 s does not (0.7 + 12 x 0.2 + 4 x 3 = 15.1 m)
+    gate = PeopleLoop([0., 0, 0], [0., 0, 1], {"status": "uncalibrated"}, lambda frame: [], max_speed_mps=12., fast_window_s=.2)
+    first = gate._associate("person", (0., 0.), 0., set())
+    assert gate._associate("person", (3., 0.), .2, set()) == first and gate._associate("person", (26., 0.), 3.4, set()) != first
     print("live people check passed: stream contract decoded (mm depth at 256x192); 1 Hz = 5 Hz verdicts; no pose, "
           "limited tracking, a new world epoch, a hidden zone floor, a footprint-sized shadow in it, a hidden narrow zone "
           "or arm, a zone half out of view, an offline or broke detector are NO_DATA; unplaceable people within the band "

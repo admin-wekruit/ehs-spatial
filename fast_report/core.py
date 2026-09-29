@@ -239,7 +239,9 @@ def person_masks(person, frames_local):
     return masks
 
 
-PEOPLE_GATE_MPS = 12.  # mvp2: X12's association gate at 5 fps (4 m/s split fast movers; 12 m/s cost nothing on walkers, VERIFY.md)
+# mvp2: X12's association gate at 5 fps (4 m/s split fast movers; 12 m/s cost nothing on walkers, VERIFY.md) over one keyframe
+# step only; longer gaps keep 4 m/s (12 m/s over a 3 s gap joined Sam's Club's man on a cart to a shopper 45 m away, run 004)
+PEOPLE_GATE_MPS, PEOPLE_GATE_WINDOW_S = 12., .2
 PEOPLE_UP_DEG = 2.  # the up direction's u for people (the cards use the walls' plumb p90, not known yet here: ME340 read 1-2 deg)
 
 
@@ -275,7 +277,7 @@ def people_shot(si, keys, fps, g, depth_m, c2w_m, masks, plane, mpu, floor=None,
     def detector(frame):
         return [{"label": "person", "source": f"sam3-person-{j}", "score": s, "mask": m} for m, s, j in masks.get(frame["local"], [])
                 if f"sam3-person-{j}" not in out_]
-    loop = PeopleLoop(p0, up, scale, detector, None, world_epoch=si, max_speed_mps=PEOPLE_GATE_MPS)
+    loop = PeopleLoop(p0, up, scale, detector, None, world_epoch=si, max_speed_mps=PEOPLE_GATE_MPS, fast_window_s=PEOPLE_GATE_WINDOW_S)
     rows, findings = [], []
     for j, f in enumerate(keys):
         r, fnd = loop.step({"t": f / fps, "frame": int(f), "local": j, "streamGap": None, "rgb": rgb[j], "depth": depth[j], "K": K[j],

@@ -1284,11 +1284,18 @@ def people_cards(people, shots, object_cards, k=None):
             if all(q.get("frame") in s["keys"] for q in t["points"]) else None
         rng_ = np.array([g_.get("range_m") or (np.linalg.norm(p_ - c_[:2]) if cams is not None else 4.) for g_, p_, c_ in
                          zip(geo, xy, cams if cams is not None else np.zeros((len(xy), 3)))], float)
-        u_xy = np.hypot(np.hypot(DEPTH_REL * rng_, s["u_pose_m"]), SCALE_REL * np.linalg.norm(xy, axis=1))
-        length = float(np.linalg.norm(np.diff(xy, axis=0), axis=1).sum()) if len(xy) > 1 else 0.
+        noise = np.hypot(DEPTH_REL * rng_, s["u_pose_m"])  # one position's own error (depth along the ray, pose)
+        u_xy = np.hypot(noise, SCALE_REL * np.linalg.norm(xy, axis=1))
+        steps = np.linalg.norm(np.diff(xy, axis=0), axis=1)
+        length = float(steps.sum()) if len(xy) > 1 else 0.
         moved = float(np.linalg.norm(xy - np.median(xy, 0), axis=1).max()) if len(xy) else 0.
-        u_move = float(np.median(np.hypot(DEPTH_REL * rng_, s["u_pose_m"])))
-        phys = {"path_length": value(length, {"scale": SCALE_REL * length, "depth": DEPTH_REL * length}, "position", k, None, views_term=False),
+        u_move = float(np.median(noise))
+        # a path whose typical step is shorter than one position's noise measures the noise (Sam's Club's shoppers 50 m away)
+        path = value(length, {"scale": SCALE_REL * length, "steps": float(np.sqrt(len(steps)) * np.median(noise)) if len(steps) else 0.},
+                     "position", k, None, views_term=False) if len(steps) and np.median(steps) >= np.median(noise) else \
+            {"status": "not measurable", "reason": f"its steps ({np.median(steps) if len(steps) else 0.:.2f} m typical) are shorter than one "
+                                                   f"position's noise ({np.median(noise):.2f} m)" if len(steps) else "one detection"}
+        phys = {"path_length": path,
                 "moved": value(moved, {"depth": u_move, "scale": SCALE_REL * moved}, "position", k, None, views_term=False,
                                note="the largest distance of a detection from the track's median place"),
                 "level": "coarse"}
@@ -1357,7 +1364,7 @@ def people_cards(people, shots, object_cards, k=None):
             why.setdefault(r["reason"].split(":")[-1].strip(), []).append(r["t"])
         out.append({"id": "person:not-a-person", "kind": "not a person", "identity": {"name": "picture of a person (not a person)", "decided_by":
                     "geometry (cards.person_geometry)", "label": "inferred"},
-                    "class": {"category": "other", "mobility": "not applicable", "mobility_source": "geometry"},
+                    "class": {"category": "other", "mobility": "not applicable", "mobility_source": "geometry"}, "physical": {},
                     "note": f"{len(rej)} SAM 3 person masks measured as no person: " + "; ".join(f"{w} ({len(ts)}x, first at {min(ts):.1f} s)" for w, ts in why.items()),
                     "examples": [r["reason"] for r in rej[:5]], "time": {"first_seen_s": min(r["t"] for r in rej), "last_seen_s": max(r["t"] for r in rej)},
                     "observed": ["masks"], "estimated": ["geometry"], "inferred": ["not a person"]})
@@ -1549,6 +1556,10 @@ def self_check():
     by = {c["id"]: c for c in out["cards"]}
     pc = by["person:0-1"]
     assert len(pc["rules"]) == 1 and pc["nearest_objects"][0]["id"] == "obj-0-0" and pc["physical"]["path_length"]["value"] > .5, pc
+    f0 = floor_frame(cams[0], [0, -1., 0], [0, 1.6, 3])
+    assert people_cards({"tracks": [dict(people["tracks"][0], points=[{"t": i * .2, "xyz": [.2 + .01 * i, 1.6, 3.6]} for i in range(5)])]},
+                        {0: dict(shot, frame=f0, cam_floor=to_floor(cams[:, :3, 3], f0), u_pose_m=.04)}, [])[0]["physical"]["path_length"]["status"] \
+        == "not measurable", "1 cm steps 3.6 m away: noise"
     assert pc["nearest_objects"][0]["distance"]["u"] > 0 and all(q["u_m"] > 0 for q in pc["time"]["positions"])
     assert pc["physical"]["stature"]["status"] == "not observed" and pc["identity"]["confirmed_by"] is None  # 0.6 m walked: not confirmed
     assert "person:untracked" in by and out["walked"][0]["person:0-1"]
