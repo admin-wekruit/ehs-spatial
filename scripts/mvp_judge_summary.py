@@ -52,18 +52,24 @@ def one(run_dir, row):
     feet = [p.get("foot_surface") for t in (pt["people"][-1]["data"]["tracks"] if pt.get("people") else []) for p in t["points"]]
     hs = [f["h_m"] for f in feet if f and f.get("h_m") is not None]
     contact = [f["contact"] for f in feet if f and f.get("h_m") is not None]
+    vis = [f for f in feet if f and f.get("h_m") is not None and f.get("feet_visible")]
+    vis_h = [f["h_m"] for f in vis if f["contact"]]
     return {"report": row["report"], "first_call": row["first_call"], "error": run.get("error"),
             "judge_summary": (run.get("summary") or {}).get("judge"), "times_s": times,
             "milestones": row.get("milestones"), "gpu_peak_gib": [{k: g[k] for k in ("gpu", "peak_gb", "at_s", "stages_active")} for g in run["gpu_peak"]],
             "flags": run["flags"], "usd_estimate": run.get("usd_estimate"), "judge_stages": stages,
             "counts": last.get("counts"), "by_check": last.get("by_check"), "calibration": last.get("calibration"), "vlm": last.get("vlm"),
             "by_object_summary": dict(Counter(last.get("by_object", {}).values())),
-            "by_type": {f"{n} | {c}": dict(v) for (n, c), v in sorted(by_type.items(), key=lambda x: -sum(x[1].values()))},
+            "by_type": {f"{n}, {c}": dict(v) for (n, c), v in sorted(by_type.items(), key=lambda x: -sum(x[1].values()))},
             "vlm_raw_p_hazard": {q: {"n": len(p), "median": round(float(np.median(p)), 4), "share_ge_0.5": round(float(np.mean(np.array(p) >= .5)), 3),
                                      "share_ge_0.9": round(float(np.mean(np.array(p) >= .9)), 3)} for q, p in sorted(vlm_q.items())},
             "foot_surface": {"detections": len(feet), "measured": len(hs), "contact_share": round(float(np.mean(contact)), 3) if contact else None,
                              "h_m_p5_p50_p95": np.percentile(hs, [5, 50, 95]).round(3).tolist() if hs else None,
-                             "over_0.30_with_contact": sum(1 for f in feet if f and f.get("h_m") is not None and f["h_m"] > .3 and f["contact"])},
+                             "feet_visible": len(vis), "feet_visible_and_contact": len(vis_h),
+                             "visible_h_m_p5_p50_p95": np.percentile(vis_h, [5, 50, 95]).round(3).tolist() if vis_h else None,
+                             "visible_contact_over_0.30_plus_u": sum(1 for f in vis if f["contact"] and f["h_m"] - f["u_m"] > .3),
+                             "note": "nobody stands on an object in these clips (the reference check of J3a's cue): every visible, "
+                                     "resting foot should read 0 m within u"},
             "evidence_images": sum(1 for r in last.get("rows", []) for e in r.get("evidence", []) if e.get("image"))}
 
 

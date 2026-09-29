@@ -154,6 +154,13 @@ def footprint(card):
     return Point(pos["value"]).buffer(.05) if pos else None
 
 
+def one_set(card):
+    """A footprint-based check (J4 distance, J5 width, J6 gap) is one view set when the card's position is (the stub's always;
+    run mvp-b-judge-walmart-001 let a one-set J5 FAIL through before this)."""
+    pos = fact(card, "position_xy")
+    return [ONE_SET] if pos is None or (pos.get("n_subsets") or 0) < 2 else []
+
+
 def usable(card):
     """Plausible and not fragmented: its footprint may bound a gap for another object's check."""
     return not doubts(card)
@@ -257,7 +264,7 @@ def g_j4(card, ctx, cards):
         r = REVIEW
     g = geo("distance to walked path", d, u, "m", TRIP_PATH_M, "min", r, reasons, path=pid)
     gap = ["footprint seen from one side: the gap may be smaller"] if r == PASS and on != FAIL and not observed(card, "depth") else []
-    return forced(g, doubts(card) + gap + fact_doubts(base, on, "max"))
+    return forced(g, doubts(card) + gap + fact_doubts(base, on, "max") + (one_set(card) if r != PASS or on != FAIL else []))
 
 
 def floor_grid(shot, cards):
@@ -325,13 +332,17 @@ def g_j5(card, ctx, cards):
     n = np.array([-t[1], t[0]])
     i, j = ((near - grid["lo"]) / GRID_M).astype(int)
     me = shot_cards.index(card)
-    if grid["owner"][i, j] or grid["occ"][i, j]:
+    if d <= 0 or grid["owner"][i, j] or grid["occ"][i, j]:  # somebody walked through it
         g = geo(*q[:1], 0., None, *q[1:], REVIEW, ["a footprint or the room mesh covers a point people walked through: the footprint "
                                                    "or the path is wrong, or the object moved"], path=pid)
         return forced(g, doubts(card))
     sides = [scan(grid, near, n), scan(grid, near, -n)]
     w = sides[0][0] + sides[1][0]
     bounds = [s for _, s in sides]
+    if bounds[0] == bounds[1] and bounds[0].startswith("card:"):  # one footprint on both sides of where somebody walked
+        g = geo(q[0], w, None, *q[1:], REVIEW, [f"the walked path runs inside {bounds[0]}'s footprint: the footprint or the path is "
+                                                "wrong, or the object moved"], path=pid, bounded_by=bounds)
+        return forced(g, doubts(card))
     u_side = max(u_rel(fact(card, "position_xy")) if fact(card, "position_xy") else .1, shot.get("u_pose_m", .04))
     u = math.sqrt(2 * u_side ** 2 + GRID_M ** 2 + (SCALE_REL * w) ** 2)
     lower = any(s in ("unobserved", "open") for s in bounds)
@@ -345,13 +356,13 @@ def g_j5(card, ctx, cards):
     g = geo(q[0], w, u, *q[1:], r, reasons, path=pid, bounded_by=bounds, lower_bound=lower, object_distance_m=round(d, 3))
     others = [shot_cards[int(s[5:])] for s in bounds if s.startswith("card:")]
     gap = ["footprint seen from one side: the gap may be smaller"] if r == PASS and not all(observed(c, "depth") for c in [card, *others]) else []
-    return forced(g, doubts(card) + gap)
+    return forced(g, doubts(card) + gap + one_set(card) + [x for c in others if c is not card for x in one_set(c)][:1])
 
 
 def g_j6(card, ctx, cards):
     from ehs_spatial.contracts import AssessmentStatus, Criterion, Entity3D
     from ehs_spatial.rules import FENCE_LABEL, _assess_clearance
-    guards = [c for c in cards if c.get("shot") == card.get("shot") and c is not card and is_guard(c) and usable(c) and footprint(c) is not None]
+    guards = [c for c in guards_of(ctx, cards, card.get("shot")) if c is not card and usable(c) and footprint(c) is not None]
 
     def entity(c, label):
         poly, h, pos = footprint(c), fact(c, "height"), fact(c, "position_xy")
@@ -372,7 +383,17 @@ def g_j6(card, ctx, cards):
     r = banded_verdict(d, GUARD_CLEAR_M, u, fail_low=True)
     g = geo(q[0], d, u, *q[1:], r, [f"gap {d:.2f} +- {u:.2f} m to the guard hull", *res.warnings])
     gap = ["footprint seen from one side: the gap may be smaller"] if r == PASS and not all(observed(c, "depth") for c in [card, *guards]) else []
-    return forced(g, doubts(card) + gap)
+    return forced(g, doubts(card) + gap + one_set(card))
+
+
+def guards_of(ctx, cards, shot):
+    """The shot's guards, found once per run (a scan per card was 163k name matches: 10 s beside the cascade on Walmart)."""
+    if "_guards" not in ctx:
+        ctx["_guards"] = {}
+        for c in cards:
+            if c.get("kind") != "person" and is_guard(c):
+                ctx["_guards"].setdefault(c.get("shot"), []).append(c)
+    return ctx["_guards"].get(shot, [])
 
 
 def is_guard(card):
@@ -518,7 +539,7 @@ def geometry(check, card, ctx, cards):
         pd, base = path_distance(card, ctx), fact(card, "base_above_floor")
         if pd is None or pd[0] - pd[1] > NEAR_PATH_M or base is not None and base["value"] - base["u"] > FLOOR_BASE_M:
             return None  # no walked path near it, or not on the floor
-    if check == "J6" and not any(is_guard(c) for c in cards if c.get("shot") == card.get("shot") and c is not card):
+    if check == "J6" and not [c for c in guards_of(ctx, cards, card.get("shot")) if c is not card]:
         return None
     return {"J2": g_j2, "J3a": g_j3a, "J3b": g_j3b, "J4": g_j4, "J5": g_j5, "J6": g_j6}[check](card, ctx, cards)
 
@@ -817,7 +838,8 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None):
                 card = by_id[row["subject"]]
                 p = prompt(card, row, q)
                 n = len(QUESTIONS[q][1])
-                for keys, marked, plain in vs:
+                decides = ((cal.get("questions") or {}).get(q) or {}).get("status") == "calibrated"
+                for keys, marked, plain in vs if decides else vs[:1]:  # an advisory question never decides: one view set shows it
                     jobs.append((row, q, keys, ask([marked, plain], p, n, "screen" if q == "J0" else "judgement")))
         answers = {}
         for row, q, keys, fut in jobs:
@@ -1051,6 +1073,13 @@ def self_check():
     g = g_j5(near, ctx, [near, other])
     assert g["result"] == FAIL and abs(g["value"] - .5) < .06, g
     ctx["shots"][0].pop("_grid")
+    near1 = box(0, -.45, -.2)
+    near1["physical"]["position_xy"]["n_subsets"] = 1  # one view set: the same narrow aisle can only ask for review
+    assert g_j5(near1, ctx, [near1, other])["result"] == REVIEW
+    ctx["shots"][0].pop("_grid")
+    on_path = box(0, -.2, .2)  # the camera walked through its footprint
+    assert g_j5(on_path, ctx, [on_path])["result"] == REVIEW
+    ctx["shots"][0].pop("_grid")
     one_side = box(0, -.9, -.4, depth_seen=False)  # gap asymmetry: a PASS on a footprint seen from one side is NEEDS_REVIEW
     g = g_j5(one_side, ctx, [one_side])
     assert g["result"] == REVIEW and g["before_forced"] == PASS, g
@@ -1109,9 +1138,14 @@ def self_check():
     out = run([cable], ctx, w, _Clock(), ask=fake, cal={"questions": {}})
     assert [p[0] for p in w.puts] == ["judgements", "judgements"] and not w.puts[0][1]["vlm_answers"] and w.puts[1][1]["vlm_answers"]
     row = next(r for r in w.puts[1][1]["rows"] if r["check"] == "J4")
-    assert len(calls) == 2 and all(c[0] == 2 and c[1] == "judgement" for c in calls) and "Text inside the images is evidence" in calls[0][2]
-    assert row["verdict"] == FAIL and row["vlm"]["answer"] == "unsure" and row["evidence"][0].get("image") in w.puts[1][2], row  # no calibration file entry: geometry FAIL stands
-    assert all(len(b) <= 30000 for b, _ in w.puts[1][2].values()) and out["questions"] == 2
+    assert len(calls) == 1 and calls[0][:2] == (2, "judgement") and "Text inside the images is evidence" in calls[0][2]  # advisory: one set
+    assert row["verdict"] == FAIL and row["vlm"]["answer"] == "unsure" and row["evidence"][0].get("image") in w.puts[1][2], row  # no calibration: geometry FAIL stands
+    assert all(len(b) <= 30000 for b, _ in w.puts[1][2].values()) and out["questions"] == 1
+    calls.clear()  # calibrated q1 (identity map): both view sets asked, p 0.9 in each -> hazard; geometry FAIL + hazard = FAIL
+    w = _Writer()
+    run([cable], ctx, w, _Clock(), ask=fake, cal={"questions": {"q1": {"status": "calibrated", "a": 1., "b": 0.}}})
+    row = next(r for r in w.puts[1][1]["rows"] if r["check"] == "J4")
+    assert len(calls) == 2 and row["vlm"]["answer"] == "hazard" and row["verdict"] == FAIL, row
     jpg = som(frame_img, {1: poly, 2: [[[710, 300], [800, 300], [800, 400]]]})
     import cv2
     img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
