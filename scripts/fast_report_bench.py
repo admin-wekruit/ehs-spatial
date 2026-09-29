@@ -314,7 +314,7 @@ def bench(a):
     with hazard_ctx, modal.enable_output(), app.run(), modal.Queue.ephemeral() as namer_q:
         meta["app_id"] = app.app_id
         relay = NamerRelay(namer_q, out) if a.namer == "gemini" else None
-        fr = holder["fr"] = FastReport()
+        fr = holder["fr"] = FastReport(profile=a.profile)
         submitted = time.time()
         boot = fr.boot_info.remote()  # waits for the container: cold start, recorded, never counted as analysis
         boot = {**boot, "client_submitted_unix": submitted, "client_ready_unix": time.time(), "submit_to_ready_s_two_clocks": round(time.time() - submitted, 1)}
@@ -468,6 +468,8 @@ if __name__ == "__main__":
     p.add_argument("--display", default="on", choices=("on", "off"), help="r4: off = no SAM 3D models and no splat (the facts only)")
     p.add_argument("--discover", action="store_true", help="X10's catch-all and label words in SAM 3's wave 1 (vlm.DISCOVER)")
     p.add_argument("--surface", action="store_true", help="r5 (models): every card's planar-part angles and observed-surface display model")
+    p.add_argument("--profile", default="commercial", choices=("commercial", "internal"),
+                   help="r5 (models): internal = RecGen (non-commercial licence) for the complete models in SAM 3D's place")
     p.add_argument("--serve", action="store_true")
     p.add_argument("--no-gpu-eval", dest="gpu_eval", action="store_false")
     p.add_argument("--billing", type=Path)

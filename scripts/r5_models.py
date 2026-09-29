@@ -22,6 +22,15 @@ NAMES = ("me340", "samsclub-a2", "walmart")
 COLS = ("crop", "primitive", "observed", "recgen", "sam3d", "trellis", "triposr", "splat")
 GEN = ("recgen", "sam3d", "trellis", "triposr")
 THRESH_DEG = 30.
+SURFACE_K, FIT_MAX_DEG = 1.75, 15.  # fast_report.surface's, applied to bench 001's records (made with k = 1, no curved gate)
+
+
+def cal(rec, k=SURFACE_K):
+    """A part angle record as the pipeline now shows it: None when not measurable or curved (fit term > FIT_MAX_DEG), else a copy
+    with u = k x its raw u (records of bench 001 carry k = 1)."""
+    if not rec or "value" not in rec or (rec.get("parts") or {}).get("fit", 0) > FIT_MAX_DEG:
+        return None
+    return {**rec, "u": round(rec["u"] * k, 3)}
 
 
 def load(bench, name, arm):
@@ -177,19 +186,22 @@ def angles(bench, out=None):
         cpu = load(bench, name, "cpu")
         if not cpu:
             continue
-        parts, bends, tilted = [], [], []
+        parts, bends, tilted, curved = [], [], [], []
         for c in cpu["cards"]:
             sp = (c.get("surface") or {}).get("parts") or {}
             for i, p in enumerate(sp.get("parts") or []):
-                t = p["tilt_deg"]
+                t = cal(p["tilt_deg"])
+                if t is None:
+                    curved.append(c["id"])
+                    continue
                 parts.append(t)
                 if 15 <= t["value"] <= 75:
                     tilted.append({"id": c["id"], "name": c.get("name"), "part": i, "tilt": t["value"], "u": t["u"], "share": p["share"], "area_m2": p["area_m2"]})
-            bends += [b["angle_deg"] for b in sp.get("bends") or []]
+            bends += [b for b in (cal(b["angle_deg"]) for b in sp.get("bends") or []) if b]
         v = np.array([p["value"] for p in parts]) if parts else np.zeros(0)
         u = np.array([p["u"] for p in parts]) if parts else np.zeros(0)
         res[name] = {"cards": len(cpu["cards"]), "cards_with_parts": sum(bool(((c.get("surface") or {}).get("parts") or {}).get("parts")) for c in cpu["cards"]),
-                     "parts": len(parts), "u_median": med(list(u)), "u_p90": med(list(u), 90),
+                     "parts": len(parts), "parts_curved": len(curved), "u_median": med(list(u)), "u_p90": med(list(u), 90),
                      "near_0": int(((v <= 15)).sum()), "near_90": int((v >= 75).sum()), "tilted_15_75": len(tilted),
                      "within_u_of_0_or_90": int(((np.minimum(v, 90 - v) <= u)).sum()),
                      "decidable_vs_30": int(sum(decided(p, THRESH_DEG) for p in parts)), "bends": len(bends),
@@ -281,7 +293,7 @@ def gt(bench, dump_run, inputs):
             Q = Q[fc.main_cluster(Q, fc.EPS_MIN)]
             if len(Q) < 200:
                 continue
-            g = planar_parts(Q, np.zeros(len(Q), int), [], np.array([np.median(sh["cams"], 0)]))
+            g = planar_parts(Q, np.zeros(len(Q), int), [], np.array([np.median(sh["cams"], 0)]))  # GT parts, same rule
             if not g.get("parts"):
                 continue
             R3 = np.eye(3)
@@ -303,8 +315,11 @@ def gt(bench, dump_run, inputs):
                     continue
                 used.add(best[1])
                 q = best[2]
-                v, u, gv = p["tilt_deg"]["value"], p["tilt_deg"]["u"], q["tilt_deg"]["value"]
-                dec = decided(p["tilt_deg"], THRESH_DEG)
+                t = cal(p["tilt_deg"])
+                if t is None or "value" not in q["tilt_deg"]:
+                    continue
+                v, u, gv = t["value"], t["u"], q["tilt_deg"]["value"]
+                dec = decided(t, THRESH_DEG)
                 rows.append({"seq": name, "window": wi, "card": c["id"], "name": (c.get("identity") or {}).get("name"), "part": i, "tilt": v, "u": u, "gt": gv,
                              "err": abs(v - gv), "covered": abs(v - gv) <= u, "decided_30": dec, "right_30": (v > THRESH_DEG) == (gv > THRESH_DEG) if dec else None,
                              "gt_near_30": abs(gv - THRESH_DEG) <= 5, "share": p["share"], "gt_tilt_check": round(tilt_deg(q["normal"]), 2)})

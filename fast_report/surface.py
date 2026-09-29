@@ -19,6 +19,9 @@ STRIDE, GRID_HW = 2, (280, 504)  # the lift's pixel stride on DA3's grid
 VOXEL_M, MAX_TRIANGLES, MIN_COMPONENT = (.01, .04), 20000, .05
 PART_SAMPLE, MAX_PARTS, NORMAL_AGREE_DEG, MIN_PART_SHARE, MIN_PART_POINTS, MIN_PART_SIDE_M = 5000, 6, 30., .05, 40, .05
 TOUCH_PAIRS, MIN_FOLD_DEG, SUBSET_POINTS = 5, 5., 30
+# u's k for a part's angle (r5 bench 001, ground truth: 265 parts of ARKitScenes 42445448 / 47333932 and TUM fr1 room matched to
+# GT parts; k = 1 covered 78 %, 1.75 covers 90 %; left-one-sequence-out k 1.55-2.05); a fit term over FIT_MAX_DEG: a curved patch
+SURFACE_K, FIT_MAX_DEG = 1.75, 15.
 
 
 def _cam_points(world, c2w):
@@ -41,13 +44,17 @@ def observed_mesh(world, frame, c2w, K, rgb=None, views=None, hw=GRID_HW, stride
     zmed = float(np.median([np.linalg.norm(np.median(world[frame == v], 0) - c2w[v][:3, 3]) for v in use]))
     vox = float(np.clip(max((hi - lo).max() / 64, zmed * stride / fx), *VOXEL_M))
     vol = o3d.pipelines.integration.ScalableTSDFVolume(voxel_length=vox, sdf_trunc=4 * vox, color_type=o3d.pipelines.integration.TSDFVolumeColorType.RGB8)
+    strides = []
     for v in use:
         cam = _cam_points(world[frame == v], c2w[v])
         z = cam[:, 2]
         ok = z > .05
         cam, z = cam[ok], z[ok]
         u, vv = K[v][0, 0] * cam[:, 0] / z + K[v][0, 2], K[v][1, 1] * cam[:, 1] / z + K[v][1, 2]
-        i, j = np.round(u / stride).astype(int), np.round(vv / stride).astype(int)
+        sv = view_stride(u, vv, stride)  # a view the point cap thinned out: a coarser grid, so its depth image stays whole
+        strides.append(sv)
+        h, w = hw[0] // sv, hw[1] // sv
+        i, j = np.round(u / sv).astype(int), np.round(vv / sv).astype(int)
         inb = (i >= 0) & (j >= 0) & (i < w) & (j < h)
         i, j, z, u, vv = i[inb], j[inb], z[inb], u[inb], vv[inb]
         order = np.argsort(-z)  # the nearest point of a pixel is written last
@@ -60,7 +67,7 @@ def observed_mesh(world, frame, c2w, K, rgb=None, views=None, hw=GRID_HW, stride
             px = np.clip(np.round(u * W / hw[1]).astype(int), 0, W - 1)
             py = np.clip(np.round(vv * H / hw[0]).astype(int), 0, H - 1)
             C[j[order], i[order]] = img[py[order], px[order], ::-1]
-        intr = o3d.camera.PinholeCameraIntrinsic(w, h, K[v][0, 0] / stride, K[v][1, 1] / stride, K[v][0, 2] / stride, K[v][1, 2] / stride)
+        intr = o3d.camera.PinholeCameraIntrinsic(w, h, K[v][0, 0] / sv, K[v][1, 1] / sv, K[v][0, 2] / sv, K[v][1, 2] / sv)
         rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(o3d.geometry.Image(C), o3d.geometry.Image(D), depth_scale=1., depth_trunc=1e4,
                                                                   convert_rgb_to_intensity=False)
         vol.integrate(rgbd, intr, np.linalg.inv(c2w[v]))
@@ -75,7 +82,18 @@ def observed_mesh(world, frame, c2w, K, rgb=None, views=None, hw=GRID_HW, stride
             mesh = mesh.simplify_quadric_decimation(MAX_TRIANGLES)
     V, F = np.asarray(mesh.vertices, np.float32), np.asarray(mesh.triangles, np.int32)
     Cv = (np.asarray(mesh.vertex_colors) * 255).round().astype(np.uint8) if len(V) else empty[2]
-    return V, F, Cv, {"views": len(use), "voxel_m": round(vox, 4), "triangles_raw": n0, "triangles": int(len(F)), "s": round(time.perf_counter() - t0, 4)}
+    return V, F, Cv, {"views": len(use), "voxel_m": round(vox, 4), "triangles_raw": n0, "triangles": int(len(F)), "stride_median": float(np.median(strides)),
+                      "s": round(time.perf_counter() - t0, 4)}
+
+
+def view_stride(u, v, base=STRIDE, strides=(2, 4, 8, 16)):
+    """The finest grid stride (>= base) at which a view's points still fill their own footprint: the occupied cells at stride s over
+    4 x those at 2 s (1 when the points are dense) >= 0.5."""
+    occ = lambda s: len(np.unique(np.round(u / s).astype(np.int64) * 100003 + np.round(v / s).astype(np.int64)))  # noqa: E731
+    for s in [x for x in strides if x >= base]:
+        if occ(s) >= .5 * 4 * occ(2 * s):
+            return s
+    return strides[-1]
 
 
 def _normals(Q, k=12):
@@ -117,7 +135,7 @@ def planar_parts(P, frame, subsets, cams, plumb_u_deg=None, k=None, keep=False):
     import open3d as o3d
     from fast_report import cards
     t0 = time.perf_counter()
-    k = k or {"angle": 1.}
+    k = k or {"angle": SURFACE_K}
     P, frame = np.asarray(P, float), np.asarray(frame)
     if len(P) > PART_SAMPLE:
         ix = np.sort(np.random.default_rng(0).choice(len(P), PART_SAMPLE, replace=False))
@@ -141,8 +159,11 @@ def planar_parts(P, frame, subsets, cams, plumb_u_deg=None, k=None, keep=False):
             break
         lab = _components(P[inl], 3 * spacing)
         comp = inl[lab == np.bincount(lab).argmax()]
+        if len(comp) < max(MIN_PART_POINTS, MIN_PART_SHARE * n):
+            left = np.setdiff1d(left, inl)
+            continue
         c, nrm, axes, ext, res95 = _plane(P[comp])
-        if len(comp) < max(MIN_PART_POINTS, MIN_PART_SHARE * n) or ext.min() < MIN_PART_SIDE_M:
+        if ext.min() < MIN_PART_SIDE_M:
             left = np.setdiff1d(left, inl)  # no part here: these points leave the pool
             continue
         left = np.setdiff1d(left, comp)
@@ -169,6 +190,8 @@ def planar_parts(P, frame, subsets, cams, plumb_u_deg=None, k=None, keep=False):
         vals = [tilt_deg(m) for m in p["subs"]]
         v = cards.value(tilt_deg(p["n"]), {"views": cards.spread(vals) if len(vals) >= 2 else None, "fit": fit(p), "plumb": plumb_u_deg},
                         "angle", k, vals if len(vals) >= 2 else None, unit="deg", scale=cards.SCALE_FREE)
+        if fit(p) > FIT_MAX_DEG:  # the cards' rule for any angle: a patch this rough is curved, no angle
+            v = {"status": "not measurable", "reason": f"a curved patch: fit term {fit(p):.0f} deg > {FIT_MAX_DEG:g}", "value_if_flat": v["value"]}
         rows.append({"tilt_deg": v, "area_m2": round(float(np.prod(p["ext"])), 3), "centre_m": np.round(p["c"], 3).tolist(),
                      "normal": np.round(p["n"], 4).tolist(), "sides_m": np.round(p["ext"], 3).tolist(), "share": round(len(p["ix"]) / n, 3)})
     bends = []
@@ -181,6 +204,8 @@ def planar_parts(P, frame, subsets, cams, plumb_u_deg=None, k=None, keep=False):
             if touch < TOUCH_PAIRS or fold < MIN_FOLD_DEG:
                 continue
             subs = [float(np.degrees(np.arccos(np.clip(x @ y, -1, 1)))) for x, y in zip(parts[a]["subs"], parts[b]["subs"])]
+            if max(fit(parts[a]), fit(parts[b])) > FIT_MAX_DEG:
+                continue
             v = cards.value(180 - fold, {"views": cards.spread(subs) if len(subs) >= 2 else None, "fit": float(np.hypot(fit(parts[a]), fit(parts[b])))},
                             "angle", k, [180 - s for s in subs] if len(subs) >= 2 else None, unit="deg", scale=cards.SCALE_FREE,
                             note="the angle between the two parts (180 = flat)")
@@ -196,7 +221,7 @@ def planar_parts(P, frame, subsets, cams, plumb_u_deg=None, k=None, keep=False):
 
 
 def decided(rec, threshold):
-    """A value +- u clear of a threshold (e.g. a 30 deg rule): True / False, None without a value."""
+    """A value +- u clear of a threshold (e.g. a 30 deg rule): True / False, None without a value (or not measurable)."""
     if not rec or "value" not in rec:
         return None
     return abs(rec["value"] - threshold) > rec["u"]
@@ -330,6 +355,9 @@ def self_check():
     V, F, C, info = observed_mesh(face, fr, c2ws, np.repeat(K[None], 3, 0), rgb=lambda v: np.full((720, 1280, 3), (40, 90, 200), np.uint8))
     assert len(F) > 100 and np.abs(V[:, 1]).max() < 4 * info["voxel_m"], (len(F), np.abs(V[:, 1]).max())
     assert V[:, 0].min() > -.05 and V[:, 0].max() < .65 and V[:, 2].max() < .55 and np.allclose(C.mean(0), (200, 90, 40), atol=8)
+    thin = rng.random(len(face)) < .08  # the point cap's random sample: a sparse speckle on each view's grid
+    _, Ft, _, it = observed_mesh(face[thin], fr[thin], c2ws, np.repeat(K[None], 3, 0))
+    assert it["stride_median"] > 2 and len(Ft) > 50, it
     _, F1, _, i1 = observed_mesh(face, fr, c2ws, np.repeat(K[None], 3, 0), views=[1])
     assert i1["views"] == 1 and 0 < len(F1) and observed_mesh(face[:5], fr[:5], c2ws, np.repeat(K[None], 3, 0))[3]["reason"] == "too few points"
     import struct

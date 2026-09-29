@@ -44,7 +44,8 @@ if LOCAL:
     from fast_report import gen3d, sam3d as fb_sam3d, x7 as fx7
     base = (modal.Image.from_registry("nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04", add_python="3.11")  # X7's base: its layers are cached
             .pip_install("numpy==2.2.6", "opencv-python-headless==4.11.0.86", "scipy==1.15.3", "pydantic==2.11.7", "trimesh==4.6.10"))
-    image = gen3d.with_generators(fx7.with_recgen(fb_sam3d.with_envs(base)))
+    gate_extra = "uv pip install --python /opt/gate/bin/python shapely==2.1.1 pydantic==2.11.7"  # scene_measurements' imports (the workcell measurement)
+    image = gen3d.with_generators(fx7.with_recgen(fb_sam3d.with_envs(base))).run_commands(gate_extra)
     for d in ("fast_report", "scripts", "modal_apps", "ehs_spatial"):
         image = image.add_local_dir(WT / d, f"/repo/{d}", ignore=["**/__pycache__/**", "**/*.pyc"])
     cpu_image = fb_sam3d.with_envs(base)
@@ -128,10 +129,20 @@ def boot_pools(self, arm):
     self.pools, self.boot_record = pools, rec
 
 
-def events_loop(pending, events, handle):
+def alive(boot, *names):
+    """A pool that failed at boot fails the run at once (its jobs would never come back)."""
+    bad = {n: boot[n]["error"][-600:] for n in names if isinstance(boot.get(n), dict) and boot[n].get("error")}
+    assert not bad, bad
+
+
+def events_loop(pending, events, handle, tag="", every=100):
+    done, t0 = 0, time.time()
     while pending[0]:
         kind, r, method, fut = events.get()
         pending[0] -= 1
+        done += 1
+        if done % every == 0:
+            print(f"  [{tag}] {done} done, {pending[0]} pending, {time.time() - t0:.0f} s (last: {kind})", flush=True)
         try:
             res = fut.result()
         except Exception as error:  # noqa: BLE001  one object's failure is recorded, the rest go on
@@ -233,6 +244,7 @@ class CpuBench:
         cards = [c for c in fx["meta"]["cards"] if c.get("kind") == "object"]
         objs = {o["id"]: o for o in fx["meta"]["objects"]}
         load_s = round(time.time() - t_load, 2)
+        alive(self.boot_record, "cpu")
         cpu = self.pools["cpu"]
         clock = Clock()
         rec = {c["id"]: {"id": c["id"], "shot": c["shot"], "name": c["identity"].get("name"), "class": (c.get("class") or {}).get("class_word"),
@@ -299,7 +311,7 @@ class CpuBench:
                 R["tiles"] = {**R.get("tiles", {}), **res.get("tiles", {}), **({"crop": R.pop("held_tile_crop")} if "held_tile_crop" in R else {})}
             elif kind == "parts_tile" and res.get("tile"):
                 R.setdefault("tiles", {})["parts"] = res["tile"]
-        events_loop(pending, events, handle)
+        events_loop(pending, events, handle, f"{name} cpu")
         surf = [r["surface"] for r in rec.values() if "surface" in r]
         summary = {"cards": len(cards), "with_mesh": sum(r["mesh"].get("triangles", 0) > 0 for r in surf),
                    "with_parts": sum("parts" in r["parts"] for r in surf),
@@ -342,6 +354,7 @@ class GpuBench:
         up = {s["index"]: s["normal"] for s in fx["meta"]["cards_shots"]}
         load_s = round(time.time() - t_load, 2)
         methods = ("recgen",) if self.arm == "internal" else ("sam3d", "trellis", "triposr")
+        alive(self.boot_record, "cpu", *methods)
         clock = Clock()
         vram = self.vram
         rec = {p["id"]: {"id": p["id"], "sep": p["sep"], "methods": {}} for p in picks}
@@ -393,7 +406,8 @@ class GpuBench:
                 M = R["methods"][method]
                 M.update(generate_s=round(res["seconds"], 3), gpu=res.get("gpu", res.get("worker")), started_s=clock.unix_to_s(res["start_unix"]),
                          generated_s=clock.unix_to_s(res["end_unix"]), faces_raw=int(len(res["faces"])),
-                         max_reserved_gib=res.get("max_reserved_gib", res.get("max_reserved_gb")))
+                         max_reserved_gib=res.get("max_reserved_gib") or (round(res["max_reserved_gb"] * 1e9 / 2 ** 30, 2) if method == "sam3d"  # SAM 3D: 1e9 bytes
+                                                                          else res.get("max_reserved_gb")))  # x7's RecGen: already 2^30 under that key
                 clock.external(f"r5.{method}.generate", None, res["start_unix"], res["end_unix"])
                 mesh = {k: res.get(k) for k in ("vertices", "faces", "colors")}
                 if method == "sam3d":
@@ -409,7 +423,7 @@ class GpuBench:
                     tiles.setdefault(cid, {})[method] = res.pop("tile")
                 M.update({k: v for k, v in res.items() if k not in ("start_unix", "end_unix", "pid")})
                 M.update(accepted=bool((res.get("gate") or {}).get("accepted_source_consistency")), decided_s=clock.unix_to_s(res["end_unix"]))
-        events_loop(pending, events, handle)
+        events_loop(pending, events, handle, f"{name} {self.arm}", 20)
         rep = clock.report(vram, price_per_s=2 * PRICE["A100-80GB"] + CPU * PRICE["cpu"] + 128 * PRICE["gib"], report=f"r5-{name}-{self.arm}", site=name)
         summary = {}
         for m in methods:
@@ -501,7 +515,7 @@ def prep():
 
 def self_check():
     rows = [{"views": 10, "longest_m": 1., "near_m": 2.}, {"views": 3, "longest_m": .2, "near_m": 4.}]
-    assert visibility(rows[0]) == 5. and visibility(rows[1]) == .15 and stats([1, None, 3])["median"] == 2.
+    assert visibility(rows[0]) == 5. and abs(visibility(rows[1]) - .15) < 1e-9 and stats([1, None, 3])["median"] == 2.
     print("r5_models_bench self-check ok: visibility ranking, stats")
 
 

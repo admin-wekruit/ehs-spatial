@@ -650,10 +650,18 @@ def models_job(m, inputs, geo, shared, words, clock, writer, dev, cards_now=None
     records, models, blobs = [], [], {}
     shots = [{k: gg[k] for k in ("index", "keys", "depth_m", "c2w_m", "K", "person")} for gg in geo]
     judged = lambda: sum(r.get("stage") == "assess" for r in records)  # noqa: E731
-    base = {"eligible": None if eligible is None else len(eligible), "rule": display_model.WELL_OBSERVED}
+    internal = getattr(m, "recgen", None) is not None  # r5 (models): the internal profile's RecGen in SAM 3D's place
+    base = {"eligible": None if eligible is None else len(eligible), "rule": display_model.WELL_OBSERVED,
+            "generator": "RecGen (internal profile: non-commercial licence)" if internal else "SAM 3D s1cfg12"}
     try:
-        for x in sam3d.gate(objs, shots, shared.result(), clock, m.sam3d, m.gate_pool, vocab=words, records=records, eligible=eligible,
-                            background=until_s is not None, deadline=None if until_s is None else clock.t0_unix + until_s):
+        if internal:
+            from fast_report import recgen_models
+            models_iter = recgen_models.gate(objs, shots, shared.result(), clock, m.recgen, m.gate_pool, eligible, records,
+                                             deadline=None if until_s is None else clock.t0_unix + until_s)
+        else:
+            models_iter = sam3d.gate(objs, shots, shared.result(), clock, m.sam3d, m.gate_pool, vocab=words, records=records, eligible=eligible,
+                                     background=until_s is not None, deadline=None if until_s is None else clock.t0_unix + until_s)
+        for x in models_iter:
             models.append({"object": x["object"], "transform": {"position": [float(v) for v in x["transform"][:3, 3]], "quaternion": [0, 0, 0, 1],
                                                                 "scale": [1, 1, 1]}, "bounds": x["bounds"], "gate": x["gate"]})
             blobs[f"model-{x['object']}"] = (x["glb"], {"mediaType": "model/gltf-binary", "format": "glb"})

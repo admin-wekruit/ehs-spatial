@@ -14,10 +14,15 @@
 import json
 import os
 from pathlib import Path
+import sys
 import time
 
 import numpy as np
 
+ROOT = Path(__file__).resolve().parents[1]
+for _p in (ROOT / "scripts", ROOT / "modal_apps"):  # complete_video_objects, r4_models, splat_to_web in every venv
+    if str(_p) not in sys.path:
+        sys.path.append(str(_p))
 HELD_SEP_DEG = 15.
 TILE = 160
 
@@ -90,7 +95,8 @@ def parts_tile(src, fx, card, frame_key, side=320):
     y = 14
     for i, p in enumerate(out["parts"]):
         t = p["tilt_deg"]
-        cv2.putText(crop, f"{i + 1}: {t['value']:.0f}+-{t['u']:.0f}", (4, y), cv2.FONT_HERSHEY_SIMPLEX, .45, PART_BGR[i % len(PART_BGR)], 1, cv2.LINE_AA)
+        txt = f"{i + 1}: {t['value']:.0f}+-{t['u']:.0f}" if "value" in t else f"{i + 1}: curved"
+        cv2.putText(crop, txt, (4, y), cv2.FONT_HERSHEY_SIMPLEX, .45, PART_BGR[i % len(PART_BGR)], 1, cv2.LINE_AA)
         y += 16
     for b in out["bends"][:3]:
         cv2.putText(crop, f"{b['parts'][0] + 1}-{b['parts'][1] + 1}: {b['angle_deg']['value']:.0f}+-{b['angle_deg']['u']:.0f}", (4, y),
@@ -184,22 +190,31 @@ def splat_crop(src, key, held, crop, card, sp, grow=1.1, margin=.03):
     depth, mask, k, c2w = view_data(src, key, held)
     h, w = mask.shape
 
-    def draw(K, size, bg=None):
+    def draw(K, size, bg=None, cap=20000, r_max=8.):
+        """Discs (2 sigma, at most r_max px) far to near, each blended on its own pixel patch only; the most opaque `cap` Gaussians."""
         cam = (sp["positions"][inside] - c2w[:3, 3]) @ c2w[:3, :3]
         z = cam[:, 2]
         ok = z > .05
         cam, z = cam[ok], z[ok]
         uv = cam[:, :2] / z[:, None] * [K[0, 0], K[1, 1]] + K[:2, 2]
-        r = np.clip(2 * sp["scales"][inside][ok].mean(1) * K[0, 0] / z, .5, size[0] / 4)
+        r = np.clip(2 * sp["scales"][inside][ok].mean(1) * K[0, 0] / z, .5, r_max)
         col, a = sp["rgb"][inside][ok] * 255, sp["opacity"][inside][ok]
+        keep = np.argsort(-a)[:cap]
         img = np.zeros((size[1], size[0], 3)) if bg is None else bg.astype(np.float64).copy()
         alpha = np.zeros((size[1], size[0]))
-        for i in np.argsort(-z):
-            m = np.zeros((size[1], size[0]), np.uint8)
-            cv2.circle(m, tuple(np.round(uv[i] * 4).astype(int)), int(round(r[i] * 4)), 1, -1, cv2.LINE_8, 2)
-            s = m > 0
-            img[s] = img[s] * (1 - a[i]) + col[i][::-1] * a[i]
-            alpha[s] = alpha[s] * (1 - a[i]) + a[i]
+        for i in keep[np.argsort(-z[keep])]:
+            x0, y0 = int(np.floor(uv[i, 0] - r[i])), int(np.floor(uv[i, 1] - r[i]))
+            x1, y1 = int(np.ceil(uv[i, 0] + r[i])) + 1, int(np.ceil(uv[i, 1] + r[i])) + 1
+            x0c, y0c, x1c, y1c = max(x0, 0), max(y0, 0), min(x1, size[0]), min(y1, size[1])
+            if x0c >= x1c or y0c >= y1c:
+                continue
+            yy, xx = np.mgrid[y0c:y1c, x0c:x1c]
+            m = (xx - uv[i, 0]) ** 2 + (yy - uv[i, 1]) ** 2 <= r[i] ** 2
+            if not m.any():
+                continue
+            patch, ap = img[y0c:y1c, x0c:x1c], alpha[y0c:y1c, x0c:x1c]
+            patch[m] = patch[m] * (1 - a[i]) + col[i][::-1] * a[i]
+            ap[m] = ap[m] * (1 - a[i]) + a[i]
         return img, alpha
     _, alpha = draw(k, (w, h))
     sil = alpha > .5
@@ -342,11 +357,21 @@ def gate_mesh(src, fx, card, msg):
         colors, _ = paint(src, key, gen, vertices, faces, colors if msg["kind"] == "triposr" else None)
     obs = observed_flags(src, key, gen, vertices, sam3d.VOXEL_M)
     out["observed_vertex_share"] = round(float(obs.mean()), 3)
-    out["tile"] = tile(src, held, msg["crop"], vertices, faces, colors, obs)
+    if msg.get("tile", True):
+        out["tile"] = tile(src, held, msg["crop"], vertices, faces, colors, obs)
     out["faces"] = int(len(faces))
-    out["gate_s"] = round(time.time() - t0, 3)
     if out["gate"]["accepted_source_consistency"]:
-        out["measure"] = measure_against_parts(src, fx, card, vertices, faces, obs)
+        if msg.get("glb"):  # the report's display copy: seen vertices opaque, the rest translucent (complete_video_objects' alphas)
+            import complete_video_objects as cvo
+            from fast_report.surface import mesh_glb
+            V = np.asarray(vertices, np.float64)
+            centre = (V.min(0) + V.max(0)) / 2
+            rgba = np.c_[np.asarray(colors, float)[:, :3], np.where(obs, cvo.OBSERVED_ALPHA, cvo.INFERRED_ALPHA)].clip(0, 255)
+            out["glb"], out["centre"] = mesh_glb(V - centre, faces, rgba), centre.tolist()
+            out["bounds"] = {"min": V.min(0).tolist(), "max": V.max(0).tolist()}
+        if fx is not None and card is not None:
+            out["measure"] = measure_against_parts(src, fx, card, vertices, faces, obs)
+    out["gate_s"] = round(time.time() - t0, 3)
     return out
 
 
@@ -366,6 +391,8 @@ def measure_against_parts(src, fx, card, vertices, faces, observed):
     seen_face = np.asarray(observed)[np.asarray(faces)].all(1)
     rows = []
     for p in parts["parts"]:
+        if "value" not in p["tilt_deg"]:
+            continue  # a curved patch has no observed angle to compare with
         n, c = np.asarray(p["normal"]), np.asarray(p["centre_m"])
         near = (np.abs((cen - c) @ n) <= .04) & (np.linalg.norm(cen - c, axis=1) <= .6 * np.linalg.norm(p["sides_m"]) + .05)
         row = {"observed_tilt": p["tilt_deg"]["value"], "observed_u": p["tilt_deg"]["u"], "model_faces": int(near.sum()),
@@ -420,8 +447,8 @@ def cpu_worker():
                 out["rgba"] = [rgba_crop(np.asarray(src.frames[g["frame"]])[..., ::-1], f) for g, f in zip(out["gen"], full) if f.any()]
                 out.pop("lowres", None)
         else:
-            fx = fx_of(m["fixture"])
-            card = m["card"]
+            fx = fx_of(m["fixture"]) if m.get("fixture") else None
+            card = m.get("card")
             if op == "surface":
                 out = surface(src, fx, card, m.get("plumb_u"))
             elif op == "parts_tile":
@@ -438,7 +465,7 @@ def cpu_worker():
         import open3d  # noqa: F401
         import scipy.optimize  # noqa: F401
         import build_lingbot_object_model  # noqa: F401
-        from ehs_spatial.platform import recgen, scene_measurements  # noqa: F401
+        from ehs_spatial.platform import recgen  # noqa: F401
         from fast_report import cards, display_model, surface as sf  # noqa: F401
         return {"ready": True, "pid": os.getpid()}
     sam3d.serve(handle, boot)

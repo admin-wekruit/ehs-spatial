@@ -295,7 +295,9 @@ const SIZE_FIELDS = new Set(["top_above_floor", "base_above_floor", "height", "w
 function samFor(models: Patch | undefined, aliases: Record<string, string> | undefined, id: string | null) {
   if (!models || !id) return null;
   const mine = (o: string) => o === id || aliases?.[o] === id, got = (models.data.models || []).find((m: any) => mine(m.object));
-  return got ? { accepted: true, iou: got.gate?.silhouette_iou, final: models.data.final } : { ...(models.data.tried || []).find((t: any) => mine(t.object)), final: models.data.final };
+  const generator = models.data.generator || "SAM 3D s1cfg12";  // r5: the internal profile's RecGen names itself
+  return got ? { accepted: true, iou: got.gate?.silhouette_iou, final: models.data.final, generator }
+    : { ...(models.data.tried || []).find((t: any) => mine(t.object)), final: models.data.final, generator };
 }
 
 /** r4 (models): the card's display model in one line: its kind, where it comes from, how it was chosen, what SAM 3D did. */
@@ -309,7 +311,7 @@ function ModelLine({ model, sam, surface, tr }: { model: any; sam?: any; surface
     : sam.final ? `${tr("未尝试", "not tried")}: ${model.sam3d_eligibility === "well observed" ? tr("首轮已满", "the first pass was full") : model.sam3d_eligibility || "—"}`
     : tr("进行中", "pending");
   return <section className="mvp-block mvp-model"><h4>{tr("模型", "Model")} <Tag>{tr("生成的，仅供显示", "generated, display only")}</Tag></h4>
-    {sam?.accepted && <p>{tr("SAM 3D 网格", "SAM 3D mesh")} · {tr("来源", "source")}: SAM 3D s1cfg12 · {tr("它替换了下面的基本形状", "it replaces the primitive below")}</p>}
+    {sam?.accepted && <p>{tr("生成的完整网格", "generated complete mesh")} · {tr("来源", "source")}: {sam.generator} · {tr("它替换了下面的基本形状", "it replaces the primitive below")}</p>}
     {surface && !sam?.accepted && <p>{tr("观测到的表面", "observed surface")} · {surface.observed_triangles} {tr("个三角形", "triangles")} · {tr("视频看到的部分（不透明，按视频着色），没看到的部分由下面的基本形状（半透明）表示", "what the video saw (opaque, the video's colours); the unseen bulk is the primitive below (translucent)")}
       {surface.voxel_m && <small> · {fmt(surface.voxel_m * 100, 1)} cm {tr("体素", "voxels")} · {surface.views} {tr("个视角", "views")}</small>}</p>}
     {model.kind ? <p>{sam?.accepted ? tr("基本形状（已被替换）", "primitive (replaced)") + ": " : ""}{({ box: tr("长方体", "box"), cylinder: tr("圆柱", "cylinder"), plane: tr("平板", "plane"), "open frame": tr("开放框架", "open frame") } as any)[model.kind] || model.kind}
@@ -318,7 +320,7 @@ function ModelLine({ model, sam, surface, tr }: { model: any; sam?: any; surface
       {" · "}{tr("看到的面", "seen")} {pct(model.seen_share ?? 0)} <small>({tr("其余是猜的，画得淡", "the rest is guessed, drawn faint")})</small>
       {model.depth && <><br /><small>{model.depth}</small></>}</p>
       : <p><small>{model.reason}</small></p>}
-    <p><small>SAM 3D: {s3}</small></p></section>;
+    <p><small>{sam?.generator || "SAM 3D"}: {s3}</small></p></section>;
 }
 
 /** r5 (models): the observed points' planar parts (fast_report.surface.planar_parts): each part's angle to the floor and the angle

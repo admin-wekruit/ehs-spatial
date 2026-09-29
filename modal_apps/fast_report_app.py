@@ -47,6 +47,7 @@ VOLUMES = {"/v/da3": modal.Volume.from_name("moge3-hf-cache"), "/v/sam3": modal.
            "/v/models": modal.Volume.from_name("panoptes-fb-models", create_if_missing=True),
            "/v/layers": modal.Volume.from_name("panoptes-fb-layers", create_if_missing=True),
            "/weights": modal.Volume.from_name("panoptes-sam3d-weights"),  # SAM 3D (sam3d_research's volume)
+           "/cache": modal.Volume.from_name("panoptes-lucida-weights"),  # r5: RecGen + DINOv2 (the internal profile only)
            "/ckpt": modal.Volume.from_name("panoptes-splat-train")}  # LPIPS' AlexNet for the splat's held-out score (torch hub cache)
 
 
@@ -54,14 +55,15 @@ def build_image():
     """CUDA devel base (nvcc for SAM 3D's pytorch3d); E9's main environment, pinned to the versions E9 ran (torch
     2.14.0+cu130, transformers 5.17.0, open3d 0.19.0), vLLM in its own venv as in E9; then B's venvs (/opt/sam3d,
     /opt/gate, /opt/splat); the repo's code mounted at /repo (the SAM 3D, gate and splat processes run it from there)."""
-    from fast_report import sam3d, splat
+    from fast_report import sam3d, splat, x7
     base = (modal.Image.from_registry("nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04", add_python="3.11")
             .apt_install("git", "libgl1", "libglib2.0-0", "libgomp1")
             .pip_install("torch==2.14.0", "torchvision", "xformers", "transformers==5.17.0", "accelerate", "addict", "pillow", "scipy",
                          "open3d==0.19.0", "shapely", "pydantic", "opencv-python-headless", "sentencepiece",
                          f"git+https://github.com/ByteDance-Seed/Depth-Anything-3.git@{DA3_CODE}")
             .run_commands("python -m venv /opt/vllm && PIP_EXTRA_INDEX_URL= /opt/vllm/bin/pip install -q vllm==0.11.0 transformers==4.57.1 pillow"))
-    out = splat.with_envs(sam3d.with_envs(base)).env({"HF_HUB_OFFLINE": "1", "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
+    out = x7.with_recgen(splat.with_envs(sam3d.with_envs(base)))  # r5: RecGen's venv for the internal profile (idle otherwise)
+    out = out.env({"HF_HUB_OFFLINE": "1", "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
     for d in ("fast_report", "scripts", "modal_apps", "ehs_spatial"):
         out = out.add_local_dir(REPO / d, f"/repo/{d}", ignore=["**/__pycache__/**", "**/*.pyc"])
     return out
@@ -109,6 +111,9 @@ from fast_report.layers import Writer  # noqa: E402  C
          scaledown_window=60)
 @modal.concurrent(max_inputs=4)  # mvp3: an on-demand click is answered beside a running analysis (run() itself stays one at a time)
 class FastReport:
+    # r5 (models): 'internal' runs RecGen (non-commercial licence: internal use only) in SAM 3D's place on GPU 0; 'commercial' as before
+    profile: str = modal.parameter(default="commercial")
+
     @modal.enter()
     def boot(self):
         import copy
@@ -129,8 +134,19 @@ class FastReport:
         self.vllm = vlm.start(1, mps=VLLM_MPS)  # first: its load overlaps everything below; GPU 1 stays empty until it has profiled
         b["vllm_mps"] = VLLM_MPS
         lap("vllm_spawned_s")
-        self.sam3d = sam3d.Workers(gpu=0, n=2)  # B: two SAM 3D processes under MPS on GPU 0 (~60 s load + 16 s warm-up, beside vLLM's load)
-        self.gate_pool = sam3d.GatePool(GATE_PROCS)  # the gate's prepare/assess processes (niced)
+        self.recgen = None
+        if self.profile == "internal":  # r5: two RecGen processes on GPU 0 (x7.recgen_worker), X7's select/gate ops in the gate venv
+            from fast_report import x7
+            env = sam3d.worker_env(x7.RECGEN_PY, CUDA_VISIBLE_DEVICES=0, ATTN_BACKEND="xformers", SPCONV_ALGO="native", HF_HUB_OFFLINE=1)
+            env["PYTHONPATH"] += os.pathsep + x7.RECGEN_DIR
+            self.sam3d = None
+            self.recgen = sam3d.Pool([x7.RECGEN_PY, "-c", "from fast_report.x7 import recgen_worker; recgen_worker()"], 2, env, "recgen")
+            self.gate_pool = sam3d.Pool([sam3d.GATE_PY, "-c", "from fast_report.r5_bench import cpu_worker; cpu_worker()"], GATE_PROCS,
+                                        sam3d.worker_env(sam3d.GATE_PY, OMP_NUM_THREADS=1, OPENBLAS_NUM_THREADS=1, MKL_NUM_THREADS=1), "gate")
+        else:
+            self.sam3d = sam3d.Workers(gpu=0, n=2)  # B: two SAM 3D processes under MPS on GPU 0 (~60 s load + 16 s warm-up, beside vLLM's load)
+            self.gate_pool = sam3d.GatePool(GATE_PROCS)  # the gate's prepare/assess processes (niced)
+        b["profile"] = self.profile
         self.proc_pool = ProcessPoolExecutor(PROCS, mp_context=multiprocessing.get_context("spawn"))
         self.proc_pool.map(core.warm_worker, range(PROCS))
         import torch
@@ -154,7 +170,8 @@ class FastReport:
         vlm.wait(self.vllm)
         lap("vllm_ready_s")
         self.splat = splat.Worker(gpu=1, torch_home="/ckpt/torch")  # after vLLM sized its cache from GPU 1's free memory (B)
-        b["sam3d"] = self.sam3d.ready()  # before this process warms up on GPU 0: SAM 3D's warm-up holds ~20 GB a process until it is done
+        b["sam3d"] = self.sam3d.ready() if self.sam3d is not None else None  # before this process warms up on GPU 0: SAM 3D's warm-up holds ~20 GB a process until it is done
+        b["recgen"] = self.recgen.ready(900) if self.recgen is not None else None
         lap("sam3d_ready_s")
         self.sams = {self.dev_geo: segment.Sam3(sam0, proc, self.dev_geo), self.dev_seg: segment.Sam3(sam.to(self.dev_seg), proc, self.dev_seg)}
         from fast_report import ondemand  # mvp3 D4 (b): SAM 3's tracker for on-demand clicks, GPU 1 (+0.9 GB), warmed below
@@ -229,7 +246,7 @@ class FastReport:
 
     @modal.exit()
     def stop(self):
-        for name in ("sam3d", "gate_pool", "splat"):
+        for name in ("sam3d", "recgen", "gate_pool", "splat"):
             if getattr(self, name, None) is not None:
                 getattr(self, name).close()
         if getattr(self, "vllm", None) is not None:

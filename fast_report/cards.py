@@ -1304,7 +1304,8 @@ def surface_parts(P, frame, bl, s, k):
     if not s["angles_usable"]:
         return {"status": "not measurable", "reason": "plumb check failed: the room's walls read "
                 f"{'n/a' if s.get('plumb_deg') is None else round(s['plumb_deg'], 1)} deg off vertical (limit {PLUMB_MAX_DEG:g})"}
-    return surface.planar_parts(P, frame, bl if len(bl) >= 2 else [], s["cam_floor"], s.get("plumb_u_deg", s.get("plumb_deg")), k)
+    return surface.planar_parts(P, frame, bl if len(bl) >= 2 else [], s["cam_floor"], s.get("plumb_u_deg", s.get("plumb_deg")),
+                                {"angle": k.get("surface_angle", surface.SURFACE_K)})  # its own GT k (surface.SURFACE_K)
 
 
 def strike(cands, measured):
