@@ -892,7 +892,16 @@ def analyse(m, mp4, opts, clock, writer, log):
 
     def cards_v2():
         """Identity once the cascade answered (section 4.7: the decider's options replace the free-text naming). Put as v2,
-        or, when densify's cards v3 is already out, merged into it as v4 (the viewer shows the newest version)."""
+        or, when densify's cards v3 is already out, merged into it as v4 (the viewer shows the newest version). A failure is
+        recorded, never raised: raised, it ended the run while densify's SAM 3 still ran, and run()'s cleanup then faulted
+        both GPUs for every later call (runs mvp-integrate-*-002/003, CUDA illegal address)."""
+        try:
+            return identity_pass()
+        except Exception:  # noqa: BLE001
+            import traceback
+            return {"error": traceback.format_exc()[-3000:]}
+
+    def identity_pass():
         if not cards_ready.wait(120):
             return
         by = {o["id"]: o for o in objects}
@@ -945,7 +954,7 @@ def analyse(m, mp4, opts, clock, writer, log):
             # integration fix: the options go into the prompt as letters (vlm.qwen_prompt); A's bare question listed none
             p = vlm.qwen_prompt(" ".join([judge.SCENE, judge.MARKS]), "What is the object marked [1]?", opts)
             return opts, [som(frames[best], marks, subject=1), som(frames[best], marks, subject=1, marks=False)], p
-        ehs = lambda c: c["class"]["category"] != "other" or cards.head_match(c["identity"]["name"], cards.CLASS_SIZE)  # noqa: E731
+        ehs = lambda c: c["class"]["category"] != "other" or cards.head_match(c["identity"]["name"], cards.CLASS_SIZE) is not None  # noqa: E731
         # integration: every object seen on >= 3 views is asked (spec 5.3's 'identity for the other objects', after the
         # judgement questions): the SAM 3 word alone named a floor drain 'metal part' and a flammables cabinet 'machine'
         todo = [c for c in card_list if c["kind"] == "object" and (ehs(c) or (c.get("views") or {}).get("n", 0) >= 3)]
@@ -1393,7 +1402,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     outlines_future.result()
     ev = vocab_future.result()
     if esc is not None:
-        esc.result()
+        summary["identity"] = esc.result()
     summary["cards"] = cards_future.result()
     summary["boxes"] = box_stats(objects[:len(members)], cards_out.get("v1"))
     summary["densify"] = densify_future.result() if densify_future is not None else None
