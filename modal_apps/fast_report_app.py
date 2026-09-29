@@ -62,10 +62,6 @@ def build_image():
                          f"git+https://github.com/ByteDance-Seed/Depth-Anything-3.git@{DA3_CODE}")
             .run_commands("python -m venv /opt/vllm && PIP_EXTRA_INDEX_URL= /opt/vllm/bin/pip install -q vllm==0.11.0 transformers==4.57.1 pillow"))
     out = splat.with_envs(sam3d.with_envs(base)).env({"HF_HUB_OFFLINE": "1", "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
-    # r4/coverage: ultralytics (AGPL-3.0: YOLOE / YOLO11 / YOLO26 box sources; the user accepts it for now) as the last layer, no
-    # deps (its opencv-python would shadow the headless one; torch stays E9's)
-    out = out.pip_install("polars==1.44.2", "psutil", "pyyaml", "requests", "matplotlib", "nvidia-ml-py", "cloudpickle", "filelock") \
-        .run_commands("pip install --no-deps ultralytics==8.4.165 ultralytics-thop==2.2.1")
     for d in ("fast_report", "scripts", "modal_apps", "ehs_spatial"):
         out = out.add_local_dir(REPO / d, f"/repo/{d}", ignore=["**/__pycache__/**", "**/*.pyc"])
     return out

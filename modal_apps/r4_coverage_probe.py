@@ -20,8 +20,12 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent if (HERE.parent / "fast_report").is_dir() else Path("/repo")  # the container mounts the repo at /repo
 sys.path[:0] = [str(REPO), str(REPO / "scripts"), str(REPO / "modal_apps"), str(HERE)]
-from fast_report_app import VOLUMES, image  # noqa: E402  the fast report's own image (+ ultralytics) and volumes
+from fast_report_app import VOLUMES, image  # noqa: E402  the fast report's own image and volumes
 
+# ultralytics (AGPL-3.0: YOLOE / YOLO11 / YOLO26) only in the probe's image, as the last layer, no deps (its opencv-python would shadow
+# the headless one; torch stays E9's); the pipeline's chosen source (OWLv2, Apache-2.0) needs none of it
+image = image.pip_install("polars==1.44.2", "psutil", "pyyaml", "requests", "matplotlib", "nvidia-ml-py", "cloudpickle", "filelock") \
+    .run_commands("pip install --no-deps ultralytics==8.4.165 ultralytics-thop==2.2.1") if modal.is_local() else image
 app = modal.App("panoptes-r4-coverage-probe")
 SRCS = ("yoloe", "yoloepf", "yolo11", "yolo26", "owlv2")
 PHASE2 = Path("/Users/adam/Desktop/panoptes-public/research-notes/phase2")
