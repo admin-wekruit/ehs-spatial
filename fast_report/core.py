@@ -774,7 +774,9 @@ def analyse(m, mp4, opts, clock, writer, log):
         summary["lift"] = lift_stats
     with clock.stage("objects.boxes", n={"objects": len(objects)}):  # section 4.2 step 5 on the cleaned points (L1)
         floors = [cards.floor_frame(gg["c2w_m"][0].cpu().numpy(), *shot_floor(gg)) for gg in geo]
-        for o, (box, lo, hi) in zip(objects, m.cpu_pool.map(lambda x: cards.v1_box(x[1]["world"], floors[x[0]["shot"]]), zip(objects, obj_points))):
+        ws = [np.asarray(x["world"])[:: max(1, len(x["world"]) // 4000)] for x in obj_points]  # v1_box's own stride, here: less to pickle
+        # integration: in the process pool (threads held the GIL: 1.7 / 2.1 s on Sam's Club / Walmart, SAM 3 -> objects +1.2 s over fb)
+        for o, (box, lo, hi) in zip(objects, m.proc_pool.map(cards.v1_box, ws, [floors[o["shot"]] for o in objects], chunksize=max(1, len(objects) // 32))):
             o.update(box=box, box_min_m=np.round(lo, 3).tolist(), box_max_m=np.round(hi, 3).tolist(),
                      box_rule="robust: p2/p98 height x min-area p2-p98 footprint of the cleaned points (click MVP 4.2)")
     clock.mark("objects_lifted")
