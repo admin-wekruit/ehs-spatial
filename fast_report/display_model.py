@@ -21,7 +21,8 @@ STATUS = "generated, display only"
 MAX_POINTS, MIN_T = 3000, .01  # points a fit uses (a seeded sample); the thinnest drawn side (m)
 SEEN_COS = np.cos(np.radians(75))  # a camera faces a face when it is less than 75 deg off the face's normal
 SECTORS = 36  # a cylinder's arc in 10 deg sectors
-PREFER_BOX = .7  # another shape wins on the residual only below 0.7 x the box's
+PREFER_BOX = {"plane": .7, "cylinder": .5}  # without a type another shape wins only below this share of the box's residual
+MIN_ARC = 9  # ... and a cylinder only when its circle was fitted on >= 90 deg of seen arc (offline dev: bags and shoes went round)
 TYPE_SLACK_M = .03  # the type's shape stays unless its residual is over 2 x the best one's and 3 cm more
 TYPE_KIND = {
     "cylinder": ("drum", "bucket", "trash can", "bottle", "can", "fire extinguisher", "column", "bollard", "safety cone", "pipe", "duct",
@@ -214,10 +215,11 @@ def type_kind(cls):
 
 def choose(fs, cls=None):
     """-> (kind, why). The type's shape (TYPE_KIND on the class) unless the points clearly fit another better; without a type,
-    the box unless a fitted cylinder or the plane fits under PREFER_BOX x its residual (an open frame only by type)."""
+    the box unless the plane or a fitted cylinder (MIN_ARC) fits under PREFER_BOX x its residual (an open frame only by type)."""
     r = {k: f["residual_m"] for k, f in fs.items()}
-    alt = min(("cylinder", "plane") if fs["cylinder"].get("fitted") else ("plane",), key=r.get)
-    best = alt if r[alt] < PREFER_BOX * r["box"] else "box"
+    cyl = fs["cylinder"].get("fitted") and fs["cylinder"]["arc"].count("1") >= MIN_ARC
+    ok = [k for k in ("cylinder", "plane") if (k == "plane" or cyl) and r[k] < PREFER_BOX[k] * r["box"]]
+    best = min(ok, key=r.get) if ok else "box"
     want = type_kind(cls)
     if want is None:
         return best, "residual" if best != "box" else "default (the box; no other shape fits the points clearly better)"
@@ -375,7 +377,7 @@ def self_check():
     Q = np.c_[u, v * np.sin(tilt), v * np.cos(tilt)] + rng.normal(0, .003, (3000, 3))
     p = fit_plane(Q, np.array([[0., -3., 1.6]]))
     assert abs(abs(p["axes"][2] @ [0, np.cos(tilt), -np.sin(tilt)]) - 1) < .01 and (p["hi"] - p["lo"])[2] < .03
-    assert p["residual_m"] < fit_box(Q, np.zeros((0, 3)))["residual_m"] * PREFER_BOX
+    assert p["residual_m"] < fit_box(Q, np.zeros((0, 3)))["residual_m"] * PREFER_BOX["plane"]
     assert choose(fits(Q, np.array([[0., -3., 1.6]])), "door")[0] == "plane"
     # open frame: a 4-level shelf (1.2 x 0.4 x 1.8 m, posts + plates): its levels found, the frame chosen by type, members seen
     pts = [np.c_[rng.uniform(0, 1.2, 500), rng.uniform(0, .4, 500), np.full(500, z)] for z in (.1, .6, 1.1, 1.7)]
