@@ -104,6 +104,10 @@ def state(root, report):
           "fps": p["video"]["data"]["fps"], "pick": p["pick"], "cameras": {s["index"]: s for s in p["cameras"]["data"]["shots"]},
           "shots": {s["index"]: s for s in cards_data.get("shots") or []}, "k": (cards_data.get("calibration") or {}).get("k") or {},
           "pick_seq": p["pick"]["seq"], "cards_seq": p["object_cards"]["seq"], "chunks": {}, "frames": {}}
+    cl = cards_data["cards"] if isinstance(cards_data.get("cards"), list) else json.loads(blob(root, p["object_cards"]["blobs"]["cards"]["sha256"]))
+    st["names"] = {c["id"]: (c.get("identity") or {}).get("name") for c in cl if c.get("kind") == "object"}
+    for old, new in (cards_data.get("aliases") or {}).items():
+        st["names"].setdefault(old, st["names"].get(new))
     threading.Thread(target=decode_keyframes, args=(st,), daemon=True).start()
     with _STATE_LOCK:
         _STATE.clear()  # ponytail: one report at a time (a viewer session); a dict per report if several viewers share a container
@@ -294,11 +298,27 @@ def parse(text):
 
 
 DIM = .45  # style 'dim': the frame outside the mask at this brightness in both halves of the tile
+HINTS, HINT_RING = 6, 12  # style 'neighbours': up to 6 names of the report's objects within 12 px (pick grid) of the mask
+HINT_PROMPT = ("Things already named next to it in this video: {}. If the outlined thing is one of these kinds, use that name; otherwise "
+               "name it yourself. ")
 
 
-def name(frame, mask, style="outline"):
-    """The mask's outline (vlm.namer_tile: context | close crop; style 'dim' darkens everything outside the mask) -> Qwen3-VL-8B
-    -> (answer, seconds)."""
+def neighbours(ids, small, ents, names, ring=HINT_RING, top=HINTS):
+    """The report's own object names around a mask on its pick map (most pixels in the ring first), without people and non-names."""
+    import cv2
+    near = cv2.dilate(small.astype(np.uint8), np.ones((2 * ring + 1, 2 * ring + 1), np.uint8)) > 0
+    codes, n = np.unique(ids[near & ~small], return_counts=True)
+    out = []
+    for c in codes[np.argsort(-n)]:
+        nm = names.get(ents[c]) if c else None
+        if nm and nm not in out and nm not in (cards.NOT_OBJECT, cards.UNIDENTIFIED):
+            out.append(nm)
+    return out[:top]
+
+
+def name(frame, mask, style="outline", hints=()):
+    """The mask's outline (vlm.namer_tile: context | close crop; style 'dim' darkens everything outside the mask; style
+    'neighbours' adds the report's names around it) -> Qwen3-VL-8B -> (answer, seconds)."""
     import cv2
     from fast_report import vlm
     t = time.perf_counter()
@@ -308,7 +328,8 @@ def name(frame, mask, style="outline"):
     cs, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     polys = [c.reshape(-1, 2).tolist() for c in sorted(cs, key=cv2.contourArea, reverse=True)[:8] if len(c) >= 3]
     jpg = cv2.imencode(".jpg", vlm.namer_tile(frame, polys), [cv2.IMWRITE_JPEG_QUALITY, 90])[1].tobytes()
-    text, _ = vlm.chat([vlm.image_block(jpg), {"type": "text", "text": PROMPT}], max_tokens=40)
+    prompt = PROMPT.replace("Judge only", HINT_PROMPT.format(", ".join(hints)) + "Judge only") if style == "neighbours" and hints else PROMPT
+    text, _ = vlm.chat([vlm.image_block(jpg), {"type": "text", "text": prompt}], max_tokens=40)
     return parse(text), round(time.perf_counter() - t, 3)
 
 
@@ -346,7 +367,9 @@ def card(st, point, i, x, y, namer=name, style="outline"):
     fr = floor_of(st, f["shot"])
     L = lift(mask, depth, cam["K"][key], cam["c2w"][key], cam["wh"], fr) if fr is not None else None
     lap("lift_s")
-    ans, tm["name_s"] = namer(frame, mask, style) if namer is name else namer(frame, mask)
+    hints = neighbours(ids, small, ents, st.get("names") or {}) if style == "neighbours" else []
+    ans, tm["name_s"] = namer(frame, mask, style, hints) if namer is name else namer(frame, mask)
+    base["hints"] = hints or None
     out = assemble(base, f, L, mask, shot, st["k"], ans)
     tm["total_s"] = round(time.perf_counter() - t0, 3)
     out["timing"] = tm
@@ -445,6 +468,13 @@ def self_check():
     assert assemble(region, f, up, mask, {}, k, {"name": "ceiling light fixture", "status": "part", "p": 0.9})["surface"] == "overhead structure"
     assert assemble(region, f, up, mask, {}, k, {"name": "sign", "status": "object", "p": 0.9})["kind"] == "object"
     assert assemble({**base, "mask_share": .01}, f, up, mask, {}, k, {"name": "light", "status": "part", "p": 0.9})["kind"] == "object"
+    # neighbours: the names around a mask, most pixels first, people and non-names out
+    ids = np.zeros((40, 60), np.uint16)
+    ids[5:15, 5:15], ids[5:15, 16:40], ids[20:30, 5:15], ids[16:18, 5:15] = 1, 2, 3, 4
+    sm = np.zeros((40, 60), bool)
+    sm[5:15, 5:15] = True
+    got = neighbours(ids, sm, [None, "obj-a", "obj-b", "person:0-1", "obj-c"], {"obj-a": "box", "obj-b": "pallet of water", "obj-c": cards.NOT_OBJECT}, ring=6)
+    assert got == ["pallet of water"], got
     # rle round trip, parsing
     r = rle(mask[::10, ::10])
     back = np.repeat(np.arange(len(r["runs"])) % 2, r["runs"]).reshape(r["h"], r["w"]).astype(bool)
