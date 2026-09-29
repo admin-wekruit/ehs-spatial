@@ -120,7 +120,7 @@ def evaluate(run, site):
         return row, None
     s = run["summary"]
     marks = s["marks"]
-    row["timing_s"] = {k: marks.get(k) for k in ("first_window_dispatched", "first_window_facts", "decoded", "cuts_final", "da3_done", "all_windows_facts")}
+    row["timing_s"] = {k: marks.get(k) for k in ("first_window_dispatched", "first_window_facts", "first_objects", "decoded", "cuts_final", "da3_done", "all_windows_facts")}
     row["client_wall_s"] = run.get("client_wall_s")
     row["gpu_peak_gb"] = [{"gpu": g["gpu"], "peak_gb": g["peak_gb"], "total_gb": g["total_gb"], "at_s": g["at_s"]} for g in run["clock"]["gpu_peak"]]
     row["flags"] = run["clock"]["flags"]

@@ -485,7 +485,7 @@ def analyse(m, mp4, words, opts, clock):
                     if kind == "sam":
                         w.setdefault("started_s", clock.now())
                         ks = w["keys"][s:s + segment.PERSON_FRAMES]
-                        obj = [j for j, k in enumerate(ks) if (k // core.BLOCK) % segment.OBJECT_EVERY == 0]
+                        obj = [j for j, k in enumerate(ks) if (k // core.BLOCK) % opts.get("object_every", segment.OBJECT_EVERY) == 0]
                         person, voc = sam_chunk(m, dev, upload(i, dev, s, s + segment.PERSON_FRAMES), obj, words, clock, i)
                         with lock:
                             sam_parts.setdefault(i, []).append((s, dev, person, voc))
@@ -931,13 +931,14 @@ def main(out: str, plan: str = "me340:b:0.4", per_gpu: int = 2, video_dir: str =
     (out / "boot.json").write_text(json.dumps(boot, indent=1, default=plain))
     print("ready:", json.dumps({k: v for k, v in boot.items() if k.endswith("_s") or k in ("mps", "resident_gb")}), flush=True)
     for item in plan.split(","):
-        site, geo, thr, *flags = item.split(":")  # flags: 'planted' (VIDEO_DIR/planted-SITE.mp4), 'p1' (one worker per card)
+        site, geo, thr, *flags = item.split(":")  # flags: 'planted' (VIDEO_DIR/planted-SITE.mp4), 'p1' (one worker per card),
+        # 'every1' (every 5 fps keyframe is an object keyframe, not every 3rd: the plants are seen close for ~2 s only)
         planted = "planted" in flags
         mp4 = (Path(video_dir) / f"planted-{site}.mp4" if planted else PHASE2 / "data/clips" / CLIPS[site] / "source-full.mp4").read_bytes()
         words, src = words_for(site)
         run_id = f"x6-{site}-{geo}-{thr}{''.join('-' + f for f in flags)}-{int(time.time())}"
         opts = {"geometry": geo, "threshold": float(thr), "run_id": run_id, "per_gpu": 1 if "p1" in flags else per_gpu, "words_source": src,
-                "site": site, "planted": planted}
+                "site": site, "planted": planted, **({"object_every": 1} if "every1" in flags else {})}
         t = time.time()
         r = x.run.remote(mp4, words, opts)
         r["client_wall_s"] = round(time.time() - t, 2)
