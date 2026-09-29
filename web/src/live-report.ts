@@ -82,8 +82,10 @@ export function liveDocument(report: string, layers: Record<string, Patch>, card
     // one model per object (the viewer's preview and bounds read every model representation): SAM 3D's accepted mesh, else the card's
     // display model, else the see-through box
     const half = dm && (dm.kind === "cylinder" ? [dm.radius_m, dm.radius_m, dm.length_m / 2] : dm.size_m.map((v: number) => v / 2));
+    // SAM 3D's bounds are in the shot frame (fast_report.sam3d.judge); the viewer reads a representation's bounds about its own pose
+    const local = glb && model.bounds?.min && [model.bounds.min, model.bounds.max].map((b: number[]) => b.map((v, k) => v - model.transform.position[k]));
     const rep: any = glb ? { id: "model:" + o.id, kind: "generated_mesh", assetId: asset(glb), coordinateFrameId: frame,
-      transform: { ...identity(frame), ...model.transform }, placementState: "confirmed", bounds: model.bounds }
+      transform: { ...identity(frame), ...model.transform }, placementState: "confirmed", bounds: local ? { min: local[0], max: local[1] } : undefined }
       : dm ? { id: "prim:" + o.id, kind: "primitive", primitive: modelPrimitive(dm), coordinateFrameId: frame,
         transform: { ...identity(frame), position: dm.position, quaternion: dm.quaternion }, placementState: "confirmed",
         bounds: { min: half.map((v: number) => -Math.max(v, .0025)), max: half.map((v: number) => Math.max(v, .0025)) },
