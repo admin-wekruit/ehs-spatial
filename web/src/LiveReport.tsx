@@ -360,7 +360,7 @@ function Time({ card, duration, patch, tr }: { card: any; duration: number; patc
 function Judgements({ info, patch, tr }: { info: Info; patch?: Patch; tr: Tr }) {
   if (!patch) return <section className="mvp-block"><h4>{tr("安全判断", "Safety judgement")}</h4><p><small>{tr("判断层还没到", "The judgements layer has not arrived yet")}</small></p></section>;
   return <section className="mvp-block"><h4>{tr("安全判断", "Safety judgement")}</h4>
-    {!info.rows.length && <p><small>{tr("没有适用于这类对象的检查", "No check applies to this kind of object")}</small></p>}
+    {!info.rows.length && <p><small>{tr("没有检查适用：它的类别和位置（离地、离走过的路）都不触发任何检查", "No check applies: neither its class nor where it is (off the floor, or away from any walked path) triggers one")}</small></p>}
     <ul className="mvp-judgements">{info.rows.map(r => <li key={r.id} data-v={r.verdict}>
       <p><Chip v={r.verdict} tr={tr} /> <strong>{r.title}</strong> <small>{r.check}{r.severity ? ` · ${r.severity}` : ""}</small></p>
       {r.geometry && <p>{r.geometry.quantity}{r.geometry.value != null && <>: {fmt(r.geometry.value, 2)}{r.geometry.u != null && ` ± ${fmt(r.geometry.u, 2)}`} {r.geometry.unit}</>}

@@ -457,8 +457,11 @@ if __name__ == "__main__":
     p.add_argument("--background-s", type=int, default=0)
     p.add_argument("--mirror-max-mb", type=float, default=0., help="larger blobs stay on the Modal Volume (a nearly full disk)")
     p.add_argument("--vocab", default="qwen", choices=("qwen", "gemini"))
-    p.add_argument("--hazard", default="gemini", choices=("qwen", "gemini"), help="the hazard judge's decider (gemini: relayed by this CLI)")
-    p.add_argument("--namer", default="gemini", choices=("gemini", "none"), help="mvp2/identity: object names from Gemini through the relay, or the Qwen decider only")
+    # mvp3 integrate: Qwen decides names and hazard pictures in the container by default. The laptop relay into the deployed
+    # report container (gemini) is not approved for mvp3; the approved server-side route (the report container's own Modal
+    # secret, by name) does not exist: that app's key is an unnamed Secret.from_dict made at deploy time (report_workspace_app)
+    p.add_argument("--hazard", default="qwen", choices=("qwen", "gemini"), help="the hazard judge's decider (gemini: relayed by this CLI; not approved in mvp3)")
+    p.add_argument("--namer", default="none", choices=("gemini", "none"), help="object names: the Qwen decider only (none), or Gemini through the relay (not approved in mvp3)")
     p.add_argument("--discover", action="store_true", help="X10's catch-all and label words in SAM 3's wave 1 (vlm.DISCOVER)")
     p.add_argument("--serve", action="store_true")
     p.add_argument("--no-gpu-eval", dest="gpu_eval", action="store_false")
