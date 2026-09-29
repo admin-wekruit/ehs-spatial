@@ -334,6 +334,7 @@ def name(frame, mask, style="outline", hints=()):
 
 
 def card(st, point, i, x, y, namer=name, style="outline"):
+    # ponytail: style 'dim' / 'neighbours' stay as A/B knobs only (runs 003 / 005: no gain over the outline tile, not the default)
     """Pick frame i (the viewer's nearest keyframe), source pixel (x, y) -> the on-demand card (or the existing entity a mask
     mostly covers). Every number with +-u, its level and scale label (cards.contract)."""
     import cv2
