@@ -413,7 +413,7 @@ function UnknownCard({ r, od, under, names, onSelect, tr }: { r: NonNullable<Cli
     {od?.status === "card" ? <OnDemand od={od} tr={tr} /> : <>
       <header className="mvp-block"><h3>{tr("未知区域", "Unknown region")}</h3><p><small>{tr("不是检测到的对象：不对它是什么做任何断言", "Not a detected object: nothing is claimed about what it is")}</small></p></header>
       <OnDemand od={od} tr={tr} /></>}
-    {r.status !== "depth" ? <section className="mvp-block"><p>{tr("这里没有三维点", "No 3D point here")}</p></section> : <section className="mvp-block">
+    {od?.status === "card" ? null : r.status !== "depth" ? <section className="mvp-block"><p>{tr("这里没有三维点", "No 3D point here")}</p></section> : <section className="mvp-block">
       <table className="mvp-physical"><tbody>
         <tr><th>{tr("离相机", "distance from the camera")}</th><td><Quantity q={{ ...r.distance, unit: "m", scale: "estimated" }} tr={tr} /></td></tr>
         <tr><th>{tr("离地高度", "height above the floor")}</th><td><Quantity q={{ ...r.height, unit: "m", scale: "estimated" }} tr={tr} /></td></tr>

@@ -25,7 +25,11 @@ ENTITY_SHARE = .5  # a mask this much on one existing entity opens that entity
 # the floor plane is the floor, when the namer says 'surface' or the mask is a region (>= 5 % of the frame) not named as a flat
 # floor thing: a cable, a mat or a spill lies on the floor too, and keeps its card (every real object there read <= 21 % on it)
 ON_FLOOR, FLOOR_TOL_M, FLOOR_TOL_REL, REGION_SHARE = .5, .05, .02, .05
-FLAT = ("mat", "rug", "tape", "marking", "drain", "grate", "cover", "cord", "wire", "sheet", "board")
+FLAT = ("mat", "rug", "tape", "marking", "drain", "grate", "cover", "cord", "wire", "sheet", "board", "cable", "hose", "spill", "puddle")
+# mvp3 round 2 (seeds 29 + 37 seen): a large region (>= 3 % of the frame) whose base is above head height is overhead structure (a
+# ceiling, the wall above the racks, a truss), which Qwen names after a fixture or the goods near it: 10 of the 26 false objects on
+# background clicks; one real object had it (a rack beam's goods, 2.4 m up). Unknown region, unless the namer says one object.
+OVERHEAD_SHARE, OVERHEAD_BASE_M = .03, 2.
 QWEN_BY = "Qwen3-VL-8B on demand (stated probability, uncalibrated)"
 PROMPT = ("This image comes from a video of a workplace (a machine shop, warehouse, store, lab or office). The left half shows one "
           "thing outlined in yellow in its surroundings, the right half a close crop of it. Name the outlined thing with its most "
@@ -206,11 +210,17 @@ def lift(mask, depth, K, c2w, wh, fr, step=2):
 
 def is_floor(L, share, ans):
     """The floor rule (ON_FLOOR above): the mask lies on the floor plane, and the namer said surface or it is a region not
-    named as a flat floor thing."""
+    named as a flat floor thing (round 2: a pallet jack is not flat; the hazard words that lie flat are in FLAT)."""
     if L is None or L["on_floor"] < ON_FLOOR:
         return False
     nm = str(ans.get("name") or "").lower()
-    return ans.get("status") == "surface" or (share >= REGION_SHARE and cards.hazard_of(nm) is None and not any(w in nm for w in FLAT))
+    return ans.get("status") == "surface" or (share >= REGION_SHARE and not any(w in nm for w in FLAT))
+
+
+def is_overhead(phys, share, ans):
+    """The overhead rule (OVERHEAD_* above) on the measured base height (estimated scale)."""
+    b = (phys or {}).get("base_above_floor") or {}
+    return share >= OVERHEAD_SHARE and ans.get("status") != "object" and b.get("value") is not None and b["value"] >= OVERHEAD_BASE_M
 
 
 def physical(L, mask, shot, k):
@@ -367,6 +377,10 @@ def assemble(base, f, L, mask, shot, k, ans):
     if is_floor(L, base.get("mask_share", 0.), ans):
         out.update(kind="surface", status="surface", surface="floor",
                    surface_reason=f"{L['on_floor']:.0%} of the mask lies on the floor plane (the namer said '{ans.get('name')}', {ans.get('status')})")
+    elif is_overhead(phys, base.get("mask_share", 0.), ans):
+        out.update(kind="surface", status="surface", surface="overhead structure",
+                   surface_reason=f"a region of {base.get('mask_share', 0.):.0%} of the frame whose base is "
+                                  f"{phys['base_above_floor']['value']:.1f} m above the floor (the namer said '{ans.get('name')}', {ans.get('status')})")
     elif ident.get("proposed") == cards.NOT_OBJECT:
         out.update(kind="surface", status="surface", surface=ident.get("covers"))  # the viewer keeps the unknown region's card
     out.pop("raw")
@@ -422,6 +436,12 @@ def self_check():
     assert assemble({**base, "mask_share": .01}, f, Lf, mask, {}, k, {"name": "floor drain", "status": "surface", "p": 0.9})["surface"] == "floor"
     assert assemble(region, f, {**L, "on_floor": .2}, mask, {}, k, {"name": "pallet", "status": "object", "p": 0.9})["kind"] == "object"
     assert L["on_floor"] == 0. and lift(mask, depth, K, c2w, (504, 280), fr)["on_floor"] == 0.  # the board stands 0.5 m above the floor
+    assert assemble(region, f, Lf, mask, {}, k, {"name": "blue pallet jack", "status": "object", "p": 0.9})["surface"] == "floor"
+    # the overhead rule: the board raised 2 m (base 2.5 m) as a large region named 'part' is overhead; named 'object' or small it keeps its card
+    up = {**L, "P": L["P"] + [0, 0, 2.]}
+    assert assemble(region, f, up, mask, {}, k, {"name": "ceiling light fixture", "status": "part", "p": 0.9})["surface"] == "overhead structure"
+    assert assemble(region, f, up, mask, {}, k, {"name": "sign", "status": "object", "p": 0.9})["kind"] == "object"
+    assert assemble({**base, "mask_share": .01}, f, up, mask, {}, k, {"name": "light", "status": "part", "p": 0.9})["kind"] == "object"
     # rle round trip, parsing
     r = rle(mask[::10, ::10])
     back = np.repeat(np.arange(len(r["runs"])) % 2, r["runs"]).reshape(r["h"], r["w"]).astype(bool)

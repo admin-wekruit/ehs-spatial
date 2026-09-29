@@ -266,39 +266,56 @@ def sheets(run, audit, per=10, seed=29, style="outline"):
                 print(p)
 
 
-def score(run, audit):
-    """Per video, over the audit's clicks (agent labels: labels-<site>-random-s29.json for the baseline, <site>/labels-b.json and
-    labels-a.json here): real-object clicks that open the right thing (baseline, + on demand, + boxes), background clicks
-    that stay unknown, on-demand names, time to card. A 'coarse' label counts as right (a group or the whole for a part)."""
-    od = json.loads((Path(run) / "ondemand.json").read_text())["rows"]
+def tally(clicks, base, lab, cards, name_key="name"):
+    """One video's audit: base = the baseline labels (click_audit's), lab = the on-demand labels by click (mask: right | coarse | wrong
+    | region | fixture | entity-wrong; name: right | close | wrong | none | -), cards = the on-demand result by click. Real objects
+    (baseline correct / wrong / miss) open the right thing: the baseline's correct, plus on demand an opened entity or a card whose
+    mask is right or coarse. Background (baseline background / background-hit) is right when nothing object-like opens: the floor or
+    a surface on demand, or a building fixture named right or close; a false object is an object card on a region or a wrong mask."""
+    ok_mask = ("right", "coarse")
+    real = [c for c in clicks if base[str(c["k"])]["label"] in ("correct", "wrong", "miss")]
+    bg = [c for c in clicks if base[str(c["k"])]["label"] in ("background", "background-hit")]
+    od = lambda c: (cards.get(c["k"]) or {}).get("status")  # noqa: E731
+    L = lambda c: lab.get(str(c["k"])) or {}  # noqa: E731
+
+    def real_ok(c):
+        if c["entity"] is not None:
+            return base[str(c["k"])]["label"] == "correct"
+        return od(c) in ("card", "entity") and L(c).get("mask") in ok_mask
+
+    def bg_state(c):
+        if c["entity"] is not None:
+            return "false object" if base[str(c["k"])]["label"] == "background-hit" else "right"  # the report's own entity
+        if od(c) == "surface":
+            return "unknown"
+        if od(c) == "entity":
+            return "false object"
+        return "fixture named" if L(c).get("mask") == "fixture" and L(c).get(name_key) in ("right", "close") else "false object"
+    named = [L(c).get(name_key) for c in real if c["entity"] is None and od(c) == "card" and L(c).get("mask") in ok_mask]
+    states = [bg_state(c) for c in bg]
+    return {"clicks": len(clicks), "real_objects": len(real), "background": len(bg),
+            "real_right_baseline": sum(base[str(c["k"])]["label"] == "correct" for c in real),
+            "real_right_with_on_demand": sum(real_ok(c) for c in real),
+            "background_unknown_baseline": sum(base[str(c["k"])]["label"] == "background" for c in bg),
+            "background_with_on_demand": {k: states.count(k) for k in ("unknown", "right", "fixture named", "false object")},
+            "on_demand_names_right_close_wrong_none": [named.count(x) for x in ("right", "close", "wrong", "none")]}
+
+
+def score(run, audit, seed=37, style="outline"):
+    """Per video on one seed and naming style: tally(), time to card (the round trip from where the viewer's server calls)."""
+    rows = [r for r in json.loads((Path(run) / "ondemand.json").read_text())["rows"] if r.get("seed", 29) == seed and r.get("style", "outline") == style]
     out = {}
     for site in SITES:
-        meta = json.loads((Path(audit) / site / f"clicks-{site}-random-s29.json").read_text())
-        base = json.loads((Path(audit) / site / f"labels-{site}-random-s29.json").read_text())["labels"]
-        lb = json.loads((Path(run) / site / "labels-b.json").read_text())["labels"] if (Path(run) / site / "labels-b.json").exists() else {}
-        la = json.loads((Path(run) / site / "labels-a.json").read_text())["labels"] if (Path(run) / site / "labels-a.json").exists() else {}
-        rows = {r["k"]: r for r in od if r["site"] == site}
-        real = [c for c in meta["clicks"] if base[str(c["k"])]["label"] in ("correct", "wrong", "miss")]
-        bg = [c for c in meta["clicks"] if base[str(c["k"])]["label"] in ("background", "background-hit")]
-        ok = lambda lab: lab in ("right", "coarse")  # noqa: E731
-
-        def opens(c, extra):
-            g = base[str(c["k"])]["label"]
-            if c["entity"] is not None:
-                return g == "correct"
-            return ok((extra.get(str(c["k"])) or {}).get("label"))
-        names = [lb[str(c["k"])].get("name") for c in real if c["entity"] is None and ok((lb.get(str(c["k"])) or {}).get("label"))]
-        rt = [r["round_trip_s"] for r in rows.values() if r["card"]]
-        out[site] = {"clicks": len(meta["clicks"]), "real_objects": len(real), "background": len(bg),
-                     "real_open_right_baseline": sum(base[str(c["k"])]["label"] == "correct" for c in real),
-                     "real_open_right_with_ondemand": sum(opens(c, lb) for c in real) if lb else None,
-                     "real_open_right_with_boxes_upper_bound": sum(opens(c, la) for c in real) if la else None,
-                     "background_unknown_baseline": sum(base[str(c["k"])]["label"] == "background" for c in bg),
-                     "background_unknown_with_ondemand": sum(c["entity"] is None and (lb.get(str(c["k"])) or {}).get("label") == "background-right" for c in bg) if lb else None,
-                     "background_unknown_with_boxes": sum(c["entity"] is None and (la.get(str(c["k"])) or {}).get("label") in ("none", "background-right") for c in bg) if la else None,
-                     "ondemand_names_right_close_wrong": [names.count(x) for x in ("right", "close", "wrong")],
-                     "ondemand_round_trip_s_p50_p95_max": [round(float(np.percentile(rt, q)), 2) for q in (50, 95, 100)] if rt else None,
-                     "ondemand_container_s_p50": round(float(np.median([r["card"]["timing"]["container_s"] for r in rows.values() if r["card"]])), 2) if rt else None}
+        meta = json.loads((Path(audit) / site / f"clicks-{site}-random-s{seed}.json").read_text())
+        base = json.loads((Path(audit) / site / f"labels-{site}-random-s{seed}.json").read_text())["labels"]
+        lab_path = Path(run) / site / (f"labels-b-s{seed}.json" if seed != 29 else "labels-b.json")
+        lab = json.loads(lab_path.read_text())["labels"] if lab_path.exists() else {}
+        mine = {r["k"]: r for r in rows if r["site"] == site}
+        t = tally(meta["clicks"], base, lab, {k: r["card"] for k, r in mine.items()}, "name" if seed == 29 else f"name_{style}")
+        rt = [r["round_trip_s"] for r in mine.values() if r["card"]]
+        t["time_to_card_s_p50_p95_max"] = [round(float(np.percentile(rt, q)), 2) for q in (50, 95, 100)] if rt else None
+        t["container_s_p50"] = round(float(np.median([r["card"]["timing"]["container_s"] for r in mine.values() if r["card"]])), 2) if rt else None
+        out[site] = t
     return out
 
 
@@ -307,7 +324,17 @@ def self_check():
     m = np.zeros((36, 64), bool)
     m[3:9, 10:30] = True
     assert (decode(ondemand.rle(m)) == m).all() and (decode(ondemand.rle(~m)) == ~m).all()
-    print("click_ondemand self-check ok: mask RLE round trip (both starting values)")
+    clicks = [{"k": 0, "entity": "obj-1"}, {"k": 1, "entity": None}, {"k": 2, "entity": None}, {"k": 3, "entity": None}, {"k": 4, "entity": None},
+              {"k": 5, "entity": None}]
+    base = {"0": {"label": "correct"}, "1": {"label": "miss"}, "2": {"label": "miss"}, "3": {"label": "background"}, "4": {"label": "background"},
+            "5": {"label": "background"}}
+    lab = {"1": {"mask": "coarse", "name": "close"}, "2": {"mask": "region"}, "3": {"mask": "region"}, "4": {"mask": "fixture", "name": "right"},
+           "5": {"mask": "region", "name": "wrong"}}
+    cards = {1: {"status": "card"}, 2: {"status": "surface"}, 3: {"status": "surface"}, 4: {"status": "card"}, 5: {"status": "card"}}
+    t = tally(clicks, base, lab, cards)
+    assert (t["real_objects"], t["real_right_baseline"], t["real_right_with_on_demand"]) == (3, 1, 2), t
+    assert t["background_with_on_demand"] == {"unknown": 1, "right": 0, "fixture named": 1, "false object": 1} and t["on_demand_names_right_close_wrong_none"] == [0, 1, 0, 0]
+    print("click_ondemand self-check ok: mask RLE round trip (both starting values), the audit tally")
 
 
 if __name__ == "__main__":
@@ -325,4 +352,4 @@ if __name__ == "__main__":
     elif a.mode == "sheets":
         sheets(a.run, a.audit, seed=a.seed, style=a.style)
     elif a.mode == "score":
-        print(json.dumps(score(a.run, a.audit), indent=1))
+        print(json.dumps(score(a.run, a.audit, a.seed, a.style), indent=1))
