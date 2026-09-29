@@ -81,7 +81,7 @@ export default function LiveReport({ reportId }: { reportId: string }) {
       await one(queue[0]);  // the chunk the viewer is looking at, alone
       const rest = queue.slice(1);
       await Promise.all([0, 1].map(async () => { for (let c = rest.shift(); c && live; c = rest.shift()) await one(c); }));
-    })().catch((e: Error) => { if (live) setError("pick: " + e.message); });
+    })().catch((e: Error) => { stats.errors.push("pick: " + e.message); if (live) setError("pick: " + e.message); });
     return () => { live = false; };
   }, [layers.pick?.seq]);
   useEffect(() => {  // cards inline, or blob `cards` over 1 MB
