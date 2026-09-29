@@ -69,7 +69,7 @@ async function video(name){
   // Three aimed clicks, each screenshotted
   const layers=await page.evaluate(async()=>{const r=await fetch(location.hash.replace('#/live/','/fast/reports/')+'/patches?after=0').then(r=>r.json());
     const last=k=>r.patches.filter(p=>p.layer===k).at(-1);const j=last('judgements').data,c=last('object_cards');
-    const cards=c.data.cards||await fetch('/fast/blobs/'+c.blobs.cards.sha256).then(r=>r.json());return {rows:j.rows,cards};});
+    const cards=Array.isArray(c.data.cards)?c.data.cards:await fetch('/fast/blobs/'+c.blobs.cards.sha256).then(r=>r.json());return {rows:j.rows,cards};});
   const rank={FAIL:0,NEEDS_REVIEW:1,NO_DATA:2,PASS:3};
   // the aims: the most severe checked object, a plausible object with every side observed, a miss on the floor, a person;
   // among candidates, the one the video shows biggest
