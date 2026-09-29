@@ -1145,6 +1145,7 @@ def time_card(o, s, counts, sub, views, P, frame, kind):
 # HEAD_MIN_M (a head and shoulders) is a picture, as is one under a standing height whose head is above a standing head's
 # reach; a track that moves less than MOVED_M is not confirmed by motion.
 PERSON_H_M, ARM_M, STANCE_M, HEAD_MIN_M, MOVED_M, STAND_M = (1., 2.1), .3, .25, .5, 1., .3
+FEET_MIN_M, REST_M = 1.3, .15  # feet seen: a standing adult between them and the head; they rest within REST_M + u of what is below
 
 
 def person_geometry(mask, depth, K, c2w, up, p0, u_floor=.02, up_deg=1.):
@@ -1198,12 +1199,21 @@ def person_geometry(mask, depth, K, c2w, up, p0, u_floor=.02, up_deg=1.):
     h_pix = float(np.median(((ray(xs[low][fo] + .5, ys[low][fo] + .5) * fz[fo, None] + c - p0) @ up))) if fo.sum() >= 3 else None
     rows = slice(ys.max() + 1, min(H, ys.max() + 4))
     cols = slice(max(0, int(np.median(xs[low])) - 6), min(W, int(np.median(xs[low])) + 7))
-    below = depth[rows, cols][(depth[rows, cols] > 0) & ~mask[rows, cols]]
+    sel = (depth[rows, cols] > 0) & ~mask[rows, cols]
+    below = depth[rows, cols][sel]
     zf = float(np.median(fz[fo])) if fo.any() else zmed
     contact = bool(len(below) >= 3 and np.median(below) >= zf - max(.3, .1 * zf))
+    patch_h = None  # the height of what is just below the lowest pixels (its own depth): floor, a surface, or an occluder
+    if len(below) >= 3:
+        vv, uu = np.nonzero(sel)
+        patch_h = float(np.median(((ray(uu + cols.start + .5, vv + rows.start + .5) * below[:, None] + c - p0) @ up)))
     cut_bottom, cut_top, cut_side = bool(ys.max() >= H - 2), bool(ys.min() <= 1), bool(xs.min() <= 1 or xs.max() >= W - 2)
     true_bottom = contact and not cut_bottom
-    feet = true_bottom and PERSON_H_M[0] <= st <= PERSON_H_M[1] + ARM_M
+    # feet seen: a true bottom, a standing adult's height between it and the head (video.PERSON_HEIGHT_M's 1.3 m: ME340's
+    # instructor behind a bench spans 1.0-1.2 m from the bench edge up), resting on what is right below them
+    rest = patch_h is not None and abs(patch_h - foot) <= REST_M + u_foot
+    feet = true_bottom and FEET_MIN_M <= st <= PERSON_H_M[1] + ARM_M and rest
+    on_floor = feet and abs(patch_h) <= REST_M + u_foot
     why = None
     if true_bottom and not cut_top and not cut_side:  # a figure cut by a frame edge may be a leg or an arm of someone out of view
         if st + u_st < HEAD_MIN_M:
@@ -1215,13 +1225,16 @@ def person_geometry(mask, depth, K, c2w, up, p0, u_floor=.02, up_deg=1.):
             why = f"it spans {st:.2f} +- {u_st:.2f} m: taller than a person"
     out = {"h_m": round(foot, 3) if feet else None, "u_m": round(u_foot, 3), "foot_h_m": round(foot, 3), "head_m": round(head, 3), "u_head_m": round(u_head, 3),
            "stature_m": round(st, 3), "u_stature_m": round(u_st, 3), "range_m": round(r, 3), "contact": contact, "feet_visible": bool(feet),
+           "below_h_m": None if patch_h is None else round(patch_h, 3),
+           "support": None if not feet else "the floor" if on_floor else f"a surface {patch_h:.2f} m up (standing on it, or hidden behind it)",
            "cut": {"bottom": cut_bottom, "top": cut_top, "side": cut_side}, "plausible": why is None, "h_pixels_m": None if h_pix is None else round(h_pix, 3),
            "span_m": round(st, 3), "bbox": bbox, "scale": SCALE}
     if why:
         out["reason"] = why
     elif not feet:
         out["reason"] = "feet cut by the frame edge" if cut_bottom else "something in front hides the feet" if not contact else \
-            f"the lowest pixels are not feet (the figure spans {st:.2f} m)"
+            f"the lowest pixels are not feet (the figure spans {st:.2f} m)" if not FEET_MIN_M <= st <= PERSON_H_M[1] + ARM_M else \
+            "the lowest pixels do not rest on what is right below them" + ("" if patch_h is None else f" ({foot:.2f} m vs {patch_h:.2f} m)")
     return out
 
 
@@ -1253,6 +1266,7 @@ def people_cards(people, shots, object_cards, k=None):
                                note="the largest distance of a detection from the track's median place"),
                 "level": "coarse"}
         whole = [g_ for g_ in geo if g_.get("feet_visible")]
+        on_floor = sum(g_.get("support") == "the floor" for g_ in whole)
         for name, key, ukey in (("stature", "stature_m", "u_stature_m"), ("foot_height", "h_m", "u_m")):
             if whole:
                 vals = [g_[key] for g_ in whole]
@@ -1260,7 +1274,8 @@ def people_cards(people, shots, object_cards, k=None):
                                                             "spread": float(np.percentile(vals, 75) - np.percentile(vals, 25)) if len(vals) >= 4 else None},
                                    "height", k, None, views_term=False, n_detections=len(whole),
                                    note="median over the detections with the whole body in view; u: a detection's own (depth, stance, floor, up, "
-                                        "pixel, 20% scale) and the interquartile spread")
+                                        "pixel, 20% scale) and the interquartile spread" + (f"; feet on the floor in {on_floor} of {len(whole)}, on a raised "
+                                        "surface or hidden behind it in the rest" if name == "foot_height" else ""))
             else:
                 phys[name] = {"status": "not observed", "reason": "the whole body (feet to head) was never in view with its feet seen"}
         moving = moved - phys["moved"]["u"] >= MOVED_M
@@ -1536,6 +1551,7 @@ def self_check():
     d1[177:180, 95:105] = 3.3
     g1 = person_geometry(m1, d1, Kp, np.eye(4), up_, p0_)
     assert g1["plausible"] and g1["feet_visible"] and abs(g1["h_m"]) < .02 < g1["u_m"] and g1["h_pixels_m"] > .25, g1
+    assert g1["support"] == "the floor" and abs(g1["below_h_m"]) < .05
     assert abs(g1["stature_m"] - 1.7) < .03 and g1["u_stature_m"] < .45 and g1["contact"]
     d2, m2 = floor_d.copy(), np.zeros((200, 200), bool)
     d2[140:, 30:80] = 3.

@@ -109,6 +109,20 @@ def people_rows(layers, cards):
             "person_cards": len(person_cards), "gate_mps": ppl.get("association_gate_mps")}
 
 
+def judgement_rows(run_dir, report, checks=("J1", "J3a", "J8")):
+    """Verdict counts of the newest judgements version for the checks the physical fixes feed (J1 reads the top, J3a the feet)."""
+    vs = ev.patch_versions(run_dir, report, "judgements")
+    if not vs:
+        return None
+    rows = ev.patch_data(run_dir, vs[-1], "rows").get("rows") or []
+    out = {}
+    for r in rows:
+        if r.get("check") in checks:
+            out.setdefault(r["check"], {}).setdefault(r["verdict"], 0)
+            out[r["check"]][r["verdict"]] += 1
+    return {"version": vs[-1]["version"], **out}
+
+
 def one_call(run_dir, report, site, shifted=None):
     layers = ev.load_layers(run_dir, report)
     data, diag = cards_layer(run_dir, report)
@@ -130,7 +144,7 @@ def one_call(run_dir, report, site, shifted=None):
                             "short_side_not_measurable": sum(any((c["physical"].get(n) or {}).get("status") == "not measurable" and "long object" in
                                                                  (c["physical"].get(n) or {}).get("reason", "") for n in ("width", "depth")) for c in objs),
                             "objects": len(objs)},
-           "contract": {"cards": len(cards), "violations": len(viol), "examples": viol[:10]},
+           "contract": {"cards": len(cards), "violations": len(viol), "examples": viol[:10]}, "judgements": judgement_rows(run_dir, report),
            "tops_moved_by_edges": summary([r["top"] - r["top_p98"] for r in ((diag or {}).get("rim") or {}).values()]),
            "bases_moved_by_edges": summary([r["base_p2"] - r["base"] for r in ((diag or {}).get("rim") or {}).values()])}
     if shifted:
@@ -140,7 +154,7 @@ def one_call(run_dir, report, site, shifted=None):
     return row
 
 
-def sheet(tiles, path, cols=8, h=220, w=160):
+def sheet(tiles, path, cols=6, h=320, w=220):
     """Contact sheet: tiles [(bgr crop, caption lines)] -> one JPEG."""
     import cv2
     cells = []
@@ -155,6 +169,7 @@ def sheet(tiles, path, cols=8, h=220, w=160):
     hh = max(c.shape[0] for c in cells)
     cells = [np.pad(c, ((0, hh - c.shape[0]), (0, 4), (0, 0)), constant_values=255) for c in cells]
     rows = [np.concatenate(cells[i:i + cols] + [np.full_like(cells[0], 255)] * (cols - len(cells[i:i + cols])), 1) for i in range(0, len(cells), cols)]
+    # ponytail: one JPEG per sheet; split into pages if a sheet grows past ~40 tiles
     cv2.imwrite(str(path), np.concatenate(rows, 0), [cv2.IMWRITE_JPEG_QUALITY, 85])
 
 
@@ -180,8 +195,7 @@ def people_sheets(out, site, run_dir, report, n=40, seed=0):
         cv2.line(img, (int(x0), int(y1)), (int(x1), int(y1)), (0, 0, 255), 1)
         return img[b:d, a:c]
     rng = np.random.default_rng(seed)
-    dets = [(t["id"], q) for t in ppl["tracks"] for q in t["points"] if (q.get("foot_surface") or {}).get("contact")
-            and not ((q["foot_surface"].get("cut") or {}).get("bottom"))]
+    dets = [(t["id"], q) for t in ppl["tracks"] for q in t["points"] if (q.get("foot_surface") or {}).get("feet_visible")]
     pick = [dets[i] for i in sorted(rng.choice(len(dets), min(n, len(dets)), replace=False))] if dets else []
     tiles, rows = [], []
     for i, (tid, q) in enumerate(pick):
@@ -189,7 +203,8 @@ def people_sheets(out, site, run_dir, report, n=40, seed=0):
         img = crop(q["frame"], g["bbox"])
         if img is None:
             continue
-        tiles.append((img, [f"#{i} {tid} t{q['t']:.1f}", f"feet {g['foot_h_m']:+.2f}+-{g['u_m']:.2f}", f"old {g.get('h_pixels_m')}", f"h {g['stature_m']:.2f}"]))
+        tiles.append((img, [f"#{i} {tid} t{q['t']:.1f}", f"feet {g['foot_h_m']:+.2f}+-{g['u_m']:.2f} old {g.get('h_pixels_m')}",
+                            f"h {g['stature_m']:.2f} below {g.get('below_h_m')}"]))
         rows.append({"tile": i, "track": tid, "t": q["t"], "frame": q["frame"], "foot_h_m": g["foot_h_m"], "u_m": g["u_m"], "h_pixels_m": g.get("h_pixels_m"),
                      "feet_visible": g.get("feet_visible"), "stature_m": g.get("stature_m"), "label": None})
     if tiles:
@@ -208,6 +223,27 @@ def people_sheets(out, site, run_dir, report, n=40, seed=0):
         sheet(tiles, Path(out) / f"rejected-{site}.jpg")
     (Path(out) / f"rejected-{site}.json").write_text(json.dumps({"labels": "picture | real person | unclear", "tiles": rows}, indent=1))
     return len(pick), len(rej)
+
+
+TIMED = ("cameras", "people", "objects v1", "pick v1", "cards v1", "judgements v1", "cards v2", "judgements v2", "pick v2", "cards v3",
+         "first SAM 3D model", "splat preview")
+STAGES = ("lift", "people.shot0", "people.shot1", "cards.v1", "densify.lift")
+
+
+def timing(bench_dir):
+    """Per call of a bench run (its summary.json): layer times (s from the MP4 bytes in the container), per-GPU peaks, the
+    stages this branch touched (s, peak GiB) and every >90% flag."""
+    d = json.loads((Path(bench_dir) / "summary.json").read_text())
+    out = {"boot_s": (d.get("boot") or {}).get("ready_s") or (d.get("boot") or {}).get("cold_start_s"), "usd_estimate_upper": d.get("usd_estimate_upper"),
+           "calls": []}
+    for c in d["calls"]:
+        lay = (c.get("mvp_latency") or {}).get("layers") or {}
+        st = c.get("stages") or {}
+        out["calls"].append({"kind": c["kind"], "report": c["report"], "first_call_after_boot": c.get("first_call_after_boot"),
+                             "layers": {k: (lay.get(k) or {}).get("written_s") for k in TIMED},
+                             "gpu_peak_gib": [g.get("peak_gb") for g in c.get("gpu_peak") or []], "flags": c.get("flags"),
+                             "stages": {k: {"s": (st.get(k) or {}).get("s"), "peak_gb": (st.get(k) or {}).get("peak_gb")} for k in STAGES if k in st}})
+    return out
 
 
 def main(argv):
