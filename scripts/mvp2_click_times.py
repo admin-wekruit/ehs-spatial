@@ -22,12 +22,17 @@ def times(run):
     first = lambda name, v: next((x["written_s"] for x in lay if x["layer"] == name and x["version"] == v), None)  # noqa: E731
     out = {row: first(name, v) for row, name, v in LAYERS}
     st = {s["stage"]: s for s in run["stages"]}
-    other = max((s["end_s"] for s in run["stages"] if s["stage"] == "vlm.identity.other"), default=None)
+    m = run.get("marks") or {}
+    # mvp2/integrate: the first-pass names are Gemini's (mark identity_gemini_put) or the Qwen decider's (identity_qwen_*_put, or
+    # the end of vlm.identity.other in round 1); densify's own objects are named later (identity_gemini_densify_put)
+    other = max([m[k] for k in ("identity_gemini_put", "identity_qwen_ehs_put", "identity_qwen_other_put") if k in m] +
+                [s["end_s"] for s in run["stages"] if s["stage"] == "vlm.identity.other"], default=None)
     cards = [x for x in lay if x["layer"] == "object_cards"]
-    out["identity complete"] = next((x["written_s"] for x in cards if other is not None and x["queued_s"] >= other), None)
+    out["identity complete"] = next((x["written_s"] for x in cards if other is not None and x["queued_s"] >= other - .01), None)
+    dens = max([m[k] for k in ("identity_gemini_densify_put", "identity_gemini_densify_left_put") if k in m], default=None)
+    out["densify names"] = next((x["written_s"] for x in cards if dens is not None and x["queued_s"] >= dens - .01), None)
     out["cards v3"] = next((x["written_s"] for x in cards if x["queued_s"] >= (st.get("cards.v3") or {}).get("end_s", 1e9) - .01), None)  # patch versions count puts
     out["final judgements"] = max((x["written_s"] for x in lay if x["layer"] == "judgements"), default=None)
-    m = run.get("marks") or {}
     out["first SAM 3D model"], out["splat preview"], out["splat start"] = m.get("first_model_put"), m.get("splat_preview_put"), m.get("splat_started")
     peaks = [max((s["peak_gb"][g] or 0) for s in run["stages"] if s.get("peak_gb")) for g in (0, 1)]
     over = sorted({s["stage"] for s in run["stages"] if any((p or 0) > OVER_GIB for p in s.get("peak_gb") or [])})
@@ -53,6 +58,10 @@ def self_check():
     t = times(run)
     assert (t["identity complete"], t["cards v3"], t["final judgements"], t["first 3D"]) == (63, 52, 73, 12), t
     assert t["gpu_peak_gib"] == [70, 73] and t["over_72"] == ["vlm.identity.other"], t
+    run["marks"].update(identity_gemini_put=40, identity_gemini_densify_put=61)  # Gemini names (no Qwen decider pass):
+    run["stages"] = run["stages"][1:]                                              # the cards patches queued at the marks
+    t = times(run)
+    assert (t["identity complete"], t["densify names"]) == (41, 63), t
     print("mvp2_click_times self-check ok: identity complete, cards v3, final judgements, peaks")
 
 

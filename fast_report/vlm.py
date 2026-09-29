@@ -27,6 +27,10 @@ MAX_SEQS = 16  # E9 ran 4; naming sends 16 one-crop requests (~300 tokens each) 
 # than between two fresh 1-server starts (max |dp| 0.106 vs 0.103; argmax flips 6 vs 8 of 378, all near-ties)
 API_SERVERS = 3
 CORE = ["fire extinguisher", "exit sign", "forklift", "ladder", "spill", "cable", "hose", "guard"]  # E2b's EHS core list
+# X10's word part of its discovery stack (fx-x10-discover-all-001: SAM 3 catch-all words + label words; its OWLv2 boxes, SAM 2.1
+# and ridge points are not plugged): wave 1 carries them when options['discover'] is on (mvp2/integrate, off by default)
+DISCOVER = ["object", "item", "tool", "debris", "container", "equipment", "sign", "label", "sticker", "tag", "placard", "price tag",
+            "warning label"]
 MAX_TYPES, VOCAB_FRAMES, SITE_WORDS = 50, 5, 50
 # E2b's v1 prompt, verbatim (vocab_probe.PROMPT with LENGTH v1): 89% recall on ME340 with Qwen, 5 frames, first 50 + core
 VOCAB_PROMPT = """These {n} frames come from one video walk-through of an indoor workplace, in walking order.

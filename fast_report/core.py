@@ -8,6 +8,7 @@ import copy
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import io
+import itertools
 import json
 import queue
 import struct
@@ -625,7 +626,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     site_vocab = use_cache and opts.get("site_vocab", False)
     site_path = f"/v/layers/sites/{site}/vocab.json"
     cached_words = vlm.site_words(site_path, video_sha) if site_vocab else []
-    wave1 = list(dict.fromkeys(vlm.CORE + cached_words))
+    wave1 = list(dict.fromkeys(vlm.CORE + (vlm.DISCOVER if opts.get("discover") else []) + cached_words))
     summary = {"video_sha256": video_sha, "site": site, "cache": use_cache, "site_vocab": site_vocab, "wave1_words": wave1,
                "site_cached_words": len(cached_words)}
     Path("/tmp/in.mp4").write_bytes(mp4)
@@ -967,6 +968,8 @@ def analyse(m, mp4, opts, clock, writer, log):
                    "identity and class are inferred: a detected word until a calibrated decider answers",
                    "time from the pick maps; 'disappeared' only with before/after keyframes"]
 
+    put_order, put_count = {}, itertools.count(1)
+
     def cards_put(version, out):
         data = {"schema": "panoptes-object-cards-v1", "version": version, "version_of": {"objects": {1: 1, 2: 2}.get(version, 3), "pick": 1 if version < 3 else 2},
                 "note": {1: "geometry; names are detected words", 2: "identity from the decider", 3: "after densify",
@@ -982,6 +985,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         if out.get("diagnostics"):  # mvp2: the tops' edge-vs-points record per object (evaluation only; never shown)
             blobs["diagnostics"] = (json.dumps(out["diagnostics"], separators=(",", ":"), default=layers._plain).encode(),
                                     {"mediaType": "application/json", "format": "panoptes-object-cards diagnostics"})
+        put_order[id(out)] = next(put_count)  # before the put: its judge run is ordered by it (v4 is put twice: two namer passes)
         writer.put("object_cards", data, blobs or None, "estimated+inferred", card_labels)
         clock.mark(f"cards_v{version}_put")
 
@@ -1018,6 +1022,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         outl = results.get("outlines_v2" if version >= 3 else "outlines") or {}
         ctx = judge.context(cam_rows, outl.get("frames", []), results.get("people"), frames,
                             {gg["index"]: gg["seeds"]["xyz"] for gg in geo if "seeds" in gg}, fps, (W, H), version_of={"object_cards": version})
+        ctx["put_order"] = put_order.get(id(out), version)  # judge.run's guard: never over the judgements of a later cards put
         by = {x["index"]: x for x in out["shots"]}
         for x in ctx["shots"]:  # the cards' own pose, floor and plumb readings (B's context has constants)
             a_ = by.get(x["index"]) or {}
@@ -1151,12 +1156,15 @@ def analyse(m, mp4, opts, clock, writer, log):
         return c["kind"] == "object" and (ehs(c) if which == "ehs" else not ehs(c) and (c.get("views") or {}).get("n", 0) >= 3 if which else
                                           ehs(c) or (c.get("views") or {}).get("n", 0) >= 3)
 
-    namer = {"started": threading.Event(), "published": threading.Event()}
+    # asked: the first pass's object ids, known once its sheets are built (asked_ready): densify's pass leaves them out and starts
+    # at cards v3 instead of after the first pass's names are in (mvp2/integrate: Walmart's densify names waited 15 s for them)
+    namer = {"started": threading.Event(), "published": threading.Event(), "asked": set(), "asked_ready": threading.Event()}
 
     def start_namer():
         """mvp2/identity: the Gemini naming starts as soon as the outlines and pick counts exist (3-4 s before cards v1)."""
         if opts.get("namer") is None or not objects:
             namer["started"].set()
+            namer["asked_ready"].set()
             return
         from concurrent.futures import Future
         namer["future"] = fut = Future()
@@ -1167,6 +1175,8 @@ def analyse(m, mp4, opts, clock, writer, log):
             except Exception:  # noqa: BLE001  no names: the Qwen decider names everything, as before
                 import traceback
                 fut.set_result(({}, {"namer": "gemini failed", "error": traceback.format_exc()[-2000:]}))
+            finally:
+                namer["asked_ready"].set()
         threading.Thread(target=run, name="namer", daemon=True).start()
         namer["started"].set()
 
@@ -1193,9 +1203,14 @@ def analyse(m, mp4, opts, clock, writer, log):
                 tiles = list(pool.map(lambda o: (lambda v: v and vlm.namer_tile(frames[v[0]], v[1][1]))(view({"id": o["id"], "views": {}})), todo))
             ids = [o["id"] for o, t in zip(todo, tiles) if t is not None]
             reqs = vlm.namer_requests(ids, [t for t in tiles if t is not None], first)
+        if rows is None:
+            namer["asked"].update(ids)
+            namer["asked_ready"].set()
+
+        part = f"{writer.report_id}-{tag}"  # one queue partition per pass: the passes run at once and must not take each other's answers
 
         def send(r, attempt):
-            writer.send({"type": "namer_request", "report": writer.report_id, "request": r["request"], "attempt": attempt, "n": len(r["ids"]),
+            writer.send({"type": "namer_request", "report": part, "request": r["request"], "attempt": attempt, "n": len(r["ids"]),
                          "blocks": r["blocks"]})
         sent = time.time()
         for r in reqs:
@@ -1207,7 +1222,7 @@ def analyse(m, mp4, opts, clock, writer, log):
             while pending and time.time() - sent < NAMER_WAIT_S:
                 wake = NAMER_WAIT_S if len(again) >= len(reqs) or time.time() - sent >= NAMER_HEDGE_S else NAMER_HEDGE_S
                 try:
-                    a = relay.get(timeout=max(.1, wake - (time.time() - sent)), partition=writer.report_id)
+                    a = relay.get(timeout=max(.1, wake - (time.time() - sent)), partition=part)
                 except _queue.Empty:
                     a = None
                 r = pending.get((a or {}).get("request"))
@@ -1528,15 +1543,24 @@ def analyse(m, mp4, opts, clock, writer, log):
             from concurrent.futures import Future
             namer["densify"] = fut = Future()
 
+            def name_and_publish(rows_now, by, first, tag):
+                got, rec = gemini_names(rows_now, "outlines_v2", counts_v2, ready_v2, first=first, tag=tag)
+                idents = {i: cards.open_identity(by[i]["identity"], a) for i, a in got.items() if i in by}
+                if idents:
+                    publish(idents, tag)
+                return rec
+
             def name_densified():
-                try:  # after the first pass's names are in: only what they left (Sam's Club asked 623 twice when v3 came first)
-                    namer["published"].wait(120)
-                    rows_now = [o for o in new_rows if o["id"] not in cards_out.get("identities", {})]
-                    got, rec = gemini_names(rows_now, "outlines_v2", counts_v2, ready_v2, first=100, tag="gemini_densify")
+                try:  # what the first pass does not ask (Sam's Club asked 623 twice when v3 came first), at once; then what the
+                    namer["asked_ready"].wait(120)  # first pass asked but got no answer for in time, once its names are in
                     by = {c["id"]: c for c in out["cards"] if c["kind"] == "object"}
-                    idents = {i: cards.open_identity(by[i]["identity"], a) for i, a in got.items() if i in by}
-                    if idents:
-                        publish(idents, "gemini_densify")
+                    known = lambda: cards_out.get("identities", {})  # noqa: E731
+                    rows_now = [o for o in new_rows if o["id"] not in namer["asked"] and o["id"] not in known()]
+                    rec = name_and_publish(rows_now, by, 100, "gemini_densify") if rows_now else {}
+                    namer["published"].wait(120)
+                    left = [o for o in objects if o["id"] in namer["asked"] and o["id"] in by and o["id"] not in known()]
+                    if left:
+                        rec["left"] = name_and_publish(left, by, 200, "gemini_densify_left")
                     fut.set_result(rec)
                 except Exception:  # noqa: BLE001  those objects keep their detected words
                     import traceback

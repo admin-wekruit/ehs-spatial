@@ -1160,10 +1160,10 @@ def run(cards, ctx, writer, clock, vlm_on=True, ask=None, cal=None, pool=None, c
     if rows is None:
         rows = ahead(cards, ctx, clock, carried, hazard_ask, pool) if vlm_on else (rules(cards, ctx, clock, pool), None)
     rows, sent = rows
-    version = (ctx.get("version_of") or {}).get("object_cards") or 0
+    version = ctx.get("put_order") or (ctx.get("version_of") or {}).get("object_cards") or 0  # the core's cards put order (v4 is put twice)
 
     def put(data, blobs):
-        """Never over a newer cards version's judgements (mvp2/click: the runs overlap)."""
+        """Never over the judgements of a later cards put (mvp2/click: the runs overlap)."""
         if carried.get("_put", -1) > version:
             return False
         carried["_put"] = version
@@ -1636,6 +1636,9 @@ def self_check():
     w = _Writer()  # a run on an older cards version after a newer one was put: nothing of it is put (mvp2: the runs overlap)
     carried["_put"] = 3
     out = run([cable], {**ctx, "version_of": {"object_cards": 1}}, w, _Clock(), ask=fake, cal={"questions": {}}, carried=carried)
+    assert w.puts == [] and out.get("superseded"), out
+    w, carried["_put"] = _Writer(), 5  # mvp2/integrate: two puts of cards v4 (two namer passes, put orders 4 and 5): the older put's
+    out = run([cable], {**ctx, "version_of": {"object_cards": 4}, "put_order": 4}, w, _Clock(), ask=fake, cal={"questions": {}}, carried=carried)
     assert w.puts == [] and out.get("superseded"), out
     far = {1: poly, 2: [[[710, 300], [800, 300], [800, 400]]], 3: [[[1200, 650], [1270, 650], [1270, 710]]]}  # mark 3 is off the crop
     crop, local = som_crop(frame_img, far)
