@@ -243,6 +243,8 @@ def canonical(name):
     """A free name -> its canonical class (TAXONOMY), NOT_OBJECT, or None (no class: the free name keeps no prior).
     '<container> of <goods>' is its container ('box of snacks' -> box), 'pallet / stack / pile of <goods>' is stacked boxes."""
     n = norm(name)
+    if " with " in n:  # 'air hose with nozzle' is an air hose
+        n = norm(n.split(" with ")[0])
     if " of " in n:
         head = n.split(" of ")[0]
         if head_match(head, ("pallet", "stack", "pile", "load")):

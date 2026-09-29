@@ -934,8 +934,10 @@ def analyse(m, mp4, opts, clock, writer, log):
         for c in new:
             if c["id"] in named:
                 c["identity"] = cards.open_identity(c["identity"], named[c["id"]])
-        if named:
-            publish({c["id"]: c["identity"] for c in new if c["id"] in named}, "gemini")
+        if named:  # every answer is kept: an object merged into another card here may be a card of its own in densify's v3
+            rows = {o["id"]: o for o in objects}
+            idents = {i: cards.open_identity(cards.identity_v1(rows[i]), a) for i, a in named.items() if i in rows}
+            publish({**idents, **{c["id"]: c["identity"] for c in new if c["id"] in named}}, "gemini")
         rest = [c for c in new if c["kind"] == "object" and c["id"] not in named]
         for which in ("ehs", "other"):  # the EHS classes' names first (the checks read them), then every other object's
             if ask_identity(rest, which):
@@ -1323,7 +1325,8 @@ def analyse(m, mp4, opts, clock, writer, log):
             cards_put(3, out)
         start_display()  # facts before display (section 7): the gate's CPU processes slowed cards v3 by 2-3x beside it (run 005)
         judge_hook(out, 3)
-        new_rows = [o for o in objects if o.get("source") == "densify" and o["id"] not in cards_out.get("identities", {})]
+        v3_ids = {c["id"] for c in out["cards"] if c["kind"] == "object"}  # densify's objects that are cards (the rest merged away)
+        new_rows = [o for o in objects if o["id"] in v3_ids and o["id"] not in cards_out.get("identities", {})]
         if new_rows and opts.get("namer") is not None:  # mvp2/identity: densify's own objects named too (a second, smaller pass)
             from concurrent.futures import Future
             namer["densify"] = fut = Future()

@@ -83,7 +83,7 @@ def context_crop(frame, polys, side=448, scale=2.5, color=(0, 230, 255)):
     return cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 90])[1].tobytes()
 
 
-def items(out, runs=None, n_random=None, seed=0, exclude=(), labels="labels-heldout.json"):
+def items(out, runs=None, n_random=None, seed=0, exclude=(), labels="labels-heldout.json", sheet_prefix=""):
     """runs: {site: (run dir, report)} (default: round 1's warm calls); exclude: item ids already labelled elsewhere."""
     import cv2
     import fast_report_eval as ev
@@ -147,12 +147,16 @@ def items(out, runs=None, n_random=None, seed=0, exclude=(), labels="labels-held
             tiles.append((both, iid))
         (out / "sheets").mkdir(exist_ok=True)
         for s in range(0, len(tiles), 8):
-            sheet(tiles[s:s + 8], out / "sheets" / f"{site}-{s // 8:02d}.jpg", cols=2, tile=896)
+            sheet(tiles[s:s + 8], out / "sheets" / f"{sheet_prefix}{site}-{s // 8:02d}.jpg", cols=2, tile=896)
+    if (out / "items.json").exists():  # another site's items already there: kept (a folder is built one video at a time)
+        old = json.loads((out / "items.json").read_text())
+        rows = [r for r in old["items"] if r["site"] not in (runs or RUNS)] + rows
+        runs = {**old["runs"], **(runs or RUNS)}
     (out / "items.json").write_text(json.dumps({"schema": "identity-study-items-v1", "runs": runs or RUNS, "n_random": n_random or N_RANDOM,
                                                 "seed": seed, "excluded": len(exclude), "items": rows}, indent=1))
-    tmpl = out / labels
-    if not tmpl.exists():  # the agent fills: canon (cards.canonical class or 'not an object' or 'other:<name>'), name, also, close
-        tmpl.write_text(json.dumps({r["id"]: {"name": "", "canon": "", "also": [], "close": [], "note": ""} for r in rows}, indent=1))
+    tmpl = out / labels  # the agent fills: canon (cards.canonical class or 'not an object' or 'other:<name>'), name, also, close
+    have = json.loads(tmpl.read_text()) if tmpl.exists() else {}
+    tmpl.write_text(json.dumps({r["id"]: have.get(r["id"]) or {"name": "", "canon": "", "also": [], "close": [], "note": ""} for r in rows}, indent=1))
     print(json.dumps({"items": len(rows), "by_site": {s: sum(r["site"] == s for r in rows) for s in RUNS},
                       "hazard": sum(r["why"] == "hazard" for r in rows)}))
 
@@ -296,6 +300,7 @@ def gemini(out, variant="pair", which="heldout"):
 def self_check():
     assert cards.canonical("flammables storage cabinet") == "cabinet" and cards.canonical("Extension cords") == "cable"
     assert cards.canonical("gizmo") is None and cards.hazard_of("stepladder") == "ladder" and cards.hazard_of("box") is None
+    assert cards.canonical("air hose with nozzle") == "hose" and cards.canonical("pallet of paper towels") == "stacked boxes"
     print("identity_study self-check ok")
 
 
@@ -462,9 +467,50 @@ def score_final(out):
     return res
 
 
+def timing(run_dir):
+    """Per call of a bench folder: when (s from the MP4 in the container, written = committed) the objects, cards v1, the
+    identity puts (Gemini first pass, densify's pass, the Qwen decider's) and the last judgements landed; the namer's
+    request times; per-GPU peaks and every stage over 72 GiB. -> [row]"""
+    rows = []
+    for f in sorted(Path(run_dir).glob("call-*.json")):
+        c = json.loads(f.read_text())
+        run, mk = c["run"], c["run"].get("marks") or {}
+        lay = run.get("layers") or []
+
+        def written(layer, at=None, version=None):
+            got = [r for r in lay if r["layer"] == layer and (version is None or r["version"] == version) and (at is None or r["sent_s"] >= at - .05)]
+            return min((r["written_s"] for r in got if r.get("written_s") is not None), default=None)
+        ident = (run.get("summary") or {}).get("identity") or {}
+        dens = (run.get("summary") or {}).get("identity_densify") or {}
+        row = {"call": c.get("kind"), "report": run.get("report"), "first_call_after_boot": (run.get("boot") or {}).get("first_call_after_boot"),
+               "objects_v1_written_s": written("objects", version=1), "cards_v1_written_s": written("object_cards", version=1)}
+        for k in ("identity_gemini", "identity_gemini_densify", "identity_qwen_ehs", "identity_qwen_other"):
+            if f"{k}_put" in mk:
+                row[f"{k}_written_s"] = written("object_cards", mk[f"{k}_put"])
+        if "identity_gemini_sent" in mk:
+            row["identity_gemini_sent_s"] = mk["identity_gemini_sent"]
+        row["identity_first_pass_written_s"] = max([row[k] for k in ("identity_gemini_written_s", "identity_qwen_ehs_written_s", "identity_qwen_other_written_s")
+                                                     if row.get(k) is not None], default=None)
+        row["identity_minus_objects_s"] = None if row["identity_first_pass_written_s"] is None or row["objects_v1_written_s"] is None else \
+            round(row["identity_first_pass_written_s"] - row["objects_v1_written_s"], 2)
+        row["last_judgements_written_s"] = max((r["written_s"] for r in lay if r["layer"] == "judgements" and r.get("written_s")), default=None)
+        row["namer"] = {k: ident.get(k) for k in ("asked", "requests", "named", "late_requests", "resent", "error")}
+        row["namer_request_s"] = sorted(a["s"] for a in ident.get("answers", []) if a.get("s") is not None)
+        row["namer_densify"] = {k: dens.get(k) for k in ("asked", "requests", "named", "late_requests", "resent", "error")} if dens else None
+        row["gemini_tokens"] = {"input": sum(((a.get("usage") or {}).get("prompt_token_count") or 0) for a in ident.get("answers", []) + dens.get("answers", [])),
+                                "output": sum(((a.get("usage") or {}).get("candidates_token_count") or 0) for a in ident.get("answers", []) + dens.get("answers", []))}
+        row["gpu_peak_gib"] = [g["peak_gb"] for g in run.get("gpu_peak", [])]
+        row["stages_over_72_gib"] = [(x["stage"], x.get("peak_gb")) for x in run.get("stages", []) if any(v > 72 for v in (x.get("peak_gb") or []))]
+        row["identity_stage_peaks_gib"] = {x["stage"]: x.get("peak_gb") for x in run.get("stages", []) if "identity" in x["stage"]}
+        row["usd_estimate"] = run.get("usd_estimate")
+        row["error"] = run.get("error")
+        rows.append(row)
+    return rows
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("what", nargs="?", choices=("items", "dev", "gemini", "score", "final", "consistency", "score-final"))
+    ap.add_argument("what", nargs="?", choices=("items", "dev", "gemini", "score", "final", "consistency", "score-final", "timing"))
     ap.add_argument("out", nargs="?", type=Path)
     ap.add_argument("--variant", default="pair", choices=("pair", "sheet", "pair2", "tile4"))
     ap.add_argument("--runs", default="", help="final: site=RUN_DIR_NAME:REPORT,... (fresh held-out items from these runs)")
@@ -474,6 +520,8 @@ if __name__ == "__main__":
         self_check()
     elif a.what == "items":
         items(a.out)
+    elif a.what == "timing":
+        print(json.dumps(timing(a.out), indent=1))
     elif a.what == "score":
         print(json.dumps(score(a.out), indent=1))
     elif a.what == "score-final":
@@ -483,7 +531,8 @@ if __name__ == "__main__":
     elif a.what == "final":  # fresh held-out items (seed 1) from the final runs, none of the study's
         study = json.loads((PHASE2 / "runs/mvp2-identity-study-001/items.json").read_text())["items"]
         runs = {k: tuple(v.rsplit(":", 1)) for k, v in (x.split("=", 1) for x in a.runs.split(","))}
-        items(a.out, runs, {"me340": 50, "samsclub-a2": 25, "walmart": 25}, seed=1, exclude=[r["id"] for r in study], labels="labels-final.json")
+        items(a.out, runs, {"me340": 50, "samsclub-a2": 25, "walmart": 25}, seed=1, exclude=[r["id"] for r in study], labels="labels-final.json",
+              sheet_prefix="final-")
     elif a.what == "dev":
         dev(a.out)
     elif a.what == "gemini":
