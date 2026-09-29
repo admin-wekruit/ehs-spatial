@@ -399,7 +399,7 @@ def recgen_view(src, view, frame_rgb):
             "camera_intrinsics": np.asarray(crop["K"], np.float64)}
 
 
-def select(src, key, obj):
+def select(src, key, obj, min_sep=MIN_SEP_DEG):
     """One object's views and jobs (module docstring). obj: the fixture's object record (centroid_m, labels)."""
     import cv2
     import complete_video_objects as cvo
@@ -429,14 +429,16 @@ def select(src, key, obj):
     good = sorted([m for m in metrics if not set(m["fails"]) & GOOD_FAILS and not (m["occluded"] > OCCLUDED)], key=lambda m: -m["score"])
     centre = np.asarray(obj["centroid_m"], float)
     cam = lambda m: np.asarray(src.rows[m["frame"]]["c2w"])[:3, 3]  # noqa: E731
-    gen, held = spread_views(good, centre, cam)
+    gen, held = spread_views(good, centre, cam, min_sep=min_sep)
+    out["directions_at_deg"] = {str(d): len(sum(spread_views(good, centre, cam, min_sep=d)[0:1], []) + ([1] if spread_views(good, centre, cam, min_sep=d)[1] else []))
+                                for d in (5, 10, 15)}  # sensitivity of the rule: views a looser separation would take
     brief = lambda m: {k: (round(v, 4) if isinstance(v, float) else v) for k, v in m.items() if k in  # noqa: E731
                        ("frame", "area", "sharpness", "frontal", "solidity", "occluded", "score", "fails", "sourceShortSide")}
     out.update(good_views=len(good), gen=[brief(m) for m in gen], held=brief(held) if held else None,
                min_pair_deg=round(min((angle_deg(cam(a) - centre, cam(b) - centre) for i, a in enumerate(gen + [held]) for b in (gen + [held])[:i]),
                                       default=0.), 1) if held else None)
     if held is None:
-        return {**out, "eligible": False, "reason": f"{len(good)} good view(s), fewer than 2 directions {MIN_SEP_DEG:g} deg apart",
+        return {**out, "eligible": False, "reason": f"{len(good)} good view(s), fewer than 2 directions {min_sep:g} deg apart",
                 "select_s": time.time() - t0}
     frames = dict(src.clip.frames({m["frame"] for m in gen + [held]}))
     # (a) RecGen on the generation views (a view whose crop keeps no mask with depth is dropped; the anchor first)
@@ -479,10 +481,25 @@ def observed_points(src, key, frames, cap=60000):
 
 
 def held_gate(src, key, held, vertices, faces):
-    """build_lingbot_object_model.evaluate on the held-out view (DA3 grid), unchanged."""
+    """build_lingbot_object_model.evaluate on the held-out view (DA3 grid), its thresholds unchanged; its 300-pixel floor
+    (640x480 clip raster = 2.25 source px each) kept as the same source-frame area on this grid (MIN_SUPPORTED px, 6.53
+    source px each). evaluate's own 300-on-this-grid verdict (fb/b's reading) stays as accepted_300px_on_grid."""
     from build_lingbot_object_model import evaluate
     depth, mask, k, c2w = view_data(src, key, held)
-    return evaluate(np.asarray(vertices, np.float64), np.asarray(faces), depth, np.full(depth.shape, 2., np.float32), depth > 0, mask, k, c2w)
+    g = evaluate(np.asarray(vertices, np.float64), np.asarray(faces), depth, np.full(depth.shape, 2., np.float32), depth > 0, mask, k, c2w)
+    floor = min_supported(src.clip.full_size, depth.shape[::-1])
+    g["accepted_300px_on_grid"] = g["accepted_source_consistency"]
+    g["min_supported_pixels"] = floor
+    g["accepted_source_consistency"] = bool(g["supported_pixels"] >= floor and g["silhouette_iou"] >= .65
+                                            and g["relative_depth_median"] is not None and g["relative_depth_median"] <= .04 and g["relative_depth_p95"] <= .10)
+    return g
+
+
+def min_supported(full_wh, grid_wh, clip_px=300):
+    """The delivered gate's pixel floor (300 px of the 640x480 raster of a 960x720 centre crop) as the same source-frame area on
+    a grid covering the whole frame."""
+    source_px = clip_px * (960 * 720) / (640 * 480) * (full_wh[1] / 720) ** 2
+    return int(round(source_px / (full_wh[0] * full_wh[1] / (grid_wh[0] * grid_wh[1]))))
 
 
 def render_tile(src, held, crop, vertices, faces, colors, observed):
@@ -555,7 +572,7 @@ def gate_model(src, msg, observed_voxel):
     vertices = transformed(vertices, moved_by)
     gate = held_gate(src, key, held, vertices, faces)
     out = {"gate": {k: gate.get(k) for k in ("accepted_source_consistency", "silhouette_iou", "relative_depth_median", "relative_depth_p95",
-                                            "supported_pixels")},
+                                            "supported_pixels", "min_supported_pixels", "accepted_300px_on_grid")},
            "gate_before_placement": {k: before.get(k) for k in ("accepted_source_consistency", "silhouette_iou", "relative_depth_median")},
            "placement": placement, "faces": int(len(faces)), "light_s": round(t_light, 3)}
     if gate["accepted_source_consistency"]:
@@ -580,7 +597,7 @@ def fit_param(src, msg):
     vertices, faces, record = parametric(msg["kind"], pts, msg["up"], np.asarray(msg["floor_point"], float))
     gate = held_gate(src, key, held, vertices, faces)
     out = {**record, "gate": {k: gate.get(k) for k in ("accepted_source_consistency", "silhouette_iou", "relative_depth_median",
-                                                      "relative_depth_p95", "supported_pixels")}}
+                                                      "relative_depth_p95", "supported_pixels", "min_supported_pixels", "accepted_300px_on_grid")}}
     if gate["accepted_source_consistency"]:
         colors = np.tile(msg["colour"], (len(vertices), 1)).astype(np.float64)
         out["tile"] = render_tile(src, held, msg["crop"], vertices, faces, colors, np.ones(len(vertices), bool))
@@ -606,10 +623,12 @@ def cpu_worker():
         start = time.time()
         src = source(message["src"], message["shot"])
         op = message["op"]
-        out = select(src, message["key"], message["obj"]) if op == "select" else gate_model(src, message, sam3d.VOXEL_M) if op == "gate" \
+        out = select(src, message["key"], message["obj"], message.get("min_sep", MIN_SEP_DEG)) if op == "select" else gate_model(src, message, sam3d.VOXEL_M) if op == "gate" \
             else fit_param(src, message)
         return {**out, "start_unix": start, "end_unix": time.time(), "pid": os.getpid()}
     def boot():  # resident code: the first object must not pay the imports
+        import cv2
+        cv2.setNumThreads(1)  # CPU_PROCS processes share the cores: no per-process thread pools
         import open3d  # noqa: F401
         import scipy.optimize  # noqa: F401
         import trimesh  # noqa: F401
@@ -807,6 +826,7 @@ def self_check():
     cube[:, 1] = np.where(rng.random(3000) < .5, 0, cube[:, 1])
     _, _, rec = parametric("box", cube, up, np.zeros(3), boots=5)
     assert abs(rec["facts"]["top_above_floor_m"]["value"] - 1.2) < .03 and rec["residual_median_m"] < .01, rec
+    assert min_supported((1280, 720), (504, 280)) == 103 and min_supported((1280, 720), (1280, 720)) == 675  # 300 x 2.25 / 6.53; 300 x 2.25
     assert param_kind(["carton stack"]) == "box" and param_kind(["pallet rack"]) == "shelf" and param_kind(["drill press"]) is None
     # the whole path on a synthetic shot: selection, the true box placed and gated, a displaced box refined, a wrong one rejected
     with tempfile.TemporaryDirectory() as tmp:

@@ -129,6 +129,7 @@ class ObjectModels:
             frames[int(f)] = img
         frames.flush()
         fixture_load_s = round(time.time() - t_load, 2)
+        arm_sep = float(options.get("min_sep", x7.MIN_SEP_DEG))
         # ---------- t0
         clock = Clock()
         with clock.stage("x7.rank_stage"):
@@ -143,9 +144,10 @@ class ObjectModels:
             pending[0] += 1
             pool.submit(msg, prio).add_done_callback(lambda f: events.put((kind, r, method, f)))
         for r, o in enumerate(ranked):
-            submit(self.cpu, {"op": "select", "src": spec, "shot": int(o["shot"]), "key": keys[o["id"]], "obj": {"centroid_m": o["centroid_m"]}},
+            submit(self.cpu, {"op": "select", "src": spec, "shot": int(o["shot"]), "key": keys[o["id"]], "obj": {"centroid_m": o["centroid_m"]},
+                              "min_sep": arm_sep},
                    (1, r), "selected", r)
-        glb_root = Path("/v/x7") / out / name / "models"
+        glb_root = Path("/v/x7") / out / f"{name}-sep{arm_sep:g}" / "models"
         while pending[0]:
             kind, r, method, fut = events.get()
             pending[0] -= 1
@@ -162,7 +164,7 @@ class ObjectModels:
                 clock.external("x7.select", None, res["start_unix"], res["end_unix"], n={"object": o["id"]})
                 lowres[o["id"]] = (res["frames"], res["lowres"])
                 R["selection"] = {k: res.get(k) for k in ("eligible", "reason", "views_with_depth", "good_views", "gen", "held", "min_pair_deg",
-                                                          "recgen_views", "sam3d_b_rejected", "select_s", "select_parts_s")}
+                                                          "recgen_views", "sam3d_b_rejected", "select_s", "select_parts_s", "directions_at_deg")}
                 R["observed_s"] = [round(min(res["frames"]) / fps, 2), round(max(res["frames"]) / fps, 2)] if res["frames"] else None
                 if not res["eligible"]:
                     continue
@@ -229,7 +231,7 @@ class ObjectModels:
         lr = io.BytesIO()
         np.savez_compressed(lr, **{f"{oid}__frames": np.asarray(f, np.int32) for oid, (f, _) in lowres.items()},
                             **{f"{oid}__masks": m for oid, (_, m) in lowres.items()})
-        return {"name": name, "fixture": {"folder": str(folder), "report": meta["report"], "load_s_not_analysis": fixture_load_s,
+        return {"name": name, "arm": f"sep{arm_sep:g}", "min_sep_deg": arm_sep, "fixture": {"folder": str(folder), "report": meta["report"], "load_s_not_analysis": fixture_load_s,
                                           "objects_in_core": len(objs), "ranked_attempt_list": len(ranked)},
                 "t0_unix": clock.t0_unix, "elapsed_s": rep["elapsed_s"], "commit_s": commit_s, "summary": summary, "objects": list(rec.values()),
                 "stages": stage_mem, "gpu_peak": rep["gpu_peak"], "flags": [f for f in rep["flags"] if "unknown stage" not in f],
@@ -280,14 +282,14 @@ def contact_sheet(result, path, per_row=2):
     rows += [np.full_like(rows[0], 255)] * (-len(rows) % per_row)
     grid = np.vstack([np.hstack([np.pad(r, ((0, 0), (0, 6), (0, 0)), constant_values=255) for r in rows[i:i + per_row]]) for i in range(0, len(rows), per_row)])
     top = np.full((24, grid.shape[1], 3), 255, np.uint8)
-    cv2.putText(top, f"{result['name']}: held-out crop | RecGen | SAM 3D | parametric (rendered from the held-out camera; blank = not accepted)",
+    cv2.putText(top, f"{result['name']} {result.get('arm', '')}: held-out crop | RecGen | SAM 3D | parametric (rendered from the held-out camera; blank = not accepted)",
                 (4, 16), cv2.FONT_HERSHEY_SIMPLEX, .42, (0, 0, 0), 1, cv2.LINE_AA)
     cv2.imwrite(str(path), np.vstack([top, grid]), [cv2.IMWRITE_JPEG_QUALITY, 80])
     return len(rows)
 
 
 @app.local_entrypoint()
-def main(out: str, clips: str = "me340-165,samsclub-337,walmart-190", fixture: str = "fx-x7-001", max_objects: int = 100):
+def main(out: str, clips: str = "me340-165,samsclub-337,walmart-190", fixture: str = "fx-x7-001", max_objects: int = 100, seps: str = "15"):
     out = Path(out)
     out.mkdir(parents=True, exist_ok=False)
     om = ObjectModels()
@@ -297,15 +299,18 @@ def main(out: str, clips: str = "me340-165,samsclub-337,walmart-190", fixture: s
     (out / "boot.json").write_text(json.dumps(boot, indent=1, default=str))
     print("boot:", json.dumps({k: v for k, v in boot.items() if k.endswith("_s") or k == "mps"}), flush=True)
     for name in clips.split(","):
-        started = time.time()
-        res = om.run.remote(name, fixture, f"{out.parent.name}/{out.name}", {"max_objects": max_objects})
-        res["client_wall_s"] = round(time.time() - started, 1)
-        (out / f"{name}-lowres.npz").write_bytes(res.pop("lowres_npz"))
-        n = contact_sheet(res, out / f"{name}-contact.jpg")
-        tiles = res.pop("tiles")
-        res["contact_sheet"] = {"file": f"{name}-contact.jpg", "objects": n, "tiles": sum(len(v) - 1 for v in tiles.values())}
-        (out / f"{name}.json").write_text(json.dumps(res, indent=1, default=str))
-        print(name, json.dumps(res["summary"], default=str)[:3000], "elapsed", res["elapsed_s"], flush=True)
+        for sep in seps.split(","):
+            started = time.time()
+            res = om.run.remote(name, fixture, f"{out.parent.name}/{out.name}", {"max_objects": max_objects, "min_sep": float(sep)})
+            res["client_wall_s"] = round(time.time() - started, 1)
+            stem = f"{name}-{res['arm']}"
+            res["lowres_file"] = f"{stem}-lowres.npz"
+            (out / res["lowres_file"]).write_bytes(res.pop("lowres_npz"))
+            n = contact_sheet(res, out / f"{stem}-contact.jpg")
+            tiles = res.pop("tiles")
+            res["contact_sheet"] = {"file": f"{stem}-contact.jpg", "objects": n, "tiles": sum(len(v) - 1 for v in tiles.values())}
+            (out / f"{stem}.json").write_text(json.dumps(res, indent=1, default=str))
+            print(stem, json.dumps(res["summary"], default=str)[:3000], "elapsed", res["elapsed_s"], flush=True)
     (out / "done.json").write_text(json.dumps({"client_called_unix": called, "client_done_unix": time.time()}, indent=1))
 
 
@@ -384,6 +389,37 @@ def container_usd(entered, ended, scaledown, per_s):
     return round((ended - entered + scaledown) * per_s, 3)
 
 
+def throughput(res):
+    """Per generator: objects generated per second while its queue was busy (first start -> last end), from the records."""
+    out = {}
+    for m, name in (("recgen", "recgen"), ("sam3d", "sam3d")):
+        rows = [M for R in res["objects"] for k, M in R["methods"].items() if k.startswith(m) and "generated_s" in M]
+        if len(rows) >= 2:
+            span = max(M["generated_s"] for M in rows) - min(M["started_s"] for M in rows)
+            out[name] = {"generated": len(rows), "busy_s": round(span, 1), "objects_per_s": round(len(rows) / span, 3),
+                         "first_dispatch_s": round(min(M["dispatched_s"] for M in rows), 1)}
+    return out
+
+
+def timing_model(videos):
+    """Expected analysis time (t0 = hand-off in memory -> last model decided) on 2 x A100-80GB with this layout (RecGen x4 and
+    SAM 3D x2 concurrently, CPU pool 20) for N objects, from the busiest arm's measured rates: ramp (first dispatch) + N / rate
+    + a median gate; SAM 3D only gets the objects its prepare rule passes (share measured)."""
+    rows = [(k, v) for k, v in videos.items() if "recgen" in v["throughput"] and "sam3d" in v["throughput"]]
+    if not rows:
+        return None
+    k, v = max(rows, key=lambda kv: kv[1]["throughput"]["recgen"]["generated"])
+    t = v["throughput"]
+    ramp = max(t["recgen"]["first_dispatch_s"], t["sam3d"]["first_dispatch_s"])
+    share = t["sam3d"]["generated"] / max(t["recgen"]["generated"], 1)
+    gate = max((v["methods"][m]["gate_s"] or {}).get("median", 0) for m in ("recgen", "sam3d_b"))
+    est = {n: {"recgen_s": round(ramp + n / t["recgen"]["objects_per_s"] + gate, 0),
+               "sam3d_s": round(ramp + n * share / t["sam3d"]["objects_per_s"] + gate, 0),
+               "param_s": v["methods"]["param"]["last_decided_s"]} for n in (20, 40, 70)}
+    return {"basis": k, "rates": t, "sam3d_share_of_objects": round(share, 2), "ramp_s": ramp, "gate_median_s": gate, "expected": est,
+            "note": "both generators run at once on both GPUs; each alone would get more of the GPUs (not measured)"}
+
+
 def aggregate(run_dir, models="models"):
     """Every reported number -> run_dir/results.json (the core's run, the model container's boot and runs, overlap, spend)."""
     run_dir = Path(run_dir)
@@ -400,6 +436,8 @@ def aggregate(run_dir, models="models"):
     spend = {"core_container_usd": container_usd(core["boot"]["entered_unix"], max(ends), 60, core_rate)}
     videos, facts, by_type = {}, [], {}
     for mdir in sorted(run_dir.glob("models*")) + sorted(run_dir.glob("smoke*")):
+        if not (mdir / "boot.json").exists():
+            continue
         boot = json.loads((mdir / "boot.json").read_text())
         done = json.loads((mdir / "done.json").read_text()) if (mdir / "done.json").exists() else None
         if done:
@@ -410,11 +448,11 @@ def aggregate(run_dir, models="models"):
         if res_path.name in ("boot.json", "done.json"):
             continue
         res = json.loads(res_path.read_text())
-        name = res["name"]
+        name = f"{res['name']}/{res.get('arm', 'sep15')}"
         for R in res["objects"]:
             t = object_type([R["word"], R["label"]])
             for m, M in R["methods"].items():
-                row = by_type.setdefault(t, {}).setdefault(m, {"attempted": 0, "accepted": 0})
+                row = by_type.setdefault(res.get("arm", "sep15"), {}).setdefault(t, {}).setdefault(m, {"attempted": 0, "accepted": 0})
                 row["attempted"] += bool(M.get("attempted"))
                 row["accepted"] += bool(M.get("accepted"))
             P = R["methods"].get("param")
@@ -425,7 +463,7 @@ def aggregate(run_dir, models="models"):
                               "held_out_iou": P["gate"]["silhouette_iou"], "held_out_depth_median": P["gate"]["relative_depth_median"],
                               "residual_median_m": P["residual_median_m"], "status": "estimated (scale from floor plane + assumed 1.6 m camera height)"})
         sel_rows = [R["selection"] for R in res["objects"] if "selection" in R]
-        videos[name] = {"core": core_runs.get(name), "fixture_load_s_not_analysis": res["fixture"]["load_s_not_analysis"],
+        videos[name] = {"core": core_runs.get(res["name"]), "fixture_load_s_not_analysis": res["fixture"]["load_s_not_analysis"],
                         "objects_in_core": res["fixture"]["objects_in_core"], "ranked_attempt_list": res["fixture"]["ranked_attempt_list"],
                         "selection": {"eligible": sum(bool(s.get("eligible")) for s in sel_rows), "not_eligible": sum(not s.get("eligible") for s in sel_rows),
                                       "generation_views": {str(k): sum(len(s.get("gen") or []) == k for s in sel_rows if s.get("eligible")) for k in range(1, 5)},
@@ -434,14 +472,29 @@ def aggregate(run_dir, models="models"):
                         "delivered_overlap": {k: v for k, v in (res.get("delivered_overlap") or {}).items() if k != "pairs"},
                         "per_gpu_peak_gib_by_stage": res["stages"], "gpu_peak": res["gpu_peak"], "flags_over_90": res["flags"],
                         "analysis_usd_estimate": res["usd_estimate_analysis"], "contact_sheet": res["contact_sheet"]}
-    for t in by_type.values():
-        for row in t.values():
-            row["rate"] = round(row["accepted"] / max(row["attempted"], 1), 3)
+    for arm in by_type.values():
+        for t in arm.values():
+            for row in t.values():
+                row["rate"] = round(row["accepted"] / max(row["attempted"], 1), 3)
+    for key, v in videos.items():  # the same gate with fb/b's reading of the pixel floor (300 px on the DA3 grid), from the stored metrics
+        res = json.loads((mdir / (key.replace("/", "-") + ".json")).read_text())
+        strict = lambda g: bool(g.get("accepted_source_consistency") and g.get("supported_pixels", 0) >= 300)  # noqa: E731
+        v["accepted_with_300px_on_grid_floor"] = {m: sum(strict(R["methods"].get(m, {}).get("gate") or {}) for R in res["objects"]) for m in METHODS}
+        v["throughput"] = throughput(res)
+    for f in facts:
+        f["pm_meaning"] = "1 sd over 30 point resamplings: the fit's spread only; the scale itself is assumed (floor plane + 1.6 m camera height) and not in the +-"
+    repeat = {}
+    if (run_dir / "models/results-run1.json").exists():  # run 1: the same 15 deg arm with the 300-px-on-grid floor, one boot earlier
+        r1 = json.loads((run_dir / "models/results-run1.json").read_text())
+        repeat = {k: {m: {x: s.get(x) for x in ("attempted", "generated", "accepted_held_out", "first_accepted_s", "last_decided_s")}
+                      for m, s in v["methods"].items()} | {"analysis_elapsed_s": v["analysis_elapsed_s"]} for k, v in r1["videos"].items()}
     results = {"experiment": "X7 per-unique-object models from the best views (fx/x7-object-models)", "run": run_dir.name,
                "rules": {"clock": "t0 = the core's hand-off in the model container's memory; each model: its held-out gate decided and GLB written",
-                         "held_out_gate": "build_lingbot_object_model.evaluate on a view never used to generate or place: IoU >= 0.65, rel. depth median <= 0.04, p95 <= 0.10, >= 300 px (DA3 grid 504x280)",
-                         "views": f"good views >= {15} deg apart, up to 4 generate + 1 held out", "scale": "estimated", "models": "display only, never measurements",
-                         "recgen_licence": "non-commercial research (demo only)"},
+                         "held_out_gate": "build_lingbot_object_model.evaluate on a view never used to generate or place: IoU >= 0.65, rel. depth median <= 0.04, "
+                                          "p95 <= 0.10, and its 300-px floor (640x480 clip raster) as the same source-frame area on the DA3 grid 504x280 = 103 px",
+                         "views": "good views >= 15 deg apart (arm sep15, the spec) or >= 5 deg (arm sep5, sensitivity), up to 4 generate + 1 held out",
+                         "scale": "estimated", "models": "display only, never measurements", "recgen_licence": "non-commercial research (demo only)"},
+               "run1_repeat_sep15_300px_on_grid": repeat, "timing_model": timing_model(videos),
                "core_reused": {"branch": "fb/a-core (+ masks_lr hand-off, dump after the clock)", "runs": core_runs, "boot": core["boot"]},
                "model_container_boot": {k: boot.get(k) for k in ("ready_s", "cpu_ready_s", "sam3d_ready_s", "recgen_ready_s", "vram_after_boot_gib", "mps")} |
                                        {"sam3d_workers": boot.get("sam3d"), "recgen_workers": boot.get("recgen")},
@@ -465,7 +518,7 @@ if __name__ == "__main__":
             accepted["sam3d_b_or_c"] = accepted["sam3d_b"] | accepted["sam3d_c"]
             accepted["any_generator"] = accepted["recgen"] | accepted["sam3d_b_or_c"]
             accepted["any"] = accepted["any_generator"] | accepted["param"]
-            res["delivered_overlap"] = overlap(res["name"], run_dir / models / f"{res['name']}-lowres.npz", accepted)
+            res["delivered_overlap"] = overlap(res["name"], run_dir / models / res.get("lowres_file", f"{res['name']}-lowres.npz"), accepted)
             res_path.write_text(json.dumps(res, indent=1, default=str))
             print(res["name"], json.dumps({k: v for k, v in res["delivered_overlap"].items() if k != "pairs"}))
         aggregate(run_dir, models)
