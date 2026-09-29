@@ -11,6 +11,11 @@ subsets agree and the shot's walls read plumb (section 4.5). Size plausibility p
 implausible size is never shown as a fact. Time (section 4.6) comes from the pick maps; 'disappeared' only with X6's
 see-through test and its before/after keyframes (timeline.place), otherwise 'last seen at t'.
 
+mvp2 (physical): tops / bases also from the un-eroded mask edges at the object's own depth (segment.edges, rim()); a long
+object seen in parts shows 'visible length >= x' (long_object); people are measured along their pixel rays at the body's
+range (person_geometry: feet, head, stature; pictures of people rejected; feet only when they rest on what is below them);
+every number a card shows carries +-u and its scale (contract()).
+
     python -m fast_report.cards --self-check
 """
 import sys
@@ -1146,9 +1151,10 @@ def time_card(o, s, counts, sub, views, P, frame, kind):
 # reach; a track that moves less than MOVED_M is not confirmed by motion.
 PERSON_H_M, ARM_M, STANCE_M, HEAD_MIN_M, MOVED_M, STAND_M = (1., 2.1), .3, .25, .5, 1., .3
 FEET_MIN_M, REST_M = 1.3, .15  # feet seen: a standing adult between them and the head; they rest within REST_M + u of what is below
+FLOOR_PX = 20  # SAM 3 floor pixels beside the feet (their rows) that re-reference the heights to the floor seen there
 
 
-def person_geometry(mask, depth, K, c2w, up, p0, u_floor=.02, up_deg=1.):
+def person_geometry(mask, depth, K, c2w, up, p0, u_floor=.02, up_deg=1., floor_mask=None):
     """One person detection (mask and metric depth on one raster, K on it, c2w in metres, the floor's up and a point on it):
     the feet's height above the floor measured along the rays through the lowest mask pixels, at the visible body's horizontal
     range (the body's median depth: the rim pixels at the feet are a foot/floor depth blend, which read people on the floor at
@@ -1188,9 +1194,25 @@ def person_geometry(mask, depth, K, c2w, up, p0, u_floor=.02, up_deg=1.):
     foot, tf = at_range(cb + .5, bot[cb] + 1.)  # their outer pixel boundary (backproject's pixel-centre convention)
     head, th = at_range(ct + .5, top[ct] + 0.)
     px = r / K[1, 1]
+    # the floor seen beside the feet, on the same image rows (the same range): its height off the plane is the plane's own
+    # error there (its tilt over the range, the depth's local scale), which then cancels; without it the plane's terms stay
+    lf, ref, n_fl = 0., "the floor plane", 0
+    if floor_mask is not None:
+        y0, y1, bw = max(0, ys.max() - 1), min(H, ys.max() + 3), xs.max() - xs.min() + 1
+        x0, x1 = max(0, xs.min() - 3 * bw), min(W, xs.max() + 3 * bw + 1)
+        fm = floor_mask[y0:y1, x0:x1] & ~mask[y0:y1, x0:x1] & (depth[y0:y1, x0:x1] > 0)
+        n_fl = int(fm.sum())
+        if n_fl >= FLOOR_PX:
+            vv, uu = np.nonzero(fm)
+            hf = (ray(uu + x0 + .5, vv + y0 + .5) * depth[y0:y1, x0:x1][fm][:, None] + c - np.asarray(p0, float)) @ up
+            lf = float(np.median(hf))
+            u_floor, up_deg = float(1.4826 * np.median(np.abs(hf - lf))), 0.
+            ref = f"the floor beside the feet ({n_fl} px on their rows, {lf:+.2f} m off the plane)"
+    foot, head = foot - lf, head - lf
     up_t = np.tan(np.radians(up_deg)) * r
-    u_foot = float(np.sqrt((DEPTH_REL * r * tf) ** 2 + (STANCE_M * tf) ** 2 + u_floor ** 2 + up_t ** 2 + px ** 2 + (SCALE_REL * foot) ** 2))
-    u_head = float(np.sqrt((DEPTH_REL * r * th) ** 2 + u_floor ** 2 + up_t ** 2 + px ** 2 + (SCALE_REL * head) ** 2))
+    dk = DEPTH_REL * r * (np.sqrt(2) if n_fl >= FLOOR_PX else 1.)  # the feet's and the floor's depth, both
+    u_foot = float(np.sqrt((dk * tf) ** 2 + (STANCE_M * tf) ** 2 + u_floor ** 2 + up_t ** 2 + px ** 2 + (SCALE_REL * foot) ** 2))
+    u_head = float(np.sqrt((dk * th) ** 2 + u_floor ** 2 + up_t ** 2 + px ** 2 + (SCALE_REL * head) ** 2))
     st = head - foot
     u_st = float(np.sqrt((DEPTH_REL * st) ** 2 + (STANCE_M * tf) ** 2 + 2 * px ** 2 + (SCALE_REL * st) ** 2))
     # the old reading (the lowest pixels' own depth), kept to compare
@@ -1206,7 +1228,7 @@ def person_geometry(mask, depth, K, c2w, up, p0, u_floor=.02, up_deg=1.):
     patch_h = None  # the height of what is just below the lowest pixels (its own depth): floor, a surface, or an occluder
     if len(below) >= 3:
         vv, uu = np.nonzero(sel)
-        patch_h = float(np.median(((ray(uu + cols.start + .5, vv + rows.start + .5) * below[:, None] + c - p0) @ up)))
+        patch_h = float(np.median(((ray(uu + cols.start + .5, vv + rows.start + .5) * below[:, None] + c - p0) @ up))) - lf
     cut_bottom, cut_top, cut_side = bool(ys.max() >= H - 2), bool(ys.min() <= 1), bool(xs.min() <= 1 or xs.max() >= W - 2)
     true_bottom = contact and not cut_bottom
     # feet seen: a true bottom, a standing adult's height between it and the head (video.PERSON_HEIGHT_M's 1.3 m: ME340's
@@ -1225,7 +1247,7 @@ def person_geometry(mask, depth, K, c2w, up, p0, u_floor=.02, up_deg=1.):
             why = f"it spans {st:.2f} +- {u_st:.2f} m: taller than a person"
     out = {"h_m": round(foot, 3) if feet else None, "u_m": round(u_foot, 3), "foot_h_m": round(foot, 3), "head_m": round(head, 3), "u_head_m": round(u_head, 3),
            "stature_m": round(st, 3), "u_stature_m": round(u_st, 3), "range_m": round(r, 3), "contact": contact, "feet_visible": bool(feet),
-           "below_h_m": None if patch_h is None else round(patch_h, 3),
+           "below_h_m": None if patch_h is None else round(patch_h, 3), "floor_ref": ref,
            "support": None if not feet else "the floor" if on_floor else f"a surface {patch_h:.2f} m up (standing on it, or hidden behind it)",
            "cut": {"bottom": cut_bottom, "top": cut_top, "side": cut_side}, "plausible": why is None, "h_pixels_m": None if h_pix is None else round(h_pix, 3),
            "span_m": round(st, 3), "bbox": bbox, "scale": SCALE}
@@ -1552,6 +1574,11 @@ def self_check():
     g1 = person_geometry(m1, d1, Kp, np.eye(4), up_, p0_)
     assert g1["plausible"] and g1["feet_visible"] and abs(g1["h_m"]) < .02 < g1["u_m"] and g1["h_pixels_m"] > .25, g1
     assert g1["support"] == "the floor" and abs(g1["below_h_m"]) < .05
+    # the plane tilted 2 deg about x: the plane alone reads the feet 0.14 m up; the floor beside them (SAM 3 'floor') says 0
+    tilt = np.radians(2.)
+    up_t, fl = np.array([0., -np.cos(tilt), np.sin(tilt)]), (d1 < 29) & ~m1 & (rows_ > 100.5)
+    gp, gf = person_geometry(m1, d1, Kp, np.eye(4), up_t, p0_), person_geometry(m1, d1, Kp, np.eye(4), up_t, p0_, floor_mask=fl)
+    assert gp["foot_h_m"] > .1 and abs(gf["h_m"]) < .02 and gf["u_m"] < gp["u_m"] and gf["floor_ref"].startswith("the floor beside"), (gp, gf)
     assert abs(g1["stature_m"] - 1.7) < .03 and g1["u_stature_m"] < .45 and g1["contact"]
     d2, m2 = floor_d.copy(), np.zeros((200, 200), bool)
     d2[140:, 30:80] = 3.

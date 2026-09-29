@@ -243,10 +243,11 @@ PEOPLE_GATE_MPS = 12.  # mvp2: X12's association gate at 5 fps (4 m/s split fast
 PEOPLE_UP_DEG = 2.  # the up direction's u for people (the cards use the walls' plumb p90, not known yet here: ME340 read 1-2 deg)
 
 
-def people_shot(si, keys, fps, g, depth_m, c2w_m, masks, plane, mpu):
+def people_shot(si, keys, fps, g, depth_m, c2w_m, masks, plane, mpu, floor=None):
     """PeopleLoop (the live rules, video.judge_frame) over the shot's 5 fps keyframes: tracks and rule rows. mvp2 (R4): each
     SAM 3 person mask is measured first (cards.person_geometry: feet and head along their rays at the body's range); a mask
-    that cannot be a person (a picture or print: cards.PERSON_H_M rules) never reaches the loop and is returned in `rejected`."""
+    that cannot be a person (a picture or print: cards.PERSON_H_M rules) never reaches the loop and is returned in `rejected`.
+    floor: the shot's SAM 3 'floor' masks per keyframe (numpy), the heights' local reference beside each person's feet."""
     from ehs_spatial.live_people import PeopleLoop
     from fast_report import cards
     if plane:
@@ -259,7 +260,7 @@ def people_shot(si, keys, fps, g, depth_m, c2w_m, masks, plane, mpu):
     depth = depth_m.cpu().numpy()
     K, c2w = g["K"].cpu().numpy().astype(float), c2w_m.cpu().numpy().astype(float)
     u_floor = plane["residual_p90_units"] * mpu if plane else .02
-    body = {i: cards.person_geometry(mk, depth[j], K[j], c2w[j], up, p0, u_floor, PEOPLE_UP_DEG) if plane else None
+    body = {i: cards.person_geometry(mk, depth[j], K[j], c2w[j], up, p0, u_floor, PEOPLE_UP_DEG, None if floor is None else floor[j]) if plane else None
             for j, kept in masks.items() for mk, _, i in kept}
     rejected = [{"t": round(keys[j] / fps, 4), "frame": int(keys[j]), "source": f"sam3-person-{i}", "score": round(sc, 3), "reason": body[i]["reason"],
                  "geometry": body[i]} for j, kept in masks.items() for _, sc, i in kept if body[i] and body[i].get("plausible") is False]
@@ -711,7 +712,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                 local = {q: j for j, q in enumerate(pos)}
                 pm = person_masks(person, local)
                 tracks, rows, findings, up, rejected = people_shot(si, [keys[q] for q in pos], fps, g, gg["depth_m"], gg["c2w_m"], pm, gg["plane"],
-                                                                    gg["mpu"])
+                                                                    gg["mpu"], floor[torch.tensor(pos, device=floor.device)].cpu().numpy())
                 for j, kept in pm.items():  # the pick layer's people: each kept mask with its track (section 3.2)
                     person_kept[pos[j]] = [(gi, mk) for mk, _, gi in kept]
                 for r in rows:

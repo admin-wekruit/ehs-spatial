@@ -103,6 +103,7 @@ def people_rows(layers, cards):
             "feet_u_median": round(float(np.median([g["u_m"] for g in whole])), 3) if whole else None,
             "feet_within_u_of_0": round(float(np.mean([abs(g["h_m"]) <= g["u_m"] for g in whole])), 3) if whole else None,
             "stature_m": summary([g.get("stature_m") for g in whole]),
+            "feet_on_local_floor": sum(str(g.get("floor_ref", "")).startswith("the floor beside") for g in whole),
             "rejected_masks": len(rej), "rejected_reasons": sorted({r["reason"].split(":")[-1].strip() for r in rej}),
             "confirmed_by_motion": sum(bool((c.get("identity") or {}).get("confirmed_by")) for c in person_cards),
             "likely_pictures": sum((c.get("identity") or {}).get("name", "").startswith("person?") for c in person_cards),
