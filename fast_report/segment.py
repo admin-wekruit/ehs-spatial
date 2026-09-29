@@ -18,6 +18,7 @@ LIFT_VOXEL, MIN_PIXELS, MOVING, MATCH_MIN, MATCH_MAX, CONFIRMED = .05, 16, .5, .
 GENERIC = {"tool", "tools", "machine", "machinery", "equipment", "object", "item", "part", "metal part", "container", "device",
            "thing", "material", "structure", "unit", "component", "hardware", "supplies", "fixture"}
 EMPTY = 2 ** 63 - 1
+EDGE_JUMP, ERODE_KEEP, DEPTH_REL = .05, .3, .05  # click MVP section 4.2: m3_exp_geometry.EDGE_JUMP; photo erosion rule; DA3 ~5 %
 HOLE_ITERS = 3
 
 
@@ -301,28 +302,103 @@ def backproject(depth, K, c2w, f, vy, vx, stride):
     return (c2w[f, :3, :3] @ cam[:, :, None])[:, :, 0] + c2w[f, :3, 3]
 
 
+def clean(masks, frame_of, depth_m, stride=2, batch=2048):
+    """Click MVP section 4.2 steps 1: mask pixels at depth edges out (a 4-neighbour jumps by > EDGE_JUMP x the depth:
+    m3_exp_geometry's flying-pixel rule, X1's per-view extents), then a 1 DA3 px (3x3) erosion unless < ERODE_KEEP of
+    the mask would remain (the photo rule: scene_inventory erodes 2 px at full resolution). Evaluated only at the stride
+    grid's pixels. -> (n, H/stride, W/stride) bool."""
+    import torch
+    import torch.nn.functional as F
+    pad = F.pad(depth_m[:, None], (1, 1, 1, 1), mode="replicate")[:, 0]
+    nb = torch.stack([pad[:, 1:-1, :-2], pad[:, 1:-1, 2:], pad[:, :-2, 1:-1], pad[:, 2:, 1:-1]])
+    edge = (nb - depth_m).abs().amax(0) > EDGE_JUMP * depth_m
+    H, W = depth_m.shape[1:]
+    out = []
+    for b0 in range(0, len(masks), batch):
+        m = masks[b0:b0 + batch] & ~edge[frame_of[b0:b0 + batch]]
+        p = F.pad(m.to(torch.uint8), (1, 1, 1, 1), value=1).bool()  # outside the image counts as inside: a frame cut is not a rim
+        er = torch.ones_like(m[:, ::stride, ::stride])
+        for dy in (0, 1, 2):
+            for dx in (0, 1, 2):
+                er &= p[:, dy:dy + H:stride, dx:dx + W:stride]
+        m2 = m[:, ::stride, ::stride]
+        ok = er.sum((1, 2)) >= ERODE_KEEP * m2.sum((1, 2))
+        out.append(torch.where(ok[:, None, None], er, m2))
+    return torch.cat(out) if out else masks[:, ::stride, ::stride]
+
+
+def trim(z, mid, n_masks):
+    """Section 4.2 step 2, per mask: keep points whose camera depth lies in [p15 - m, p85 + m], m = 0.25 (p85 - p15) +
+    DEPTH_REL z_med (the photo rule with its fixed 5 cm as 5 % of the depth). -> bool per point."""
+    import torch
+    order = torch.argsort(z)
+    order = order[torch.argsort(mid[order], stable=True)]
+    zs, ms = z[order], mid[order]
+    cnt = torch.bincount(ms, minlength=n_masks)
+    start = torch.cumsum(cnt, 0) - cnt
+    last = (cnt - 1).clamp(min=0).float()
+    q = lambda p: zs[(start + (last * p).long()).clamp(max=max(len(zs) - 1, 0))]  # noqa: E731
+    p15, p50, p85 = q(.15), q(.5), q(.85)
+    m = .25 * (p85 - p15) + DEPTH_REL * p50
+    ok = (zs >= (p15 - m)[ms]) & (zs <= (p85 + m)[ms])
+    keep = torch.empty_like(ok)
+    keep[order] = ok
+    return keep
+
+
+def mask_points(masks, frame_of, depth_m, K, c2w_m, dyn, stride=2):
+    """The lift's point step (click MVP section 4.2 steps 1-2): masks mostly on people out (E9), depth-edge pixels and a
+    1 px rim out, >= MIN_PIXELS left, per-mask depth tails trimmed, back-projected (stride grid).
+    -> ({lifted (L) input mask index, mid (N) index into lifted, world (N,3) metres, z (N) camera depth, fr (L) frame,
+         border (L,4) top/bottom/left/right edge touched, pixels (L) raw mask pixels} or None, stats)."""
+    import torch
+    raw = masks[:, ::stride, ::stride]
+    dy = dyn[:, ::stride, ::stride][frame_of]
+    moving = (raw & dy).sum((1, 2)) >= MOVING * raw.sum((1, 2)).clamp(min=1)
+    m = clean(masks, frame_of, depth_m, stride) & (depth_m[:, ::stride, ::stride] > 0)[frame_of] & ~dy
+    idx = torch.nonzero(~moving & (m.sum((1, 2)) >= MIN_PIXELS)).squeeze(1)
+    stats = {"masks_in": len(masks), "masks_dropped_moving": int(moving.sum()), "masks_lifted": len(idx), "pixels_raw": int(raw.sum()),
+             "pixels_clean": int(m.sum())}
+    if not len(idx):
+        return None, stats
+    mid, vy, vx = torch.nonzero(m[idx], as_tuple=True)
+    fr = frame_of[idx]
+    z = depth_m[fr[mid], vy * stride, vx * stride]
+    t = trim(z, mid, len(idx))
+    mid, vy, vx, z = mid[t], vy[t], vx[t], z[t]
+    stats["points_trimmed"] = int((~t).sum())
+    mk = masks[idx]
+    border = torch.stack([mk[:, :2].flatten(1).any(1), mk[:, -2:].flatten(1).any(1), mk[:, :, :2].flatten(1).any(1), mk[:, :, -2:].flatten(1).any(1)], 1)
+    return {"lifted": idx, "mid": mid, "world": backproject(depth_m, K, c2w_m, fr[mid], vy, vx, stride), "z": z, "fr": fr,
+            "border": border, "pixels": raw[idx].sum((1, 2))}, stats
+
+
+VB, VOFF = 1 << 21, 1 << 20
+
+
+def voxel_codes(world):
+    import torch
+    ijk = torch.floor(world / LIFT_VOXEL).long()
+    return ((ijk[:, 0] + VOFF) * VB + (ijk[:, 1] + VOFF)) * VB + (ijk[:, 2] + VOFF)
+
+
 def lift(masks, frame_of, depth_m, K, c2w_m, dyn, stride=2):
-    """E7's lift (E9's code): pixels -> 5 cm voxels -> cross-frame voxel overlap -> connected components.
-    -> (component per input mask, -1 = not lifted; per component arrays; stats)."""
+    """E7's lift (E9's code): pixels -> 5 cm voxels -> cross-frame voxel overlap -> connected components, on points
+    cleaned first (mask_points: depth-edge pixels and a 1 px rim out, per-mask depth tails trimmed), so flying pixels
+    neither bridge components nor stretch boxes (L1).
+    -> (component per input mask, -1 = not lifted; per component arrays; stats; points: mask_points' dict plus label (L)
+        component per lifted mask and obj_voxel (component, voxel code) pairs)."""
     import torch
     from scipy.sparse import coo_matrix
     from scipy.sparse.csgraph import connected_components
     dev, n = depth_m.device, len(depth_m)
     comp = np.full(len(masks), -1)
-    m = masks[:, ::stride, ::stride]
-    dy = dyn[:, ::stride, ::stride][frame_of]
-    moving = (m & dy).sum((1, 2)) >= MOVING * m.sum((1, 2)).clamp(min=1)
-    m = m & (depth_m[:, ::stride, ::stride] > 0)[frame_of] & ~dy
-    idx = torch.nonzero(~moving & (m.sum((1, 2)) >= MIN_PIXELS)).squeeze(1)
-    stats = {"masks_in": len(masks), "masks_dropped_moving": int(moving.sum()), "masks_lifted": len(idx)}
-    if len(idx) < 2:
-        return comp, None, stats
-    mid, vy, vx = torch.nonzero(m[idx], as_tuple=True)
-    fr = frame_of[idx]
-    world = backproject(depth_m, K, c2w_m, fr[mid], vy, vx, stride)
-    ijk = torch.floor(world / LIFT_VOXEL).long()
-    B, OFF = 1 << 21, 1 << 20
-    vox, vid = torch.unique(((ijk[:, 0] + OFF) * B + (ijk[:, 1] + OFF)) * B + (ijk[:, 2] + OFF), return_inverse=True)
+    p, stats = mask_points(masks, frame_of, depth_m, K, c2w_m, dyn, stride)
+    if p is None or len(p["lifted"]) < 2:
+        return comp, None, stats, None
+    idx, mid, fr = p["lifted"], p["mid"], p["fr"]
+    B, OFF = VB, VOFF
+    vox, vid = torch.unique(voxel_codes(p["world"]), return_inverse=True)
     pair = torch.unique(mid * len(vox) + vid)
     pm, pv = pair // len(vox), pair % len(vox)
     size = torch.bincount(pm, minlength=len(idx)).float()
@@ -332,7 +408,7 @@ def lift(masks, frame_of, depth_m, K, c2w_m, dyn, stride=2):
     edge = (a < b) & (fr[a] != fr[b]) & (c >= MATCH_MIN * torch.minimum(size[a], size[b])) & (c >= MATCH_MAX * torch.maximum(size[a], size[b]))
     a, b = a[edge].cpu().numpy(), b[edge].cpu().numpy()
     ncomp, label = connected_components(coo_matrix((np.ones(len(a)), (a, b)), shape=(len(idx), len(idx))), directed=False)
-    lab = torch.from_numpy(label).to(dev)
+    lab = torch.from_numpy(label.astype(np.int64)).to(dev)  # scipy gives int32: lab * voxels overflows (X1, fx/x1-fps lift_big)
     ov = torch.unique(lab[pm] * len(vox) + pv)
     oc, ovid = ov // len(vox), ov % len(vox)
     centre = torch.stack([vox // (B * B) - OFF, (vox // B) % B - OFF, vox % B - OFF], 1).float()[ovid] * LIFT_VOXEL + LIFT_VOXEL / 2
@@ -344,7 +420,47 @@ def lift(masks, frame_of, depth_m, K, c2w_m, dyn, stride=2):
     comp[idx.cpu().numpy()] = label
     arrays = {k: x.cpu().numpy() for k, x in (("frames", nframes), ("voxels", nvox), ("centroid", cent), ("lo", lo), ("hi", hi))}
     stats.update(points=int(len(mid)), voxels=int(len(vox)), edges=int(len(a)), components=int(ncomp))
-    return comp, arrays, stats
+    return comp, arrays, stats, {**p, "label": lab, "obj_voxel": (oc, vox[ovid])}
+
+
+def join(p, codes, owner):
+    """Densify (click MVP section 7): new masks' cleaned points against the objects' voxel sets (codes sorted, owner = the
+    object of each code): a mask joins the object holding the most of its voxels when that is >= MATCH_MIN of them (the
+    lift's rule, mask to object). -> (object per lifted mask, -1 = none; its share)."""
+    import torch
+    L = len(p["lifted"])
+    vox, vid = torch.unique(voxel_codes(p["world"]), return_inverse=True)
+    pair = torch.unique(p["mid"] * len(vox) + vid)
+    pm, pv = pair // len(vox), pair % len(vox)
+    size = torch.bincount(pm, minlength=L).float()
+    if not len(codes):
+        return torch.full((L,), -1, dtype=torch.long, device=vox.device), torch.zeros(L, device=vox.device)
+    pos = torch.searchsorted(codes, vox).clamp(max=len(codes) - 1)
+    ob = torch.where(codes[pos] == vox, owner[pos], torch.full_like(pos, -1))[pv]
+    ok = ob >= 0
+    n_obj = int(owner.max()) + 1
+    key, cnt = torch.unique(pm[ok] * n_obj + ob[ok], return_counts=True)
+    km, ko = key // n_obj, key % n_obj
+    best = torch.zeros(L, device=vox.device).scatter_reduce(0, km, cnt.float(), "amax")
+    who = torch.full((L,), -1, dtype=torch.long, device=vox.device)
+    top = cnt.float() == best[km]
+    who[km[top]] = ko[top]
+    share = best / size.clamp(min=1)
+    return torch.where(share >= MATCH_MIN, who, torch.full_like(who, -1)), share
+
+
+def pack(m):
+    """(n,H,W) bool -> (n,H,W/8) uint8 numpy, np.packbits' bit order (X1's layout: densify masks wait on the CPU)."""
+    import torch
+    w = torch.tensor([128, 64, 32, 16, 8, 4, 2, 1], dtype=torch.uint8, device=m.device)
+    return (m.reshape(m.shape[0], m.shape[1], m.shape[2] // 8, 8).to(torch.uint8) * w).sum(-1, dtype=torch.uint8).cpu().numpy()
+
+
+def unpack(p, dev):
+    import torch
+    x = torch.from_numpy(np.ascontiguousarray(p)).to(dev)
+    w = torch.tensor([128, 64, 32, 16, 8, 4, 2, 1], dtype=torch.uint8, device=dev)
+    return ((x[..., None] & w) > 0).reshape(x.shape[0], x.shape[1], x.shape[2] * 8)
 
 
 # ---------- outlines ----------
@@ -360,6 +476,29 @@ def polygons(mask, sx, sy, min_area=4.):
         c = cv2.approxPolyDP(c, .75, True)[:, 0].astype(np.float64)
         out.append(np.round(np.stack([(c[:, 0] + .5) * sx - .5, (c[:, 1] + .5) * sy - .5], 1), 1).tolist())
     return out
+
+
+def label_rle(lab):
+    """(h,w) int label map (0 = nothing, < 65536) -> uint16 little-endian (value, run) pairs in raster order, runs over
+    65535 split (panoptes-pick-v1)."""
+    x = np.asarray(lab).ravel()
+    starts = np.r_[0, np.flatnonzero(np.diff(x)) + 1]
+    runs = np.diff(np.r_[starts, len(x)])
+    reps = (runs + 65534) // 65535
+    r = np.full(int(reps.sum()), 65535, np.int64)
+    r[np.cumsum(reps) - 1] = runs - (reps - 1) * 65535
+    return np.stack([np.repeat(x[starts], reps), r], 1).astype("<u2").ravel()
+
+
+def pick_frame(lab):
+    """One pick map (process pool): (RLE bytes, entity values present, their pixel counts)."""
+    v, c = np.unique(lab, return_counts=True)
+    return label_rle(lab).tobytes(), v.tolist(), c.tolist()
+
+
+def rle_decode(pairs, h, w):
+    p = np.asarray(pairs, np.int64).reshape(-1, 2)
+    return np.repeat(p[:, 0], p[:, 1]).reshape(h, w)
 
 
 def label_polygons(lab, sx, sy):
@@ -436,10 +575,15 @@ def self_check():
     assert name({"machine": 3., "lathe": 2.}, order) == "lathe"  # 'machine' is generic
     assert name({"machine": 3., "lathe": 1.}, order) == "machine"  # lathe lacks support
     assert polygons(np.pad(np.ones((4, 4), bool), 2), 2., 2.)[0][0] == [4.5, 4.5]
+    lab = np.zeros((360, 640), np.int64)
+    lab[10:20, 5:600] = 3
+    lab[200:, :] = 65535  # a run longer than 65535 pixels is split
+    enc = label_rle(lab)
+    assert enc.dtype == np.dtype("<u2") and np.array_equal(rle_decode(enc, 360, 640), lab) and (enc.reshape(-1, 2)[:, 1] > 0).all()
     try:
         import torch
     except ImportError:
-        print("segment self-check ok: naming, polygons (flood rules skipped: no torch here)")
+        print("segment self-check ok: naming, polygons, pick RLE (flood rules, cleaning, trim skipped: no torch here)")
         return
     masks = torch.zeros((5, 280, 504), dtype=torch.bool)
     masks[0, 10:50, 10:50] = True   # 'cabinet' .9
@@ -452,4 +596,26 @@ def self_check():
     assert sorted((int(a), int(w)) for a, w, _ in votes) == [(0, 0), (0, 1), (3, 0), (4, 1)], votes
     lab = paint(masks[[0, 2, 3]])  # 2 lies inside 0: the smaller one keeps its pixels
     assert int(lab[20, 20]) == 2 and int(lab[45, 45]) == 1 and int(lab[120, 120]) == 3 and int(lab[200, 400]) == 0
-    print("segment self-check ok: flood merge/drop, naming, polygons")
+    # cleaning: a depth step inside mask 0 drops the edge pixels there; a 1 px rim goes; a 2 px wide mask keeps its pixels
+    depth = torch.full((2, 280, 504), 4.)
+    depth[0, :, 30:] = 6.
+    thin = torch.zeros((1, 280, 504), dtype=torch.bool)
+    thin[0, 100:200, 300:302] = True
+    cm = clean(torch.cat([masks[:1], thin]), torch.tensor([0, 1]), depth)
+    full = masks[0, ::2, ::2]
+    assert cm.shape == (2, 140, 252) and not cm[0, 7:25, 14].any() and not cm[0, 7:25, 5].any() and cm[0, 12, 10] and cm[0].sum() < full.sum()
+    assert cm[1].sum() == thin[0, ::2, ::2].sum(), "a mask the erosion would empty keeps its pixels"
+    z = torch.tensor([1., 1.02, 1.01, .99, 1., 3., 2., 2.01, 2.02, 1.99, 2., 2.])
+    keep = trim(z, torch.tensor([0] * 6 + [1] * 6), 2)
+    assert keep.tolist() == [True] * 5 + [False] + [True] * 6, keep  # a flying 3 m point in a 1 m mask goes
+    bits = torch.rand(3, 280, 504) > .5
+    assert torch.equal(unpack(pack(bits), "cpu"), bits) and np.array_equal(pack(bits), np.packbits(bits.numpy(), axis=2))
+    # join: object 0 owns voxels around x = 0, object 1 around x = 1; mask 0 lies 80 % in object 1, mask 1 nowhere
+    w0 = torch.tensor([[1.01 + .05 * i, 0., 0.] for i in range(5)])
+    w1 = torch.tensor([[3. + .05 * i, 0., 0.] for i in range(4)])
+    codes = torch.cat([voxel_codes(torch.tensor([[.01 + .05 * i, 0., 0.] for i in range(4)])), voxel_codes(w0[:4])])
+    order = torch.argsort(codes)
+    who, share = join({"lifted": torch.arange(2), "mid": torch.tensor([0] * 5 + [1] * 4), "world": torch.cat([w0, w1])},
+                      codes[order], torch.tensor([0] * 4 + [1] * 4)[order])
+    assert who.tolist() == [1, -1] and abs(float(share[0]) - .8) < 1e-6, (who, share)
+    print("segment self-check ok: flood merge/drop, naming, polygons, pick RLE, depth-edge cleaning, depth-tail trim, mask packing, densify join")

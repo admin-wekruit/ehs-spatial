@@ -178,17 +178,20 @@ class Writer:
         self.outbox.put(None)
 
 
-def mirror(event, root):
+def mirror(event, root, max_bytes=None):
     """The CLI's copy of one event run() yielded: blobs checked against their sha256 and stored like the Volume, patch JSONs,
-    `written` times (written.json) and the final run.json. Raises on a bad blob or a blob the mirror does not hold."""
+    `written` times (written.json) and the final run.json. Raises on a bad blob or a blob the mirror does not hold.
+    max_bytes: larger blobs stay on the Volume only (a nearly full disk); their patches still mirror."""
     root, report = Path(root), Path(root) / "reports" / event["report"]
     if event["type"] == "patch":
         for sha, payload in event["blobs"].items():
             if hashlib.sha256(payload).hexdigest() != sha:
                 raise ValueError(f"blob {sha} does not match its sha256")
-            put_blob(root, payload)
+            if max_bytes is None or len(payload) <= max_bytes:
+                put_blob(root, payload)
         patch = event["patch"]
-        missing = [r["sha256"] for r in patch["blobs"].values() if not (root / "blobs" / "sha256" / r["sha256"]).exists()]
+        missing = [r["sha256"] for r in patch["blobs"].values() if not (root / "blobs" / "sha256" / r["sha256"]).exists()
+                   and (max_bytes is None or r["bytes"] <= max_bytes)]
         if missing:
             raise ValueError(f"patch {patch['seq']} needs blobs the mirror does not hold: {missing}")
         _write_json(report / "patches" / f"{patch['seq']:06d}-{patch['layer']}.json", patch)

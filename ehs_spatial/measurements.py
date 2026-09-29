@@ -40,6 +40,9 @@ def measurement_scale(scene: dict, calibration: dict | None = None, *, scene_sha
     if source == 'moge_anchor':
         result.update(status='estimated', m_per_native=float(factor),
                       reason='Model-estimated scale; not a surveyed or operator-calibrated dimension')
+    elif source == 'assumed_camera_height':  # the video fast path (video.contract_scale calls it model_estimated)
+        result.update(status='estimated', m_per_native=float(factor),
+                      reason='Floor plane + an assumed camera height; not a measured dimension')
     elif source == 'camera_height' and calibration and calibration.get('provided') is True and _positive(calibration.get('camera_height_m')):
         result.update(status='operator_anchored', m_per_native=float(factor), reason=None,
                       camera_height_m=float(calibration['camera_height_m']),

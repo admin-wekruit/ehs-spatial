@@ -8,6 +8,7 @@ import copy
 import hashlib
 import io
 import json
+import queue
 import struct
 import threading
 import time
@@ -18,6 +19,7 @@ import numpy as np
 import detect_shot_cuts as dsc  # cut rules, unchanged
 
 BLOCK, MIN_SHOT, CHUNK, TAIL = 6, 30, 16, 8  # E9: sharpest of each 6-frame block; shots under 1 s get no geometry
+DENSIFY_BATCH = 4  # click MVP section 7: keyframes per densify SAM 3 task
 DA3_HW = (280, 504)
 CAMERA_HEIGHT_M = 1.6  # the reference's own assumption: every metre here is 'estimated'
 LICENSE = "DA3-GIANT-1.1 (CC BY-NC 4.0): research licence, not for commercial use"
@@ -200,7 +202,8 @@ def floor_plane(depth, K, c2w, floor, stride=4):
     if h.median() < 0:
         n, h = -n, -h
     return {"normal": n.float(), "point": c.float(), "camera_height_units": float(h.median()), "points": int(len(pts)),
-            "inliers": int(len(keep)), "camera_height_spread_rel": float((h - h.median()).abs().median() / h.median().abs())}
+            "inliers": int(len(keep)), "camera_height_spread_rel": float((h - h.median()).abs().median() / h.median().abs()),
+            "residual_p90_units": float(((keep - c) @ n).abs().quantile(.9))}  # click MVP section 4.4: u_floor
 
 
 def union_by_frame(frame, masks, n):
@@ -264,6 +267,108 @@ def people_shot(si, keys, fps, g, depth_m, c2w_m, masks, plane, mpu):
             tracks.setdefault(r["track"], []).append({"t": r["t"], "frame": r["frame"], "xyz": np.round(ground, 3).tolist(),
                                                       "foot": r["footWorld"], "accepted_foot": r["accepted"]})
     return tracks, rows, findings, up
+
+
+def object_points(pts, frame_of_lifted, conf, cap=20000):
+    """Per confirmed lift component (in `conf` order): its cleaned points (<= cap, a seeded random sample, with the
+    share kept) and per view [mask pixels, touches top, bottom, left, right], on the CPU for the cards (section 4.2)."""
+    import torch
+    lab = pts["label"]
+    if not len(conf):
+        return []
+    want = torch.full((int(lab.max()) + 1,), -1, dtype=torch.long, device=lab.device)
+    want[torch.as_tensor(conf, device=lab.device)] = torch.arange(len(conf), device=lab.device)
+    oi_pt = want[lab[pts["mid"]]]
+    k = oi_pt >= 0
+    oi_pt, world, fr_pt, z = (t.cpu().numpy() for t in (oi_pt[k], pts["world"][k], frame_of_lifted[pts["mid"][k]], pts["z"][k]))
+    oi_m, fm = want[lab].cpu().numpy(), frame_of_lifted.cpu().numpy()
+    px, bd = pts["pixels"].cpu().numpy(), pts["border"].cpu().numpy()
+    order = np.argsort(oi_pt, kind="stable")
+    rng = np.random.default_rng(0)
+    out = []
+    for ix in np.split(order, np.cumsum(np.bincount(oi_pt, minlength=len(conf)))[:-1]):
+        ratio = min(1., cap / max(len(ix), 1))
+        if ratio < 1:
+            ix = np.sort(rng.choice(ix, cap, replace=False))
+        out.append({"world": world[ix], "frame": fr_pt[ix].astype(np.int32), "z": z[ix], "sample_ratio": ratio, "views": {}})
+    for j in np.flatnonzero(oi_m >= 0):
+        v = out[oi_m[j]]["views"].setdefault(int(fm[j]), [0, False, False, False, False])
+        v[0] += int(px[j])
+        v[1:] = [a or bool(b) for a, b in zip(v[1:], bd[j])]
+    return out
+
+
+def object_voxels(obj_voxel, conf, first):
+    """The first lift's (component, voxel code) pairs -> (sorted unique codes, object index of each) for the densify join;
+    objects are numbered from `first` in `conf` order; a voxel two objects share goes to one of them."""
+    import torch
+    oc, codes = obj_voxel
+    want = torch.full((int(oc.max()) + 1 if len(oc) else 1,), -1, dtype=torch.long, device=codes.device)
+    want[torch.as_tensor(conf, device=codes.device)] = torch.arange(len(conf), device=codes.device) + first
+    o = want[oc]
+    keep = o >= 0
+    codes, o = codes[keep], o[keep]
+    u, inv = torch.unique(codes, return_inverse=True)
+    owner = torch.full((len(u),), -1, dtype=torch.long, device=codes.device).scatter_reduce(0, inv, o, "amax")
+    return u, owner
+
+
+def merge_points(parts, cap=20000):
+    """Point dicts of one object (object_points' layout) -> one, subsampled to `cap` with a seeded draw."""
+    world = np.concatenate([p["world"] for p in parts])
+    frame = np.concatenate([p["frame"] for p in parts])
+    z = np.concatenate([p["z"] for p in parts])
+    ratio = float(np.mean([p.get("sample_ratio", 1.) for p in parts]))
+    if len(world) > cap:
+        ix = np.sort(np.random.default_rng(1).choice(len(world), cap, replace=False))
+        world, frame, z, ratio = world[ix], frame[ix], z[ix], ratio * cap / len(world)
+    views = {}
+    for p in parts:
+        for v, m in (p.get("views") or {}).items():
+            a = views.setdefault(v, [0, False, False, False, False])
+            a[0] += m[0]
+            a[1:] = [x or bool(y) for x, y in zip(a[1:], m[1:])]
+    return {"world": world, "frame": frame, "z": z, "sample_ratio": ratio, "views": views}
+
+
+def cards_calibration():
+    """fast_report/calibration.json (D writes it): k per family and k_pose; defaults 1 without it (spec section 4.4)."""
+    path = Path(__file__).with_name("calibration.json")
+    out = {"file_sha256": None, "k": {"height": 1., "extent": 1., "position": 1., "angle": 1.}, "k_pose": 1.}
+    if path.exists():
+        raw = path.read_bytes()
+        d = json.loads(raw)
+        out.update(file_sha256=sha256(raw), k={**out["k"], **(d.get("k") or {})}, k_pose=float(d.get("k_pose", 1.)))
+    return out
+
+
+def box_stats(objects, cards_v1, limit=3.):
+    """L1 inflation: longest box side over `limit` m, p90 and max, for the lift's voxel boxes (fb/integrate's), the v1 robust
+    boxes and the cards' boxes shown as plausible."""
+    def row(sides):
+        a = np.asarray([x for x in sides if x is not None], float)
+        return {"n": int(len(a)), "over_3m_share": round(float((a > limit).mean()), 4) if len(a) else None,
+                "p90_m": round(float(np.percentile(a, 90)), 3) if len(a) else None, "max_m": round(float(a.max()), 3) if len(a) else None}
+    out = {"voxel_box": row([max(np.subtract(o["voxel_box_m"][1], o["voxel_box_m"][0])) for o in objects if "voxel_box_m" in o]),
+           "v1_robust_box": row([max(o["box"]["size_m"]) for o in objects if "box" in o])}
+    if cards_v1:
+        shown = [c["physical"] for c in cards_v1["cards"] if c["kind"] == "object" and "box" in c["physical"]]
+        out["cards_all"] = row([max(p["box"]["size_m"]) for p in shown])
+        out["cards_shown_plausible"] = row([max(p["box"]["size_m"]) for p in shown if p["size_check"].get("status") != "implausible"])
+        out["implausible_by_class"] = {}
+        for p in shown:
+            if p["size_check"].get("status") == "implausible":
+                c = p["size_check"]["class"]
+                out["implausible_by_class"][c] = out["implausible_by_class"].get(c, 0) + 1
+    return out
+
+
+def shot_floor(gg):
+    """(normal, point in metres) of the shot's floor; without a floor plane the first camera's down vector 1.6 m below it."""
+    if gg["plane"]:
+        return gg["plane"]["normal"].cpu().numpy().astype(float), gg["plane"]["point"].cpu().numpy().astype(float) * gg["mpu"]
+    c = gg["c2w_m"][0].cpu().numpy().astype(float)
+    return -c[:3, 1], c[:3, 3] + CAMERA_HEIGHT_M * c[:3, 1]
 
 
 # ---------- the run ----------
@@ -365,7 +470,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     import torch
     import torch.nn.functional as F
     import video_events
-    from fast_report import cascade, layers, segment, vlm
+    from fast_report import cards, cascade, layers, segment, vlm
     dev_geo, dev_seg = m.dev_geo, m.dev_seg
     video_sha = sha256(mp4)
     site = opts.get("site") or "unknown"
@@ -467,6 +572,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         decoded_all.set()
         shared = m.cpu_pool.submit(share_frames, frames, clock)
         gray_all = [g.result()[0] for g in grays]
+        sharp_all = [g.result()[1] for g in grays]  # the cards' best-view ranking (section 4.3)
         for a1 in range(a, n, TAIL):  # the tail in small pieces: after decoding it is on the critical path
             b1, lo = min(a1 + TAIL, n), max(0, a1 - 2)
             futures.append(m.proc_pool.submit(measure_chunk, gray_all[lo:min(n, b1 + dsc.SPAN + 1)], a1, b1, lo, min(n, b1 + dsc.SPAN + 1)))
@@ -511,7 +617,7 @@ def analyse(m, mp4, opts, clock, writer, log):
             c2w_m[:, :3, 3] *= mpu
         floor_rec = {k: v for k, v in (plane or {}).items() if k not in ("normal", "point")}
         if plane:
-            floor_rec.update(normal=plane["normal"].tolist(), point_m=(plane["point"] * mpu).tolist())
+            floor_rec.update(normal=plane["normal"].tolist(), point_m=(plane["point"] * mpu).tolist(), u_floor_m=round(plane["residual_p90_units"] * mpu, 4))
         cam_rows.append({"index": si, "frame_id": f"shot-{si}", "frames": list(shots[si]), "keys": [keys[q] for q in pos],
                          "times": [round(keys[q] / fps, 4) for q in pos], "c2w": c2w_m.cpu().numpy().round(5).tolist(),
                          "K": g["K"].cpu().numpy().round(3).tolist(), "wh": [DA3_HW[1], DA3_HW[0]], "source_wh": [W, H], "mpu": mpu,
@@ -540,6 +646,7 @@ def analyse(m, mp4, opts, clock, writer, log):
             raw, meta = points_glb(tsdf["points"], tsdf["colors"], .03)
             room_blobs[f"points-{si}"] = (raw, {**meta, "frame": f"shot-{si}"})
         gg["seeds"] = {"xyz": tsdf["points"], "rgb": tsdf["colors"]}
+        gg["mesh_vf"] = (rows9[:, :3], faces)  # the cards' plumb check (section 4.5), off the critical path
         room_rows.append({"index": si, "frame_id": f"shot-{si}", "triangles": tsdf["n_triangles"], "points": tsdf["n_points"], "tsdf_voxel_m": .03})
         light_rows.append({"index": si, "frame_id": f"shot-{si}", "triangles": len(quick[3]), "points": 0, "light_cell_m": .06})
     # cameras and the light room in one commit (put 1 s apart, the room waited for the cameras' commit: run
@@ -574,6 +681,11 @@ def analyse(m, mp4, opts, clock, writer, log):
                 local = {q: j for j, q in enumerate(pos)}
                 pm = person_masks(person, local)
                 tracks, rows, findings, up = people_shot(si, [keys[q] for q in pos], fps, g, gg["depth_m"], gg["c2w_m"], pm, gg["plane"], gg["mpu"])
+                for j, kept in pm.items():  # the pick layer's people: each kept mask with its track (section 3.2)
+                    person_kept[pos[j]] = [(gi, mk) for mk, _, gi in kept]
+                for r in rows:
+                    if (r.get("source") or "").startswith("sam3-person-"):
+                        person_entity[int(r["source"].rsplit("-", 1)[1])] = f"person:{si}-{r['track']}" if r["track"] else "person:untracked"
                 for tid, pts in tracks.items():
                     rb = ribbon([q["xyz"] for q in pts], up)
                     if rb is not None:
@@ -583,23 +695,27 @@ def analyse(m, mp4, opts, clock, writer, log):
                            for t, pts in tracks.items()]
             rules_out += [{**f, "shot": si} for f in findings]
             per_shot.append({"index": si, "frame_id": f"shot-{si}", "detections": len(rows), "tracks": len(tracks)})
-        writer.put("people", {"tracks": tracks_out, "rules": rules_out, "shots": per_shot, "note": "the fast path tracks people only: no non-person movers"},
-                   people_blobs, "observed+estimated", [*lab, "rules that need metres say NEEDS_REVIEW: the scale is not measured"])
+        results["people"] = {"tracks": tracks_out, "rules": rules_out, "shots": per_shot, "note": "the fast path tracks people only: no non-person movers"}
+        writer.put("people", results["people"], people_blobs, "observed+estimated", [*lab, "rules that need metres say NEEDS_REVIEW: the scale is not measured"])
         clock.mark("geometry_layers_put")
 
+    person_kept, person_entity = {}, {}  # keyframe -> [(person mask index, DA3-grid mask)]; mask index -> entity id
     people_future = m.cpu_pool.submit(people_layer)
 
     if dev_geo != dev_seg:
         work.worker(dev_geo, "geo")
     work.wait(work.all_ready)
     seg_future.result()
-    release.set()
+    densify_on = opts.get("densify", True)
+    if not densify_on:
+        release.set()  # fb/integrate's order: the splat trains once the SAM 3 queue is empty
     people_future.result()
     clock.mark("sam3_done")
     words = work.words
     work.cache.clear()
-    for d in work.chunks:  # the keyframes on each GPU (kf is GPU 0's own copy)
-        work.chunks[d] = []
+    if not densify_on:
+        for d in work.chunks:  # the keyframes on each GPU (kf is GPU 0's own copy); densify keeps them until it is done
+            work.chunks[d] = []
 
     # ---------- objects: flood handling, lift, naming, cascade ----------
     with torch.inference_mode(), clock.stage("dedupe", gpu=dev_geo):
@@ -608,7 +724,7 @@ def analyse(m, mp4, opts, clock, writer, log):
         voc_count = int(len(voc["frame"])) if voc is not None else 0
         kept, votes = segment.dedupe(voc["frame"], voc["word"], voc["score"], voc["mask"]) if voc is not None else (np.zeros(0, int), [])
         vf = voc["frame"].cpu().numpy() if voc is not None else np.zeros(0, int)
-    objects, members, obj_masks_on = [], [], []
+    objects, members, obj_masks_on, obj_points, shot_voxels = [], [], [], [], {}
     with torch.inference_mode(), clock.stage("lift", gpu=dev_geo, n={"masks_kept": int(len(kept)), "masks_in": int(len(voc["frame"])) if voc else 0}):
         vote_of = {}
         for a_, w_, s_ in votes:
@@ -621,10 +737,14 @@ def analyse(m, mp4, opts, clock, writer, log):
             sel = kept_t[local[voc["frame"][kept_t]] >= 0] if len(kept_t) else kept_t
             if len(sel) < 2:
                 continue
-            comp, arr, stats = segment.lift(voc["mask"][sel], local[voc["frame"][sel]], gg["depth_m"], gg["K"], gg["c2w_m"], dyn[torch.tensor(gg["pos"], device=dev_geo)])
+            comp, arr, stats, pts = segment.lift(voc["mask"][sel], local[voc["frame"][sel]], gg["depth_m"], gg["K"], gg["c2w_m"],
+                                                 dyn[torch.tensor(gg["pos"], device=dev_geo)])
             lift_stats.append(stats)
             if arr is None:
                 continue
+            conf = np.flatnonzero(arr["frames"] >= segment.CONFIRMED)
+            obj_points += object_points(pts, pts["fr"], conf)
+            shot_voxels[si] = object_voxels(pts["obj_voxel"], conf, len(objects))
             sel_np, fr_np, sc_np = sel.cpu().numpy(), voc["frame"][sel].cpu().numpy(), voc["score"][sel].float().cpu().numpy()
             area = voc["mask"][sel].sum((1, 2)).cpu().numpy()
             for c in np.flatnonzero(arr["frames"] >= segment.CONFIRMED):
@@ -638,11 +758,16 @@ def analyse(m, mp4, opts, clock, writer, log):
                 objects.append({"id": oid, "shot": si, "word": segment.name(vv, words),
                                 "votes": {w: round(v, 3) for w, v in sorted(vv.items(), key=lambda x: -x[1])[:5]},
                                 "frames": int(arr["frames"][c]), "masks": int(len(mem)), "voxels": int(arr["voxels"][c]),
-                                "centroid_m": arr["centroid"][c].round(3).tolist(), "box_min_m": (arr["lo"][c] - segment.LIFT_VOXEL / 2).round(3).tolist(),
-                                "box_max_m": (arr["hi"][c] + segment.LIFT_VOXEL / 2).round(3).tolist(), "best_key": int(keys[fr_np[best]])})
+                                "centroid_m": arr["centroid"][c].round(3).tolist(), "best_key": int(keys[fr_np[best]]),
+                                "voxel_box_m": [(arr["lo"][c] - segment.LIFT_VOXEL / 2).round(3).tolist(), (arr["hi"][c] + segment.LIFT_VOXEL / 2).round(3).tolist()]})
                 members.append(sel_np[mem])
                 obj_masks_on.append((si, int(sel_np[best])))
         summary["lift"] = lift_stats
+    with clock.stage("objects.boxes", n={"objects": len(objects)}):  # section 4.2 step 5 on the cleaned points (L1)
+        floors = [cards.floor_frame(gg["c2w_m"][0].cpu().numpy(), *shot_floor(gg)) for gg in geo]
+        for o, (box, lo, hi) in zip(objects, m.cpu_pool.map(lambda x: cards.v1_box(x[1]["world"], floors[x[0]["shot"]]), zip(objects, obj_points))):
+            o.update(box=box, box_min_m=np.round(lo, 3).tolist(), box_max_m=np.round(hi, 3).tolist(),
+                     box_rule="robust: p2/p98 height x min-area p2-p98 footprint of the cleaned points (click MVP 4.2)")
     clock.mark("objects_lifted")
 
     by_frame = {}  # object keyframe -> {object: [its masks there]}
@@ -660,6 +785,119 @@ def analyse(m, mp4, opts, clock, writer, log):
     writer.put("objects", copy.deepcopy({"objects": objects, "cascade": casc, "vocabulary": words}), None, "estimated+inferred", obj_labels)
     clock.mark("objects_v1_put")
 
+    # ---------- click MVP: object cards (section 4) and the judgement hook (B's fast_report.judge, when present) ----------
+    cards_out, cards_ready, pick_ready, judge_futures = {}, threading.Event(), threading.Event(), []
+    card_labels = ["physical values are estimated (floor plane + assumed 1.6 m camera height) with +-u from view-subset disagreement plus depth, "
+                   "pose, floor, resolution and scale terms; 'not observed' / 'not measurable' carry their reason",
+                   "identity and class are inferred: a detected word until a calibrated decider answers",
+                   "time from the pick maps; 'disappeared' only with before/after keyframes"]
+
+    def cards_put(version, out):
+        data = {"schema": "panoptes-object-cards-v1", "version": version, "version_of": {"objects": {1: 1, 2: 2}.get(version, 3), "pick": 1 if version < 3 else 2},
+                "calibration": cards_calibration(), "shots": out["shots"], "aliases": out["aliases"], "stats": out["stats"]}
+        body = json.dumps(out["cards"], separators=(",", ":"), default=layers._plain).encode()
+        blobs = None
+        if len(body) < 1 << 20:
+            data["cards"] = out["cards"]
+        else:
+            data["cards"] = "blob"
+            blobs = {"cards": (body, {"mediaType": "application/json", "format": "panoptes-object-cards-v1 cards"})}
+        writer.put("object_cards", data, blobs, "estimated+inferred", card_labels)
+        clock.mark(f"cards_v{version}_put")
+
+    def cards_job():
+        with clock.stage("cards.inputs", n={"shots": len(geo)}):
+            shots_in = []
+            for si, gg in enumerate(geo):
+                normal, point = shot_floor(gg)
+                shots_in.append({"index": si, "keys": gg["keys"], "times": [k_ / fps for k_ in gg["keys"]], "c2w": gg["c2w_m"].cpu().numpy().astype(float),
+                                 "K": gg["K"].cpu().numpy().astype(float), "normal": normal, "point_m": point, "mpu": gg["mpu"],
+                                 "u_floor_m": cam_rows[si]["floor"].get("u_floor_m"), "scale_status": cam_rows[si]["scale_status"],
+                                 "sharp": np.array([sharp_all[k_] for k_ in gg["keys"]]), "plumb_deg": cards.plumb(*gg["mesh_vf"], normal),
+                                 "plumb_walls": cards.plumb_walls(*gg["mesh_vf"], normal),
+                                 "depth": gg["depth_m"].cpu().numpy(), "person": gg["person"].cpu().numpy()})
+        with clock.stage("cards.v1", n={"objects": len(objects)}):  # the pick maps' counts are read only for the time fields
+            out = cards.build({"shots": shots_in, "objects": copy.deepcopy(objects), "points": obj_points,
+                               "counts": lambda: (pick_ready.wait(120), pick_counts)[1],
+                               "people": results.get("people"), "calibration": cards_calibration()}, m.proc_pool, 16)
+        cards_out["v1"], cards_out["shots_in"] = out, shots_in
+        cards_ready.set()
+        cards_put(1, out)
+        judge_hook(out, shots_in)
+        return out["stats"]
+
+    def judge_hook(out, shots_in):
+        """B's entry point (spec section 9 A's contract out): judge.run(cards, ctx, writer, clock), when fast_report.judge exists."""
+        try:
+            from fast_report import judge
+        except ImportError:
+            return
+        by = {x["index"]: x for x in out["shots"]}
+        ctx = {"shots": [{"index": x["index"], "keys": x["keys"], "times": x["times"], "c2w_m": x["c2w"], "K": x["K"],
+                          "floor": {"normal": x["normal"], "point_m": x["point_m"]}, "floor_frame": by[x["index"]]["floor_frame"],
+                          "u_pose_m": by[x["index"]]["u_pose_m"], "angles_usable": by[x["index"]]["angles_usable"]} for x in shots_in],
+               "frames": frames, "outlines": results.get("outlines"), "people": results.get("people"), "walked": out["walked"]}
+        judge_futures.append(m.cpu_pool.submit(judge.run, out["cards"], ctx, writer, clock))
+
+    def sync_objects():
+        """objects v2 carries the cards' boxes (main cluster, fragments merged) and size checks once they exist."""
+        if not cards_ready.wait(20):
+            return
+        out = cards_out["v1"]
+        by = {c["id"]: c["physical"] for c in out["cards"] if c["kind"] == "object"}
+        for o in objects:
+            p = by.get(o["id"])
+            if p and "box" in p:
+                o.update(box=p["box"], box_min_m=p["box_min_m"], box_max_m=p["box_max_m"], size_check=p["size_check"].get("status"),
+                         box_rule="cards: main cluster of the cleaned points, fragments merged (click MVP 4.2)")
+            if o["id"] in out["aliases"]:
+                o["merged_into"] = out["aliases"][o["id"]]
+
+    def cards_v2():
+        """Identity once the cascade and the free-text namer answered (section 4.7; the decider is B's)."""
+        if "v1" not in cards_out:
+            return
+        by = {o["id"]: o for o in objects}
+        new = [{**c, "identity": cards.identity_v2(c["identity"], by[c["id"]], c["physical"].get("size_check") or {})} if c["kind"] == "object" else c
+               for c in cards_out["v1"]["cards"]]
+        ask_identity(new)
+        cards_out["v2"] = {**cards_out["v1"], "cards": new}
+        cards_put(2, cards_out["v2"])
+
+    def ask_identity(card_list):
+        """Section 4.7 step 3 through B's decider (vlm.options + judge.som, when both exist): the best view with the outlines
+        as numbered white-over-black marks, the subject [1]; EHS-relevant classes only (ponytail: the rest wait for B's queue)."""
+        options_fn = getattr(vlm, "options", None)
+        try:
+            from fast_report import judge
+            som = getattr(judge, "som", None)
+        except ImportError:
+            som = None
+        if options_fn is None or som is None:
+            return
+        outl = {f["sourceFrame"]: f for f in (results.get("outlines") or {}).get("frames", []) if f["source"] == "segmented"}
+        cal = cards_calibration()
+
+        def one(c):
+            best = next((k for k in c["views"].get("best", []) if k in outl), None)
+            if best is None:
+                return
+            marks, n = {}, 2
+            for o in outl[best]["objects"]:
+                if o["entityId"] == c["id"]:
+                    marks[1] = o["polygons"]
+                else:
+                    marks[n], n = o["polygons"], n + 1
+            if 1 not in marks:
+                return
+            opts = cards.identity_options(c["identity"])
+            c["identity"] = cards.decide_identity(c["identity"], opts, options_fn([som(frames[best], marks, subject=1)], cards.IDENTITY_PROMPT, opts), cal)
+        todo = [c for c in card_list if c["kind"] == "object" and (c["class"]["category"] != "other" or cards.head_match(c["identity"]["name"], cards.CLASS_SIZE))]
+        with clock.stage("vlm.identity", n={"objects": len(todo)}):
+            list(m.cpu_pool.map(one, todo))
+
+    cards_future = m.cpu_pool.submit(cards_job)
+
     def sam3d_inputs():
         """B's Obj: every object's SAM 3 logits on each keyframe it was seen in (the max over its masks there, B's fixture rule)."""
         with torch.inference_mode(), clock.stage("sam3d.inputs", gpu=dev_geo, n={"objects": len(objects)}):
@@ -673,7 +911,8 @@ def analyse(m, mp4, opts, clock, writer, log):
                 lr.index_reduce_(0, torch.tensor(owner, device=dev_geo), voc["logits"][torch.tensor(rows, device=dev_geo)], "amax")
             lr = lr.cpu().numpy()
         inputs_taken.set()
-        objs = [{"id": o["id"], "shot": o["shot"], "word": o["word"], "box_min_m": o["box_min_m"], "box_max_m": o["box_max_m"], "masks_lr": {}} for o in objects]
+        objs = [{"id": o["id"], "shot": o["shot"], "word": o["word"], "box_min_m": o["box_min_m"], "box_max_m": o["box_max_m"], "masks_lr": {}}
+                for o in objects[:len(members)]]
         for (oi, f), r in pair.items():
             objs[oi]["masks_lr"][f] = lr[r]
         return objs
@@ -687,12 +926,212 @@ def analyse(m, mp4, opts, clock, writer, log):
         maps_ready.wait()
         if voc is not None:
             voc.clear()
-        with torch.cuda.device(dev_geo):
-            torch.cuda.empty_cache()
+        if not densify_on:  # densify: the one empty_cache is models_job's, after its SAM 3 (see below)
+            with torch.cuda.device(dev_geo):
+                torch.cuda.empty_cache()
 
-    # complete models: SAM 3D + the fit gate on GPU 0's two processes, beside the outlines and the naming cascade
-    models_future = m.cpu_pool.submit(models_job, m, sam3d_inputs, geo, shared, words, clock, writer, dev_geo)
+    # complete models: SAM 3D + the fit gate on GPU 0's two processes; its inputs are gathered now, the generation waits for
+    # the facts (click MVP section 7: densify, cards and judgements before the display layers)
+    sam3d_objs = m.cpu_pool.submit(sam3d_inputs)
+    display = {}
+
+    def release_splat():
+        if not release.is_set():
+            release.set()  # the splat trains on GPU 1 from here
+            clock.mark("splat_started")
+
+    def start_display():
+        release_splat()
+        if display:
+            return
+        display["models"] = m.cpu_pool.submit(models_job, m, sam3d_objs.result, geo, shared, words, clock, writer, dev_geo)
+        clock.mark("display_started")
+    if not densify_on or not objects:
+        start_display()
     v1_labels = {o["id"]: o["label"] for o in objects}
+    gpu0_free, cascade_done = threading.Event(), threading.Event()
+
+    def densify_sam3(dev, batches, dens, lock):
+        """Section 7: SAM 3 with every word on the 5 fps keyframes the objects skipped, from one queue both GPUs take from;
+        per batch the flood dedupe, a label map per frame at 640x360 from the kept masks' logits (the smaller wins), and the
+        kept masks bit-packed on the CPU (X1's layout)."""
+        sam, words_t, oh, ow = m.sams[dev], tuple(words), H // 2, W // 2
+        with torch.cuda.device(dev), torch.inference_mode():
+            while True:
+                try:
+                    batch = batches.get_nowait()
+                except queue.Empty:
+                    return
+                print(f"densify gpu{dev.index} frames {batch} t={clock.now():.2f}", flush=True)  # a breadcrumb in the container log
+                with clock.stage(f"densify.sam3@gpu{dev.index}", gpu=dev, n={"frames": len(batch), "words": len(words_t)}):
+                    x = torch.stack([work.chunks[dev][q // segment.PERSON_FRAMES][q % segment.PERSON_FRAMES] for q in batch])
+                    r = sam.detect(sam.vision(x), len(batch), words_t, segment.VOCAB_SCORE, logits=True)
+                    r["frame"] = torch.tensor(batch, device=dev)[r["frame"]]
+                    kd, vd = segment.dedupe(r["frame"], r["word"], r["score"], r["mask"]) if len(r["frame"]) else (np.zeros(0, int), [])
+                    kt = torch.from_numpy(kd).to(dev)
+                    fk = r["frame"][kt]
+                    maps_d = {}
+                    for q in batch:
+                        sel = torch.nonzero(fk == q).squeeze(1)
+                        if not len(sel):
+                            maps_d[q] = (np.zeros((oh, ow), np.int16), np.zeros(0, np.int64))
+                            continue
+                        up = F.interpolate(r["logits"][kt[sel]][None].float(), size=(oh, ow), mode="bilinear", align_corners=False)[0] > 0
+                        maps_d[q] = (segment.paint(up).short().cpu().numpy(), sel.cpu().numpy())
+                    packed = segment.pack(r["mask"][kt]) if len(kt) else np.zeros((0, DA3_HW[0], DA3_HW[1] // 8), np.uint8)
+                    fr_np, w_np, s_np = fk.cpu().numpy(), r["word"][kt].cpu().numpy(), r["score"][kt].float().cpu().numpy()
+                    at = {int(a): i for i, a in enumerate(kd)}
+                with lock:
+                    base = len(dens["q"])
+                    dens["q"] += fr_np.tolist()
+                    dens["word"] += w_np.tolist()
+                    dens["score"] += s_np.tolist()
+                    dens["packed"].append(packed)
+                    dens["votes"] += [(base + at[int(a)], int(w_), float(s_)) for a, w_, s_ in vd]
+                    for q, (lab, sel) in maps_d.items():
+                        dens["maps"][q] = (lab, base + sel)
+
+    def densify_job():
+        try:
+            return densify()
+        finally:
+            start_display()
+            for d in work.chunks:
+                work.chunks[d] = []
+
+    def densify():
+        """Section 7: every 5 fps keyframe segmented (X1: in-between outline IoU 0.70 -> 0.81 on ME340). New masks join an
+        existing object by the lift's overlap rule (segment.join), the rest are lifted among themselves (new objects seen on
+        >= 2 keyframes); existing ids never change. Then outlines v2, pick v2, objects v3 and cards v3; SAM 3D and the splat
+        start after its GPU part."""
+        frames_d = [q for gg in geo for q in gg["pos"] if q not in by_frame]
+        batches = queue.Queue()
+        for b in range(0, len(frames_d), DENSIFY_BATCH):
+            batches.put(frames_d[b:b + DENSIFY_BATCH])
+        dens, lock = {"q": [], "packed": [], "word": [], "score": [], "votes": [], "maps": {}}, threading.Lock()
+        g1 = m.cpu_pool.submit(densify_sam3, dev_seg, batches, dens, lock) if dev_seg != dev_geo else None
+        gpu0_free.wait(300)  # ponytail: a failed cascade never holds densify forever
+        densify_sam3(dev_geo, batches, dens, lock)
+        if g1 is not None:
+            g1.result()
+        clock.mark("densify_sam3_done")
+        n_d = len(dens["q"])
+        qs = np.asarray(dens["q"], np.int64)
+        packed = np.concatenate(dens["packed"]) if dens["packed"] else np.zeros((0, DA3_HW[0], DA3_HW[1] // 8), np.uint8)
+        ent = np.zeros(n_d, np.int64)  # object index + 1 per densify mask, 0 = none
+        vote_d = {}
+        for g_, w_, s_ in dens["votes"]:
+            vote_d.setdefault(g_, []).append((w_, s_))
+        n_old = len(members)
+        added, new_objs, new_points, st = {}, [], [], {"frames": len(frames_d), "masks_kept": n_d, "joined": 0, "new_objects": 0}
+        with torch.inference_mode(), clock.stage("densify.lift", gpu=dev_geo, n={"masks": n_d}):
+            for si, gg in enumerate(geo):
+                pos = gg["pos"]
+                idx = np.flatnonzero(np.isin(qs, pos))
+                if not len(idx):
+                    continue
+                local = torch.full((len(keys),), -1, dtype=torch.long, device=dev_geo)
+                local[torch.tensor(pos, device=dev_geo)] = torch.arange(len(pos), device=dev_geo)
+                dyn_s = dyn[torch.tensor(pos, device=dev_geo)]
+                codes, owner = shot_voxels.get(si, (None, None))
+                unmatched = []
+                for b0 in range(0, len(idx), 4096):
+                    b = idx[b0:b0 + 4096]
+                    p, _ = segment.mask_points(segment.unpack(packed[b], dev_geo), local[torch.from_numpy(qs[b]).to(dev_geo)], gg["depth_m"], gg["K"],
+                                               gg["c2w_m"], dyn_s)
+                    if p is None:
+                        continue
+                    lifted = p["lifted"].cpu().numpy()
+                    who = segment.join(p, codes, owner)[0] if codes is not None else torch.full((len(lifted),), -1, dtype=torch.long, device=dev_geo)
+                    w_np = who.cpu().numpy()
+                    ent[b[lifted[w_np >= 0]]] = w_np[w_np >= 0] + 1
+                    unmatched += b[lifted[w_np < 0]].tolist()
+                    got = np.unique(w_np[w_np >= 0])
+                    lab = torch.where(who >= 0, who, torch.full_like(who, int(max(got.max(initial=0), 0)) + 1))
+                    for oi, d in zip(got, object_points({**p, "label": lab}, p["fr"], got)):
+                        added.setdefault(int(oi), []).append(d)
+                if len(unmatched) >= 2:
+                    um = np.asarray(unmatched)
+                    comp, arr, _, pts = segment.lift(segment.unpack(packed[um], dev_geo), local[torch.from_numpy(qs[um]).to(dev_geo)], gg["depth_m"],
+                                                     gg["K"], gg["c2w_m"], dyn_s)
+                    if arr is not None:
+                        conf = np.flatnonzero(arr["frames"] >= segment.CONFIRMED)
+                        floor = cards.floor_frame(gg["c2w_m"][0].cpu().numpy(), *shot_floor(gg))
+                        for c, pp in zip(conf, object_points(pts, pts["fr"], conf)):
+                            mem = np.flatnonzero(comp == c)
+                            vv = {}
+                            for g_ in um[mem]:
+                                for w_, s_ in vote_d.get(int(g_), []):
+                                    vv[words[w_]] = vv.get(words[w_], 0.) + s_
+                            oi = n_old + len(new_objs)
+                            best = um[mem][np.argmax(np.asarray(dens["score"])[um[mem]])]
+                            box, lo, hi = cards.v1_box(pp["world"], floor)
+                            word = segment.name(vv, words)
+                            new_objs.append({"id": f"obj-{si}-{oi}", "shot": si, "word": word, "label": word, "label_source": "sam3 word vote",
+                                             "votes": {w: round(v, 3) for w, v in sorted(vv.items(), key=lambda x: -x[1])[:5]},
+                                             "frames": int(arr["frames"][c]), "masks": int(len(mem)), "voxels": int(arr["voxels"][c]),
+                                             "centroid_m": arr["centroid"][c].round(3).tolist(), "best_key": int(keys[qs[best]]),
+                                             "voxel_box_m": [(arr["lo"][c] - segment.LIFT_VOXEL / 2).round(3).tolist(),
+                                                             (arr["hi"][c] + segment.LIFT_VOXEL / 2).round(3).tolist()],
+                                             "box": box, "box_min_m": np.round(lo, 3).tolist(), "box_max_m": np.round(hi, 3).tolist(),
+                                             "box_rule": "robust: p2/p98 height x min-area p2-p98 footprint of the cleaned points (click MVP 4.2)",
+                                             "source": "densify", "status": "estimated box; name is a detected word, unverified"})
+                            new_points.append(pp)
+                            ent[um[mem]] = oi + 1
+            maps_v2 = [e for e in results.get("maps_v1", []) if e[0]["source"] == "segmented"]
+            for q, (lab, gidx) in dens["maps"].items():
+                lut = np.r_[0, ent[gidx]].astype(np.int16)
+                maps_v2.append(({"timeSec": round(keys[q] / fps, 4), "sourceFrame": int(keys[q]), "source": "segmented"}, lut[lab], W / (W // 2),
+                                H / (H // 2), q))
+        st.update(joined=int((ent[:] > 0).sum() - sum(new_o["masks"] for new_o in new_objs)), new_objects=len(new_objs),
+                  objects_gaining_views=len(added))
+        release_splat()  # densify's GPU 1 share is done: the splat trains; SAM 3D (GPU 0, and 16 CPU processes) after cards v3
+        points_v3 = list(obj_points)
+        for oi, ds in added.items():
+            points_v3[oi] = merge_points([obj_points[oi]] + ds)
+        cascade_done.wait()  # the cascade indexes the first objects: new ones join the list after it
+        objects.extend(new_objs)
+        points_v3 += new_points
+        labels_v2 = {**v1_labels, **{o["id"]: o["label"] for o in new_objs}}
+        with clock.stage("outlines.polygons.v2", n={"frames": len(maps_v2)}):
+            counts_v2, ready_v2 = {}, threading.Event()
+            polys = m.proc_pool.map(segment.label_polygons, [x[1] for x in maps_v2], [x[2] for x in maps_v2], [x[3] for x in maps_v2])
+            pick2 = pick_layer(maps_v2, counts_v2, ready_v2)
+            frames_out = []
+            for (entry, _, _, _, _), found in zip(maps_v2, polys):
+                entry = dict(entry, objects=[{"entityId": objects[v - 1]["id"], "label": labels_v2[objects[v - 1]["id"]], "polygons": poly,
+                                              "source": "segmented"} for v, poly in sorted(found.items())])
+                frames_out.append(entry)
+            frames_out.sort(key=lambda e: e["timeSec"])
+            for e, nxt in zip(frames_out, frames_out[1:] + [None]):
+                e["endTimeSec"] = nxt["timeSec"] if nxt else round(e["timeSec"] + BLOCK / fps, 4)
+            results["outlines_v2"] = {"width": W, "height": H, "frames": frames_out}
+            analysis = json.dumps(results["outlines_v2"], separators=(",", ":")).encode()
+        pick_data, pick_blobs = pick2.result()
+        writer.put("outlines", {"analysis": "blob", "frames": len(frames_out), "segmented": len(frames_out), "projected": 0, "densified": True},
+                   {"analysis": (analysis, {"mediaType": "application/json", "format": "video-analysis"})}, "observed(segmented)",
+                   ["every 5 fps keyframe segmented (SAM 3 masks): the densify pass", "labels as of the first objects version"])
+        writer.put("pick", {**pick_data, "version_note": "v2: every keyframe segmented"}, pick_blobs, "observed(segmented)",
+                   ["segmented frames: SAM 3 masks (observed)", SCALE_LABEL])
+        clock.mark("pick_v2_put")
+        writer.put("objects", copy.deepcopy({"objects": objects, "cascade": casc, "vocabulary": words, "densify": st}), None, "estimated+inferred", obj_labels)
+        clock.mark("objects_v3_put")
+        cards_ready.wait(120)
+        with clock.stage("cards.v3", n={"objects": len(objects)}):
+            shots_in = cards_out.get("shots_in")
+            out = cards.build({"shots": shots_in, "objects": copy.deepcopy(objects), "points": points_v3, "counts": counts_v2,
+                               "people": results.get("people"), "calibration": cards_calibration()}, m.proc_pool, 16)
+        prev = {c["id"]: c["identity"] for c in (cards_out.get("v2") or cards_out.get("v1") or {}).get("cards", [])}
+        for c in out["cards"]:
+            if c["id"] in prev and c["kind"] == "object":
+                c["identity"] = {**prev[c["id"]], "candidates_struck": cards.strike(prev[c["id"]]["candidates"],
+                                                                                    c["physical"].get("size_check", {}).get("measured_m"))}
+        cards_out["v3"] = out
+        cards_put(3, out)
+        start_display()  # facts before display (section 7): the gate's CPU processes slowed cards v3 by 2-3x beside it (run 005)
+        judge_hook(out, shots_in)
+        return {**st, "cards": out["stats"]}
+    densify_future = m.cpu_pool.submit(densify_job) if densify_on and objects else None
 
     maps_ready = threading.Event()
 
@@ -719,10 +1158,13 @@ def analyse(m, mp4, opts, clock, writer, log):
                     lg = per_object(voc["logits"], q, -1e4).float()
                     lab = segment.paint(F.interpolate(lg[None], size=(oh, ow), mode="bilinear", align_corners=False)[0] > 0)
                     maps.append(({"timeSec": round(keys[q] / fps, 4), "sourceFrame": int(keys[q]), "source": "segmented"},
-                                 global_ids(q, lab).short().cpu().numpy(), W / ow, H / oh))
+                                 global_ids(q, lab).short().cpu().numpy(), W / ow, H / oh, q))
             with torch.inference_mode(), clock.stage("outlines.projected", gpu=dev_geo):
                 for si, gg in enumerate(geo):
                     pos = gg["pos"]
+                    d = torch.where(gg["depth_m"] > 0, gg["depth_m"], torch.full_like(gg["depth_m"], 1e4))
+                    d4 = -F.max_pool2d(-d[:, None], 4)[:, 0]  # section 3.3: nearest visible surface per 4 x 4 block, mm
+                    depth4[si] = torch.where(d4 < 1e4, (d4 * 1000).round().clamp(1, 65535), torch.zeros_like(d4)).cpu().numpy().astype("<u2")
                     obj_local = [j for j, q in enumerate(pos) if q in by_frame]
                     if not obj_local:
                         continue
@@ -736,26 +1178,90 @@ def analyse(m, mp4, opts, clock, writer, log):
                         lab = segment.project_pair(idm, gg["depth_m"], gg["K"], gg["c2w_m"], obj_local, j)
                         lab[people_local[j]] = -1  # people are not projected (E6b caveat): cut out with this frame's SAM 3 person mask
                         maps.append(({"timeSec": round(keys[q] / fps, 4), "sourceFrame": int(keys[q]), "source": "projected"},
-                                     lab.clamp(min=0).short().cpu().numpy(), W / DA3_HW[1], H / DA3_HW[0]))
+                                     lab.clamp(min=0).short().cpu().numpy(), W / DA3_HW[1], H / DA3_HW[0], q))
         finally:
             maps_ready.set()  # the cascade's SigLIP pass waits for the GPU part of the outlines, never longer
+        polys = m.proc_pool.map(segment.label_polygons, [x[1] for x in maps], [x[2] for x in maps], [x[3] for x in maps])
+        results["maps_v1"] = maps
+        pick = pick_layer(maps, pick_counts, pick_ready)  # section 3: people painted over the same maps, RLE in the pool beside the polygons
         with clock.stage("outlines.polygons", n={"frames": len(maps)}):
-            polys = list(m.proc_pool.map(segment.label_polygons, [x[1] for x in maps], [x[2] for x in maps], [x[3] for x in maps]))
+            polys = list(polys)
             frames_out = []
-            for (entry, _, _, _), found in zip(maps, polys):
+            for (entry, _, _, _, _), found in zip(maps, polys):
                 entry["objects"] = [{"entityId": objects[v - 1]["id"], "label": v1_labels[objects[v - 1]["id"]], "polygons": poly, "source": entry["source"]}
                                     for v, poly in sorted(found.items())]
                 frames_out.append(entry)
             frames_out.sort(key=lambda e: e["timeSec"])
             for e, nxt in zip(frames_out, frames_out[1:] + [None]):
                 e["endTimeSec"] = nxt["timeSec"] if nxt else round(e["timeSec"] + BLOCK / fps, 4)
-            analysis = json.dumps({"width": W, "height": H, "frames": frames_out}, separators=(",", ":")).encode()
+            results["outlines"] = {"width": W, "height": H, "frames": frames_out}
+            analysis = json.dumps(results["outlines"], separators=(",", ":")).encode()
+        pick_data, pick_blobs = pick.result()  # outlines and pick back to back: one commit (section 3.3)
         writer.put("outlines", {"analysis": "blob", "frames": len(frames_out), "segmented": sum(e["source"] == "segmented" for e in frames_out),
                                 "projected": sum(e["source"] == "projected" for e in frames_out)},
                    {"analysis": (analysis, {"mediaType": "application/json", "format": "video-analysis"})}, "observed(segmented)/estimated(projected)",
                    ["'segmented' outlines are SAM 3 masks on keyframes; 'projected' ones are carried from 3D (E6b 'pair'): no accuracy claimed",
                     "labels as of the first objects version; the objects layer holds the latest"])
         clock.mark("outlines_put")
+        writer.put("pick", pick_data, pick_blobs, "observed(segmented)/estimated(projected)",
+                   ["segmented frames: SAM 3 masks (observed); projected frames: carried from 3D (estimated)", SCALE_LABEL])
+        clock.mark("pick_put")
+
+    depth4, pick_counts = {}, {}  # shot -> (n,70,126) mm; object id -> {local keyframe: [segmented, projected] px at 640x360}
+
+    def pick_layer(maps, counts, ready):
+        """panoptes-pick-v1 (section 3.3): one id map per 5 fps keyframe of every geometry shot (objects as outlined, people
+        painted last with their tracks, the smaller person on top), RLE per frame in the process pool; nearest depth per
+        4 x 4 block. -> future of (data, blobs); fills pick_counts for the cards' time (section 4.6)."""
+        import gzip
+        n_objects = len(objects)  # objects added later (densify) are not on these maps
+        with clock.stage("pick.maps"):
+            people_ids = sorted(set(person_entity.values()) | {"person:untracked"})
+            ent = [None] + [o["id"] for o in objects[:n_objects]] + people_ids
+            pidx = {e: n_objects + 1 + i for i, e in enumerate(people_ids)}
+            by_q = {x[4]: x for x in maps}
+            labs, meta = [], []
+            for si, gg in enumerate(geo):
+                for j, q in enumerate(gg["pos"]):
+                    x = by_q.get(q)
+                    lab = x[1].astype(np.uint16) if x else np.zeros(DA3_HW, np.uint16)
+                    h, w = lab.shape
+                    for gi, mk in sorted(person_kept.get(q, []), key=lambda t: -int(t[1].sum())):
+                        mk = mk if mk.shape == (h, w) else cv2.resize(mk.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST) > 0
+                        lab[mk] = pidx[person_entity.get(gi, "person:untracked")]
+                    labs.append(lab)
+                    meta.append((si, j, q, x[0]["source"] if x else "people only", w, h))
+            enc = m.proc_pool.map(segment.pick_frame, labs)
+
+        def finish():
+            try:
+                return encode()
+            finally:
+                ready.set()  # the cards go on with what there is
+
+        def encode():
+            with clock.stage("pick.encode", n={"frames": len(labs)}):
+                frames_pk, chunks, depth, offset = [], [], [], 0
+                for (si, j, q, source, w, h), (rle, vals, cnts) in zip(meta, enc):
+                    t = round(keys[q] / fps, 4)
+                    frames_pk.append({"t": t, "frame": int(keys[q]), "shot": si, "key": j, "w": w, "h": h, "source": source, "offset": offset,
+                                      "pairs": len(rle) // 4})
+                    chunks.append(rle)
+                    offset += len(rle) // 4
+                    depth.append(depth4[si][j].tobytes())
+                    sc = (W // 2) * (H // 2) / (w * h)
+                    for v, c in zip(vals, cnts):
+                        if 1 <= v <= n_objects:
+                            counts.setdefault(objects[v - 1]["id"], {}).setdefault(j, [0, 0])[source != "segmented"] += int(round(c * sc))
+                for e, nxt in zip(frames_pk, frames_pk[1:] + [None]):
+                    e["t_end"] = nxt["t"] if nxt and nxt["t"] - e["t"] <= 2 * BLOCK / fps + 1e-6 else round(e["t"] + BLOCK / fps, 4)
+                data = {"format": "panoptes-pick-v1", "source_wh": [W, H], "entities": ent, "frames": frames_pk,
+                        "depth": {"w": DA3_HW[1] // 4, "h": DA3_HW[0] // 4, "unit": "mm", "scale": "estimated", "grid": "DA3 504x280 / 4, min per block"},
+                        "note": "segmented frames: SAM 3 masks (observed); projected frames: carried from 3D (estimated); 'people only': no object map"}
+                blobs = {"pick": (gzip.compress(b"".join(chunks), 5), {"mediaType": "application/gzip", "format": "panoptes-pick-v1 uint16 (value, run) pairs"}),
+                         "depth": (gzip.compress(b"".join(depth), 5), {"mediaType": "application/gzip", "format": "panoptes-pick-v1 depth uint16 mm"})}
+            return data, blobs
+        return m.cpu_pool.submit(finish)
 
     outlines_future = m.cpu_pool.submit(outlines_job)
 
@@ -782,8 +1288,13 @@ def analyse(m, mp4, opts, clock, writer, log):
             ctx = m.emb.zero_shot(m.emb.crops(frames_obj, torch.tensor([kf_index[int(q)] for q in vf[best_masks]], device=dev_geo),
                                               voc["mask"][bt], masked=False), txt)
             m.emb.release()
-            with torch.cuda.device(dev_geo):
-                torch.cuda.empty_cache()
+            if not densify_on:
+                # torch.cuda.empty_cache() empties every device's cache: called here while densify's SAM 3 ran on GPU 1 it
+                # faulted that GPU (XID 31, illegal address, runs mvp-a-cards-me340-002/003, both at the second GPU 1 batch)
+                with torch.cuda.device(dev_geo):
+                    torch.cuda.empty_cache()
+    gpu0_free.set()  # densify's GPU 0 share starts after the objects' own GPU work (section 7)
+    if objects:
         with clock.stage("cascade.decide", n={"objects": len(objects)}):
             cache = cascade.LabelCache("/v/layers/label-cache/siglip2-base-p16-224-v3.npz")
             e_np, p_np, c_np = obj_emb.cpu().numpy(), probs.cpu().numpy(), ctx.cpu().numpy()
@@ -804,12 +1315,16 @@ def analyse(m, mp4, opts, clock, writer, log):
                     cross_video_hits=sum(r["source"] == "cache:cross-video" for r in recs),
                     zero_shot_accepted=sum(r["source"] == "zero-shot" for r in recs), in_video_hits=sum(r["source"] == "cache:in-video" for r in recs),
                     uncertain=len(unsure), vlm_requests_objects=len(groups))
+    cascade_done.set()
     if objects and not groups:
+        sync_objects()
         writer.put("objects", copy.deepcopy({"objects": objects, "cascade": casc, "vocabulary": words}), blobs_obj, "estimated+inferred", obj_labels)
         clock.mark("objects_v2_put")
+        cards_v2()
 
     def vlm_crop(gi):
-        """The object's best view, full resolution: SAM 3's own mask outlined in red, 1.5 x its box, long side 448 px."""
+        """The object's best view, full resolution: SAM 3's own mask outlined white over black (never red: X2 saw Qwen name
+        red-outlined crops 'fire extinguisher'), 1.5 x its box, long side 448 px."""
         q = int(vf[gi])
         img = frames[keys[q]].copy()
         mk = (F.interpolate(voc["logits"][gi][None, None].float(), size=(H, W), mode="bilinear", align_corners=False)[0, 0] > 0).cpu().numpy()
@@ -820,7 +1335,8 @@ def analyse(m, mp4, opts, clock, writer, log):
         half = max(ys.max() - ys.min(), xs.max() - xs.min(), 128) * .75
         y0, y1, x0, x1 = int(max(0, cy - half)), int(min(H, cy + half)), int(max(0, cx - half)), int(min(W, cx + half))
         contours, _ = cv2.findContours(mk.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        cv2.drawContours(img, contours, -1, (0, 0, 255), 2)
+        cv2.drawContours(img, contours, -1, (0, 0, 0), 4)
+        cv2.drawContours(img, contours, -1, (255, 255, 255), 2)
         crop = img[y0:y1, x0:x1]
         sc = 448 / max(crop.shape[:2])
         crop = cv2.resize(crop, (max(1, int(crop.shape[1] * sc)), max(1, int(crop.shape[0] * sc))), interpolation=cv2.INTER_AREA if sc < 1 else cv2.INTER_CUBIC)
@@ -849,8 +1365,10 @@ def analyse(m, mp4, opts, clock, writer, log):
             cache.add(e_np[answered], [objects[r]["cascade"]["label"] for r in answered], video_sha, site, "vlm")
             cache.save()
         casc.update(vlm={k: v for k, v in rec.items() if k != "texts"}, vlm_answered=len(answered), cache_entries_after=len(cache))
+        sync_objects()
         writer.put("objects", copy.deepcopy({"objects": objects, "cascade": casc, "vocabulary": words}), blobs_obj, "estimated+inferred", obj_labels)
         clock.mark("objects_v2_put")
+        cards_v2()
     esc = m.vlm_pool.submit(escalate) if objects and groups else None
     if esc is None:
         release_voc()
@@ -859,7 +1377,13 @@ def analyse(m, mp4, opts, clock, writer, log):
     ev = vocab_future.result()
     if esc is not None:
         esc.result()
-    summary["sam3d"] = models_future.result()
+    summary["cards"] = cards_future.result()
+    summary["boxes"] = box_stats(objects[:len(members)], cards_out.get("v1"))
+    summary["judge"] = [f.result() for f in judge_futures]
+    summary["densify"] = densify_future.result() if densify_future is not None else None
+    summary["cards"] = {"v1": summary["cards"], "v3": cards_out.get("v3", {}).get("stats")}
+    summary["boxes_v3"] = box_stats(objects, cards_out.get("v3"))
+    summary["sam3d"] = display["models"].result()
     summary["splat"] = splat_future.result() if splat_future is not None else None
     Path(shared.result()).unlink(missing_ok=True)
     summary.update(frames=n, fps=fps, wh=[W, H], cuts=cuts, keyframes=len(keys), object_keyframes=len(range(0, len(keys), segment.OBJECT_EVERY)),
@@ -893,4 +1417,18 @@ def self_check():
     assert v.shape == (6, 3) and f.shape == (4, 3) and np.allclose(v[:, 1], .01)
     raw, meta = points_glb(np.zeros((3, 3)), np.zeros((3, 3), np.uint8), .03)
     assert raw[:4] == b"glTF" and len(raw) % 4 == 0 and meta["pointSizeNative"] == .03
-    print(f"core self-check ok: chunked cut measure == sequential (chunks 8/{CHUNK}/64), ribbon, GLB points")
+    try:
+        import torch
+    except ImportError:
+        print(f"core self-check ok: chunked cut measure == sequential (chunks 8/{CHUNK}/64), ribbon, GLB points (point helpers skipped: no torch)")
+        return
+    # the cards' point hand-off: components by label (a sentinel label is skipped), per-view pixels and edge flags
+    p = {"world": torch.rand(10, 3), "mid": torch.tensor([0, 0, 1, 1, 1, 2, 2, 2, 2, 2]), "z": torch.rand(10), "pixels": torch.tensor([5, 6, 7]),
+         "border": torch.tensor([[1, 0, 0, 0], [0, 0, 0, 0], [0, 1, 0, 0]], dtype=torch.bool), "label": torch.tensor([4, 9, 2])}
+    out = object_points(p, torch.tensor([0, 1, 1]), np.array([2, 4]))
+    assert [len(o["world"]) for o in out] == [5, 2] and out[0]["views"] == {1: [7, False, True, False, False]}
+    u, owner = object_voxels((torch.tensor([0, 0, 1, 2, 2]), torch.tensor([10, 11, 11, 30, 31])), np.array([0, 2]), 7)
+    assert u.tolist() == [10, 11, 30, 31] and owner.tolist() == [7, 7, 8, 8]  # component 1 is not an object
+    mp = merge_points(out, cap=4)
+    assert len(mp["world"]) == 4 and mp["views"][1][0] == 7 and mp["views"][0][1] is True
+    print(f"core self-check ok: chunked cut measure == sequential (chunks 8/{CHUNK}/64), ribbon, GLB points, object points, voxel owners")
