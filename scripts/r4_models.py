@@ -71,13 +71,23 @@ def model_tris(m):
 
 
 def glb_tris(raw, position):
-    """A SAM 3D display GLB (fast_report.sam3d.judge: centred, placed by its transform) -> world triangles and RGBA per face."""
-    import io
-    import trimesh
-    mesh = trimesh.load(io.BytesIO(raw), file_type="glb", force="mesh", process=False)
-    V = np.asarray(mesh.vertices) + np.asarray(position, float)
-    cols = np.asarray(mesh.visual.vertex_colors, float) if hasattr(mesh.visual, "vertex_colors") else np.full((len(V), 4), 200.)
-    F = np.asarray(mesh.faces)
+    """A SAM 3D display GLB (fast_report.sam3d.judge: centred, placed by its transform; one primitive, POSITION + COLOR_0 RGBA
+    uint8 + uint32 indices, as trimesh writes it: trimesh reads it back without its vertex colours) -> world triangles, RGBA per face."""
+    import struct
+    n = struct.unpack("<I", raw[12:16])[0]
+    doc, binary = json.loads(raw[20:20 + n]), raw[20 + n + 8:]
+    dt = {5121: np.uint8, 5125: np.uint32, 5126: np.float32, 5123: np.uint16}
+    width = {"SCALAR": 1, "VEC3": 3, "VEC4": 4}
+
+    def acc(i):
+        a = doc["accessors"][i]
+        v = doc["bufferViews"][a["bufferView"]]
+        off = v.get("byteOffset", 0) + a.get("byteOffset", 0)
+        return np.frombuffer(binary, dt[a["componentType"]], a["count"] * width[a["type"]], off).reshape(a["count"], -1)
+    prim = doc["meshes"][0]["primitives"][0]
+    V = acc(prim["attributes"]["POSITION"]).astype(float) + np.asarray(position, float)
+    cols = acc(prim["attributes"]["COLOR_0"]).astype(float) if "COLOR_0" in prim["attributes"] else np.full((len(V), 4), 200.)
+    F = acc(prim["indices"]).reshape(-1, 3)
     return V[F], cols[F].mean(1)
 
 
@@ -109,9 +119,19 @@ def draw(img, tris, K, c2w, colors, alphas, edges=True):
 def render(img, card, model_glb, K, c2w):
     """The card's model drawn on a dimmed copy of img: the accepted SAM 3D mesh, else the primitive."""
     dim = (img * .35).astype(np.uint8)
-    if model_glb is not None:
+    if model_glb is not None:  # 40k triangles: painted opaque in depth order on one layer, blended once
+        import cv2
         tris, rgba = model_glb
-        return draw(dim, tris, K, c2w, rgba[:, 2::-1], np.full(len(tris), MESH_ALPHA), edges=False)
+        uv, z = project(tris, K, c2w)
+        layer, cover = dim.copy(), np.zeros(dim.shape[:2], np.uint8)
+        for i in [i for i in np.argsort(-z.mean(1)) if (z[i] > .05).all()]:
+            poly = np.round(uv[i]).astype(np.int32)
+            cv2.fillConvexPoly(layer, poly, tuple(float(c) for c in rgba[i, 2::-1]))
+            cv2.fillConvexPoly(cover, poly, 1)
+        out = dim.copy()
+        out[cover > 0] = (dim[cover > 0] * (1 - MESH_ALPHA) + layer[cover > 0] * MESH_ALPHA).astype(np.uint8)
+        ok = (z > .05).all(1)
+        return out, uv[ok] if ok.any() else None
     tris, seen = model_tris(card["model"])
     return draw(dim, tris, K, c2w, [SEEN_BGR if s else GUESS_BGR for s in seen], np.where(seen, .55, .18))
 
