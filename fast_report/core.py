@@ -347,10 +347,10 @@ def person_masks(person, frames_local):
 
 
 SPLAT_LATEST_S = 72.  # analysis s: the splat waits for the facts until here at most (150 s preview + write: by ~226 s)
-# r4 (models): while the splat trains (its preview lands by ~226 s) SAM 3D keeps going in the background (the first pass's other
-# views and seed 43, then the rest of the well-observed cards) until here: more accepted meshes, no later call end (bench 001:
-# the first pass was judged by 124-141 s and GPU 0 then idled)
-MODELS_UNTIL_S = 205.
+# r4 (models): SAM 3D's background mode (the first pass's other views and seed 43, then the rest of the well-observed cards) until
+# this analysis s, or None (the first pass only). Off: tried in r4-models-bench-002 (ME340, 205 s): 81 tries gave 3 accepted meshes
+# against 2 of 30, and the queued generations ran past the deadline (models final 255 s, the call 26 s longer, GPU 0 at 70.7 GiB)
+MODELS_UNTIL_S = None
 DENSIFY_WORDS_RULE = ("densify runs the EHS core words and every word with a detection on the object keyframes (every 3rd 5 fps keyframe, "
                       "0.6 s apart); a word with none there is listed in words_not_run (round 1: 0-4 of 149-568 new objects carried such a word)")
 
@@ -1423,7 +1423,7 @@ def analyse(m, mp4, opts, clock, writer, log):
                 return
             display["models"] = m.cpu_pool.submit(models_job, m, sam3d_objs.result, geo, shared, words, clock, writer, dev_geo,
                                                   lambda: next((cards_out[v] for v in ("v4", "v3", "v2", "v1") if v in cards_out), None),
-                                                  MODELS_UNTIL_S if splat_future is not None else None)
+                                                  MODELS_UNTIL_S if splat_future is not None else None)  # while the splat trains
             clock.mark("display_started")
     if not densify_on or not objects:
         start_display()
