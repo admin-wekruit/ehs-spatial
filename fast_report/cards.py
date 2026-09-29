@@ -1201,11 +1201,11 @@ def person_geometry(mask, depth, K, c2w, up, p0, u_floor=.02, up_deg=1.):
     below = depth[rows, cols][(depth[rows, cols] > 0) & ~mask[rows, cols]]
     zf = float(np.median(fz[fo])) if fo.any() else zmed
     contact = bool(len(below) >= 3 and np.median(below) >= zf - max(.3, .1 * zf))
-    cut_bottom, cut_top = bool(ys.max() >= H - 2), bool(ys.min() <= 1)
+    cut_bottom, cut_top, cut_side = bool(ys.max() >= H - 2), bool(ys.min() <= 1), bool(xs.min() <= 1 or xs.max() >= W - 2)
     true_bottom = contact and not cut_bottom
     feet = true_bottom and PERSON_H_M[0] <= st <= PERSON_H_M[1] + ARM_M
     why = None
-    if true_bottom and not cut_top:
+    if true_bottom and not cut_top and not cut_side:  # a figure cut by a frame edge may be a leg or an arm of someone out of view
         if st + u_st < HEAD_MIN_M:
             why = f"its true bottom is in view and it spans {st:.2f} +- {u_st:.2f} m: less than a head and shoulders (a picture or print)"
         elif st + u_st < PERSON_H_M[0] and head - u_head > PERSON_H_M[1] + ARM_M:
@@ -1215,7 +1215,7 @@ def person_geometry(mask, depth, K, c2w, up, p0, u_floor=.02, up_deg=1.):
             why = f"it spans {st:.2f} +- {u_st:.2f} m: taller than a person"
     out = {"h_m": round(foot, 3) if feet else None, "u_m": round(u_foot, 3), "foot_h_m": round(foot, 3), "head_m": round(head, 3), "u_head_m": round(u_head, 3),
            "stature_m": round(st, 3), "u_stature_m": round(u_st, 3), "range_m": round(r, 3), "contact": contact, "feet_visible": bool(feet),
-           "cut": {"bottom": cut_bottom, "top": cut_top}, "plausible": why is None, "h_pixels_m": None if h_pix is None else round(h_pix, 3),
+           "cut": {"bottom": cut_bottom, "top": cut_top, "side": cut_side}, "plausible": why is None, "h_pixels_m": None if h_pix is None else round(h_pix, 3),
            "span_m": round(st, 3), "bbox": bbox, "scale": SCALE}
     if why:
         out["reason"] = why
@@ -1543,6 +1543,10 @@ def self_check():
     assert person_geometry(m2, np.zeros_like(d2), Kp, np.eye(4), up_, p0_)["plausible"], "no depth: kept as a person"
     g2 = person_geometry(m2, d2, Kp, np.eye(4), up_, p0_)
     assert not g2["plausible"] and "picture" in g2["reason"] and g2["h_m"] is None, g2
+    m2e = np.zeros_like(m2)
+    m2e[150:160, 0:5] = True  # the same small figure at the frame's left edge: maybe a leg of someone out of view, kept
+    d2[140:, 0:30] = 3.
+    assert person_geometry(m2e, d2, Kp, np.eye(4), up_, p0_)["plausible"]
     d3, m3 = floor_d.copy(), np.zeros((200, 200), bool)
     d3[95:180, 90:110] = 4.
     m3[95:141, 95:105] = True
