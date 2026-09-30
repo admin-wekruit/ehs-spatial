@@ -1,6 +1,6 @@
 # Panoptes phase 2 handoff: video → clickable 3D object layer (2026-09-29)
 
-**What to solve next and the definition of done: `NEXT-SESSION-GOAL.md` (includes a paste-ready prompt and a
+**How to show the user a report: `SHOW-REPORTS.md` (GitHub Pages, one interactive 3D page per video).** **What to solve next and the definition of done: `NEXT-SESSION-GOAL.md` (includes a paste-ready prompt and a
 suggested `/goal`).** Research memos: `research/`; per-round result summaries: `results/by-run/`; ledger: `research/cost-ledger.json`.
 
 You are taking over the Panoptes phase-2 video work from a long agent session. Read this file first, then
@@ -88,7 +88,7 @@ line, and report results. Only ask when truly blocked (secrets, deletions, money
 | pipeline code | `fast_report/` (`core.py` orchestration, `cards.py`, `segment.py`, `cascade.py` naming, `vlm.py`, `vocab.py` (r5b), `ondemand.py`, `display_model.py`, `recgen_fast.py`, `timeline.py`, `windows.py`, `layers.py` patch store + HTTP server) |
 | viewer | `web/src` (`LiveReport.tsx`), served by `python -m fast_report.layers serve <root> --port 8794` + `FAST_PORT=8794 npx vite --port 5185`; page `http://localhost:5185/app.html#/live/<report id>`; helper `workflows/check-viewer.sh` (edit its worktree `W` and root paths first; the root is a folder of `reports/` + `blobs/` symlinks to a run's `mirror/`). Heavy on the Mac: start only when needed |
 | reports for the user (claude.ai artifacts) | round 5: https://claude.ai/artifact/86jUzcrvntqFAgXPQiUnuC · object layer / round 4 / older experiments: https://claude.ai/artifact/5Xhnj2SHg3pTmTNJLGZG9s |
-| **interactive 3D reports (how the user views results now)** | one claude.ai artifact per video, generated from a run's mirror by `artifact-report/` (README there): ME340 https://claude.ai/artifact/5chsXyryTRx29BgTLdT4He · Sam's Club https://claude.ai/artifact/PAYw5ESJLvM7fmydiYUNMz · Walmart https://claude.ai/artifact/PcQi51Wggr8YD9mU8CtxUH. Regenerate them after every round (export → add_fov → pack → build → publish); the local viewer is only for development |
+| **interactive 3D reports (how the user views results now)** | GitHub Pages, public (user's choice, 2026-09-30): https://admin-wekruit.github.io/panoptes-workcell-report/video/ (ME340 / Sam's Club / Walmart). How to regenerate and publish after every round: `SHOW-REPORTS.md`. A private claude.ai artifact variant exists (links in `artifact-report/README.md`) |
 | older handoff / architecture | code repo `docs/phase2/` (`ARCHITECTURE.md`, `FAST-PATH-PLAN.md`, `FAST-BUILD-SPEC.md`, `CLICK-MVP-SPEC.md`, `HANDOFF.md`, ...) |
 
 ## 5. The pipeline as it stands (one Modal container, 2× A100-80GB, MPS)

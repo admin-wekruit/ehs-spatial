@@ -49,8 +49,7 @@ Suggested `/goal` line for the new session (the user writes goals in Chinese):
 4. ME340 held-out family accuracy ≥ 0.70 without leakage; Sam's Club and Walmart not lower than round 4.
 5. Every truly tilted ME340 part audited; GT angle error p90 ≤ 8°.
 6. An independent adversarial review (CPU only, re-derives numbers, looks at images) passes with no open blocker or major.
-7. The three interactive 3D report pages regenerated from the new runs with `artifact-report/` (same URLs: republish
-   in place) — this is how the user looks at results now — and a report (update the round-5 artifact in place, or a new one) whose first table is "positions right or wrong" per
+7. The three interactive 3D report pages on GitHub Pages regenerated from the new runs (`SHOW-REPORTS.md`, same URLs) — this is how the user looks at results now — and a report (update the round-5 artifact in place, or a new one) whose first table is "positions right or wrong" per
    video, before → after, with overlay images before/after on the same frames, and latency within 10 % of round 5.
 
 Not in scope: speed work, safety judgement, commercial model alternatives, deployment.
@@ -68,7 +67,7 @@ branch r5b/integrate (worktree panoptes-phase2-video-r6-correct, branch r6/corre
 decide instead of asking, VLM last, RecGen internal only, ephemeral `modal run` on 2x A100 only, heavy compute on Modal
 (the Mac is weak), no secrets, never SendMessage to workflow agents, builders -> integrator -> adversarial review, log
 spend in the ledger. Report in short Chinese messages with pictures; the first table of every report says whether
-positions are right or wrong per video. The user views results as claude.ai artifact pages (one per video: the 3D
-follows the video camera, click an object for its card) made with docs/phase2/handoff-2026-09-29/artifact-report/
-(README there); regenerate and republish them in place after every round.
+positions are right or wrong per video. The user views results on GitHub Pages (one interactive 3D page per video:
+https://admin-wekruit.github.io/panoptes-workcell-report/video/); follow docs/phase2/handoff-2026-09-29/SHOW-REPORTS.md to
+regenerate and republish them in place after every round.
 ```

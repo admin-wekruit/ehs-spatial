@@ -138,7 +138,8 @@ function resize() {
 window.addEventListener("resize", render);
 
 const loader = new THREE.GLTFLoader();
-const glb = url => fetch(url + ".json").then(r => { if (!r.ok) throw new Error(url + " " + r.status); return r.json(); }).then(j => {
+const GLB_JSON = {{GLB_JSON}};  // claude.ai artifacts cannot serve .glb, so there each model travels as base64 in .glb.json
+const glb = url => !GLB_JSON ? new Promise((res, rej) => loader.load(url, g => res(g.scene), undefined, rej)) : fetch(url + ".json").then(r => { if (!r.ok) throw new Error(url + " " + r.status); return r.json(); }).then(j => {
   const bin = atob(j.b64), buf = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
   return new Promise((res, rej) => loader.parse(buf.buffer, "", g => res(g.scene), rej));

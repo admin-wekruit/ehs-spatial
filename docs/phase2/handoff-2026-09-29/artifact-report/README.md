@@ -1,4 +1,6 @@
-# Report pages as claude.ai artifacts (how reports are shown now, 2026-09-30)
+# Report page generator (GitHub Pages first; claude.ai artifact variant) — 2026-09-30
+
+**Primary: GitHub Pages** https://admin-wekruit.github.io/panoptes-workcell-report/video/ — see `../SHOW-REPORTS.md` for the publish steps. The notes below describe the generator and the private claude.ai artifact variant.
 
 The interactive Fast-report viewer (`web/src`, `python -m fast_report.layers serve`) only runs locally: a report
 mirror is 400-840 MB (full-resolution room meshes, every layer version, two calls per bench) and GitHub holds code and

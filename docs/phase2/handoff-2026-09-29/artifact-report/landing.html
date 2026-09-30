@@ -1,0 +1,32 @@
+<title>Panoptes 视频 3D 报告</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{--bg:#F2F4F1;--panel:#FFFFFF;--ink:#17201D;--muted:#56635F;--line:#D3DAD6;--accent:#0D7666;--accent-soft:#DCEEEA;
+  --f-display:"Barlow Condensed","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --f-body:"IBM Plex Sans","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif}
+@media (prefers-color-scheme: dark){:root{color-scheme:dark;--bg:#0F1513;--panel:#161F1C;--ink:#E2E9E6;--muted:#94A29D;--line:#2A3531;--accent:#47B7A4;--accent-soft:#15302B}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55}
+.wrap{max-width:980px;margin:0 auto;padding-inline:16px;padding-block:32px 48px;display:flex;flex-direction:column;gap:22px}
+h1{font-family:var(--f-display);font-size:40px;margin:0;line-height:1.1}
+p{margin:0;max-width:70ch;color:var(--muted)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+a.card{display:flex;flex-direction:column;gap:6px;padding:16px 18px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--ink);text-decoration:none}
+a.card:hover{border-color:var(--accent)}
+a.card h2{font-family:var(--f-display);font-size:26px;margin:0}
+a.card span{color:var(--muted);font-size:13.5px}
+.foot{font-size:13px}
+.foot a{color:var(--accent)}
+</style>
+<div class="wrap">
+  <h1>Panoptes 视频 3D 报告</h1>
+  <p>一段边走边拍的视频 → 可点击的 3D 物体层。每页上面是视频，下面是 3D 重建：播放时 3D 视图跟着视频的相机走；点任何物体，看它的类型、位置、高度和尺寸（带 ± 误差）、出现的时间和用的模型。</p>
+  <div class="cards">
+    <a class="card" href="me340/"><h2>ME340 车间</h2><span>机加工车间 · 281 个物体 · 75 个 RecGen 模型</span></a>
+    <a class="card" href="samsclub/"><h2>Sam's Club</h2><span>超市货架通道 · 952 个物体 · 货架和货品</span></a>
+    <a class="card" href="walmart/"><h2>Walmart</h2><span>超市鞋区 · 962 个物体 · 鞋和毛绒玩具</span></a>
+  </div>
+  <p class="foot">米制数值按"相机离地 1.6 m"的假设估算。为了能在网页里打开，网格和模型都做了简化。结果来自第 5 轮合并版（2026-09-29）。车间照片报告见 <a href="../app.html">工作单元报告</a>。</p>
+</div>
