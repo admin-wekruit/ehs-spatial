@@ -356,15 +356,14 @@ def card_timeline(s, observed, frame, world, measure, compare):
         elif ks:
             vals = measure(ks)
             row["v"] = _compact(vals)
-            unseen = []
             if gone is not None:  # seen again after a 'disappeared': the claim is withdrawn, never kept
                 for x in out[gone:]:
                     if x["state"] == "disappeared":
                         x.update(state="not observed", reason="its place was seen empty, but it was seen there again later: withdrawn")
                 changes[:] = [c for c in changes if not (c["kind"] == "disappeared" and c["window"] == out[gone]["w"])]
                 gone = None
-            if i == first:
-                row.update(_appeared(s, rows, first, first_pts, ks))
+            if i == first:  # the keyframes before its first sighting, this window's too (a change inside a window is still seen)
+                row.update(_appeared(s, [j for x in rows[:first + 1] for j in x["keys"] if j < ks[0]], first_pts, ks))
                 if row["state"] == "appeared":
                     changes.append({"kind": "appeared", "window": r["w"], **row["evidence"]})
             else:
@@ -388,7 +387,8 @@ def card_timeline(s, observed, frame, world, measure, compare):
                     else:
                         row["note"] = f"its position differs by more than both u, but its old place was not seen empty ({p['state']}): no claim of motion"
             last = (i, vals, pts_of(ks))
-        else:  # after it was seen, not seen here: the place test over the unseen windows so far
+            unseen = [j for j in r["keys"] if j > ks[-1]]  # this window's keyframes after its last sighting count as unseen too
+        else:  # after it was seen, not seen here: the place test over the keyframes since its last sighting
             unseen += r["keys"]
             if gone is not None:
                 row.update(state="disappeared", reason=f"gone since window {out[gone]['w']}")
@@ -411,18 +411,16 @@ def card_timeline(s, observed, frame, world, measure, compare):
     return {"windows": out, "intervals": ivs, "changes": changes, "rule": TL_RULE}
 
 
-def _appeared(s, rows, first, pts, ks):
-    """'appeared' when the latest judged earlier windows (<= LOOKBACK back, read together from the latest) saw its place empty;
-    'first seen' when they saw it occupied or occluded (there before, not detected) or never saw it (new content)."""
-    keys = []
-    for j in range(first - 1, max(-1, first - 1 - LOOKBACK), -1):
-        keys += rows[j]["keys"]
-        p = place(pts, s, _spread_keys(keys))
+def _appeared(s, before, pts, ks):
+    """'appeared' when the keyframes before its first sighting (the latest 2 x TL_PLACE_KEYS of them, <= LOOKBACK windows' worth)
+    saw its place empty; 'first seen' when they saw it occupied or occluded (there before, not detected) or never saw it."""
+    if before:
+        p = place(pts, s, _spread_keys(before[-2 * TL_PLACE_KEYS:]))
         if p["state"] == "free":
             return {"state": "appeared", "evidence": {"t_before": _t_key(s, p["best_key"]), "t_after": _t(s, ks[0]), "before_key": p["best_key"],
                                                       "after_key": int(s["keys"][ks[0]]), "free_views": p["free_views"]}}
         if p["state"] in ("occupied", "occluded"):
-            return {"state": "first seen", "reason": f"its place was {p['state']} before (window {rows[j]['w']}): there before, not detected"}
+            return {"state": "first seen", "reason": f"its place was {p['state']} before its first sighting: there before, not detected"}
     return {"state": "first seen", "reason": "new content (its place was not seen before)"}
 
 
@@ -661,6 +659,65 @@ def self_check():
           "out of view, missed detection, a thin object under a 3 px pose error, a deferred appearance")
 
 
+def self_check_cards():
+    """r5b: card timelines on a rendered shot (12 keyframes, 3 windows of 4): a box that stays, one taken away after window 0,
+    one put down in window 2, one pushed 0.9 m in window 1; a missed detection is not a change; per-window values carry u."""
+    K, hw = np.array([[200., 0, 160], [0, 200, 120], [0, 0, 1]]), (240, 320)
+    box = {"A": ([-1.2, -.3, 3.], [-.6, .3, 3.5]), "C": ([.8, -.3, 2.8], [1.2, .3, 3.2]), "D": ([-1.9, -.3, 3.2], [-1.5, .3, 3.6]),
+           "M0": ([-.3, -.3, 3.3], [.1, .3, 3.7]), "M1": ([.6, -.3, 3.3], [1., .3, 3.7])}
+    scene = [["A", "C", "M0"]] * 4 + [["A", "M1"]] * 4 + [["A", "D", "M1"]] * 4  # what stands there in each keyframe
+    c2w = np.stack([_cam(.02 * j) for j in range(12)])
+    s = {"keys": list(range(0, 72, 6)), "times": [j * .2 for j in range(12)], "c2w": c2w, "K": np.repeat(K[None], 12, 0),
+         "depth": np.stack([_render([box[b] for b in sc], c, K, hw) for sc, c in zip(scene, c2w)]), "person": np.zeros((12, *hw), bool),
+         "windows": [{"keys": list(range(4 * i, 4 * i + 4)), "carried": 0, "reason": "content"} for i in range(3)]}
+
+    def card(name, seen, ks_pts=None):
+        lo, hi = np.array(box[name][0]), np.array(box[name][1])
+        g = np.stack(np.meshgrid(*[np.linspace(a, b, 7) for a, b in zip(lo, hi)]), -1).reshape(-1, 3)
+        front = g[g[:, 2] <= lo[2] + 1e-9]
+        return front, seen
+
+    def measure(ks, W, F):
+        m = np.isin(F, ks)
+        if m.sum() < TL_MIN_POINTS:
+            return None
+        c = W[m].mean(0)
+        return {"position_xy": {"value": [round(c[0], 3), round(c[2], 3)], "u": .1, "u_rel": .1}}
+
+    def compare(a, b):
+        d = float(np.linalg.norm(np.subtract(b["position_xy"]["value"], a["position_xy"]["value"])))
+        return {"position_xy": {"delta": d, "u": [.1, .1], "flagged": d > .1}}
+
+    def run(parts):  # parts: [(box name, keyframes it is seen on)]
+        W = np.concatenate([card(n, ks)[0] for n, ks in parts for _ in ks])
+        F = np.concatenate([[k] * len(card(n, ks)[0]) for n, ks in parts for k in ks])
+        return card_timeline(s, sorted({k for _, ks in parts for k in ks}), F, W, lambda ks: measure(ks, W, F), compare)
+    a = run([("A", range(12))])
+    assert [x["state"] for x in a["windows"]] == ["first seen", "static", "static"] and not a["changes"], a["windows"]
+    assert a["windows"][1]["v"]["position_xy"][1] == .1 and a["windows"][1]["d"]["position_xy"][3] is False
+    c = run([("C", range(4))])
+    assert [x["state"] for x in c["windows"]] == ["first seen", "disappeared", "disappeared"] and c["changes"][0]["kind"] == "disappeared", c["windows"]
+    assert c["changes"][0]["before_key"] == 18 and c["changes"][0]["after_key"] >= 24, c["changes"]
+    d = run([("D", range(9, 12))])  # put down at keyframe 8, first detected on keyframe 9 (the window's first keyframes saw its place)
+    assert [x["state"] for x in d["windows"]][2] == "appeared" and d["changes"][0]["kind"] == "appeared", d["windows"]
+    assert d["intervals"][-1]["state"] == "appeared" and d["intervals"][0]["state"] == "not observed"
+    m = run([("M0", range(4)), ("M1", range(4, 12))])  # one lifted object at two places: moved by 0.9 m, its old place seen empty
+    assert [x["state"] for x in m["windows"]] == ["first seen", "moved", "static"] and m["changes"][0]["kind"] == "moved", m["windows"]
+    assert abs(m["changes"][0]["distance_m"] - .9) < .05 and len(m["intervals"]) == 2
+    miss = run([("A", [0, 1, 2, 3, 10, 11])])  # not detected in window 1: its place is occupied, no change
+    assert miss["windows"][1]["state"] == "not observed" and "occupied" in miss["windows"][1]["reason"] and not miss["changes"], miss["windows"]
+    assert interval_at(m, 1.0)["state"] == "moved" and interval_at(m, .1)["state"] == "first seen"
+    tl = run([("C", range(4))])
+    shown(tl, "deformable", raw_states(tl))
+    assert not tl["changes"] and tl["windows"][1]["state"] == "not observed", "a deformable object gets no place claims"
+    tl2 = run([("C", range(4))])
+    no_claims(tl2, "overlay")
+    assert not tl2["changes"] and tl2["claims"] == "overlay"
+    print("timeline card self-check ok: static, disappeared with evidence keys, appeared inside a window, moved (one lifted object), "
+          "a missed detection, the scrubber's interval at t, deformable and overlay claims dropped")
+
+
 if __name__ == "__main__":
     assert sys.argv[1:] == ["--self-check"], __doc__
     self_check()
+    self_check_cards()

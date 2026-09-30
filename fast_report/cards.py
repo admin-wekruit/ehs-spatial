@@ -1369,9 +1369,11 @@ def unresolved(phys):
                 if ends else "its ends were not tested (no depth)"
             if lower and lower["u"] < lower["value"]:
                 phys[n] = {**keep, "value": lower["value"], "u": lower["u"], "parts": lower["parts"], "status": "at least", "bound": "at least", "ends": ends,
-                           "measured": {"value": f["value"], "u": f["u"]}, "reason": f"not resolved and {why}: the extent seen, a lower bound"}
+                           "measured": {"value": f["value"], "u": f["u"], "subsets": f.get("subsets")}, "lower_rule": lower.get("rule"),
+                           "reason": f"not resolved and {why}: the extent seen in single views, a lower bound"}
             else:
-                phys[n] = {"status": "not observed", "ends": ends, "measured": {"value": f["value"], "u": f["u"]},
+                phys[n] = {"status": "not observed", "ends": ends, "measured": {"value": f["value"], "u": f["u"], "subsets": f.get("subsets")},
+                           "lower": {kk: lower.get(kk) for kk in ("value", "u", "parts")} if lower else None,
                            "reason": f"not resolved and {why}; the extent seen is below its own uncertainty"}
         else:
             phys[n] = {**{k: f[k] for k in ("unit", "level", "scale", "parts", "n_subsets", "ends") if k in f},
@@ -1389,7 +1391,7 @@ def unresolved_distance(f, floor_m=1.):
     return f
 
 
-END_REGION, END_GAP_PX, END_SLAB_PX, END_KEYS, END_MIN_PIX, END_MIN_JUDGED = .2, 6, 3, 12, 6, 8  # r5b: the width ends' test
+END_REGION, END_GAP_PX, END_SLAB_PX, END_KEYS, END_MIN_PIX, END_MIN_JUDGED, END_ABOVE = .2, 6, 3, 12, 6, 8, .3  # r5b: the width ends' test
 BAND = .15  # r5b: an object whose points sit in the frame's top or bottom band in >= BAND_VIEWS of its views gets no change claims
 BAND_VIEWS = .8  # (burned-in captions and logos, the camera operator's own cart: they move with the frame, not in the room)
 
@@ -1410,8 +1412,10 @@ def ends(P, views, axis, s, z_med):
     L, px = hi - lo, z_med / s["fx"]
     keys = views if len(views) <= END_KEYS else [views[int(i)] for i in np.linspace(0, len(views) - 1, END_KEYS)]
     out = {"keys": len(keys), "span_m": round(float(L + 2 * END_GAP_PX * px), 3)}  # between the two probes: 'at most' is never below it
+    base, top = np.percentile(P[:, 2], [2, 98])
+    up = P[:, 2] >= base + END_ABOVE * (top - base)  # the surface it stands on continues beside its base at its depth: no end there
     for name, sgn, edge in (("lo", -1., lo), ("hi", 1., hi)):
-        Q = P[pr <= lo + END_REGION * L] if sgn < 0 else P[pr >= hi - END_REGION * L]
+        Q = P[up & (pr <= lo + END_REGION * L)] if sgn < 0 else P[up & (pr >= hi - END_REGION * L)]
         if len(Q) < 8:
             out[name] = "unjudged"
             continue
@@ -1605,8 +1609,13 @@ def object_card(o, x, s, k, marking, merged_from, counts):
             rec.update(status="at least", reason="cut by the frame edge in every view")
         if name == "width" and s.get("r5b", True):  # r5b: its ends' free-space evidence, and its extent seen as a lower bound (unresolved() decides)
             rec["ends"] = ends(P, views, axes[wi], s, z_med)
-            lb = value(v, {"depth": DEPTH_REL * v, "resolution": res, "scale": SCALE_REL * v}, "extent", k, views_term=False)
-            rec["lower"] = {kk: lb[kk] for kk in ("value", "u", "parts")}
+            # the extent seen: the median over single views (pooled views smear a pose or depth error into width: on the GT runs
+            # 14 of 144 pooled lower bounds were above the true width, the largest 2.1x)
+            per = [float(np.subtract(*np.percentile(P[frame == vv, :2] @ axes[wi], [98, 2]))) for vv in views if (frame == vv).sum() >= 8]
+            vis = float(np.median(per)) if per else v
+            lb = value(vis, {"depth": DEPTH_REL * vis, "resolution": res, "scale": SCALE_REL * vis}, "extent", k, views_term=False)
+            rec["lower"] = {**{kk: lb[kk] for kk in ("value", "u", "parts")}, "pooled": round(v, 3), "views": len(per),
+                            "subsets": rec.get("subsets"), "rule": "median over single views of the extent seen (p2-p98 along the width axis)"}
         if not seen:  # r4: the depth seen from this side stays beside it as a lower bound when it is resolved (u < value)
             rec = {"status": "not observed", "reason": f"seen from one side (azimuth spread {az_spread:.0f} deg)",
                    **({"visible": {**rec, "status": "at least", "reason": "the depth seen from this side: the far side is hidden"}} if rec["u"] < rec["value"] else {})}
@@ -2827,7 +2836,7 @@ def self_check():
     ph = {"width": {**value(.04, {"resolution": .03}, "extent", {"extent": {"sets": 2.4, "one_set": 4.5}}), "ends": {"lo": "free", "hi": "occupied"},
                     "lower": {"value": .04, "u": .05, "parts": {}}}}
     unresolved(ph)
-    assert ph["width"]["status"] == "not observed" and "value" not in ph["width"] and "lower" not in ph["width"], ph
+    assert ph["width"]["status"] == "not observed" and "value" not in ph["width"] and ph["width"]["lower"]["value"] == .04, ph
     ph = {"width": {**value(.3, {"views": .4}, "extent", {}), "ends": {"lo": "free", "hi": "out-of-view"}, "lower": {"value": .3, "u": .1, "parts": {}}}}
     unresolved(ph)
     assert ph["width"]["status"] == "at least" and ph["width"]["value"] == .3 and ph["width"]["u"] == .1 and ph["width"]["bound"] == "at least", ph
