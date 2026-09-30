@@ -466,7 +466,10 @@ def gt_rows(dump_run, inputs, parts_of, recorded_k=1.):
             for i, p in enumerate(sp["parts"]):
                 t, gated = cal(p["tilt_deg"], recorded_k=recorded_k), False
                 if t is None and "value_if_measurable" in (p["tilt_deg"] or {}):  # r5b integrate: shown 'not measurable' (too few view sets
-                    t, gated = {"value": p["tilt_deg"]["value_if_measurable"], "u": p["tilt_deg"].get("u_if_measurable") or 0.}, True  # or u too wide)
+                    import re  # or u too wide): scored apart, with its view sets (the gate's reason)
+                    m = re.search(r"measured from (\d+) view set", p["tilt_deg"].get("reason", ""))
+                    t, gated = {"value": p["tilt_deg"]["value_if_measurable"], "u": p["tilt_deg"].get("u_if_measurable") or 0.,
+                                "n_subsets": p["tilt_deg"].get("n_subsets", int(m.group(1)) if m else 0)}, True
                 if t is None:
                     continue
                 n = R3 @ np.asarray(p["normal"])

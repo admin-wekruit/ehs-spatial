@@ -19,8 +19,10 @@ STRIDE, GRID_HW = 2, (280, 504)  # the lift's pixel stride on DA3's grid
 VOXEL_M, MAX_TRIANGLES, MIN_COMPONENT = (.01, .04), 20000, .05
 PART_SAMPLE, MAX_PARTS, NORMAL_AGREE_DEG, MIN_PART_SHARE, MIN_PART_POINTS, MIN_PART_SIDE_M = 5000, 6, 30., .05, 40, .05
 # r5b integrate (round 5's false tilts: 26 of 27 parts read 15-75 deg on ME340 were not tilted by eye, part u median 12-17 deg): an
-# angle is shown only when >= TILT_MIN_SETS view sets measured it and its u <= TILT_U_MAX_DEG; otherwise 'not measurable' with both
-TILT_MIN_SETS, TILT_U_MAX_DEG = 3, 5.
+# angle is shown only when >= TILT_MIN_SETS view sets measured it and its u <= TILT_U_MAX_DEG; otherwise 'not measurable' with both.
+# The first pick (3 sets, u <= 5 deg) left 2 of 764 GT parts; this one was read off the GT scan (runs/r5b-results/gt/angle-gate.md:
+# 111 GT pairs, error median 1.7 / p90 8.4 deg, +-u covers 0.89, 11 of 12 readings of 15-75 deg truly tilted)
+TILT_MIN_SETS, TILT_U_MAX_DEG = 2, 12.
 
 
 def _gated(v, sets):
@@ -28,7 +30,8 @@ def _gated(v, sets):
     if "value" not in v or (sets >= TILT_MIN_SETS and v.get("u", 1e9) <= TILT_U_MAX_DEG):
         return v
     return {"status": "not measurable", "reason": f"measured from {sets} view set(s), u {v.get('u', float('nan')):.0f} deg: an angle needs "
-            f">= {TILT_MIN_SETS} agreeing view sets and u <= {TILT_U_MAX_DEG:g} deg", "value_if_measurable": v["value"], "u_if_measurable": v.get("u")}
+            f">= {TILT_MIN_SETS} agreeing view sets and u <= {TILT_U_MAX_DEG:g} deg", "value_if_measurable": v["value"], "u_if_measurable": v.get("u"),
+            "n_subsets": sets}
 TOUCH_PAIRS, MIN_FOLD_DEG, SUBSET_POINTS = 5, 5., 30
 # u's k for a part's angle (r5 bench 001, ground truth: 265 parts of ARKitScenes 42445448 / 47333932 and TUM fr1 room matched to
 # GT parts; k = 1 covered 78 %, 1.75 covers 90 %; left-one-sequence-out k 1.55-2.05); a fit term over FIT_MAX_DEG: a curved patch
@@ -468,7 +471,9 @@ def self_check():
     raw = lambda v: v.get("value", v.get("value_if_measurable"))  # noqa: E731
     assert sorted(round(raw(p["tilt_deg"]) / 45) * 45 for p in o2["parts"]) == [0, 90, 90], [raw(p["tilt_deg"]) for p in o2["parts"]]
     assert all(abs(raw(b_["angle_deg"]) - 90) < 3 for b_ in o2["bends"]) and len(o2["bends"]) == 3
-    assert all(p["tilt_deg"]["status"] == "not measurable" for p in o2["parts"])  # 2 view sets: shown as not measurable (r5b integrate)
+    assert all("value" in p["tilt_deg"] for p in o2["parts"])  # r5b integrate: 2 agreeing view sets, a small u: shown
+    o1 = planar_parts(box, np.tile([0, 1], 1800), [[0]], np.array([[2, -2, 1.6], [2.5, -1, 1.2]]))
+    assert all(p["tilt_deg"]["status"] == "not measurable" and p["tilt_deg"]["n_subsets"] == 1 for p in o1["parts"])  # one view set: not shown
     assert planar_parts(box[:30], np.zeros(30, int), [], np.zeros((1, 3)))["status"] == "not measurable"
     # observed mesh: the box's front face seen by 3 cameras; the mesh stays on the seen face, the back is not invented
     K = np.array([[250., 0, 252], [0, 250., 140], [0, 0, 1]])
