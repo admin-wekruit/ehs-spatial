@@ -165,34 +165,55 @@ u <= 12°) keeps 182 of 764 part readings, error median 1.65°, p90 8.4° (`runs
 Report with the issue list and a "位置对不对" table: https://claude.ai/artifact/86jUzcrvntqFAgXPQiUnuC (source in
 `report/`, rendered `report/panoptes-round5.html`).
 
-**Round 5 integration: IN PROGRESS when this was written** (Walmart checkpoint, audits, summary and the review were still running at 23:55). Workflow run `wf_401bb21d-ec8` (script
-`workflows/r5d.js`) on branch `r5b/integrate` (merge of the four builders done at 854e3e7). It implements RecGen for all
-non-simple objects (FAST, 2 processes per GPU, look-alike reuse), the clean 3D pane (models in place, no boxes/labels),
-an overlay alignment metric + overlay view, and the false-tilt fix; runs ME340 first and writes
-`runs/r5b-results/me340/quick.json` + `runs/r5b-results/viewer/me340/*.jpg`, then Sam's Club / Walmart / GT / one visit
-pair in parallel, smaller audits, `runs/r5b-results/summary.{md,json}`, then an adversarial review (CPU only). Check
-`runs/r5b-results/` and `git -C <base>-r5b-integrate log` for where it got to.
+**STATUS: ALL WORK STOPPED BY THE USER at ~23:40 on 2026-09-29 ("先停下来全部 不修了 … 放在handoff").** Nothing is
+running: both workflows were stopped, the last bench client (ME340 run 003) was killed, its ephemeral Modal app was
+stopped, and `modal app list` shows no ephemeral apps. Where things were left:
+
+- **Round-5 integration** (workflow `wf_401bb21d-ec8`, script `workflows/r5d.js`, branch `r5b/integrate`): done =
+  merge of the four builders, RecGen for all non-simple objects, the clean 3D pane, the overlay metric and view, the
+  angle gate, ME340 runs 001-002, Sam's Club run 002, the GT run `r5b-int-gt-001` (`runs/r5b-results/gt/`), the visit
+  GT score (`runs/r5b-results/visit-gt/`), partial audits (`runs/r5b-results/audit/`). Not done = Walmart's checkpoint
+  (its calls in `runs/r5b-int-walmart-002` finished but were not summarised), the audits, `runs/r5b-results/summary.*`,
+  the adversarial review. ME340 run 003 was aborted. Local `r5b/integrate` HEAD is `ac04f0d`, 2 commits ahead of
+  GitHub (`90e7639` results tooling, `ac04f0d` RAM++ stays the default vocabulary after measuring the Qwen+RAM++
+  union): push again with the same command the user used.
+- **Round-6 correctness** (workflow `workflows/r6-correctness.js`): stopped before any work. Worktree
+  `panoptes-phase2-video-r6-correct` exists on branch `r6/correct` at `ac04f0d` with no changes. This is next step 1.
 
 ## 7. What is missing (prioritised next steps)
 
-1. **Finish and verify round-5 integration** (above). Publish ME340 first (latency waterfall r4b vs r5 — generator
-   `report/latency.py` in this folder, page source `report/template.html`; before/after 3D pane, overlay frames), then
-   the other videos and the review. Update the round-5 artifact in place (pass its URL).
-2. **RecGen for every non-simple object, fast.** Script ready, never run: `workflows/recgen-fast2-speedups-not-run.js`
-   (training-free speed-ups: partial denoising from the observed occupancy, size-based token budget, compile/bf16/CUDA
-   graphs, cross-object batching, processes per GPU; scheduler `generate_all` with look-alike reuse, click-first
-   priority, progressive writes; one-sided objects with guessed backs). Note: 2 processes per GPU gave only +17 %, so
-   the remaining gains must come from doing less work per object and fewer objects (reuse), not more parallel copies.
-3. **Aligned reconstruction view**: models posed in world space so the overlay matches the video; per-object silhouette
-   IoU / centre offset; overlay mode; render on demand (the WebGL pane made the Mac slow).
-4. **Angles**: only from multi-view measurements with small u; label the rest "not measurable"; audit truly tilted parts
-   (ME340 guards) — the user's example is a guard panel at ~30° to the floor.
-5. **Change recall** (in-video and across visits) is low for small objects; improve matching (appearance + place).
-6. **Width coverage** fell when dishonest "at most" bounds were removed; measure widths from more views.
-7. **ME340 types** (workshop domain) at 0.6; add workshop classes/rows without leakage; decide the default word source
-   from the Qwen / RAM++ / union comparison.
-8. **Latency targets** on 2 A100 (warm): clickable cards ≤ 30 s, all typed ≤ 60 s, all models ≤ 90–120 s.
-9. Later: resume judgement per interval / per visit (`research-notes/phase2/rule-library-2026-09-29.md`), real camera
+The user's order: correctness first, speed later ("267s还可以接受，问题不大，先解决正确性问题"). Every result must
+say whether positions are right or wrong.
+
+1. **Correctness round (planned, not started; script `workflows/r6-correctness.js`, branch `r6/correct`).**
+   - *RecGen models that do not line up*: ME340 75 of 149 generated models fail the display rule (size 0.25–3× the
+     card box, centre within half its diagonal + 0.1 m, best-view IoU ≥ 0.5) and are hidden; Sam's Club 20 of 32.
+     Worst cases are 40 cm to 3 m off or not drawn (`runs/r5b-results/{me340,samsclub-a2}/alignment.json`,
+     `runs/r5b-results/viewer/*/modal-worst-generated.jpg`). Classify every failure (scale / translation / rotation /
+     view or crop / mask mismatch / bad generation) from the posed-mesh → world path in `fast_report/recgen_fast.py`,
+     the view selection, DA3's estimated scale and look-alike copies; fix general causes. Target ≥ 80 % pass without
+     loosening the rule, IoU median ≥ 0.6, centre offset median ≤ 8 cm.
+   - *Floor position*: GT error median 12.5 cm (ARKit47) / 9.0 cm (TUM) at the true camera height, 23.6 / 20.0 cm at
+     the assumed 1.6 m, p90 23–35 cm (`runs/r5b-results/gt/physical-score.json`). Compare centre estimators (visible
+     centroid, lined-up RecGen model centre, footprint centre, one-sided-visibility correction); report how much error
+     is the height assumption; a real camera-height input removes about half.
+   - *One-view sizes*: never state width/length/height from a single view set as a value ("at least" or "not
+     measurable" + class size priors). Examples: Sam's Club cart width 2.56 m, ME340 machine base 1.06 m above floor.
+   - Re-run ME340, Sam's Club and GT; lead the results with a per-video "positions right or wrong" table before →
+     after; overlay screenshots before/after on the same frames; adversarial check.
+2. **Finish round 5's leftovers**: Walmart checkpoint (calls exist in `runs/r5b-int-walmart-002`), audits, summary,
+   adversarial review; add Walmart to the report (https://claude.ai/artifact/86jUzcrvntqFAgXPQiUnuC; source in
+   `report/`, builder scripts `report/add-sams.py`, `report/me340-run2.py`, chart `report/latency.py`).
+3. **Angles**: only from ≥ 2 view sets with u ≤ 12° now (GT: 182 of 764 readings kept, error median 1.65°, p90 8.4°);
+   audit truly tilted parts (ME340 guards) — the user's example is a guard panel at ~30° to the floor.
+4. **ME340 types** (workshop domain) ~0.6; add workshop classes/rows without leakage.
+5. **Change recall** (in-video and across visits) is low for small objects (TUM plant 6/43, teddy 4/56).
+6. **Width coverage** fell to 32–55 % once dishonest "at most" bounds were removed; measure widths from more views.
+7. **Speed (later; the user accepts ~267 s for now)**: RecGen all-models 267 s ME340 / 162 s Sam's Club; GPU time
+   ME340: generation 624 s (149 models, ~4 s each), view selection 328 s, checks 252 s. Script ready, never run:
+   `workflows/recgen-fast2-speedups-not-run.js` (partial denoising from observed occupancy, size-based token budget,
+   compile/bf16, cross-object batching, look-alike reuse, click-first queue). 2 processes per GPU gave only +17 %.
+8. Later: resume judgement per interval / per visit (`research-notes/phase2/rule-library-2026-09-29.md`), real camera
    height input, deployment (only after the user asks).
 
 ## 8. Working method that worked (and pitfalls)
