@@ -352,6 +352,9 @@ def gate_mesh(src, fx, card, msg):
     moved, out["placement"] = refine(vertices, faces, views)
     vertices = transformed(vertices, moved)
     out["gate"] = gate_row(held_gate(src, key, held, vertices, faces))
+    if msg.get("always"):  # r5b integrate: how the placed model lines up with the object in its own best (anchor) view: the display rule
+        fit = held_gate(src, key, gen[0], vertices, faces) if gen[0] != held else None
+        out["fit"] = {"view": gen[0], "silhouette_iou": (fit or out["gate"]).get("silhouette_iou")}
     if msg["kind"] in ("trellis", "triposr"):
         colors, _ = paint(src, key, gen, vertices, faces, colors if msg["kind"] == "triposr" else None)
     from fast_report import observed

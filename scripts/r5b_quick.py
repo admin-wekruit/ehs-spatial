@@ -24,7 +24,8 @@ def tiers(mirror, report):
     md = ((P.get("models") or [{}])[-1].get("data") or {})
     routes, rows = md.get("routes") or {}, {r["object"]: r for r in md.get("models", [])}
     obj = [c for c in cs if c.get("kind") == "object"]
-    ns = [c for c in obj if c["id"] in rows or (routes.get(c["id"]) or [""])[0] == "generated" or "a look-alike of" in str((routes.get(c["id"]) or ["", ""])[1])]
+    ns = [c for c in obj if c["id"] in rows or (routes.get(c["id"]) or [""])[0] in ("generated", "observed surface")
+          or "a look-alike of" in str((routes.get(c["id"]) or ["", ""])[1])]
     shown = collections.Counter("generated (own)" if c["id"] in rows and not rows[c["id"]].get("reuse_of") else "generated (look-alike copy)"
                                 if c["id"] in rows else rm.tier_of(c, P) for c in ns)
     checked = [r for r in rows.values() if not r.get("reuse_of")]
@@ -36,7 +37,7 @@ def tiers(mirror, report):
             "held_out_view": sum((r.get("gate") or {}).get("held_out", True) is not False for r in checked),
             "plan": {k: v for k, v in (md.get("plan") or {}).items() if k in ("cards", "candidates", "groups", "jev_asked", "jev_s", "generated_groups",
                                                                             "kept", "members", "by_route", "soft_goods", "plan_s")},
-            "reuse": md.get("reuse"), "final": md.get("final")}
+            "reuse": md.get("reuse"), "display_rule": md.get("display"), "final": md.get("final")}
 
 
 def run_times(run):

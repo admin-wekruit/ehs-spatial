@@ -683,6 +683,28 @@ def tried_rows(records):
 TIER1_CAP, TIER1_UNTIL_S = 100000, 900.  # r5b integrate (the user 2026-09-29): every non-simple object gets a generated model: no cap;
 # the deadline only guards a stuck generator (the app's call timeout); look-alike groups share one model
 MODELS_PUT_S = 3.  # progressive 'models' versions at most this often (each version lists every model so far; the blobs are content-addressed)
+# r5b integrate, the display rule for a generated model (ME340 first call: 21 of 118 RecGen meshes were empty, tiny or off the object, best-view
+# IoU 0.015; the rest 0.43): shown only when its size and centre agree with the card's box and it covers its object in its own best view;
+# otherwise the object's observed surface stays (it lines up by construction)
+FIT_IOU_MIN, FIT_SIZE, FIT_CENTRE = .5, (.25, 3.), (.5, .1)  # IoU in the anchor view; longest extent / the card box's; centre within a x diagonal + b m
+
+
+def lines_up(x, card):
+    """-> (show?, why) for one generated model x ({bounds, gate}) on its card (fast_report.core's display rule above)."""
+    b, ph = x.get("bounds") or {}, (card or {}).get("physical") or {}
+    if not b.get("min") or "box_min_m" not in ph:
+        return True, "no box to check it against"
+    ext, box = np.subtract(b["max"], b["min"]), np.subtract(ph["box_max_m"], ph["box_min_m"])
+    d = float(np.linalg.norm((np.add(b["max"], b["min"]) - np.add(ph["box_max_m"], ph["box_min_m"])) / 2))
+    r = float(ext.max() / max(box.max(), 1e-3))
+    if not FIT_SIZE[0] <= r <= FIT_SIZE[1]:
+        return False, f"its size is {r:.2f} x the object's box"
+    if d > FIT_CENTRE[0] * float(np.linalg.norm(box)) + FIT_CENTRE[1]:
+        return False, f"its centre is {d:.2f} m from the object's"
+    iou = (x.get("gate") or {}).get("fit_iou")
+    if iou is not None and iou < FIT_IOU_MIN:
+        return False, f"it covers the object's outline at IoU {iou:.2f} in its own best view (< {FIT_IOU_MIN})"
+    return True, f"size x{r:.2f}, centre {d:.2f} m off, IoU {iou if iou is None else round(iou, 2)} in its best view"
 JEV_SIDE = 448  # the outlined view Jev-Omni sees (route/jev's crops)
 
 
@@ -874,10 +896,30 @@ def models_job(m, inputs, geo, shared, words, clock, writer, dev, cards_now=None
         else:
             models_iter = sam3d.gate(objs, shots, shared.result(), clock, m.sam3d, m.gate_pool, vocab=words, records=records, eligible=reps,
                                      first=len(reps), background=False, deadline=deadline)
-        for x in models_iter:
+        shown = {"shown": 0, "not_lined_up": 0, "own_after_copy": 0}
+
+        def take(x):
+            ok, why = lines_up(x, by_id.get(x["object"]))
+            if not ok:  # r5b integrate: a model that does not line up is not drawn; the object's observed surface stays
+                shown["not_lined_up"] += 1
+                routes[x["object"]] = ["observed surface", f"its RecGen model does not line up ({why}): the observed surface stays"]
+                return None
+            shown["shown"] += 1
             row = {"object": x["object"], "transform": {"position": [float(v) for v in x["transform"][:3, 3]], "quaternion": [0, 0, 0, 1],
-                                                        "scale": [1, 1, 1]}, "bounds": x["bounds"], "gate": x["gate"]}
+                                                        "scale": [1, 1, 1]}, "bounds": x["bounds"], "gate": {**x["gate"], "display": why}}
             models.append(row)
+            return row
+
+        def put_now():
+            if time.perf_counter() - last_put[0] >= MODELS_PUT_S:  # progressive, batched (every version lists every model so far)
+                last_put[0] = time.perf_counter()
+                writer.put("models", {**base, "models": list(models), "attempted": judged(), "final": False, "tried": tried_rows(records), "reuse": reuse,
+                                      "display": shown}, dict(blobs), "generated", GENERATED)
+                clock.mark("first_model_put")
+        for x in models_iter:
+            row = take(x)
+            if row is None:
+                continue
             blobs[f"model-{x['object']}"] = (x["glb"], {"mediaType": "model/gltf-binary", "format": "glb"})
             rep = by_id.get(x["object"])
             if rep is not None and members.get(x["object"]):
@@ -897,16 +939,26 @@ def models_job(m, inputs, geo, shared, words, clock, writer, dev, cards_now=None
                                        "status": "a look-alike's generated model, placed on this object: display only"}})
                     else:
                         routes[mc["id"]] = ["primitive", f"a look-alike of {x['object']}, but its model does not fit this one ({why}): the observed surface stays"]
-            if time.perf_counter() - last_put[0] >= MODELS_PUT_S:  # progressive, batched (every version lists every model so far)
-                last_put[0] = time.perf_counter()
-                writer.put("models", {**base, "models": list(models), "attempted": judged(), "final": False, "tried": tried_rows(records), "reuse": reuse},
-                           dict(blobs), "generated", GENERATED)
-                clock.mark("first_model_put")
+            put_now()
+        # r5b integrate: every group member without a model (its copy did not fit, or its group's model did not line up) gets its own
+        if internal and reps:
+            have = {r["object"] for r in models}
+            redo = [c for ms in members.values() for c in ms if c["id"] not in have]
+            if redo:
+                objs2 = [o for o in objs if o["id"] in {c["id"] for c in redo}]
+                objs2 += outline_inputs(redo, ctx.get("outlines") and ctx["outlines"](), {o["id"] for o in objs2}, ctx.get("frame_wh"))
+                for x in recgen_models.gate(objs2, shots, shared.result(), clock, m.recgen, m.gate_pool, {c["id"]: 1. for c in redo}, records,
+                                            deadline=deadline, first=len(redo)):
+                    if take(x) is not None:
+                        shown["own_after_copy"] += 1
+                        blobs[f"model-{x['object']}"] = (x["glb"], {"mediaType": "model/gltf-binary", "format": "glb"})
+                    put_now()
     finally:
         summary = {"eligible": len(reps), "attempted": judged(), "accepted": sum("reuse_of" not in r for r in models), "reused": reuse,
-                   "prepare_rejected": sum("rejected" in r for r in records), "errors": [r for r in records if "error" in r][:5], "plan": plan}
+                   "prepare_rejected": sum("rejected" in r for r in records), "errors": [r for r in records if "error" in r][:5], "plan": plan,
+                   "display": dict(shown) if "shown" in locals() else None}
         writer.put("models", {**base, "models": models, "attempted": judged(), "final": True, "first_pass": summary, "tried": tried_rows(records),
-                              "reuse": reuse}, dict(blobs), "generated", GENERATED)
+                              "reuse": reuse, "display": summary["display"]}, dict(blobs), "generated", GENERATED)
         clock.mark("models_final_put")
         for d in sam3d.SHARED.glob(f"fb-gate-{os.getpid()}-*"):  # this run's staged gate inputs
             shutil.rmtree(d, ignore_errors=True)
@@ -2708,10 +2760,15 @@ def self_check():
     time.sleep(1.1)  # gzip's header time: an unchanged chunk must be the same bytes a second later (content-addressed blobs)
     assert pick_chunks([bytes([i]) * 4 for i in range(23)], [bytes([i]) * 2 for i in range(23)])[1]["depth-0"][0] == blobs["depth-0"][0]
     assert gzip.decompress(blobs["pick-1"][0]) == b"".join(bytes([i]) * 4 for i in range(10, 20)) and gzip.decompress(blobs["depth-2"][0]) == bytes([20, 20, 21, 21, 22, 22])
+    box = {"physical": {"box_min_m": [0, 0, 0], "box_max_m": [1, 1, 1]}}  # r5b integrate: the generated model display rule
+    assert lines_up({"bounds": {"min": [0, 0, 0], "max": [.9, 1, 1]}, "gate": {"fit_iou": .7}}, box)[0]
+    assert not lines_up({"bounds": {"min": [0, 0, 0], "max": [.01, .01, .01]}, "gate": {"fit_iou": .7}}, box)[0]  # an empty mesh
+    assert not lines_up({"bounds": {"min": [3, 3, 3], "max": [4, 4, 4]}, "gate": {"fit_iou": .7}}, box)[0]  # beside the object
+    assert not lines_up({"bounds": {"min": [0, 0, 0], "max": [1, 1, 1]}, "gate": {"fit_iou": .2}}, box)[0]  # off its outline
     try:
         import torch
     except ImportError:
-        print(f"core self-check ok: chunked cut measure == sequential (chunks 8/{CHUNK}/64), ribbon, GLB points (point helpers skipped: no torch)")
+        print(f"core self-check ok: chunked cut measure == sequential (chunks 8/{CHUNK}/64), ribbon, GLB points, display rule (point helpers skipped: no torch)")
         return
     # the cards' point hand-off: components by label (a sentinel label is skipped), per-view pixels and edge flags
     p = {"world": torch.rand(10, 3), "mid": torch.tensor([0, 0, 1, 1, 1, 2, 2, 2, 2, 2]), "z": torch.rand(10), "pixels": torch.tensor([5, 6, 7]),

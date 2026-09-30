@@ -83,6 +83,7 @@ def gate(objs, shots, frames_host, clock, recgen, cpu, eligible, records, deadli
                 yield {"object": o["id"], "glb": res["glb"], "transform": t, "bounds": res["bounds"],
                        "gate": {**{k: g.get(k) for k in ("silhouette_iou", "relative_depth_median", "relative_depth_p95", "supported_pixels")},
                                 "accepted_source_consistency": bool(g.get("accepted_source_consistency")), "held_out": sel[r]["held_out"],
+                                "fit_iou": (res.get("fit") or {}).get("silhouette_iou"), "fit_view": (res.get("fit") or {}).get("view"),
                                 "separation_deg": sel[r]["sep"], "views": len(sel[r]["gen"]),
                                 "held_out_view": sel[r]["held"], "generator": "RecGen", "licence": LICENCE, "faces": res.get("faces"),
                                 "observed_vertex_share": res.get("observed_vertex_share"), "status": "generated display model: never used for measurement"}}
