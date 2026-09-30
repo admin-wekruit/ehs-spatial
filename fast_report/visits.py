@@ -390,16 +390,6 @@ def record(V, c, T=None):
             "specific": specific(c), "dino": V["dino"].get(c["id"]), "card": c}
 
 
-def overlap(a, b):
-    """Footprint IoU (convex hulls in the floor plane), 0 without footprints."""
-    if len(a["foot"]) < 3 or len(b["foot"]) < 3:
-        return 0.
-    from shapely.geometry import MultiPoint
-    pa, pb = MultiPoint([tuple(p) for p in a["foot"]]).convex_hull, MultiPoint([tuple(p) for p in b["foot"]]).convex_hull
-    inter = pa.intersection(pb).area
-    return float(inter / max(pa.union(pb).area, 1e-9))
-
-
 def compatible(fa, fb):
     return fa in GENERIC or fb in GENERIC or fa == fb
 
@@ -1170,13 +1160,6 @@ def run(root, a_report, b_report, gpu, writer=None, clock=None, site=None, b_fra
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(idx, indent=1))
     return data, blobs, rec
-
-
-def summary(data):
-    """One line per visit comparison (the CLI and the results)."""
-    regs = data["registration"]
-    return {"accepted": f"{sum(r['accepted'] for r in regs)}/{len(regs)}", "counts": data["counts"],
-            "u_m": [r.get("u_m") for r in regs if r.get("accepted")], "refused": [r["refused_because"] for r in regs if not r["accepted"]], "s": data["s"]}
 
 
 # ---------------------------------------------------------------- self-check

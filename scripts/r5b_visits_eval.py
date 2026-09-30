@@ -467,6 +467,84 @@ def box_iou(a, b):
     return float(inter / max(va + vb - inter, 1e-9))
 
 
+def results(run, bench, gt_dir, labels_file, out):
+    """The results page: every pair's row (evaluate) on the bench's final visits layers, the per-video table, times, spend."""
+    import shutil
+    from fast_report.instrument import usd_per_s
+    run, bench, out = Path(run), Path(bench), Path(out)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "evidence").mkdir(exist_ok=True)
+    reports = reports_of([run])
+    labels = json.loads(Path(labels_file).read_text()) if labels_file and Path(labels_file).exists() else {}
+    vs = json.loads((bench / "visits-summary.json").read_text())
+    rv = json.loads((bench / "revisits-summary.json").read_text()) if (bench / "revisits-summary.json").exists() else {"runs": []}
+    timing = {(r["a"], r["b"]): r for r in vs["pairs"]}
+    rows = []
+    for sa, sb, kind in PAIRS:
+        if sa not in reports or sb not in reports:
+            continue
+        a_rep, b_rep = reports[sa][0], reports[sb][0]
+        lay = layer_of(bench, b_rep, a_rep)
+        if lay is None:
+            continue
+        g = Path(gt_dir) / f"gt-{a_rep}--{b_rep}.json"
+        gt = json.loads(g.read_text()) if g.exists() else None
+        row = evaluate(sa, sb, kind, reports, lay["data"], gt, labels.get(f"{sb}--{sa}"))
+        t = timing.get((a_rep, b_rep), {})
+        row["timing"] = {"visit_call_written_s": (t.get("written_s") or [None])[0], "stages_s": t.get("stages"), "gpu_peak_gib": t.get("gpu_peak_gib"),
+                         "clock": "FastReport.visit: t0 = the call (the two analyses done), written = the Volume commit"}
+        for c in row["claims_all"]:
+            if c.get("tile") and lay["blobs"].get(c["tile"]):
+                src = bench / "blobs" / "sha256" / lay["blobs"][c["tile"]]["sha256"]
+                if src.exists():
+                    dst = out / "evidence" / f"{sb}--{sa}--{c['tile']}.jpg"
+                    shutil.copyfile(src, dst)
+                    c["file"] = f"evidence/{dst.name}"
+        rows.append(row)
+    revisits = []
+    for r in rv["runs"]:
+        m = r["milestones"]
+        revisits.append({"site": r["site"], "report": r["report"], "visit_of": r["visit_of"], "error": r["error"], "visits_error": r.get("visits_error"),
+                         "cards_final_written_s": m.get("cards_v3") or m.get("cards_v2"), "visits_written_s": m.get("visits"), "visits_stage_s": r["visits_stage_s"],
+                         "gpu_peak_gib": r["gpu_peak_gib"], "first_call_after_boot": r["first_call"]})
+    boot = vs["boot"]
+    ends = [r.get("ended_unix") for r in vs["pairs"] if r.get("ended_unix")]
+    life = (max(ends) - boot["client_submitted_unix"]) if ends else None
+    summary = {"schema": "r5b-visits-results-v1", "pairs": rows, "revisits": revisits,
+               "bench": {"boot_ready_s": boot.get("ready_s"), "container_life_s": round(life, 1) if life else None,
+                         "usd_upper": round((life + 60) * usd_per_s(), 2) if life else None, "gpus": boot.get("gpus")}}
+    (out / "results.json").write_text(json.dumps(summary, indent=1, default=float))
+    (out / "tables.md").write_text(tables_md(summary))
+    return summary
+
+
+def gt_err(x):
+    return f"{x['cm_median']} / {x['cm_p90']}, {x['deg_median']}"
+
+
+def tables_md(sm):
+    f = lambda v, d=2: "—" if v is None else (f"{v:.{d}f}" if isinstance(v, float) else str(v))  # noqa: E731
+    md = "## Per revisit video (B against its site map A)\n\n| B (revisit) | A (site map) | kind | shots registered | u (cm) | GT error cm (median / p90), deg | " \
+         "objects compared | match P (surface / box) / R | claims: right / wrong / unverified / unlabelled | GT changes found (all / >= 30 cm) | false changes / judged objects | visit s (to commit) |\n" \
+         "|---|---|---|---|---|---|---|---|---|---|---|---|\n"
+    for r in sm["pairs"]:
+        regs = r["registration"]
+        acc = [x for x in regs if x.get("accepted")]
+        rg = r.get("registration_gt") or []
+        m, c, fc = r.get("match") or {}, r.get("changes") or {}, r["false_changes"]
+        v = [x["verdict"] for x in r["claims_all"]]
+        md += (f"| {r['b']} | {r['a']} | {r['kind']} | {len(acc)}/{len(regs)} | {', '.join(f(x['u_m'] * 100, 0) for x in acc) or '—'} | "
+               f"{'; '.join(map(gt_err, rg)) or '—'} | "
+               f"{fc['judged_objects']} | {f(m.get('precision'))} / {f(m.get('precision_box'))} / {f(m.get('recall'))} | "
+               f"{v.count('right')} / {v.count('wrong')} / {v.count('unverifiable') + v.count('unclear')} / {v.count('unlabelled')} | "
+               f"{f(c.get('gt_gone_found', 0) + c.get('gt_came_found', 0) if c else None)} of {f(c.get('gt_gone', 0) + c.get('gt_came', 0) if c else None)} / "
+               f"{f(c.get('gt_large_found'))} of {f(c.get('gt_large'))} | {fc['wrong']} / {fc['judged_objects']} | {f(r['timing']['visit_call_written_s'], 1)} |\n")
+    md += "\n## Revisits analysed with their visit step (s from the MP4 bytes in the container to the Volume commit)\n\n| B | cards final written | visits written | visits stage | GPU peak GiB (0 / 1) |\n|---|---|---|---|---|\n"
+    for r in sm["revisits"]:
+        md += f"| {r['site']} | {f(r['cards_final_written_s'], 1)} | {f(r['visits_written_s'], 1)} | {f(r['visits_stage_s'], 1)} | {' / '.join(f(x, 1) for x in r['gpu_peak_gib'])} |\n"
+    return md
+
+
 def _count(xs):
     out = {}
     for x in xs:
@@ -507,7 +585,16 @@ def self_check():
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("cmd", nargs="?", choices=("results",))
+    ap.add_argument("--run", type=Path)
+    ap.add_argument("--bench", type=Path)
+    ap.add_argument("--gt", type=Path)
+    ap.add_argument("--labels", type=Path)
+    ap.add_argument("--out", type=Path)
     ap.add_argument("--self-check", action="store_true")
     a = ap.parse_args()
     if a.self_check:
         self_check()
+    elif a.cmd == "results":
+        sm = results(a.run, a.bench, a.gt, a.labels, a.out)
+        print((a.out / "tables.md").read_text())
