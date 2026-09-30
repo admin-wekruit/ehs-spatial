@@ -731,7 +731,7 @@ def analyse(m, mp4, opts, clock, writer, log):
     # r5b: the bank rows a run may read: never the scored site's (bank_exclude_site: the benches) nor those named (a bank build)
     bank_exclude = ([site] if opts.get("bank_exclude_site") else []) + list(opts.get("bank_exclude_sites") or [])
     site_family = json.loads(cascade.CALIBRATION.read_text()).get("site_family", {}).get(site, "unknown")
-    vlm_frames = vocab.pick_frames(n_total, vlm.VOCAB_FRAMES if vocab_src == "qwen" else vocab.FRAMES) if vocab_src in ("qwen", "pe", "ram") else []
+    vlm_frames = vocab.pick_frames(n_total, vlm.VOCAB_FRAMES if vocab_src == "qwen" else vocab.FRAMES) if vocab_src not in ("words", "taxonomy") else []
     frames, grays, futures, keys, chunk_at, chunk_done = [], [], [], [], [], {}
     decoded_all = threading.Event()
     results = {}
