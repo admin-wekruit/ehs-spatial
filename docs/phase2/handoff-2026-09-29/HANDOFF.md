@@ -179,7 +179,7 @@ stopped, and `modal app list` shows no ephemeral apps. Where things were left:
   GT score (`runs/r5b-results/visit-gt/`), partial audits (`runs/r5b-results/audit/`). Not done = Walmart's checkpoint
   (its calls in `runs/r5b-int-walmart-002` finished but were not summarised), the audits, `runs/r5b-results/summary.*`,
   the adversarial review. ME340 run 003 was aborted. `r5b/integrate` HEAD is `ac04f0d`, on GitHub (`90e7639` results tooling, `ac04f0d`
-  RAM++ stays the default vocabulary after measuring the Qwen+RAM++ union); on GitHub.
+  RAM++ stays the default vocabulary after measuring the Qwen+RAM++ union).
 - **Round-6 correctness** (workflow `workflows/r6-correctness.js`): stopped before any work. Worktree
   `panoptes-phase2-video-r6-correct` exists on branch `r6/correct` at `ac04f0d` with no changes. This is next step 1.
 
