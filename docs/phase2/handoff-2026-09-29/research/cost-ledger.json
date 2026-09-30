@@ -1,0 +1,3453 @@
+{
+  "authorization_usd": 500,
+  "prior_ledger_accounted_usd": 20.36,
+  "prior_unresolved_overhead_reserve_usd": 2,
+  "phase2_current_reserve_usd": 2,
+  "phase2_published_estimate_usd": 0.41,
+  "actual_billing_reconciled": false,
+  "requests": [
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam31-fal-video-rle-probe-16/visual-box-point-instance-0/provider-started-events.jsonl",
+      "request_id": "01a0b2f2-a48c-7e73-b2a2-ab0f79dd9f71",
+      "estimate_usd": 0.01,
+      "provider_result_observed": false,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam31-fal-video-rle-probe-16/visual-mask-point-instance-0/provider-started-events.jsonl",
+      "request_id": "01a0b2f0-5105-7a03-bfc3-d6e0ff8966cc",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam31-fal-video-rle-probe-16/visual-mask-instance-0/provider-events.jsonl",
+      "request_id": "01a0b2ed-7c9f-78c1-a40c-7cf693d4d8c4",
+      "estimate_usd": 0.01,
+      "provider_result_observed": false,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-keyframes-001/frame-00350/provider-events.jsonl",
+      "request_id": "01a0b304-1db6-7163-9034-6a06a5394017",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-keyframes-001/frame-00600/provider-events.jsonl",
+      "request_id": "01a0b304-347f-7e12-8347-decc4d54b363",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-keyframes-001/frame-00210/provider-events.jsonl",
+      "request_id": "01a0b304-074b-72c1-b475-53c55f1f2db2",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-a/frame-00270/provider-events.jsonl",
+      "request_id": "01a0b310-48a2-7c40-b841-5818fcad60a3",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-a/frame-00240/provider-events.jsonl",
+      "request_id": "01a0b310-32f7-70e3-80d2-54b96847f740",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-a/frame-00060/provider-events.jsonl",
+      "request_id": "01a0b30f-aab7-7be3-8fd7-3aa79591d865",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-a/frame-00150/provider-events.jsonl",
+      "request_id": "01a0b30f-ecc7-74c2-b5b5-fa0db0da914b",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-a/frame-00300/provider-events.jsonl",
+      "request_id": "01a0b310-5e55-7b21-939c-cc9e8e0250bd",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-a/frame-00330/provider-events.jsonl",
+      "request_id": "01a0b310-762c-7331-8df5-0604361d50aa",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-a/frame-00210/provider-events.jsonl",
+      "request_id": "01a0b310-1ca1-73b2-a909-0dc1ecdea43d",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-a/frame-00000/provider-events.jsonl",
+      "request_id": "01a0b30f-6d5c-7813-a3f0-726f41e610fe",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-a/frame-00030/provider-events.jsonl",
+      "request_id": "01a0b30f-93dd-76b0-8dbb-443a829d07c6",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-a/frame-00090/provider-events.jsonl",
+      "request_id": "01a0b30f-c078-7ec3-9236-efe1a5c45348",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-a/frame-00120/provider-events.jsonl",
+      "request_id": "01a0b30f-d705-71c2-9b47-b17714c5e9a6",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-a/frame-00180/provider-events.jsonl",
+      "request_id": "01a0b310-04f6-7d83-98d0-1133626d628c",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-b/frame-00360/provider-events.jsonl",
+      "request_id": "01a0b311-7298-7f60-a448-e54ca82f15b1",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-b/frame-00480/provider-events.jsonl",
+      "request_id": "01a0b311-cefd-7610-b3ec-9654a1b222c8",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-b/frame-00420/provider-events.jsonl",
+      "request_id": "01a0b311-9f0e-7530-9757-1eb3b7c01aa7",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-b/frame-00630/provider-events.jsonl",
+      "request_id": "01a0b312-3d08-7d90-b644-ef23c2cdabb6",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-b/frame-00690/provider-events.jsonl",
+      "request_id": "01a0b312-6841-7053-907c-f3c7a69acc21",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-b/frame-00600/provider-events.jsonl",
+      "request_id": "01a0b312-276e-7b51-a2e3-3e8ee2e56899",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-b/frame-00450/provider-events.jsonl",
+      "request_id": "01a0b311-b666-7a80-93c0-f4efafe5e834",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-b/frame-00540/provider-events.jsonl",
+      "request_id": "01a0b311-fa7b-7671-9110-7b9f45c536a6",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-b/frame-00570/provider-events.jsonl",
+      "request_id": "01a0b312-109c-7b32-aed0-d3be9b214cd5",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-b/frame-00390/provider-events.jsonl",
+      "request_id": "01a0b311-891b-7752-a6fa-eb2b76893ac1",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-b/frame-00660/provider-events.jsonl",
+      "request_id": "01a0b312-525e-70d2-bc64-53ef34326d66",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-b/frame-00510/provider-events.jsonl",
+      "request_id": "01a0b311-e467-7572-b400-5eaee116b177",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-c/frame-00750/provider-events.jsonl",
+      "request_id": "01a0b313-fba0-7b01-b292-74e9b7eae1c8",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-c/frame-00840/provider-events.jsonl",
+      "request_id": "01a0b314-3c81-7f20-bf4c-164b06f1762d",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-c/frame-00720/provider-events.jsonl",
+      "request_id": "01a0b313-e244-7240-85a0-8dfd22f45cde",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-c/frame-00780/provider-events.jsonl",
+      "request_id": "01a0b314-1158-7fe1-87c4-2b93087b5694",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-walking-periodic-c/frame-00810/provider-events.jsonl",
+      "request_id": "01a0b314-26c5-72f0-a2e7-68b5ce7ef768",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-video-objects-chair-001/frame-00120/provider-events.jsonl",
+      "request_id": "01a0b316-2c76-7e81-9443-dec38884b0ab",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-video-objects-monitor-001/frame-00120/provider-events.jsonl",
+      "request_id": "01a0b316-ee80-7811-90e9-bea4a20b3f70",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3-video-objects-table-001/frame-00120/provider-events.jsonl",
+      "request_id": "01a0b316-6651-7233-8e04-bde23baeb31e",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam31-fal-video-rle-probe-16/provider-events.jsonl",
+      "request_id": "01a0b2dc-2eb2-78e0-98dc-068b693e3772",
+      "estimate_usd": 0.01,
+      "estimate_basis": "one short image/video request, saved published unit price; actual invoice unknown",
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam31-fal-video-rle-probe-16/image-person-discovery/verified-pricing-events.jsonl",
+      "request_id": "01a0b2e9-18d5-7471-847b-920718680e52",
+      "estimate_usd": 0.01,
+      "estimate_basis": "one short image/video request, saved published unit price; actual invoice unknown",
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam31-fal-video-rle-probe-16/visual-seed-instance-0/provider-events.jsonl",
+      "request_id": "01a0b2ea-0cac-7391-a605-48ae02f7fe36",
+      "estimate_usd": 0.01,
+      "estimate_basis": "one short image/video request, saved published unit price; actual invoice unknown",
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-069-probe-001/provider-events.jsonl",
+      "request_id": "01a0b4ed-0e0b-71a1-9694-2db33b36cf4b",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00120-track-0/provider-events-1789742674471277000.jsonl",
+      "request_id": "01a0b4fa-0633-73e3-8d8c-26d0c4ad4152",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00390-track-5/provider-events-1789742740586721000.jsonl",
+      "request_id": "01a0b4fb-0a56-7c10-b4ef-3c908bb02e93",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00130-track-0/provider-events-1789742683182518000.jsonl",
+      "request_id": "01a0b4fa-28a9-76f0-a996-90f36b7c29d0",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00500-track-6/provider-events-1789742789581089000.jsonl",
+      "request_id": "01a0b4fb-c87d-7fa3-a0b0-ea2dad8650f2",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00510-track-6/provider-events.jsonl",
+      "request_id": "01a0b4f7-cd84-7380-9873-d257f96b1c80",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00800-track-8/provider-events-1789742993673807000.jsonl",
+      "request_id": "01a0b4fe-e649-7402-8a08-df41223779db",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00810-track-8/provider-events-1789743010125712000.jsonl",
+      "request_id": "01a0b4ff-25e5-7200-a9cd-2d95a07bb69a",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00120-track-1/provider-events-1789742681493716000.jsonl",
+      "request_id": "01a0b4fa-230d-73d1-908a-fa5b6c54f486",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00390-track-4/provider-events-1789742742696416000.jsonl",
+      "request_id": "01a0b4fb-12c2-7311-9e35-76ecf3f08b29",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00380-track-4/provider-events-1789742731658738000.jsonl",
+      "request_id": "01a0b4fa-e5bb-7462-9eef-e888476e38c8",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00130-track-1/provider-events-1789742685784594000.jsonl",
+      "request_id": "01a0b4fa-34b8-79f3-a27c-a38c700cc68c",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00180-track-0/provider-events-1789742706181532000.jsonl",
+      "request_id": "01a0b4fa-826d-7ed2-b334-fcd9d3d4aef4",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00810-track-6/provider-events-1789743001042954000.jsonl",
+      "request_id": "01a0b4ff-02a0-7bc0-a9f0-19dd4d17cbc5",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00800-track-6/provider-events-1789742999507209000.jsonl",
+      "request_id": "01a0b4fe-fc74-7b60-abfa-d85eaf1cbac1",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00440-track-5/provider-events.jsonl",
+      "request_id": "01a0b4f7-9d54-72f3-9014-4a7a41798ebb",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00450-track-5/provider-events-1789742757171049000.jsonl",
+      "request_id": "01a0b4fb-4a32-70b3-832c-3a53625b7c9c",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00640-track-6/provider-events-1789742857069901000.jsonl",
+      "request_id": "01a0b4fc-ce94-7501-b98e-ae6ad48084f0",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00650-track-6/provider-events-1789742867671111000.jsonl",
+      "request_id": "01a0b4fc-f9a5-7871-b6da-fd15a3d89d1f",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00470-track-6/provider-events-1789742776861925000.jsonl",
+      "request_id": "01a0b4fb-96dc-74c0-ae62-3a2d832d9c5f",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00460-track-6/provider-events.jsonl",
+      "request_id": "01a0b4f7-b716-70a1-930a-9d21377d268d",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00050-track-0/provider-events-1789742617792039000.jsonl",
+      "request_id": "01a0b4f9-6b5f-7f21-8f8b-0c409cad173e",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00040-track-0/provider-events.jsonl",
+      "request_id": "01a0b4f6-88b0-7403-99cf-5810068e28a2",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00250-track-3/provider-events-1789742720247973000.jsonl",
+      "request_id": "01a0b4fa-b98b-7790-8001-f9edab810180",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00240-track-3/provider-events.jsonl",
+      "request_id": "01a0b4f7-5477-7a11-94d6-4a33e99dec16",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00790-track-6/provider-events-1789742989314438000.jsonl",
+      "request_id": "01a0b4fe-d4fb-70d2-bca5-060850fc1aae",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00780-track-6/provider-events-1789742978043803000.jsonl",
+      "request_id": "01a0b4fe-a846-79a1-9a4c-12b5e99c1744",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00780-track-8/provider-events-1789742975270095000.jsonl",
+      "request_id": "01a0b4fe-9dfa-7690-a8d5-91ea7a59c802",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00790-track-8/provider-events-1789742981897160000.jsonl",
+      "request_id": "01a0b4fe-b85a-77f2-b43a-51a0db81f50b",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00050-track-1/provider-events.jsonl",
+      "request_id": "01a0b4f6-a814-7671-a422-d89d0a28f713",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00040-track-1/provider-events.jsonl",
+      "request_id": "01a0b4f6-87b5-7ab3-b061-0320ac6bb20e",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00720-track-8/provider-events-1789742914940300000.jsonl",
+      "request_id": "01a0b4fd-b2c0-7e72-99d9-272f62a5d2a6",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00730-track-8/provider-events-1789742925992586000.jsonl",
+      "request_id": "01a0b4fd-dd9f-7120-b054-39c4052619d2",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00730-track-6/provider-events-1789742926717654000.jsonl",
+      "request_id": "01a0b4fd-dff0-73a1-9bcd-adfabb1ed7d3",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00720-track-6/provider-events-1789742925948459000.jsonl",
+      "request_id": "01a0b4fd-dcdb-7fa1-8637-cdaaeed5d79a",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00220-track-3/provider-events-1789742715353459000.jsonl",
+      "request_id": "01a0b4fa-a554-7080-a849-be42857044b1",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00230-track-3/provider-events-1789742717609471000.jsonl",
+      "request_id": "01a0b4fa-af0a-7a20-949b-4ded93451eaf",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00020-track-0/provider-events.jsonl",
+      "request_id": "01a0b4f6-3122-7051-b1fe-2e6eb2afee98",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00030-track-0/provider-events.jsonl",
+      "request_id": "01a0b4f6-668b-7361-9be9-9ce8c9e26cca",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00080-track-1/provider-events-1789742648654071000.jsonl",
+      "request_id": "01a0b4f9-a31a-7f93-9192-6ae07d99fd3d",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00090-track-1/provider-events-1789742660466220000.jsonl",
+      "request_id": "01a0b4f9-cf50-71f3-b67f-df80eea30d15",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00020-track-1/provider-events.jsonl",
+      "request_id": "01a0b4f6-65bb-7471-a8b7-7d271cc9d487",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00030-track-1/provider-events.jsonl",
+      "request_id": "01a0b4f6-669e-7570-8da6-7fe74832ff5e",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00080-track-0/provider-events-1789742658018608000.jsonl",
+      "request_id": "01a0b4f9-c850-7062-a51c-f4a674157e3c",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00090-track-0/provider-events.jsonl",
+      "request_id": "01a0b4f6-dd62-7f11-b1f5-d9c04bc8787f",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00750-track-8/provider-events-1789742947072565000.jsonl",
+      "request_id": "01a0b4fe-2fd1-74a1-847a-110a5f88e4f7",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00740-track-8/provider-events-1789742937790571000.jsonl",
+      "request_id": "01a0b4fe-0bca-7ac0-bd3c-9d0ed56c3814",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00740-track-6/provider-events-1789742940622626000.jsonl",
+      "request_id": "01a0b4fe-16a8-7750-a783-6586535960ca",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00750-track-6/provider-events-1789742954156420000.jsonl",
+      "request_id": "01a0b4fe-4b04-7622-b2e6-5b56619905d8",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00150-track-0/provider-events-1789742697665015000.jsonl",
+      "request_id": "01a0b4fa-65a8-7341-b70c-df9dff90c052",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00140-track-0/provider-events.jsonl",
+      "request_id": "01a0b4f7-106b-7181-ad85-6965a0a351f2",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00350-track-4/provider-events-1789742728882151000.jsonl",
+      "request_id": "01a0b4fa-dab5-7f41-91e7-c84776f3aa84",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00570-track-6/provider-events-1789742833049128000.jsonl",
+      "request_id": "01a0b4fc-725c-7ec1-acb7-b64f9ca86917",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00560-track-6/provider-events-1789742822679381000.jsonl",
+      "request_id": "01a0b4fc-49fb-7870-b44e-b2cd89ca2364",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00680-track-8/provider-events-1789742891331313000.jsonl",
+      "request_id": "01a0b4fd-55bc-70d2-b214-08fef80c81fc",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00690-track-8/provider-events-1789742891400459000.jsonl",
+      "request_id": "01a0b4fd-563f-7d81-94f0-60cb655c6fb5",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00690-track-6/provider-events-1789742902780234000.jsonl",
+      "request_id": "01a0b4fd-82ae-7da1-8ae2-c6e505999dcd",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00680-track-6/provider-events-1789742891323938000.jsonl",
+      "request_id": "01a0b4fd-5740-71c1-8b6a-78f5b128f4c2",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00560-track-7/provider-events-1789742828788751000.jsonl",
+      "request_id": "01a0b4fc-619b-7872-8d30-d954f354cc30",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00140-track-1/provider-events-1789742694654908000.jsonl",
+      "request_id": "01a0b4fa-5593-70d1-a0e1-b49899bacbd0",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00630-track-6/provider-events-1789742856437689000.jsonl",
+      "request_id": "01a0b4fc-cd26-73e3-b443-7657efa494c2",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00620-track-6/provider-events-1789742856260568000.jsonl",
+      "request_id": "01a0b4fc-ccb3-7a02-83bb-748d83219f94",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00430-track-5/provider-events-1789742757102530000.jsonl",
+      "request_id": "01a0b4fb-4997-72e1-b6f1-6dbe9a5d46be",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00420-track-5/provider-events-1789742754507579000.jsonl",
+      "request_id": "01a0b4fb-3f7e-7340-ad92-6696d80659ea",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00060-track-1/provider-events-1789742617968836000.jsonl",
+      "request_id": "01a0b4f9-6bf2-7fb2-b12e-b7ac32cb7802",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00070-track-1/provider-events.jsonl",
+      "request_id": "01a0b4f6-c83c-7a02-bffa-ec366a7a6032",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00710-track-8/provider-events-1789742914279769000.jsonl",
+      "request_id": "01a0b4fd-b066-7a91-83bc-53a408380fc2",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00700-track-8/provider-events-1789742902888946000.jsonl",
+      "request_id": "01a0b4fd-82d9-7723-9796-91809ba87d8f",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00700-track-6/provider-events-1789742903132237000.jsonl",
+      "request_id": "01a0b4fd-83f6-78e3-ac33-d658768ef89b",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00710-track-6/provider-events-1789742914307074000.jsonl",
+      "request_id": "01a0b4fd-b071-7b50-8b6f-9b72d726fb17",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00450-track-6/provider-events-1789742768599130000.jsonl",
+      "request_id": "01a0b4fb-762c-7341-9894-7b0a5a0c708b",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00060-track-0/provider-events-1789742646386400000.jsonl",
+      "request_id": "01a0b4f9-9900-7380-89d9-8a27782a3d96",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00070-track-0/provider-events-1789742646927445000.jsonl",
+      "request_id": "01a0b4f9-9a2a-7911-a92a-6957c8a902d3",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00830-track-8/provider-events-1789743022480483000.jsonl",
+      "request_id": "01a0b4ff-55c7-7012-b07d-1e560aea6a6a",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00820-track-8/provider-events-1789743015056556000.jsonl",
+      "request_id": "01a0b4ff-3994-7951-ab54-00a49d3bc3dd",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00590-track-6/provider-events-1789742844547924000.jsonl",
+      "request_id": "01a0b4fc-9e83-7621-ac15-f9251a474abd",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00580-track-6/provider-events-1789742834176864000.jsonl",
+      "request_id": "01a0b4fc-76b7-7941-a8af-2909e17d5352",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00820-track-6/provider-events-1789743011037084000.jsonl",
+      "request_id": "01a0b4ff-2948-7c41-abb1-468f0174eeb8",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00830-track-6/provider-events-1789743021731146000.jsonl",
+      "request_id": "01a0b4ff-52f1-7a03-8c78-19e9648088da",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00110-track-1/provider-events.jsonl",
+      "request_id": "01a0b4f6-f5d4-7772-a955-18ecf828ee50",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00100-track-1/provider-events-1789742669985034000.jsonl",
+      "request_id": "01a0b4f9-f567-7c40-9703-15ce3ca63462",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00460-track-5/provider-events-1789742768711320000.jsonl",
+      "request_id": "01a0b4fb-7662-7990-b147-2359150a958f",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00670-track-6/provider-events-1789742879219805000.jsonl",
+      "request_id": "01a0b4fd-28ab-7ab2-9405-a355227a5a8e",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00660-track-6/provider-events-1789742868105362000.jsonl",
+      "request_id": "01a0b4fc-fac5-7103-a056-dc52b9a7c94e",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00660-track-8/provider-events-1789742870139705000.jsonl",
+      "request_id": "01a0b4fd-0398-75d0-9c2b-db1510f3b473",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00670-track-8/provider-events-1789742879524526000.jsonl",
+      "request_id": "01a0b4fd-294a-7ca1-a39f-582c37a9c4d6",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00110-track-0/provider-events-1789742671727609000.jsonl",
+      "request_id": "01a0b4f9-fc0e-7bc2-9bc5-c8fd8320a2ce",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00100-track-0/provider-events-1789742662877207000.jsonl",
+      "request_id": "01a0b4f9-d92b-7dd1-90a7-42624fb2e887",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00530-track-6/provider-events-1789742805405053000.jsonl",
+      "request_id": "01a0b4fc-05a8-7ba2-9618-79057a1990f5",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00520-track-6/provider-events-1789742800021006000.jsonl",
+      "request_id": "01a0b4fb-f066-7843-803c-7c5e161b062a",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00050-track-2/provider-events.jsonl",
+      "request_id": "01a0b4f6-b1f1-7aa1-885f-e006eaf10680",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00040-track-2/provider-events-1789742617730615000.jsonl",
+      "request_id": "01a0b4f9-6b48-7041-9181-fe725d3214dc",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00540-track-7/provider-events-1789742811294694000.jsonl",
+      "request_id": "01a0b4fc-1cff-7fe1-bf07-044e3b681428",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00550-track-7/provider-events-1789742819139521000.jsonl",
+      "request_id": "01a0b4fc-3c10-7b12-861f-f4ef85a176cf",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00840-track-8/provider-events-1789743029173506000.jsonl",
+      "request_id": "01a0b4ff-7056-74e3-80eb-d1a07a9085ac",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00850-track-8/provider-events-1789743036572315000.jsonl",
+      "request_id": "01a0b4ff-8d1a-79e0-9923-fb1edd849fc3",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00850-track-6/provider-events-1789743044697171000.jsonl",
+      "request_id": "01a0b4ff-ad30-75a1-abb4-919b59c1580a",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00840-track-6/provider-events-1789743033148919000.jsonl",
+      "request_id": "01a0b4ff-7fd5-70b2-9dc9-0371f65ed8ed",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00600-track-6/provider-events-1789742844962449000.jsonl",
+      "request_id": "01a0b4fc-9f9f-7053-8a97-2b7af76e770e",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00610-track-6/provider-events-1789742845673075000.jsonl",
+      "request_id": "01a0b4fc-a35c-7b41-8a95-69b07557a457",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00400-track-5/provider-events.jsonl",
+      "request_id": "01a0b4f7-82bc-77e2-88a0-75609da020b0",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00410-track-5/provider-events-1789742743070167000.jsonl",
+      "request_id": "01a0b4fb-13b3-7862-a130-db707aadaf17",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00370-track-4/provider-events-1789742731401609000.jsonl",
+      "request_id": "01a0b4fa-e45a-76e0-9c88-2aef23dbc618",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00360-track-4/provider-events.jsonl",
+      "request_id": "01a0b4f7-6b1f-7a82-ae1d-0e5bc2410fcb",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00160-track-0/provider-events-1789742697925395000.jsonl",
+      "request_id": "01a0b4fa-60f8-7531-a9ff-889506a47eee",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00170-track-0/provider-events.jsonl",
+      "request_id": "01a0b4f7-292a-7792-9950-0958328af04f",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00540-track-6/provider-events-1789742805762528000.jsonl",
+      "request_id": "01a0b4fc-0773-7281-8a0d-36fb7158c671",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00550-track-6/provider-events-1789742817231038000.jsonl",
+      "request_id": "01a0b4fc-34a7-7792-9e80-63c25b0509c0",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00030-track-2/provider-events.jsonl",
+      "request_id": "01a0b4f6-867b-7b31-8c4c-ffed0dca53b6",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00010-track-1/provider-events.jsonl",
+      "request_id": "01a0b4f6-3114-72f0-8980-285d6ab6272c",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00490-track-6/provider-events-1789742788432675000.jsonl",
+      "request_id": "01a0b4fb-c51b-7722-a672-d529cc865106",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00480-track-6/provider-events-1789742779946787000.jsonl",
+      "request_id": "01a0b4fb-a2f8-7d42-9f96-bc896747102f",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00760-track-8/provider-events-1789742954638364000.jsonl",
+      "request_id": "01a0b4fe-4d8b-7302-9d47-4d3b929b34fc",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00770-track-8/provider-events-1789742966292311000.jsonl",
+      "request_id": "01a0b4fe-7a36-7623-be70-45de7cef4340",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00770-track-6/provider-events-1789742968076287000.jsonl",
+      "request_id": "01a0b4fe-812a-70b1-93a9-4c3b164eb983",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00760-track-6/provider-events-1789742961172279000.jsonl",
+      "request_id": "01a0b4fe-66fe-7bb0-b3f6-5c993f6013ad",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00210-track-3/provider-events-1789742709061246000.jsonl",
+      "request_id": "01a0b4fa-8c9f-7310-bbeb-2846ba0401b2",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00200-track-3/provider-events.jsonl",
+      "request_id": "01a0b4f7-3c5c-7cc2-8871-81350b800c9d",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-001/frame-00010-track-0/provider-events.jsonl",
+      "request_id": "01a0b4f6-30e8-7833-bf79-f665aa6470b9",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_visual_quality_reserve_usd": 4
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00005-track-0/provider-events-1789744886622385000.jsonl",
+      "request_id": "01a0b51b-f932-7f23-8e1a-29b4237da232",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00005-track-1/provider-events-1789744911575105000.jsonl",
+      "request_id": "01a0b51c-206a-7d90-8857-8d6bfe7f4b17",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00015-track-0/provider-events-1789744911635642000.jsonl",
+      "request_id": "01a0b51c-201f-7050-9676-1cd0a6ea57cf",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00015-track-1/provider-events-1789744911635782000.jsonl",
+      "request_id": "01a0b51c-2081-7702-8f24-f612229d3d2d",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00025-track-0/provider-events-1789744919901132000.jsonl",
+      "request_id": "01a0b51c-4083-7032-8a6e-0807cd91c64d",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00025-track-1/provider-events-1789744919940411000.jsonl",
+      "request_id": "01a0b51c-4110-79a3-98ea-d989c73b0e9b",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00035-track-0/provider-events-1789744930826491000.jsonl",
+      "request_id": "01a0b51c-6b15-75b3-9712-c4015dc23850",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00035-track-1/provider-events-1789744928743912000.jsonl",
+      "request_id": "01a0b51c-6420-73b0-9791-c580317bc3fb",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00035-track-2/provider-events-1789744932353130000.jsonl",
+      "request_id": "01a0b51c-7160-7e82-acaf-b4b8e7a4cc8f",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00045-track-0/provider-events-1789744939600772000.jsonl",
+      "request_id": "01a0b51c-8d32-7840-8c40-129d7358953b",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00045-track-1/provider-events-1789744937682529000.jsonl",
+      "request_id": "01a0b51c-8611-71a3-9574-f32ca2b59c50",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00045-track-2/provider-events-1789744940702058000.jsonl",
+      "request_id": "01a0b51c-922d-7d83-8a83-2ab0b81a212b",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00055-track-0/provider-events-1789744947689617000.jsonl",
+      "request_id": "01a0b51c-ad48-7871-a178-edd15253677e",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00055-track-1/provider-events-1789744946267892000.jsonl",
+      "request_id": "01a0b51c-a802-75c1-a8ee-e889fc892798",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00055-track-2/provider-events-1789744949087852000.jsonl",
+      "request_id": "01a0b51c-b246-7db0-8cbf-1e0eb3807473",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00065-track-0/provider-events-1789744958868243000.jsonl",
+      "request_id": "01a0b51c-d855-7300-9124-23b6dfc65146",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00065-track-1/provider-events-1789744958175368000.jsonl",
+      "request_id": "01a0b51c-d5a1-7270-8994-70034fa30bec",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00075-track-0/provider-events-1789744966376090000.jsonl",
+      "request_id": "01a0b51c-f663-7600-8737-70e97714c0d9",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00075-track-1/provider-events-1789744959411963000.jsonl",
+      "request_id": "01a0b51c-dae8-7d23-826f-8b6132958c2e",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00085-track-0/provider-events-1789744972001343000.jsonl",
+      "request_id": "01a0b51d-0c83-7c30-b92e-d47a7c7af7db",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00085-track-1/provider-events-1789744969286864000.jsonl",
+      "request_id": "01a0b51d-01a6-7e41-a684-621183969a32",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00095-track-0/provider-events-1789744974689811000.jsonl",
+      "request_id": "01a0b51d-16b6-7b32-bc4e-f814c7df397d",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00095-track-1/provider-events-1789744980233514000.jsonl",
+      "request_id": "01a0b51d-2cbb-7920-b710-5d320a10ed41",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00105-track-0/provider-events-1789744981981754000.jsonl",
+      "request_id": "01a0b51d-32fb-7081-ad9c-6ee48e5e0442",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00105-track-1/provider-events-1789744987410321000.jsonl",
+      "request_id": "01a0b51d-48f0-7292-9bc4-ec2dd63b9a97",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00115-track-0/provider-events-1789744988498292000.jsonl",
+      "request_id": "01a0b51d-4d01-71e2-b539-1eb49c15176e",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00115-track-1/provider-events-1789744989953288000.jsonl",
+      "request_id": "01a0b51d-526b-7a31-b5f4-8b41c04c8d27",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00125-track-0/provider-events-1789744995652749000.jsonl",
+      "request_id": "01a0b51d-696a-7163-b251-10bacc536675",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00125-track-1/provider-events-1789745001020953000.jsonl",
+      "request_id": "01a0b51d-7d8f-7780-aa94-7328ffb30236",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00135-track-0/provider-events-1789745002459960000.jsonl",
+      "request_id": "01a0b51d-8310-7c00-b887-adcb7de23a58",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00135-track-1/provider-events-1789745006024445000.jsonl",
+      "request_id": "01a0b51d-911d-7e52-bb06-14b716dde0ab",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00145-track-0/provider-events-1789745013525047000.jsonl",
+      "request_id": "01a0b51d-ae56-7660-98e0-ccf20b65c951",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00155-track-0/provider-events-1789745014754391000.jsonl",
+      "request_id": "01a0b51d-b40f-7e21-a044-e1611256cecd",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00165-track-0/provider-events-1789745018390474000.jsonl",
+      "request_id": "01a0b51d-c1cf-7401-aed3-e6283dc58a83",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00175-track-0/provider-events-1789745021650174000.jsonl",
+      "request_id": "01a0b51d-ce04-7ed3-b4ea-585748b2f352",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00205-track-3/provider-events-1789745023166786000.jsonl",
+      "request_id": "01a0b51d-d3be-7e92-950f-2a18e2bae645",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00215-track-3/provider-events-1789745026525651000.jsonl",
+      "request_id": "01a0b51d-e1a4-7aa2-935f-aebbd7dbbde9",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00225-track-3/provider-events-1789745029658538000.jsonl",
+      "request_id": "01a0b51d-ed4b-7891-935e-29a4c1b4e588",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00235-track-3/provider-events-1789745031652423000.jsonl",
+      "request_id": "01a0b51d-f87e-7e53-a89a-af253706351d",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00245-track-3/provider-events-1789745040502171000.jsonl",
+      "request_id": "01a0b51e-1833-7c62-b337-9a2beb35f21c",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00355-track-4/provider-events-1789745041981140000.jsonl",
+      "request_id": "01a0b51e-1d48-7190-972c-e019b3ac53b8",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00365-track-4/provider-events-1789745043399781000.jsonl",
+      "request_id": "01a0b51e-233f-70a2-ac81-507ac0259b34",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00375-track-4/provider-events-1789745048898264000.jsonl",
+      "request_id": "01a0b51e-3893-75f1-b364-cb19744513ba",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00385-track-4/provider-events-1789745054305217000.jsonl",
+      "request_id": "01a0b51e-4dd4-7da1-bc0b-055d03f19cdb",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00395-track-4/provider-events-1789745056858486000.jsonl",
+      "request_id": "01a0b51e-5777-7630-b84d-25db84228100",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00395-track-5/provider-events-1789745055795813000.jsonl",
+      "request_id": "01a0b51e-536c-7cc1-bd14-df2501a25021",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00405-track-5/provider-events-1789745064047581000.jsonl",
+      "request_id": "01a0b51e-7349-7c52-9e9e-7b4397b290a0",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00415-track-5/provider-events-1789745064774157000.jsonl",
+      "request_id": "01a0b51e-7643-7ec1-8486-b0cab3392e6d",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00425-track-5/provider-events-1789745071105494000.jsonl",
+      "request_id": "01a0b51e-8f37-7b30-9802-5fd8edefa503",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00435-track-5/provider-events-1789745072755106000.jsonl",
+      "request_id": "01a0b51e-951c-7331-9501-ea00ea807d95",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00445-track-5/provider-events-1789745076409825000.jsonl",
+      "request_id": "01a0b51e-a50d-7573-81ba-9b574d3eca98",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00455-track-5/provider-events-1789745080616816000.jsonl",
+      "request_id": "01a0b51e-b672-7250-9293-e4922219d6b4",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00455-track-6/provider-events-1789745087793335000.jsonl",
+      "request_id": "01a0b51e-d113-70d0-8430-3e9e4258ff15",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00465-track-6/provider-events-1789745089094084000.jsonl",
+      "request_id": "01a0b51e-d55c-79a3-80a6-1eb43370c4cf",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00475-track-6/provider-events-1789745089149779000.jsonl",
+      "request_id": "01a0b51e-d5f8-78d3-b1a1-0f22ae9a4155",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00485-track-6/provider-events-1789745096420037000.jsonl",
+      "request_id": "01a0b51e-f226-78c1-a8e2-b4e969e09158",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00495-track-6/provider-events-1789745097204141000.jsonl",
+      "request_id": "01a0b51e-f557-7651-abd8-56cff8c563f8",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00505-track-6/provider-events-1789745105276177000.jsonl",
+      "request_id": "01a0b51f-14a9-7bb1-880e-83599091b6f5",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00515-track-6/provider-events-1789745105761327000.jsonl",
+      "request_id": "01a0b51f-162d-7563-a05a-bcaf1b01e494",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00535-track-6/provider-events-1789745109028173000.jsonl",
+      "request_id": "01a0b51f-2545-7321-98ce-d2699842aa82",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00545-track-6/provider-events-1789745117766503000.jsonl",
+      "request_id": "01a0b51f-4579-73c3-bcda-621de992adc6",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00545-track-7/provider-events-1789745118099858000.jsonl",
+      "request_id": "01a0b51f-4662-7821-98a8-878ee8be12bd",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00555-track-6/provider-events-1789745126284562000.jsonl",
+      "request_id": "01a0b51f-67f1-7150-be14-1e6a56423786",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00555-track-7/provider-events-1789745130139818000.jsonl",
+      "request_id": "01a0b51f-7615-7a31-9c0f-9d0d9aea85fa",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00565-track-6/provider-events-1789745130485472000.jsonl",
+      "request_id": "01a0b51f-76b8-7961-bc10-306bca3029d4",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00565-track-7/provider-events-1789745138296480000.jsonl",
+      "request_id": "01a0b51f-970c-7fd2-bd94-fb86f30bca37",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00575-track-6/provider-events-1789745138929879000.jsonl",
+      "request_id": "01a0b51f-9914-7401-99ad-8ecdfb27f551",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00585-track-6/provider-events-1789745142728247000.jsonl",
+      "request_id": "01a0b51f-a721-78f0-abe1-287e8487eac2",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00595-track-6/provider-events-1789745151066922000.jsonl",
+      "request_id": "01a0b51f-c78d-79e3-9a16-3bdfefab681a",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00605-track-6/provider-events-1789745151555909000.jsonl",
+      "request_id": "01a0b51f-c976-7460-9f35-bacac00abc3b",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00615-track-6/provider-events-1789745155436720000.jsonl",
+      "request_id": "01a0b51f-d8c4-7f42-9a31-287b5b5ea483",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00635-track-6/provider-events-1789745161280510000.jsonl",
+      "request_id": "01a0b51f-ef48-7da1-bc05-4f39b2a455bc",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00645-track-6/provider-events-1789745164456616000.jsonl",
+      "request_id": "01a0b51f-fbe6-71f0-8702-6e95596ee3fb",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00655-track-6/provider-events-1789745165776986000.jsonl",
+      "request_id": "01a0b520-0505-74e0-8d43-dcf8d21dd158",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00665-track-6/provider-events-1789745171860550000.jsonl",
+      "request_id": "01a0b520-19ac-7cf2-b34d-43abbb770ec6",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00665-track-8/provider-events-1789745174683503000.jsonl",
+      "request_id": "01a0b520-242b-70f2-a451-697e071fc0ee",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00675-track-6/provider-events-1789745179249808000.jsonl",
+      "request_id": "01a0b520-364a-7b52-98ec-e122df0679ba",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00675-track-8/provider-events-1789745182704454000.jsonl",
+      "request_id": "01a0b520-439a-7970-ad0e-fa6466836ba5",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00685-track-6/provider-events-1789745187599272000.jsonl",
+      "request_id": "01a0b520-569e-7ed3-a3c9-be43a7642518",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00685-track-8/provider-events-1789745191666255000.jsonl",
+      "request_id": "01a0b520-6818-7823-aac5-3832b35f0167",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00695-track-6/provider-events-1789745197973627000.jsonl",
+      "request_id": "01a0b520-7f2c-7240-b756-e12027a7a00e",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00695-track-8/provider-events-1789745193142155000.jsonl",
+      "request_id": "01a0b520-6d9f-79b2-9d18-fe3bc3d48e2c",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00705-track-6/provider-events-1789745204559875000.jsonl",
+      "request_id": "01a0b520-99b0-7c93-add6-3477f917ea01",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00705-track-8/provider-events-1789745201827958000.jsonl",
+      "request_id": "01a0b520-8e7e-7dc2-a278-eae3878a149d",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00715-track-6/provider-events-1789745213054857000.jsonl",
+      "request_id": "01a0b520-ba85-73a0-89cc-7c58d3318247",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00715-track-8/provider-events-1789745206258540000.jsonl",
+      "request_id": "01a0b520-9f49-7260-a7a6-4c94333a30d3",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00725-track-6/provider-events-1789745215037703000.jsonl",
+      "request_id": "01a0b520-c1c2-79c3-8e84-03e6a3403ae6",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00725-track-8/provider-events-1789745214853383000.jsonl",
+      "request_id": "01a0b520-c149-7ab2-b649-a762e661e4a4",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00735-track-6/provider-events-1789745225323070000.jsonl",
+      "request_id": "01a0b520-e9c4-78c0-b44c-843dd0c1f370",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00735-track-8/provider-events-1789745223287307000.jsonl",
+      "request_id": "01a0b520-e243-7a02-ba8a-733c2d8ca809",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00745-track-6/provider-events-1789745233450345000.jsonl",
+      "request_id": "01a0b521-099f-7431-a370-e713850956e2",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00745-track-8/provider-events-1789745225822109000.jsonl",
+      "request_id": "01a0b520-eb92-7ba0-8bc5-a9eaf0fc5a3b",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00755-track-6/provider-events-1789745238310247000.jsonl",
+      "request_id": "01a0b521-1d16-73a2-97d6-296c1ddcc9a9",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00755-track-8/provider-events-1789745234717775000.jsonl",
+      "request_id": "01a0b521-0e47-7b11-931c-2f7258d00002",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00765-track-6/provider-events-1789745245874390000.jsonl",
+      "request_id": "01a0b521-39b9-7dd1-8045-824b8eaf58a1",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00765-track-8/provider-events-1789745245066005000.jsonl",
+      "request_id": "01a0b521-3745-7f81-8bbe-14199fed6dc9",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00775-track-6/provider-events-1789745255488543000.jsonl",
+      "request_id": "01a0b521-6007-7dc3-9b6a-61c24eb9c7a2",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00775-track-8/provider-events-1789745246612205000.jsonl",
+      "request_id": "01a0b521-3cdd-7461-b7bd-31244b4b55f4",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00785-track-6/provider-events-1789745263731793000.jsonl",
+      "request_id": "01a0b521-7fff-77d2-a415-2fa1ee31afe8",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00785-track-8/provider-events-1789745259162992000.jsonl",
+      "request_id": "01a0b521-6e1e-7d20-9edf-ea668e6d2d50",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00795-track-6/provider-events-1789745267221641000.jsonl",
+      "request_id": "01a0b521-8d84-71a3-a942-b84d22016e8f",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00795-track-8/provider-events-1789745264845350000.jsonl",
+      "request_id": "01a0b521-851f-7370-9ff9-dc1d9f9ad2a2",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00805-track-6/provider-events-1789745275355850000.jsonl",
+      "request_id": "01a0b521-b035-77b3-9238-e7b2d6a44904",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00805-track-8/provider-events-1789745274406900000.jsonl",
+      "request_id": "01a0b521-a926-7a10-87dd-a3e58833cc20",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00815-track-6/provider-events-1789745275509233000.jsonl",
+      "request_id": "01a0b521-adc5-7530-825c-9ef048bd654f",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00815-track-8/provider-events-1789745282475097000.jsonl",
+      "request_id": "01a0b521-c963-7db2-b0b1-fdba51857e06",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00825-track-6/provider-events-1789745284409770000.jsonl",
+      "request_id": "01a0b521-d068-7f50-a5c3-ee48a26be858",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00825-track-8/provider-events-1789745288031928000.jsonl",
+      "request_id": "01a0b521-df69-71a1-bc58-907e6e6f60cd",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00835-track-6/provider-events-1789745290790587000.jsonl",
+      "request_id": "01a0b521-e9f1-7761-96d9-36bc32a0fd2d",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00835-track-8/provider-events-1789745296907580000.jsonl",
+      "request_id": "01a0b522-02ae-78a1-a367-8c796bdd6e01",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00845-track-6/provider-events-1789745305391220000.jsonl",
+      "request_id": "01a0b522-2301-7312-89b2-89e36cbb9788",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00845-track-8/provider-events-1789745299176033000.jsonl",
+      "request_id": "01a0b522-0a82-7331-85e8-a52589b785b8",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00855-track-6/provider-events-1789745311643808000.jsonl",
+      "request_id": "01a0b522-3b65-7112-921b-be11f93c8067",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/sam3d-body-walking-keyframes-002/frame-00855-track-8/provider-events-1789745307840896000.jsonl",
+      "request_id": "01a0b522-2dd7-7651-94c4-825e65dc18d9",
+      "endpoint": "fal-ai/sam-3/3d-body",
+      "estimate_usd": 0.02,
+      "provider_result_observed": true,
+      "actual_billed_usd": null,
+      "covered_by_human_temporal_density_reserve_usd": 3
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/batch-0/frame-00000/provider-events.jsonl",
+      "request_id": "01a0b5d4-b7ce-7f41-acba-1117a002b2d7",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/batch-0/frame-00030/provider-events.jsonl",
+      "request_id": "01a0b5d4-cdbc-7860-822d-95ecf013cbab",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/batch-0/frame-00060/provider-events.jsonl",
+      "request_id": "01a0b5d4-e39c-7a50-b029-6b6b7bd7e73b",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/batch-0/frame-00090/provider-events.jsonl",
+      "request_id": "01a0b5d4-f9c2-7240-b90a-03d352432aa0",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/batch-0/frame-00120/provider-events.jsonl",
+      "request_id": "01a0b5d5-0f73-7050-ad37-fb6efd7a6369",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-0/frame-00150/provider-events.jsonl",
+      "request_id": "01a0b5d7-3122-7462-9fb1-896e3f425f47",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-0/frame-00180/provider-events.jsonl",
+      "request_id": "01a0b5d7-45c1-7df0-b14b-b2b1a1c00cda",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-0/frame-00210/provider-events.jsonl",
+      "request_id": "01a0b5d7-5ab9-7181-b784-f3ecbd2585e4",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-0/frame-00240/provider-events.jsonl",
+      "request_id": "01a0b5d7-77ea-7ed3-808a-093b67d03aa3",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-0/frame-00270/provider-events.jsonl",
+      "request_id": "01a0b5d7-8d51-70f1-91c8-2c2d774403cf",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-0/frame-00300/provider-events.jsonl",
+      "request_id": "01a0b5d7-c37b-7b43-af95-68b183e6e8f3",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-0/frame-00330/provider-events.jsonl",
+      "request_id": "01a0b5d7-d832-79f0-9f93-a2dccd7cebb7",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/batch-1/frame-00360/provider-events.jsonl",
+      "request_id": "01a0b5d4-b87e-7a33-935a-8bd3b5820f8b",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/batch-1/frame-00390/provider-events.jsonl",
+      "request_id": "01a0b5d4-ce61-7240-8a0a-1d04065f1a7f",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/batch-1/frame-00420/provider-events.jsonl",
+      "request_id": "01a0b5d4-e459-7902-bbe1-be21d2deb6ab",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/batch-1/frame-00450/provider-events.jsonl",
+      "request_id": "01a0b5d4-f996-7012-97fb-1003bb40d704",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/batch-1/frame-00480/provider-events.jsonl",
+      "request_id": "01a0b5d5-0f60-7d51-9f81-63d51c228083",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/batch-1/frame-00510/provider-events.jsonl",
+      "request_id": "01a0b5d5-34bf-7263-a70b-8837aab84d85",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-0/frame-00540/provider-events.jsonl",
+      "request_id": "01a0b5d7-ed8c-7d31-b1d1-6bcc17c123fe",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-0/frame-00570/provider-events.jsonl",
+      "request_id": "01a0b5d8-023c-7841-99ea-19b7db42c5ed",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-0/frame-00600/provider-events.jsonl",
+      "request_id": "01a0b5d8-1745-78d2-b728-d8bb8b8e66a9",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-0/frame-00630/provider-events.jsonl",
+      "request_id": "01a0b5d8-2c16-7ba2-9e4a-28cbaf23e628",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-0/frame-00660/provider-events.jsonl",
+      "request_id": "01a0b5d8-40fc-7f10-b85b-5bf889df5cab",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-1/frame-00690/provider-events.jsonl",
+      "request_id": "01a0b5d7-3157-7202-936a-4a322e8b1bb5",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/batch-2/frame-00720/provider-events.jsonl",
+      "request_id": "01a0b5d5-4355-7760-a680-2dfc9ebe4559",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/batch-2/frame-00750/provider-events.jsonl",
+      "request_id": "01a0b5d5-5900-7fb1-86d7-b7bd84f1f5f4",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/batch-2/frame-00780/provider-events.jsonl",
+      "request_id": "01a0b5d5-6f5b-7e03-b4ca-abe4207e9c46",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/batch-2/frame-00810/provider-events.jsonl",
+      "request_id": "01a0b5d5-854b-7c82-8dc7-7d5613e9948d",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-1/frame-00840/provider-events.jsonl",
+      "request_id": "01a0b5d7-45b0-7c83-a65f-de0000cecb20",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-1/frame-00870/provider-events.jsonl",
+      "request_id": "01a0b5d7-5abf-7621-ac0c-077da01a8fd0",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-1/frame-00900/provider-events.jsonl",
+      "request_id": "01a0b5d7-6fb8-7d41-8529-da452e165d0e",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-1/frame-00930/provider-events.jsonl",
+      "request_id": "01a0b5d7-84e7-74c3-94ea-985f73a62184",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-1/frame-00960/provider-events.jsonl",
+      "request_id": "01a0b5d7-c384-7860-990f-8b39eb685941",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-1/frame-00990/provider-events.jsonl",
+      "request_id": "01a0b5d7-d919-7210-970a-2274f2dd75f4",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-1/frame-01020/provider-events.jsonl",
+      "request_id": "01a0b5d7-edd0-7691-8c19-fb688d5edd34",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-1/frame-01050/provider-events.jsonl",
+      "request_id": "01a0b5d8-025c-7761-9664-56def6268e35",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-1/frame-01080/provider-events.jsonl",
+      "request_id": "01a0b5d8-1764-7e82-8197-ba946ee0af03",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-1/frame-01110/provider-events.jsonl",
+      "request_id": "01a0b5d8-2c6b-75f3-a9a6-e244a8c0305e",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-1/frame-01140/provider-events.jsonl",
+      "request_id": "01a0b5d8-41f8-7df3-9c5c-d3f884bc343f",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-2/frame-01170/provider-events.jsonl",
+      "request_id": "01a0b5d8-59f8-7fb1-b03d-49d5b45a01c8",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-2/frame-01200/provider-events.jsonl",
+      "request_id": "01a0b5d8-6e00-71c3-b26a-a7ff65d868ae",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-2/frame-01230/provider-events.jsonl",
+      "request_id": "01a0b5d8-82e1-7d70-b2dd-ea500e758418",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-2/frame-01260/provider-events.jsonl",
+      "request_id": "01a0b5d8-9948-7700-9e8c-3a270c4d7b63",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-2/frame-01290/provider-events.jsonl",
+      "request_id": "01a0b5d8-ae22-7390-86f6-791617cd23c2",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-2/frame-01320/provider-events.jsonl",
+      "request_id": "01a0b5d8-c2bf-7331-8398-bdc64082694e",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    },
+    {
+      "events": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/room-person-discovery-001/resume-2/frame-01350/provider-events.jsonl",
+      "request_id": "01a0b5d8-d857-7911-8fdb-4c8de1eaf6da",
+      "estimate_usd": 0.01,
+      "provider_result_observed": true,
+      "actual_billed_usd": null
+    }
+  ],
+  "notes": [
+    "失败请求和容器计算实际费用尚未对账，保留预算占用。",
+    "SAM2/RTMPose/ReID、MapAnything探针及融合在本机运行；DROID累计两次有界A10040对照，应用均已停止。资源时长估算不含启动、镜像、存储，不是结算账单。",
+    "2026-09-20 arkit_posed_depth: DA3-GIANT posed depth on 47 ARKitScenes views, one call, retries 0, run da3-posed-arkit-041; texture_fused_mesh / fuse / evaluate / report import are local and free.",
+    "2026-09-20 vocabulary_objects: one bounded VLM vocabulary request (runs/room-vocabulary-044) + SAM3 on 24 room keyframes x 7 new prompts (runs/sam3-room-objects-045), 0.01 USD per call estimate, no retries.",
+    "2026-09-20 class_agnostic_objects: SAM 2.1 automatic masks on 24 room keyframes, one L4 call incl. image build (runs/sam2-room-everything-052), plus bounded VLM naming requests for the resulting entities; no retries.",
+    "2026-09-20 class_agnostic_dense: SAM 2.1 automatic masks on all 352 depth views (runs/sam2-room-everything-060, 858 s L4) and 25 bounded VLM naming requests (runs/room-entity-names-063); no retries.",
+    "2026-09-20 walking_everything: SAM 2.1 automatic masks on the 303 depth views of fr3/walking_xyz (runs/sam2-walking-everything-079) and bounded VLM naming of the confirmed entities; no retries.",
+    "2026-09-20 arkit_raw_clip: ARKitScenes raw capture 47333932 (download approved by the user, 0.92 GB): DA3-GIANT posed depth on 257 views (runs/da3-posed-arkit-raw-081), SAM 2.1 automatic masks and bounded VLM naming; no retries.",
+    "2026-09-20 arkit_raw_entity_models: up to 24 generated object models (existing RecGen transport, about 0.19 USD a call by the earlier run) for the hi-res clip, runs/arkit-raw-entity-models-093; one call per entity, never resubmitted; the user asked where the 3D models are.",
+    "2026-09-23 walking-video-events-126-cosmos: Modal A100-40GB, 353 s wall, retries 0; Cosmos Reason 2 8B, greedy decoding, 3 windows; charged 0.29 USD at 3.00 USD/h (upper bound, not reconciled with billing).",
+    "2026-09-23 walking-video-events-127-cosmos-2500: Modal A100-40GB, 240 s wall, retries 0; Cosmos Reason 2 8B, 2500-token budget; charged 0.2 USD at 3.00 USD/h (upper bound, not reconciled with billing).",
+    "2026-09-23 walking-video-events-128-cosmos-t06: Modal A100-40GB, 173 s wall, retries 0; Cosmos Reason 2 8B, temperature 0.6; charged 0.14 USD at 3.00 USD/h (upper bound, not reconciled with billing).",
+    "2026-09-23 room-sam31-stride3-130: Modal A100-40GB, 767 s wall, retries 0; SAM 3.1 full room clip, 1362 frames at stride 3 (454 tracked), person text prompt; charged 0.64 USD at 3.00 USD/h (upper bound, not reconciled with billing).",
+    "2026-09-23 correction: the four runs above were not recorded when they ran; added afterwards. Ceiling 88.31 -> 89.58 of 100 authorized.",
+    "2026-09-23 authorization raised 100 -> 150 USD by the user in chat, for the Lightning eMotors / tankodrome prototype runs. Ceiling in use 89.58.",
+    "2026-09-23 prepare_video_clip lightning-3572 and lightning-3585: MoGe-3 field-of-view estimate on 5 frames each, Modal L4, 2 calls; charged 0.10 USD (upper bound).",
+    "2026-09-23 droid-lightning-3585-132: DROID-SLAM on 779 frames of the Lightning eMotors tour video, A100-40GB, 900 s cap, retries 0; reserved 0.60 USD, reconciled when it finishes.",
+    "2026-09-23 droid-lightning-3585-132 finished: 42 s GPU elapsed, 779 poses, 37 keyframes; the 0.60 USD reservation stands (upper bound incl. upload and container start).",
+    "2026-09-23 lightning-motion-masks-133: RAFT motion masks on the Lightning clip every 10 frames, Modal GPU, retries 0; reserved 0.40 USD.",
+    "2026-09-23 da3-posed-lightning-134: DA3-GIANT-1.1 posed depth, every 3rd frame + keyframes (~297 views), retries 0; reserved 0.80 USD.",
+    "2026-09-23 lightning-motion-masks-133 finished: 78 pairs, 72 with moving blobs; the 0.40 USD reservation stands.",
+    "2026-09-23 lightning-sam31-tracks-135/136/137: SAM 3.1 motion-seeded tracks + 'person' text session, windows [0,300) [260,560) [520,779), no stride, A100-40GB, 900 s cap each, retries 0; reserved 1.20 USD.",
+    "2026-09-23 sam3-lightning-floor-138: self-hosted facebook/sam3 prompt 'floor' on 12 DA3 views of the Lightning clip (frames 0..777), Modal L4, 600 s cap, retries 0; reserved 0.15 USD.",
+    "2026-09-23 lightning-sam31-tracks-139: rerun of window [0,300) after switching masklet confirmation off for the click-only session (object 1 kept only its seed frame in every earlier run), A100-40GB, 900 s cap, retries 0; reserved 0.40 USD.",
+    "2026-09-23 sam2-lightning-everything-140: SAM 2.1 automatic masks on the 286 DA3 views of the Lightning clip, Modal L4, retries 0; reserved 0.30 USD.",
+    "2026-09-23 lightning-sam31-tracks-139 finished in 231 s: identical to 135 (object 1 still one frame); masklet confirmation was not the cause, change reverted. The 0.40 USD reservation stands.",
+    "2026-09-23 lightning-sam31-tracks-141: window [0,300) again with a throwaway first object (id 0) in the click session, A100-40GB, 900 s cap, retries 0; reserved 0.40 USD.",
+    "2026-09-23 lightning-sam31-tracks-141 finished in 303 s: the throwaway object took the one-frame fate, object 1 now tracks all 300 frames; the 0.40 USD reservation stands.",
+    "2026-09-23 lightning-sam31-tracks-142/143: windows [260,560) and [520,779) with the throwaway-object fix, 'person' text session, A100-40GB, 900 s cap each, retries 0; reserved 0.80 USD.",
+    "2026-09-23 sam2-lightning-everything-140 finished: 286 views, 12949 masks from SAM, 8693 kept, 789 s wall on one L4 (after one launch that failed in argparse, no GPU); the 0.30 USD reservation stands. sam3-lightning-floor-138 finished: 12 frames, 1 floor instance each (after one launch that failed on a missing timeout binary, no GPU); the 0.15 USD reservation stands.",
+    "2026-09-23 lightning-sam31-tracks-142/143 finished (201 s, 321 s); no one-frame objects; the 0.80 USD reservation stands. Metric, fusion variants 149-152, stitch 145, dynamic masks 146, analysis 147/148 ran locally at no GPU cost.",
+    "2026-09-23 people-coverage-154: self-hosted facebook/sam3 prompt 'person' on 5 frames of each scouted 30 s window of the five downloaded factory videos (clip-scout-153, up to 60 windows, ~300 frames at 640 px), Modal L4, retries 0; reserved 0.30 USD.",
+    "2026-09-23 people-coverage-154 finished: 34 windows x 5 frames; the 0.30 USD reservation stands. people-coverage-156: same check on 11 scouted windows of the Sam's Club and Walmart walking videos (clip-scout-155), Modal L4, retries 0; reserved 0.10 USD.",
+    "2026-09-23 people-coverage-156 finished: 11 windows x 5 frames; the 0.10 USD reservation stands. Chosen: Sam's Club 4K walking tour 337-367 s (warehouse racking, 0% people median).",
+    "2026-09-23 prepare_video_clip samsclub-337: MoGe-3 field-of-view estimate on 5 frames, Modal L4; reserved 0.05 USD. droid-samsclub-337-157: DROID-SLAM on 750 frames, A100-40GB, 900 s cap, retries 0; reserved 0.60 USD.",
+    "2026-09-23 droid-samsclub-337-157 finished: 750 poses, 32 keyframes, no jumps (worst 1% jerk/step 0.97 vs 8.66 on Lightning); the 0.60 USD reservation stands.",
+    "2026-09-23 da3-posed-samsclub-158: DA3-GIANT-1.1 posed depth every 3rd frame + keyframes, A100-80GB, 1200 s cap, retries 0; reserved 0.80 USD. sam3-samsclub-floor-159: self-hosted SAM3 'floor' on 12 frames, L4, retries 0; reserved 0.15 USD.",
+    "2026-09-23 da3-posed-samsclub-158 finished: 267 views, 129 s on A100-80GB; sam3-samsclub-floor-159 finished: 12/12 frames with floor; reservations stand. sam2-samsclub-everything-160: SAM 2.1 automatic masks on the 267 DA3 views, L4, retries 0; reserved 0.30 USD.",
+    "2026-09-24 sam2-samsclub-everything-160 finished (267 views); the 0.30 USD reservation stands.",
+    "2026-09-24 samsclub-entity-names-165: bounded Gemini naming of the 264 confirmed entities of samsclub-object-map-163, ~27 requests of 10 crops, via the existing deployed Modal adapter; reserved 0.40 USD.",
+    "2026-09-24 samsclub-entity-names-165 finished: 27 requests, 227 named, 37 not objects; the 0.40 USD reservation stands. Object map 163, texture 164, frame selection 166 and the report import (publication bb677d67) ran locally at no GPU cost.",
+    "2026-09-24 prepare_video_clip walmart-190 (Walmart 4K no-talking walk, 190-220 s, 0% people): MoGe-3 FoV on 5 frames, L4; reserved 0.05 USD. droid-walmart-190-168: DROID-SLAM, A100-40GB, 900 s cap, retries 0; reserved 0.60 USD.",
+    "2026-09-24 droid-walmart-190-168 finished: 750 poses, 67 keyframes, no jumps; the 0.60 USD reservation stands. da3-posed-walmart-169 (DA3-GIANT every 3rd frame, A100-80GB, retries 0) reserved 0.80 USD; sam3-walmart-floor-170 (12 frames, L4) reserved 0.15 USD.",
+    "2026-09-24 prepare_video_clip me340-165 (ME340 machine shop walk-through, 165-195 s): MoGe-3 FoV on 5 frames, L4; reserved 0.05 USD. droid-me340-165-171: DROID-SLAM, A100-40GB, 900 s cap, retries 0; reserved 0.60 USD.",
+    "2026-09-24 da3-posed-walmart-169 finished (298 views), sam3-walmart-floor-170 finished (12/12), droid-me340-165-171 finished (899 poses, 20 keyframes, worst 1% jerk/step 6.55); reservations stand. sam2-walmart-everything-172 (L4) reserved 0.30 USD; da3-posed-me340-173 (A100-80GB) reserved 0.80 USD; sam3-me340-floor-174 (L4) reserved 0.15 USD.",
+    "2026-09-24 da3-posed-me340-173 finished (312 views), sam3-me340-floor-174 12/12; reservations stand. me340-motion-masks-177: RAFT motion masks every 10 frames, L4, retries 0; reserved 0.40 USD.",
+    "2026-09-24 me340-motion-masks-177 finished (90 pairs, 81 with blobs); reservation stands. me340-sam31-tracks-178/179/180: windows [0,300) [260,560) [520,899), decoy-fixed tracker, 'person' text session, A100-40GB, 900 s cap each, retries 0; reserved 1.20 USD.",
+    "2026-09-24 disk full (ENOSPC) at 340 MB free: sam2-walmart-everything-172 wrote only 142/298 frames (the rest of the paid answer was lost; its 0.30 USD stands) and me340-sam31-tracks-178 was stopped mid-run (its share of the 1.20 USD reservation stands). Reruns: sam2-walmart-everything-181 reserved 0.30 USD.",
+    "2026-09-24 sam2-walmart-everything-181 finished (298 views, 15822 masks kept, 773 s); reservation stands. sam2-me340-everything-184: SAM 2.1 automatic masks on the 312 DA3 views of me340-165, L4, retries 0; reserved 0.30 USD.",
+    "2026-09-24 me340-sam31-tracks-178/179/180 finished after the rerun; the 1.20 USD reservation stands. walmart-entity-names-191: bounded Gemini naming via the deployed Modal adapter; reserved 0.40 USD.",
+    "2026-09-24 video events (Qwen3-VL-8B default, 12 s windows at 2 fps, A100-40GB, 1200 s cap, retries 0) for me340-165 (with the person marks of me340-motion-analysis-187), samsclub-337 and walmart-190: runs 197/198/199; reserved 0.90 USD.",
+    "2026-09-24 events 197/198/199 finished (2 windows, 4 events each; 31-49 s GPU each); the 0.90 USD reservation stands. walmart-entity-names-191 finished (310 named); reservation stands. me340-entity-names-200 reserved 0.30 USD.",
+    "2026-09-24 me340-entity-names-200 finished (140 named); reservation stands. MVP reports on the three user-chosen MP4s: Sam's Club 7d0748de (v2 with video events), Walmart 1a6a5157 (v2 with video events), ME340 d4fea10b (dynamic person layer + video events). Imports ran locally at no GPU cost.",
+    "2026-09-24 qwen3vl-retrieval-probe-205 (user asked): Qwen3-VL-Embedding-8B + Qwen3-VL-Reranker-8B (Apache-2.0, repo 393e297) on the ~775 entity crops of the three MVP videos, finding (14 text queries, top-30 recall then rerank) and naming (top-5 labels then rerank); one A100-80GB call, 2400 s cap, retries 0; reserved 2.50 USD.",
+    "2026-09-24 qwen3vl-retrieval-probe-205 failed after the embedding stage: the reranker's processor did not load under transformers 4.57.1 (the repo pins >=4.57.3); its 2.50 USD reservation stands for that attempt. Rerun as qwen3vl-retrieval-probe-206 with transformers 4.57.3; reserved another 2.50 USD.",
+    "2026-09-24 qwen3vl-retrieval-probe-206 failed the same way under transformers 4.57.3 (the hub id, not the version: the reranker's extra chat template resolves to None); a CPU check confirmed loading from a local snapshot works. Run 207 loads from the snapshot; the 2.50 USD reserved for 206 covers 206 + 207 together.",
+    "2026-09-24 qwen3vl-retrieval-probe-207 stopped by me after ~45 min on A100-80GB: one call scoring all 775 crops x 5 names pair by pair did not fit; nothing returned. Added 2.00 USD for the overrun. Run 208 splits into three saved calls (recall, finding rerank, naming rerank on 150 crops); reserved 1.50 USD.",
+    "2026-09-24 qwen3vl-retrieval-probe-209 ran (A100-80GB, 149+129+79 s) but its inputs were the naming contact sheets (whole darkened frames), not object crops: result discarded, the 1.50 USD reservation stands. Run 210 with tight crops (largest observed view, box + 15% margin, mask outlined); reserved 1.00 USD.",
+    "2026-09-24 qwen3vl-retrieval-probe-210 finished (tight crops): finding mean p@10 0.16 embedding -> 0.19 reranked (shopping cart 0.4 -> 0.8); naming agreement with Gemini head noun 27 -> 33 of 150. Reservation stands.",
+    "2026-09-25 quality pilot on ME340 (user asked for best quality, tracks in parallel): me340-splat-217 Gaussian splatting with gsplat on Modal, cap 3.00 USD; me340-object-models-220 SAM 3D Objects via the deployed panoptes-platform-models app for 10 objects, cap 4.00 USD; texture and viewer tracks are CPU only. Reserved 7.00 USD.",
+    "2026-09-25 the user raised the authorization to 200 USD and asked for the best possible result. Pilot caps raised: splat training 3 -> 12 USD, object models 4 -> 15 USD (reservations +20.00).",
+    "2026-09-25 goal set by the user: (1) all detail like LingBot-Map, (2) complete object restoration like the workcell models. me340-lingbot-map-222 LingBot-Map dense map on Modal, cap 3.00 USD; object-model cap raised 15 -> 30 USD to cover every qualifying ME340 object. Reserved +18.00.",
+    "2026-09-25 ME340 has hard cuts at frames 14 and 226 (frames 14-225 are a cut-away close-up shot with another lens; its report poses and K are wrong). Splat track retrains without 14-225: cap 12 -> 18 USD (+6). LingBot-Map track finished at 0.28 USD of its 3.00 cap.",
+    "2026-09-25 me340-splat-217 finished: 13.29 USD billed by Modal (5007 s H100 + 10014 s A100-80GB incl. six failed/stopped attempts) against an 18.00 cap; 4.71 released. Final: 1,642,581 Gaussians, held-out 31.33 dB PSNR / 0.938 SSIM / 0.081 LPIPS on 86 walk-through frames.",
+    "2026-09-25 me340-object-models-220 finished: 87 RecGen dispatches (82 returned, 4397 generator GPU s, mostly A100-40GB) + SAM 2.1 re-segmentation; upper-bound estimate 6.43 USD against a 30.00 cap, 23.57 released. 78 qualifying objects, 50 modelled, 18 accepted.",
+    "2026-09-25 me340-splat-232 (off-path robust splats: LingBot dense-map seeds + depth prior, elongation cap 4) on Modal, H100/A100, retries 0; reserved 12.00 USD.",
+    "2026-09-25 me340-splat-232 finished: estimated 4.28 USD (Modal H100, 7 calls: 500-step smoke 0.11, runs A 1.75 and B 1.69, A continued 15k steps 0.49, cleanup scoring 0.10, two render calls 0.15; billing not reconciled) against the 12.00 reserve. No new model reached 30.5 dB held-out; delivered me340-splat-217's elongation-capped model (30.82 dB after cleanup) in runs/me340-splat-232."
+  ],
+  "other_provider_calls": [
+    {
+      "provider": "existing Gemini photo adapter",
+      "result": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/video-object-semantics-001/provider-output.json",
+      "usage": {
+        "cache_tokens_details": null,
+        "cached_content_token_count": null,
+        "candidates_token_count": 427,
+        "candidates_tokens_details": null,
+        "prompt_token_count": 13021,
+        "prompt_tokens_details": [
+          {
+            "modality": "TEXT",
+            "token_count": 253
+          },
+          {
+            "modality": "IMAGE",
+            "token_count": 12768
+          }
+        ],
+        "thoughts_token_count": null,
+        "tool_use_prompt_token_count": null,
+        "tool_use_prompt_tokens_details": null,
+        "total_token_count": 13448,
+        "traffic_type": null
+      },
+      "actual_billed_usd": null,
+      "covered_by_phase2_reserve_usd": 2
+    }
+  ],
+  "droid_rgb_control_reserve_usd": 3,
+  "accounted_and_reserved_ceiling_usd": 654.71,
+  "droid_budget_scope": "Two explicitly bounded pretrained RGB runs within same3USDreservation;002reusedsuccessfulCPUbuild and fixed finaldepthoutput, eachsingleGPUcall capped900seconds; billingpending.",
+  "cloud_compute": [
+    {
+      "run_id": "droid-fr1-room-001",
+      "status": "completed_app_stopped",
+      "cpu_seconds": 1338.5968,
+      "gpu_seconds": 197.41473364830017,
+      "gpu_calls": 1,
+      "cost_record": "runs/droid-fr1-room-001/cost-record.json",
+      "cost_record_sha256": "138eecf239fae01b09dadce7f0ca51bd7a254ac004cc1dd08344f3220a4472c6",
+      "actual_billed_usd": null,
+      "covered_by_reserve_usd": 3
+    },
+    {
+      "run_id": "droid-fr1-room-final-upsample-002",
+      "status": "completed_app_stopped",
+      "cpu_build_invoked": false,
+      "gpu_seconds": 117.1532518863678,
+      "gpu_calls": 1,
+      "cost_record": "runs/droid-fr1-room-final-upsample-002/cost-record.json",
+      "cost_record_sha256": "e26d857db690880cb6e351774ae7f7aa5d175a5b19f9b129763f73dfc6590039",
+      "actual_billed_usd": null,
+      "covered_by_reserve_usd": 3,
+      "resource_time_estimate_usd": 0.0786619001277023
+    },
+    {
+      "run_id": "lingbot-walking-rgb-001",
+      "status": "export_failed_app_stopped",
+      "gpu_seconds": 145.15029287338257,
+      "gpu_calls": 1,
+      "covered_by_reserve_usd": 2,
+      "actual_billed_usd": null,
+      "failure": "native depth/pose available; adapter incorrectly required optional world_points head; fixed to native depth unprojection"
+    },
+    {
+      "run_id": "lingbot-room-official-cache-003",
+      "status": "completed_no_active_container",
+      "gpu_forward_seconds": 113.40609741210938,
+      "gpu_call_elapsed_seconds": 261.99057149887085,
+      "peak_gpu_bytes": 16904038912,
+      "gpu_calls": 1,
+      "execution_record": "runs/lingbot-room-official-cache-003-launch3-preview/run.json",
+      "covered_by_reserve_usd": 2,
+      "actual_billed_usd": null
+    },
+    {
+      "run_id": "lingbot-room-rectified-004",
+      "status": "completed_no_active_container",
+      "gpu_forward_seconds": 118.5526294708252,
+      "gpu_call_elapsed_seconds": 248.09612131118774,
+      "peak_gpu_bytes": 16904038912,
+      "gpu_calls": 1,
+      "execution_record": "runs/lingbot-room-rectified-004-preview/run.json",
+      "covered_by_reserve_usd": 2,
+      "actual_billed_usd": null
+    },
+    {
+      "run_id": "lingbot-room-windowed-005",
+      "status": "completed_no_active_container",
+      "gpu_forward_seconds": 95.71639609336853,
+      "gpu_call_elapsed_seconds": 227.3993113040924,
+      "peak_gpu_bytes": 14936947200,
+      "gpu_calls": 1,
+      "execution_record": "runs/lingbot-room-windowed-005-preview/run.json",
+      "covered_by_reserve_usd": 2,
+      "actual_billed_usd": null
+    },
+    {
+      "run_id": "droid-fr1-room-resolution2-004",
+      "status": "complete_quality_not_accepted",
+      "gpu_calls": 1,
+      "gpu_call_elapsed_seconds": 217.52360939979553,
+      "peak_gpu_bytes": 19682808320,
+      "covered_by_reserve_usd": 2,
+      "actual_billed_usd": null,
+      "app_id": "ap-dGCOI4p1COz7nRJJxW9M1n",
+      "gpu_call_id": "fc-01M2VAJK02JXH24RCT0VGGFMA6",
+      "cloud_export_seconds": 211.20623169200002,
+      "cpu_review_app_id": "ap-00qN3LpoNSsA5vhcQEQWsJ",
+      "failed_cpu_start_app_id": "ap-OB0rgrp9SgECtUgVZaqtyz",
+      "failed_cpu_start_reason": "Volume reload was after importing libraries; fixed before imports without rerunning GPU",
+      "gpu_and_cpu_apps_stopped": true,
+      "local_collected_bytes": 28227863,
+      "complete_room_accepted": false
+    }
+  ],
+  "pre_submission_failures": [
+    {
+      "run": "runs/sam3-car-discovery-001/failure.json",
+      "provider_submissions": 0
+    },
+    {
+      "run": "runs/sam3-car-discovery-002/failure.json",
+      "provider_submissions": 0
+    }
+  ],
+  "human_visual_quality_reserve_usd": 4,
+  "human_budget_scope": "One $0.02 single-frame probe plus at most 130 prepaid-price-capped $0.02 human mesh calls, no training and no retry; remaining reserve covers service overhead; actual billing pending.",
+  "human_mesh_request_count": 233,
+  "human_mesh_published_estimate_usd": 4.66,
+  "human_visual_quality_results": {
+    "body_provider_returns": 118,
+    "accepted_keyframes": 83,
+    "rejected_keyframes": 29,
+    "insufficient_depth_keyframes": 6,
+    "interpolated_observations_checked": 414,
+    "interpolated_observations_accepted": 400,
+    "displayable_body_observations": 483,
+    "scene_body_observations": 1177,
+    "result": "runs/rgbd-walking-textured-body-replay-002/scene.json"
+  },
+  "human_temporal_density_reserve_usd": 3,
+  "human_temporal_density_plan": {
+    "run": "runs/sam3d-body-walking-keyframes-002",
+    "new_provider_calls": 114,
+    "reused_results": 118,
+    "max_new_calls": 130,
+    "max_provider_usd": 2.6,
+    "reserved_with_overhead_usd": 3,
+    "status": "completed_114_new_provider_results_118_reused"
+  },
+  "human_temporal_density_results": {
+    "accepted_keyframes": 168,
+    "rejected_keyframes": 53,
+    "insufficient_depth_keyframes": 11,
+    "interpolated_observations_checked": 549,
+    "interpolated_observations_accepted": 502,
+    "displayable_body_observations": 670,
+    "scene_body_observations": 1177,
+    "new_provider_requests": 114,
+    "published_new_estimate_usd": 2.28,
+    "source_scene_sha256": "70392f764f2bfd8029f54a756295e5bcdbad863b2c56a4c1860f0b72b28f0263"
+  },
+  "lingbot_rgb_comparison_reserve_usd": 2,
+  "lingbot_rgb_comparison_plan": {
+    "run": "runs/lingbot-walking-rgb-001",
+    "gpu": "A100-80GB",
+    "maximum_gpu_seconds": 900,
+    "maximum_gpu_attempts": 2,
+    "reserved_with_overhead_usd": 2,
+    "status": "completed_two_attempts_apps_stopped",
+    "total_accounted_and_reserved_usd": 36.36,
+    "rates_usd_second": {
+      "gpu": 0.000694,
+      "cpu_core": 1.31e-05,
+      "ram_gib": 2.22e-06
+    },
+    "pricing_source": "https://modal.com/pricing",
+    "runs": [
+      "runs/lingbot-walking-rgb-001",
+      "runs/lingbot-walking-rgb-002"
+    ],
+    "successful_run": "runs/lingbot-walking-rgb-002",
+    "canonical_export": "runs/lingbot-walking-rgb-003",
+    "inference_seconds": 62.589389,
+    "elapsed_seconds": 175.367913,
+    "peak_gpu_bytes": 15994571264,
+    "active_gpu_tasks": 0,
+    "actual_billing_reconciled": false
+  },
+  "authorization_history": [
+    {
+      "previous_total_usd": 40,
+      "new_total_usd": 100,
+      "source": "用户明确授权：预算100美元 别停，做。",
+      "scope": "累计上限100美元，不是额外100美元；不训练新基础模型"
+    },
+    "2026-09-28: user raised the authorization from 200 to 250 USD for one-command fresh runs of the three demo videos with RecGen kept",
+    "2026-09-28: user raised the authorization from 250 to 300 USD",
+    "2026-09-28: user raised the authorization from 300 to 500 USD"
+  ],
+  "lingbot_human_gap_reserve_usd": 2,
+  "lingbot_human_gap_plan": {
+    "maximum_calls": 32,
+    "maximum_provider_usd": 0.64,
+    "reserved_with_overhead_usd": 2,
+    "source": "lingbot-walking-replay-002/evidence.json no_supported_cached_body",
+    "status": "complete",
+    "new_requests": 32,
+    "published_estimate_usd": 0.64,
+    "cache_reused": 232,
+    "additional_accepted_model_times": 7,
+    "actual_billing_reconciled": false
+  },
+  "lingbot_object_probe_reserve_usd": 1,
+  "lingbot_object_probe_plan": {
+    "run": "runs/lingbot-chair-recgen-001",
+    "gpu": "A100-80GB",
+    "maximum_calls": 1,
+    "worker_timeout_seconds": 180,
+    "client_timeout_seconds": 240,
+    "retries": 0,
+    "cpu_cores": 8,
+    "memory_gib": 64,
+    "reservation_usd": 1,
+    "status": "complete_published_visual_review_passed",
+    "actual_billed_usd": null,
+    "function_id": "fu-Hh2leT3x1kprDaWpWsZ09l",
+    "source": "existing pinned RecGen transport; original video crop + native LingBot depth and camera",
+    "pricing_source": "https://modal.com/pricing",
+    "provider_request_id": "fc-01M2TS2KEQBG1FQ52KN1ANPG1H",
+    "gpu_function_seconds": 39.054110013999995,
+    "inference_seconds": 4.851081606999998,
+    "worker_wall_seconds": 219.3165979385376,
+    "resource_time_estimate_usd": 0.03674523102997231,
+    "provider_record": "runs/lingbot-chair-recgen-001/provider-record.json",
+    "active_gpu_tasks_after_completion": 0
+  },
+  "human_depth_probe": {
+    "run": "runs/lingbot-human-moge-probe-001",
+    "reserve_usd": 2,
+    "max_calls": 4,
+    "source_frames": [
+      3,
+      120,
+      180,
+      750
+    ],
+    "gpu": "L4",
+    "worker_timeout_seconds": 180,
+    "max_containers": 1,
+    "retries": 0,
+    "purpose": "independent RGB depth diagnostic; keep LingBot map and cameras",
+    "status": "completed_four_frame_diagnostic_not_published",
+    "rates_usd_second": {
+      "gpu": 0.000222,
+      "cpu_core": 1.31e-05,
+      "ram_gib": 2.22e-06
+    },
+    "pricing_source": "https://modal.com/pricing",
+    "actual_billing_reconciled": false,
+    "provider_request_ids": [
+      "fc-01M2TTN4341CZQP9CDDDH9H8JB",
+      "fc-01M2TTQ0KVK3J527GZHPB2Y931",
+      "fc-01M2TTQ4AAQ1RSH5KQ5CY6CC3F",
+      "fc-01M2TTQ6TWP93BCTQDE57SCV6T"
+    ],
+    "inference_seconds": 14.53,
+    "model_load_seconds": [
+      8.8,
+      8.8,
+      8.8,
+      8.8
+    ],
+    "actual_billed_usd": null,
+    "active_gpu_tasks_after_completion": 0
+  },
+  "other_video_samples_plan": {
+    "runs": [
+      {
+        "sample": "room-rgb",
+        "path": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/lingbot-room-rgb-001/plan.json",
+        "rgb_frames": 273,
+        "reserved_usd": 2,
+        "max_gpu_seconds": 900,
+        "max_attempts": 1,
+        "status": "complete",
+        "inference_seconds": 51.00580310821533,
+        "elapsed_seconds": 113.8479425907135,
+        "peak_gpu_bytes": 15943713792,
+        "app_stopped": true
+      },
+      {
+        "sample": "cars",
+        "path": "/Users/adam/Desktop/panoptes-public/research-notes/phase2/runs/lingbot-cars-001/plan.json",
+        "rgb_frames": 147,
+        "reserved_usd": 2,
+        "max_gpu_seconds": 900,
+        "max_attempts": 1,
+        "status": "complete",
+        "inference_seconds": 20.836965799331665,
+        "elapsed_seconds": 66.50023150444031,
+        "peak_gpu_bytes": 12364797952,
+        "app_stopped": true
+      }
+    ],
+    "room_person_discovery": {
+      "calls": 46,
+      "frames": [
+        0,
+        30,
+        60,
+        90,
+        120,
+        150,
+        180,
+        210,
+        240,
+        270,
+        300,
+        330,
+        360,
+        390,
+        420,
+        450,
+        480,
+        510,
+        540,
+        570,
+        600,
+        630,
+        660,
+        690,
+        720,
+        750,
+        780,
+        810,
+        840,
+        870,
+        900,
+        930,
+        960,
+        990,
+        1020,
+        1050,
+        1080,
+        1110,
+        1140,
+        1170,
+        1200,
+        1230,
+        1260,
+        1290,
+        1320,
+        1350
+      ],
+      "reserved_usd": 2,
+      "max_call_usd": 0.02,
+      "new_training": false,
+      "status": "complete",
+      "successful_requests": 46,
+      "published_estimate_usd": 0.46,
+      "propagated_frames": 1362,
+      "person_observations": 174
+    },
+    "reserved_usd": 6,
+    "status": "complete_native_runs_and_checks",
+    "dense_room_comparison": {
+      "run_id": "lingbot-room-rgb-002",
+      "stride": 2,
+      "expected_frames": 681,
+      "reserved_usd": 3,
+      "max_gpu_seconds": 900,
+      "max_attempts": 1,
+      "reason": "Sparse room result failed cross-view geometry check; denser identical RGB input, unchanged model and quality gate",
+      "status": "inference_complete_cross_view_check_failed",
+      "inference_seconds": 137.57674312591553,
+      "elapsed_seconds": 285.5646529197693,
+      "collected_frames": 681,
+      "passing_pairs": 5,
+      "evaluable_pairs": 19,
+      "app_stopped": true,
+      "active_gpu_tasks": 0
+    }
+  },
+  "lingbot_official_interval_comparison_reserve_usd": 2,
+  "lingbot_official_interval_comparison_scope": "One A100-80GB inference, maximum 900 seconds, zero retries; reuse cloud RGB and weights, compare interval 3 with prior interval 1 on same 681 frames; CPU review and small preview included. Actual billing pending.",
+  "lingbot_rectification_comparison_reserve_usd": 2,
+  "lingbot_rectification_comparison_scope": "One A100-80GB RGB rectification comparison, 681 identical source frames, same official interval3; max900seconds/retries0, CPU review and bounded previews included; no depth/GT and no local heavy inference.",
+  "lingbot_windowed_comparison_reserve_usd": 2,
+  "lingbot_windowed_comparison_scope": "One A100-80GB official windowed comparison versus existing interval1 streaming; same681RGB inputs/weights, window64/overlap16, max900seconds/retries0; cloud CPU review and compact previews included.",
+  "droid_double_resolution_reserve_usd": 2,
+  "droid_double_resolution_scope": "One A10040 invocation, max840s/retries0, existing RGB/weights/build; 640x480 model domain, cloud-only native arrays and compact CPU-reviewed preview.",
+  "posed_depth_room_reserve_usd": 2,
+  "posed_depth_room_scope": {
+    "runs": [
+      "runs/mono-anchored-room-pilot-006",
+      "runs/mono-anchored-room-full-007",
+      "runs/da3-posed-room-pilot-008",
+      "runs/da3-posed-room-full-009",
+      "runs/da3-base-posed-room-010",
+      "runs/da3-posed-room-allviews-011 (CPU only, reuses 009 depth)",
+      "runs/da3-posed-room-midframes-012",
+      "runs/sam3-room-floor-016"
+    ],
+    "gpu_wall_seconds": {
+      "moge3_L4": [
+        55.4,
+        192.7
+      ],
+      "da3_giant_A100-80GB": [
+        76.5,
+        117.2
+      ],
+      "da3_base_A100-80GB": [
+        73.2
+      ],
+      "da3_giant_352_views_A100-80GB": [
+        176.4
+      ]
+    },
+    "failed_before_inference": "first DA3 container died on import (addict missing); no model ran",
+    "resource_estimate_usd": 0.48,
+    "estimate_excludes": "image builds, container start, weight download, storage",
+    "retries": 0,
+    "sensor_depth_uploaded": false,
+    "groundtruth_uploaded": false,
+    "actual_billing_reconciled": false,
+    "fal_sam3_floor_requests": 12
+  },
+  "dynamic_replay_reserve_usd": 3,
+  "dynamic_replay_scope": {
+    "runs": [
+      "runs/droid-fr3-walking-018 (failed after 24 s GPU, my bug)",
+      "runs/droid-fr3-walking-019",
+      "runs/da3-posed-walking-020",
+      "runs/da3-base-room-352-021",
+      "runs/da3-base-walking-022"
+    ],
+    "gpu": "DROID A100-40GB 49 s + 24 s failed; DA3 A100-80GB one pass per run",
+    "retries": 0,
+    "sensor_depth_uploaded": false,
+    "groundtruth_uploaded": false,
+    "actual_billing_reconciled": false
+  },
+  "object_map_reserve_usd": 2,
+  "object_map_scope": {
+    "runs": [
+      "runs/sam3-room-objects-023 (144 fal SAM3 calls, about 0.01 USD each)",
+      "runs/moge-walking-024 (L4, 303 frames)",
+      "runs/room-object-map-025 and -026 (CPU)",
+      "runs/sam3-room-objects-023/cabinet-c (12 more fal SAM3 calls)"
+    ],
+    "actual_billing_reconciled": false
+  },
+  "video_entity_models_reserve_usd": 3,
+  "video_entity_models_scope": {
+    "run": "runs/video-entity-models-033",
+    "provider": "existing RecGen transport (lucida-private-assets generate_object, A100-80GB)",
+    "calls": 16,
+    "accepted_source_consistency": 9,
+    "rejected_by_gate": 6,
+    "outcome_unknown_not_resubmitted": [
+      "desk-015 (808x808 crop, client timeout 240 s)"
+    ],
+    "skipped": [
+      "desk-016"
+    ],
+    "licence": "RecGen weights non-commercial research",
+    "actual_billing_reconciled": false
+  },
+  "arkit_posed_depth_reserve_usd": 0.25,
+  "vocabulary_objects_reserve_usd": 2.0,
+  "class_agnostic_objects_reserve_usd": 1.5,
+  "class_agnostic_dense_reserve_usd": 1.0,
+  "walking_everything_reserve_usd": 1.0,
+  "arkit_raw_clip_reserve_usd": 1.5,
+  "arkit_raw_entity_models_reserve_usd": 5.0,
+  "motion_masks_reserve_usd": 0.5,
+  "motion_masks_scope": "walking clip: one L4 call for RAFT flow on 85 frame pairs (timeout 600 s, retries 0) and one L4 call for SAM 2.1 box prompts (timeout 900 s, retries 0); no training; run dir runs/walking-motion-masks-103",
+  "sam31_motion_tracks_reserve_usd": 1.5,
+  "sam31_motion_tracks_scope": "self-hosted SAM 3.1 (facebook/sam3.1 multiplex) on walking frames 500-800: one A100-40GB call, timeout 900 s, retries 0, motion-seeded instance tracks plus one text-prompt session; first weight download into the sam3-hf-cache volume; run dir runs/walking-sam31-motion-tracks-104 | 2026-09-21 later: runs 105-108 (five A100 calls, about 1320 s in all, estimated 0.85 USD of the 1.5 reserve); 109/110 are CPU only",
+  "sam3_selfhosted_image_reserve_usd": 0.2,
+  "sam3_selfhosted_image_scope": "modal_apps/sam3_app.py (facebook/sam3 via transformers, L4): two smoke calls and one 2-frame discovery run (runs/sam3-selfhosted-arkit-raw-basket-111); weights cached in sam3-hf-cache",
+  "nonhuman_motion_validation_reserve_usd": 1.5,
+  "nonhuman_motion_validation_scope": {
+    "source": "existing real DROID AUTOLab__Tue_Nov__7_13:53:20_2023/22008760.mp4",
+    "runs": [
+      "robot-motion-masks-113",
+      "robot-sam31-motion-tracks-114"
+    ],
+    "limits": {
+      "flow_l4_seconds": 600,
+      "boxes_l4_seconds": 900,
+      "tracks_a100_40gb_seconds": 900,
+      "retries": 0
+    },
+    "max_attempts_each": 1,
+    "evaluation": "predeclared source frames 0,30,60,90,120,150,180; manual visible-target/background check; no mask GT or pose/metric claims; fixed-camera assumption",
+    "status": "flow_and_seed_complete_tracking_running",
+    "pricing_source": "https://modal.com/pricing",
+    "rates_usd_second": {
+      "l4": 0.000222,
+      "a100_40gb": 0.000583
+    },
+    "actual_billing_reconciled": false,
+    "pairs": 18,
+    "seed_candidates": 13,
+    "flow_wall_seconds": 26.74185585975647,
+    "box_wall_seconds": 23.219209909439087
+  },
+  "new_scene_selfhosted_reserve_usd": 0.5,
+  "new_scene_selfhosted_scope": {
+    "run": "sam3-selfhosted-robot-115",
+    "frames": [
+      30,
+      120
+    ],
+    "prompt": "robot arm",
+    "provider": "default self-hosted SAM3",
+    "max_calls": 2,
+    "timeout_seconds_per_call": 600,
+    "retries": 0,
+    "status": "complete_two_source_frames_verified",
+    "instances": [
+      1,
+      3
+    ],
+    "review": "runs/sam3-selfhosted-robot-115/review.jpg",
+    "limitation": "frame120 has overlapping arm part instances, not whole-object acceptance"
+  },
+  "room_motion_reserve_usd": 2.0,
+  "room_motion_scope": "fr1/room dynamic layer: motion_masks.py (2 L4 calls, retries 0) + sam3_motion_tracks.py windows (A100-40GB, 900 s cap each, retries 0); runs/room-motion-masks-116 onwards | used: motion 116 (L4 ~2 min), tracks 117 (A100 543 s, CUDA OOM, kept), 118 (308 s, 4 tracks all rejected: no trusted motion), 119 (see run); ~0.6 USD. The standing person of frames 750-850 never moves, so motion cannot find it; the room's dynamic layer uses the existing person tracks (room-sam3-sam2-001) instead.",
+  "video_events_reserve_usd": 1.5,
+  "video_events_scope": "VSS-style window captions/events with Qwen3-VL-8B-Instruct (Apache-2.0) on one A100-40GB call per clip (timeout 1200 s, retries 0): walking, room, hi-res; runs/*-video-events-123... | used: walking-video-events-123, one A100-40GB call, 204 s incl. 153 s first weight load (~0.15 USD)",
+  "object_models_more_attempts_reserve_usd": 20,
+  "object_models_more_attempts_scope": "ME340 complete object models, more attempts per object: scripts/complete_video_objects.py into runs/me340-object-models-231 (clones the 18 accepted models of runs/me340-object-models-220 and reuses its received RecGen journals, nothing paid twice). Existing RecGen transport (lucida-private-assets generate_object, A100-80GB/40GB, 8 cores, 64 GiB, client deadline 240 s, retries 0, one call at a time), up to 4 views + 1 extra seed per object, new-call cap 20 USD (--max-usd = 220's journaled spend + 20); acceptance gate unchanged. Estimated actual recorded at the end.",
+  "splat_offpath_reserve_usd": 12,
+  "splat_offpath_scope": "me340-splat-232: Gaussian splats robust to small off-path views (seeds and a clipped log-depth pull from the LingBot-Map dense map me340-lingbot-map-222, elongation cap 4, walk frames only, pose refinement) with modal_apps/splat_train.py (gsplat 1.5.3) on Modal: at most two training runs plus render/cleanup scoring calls, one GPU call at a time, retries 0, hard --max-minutes deadlines; cap 12 USD; actual estimate recorded at the end.",
+  "splat_offpath_estimated_usd": 4.28,
+  "object_models_more_attempts_estimated_usd": 4.13,
+  "object_models_more_attempts_result": "runs/me340-object-models-231 complete: 66 new RecGen calls, all received (4375 s local wall, 3678 s provider GPU; 4.12 USD at the A100-80GB + 8 cores + 64 GiB list price x wall seconds, an upper bound) + one SAM 2.1 L4 call (16 s, <0.01 USD); 67 earlier calls read back from run 220's journal, none paid twice. Accepted models 18 -> 22. Actual billing not reconciled.",
+  "reserve_release_2026_09_25": "object_models_more_attempts (20 -> 4.13) and splat_offpath (12 -> 4.28) closed at their estimates: 23.59 USD released; the SAM 3D access check was CPU only (<0.01 USD); the objects re-assessment was local CPU",
+  "sam3d_objects_reserve_usd": 15,
+  "sam3d_objects_scope": "Self-hosted SAM 3D Objects (modal_apps/sam3d_research.py, A100-80GB, one container, retries 0, 900 s timeout) for every qualifying ME340 walk object into runs/me340-object-models-241-sam3d, full frame + our own pointmap, the unchanged out-of-sample gate; image builds and debug calls (~3 short A100 calls) included; --max-usd 15",
+  "sam3d_objects_estimated_usd": 2.5,
+  "sam3d_objects_result": "runs/me340-object-models-241-sam3d: 52 objects, 154 calls, 12 accepted; merged with RecGen into runs/me340-object-models-242-merged (20 models, 9 SAM 3D); published 7f418b36",
+  "samsclub_quality_rebuild_reserve_usd": 10.32,
+  "samsclub_quality_rebuild_scope": "samsclub: ME340-level rebuild on its longer continuous shot (DROID/DA3/fusion/texture+fill/object map+names/LingBot dense map/splats/RecGen+SAM3D models/validated inferred floor), GPU calls one at a time, retries 0, cap 20 USD; actual recorded at the end under samsclub_quality_rebuild_estimated_usd",
+  "walmart_quality_rebuild_reserve_usd": 13.5,
+  "walmart_quality_rebuild_scope": "walmart: ME340-level rebuild on its longer continuous shot (DROID/DA3/fusion/texture+fill/object map+names/LingBot dense map/splats/RecGen+SAM3D models/validated inferred floor), GPU calls one at a time, retries 0, cap 20 USD; actual recorded at the end under walmart_quality_rebuild_estimated_usd",
+  "samsclub_quality_rebuild_estimated_usd": 10.32,
+  "samsclub_quality_rebuild_result": "samsclub shot A (frames 0-419; hard cut at 420 excluded) rebuilt at ME340 level; K re-estimated on the shot (55.3 deg); upper-bound estimate 10.32 USD: DROID x2 0.12, DA3 x2 0.12, motion masks + SAM 3.1 tracks 0.26, MoGe FOV 0.03, LingBot decode + inference + 3 CPU calls 0.40, splats x2 + cleanups 3.15, Gemini naming 0.10, SAM 3D Objects 2.30 (145 calls), RecGen 3.84 (34 calls, cap 4); manifest runs/samsclub-quality-manifest.json. Actual billing not reconciled.",
+  "walmart_quality_rebuild_estimated_usd": 13.5,
+  "walmart_quality_rebuild_result": "runs/walmart-quality-manifest.json: shot 383-749; DROID/DA3/motion/SAM3.1/LingBot/names ~0.9, splats 1.54 (H100), RecGen 9.22 (86+24 calls incl. 17 of run 1), SAM 3D 2.10 (157 calls); list price x wall seconds, upper bounds, billing not reconciled",
+  "reserve_release_2026_09_25b": "samsclub_quality_rebuild (20 -> 10.32) and walmart_quality_rebuild (20 -> 13.5) closed at their estimates: 16.18 USD released; LingBot ICP refinement and imports were local CPU",
+  "me340_cutaway_shot_reserve_usd": 0.3,
+  "me340_cutaway_shot_scope": "ME340 frames 14-225 (a second, static camera): register it into the walk map with DA3 unposed multi-view (A100-80GB, 1200 s timeout, retries 0), then per-frame depth for the person layer; at most 3 USD; actual recorded at the end",
+  "me340_cutaway_shot_estimated_usd": 0.3,
+  "me340_cutaway_shot_result": "runs/me340-cutaway-register-304 (17 views) and me340-cutaway-dynamic-305 (86 views): two A100-80GB DA3 unposed calls, a few minutes each incl. weight load; ~0.3 USD at list price (upper bound); person layer 72 surfaces; published after checks",
+  "streaming_m0_probes_reserve_usd": 4.94,
+  "streaming_m0_probes_scope": "docs/phase2/STREAMING-PLAN.md M0 (user-approved 2026-09-27): SAM 3 per-image latency on L4; SAM 3.1 incremental-frame session up to 30 min on H100; LingBot warm per-frame + windowed 10 min; ARKit 47333932 1x replay live worker on Modal. Each call bounded by timeout, retries 0; cap 10 USD; actual recorded at the end",
+  "streaming_m0_probes_estimated_usd": 4.94,
+  "streaming_m0_probes_result": "M0 branches m0/{live-core,people,probe-sam3-l4,probe-sam31-stream,probe-lingbot,cpu-tests} (local, not merged): live-core and cpu-tests CPU only; people 0.02 (SAM 3 calls); SAM 3 L4 bench 0.09; SAM 3.1 stream probe 2.4 (5 GPU calls); LingBot warm probe 2.43; list price x wall seconds, upper bound, billing not reconciled",
+  "streaming_m0_fixes_reserve_usd": 0.03,
+  "streaming_m0_fixes_scope": "M0 review fixes: live map worker on a Modal CPU container behind a network transport (ARKit replay from the Mac), latency measured; CPU-only otherwise; cap 2 USD",
+  "streaming_m0_fixes_estimated_usd": 0.03,
+  "streaming_m0_fixes_result": "m0/live-core-fix Modal CPU worker runs: $0.0232 from the Modal billing report (run 1 $0.0120, run 2 $0.0106, probe $0.0006); all other fix parts CPU only",
+  "streaming_m1_reserve_usd": 0,
+  "streaming_m1_scope": "M1 phone path: live_map_worker phone-session mode on a Modal CPU container (ephemeral modal run, timeout-bounded), end-to-end replay test and the user's iPhone 15 Pro session; cap 2 USD",
+  "streaming_m1_result": "stopped by the user on 2026-09-27 (video first, no streaming for now) before any Modal call; partial local branches m1/ios, m1/server, not merged",
+  "m2_lightning_oneshot_reserve_usd": 5.1,
+  "m2_lightning_oneshot_scope": "First one-command run (scripts/run_video_report.py, research profile) on the Lightning eMotors factory clip, user-approved 2026-09-27; PANOPTES_PAID_BUDGET_USD caps paid calls; actual recorded at the end. User decisions: no rebuild of the 3 delivered reports (U2), Walmart lens gate stays 0.90 (U1), commercial profile may use Gemini naming (U6)",
+  "m2_lightning_oneshot_estimated_usd": 5.1,
+  "m2_lightning_oneshot_result": "Imported 2026-09-28 as publication bdfe0603-dd13-479e-bb97-1fe7e5fec6ee (local 8792; not published: the deploy needs the user's go-ahead and publish.py targets the standalone video app, not the shared panoptes-publications API behind the Pages link). Source: data/clips/lightning-3585/source-rgb.mp4 0-26 s (YouTube 3585-3611 s; the full 720p video is no longer on disk). 4 invocations of the same command (3 runner fixes between them); runner ledger booked 11.78 of the 15 cap (worst-case/4-worker upper bounds). List price x seconds, upper bound, billing not reconciled: source 0.016, census 0.0491, moge 0.0208, camera 0.0363, floor_masks 0.0067, sam2 0.1878, motion 0.0253, depth 0.0975, tracks 0.1746+0.1422+0.1631, lingbot 0.1915, events 0.0323, lingbot_diagnose 0.0253 (Modal CPU), sam3d 1.627 (1990 container s), names 0.50 (Gemini cloud, reservation; 202k tokens, actual not billed back), failed: lingbot_build x3 0.1737 (Modal CPU), recgen parallel-journal run 1.6333 (10 received calls + 2 unresolved at worst case), splat x4 and recgen x2 0 (failed before any GPU call) = 5.10",
+  "m2_lightning_oneshot_note": "closed at 5.10 (list-price upper bound): the user redirected to the three demo videos on 2026-09-28; the Lightning re-run was stopped before any paid call; report bdfe0603 stays local, unpublished",
+  "m2_three_videos_oneshot_reserve_usd": 7.87,
+  "m2_three_videos_oneshot_scope": "Acceptance (user, 2026-09-28): one frozen commit, one command per video (ME340, Sam's Club, Walmart), research profile incl. RecGen, from scratch (no reuse of the hand-built runs), each to a published report with no intervention; failures fixed in general code then the round re-run; PANOPTES_PAID_BUDGET_USD=20 per video",
+  "m3_fast_path_reserve_usd": 10.3,
+  "m3_fast_path_scope": "User request 2026-09-28: first report in 2-3 min warm for a 30 s video (demo); parallel DAG executor + Modal fan-out (SAM 2, naming, tracks, SAM 3D), RecGen off in the fast profile, CPU-heavy stages on Modal, warm pool; progressive publish; measured on one of the three videos under a separate site name; cap 20 USD",
+  "m4_twin_prototype_reserve_usd": 0.5,
+  "m4_twin_prototype_scope": "User request 2026-09-28: HomeBody-style Real2Sim digital twin (VLM agent assembles complete objects constrained by our measured geometry, verified against matched camera views) prototyped on ME340 in parallel with the fast-path experiments; Gemini VLM calls + optional SAM 3D calls; cap 10 USD",
+  "m3_followups_reserve_usd": 15.3,
+  "m3_followups_scope": "User-approved 2026-09-28: E2b per-video VLM vocabulary for SAM 3, E5b splat speed-ups (init from dense points, 2-GPU distributed, H100, coarse-to-fine), E6b keyframe masks + projected in-between outlines, E9 whole core pipeline in one resident process on one A100; target design is two GPUs; cap 25 USD",
+  "m2_three_videos_oneshot_estimated_usd": 7.87,
+  "m2_three_videos_oneshot_result": "stopped by the user 2026-09-28 (switch to the fast version) during round 1, ME340 at RecGen after 4 h 15 min; Sam's Club and Walmart never started; runner-booked list-price upper bound",
+  "m3_fast_path_estimated_usd": 10.3,
+  "m3_fast_path_result": "round 1 E1-E8 on ME340: E1/E7 0.80, E2/E6 1.57, E3 0.26, E4 4.17, E5 2.90, E8 0.60 (agent-reported list-price upper bounds)",
+  "m3_followups_estimated_usd": 15.3,
+  "m3_followups_result": "E2b 1.7, E5b 7.5, E6b 1.6, E9 4.5 (agent-reported list-price upper bounds)",
+  "m4_twin_prototype_estimated_usd": 0.5,
+  "m4_twin_prototype_result": "twin v1 on ME340: Gemini critique 0.504 USD; below the done bar, v2 not started",
+  "m3_fast_build_reserve_usd": 40,
+  "m3_fast_build_scope": "User 2026-09-28: build the fast version only (full-quality acceptance and twin v2 stopped/parked): 2x A100-80GB Modal pipeline from the E9 core + validated experiment settings, layer store + progressive viewer, run on ME340, Sam's Club, Walmart; analysis time only (cold start excluded); per-stage GPU memory logged; cap 40 USD",
+  "m3_fast_build_result": "resumed 2026-09-28 by the user, with the object classification cascade + cache added",
+  "m4_twin_v2_reserve_usd": 2,
+  "m4_twin_v2_scope": "User 2026-09-28: HomeBody-style twin v2 on Sams Club: clean instances (per-video vocabulary + SAM 3 + classification cascade), structured layout, library asset retrieval (library per the research memo) + SAM 3D for special objects, matched-view checks, GLB/USD + three.js viewer; cap 30 USD",
+  "m4_twin_v2_result": "stopped by the user 2026-09-28: twin only serves the demo; the reconstruction must serve VLM safety judgment (workcell-report style); partial instance/layout work kept in runs/t2-*, t3-*",
+  "fine_fast_experiments_estimated_usd": 21.34,
+  "fine_fast_experiments_scope": "User 2026-09-28: X1 frame-rate sweep, X2 vocabulary + active discovery, X3 parallel LingBot lane, X4 targeted refinement on ME340/Sam's Club/Walmart (branches fx/x1-fps, fx/x2-discover, fx/x3-lingbot, fx/x4-refine); caps 8 USD each; verifiers ran no GPU jobs",
+  "fine_fast_experiments_result": "X1 4.20, X2 6.30, X3 6.62, X4 4.22 (Modal billing report per the verifier; agent claimed 3.46) = 21.34, list-price upper bounds, billing not reconciled",
+  "windows_time_experiments_reserve_usd": 24,
+  "windows_time_experiments_scope": "User 2026-09-28: X6 content windows + object change over time, X7 per-unique-object models from best views (RecGen multiview / SAM 3D / parametric); caps 10 USD each + up to 2 USD per verifier; user said budget can be raised",
+  "decide_reuse_discover_refine_reserve_usd": 52,
+  "decide_reuse_discover_refine_scope": "User 2026-09-28: X8 Jev-Omni/Laya as calibrated deciders (12), X9 same-object reuse ladder (12), X10 class-agnostic 'everything' discovery incl. thin/small (12), X11 local bundle adjustment for refine spots (10), X12 frame rate for fast motion (6); agents may exceed caps by up to 50% if needed; verifiers max 2 USD each",
+  "click_mvp_reserve_usd": 40,
+  "click_mvp_scope": "User goal 2026-09-28: click-to-understand video MVP on fb/integrate (2x A100): pick layer, object cards (physical info with uncertainty, evidence level, time), judgement engine (workcell/video rules + VLM set-of-marks + verdict rule), viewer click UX, validation on ME340/Sam's Club/Walmart; branches mvp/*",
+  "windows_time_experiments_estimated_usd": 6.65,
+  "windows_time_experiments_result": "X6 4.0, X7 2.65 (agent-reported list-price upper bounds); verifiers ran no GPU jobs",
+  "m3_fast_build_estimated_usd": 24.06,
+  "m3_fast_build_result_2": "fast build complete (fb/integrate): A 5.8, B 7.34, C 0.02, D 0.30, integrate 10.6 = 24.06 (agent-reported); review spent 0",
+  "reserve_release_2026_09_28": "windows_time_experiments (24 -> 6.65) and m3_fast_build (40 -> 24.06) closed at their estimates: 33.29 USD released",
+  "decide_reuse_discover_refine_estimated_usd": 27.13,
+  "decide_reuse_discover_refine_result": "X8 2.13, X9 7.54, X10 8.63, X11 6.30 (billing 6.18), X12 2.53 (agent-reported list-price upper bounds); verifiers ran no GPU jobs",
+  "reserve_release_2026_09_29": "decide_reuse_discover_refine (52 -> 27.13) closed at its estimate: 24.87 USD released",
+  "click_mvp_estimated_usd": 42.98,
+  "click_mvp_result": "round 1 (mvp/integrate): builders A 8.8, B 8.9, C 0, D 2.3, integrate 22.98 (Modal billed 18.52 so far) = 42.98 list-price upper bound; review spent 0; exceeded the 40 reserve by 2.98 with the user's standing permission to raise budget",
+  "click_mvp_v2_reserve_usd": 60,
+  "click_mvp_v2_scope": "round 2 (mvp2/*): identity, physical info vs LiDAR/Kinect ground truth (ARKit 47333932/42445448, TUM fr1-room), judgements (Gemini hazard judge), click audit and timing; integrate + review",
+  "click_mvp_v2_estimated_usd": 142.03,
+  "click_mvp_v2_result": "round 2 (mvp2/integrate): identity 22 (incl. Gemini ~est), physical 35, accuracy 3.9, judge 17.1, click 21.03, integrate 43 (Modal 30.73 + Gemini ~12 est) = 142.03 agent-reported upper bounds; exceeded the 60 reserve by 82.03 (agents were told budget is generous)",
+  "authorization_note_2026_09_29": "User said on 2026-09-28 'budget can be raised' (没事 都可以加budget); authorization_usd 500 is now reached by accounted+reserved; round 3 capped hard at 55 USD and reported to the user",
+  "click_mvp_v3_reserve_usd": 55,
+  "click_mvp_v3_scope": "round 3 (mvp3/*): judge rule + walked-path gates + coverage (8), click coverage/on-demand segmentation (14), server-side Gemini + timing (10), integrate + fresh audit (15), hard caps; review no GPU",
+  "authorization_history_note_2026_09_29": "User 2026-09-29: '可以超预算 做吧' (may exceed the budget, go ahead) after being told accounted+reserved reached 534.49 of the 500 authorization; round 3 continues. User also chose to attach the existing Modal secret of panoptes-report-workspace by name to the ephemeral fast-report app for server-side Gemini (no local key handling, no new secret, no deploy; remote exec not approved).",
+  "vlm_light_cascade_reserve_usd": 44,
+  "vlm_light_cascade_scope": "User 2026-09-29: fewer run-time VLM calls: research + X13 naming cascade (20) and hazard cascade (20) held out by video, verifiers max 2 each; branches x13/*",
+  "vlm_light_cascade_estimated_usd": 1.47,
+  "vlm_light_cascade_result": "X13 naming 0.66 + hazards 0.81 (list-price upper bounds); research/verify/synth no GPU; 42.53 of the 44 reserve released",
+  "object_layer_r4_reserve_usd": 61,
+  "object_layer_r4_scope": "User 2026-09-29: judgement paused; round 4 object layer (instances 12, coverage incl. YOLO11/26/YOLOE 12, naming cascade VLM-last 12, physical 10, integrate 15), hard caps; rule-library workflow stopped before any GPU spend",
+  "click_mvp_v3_estimated_usd": 23.71,
+  "click_mvp_v3_result": "round 3 (mvp3/integrate): judge 6.42, click 6.29, speed 0, integrate 11 (Modal only; Gemini 0: no named secret exists, Qwen used) = 23.71; 31.29 of the 55 reserve released",
+  "object_models_r4_reserve_usd": 14,
+  "object_models_r4_scope": "User acceptance 2026-09-29 (type + segmentation + physical info + model): every object gets a display model (fitted primitive always; SAM 3D for well-seen objects), branch r4/models, hard cap 14",
+  "object_layer_r4_estimated_usd": 21.14,
+  "object_layer_r4_result": "builders: physical ~1.5 + resumed-copy GT 0.47 (~2.0), naming ~5.8, instances 3.46, coverage 9.88 (agent-reported upper bounds); first integrate stopped early (duplicate agent); 39.86 of the 61 reserve released",
+  "object_layer_r4b_integrate_reserve_usd": 18,
+  "r5_models_reserve_usd": 30,
+  "r5_models_scope": "User 2026-09-29: display models are all cuboids; fast better models: observed-surface meshes, TripoSR/SF3D/TRELLIS/SAM 3D aligned to points, per-object splat crops; branch r5/models; hard cap 18; relaunched 2026-09-29 16:0x with outline-true observed-surface meshes as default, per-object plane/bend angles (to floor and between parts) as card measurements, and the workcell RecGen recipe as a demo-only comparison; cap raised 18 -> 25; relaunched again with RecGen allowed internally (resident, parallel), RecGen-like commercial alternatives (SAM 3D, TRELLIS, TripoSR/SF3D) and angle validation incl. tilted surfaces; cap 30",
+  "recgen_fast_reserve_usd": 15,
+  "recgen_fast_scope": "User 2026-09-29: RecGen (internal use allowed) is strong but slow: profile + speed-ups (steps, CFG, bf16/compile, skip Gaussian decode, fewer views, batching, MPS) and similar faster methods; branch recgen/fast; hard cap 15",
+  "route_jev_reserve_usd": 6,
+  "route_jev_scope": "User 2026-09-29: can Jev-Omni route objects to primitive vs RecGen? rules/zero-shot/Jev cascade on >=300 agent-labelled objects, held out by video; branch route/jev; cap 6",
+  "route_jev_estimated_usd": 1.56,
+  "route_jev_result": "Jev-Omni routing: best single router (held out by video); recommended cascade (fixed-shape class list -> Jev Q5 raw) 0.904 (post hoc; honest bounds 0.815-0.875); 1.56 USD; 4.44 of the 6 reserve released",
+  "object_models_r4_estimated_usd": 7.82,
+  "object_models_r4_result": "r4/models: primitive model on 100% of object cards; SAM 3D 24/180 accepted; by-eye plausible 19/27/26 of 30; 7.82 USD; 6.18 of the 14 reserve released",
+  "recgen_fast_estimated_usd": 7.38,
+  "recgen_fast_result": "FAST RecGen (SS 12 steps CFG 5, SLAT 8 steps CFG off, mesh-only, batched view-pair fusion): 2.5 s/object vs 8.2-8.4 (3.3x), acceptance within gate noise; 20/40/70 objects in 19/36/62 s on 2 A100; branch recgen/fast 1c137cc; 7.38 USD (incl. an 11-min preempted re-run); 7.62 of the 15 reserve released",
+  "r5_models_estimated_usd": 18.1,
+  "r5_models_result": "observed-surface meshes (38/52/0 look vs primitive 7/41/42), planar-part angles (GT median 2.9 deg, 90.7% +-u coverage, 30-deg rule 234/235), RecGen resident best look 58/27/5; 18.1 USD; 11.9 of the 30 reserve released",
+  "object_layer_r4b_integrate_estimated_usd": 12.04,
+  "object_layer_r4b_integrate_result": "r4b integrate (branch r4b/integrate 40a153e): types by family 95/100/98%, clicks 0.87/0.76/0.82, physical 100% complete, models 100% (84-89% boxes); independent review PARTIAL: VLM scene vocabulary gates SAM 3 wave-2 words (VLM first, not last), event captions still ask PPE/safety, ME340 family right only 0.51 on held-out items, width 'at most' bounds fail 8-28% vs GT; 12.04 USD; 5.96 of the 18 reserve released",
+  "object_layer_r5b_reserve_usd": 82,
+  "object_layer_r5b_scope": "Round 5 (2026-09-29 20:1x, after r4b review PARTIAL): builders r5b/vocab (VLM-free vocabulary, no PPE/safety prompts, judge off, 'unidentified (shape)' fallback, read-only bank, ME340 types) cap 10; r5b/models (observed-surface mesh default, route() + fast RecGen internal / SAM 3D commercial, seen-face facing test, angles re-scored without selection bias) cap 25; r5b/time (per-interval physical values, timelines, width bounds) cap 10; r5b/visit (cross-visit registration + object diffs on TUM fr1 / ARKitScenes revisits) cap 12; r5b/integrate (3 videos first+warm, GT, audit) cap 25; review CPU only",
+  "recgen_fast2_reserve_usd": 15,
+  "recgen_fast2_scope": "User 2026-09-29 ~22:00: 'recgen有类似吗？可以优化吗？' -> branch recgen/fast2 from recgen/fast: test untested RecGen-like methods (Amodal3R, TRELLIS.2, Affostruction, newer 2026 ones; SAM 3D as commercial baseline) and training-free speed-ups (partial denoising from observed occupancy, size-based resolution, compile/CUDA graphs, cross-object batching, look-alike reuse, click-first queue) on >= 40 objects; cap 15",
+  "r6_correctness_reserve_usd": 15,
+  "r6_correctness_scope": "User 2026-09-29 23:50: '267s还可以接受，问题不大，先解决正确性问题' -> branch r6/correct from r5b/integrate: root-cause and fix RecGen models that do not line up (ME340 75/149, Sam's Club 20/32), object floor-position error (GT 9-12 cm true height, 20-24 cm assumed), one-view sizes (cart 2.56 m); re-run ME340 + Sam's Club + GT; cap 15",
+  "r6_correctness_result": "stopped by the user at ~23:40 before any GPU work; 0 USD; 15 reserve released; plan kept in handoff-2026-09-29/HANDOFF.md section 7 item 1",
+  "recgen_fast2_result": "never run (stopped/postponed); 0 USD; 15 reserve released",
+  "object_layer_r5b_result": "builders ~38 USD (models 18.74, visit 7.10, time 6.19, vocab ~6 est.); integration stopped by the user at ~23:40 after ME340 runs 001-002, Sam's Club 002, Walmart 002 calls, GT r5b-int-gt-001; its spend was not reported (estimate from Modal app lifetimes when reconciling)"
+}
