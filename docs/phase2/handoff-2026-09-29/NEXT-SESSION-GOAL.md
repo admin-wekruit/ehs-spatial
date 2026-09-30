@@ -49,7 +49,8 @@ Suggested `/goal` line for the new session (the user writes goals in Chinese):
 4. ME340 held-out family accuracy ≥ 0.70 without leakage; Sam's Club and Walmart not lower than round 4.
 5. Every truly tilted ME340 part audited; GT angle error p90 ≤ 8°.
 6. An independent adversarial review (CPU only, re-derives numbers, looks at images) passes with no open blocker or major.
-7. A report (update the round-5 artifact in place, or a new one) whose first table is "positions right or wrong" per
+7. The three interactive 3D report pages regenerated from the new runs with `artifact-report/` (same URLs: republish
+   in place) — this is how the user looks at results now — and a report (update the round-5 artifact in place, or a new one) whose first table is "positions right or wrong" per
    video, before → after, with overlay images before/after on the same frames, and latency within 10 % of round 5.
 
 Not in scope: speed work, safety judgement, commercial model alternatives, deployment.

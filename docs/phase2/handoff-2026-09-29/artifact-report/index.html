@@ -1,0 +1,314 @@
+<title>{{TITLE}}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#F2F4F1; --panel:#FFFFFF; --ink:#17201D; --muted:#56635F; --line:#D3DAD6;
+  --accent:#0D7666; --accent-soft:#DCEEEA; --warn:#9A6212; --warn-bg:#F6EBD6;
+  --stage:#0F1513;
+  --f-display:"Barlow Condensed","PingFang SC","Hiragino Sans GB","Noto Sans CJK SC","Microsoft YaHei",sans-serif;
+  --f-body:"IBM Plex Sans","PingFang SC","Hiragino Sans GB","Noto Sans CJK SC","Microsoft YaHei",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#0F1513; --panel:#161F1C; --ink:#E2E9E6; --muted:#94A29D; --line:#2A3531;
+    --accent:#47B7A4; --accent-soft:#15302B; --warn:#DDA650; --warn-bg:#33270F; --stage:#0A0F0D;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0F1513; --panel:#161F1C; --ink:#E2E9E6; --muted:#94A29D; --line:#2A3531;
+  --accent:#47B7A4; --accent-soft:#15302B; --warn:#DDA650; --warn-bg:#33270F; --stage:#0A0F0D;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14.5px;line-height:1.5;margin:0}
+.wrap{max-width:1400px;margin:0 auto;padding-inline:16px;padding-block:18px 40px;display:flex;flex-direction:column;gap:14px}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 18px}
+h1{font-family:var(--f-display);font-size:32px;margin:0;line-height:1.1}
+.nav{display:flex;flex-wrap:wrap;gap:8px}
+.nav a,.nav span{font-size:13px;padding:3px 10px;border-radius:999px;border:1px solid var(--line);color:var(--ink);text-decoration:none}
+.nav span{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:600}
+.meta{color:var(--muted);font-size:13px;flex-basis:100%}
+.grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,1fr);gap:14px;align-items:start}
+.left{display:flex;flex-direction:column;gap:10px}
+video{width:100%;aspect-ratio:16/9;background:#000;border-radius:10px;display:block}
+.stagebox{position:relative;border-radius:10px;overflow:hidden;background:var(--stage)}
+canvas#c{display:block;width:100%;aspect-ratio:16/9;touch-action:none;cursor:pointer}
+.status{position:absolute;left:12px;top:10px;color:#DDE6E2;font-size:12.5px;font-family:var(--f-mono);background:rgba(0,0,0,.45);padding:3px 8px;border-radius:6px;pointer-events:none}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.bar button{font:inherit;font-size:13px;padding:4px 11px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+.bar button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.hint{color:var(--muted);font-size:12.5px}
+.side{display:flex;flex-direction:column;gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.card h2{font-family:var(--f-display);font-size:24px;margin:0;line-height:1.15}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:12px;padding:2px 9px;border-radius:999px;background:var(--accent-soft);color:var(--accent)}
+.chip.w{background:var(--warn-bg);color:var(--warn)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+td{padding:5px 6px;border-top:1px solid var(--line);vertical-align:top}
+td.k{color:var(--muted);white-space:nowrap;width:30%}
+.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.why{color:var(--muted);font-size:12px}
+.list{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.list input{font:inherit;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.items{max-height:340px;overflow:auto;display:flex;flex-direction:column}
+.items button{all:unset;cursor:pointer;padding:5px 8px;border-radius:6px;display:flex;justify-content:space-between;gap:8px;font-size:13px}
+.items button:hover,.items button.sel{background:var(--accent-soft)}
+.items .t{color:var(--muted);font-size:12px;white-space:nowrap}
+.foot{color:var(--muted);font-size:12.5px;max-width:100ch}
+@media (max-width:900px){.grid{grid-template-columns:1fr} h1{font-size:26px}}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1 id="title">{{TITLE}}</h1>
+    <nav class="nav" id="nav"></nav>
+    <div class="meta" id="meta">加载中…</div>
+  </header>
+  <div class="grid">
+    <div class="left">
+      <video id="v" src="video.mp4" controls playsinline muted preload="auto"></video>
+      <div class="stagebox">
+        <canvas id="c"></canvas>
+        <div class="status" id="status">加载 3D…</div>
+      </div>
+      <div class="bar">
+        <button id="follow" class="on">跟随视频相机</button>
+        <button id="room" class="on">房间网格</button>
+        <span class="hint">播放视频，3D 视图会跟着视频的相机走；拖动 3D 可自由查看；点任何物体看它的卡片。</span>
+      </div>
+    </div>
+    <div class="side">
+      <div class="card" id="card"><h2>点一个物体</h2><div class="why">在 3D 视图里点物体，或者从下面的列表里选。</div></div>
+      <div class="list">
+        <input id="q" placeholder="搜索物体名称，例如 machine、cart、shelf" aria-label="搜索物体">
+        <div class="items" id="items"></div>
+      </div>
+    </div>
+  </div>
+  <p class="foot">米制数值按"相机离地 1.6 m"的假设估算（带 ± 误差）。模型：RecGen 生成的完整模型只在叠回视频对得上时显示；其余物体显示"看到的表面"或简单形状。为了能在网页里打开，房间网格和模型都做了简化，细节比原始结果少。</p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+const LINKS = {{LINKS}};
+const KEY = "{{KEY}}";
+const $ = s => document.querySelector(s);
+const FIELD = {position_xy:"位置（地面 x, y）", top_above_floor:"顶部离地", base_above_floor:"底部离地", height:"高", width:"宽", depth:"深", visible_length:"可见长度", principal_axis_tilt_deg:"主轴倾斜", planar_slope_deg:"平面坡度"};
+const KIND = {"RecGen":"RecGen 生成模型", "observed surface":"看到的表面", "box":"简单形状：方块", "cylinder":"简单形状：圆柱", "plane":"简单形状：板", "open frame":"简单形状：框架", "none":"无模型"};
+const nav = $("#nav");
+for (const [k, v] of Object.entries(LINKS)) {
+  const el = document.createElement(k === KEY ? "span" : "a");
+  el.textContent = v.label; if (k !== KEY) { el.href = v.url; el.target = "_blank"; el.rel = "noopener"; }
+  nav.appendChild(el);
+}
+
+let D, cardsById = {}, nodesById = {}, shotGroups = {}, roomObjs = [], pickables = [];
+let follow = true, showRoom = true, current = null, selected = null, pending = false, lastShot = null;
+const canvas = $("#c"), video = $("#v"), statusEl = $("#status");
+const renderer = new THREE.WebGLRenderer({canvas, antialias: true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue("--stage").trim() || "#0F1513");
+const camera = new THREE.PerspectiveCamera(36, 16 / 9, 0.02, 400);
+camera.up.set(0, -1, 0);  // OpenCV frame: y points down
+const controls = new THREE.OrbitControls(camera, canvas);
+controls.enableDamping = false;
+controls.addEventListener("start", () => setFollow(false));
+controls.addEventListener("change", render);
+const highlight = new THREE.MeshBasicMaterial({color: 0xffb020, transparent: true, opacity: .75, side: THREE.DoubleSide, depthTest: true});
+let boxHelper = null;
+
+function render() {
+  if (pending) return; pending = true;
+  requestAnimationFrame(() => { pending = false; resize(); renderer.render(scene, camera); });
+}
+function resize() {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (canvas.width !== Math.round(w * renderer.getPixelRatio()) || canvas.height !== Math.round(h * renderer.getPixelRatio())) {
+    renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+  }
+}
+window.addEventListener("resize", render);
+
+const loader = new THREE.GLTFLoader();
+const glb = url => fetch(url + ".json").then(r => { if (!r.ok) throw new Error(url + " " + r.status); return r.json(); }).then(j => {
+  const bin = atob(j.b64), buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  return new Promise((res, rej) => loader.parse(buf.buffer, "", g => res(g.scene), rej));
+});
+const basic = () => new THREE.MeshBasicMaterial({vertexColors: true, side: THREE.DoubleSide});
+
+function cardOf(obj) {
+  for (let o = obj; o; o = o.parent) if (cardsById[o.name]) return o.name;
+  return null;
+}
+function register(id, obj) { (nodesById[id] = nodesById[id] || []).push(obj); pickables.push(obj); }
+
+function primitive(c) {
+  const m = c.model, mat = new THREE.MeshBasicMaterial({color: 0x6fb7a8, transparent: true, opacity: .55, side: THREE.DoubleSide});
+  let geo;
+  if (m.kind === "cylinder") { geo = new THREE.CylinderGeometry(m.radius_m, m.radius_m, m.length_m, 24, 1, true); geo.rotateX(Math.PI / 2); }
+  else if (m.kind === "open frame" && Array.isArray(m.parts)) {
+    const g = new THREE.Group();
+    for (const q of m.parts) { const b = new THREE.Mesh(new THREE.BoxGeometry(Math.max(q[3], .01), Math.max(q[4], .01), Math.max(q[5], .01)), mat); b.position.set(q[0], q[1], q[2]); g.add(b); }
+    g.position.fromArray(m.position); g.quaternion.fromArray(m.quaternion); g.name = c.id; return g;
+  } else { const s = (m.size_m || [.1, .1, .1]).map(v => Math.max(v, .01)); geo = new THREE.BoxGeometry(s[0], s[1], s[2]); }
+  const mesh = new THREE.Mesh(geo, mat); mesh.position.fromArray(m.position); mesh.quaternion.fromArray(m.quaternion); mesh.name = c.id;
+  return mesh;
+}
+
+async function loadShot(shot) {
+  const g = new THREE.Group(); g.visible = false; scene.add(g); shotGroups[shot] = g;
+  const room = await glb(`room-${shot}.glb`).catch(() => null);
+  if (room) { room.traverse(o => { if (o.isMesh) o.material = basic(); }); g.add(room); roomObjs.push(room); }
+  const covered = new Set();
+  for (const f of (D.model_files[String(shot)] || [])) {
+    const s = await glb(f).catch(() => null); if (!s) continue;
+    s.traverse(o => { if (o.isMesh) o.material = basic(); });
+    g.add(s);
+    s.traverse(o => { if (cardsById[o.name]) { register(o.name, o); covered.add(o.name); } });
+  }
+  for (const c of D.cards) if (c.shot === shot && ["box", "cylinder", "plane", "open frame"].includes(c.model.kind) && c.model.position) {
+    const p = primitive(c); g.add(p); register(c.id, p); covered.add(c.id);
+  }
+  const surf = await glb(`surfaces-${shot}.glb`).catch(() => null);
+  if (surf) {
+    surf.traverse(o => { if (o.isMesh) o.material = basic(); });
+    g.add(surf);
+    surf.traverse(o => { if (cardsById[o.name]) { if (covered.has(o.name)) o.visible = false; else register(o.name, o); } });
+  }
+}
+
+function showShot(shot) {
+  if (shot === lastShot || !shotGroups[shot]) return;
+  for (const [k, g] of Object.entries(shotGroups)) g.visible = (+k === shot);
+  lastShot = shot; render();
+}
+
+function poseAt(t) {
+  let best = null;
+  for (const c of D.cameras) {
+    const n = c.times.length; if (!n) continue;
+    const inside = t >= c.times[0] - .4 && t <= c.times[n - 1] + .4;
+    let i = 0, d = Infinity;
+    c.times.forEach((x, k) => { const dd = Math.abs(x - t); if (dd < d) { d = dd; i = k; } });
+    if (inside || !best || d < best.d) { const cand = {shot: c.shot, m: c.c2w[i], d, fov: c.fov_y}; if (inside) return cand; best = cand; }
+  }
+  return best;
+}
+function applyPose(p) {
+  if (!p) return;
+  const m = p.m;
+  const M = new THREE.Matrix4().set(m[0][0], m[0][1], m[0][2], m[0][3], m[1][0], m[1][1], m[1][2], m[1][3], m[2][0], m[2][1], m[2][2], m[2][3], 0, 0, 0, 1);
+  M.multiply(new THREE.Matrix4().makeScale(1, -1, -1));
+  const sc = new THREE.Vector3(); M.decompose(camera.position, camera.quaternion, sc);
+  if (p.fov) { camera.fov = p.fov; camera.updateProjectionMatrix(); }
+  controls.target.set(m[0][3] + m[0][2] * 3, m[1][3] + m[1][2] * 3, m[2][3] + m[2][2] * 3);
+  showShot(p.shot); render();
+}
+function setFollow(on) {
+  follow = on; $("#follow").classList.toggle("on", on);
+  if (on) applyPose(poseAt(video.currentTime || 0));
+}
+$("#follow").onclick = () => setFollow(!follow);
+$("#room").onclick = () => { showRoom = !showRoom; $("#room").classList.toggle("on", showRoom); roomObjs.forEach(r => r.visible = showRoom); render(); };
+function tick() {
+  if (follow) applyPose(poseAt(video.currentTime));
+  if (!video.paused && !video.ended) requestAnimationFrame(tick);
+}
+video.addEventListener("play", () => requestAnimationFrame(tick));
+video.addEventListener("seeked", () => { if (follow) applyPose(poseAt(video.currentTime)); });
+video.addEventListener("timeupdate", () => { if (follow && video.paused) applyPose(poseAt(video.currentTime)); });
+
+function fmt(v, unit) {
+  const r = x => (Math.abs(x) >= 10 ? x.toFixed(1) : x.toFixed(2));
+  return Array.isArray(v) ? "(" + v.map(r).join(", ") + ")" : r(v);
+}
+function fieldRow(k, f) {
+  const deg = k.endsWith("_deg"), unit = deg ? "°" : " m";
+  let val;
+  if (f.value !== undefined && f.value !== null && !f.status) val = `<span class="num">${fmt(f.value)}${f.u != null ? " ± " + fmt(f.u) : ""}${unit}</span>`;
+  else if (f.value !== undefined && f.value !== null) val = `<span class="num">${f.status || ""} ${fmt(f.value)}${unit}</span>${f.reason ? `<div class="why">${f.reason}</div>` : ""}`;
+  else val = `${f.status || "—"}${f.reason ? `<div class="why">${f.reason}</div>` : ""}`;
+  return `<tr><td class="k">${FIELD[k] || k}</td><td>${val}</td></tr>`;
+}
+function select(id, fly) {
+  if (selected) for (const o of nodesById[selected] || []) o.traverse(x => { if (x.isMesh && x.userData.mat) { x.material = x.userData.mat; delete x.userData.mat; } });
+  if (boxHelper) { boxHelper.parent && boxHelper.parent.remove(boxHelper); boxHelper = null; }
+  selected = id; const c = cardsById[id]; if (!c) return;
+  for (const o of nodesById[id] || []) o.traverse(x => { if (x.isMesh) { x.userData.mat = x.material; x.material = highlight; } });
+  const objs = nodesById[id] || [];
+  if (objs.length) {
+    const box = new THREE.Box3(); objs.forEach(o => box.expandByObject(o));
+    boxHelper = new THREE.Box3Helper(box, 0xffb020); shotGroups[c.shot].add(boxHelper);
+    if (fly) {
+      setFollow(false); showShot(c.shot);
+      const ctr = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3()).length() || 1;
+      controls.target.copy(ctr);
+      const dir = camera.position.clone().sub(ctr); if (dir.length() < 1e-3) dir.set(0, 0, -1);
+      camera.position.copy(ctr).add(dir.normalize().multiplyScalar(Math.max(size * 1.8, 1.2))); controls.update();
+    }
+  }
+  const m = c.model, kind = KIND[m.kind] || m.kind;
+  const chips = [`<span class="chip">${kind}</span>`];
+  if (m.kind === "RecGen" && m.iou != null) chips.push(`<span class="chip">与画面重合度 ${(+m.iou).toFixed(2)}</span>`);
+  if (c.category) chips.push(`<span class="chip">${c.category}</span>`);
+  const rows = Object.entries(c.physical || {}).map(([k, f]) => fieldRow(k, f)).join("");
+  const t = c.time || {};
+  $("#card").innerHTML = `<h2>${c.name || "未识别物体"}</h2>
+    <div class="chips">${chips.join("")}</div>
+    <div class="why">类型怎么来的：${c.decided_by || "—"} · ${c.views ? c.views + " 个关键帧里看到" : ""}</div>
+    <table>${rows}
+      <tr><td class="k">时间</td><td>${t.first != null ? `第 <span class="num">${(+t.first).toFixed(1)}</span>–<span class="num">${(+t.last).toFixed(1)}</span> s 看到` : "—"}${t.state ? ` · ${t.state}` : ""}</td></tr>
+      <tr><td class="k">模型</td><td>${kind}${m.chosen_by ? `<div class="why">${m.chosen_by}</div>` : ""}${m.display ? `<div class="why">${m.display}</div>` : ""}</td></tr>
+    </table>
+    <div class="why">${c.id} · 镜头 ${c.shot + 1}</div>`;
+  document.querySelectorAll(".items button").forEach(b => b.classList.toggle("sel", b.dataset.id === id));
+  render();
+}
+
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+let down = null;
+canvas.addEventListener("pointerdown", e => { down = [e.clientX, e.clientY]; });
+canvas.addEventListener("pointerup", e => {
+  if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) return;
+  const r = canvas.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const vis = pickables.filter(o => { for (let x = o; x; x = x.parent) if (!x.visible) return false; return true; });
+  const hit = ray.intersectObjects(vis, true)[0];
+  if (hit) { const id = cardOf(hit.object); if (id) select(id, false); }
+});
+
+function buildList() {
+  const q = ($("#q").value || "").toLowerCase();
+  const items = D.cards.filter(c => c.kind === "object" && (!q || (c.name || "").toLowerCase().includes(q)))
+    .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  $("#items").innerHTML = items.slice(0, 600).map(c => `<button data-id="${c.id}"><span>${c.name || "未识别物体"}</span><span class="t">${KIND[c.model.kind] || c.model.kind}</span></button>`).join("");
+  $("#items").querySelectorAll("button").forEach(b => b.onclick = () => select(b.dataset.id, true));
+}
+$("#q").addEventListener("input", buildList);
+
+(async () => {
+  try {
+    D = await fetch("data.json").then(r => r.json());
+    D.cards.forEach(c => cardsById[c.id] = c);
+    const n = D.counts;
+    $("#meta").textContent = `${n.cards} 个物体卡片 · RecGen 模型 ${n.recgen} · 简单形状 ${n.primitives} · 看到的表面 ${n.surfaces} · 报告 ${D.report}`;
+    buildList();
+    for (const s of D.shots) { statusEl.textContent = `加载镜头 ${s + 1}/${D.shots.length}…`; await loadShot(s); }
+    statusEl.textContent = "镜头 1";
+    applyPose(poseAt(0.5));
+    const upd = () => { if (lastShot !== null) statusEl.textContent = `镜头 ${lastShot + 1} · ${follow ? "跟随视频相机" : "自由视角"}`; };
+    setInterval(upd, 500);
+    render();
+  } catch (err) { statusEl.textContent = "加载失败：" + err; }
+})();
+</script>
