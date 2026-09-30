@@ -26,7 +26,9 @@ MODAL = Path("/Users/adam/Desktop/Tesla/panoptes-platform/.venv/bin/modal")
 TEMPLATE = Path("/Users/adam/Desktop/panoptes-public/panoptes-workcell-pages/workcell-photo-direct/index.html")
 WORDS = ("industrial robot arm", "safety fence", "yellow safety post", "black bollard",
          "emergency stop button", "red emergency stop switch", "light curtain",
-         "work platform", "cart", "control cabinet")
+         "work platform", "cart", "control cabinet", "signal light", "stack light",
+         "warning sign", "workcell sign", "folding safety barrier", "cable tray",
+         "instruction poster", "transparent safety panel", "floor marking")
 
 
 def _array(spec):
@@ -245,9 +247,20 @@ def _export_metric_scene(root, geometry):
     transform[:3, :3] *= scale
     transform[1, 3] = scale * float(geometry["floor"]["offset"])
     scene = trimesh.Scene()
-    for name in ("robot-v4", "cart-single", "posts", "fence-fitted", "floor-fitted"):
-        mesh = trimesh.load(root / f"{name}.glb", force="scene").to_geometry()
-        scene.add_geometry(mesh, node_name=name, geom_name=name, transform=transform)
+    objects = json.loads((root / "objects.json").read_text())["objects"]
+    cached = {}
+    for item in objects:
+        spec = item.get("modelsByPhoto", {}).get("4", item["model"])
+        if not spec or not spec.get("nodes"):
+            continue
+        if spec["file"] not in cached:
+            cached[spec["file"]] = trimesh.load(root / spec["file"], force="scene")
+        source = cached[spec["file"]]
+        for node in spec["nodes"]:
+            matrix, geometry_id = source.graph.get(node)
+            mesh = source.geometry[geometry_id].copy()
+            name = item["id"] + ":" + node
+            scene.add_geometry(mesh, node_name=name, geom_name=name, transform=transform @ matrix)
     scene.metadata.update(units="meters", scale_status="user_dimension_hypothesis",
                           button_height_m=geometry["anchor"]["assumedHeightM"],
                           button_width_m=geometry["anchor"]["assumedWidthM"])
@@ -270,20 +283,24 @@ def _anchor_sheet(root, sources, anchor):
 
 
 def _build_page(root, metrics):
-    if not TEMPLATE.is_file():
-        raise FileNotFoundError(f"Report template missing: {TEMPLATE}")
+    built = root / "report-ui"
+    if not (built / "photo.html").is_file():
+        raise FileNotFoundError("Build the shared report UI first: cd web && node node_modules/vite/bin/vite.js build --config vite.photo.config.ts")
     page = root / "page"
     page.mkdir()
-    (page / "index.html").write_text(
-        TEMPLATE.read_text().replace("../observed/viewer-assets/", "./viewer-assets/"))
+    shutil.copytree(built, page, dirs_exist_ok=True)
+    shutil.copyfile(built / "photo.html", page / "index.html")
     shutil.copytree(TEMPLATE.parent.parent / "observed/viewer-assets", page / "viewer-assets")
     shutil.copytree(TEMPLATE.parent / "viewer-assets", page / "viewer-assets", dirs_exist_ok=True)
     assets = ("robot-v1.glb", "robot-v2.glb", "robot-v3.glb", "robot-v4.glb", "robot-multi.glb",
               "cart-single.glb", "cart-observed.glb", "posts.glb", "fence-observed.glb",
               "mask-contact-sheet.jpg", "extra-mask-contact-sheet.jpg", "cart-mask-sheet.jpg",
-              "fence-fitted.glb", "floor-fitted.glb", "workcell-metric.glb", "geometry.json")
+              "fence-fitted.glb", "floor-fitted.glb", "workcell-metric.glb", "geometry.json",
+              "objects.json", "object-extras.glb", "scene-report.json")
     for name in assets:
         shutil.copyfile(root / name, page / name)
+    for model in root.glob("entity-*.glb"):
+        shutil.copyfile(model, page / model.name)
     for evidence in [*root.glob("geometry-*.jpg"), *root.glob("geometry-*.png")]:
         shutil.copyfile(evidence, page / evidence.name)
     frames = []
@@ -304,6 +321,9 @@ def _build_page(root, metrics):
                        "owlSeconds": times["owlSeconds"], "cartMaskSeconds": times["cartMaskSeconds"],
                        "cartModelSeconds": times["modelSeconds"], "modelSeconds": times["modelSeconds"]}}
     (page / "data.json").write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+    shared = json.loads((page / "scene-report.json").read_text())
+    shared["timing"] = data["timing"]
+    (page / "scene-report.json").write_text(json.dumps(shared, ensure_ascii=False, indent=2) + "\n")
     return page
 
 
@@ -321,9 +341,13 @@ def run(images, out, diameter_m, height_m):
         raise ValueError("Exactly four distinct, readable source photos are required")
     if not all(np.isfinite(v) and v > 0 for v in (diameter_m, height_m)):
         raise ValueError("Button dimensions must be finite and positive")
+    if not (REPO / 'web/dist-photo/photo.html').is_file():
+        raise FileNotFoundError('Build web/vite.photo.config.ts before starting cloud inference')
     if out.exists():
         raise ValueError("Output must be a new directory; a one-shot run never mutates earlier evidence")
     out.mkdir(parents=True)
+    # Freeze the built viewer before compute; concurrent rebuilds must not change a running report.
+    shutil.copytree(REPO / "web/dist-photo", out / "report-ui")
     began = time.monotonic()
     ledger = {"hardware": "one ephemeral 2 x A100-80GB container", "mode": "ephemeral modal run",
               "actualBilledUsd": None, "runs": []}
@@ -358,7 +382,7 @@ def run(images, out, diameter_m, height_m):
     cart_z = np.load(out / "cart-input.npz")
     surfaces = {"cart": _surface(out, seg, "cart-observed", 1, "cart", cart_z["v1_mask"] > 0),
                 "fence": _surface(out, seg, "fence-observed", 4, "safety fence")}
-    posts = _posts(out, seg)
+    posts = json.loads((out / "posts-source.json").read_text())
     _mask_sheet(out, seg, ("industrial robot arm", "safety fence", "work platform"), "mask-contact-sheet.jpg")
     _mask_sheet(out, seg, ("yellow safety post", "black bollard", "emergency stop button"), "extra-mask-contact-sheet.jpg")
     _mask_sheet(out, seg, ("cart",), "cart-mask-sheet.jpg", cart_seg)
@@ -374,6 +398,10 @@ def run(images, out, diameter_m, height_m):
     page_data = json.loads((page / "data.json").read_text())
     page_data["timing"]["oneShotSeconds"] = metrics["oneShotWallSeconds"]
     (page / "data.json").write_text(json.dumps(page_data, ensure_ascii=False, indent=2) + "\n")
+    shared = json.loads((page / "scene-report.json").read_text())
+    shared["timing"]["oneShotSeconds"] = metrics["oneShotWallSeconds"]
+    (page / "scene-report.json").write_text(json.dumps(shared, ensure_ascii=False, indent=2) + "\n")
+    (out / "scene-report.json").write_text(json.dumps(shared, ensure_ascii=False, indent=2) + "\n")
     (out / "one-shot.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2) + "\n")
     (out / "spend-ledger.json").write_text(json.dumps(ledger, indent=2) + "\n")
     print(json.dumps({"oneShotWallSeconds": metrics["oneShotWallSeconds"],

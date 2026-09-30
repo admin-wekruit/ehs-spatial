@@ -1,4 +1,5 @@
 import { CadView } from "./CadView";
+import { useSceneResources } from "./SceneResources";
 import {
   createElement,
   lazy,
@@ -1070,6 +1071,7 @@ export function SpatialView({
   onModelPreview,
   onAssetStates,
   onMeasurementPoint,
+  showSourcePhoto,
 }: {
   revision: Revision;
   selection: Selection;
@@ -1082,7 +1084,9 @@ export function SpatialView({
   onModelPreview?: (requestKey: string, image: string) => void;
   onMeasurementPoint?: (point: import("./viewer/native-math").SurfacePick | null) => void;
   onAssetStates?: (revisionId: string, states: import("./types").RepresentationLoadState[]) => void;
+  showSourcePhoto?: boolean;
 }) {
+  const { resolveAsset } = useSceneResources();
   const host = useRef<HTMLDivElement>(null),
     runtime = useRef<any>(null),
     callbacks = useRef({ onSelect, onCommit, revision, selection, modelPreview, onModelPreview, onAssetStates, onMeasurementPoint }),
@@ -1124,6 +1128,7 @@ export function SpatialView({
     try {
       viewer = mountSceneViewer(host.current, {
         resolveAsset,
+        showSourcePhoto,
         locale: language,
         layers: viewLayers,
         onEvent: (event: any) => {

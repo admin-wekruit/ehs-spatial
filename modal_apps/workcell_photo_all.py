@@ -113,6 +113,11 @@ def reconstruct(images: list[bytes], words: list[str], diameter_m: float, height
                     timing[f"{kind}-{name}"] = {**stats, "modelLoadSeconds": worker["modelLoadSeconds"]}
             model_end = time.monotonic()
             _finish(geometry_proc, "metric geometry")
+            from scripts.workcell_photo_objects import build as build_objects
+            from scripts.workcell_photo_report import build as build_report
+            report._posts(root, seg)
+            build_objects(root, [Path(path) for path in sources])
+            build_report(root)
             complete_end = time.monotonic()
             (root / "models-timing.json").write_text(json.dumps({"models": timing, "containerWallSeconds": model_end - started}))
             (root / "stage-timing.json").write_text(json.dumps({"geometrySeconds": geometry_end-started,

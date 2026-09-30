@@ -1,5 +1,6 @@
 """Small executable check of exported mesh units and floor alignment."""
 import sys
+import json
 import tempfile
 from pathlib import Path
 
@@ -18,6 +19,11 @@ def check():
             mesh = trimesh.creation.box([1, .2, .1])
             mesh.apply_translation([0, 1.5, 0])
             (root / f"{name}.glb").write_bytes(mesh.export(file_type="glb"))
+        objects = []
+        for name in ("robot-v4", "cart-single", "posts", "fence-fitted", "floor-fitted"):
+            saved = trimesh.load(root / f"{name}.glb", force="scene")
+            objects.append({"id": name, "model": {"file": f"{name}.glb", "nodes": list(saved.graph.nodes_geometry)}})
+        (root / "objects.json").write_text(json.dumps({"objects": objects}))
         previous = None
         for scale in (1, 2):
             geometry = {"anchor": {"mPerNative": scale, "assumedHeightM": .2 * scale,
