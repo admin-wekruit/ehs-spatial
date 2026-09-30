@@ -742,8 +742,7 @@ def jev_crops(cs, outlines, frames):
         for o in f.get("objects", []):
             if o.get("polygons"):
                 polys.setdefault(o["entityId"], {}).setdefault(int(f["sourceFrame"]), []).extend(o["polygons"])
-    out = {}
-    for c in cs:
+    def one(c):
         mine = {}
         for i in [c["id"], *((c.get("physical") or {}).get("merged_from") or [])]:
             for q, p in polys.get(i, {}).items():
@@ -751,9 +750,9 @@ def jev_crops(cs, outlines, frames):
         q = next((int(k) for k in (c.get("views") or {}).get("best", []) if int(k) in mine), None)
         if q is None and mine:
             q = max(mine, key=lambda k: len(mine[k]))
-        if q is not None:
-            out[c["id"]] = judge.som(frames[q], {1: mine[q]}, subject=1, side=JEV_SIDE)
-    return out
+        return c["id"], (judge.som(frames[q], {1: mine[q]}, subject=1, side=JEV_SIDE) if q is not None else None)
+    with ThreadPoolExecutor(8) as ex:  # r5b integrate: every non-simple candidate is asked (200+ crops on ME340): in threads
+        return {k: v for k, v in ex.map(one, cs) if v is not None}
 
 
 def reuse_placement(rep, member, model, shot, shot_m=None):
@@ -833,6 +832,14 @@ def models_job(m, inputs, geo, shared, words, clock, writer, dev, cards_now=None
     ctx = ctx or {}
     if ctx.get("names") is not None:
         ctx["names"].wait(150)  # the first names (the identity pass's cards v2), or its end without any
+    early = {}
+    if ctx.get("jev_ask") and cards_now:  # r5b integrate: the router's questions on the cards known now, beside densify (jev_ask
+        t_e = time.perf_counter()  # keeps each card's answer: the plan on the newest cards below asks only for the new ones)
+        try:
+            tier1_plan([c for c in ((cards_now() or {}).get("cards") or []) if c.get("kind") == "object"], ctx["jev_ask"], clock)
+        except Exception as error:  # noqa: BLE001  the final plan asks again
+            early["error"] = repr(error)[:300]
+        early["s"] = round(time.perf_counter() - t_e, 3)
     if ctx.get("gpu0_free") is not None:
         ctx["gpu0_free"].wait(300)  # the facts first (click MVP section 7): densify's GPU 0 work and the cards v3 build
     # r5b integrate: planned on the newest cards (densify's objects included: every non-simple object gets a model)
@@ -840,7 +847,7 @@ def models_job(m, inputs, geo, shared, words, clock, writer, dev, cards_now=None
     by_id = {c["id"]: c for c in cs}
     t_plan = time.perf_counter()
     reps, members, routes, plan = tier1_plan(cs, ctx.get("jev_ask") or (lambda _: {}), clock)
-    plan["plan_s"] = round(time.perf_counter() - t_plan, 3)
+    plan["plan_s"], plan["early_jev"] = round(time.perf_counter() - t_plan, 3), early
     internal = getattr(m, "recgen", None) is not None
     base = {"eligible": len(reps), "rule": "r5b tier 1 (integrate): every non-simple object; fast_report.route (fixed-shape classes, Jev-Omni Q5), "
             "one model per look-alike group (each member's copy posed on it), large / well-seen / complex first", "plan": plan, "routes": routes,
@@ -1957,13 +1964,22 @@ def analyse(m, mp4, opts, clock, writer, log):
         js = [at[i] for i in [card["id"], *card["physical"].get("merged_from", [])] if i in at]
         return (np.concatenate([pts[j]["world"] for j in js]), np.concatenate([pts[j]["frame"] for j in js])) if js else None
 
+    jev_cache = {}
+
     def jev_ask(cs):
-        """Jev-Omni's Q5 on each card's outlined best view (route/jev's question), on its own GPU (the app's Jev class)."""
+        """Jev-Omni's Q5 on each card's outlined best view (route/jev's question), on its own GPU (the app's Jev class). r5b integrate:
+        each card is asked once a report (its answer kept: the early plan's, then only the newest cards' questions)."""
         from fast_report import route
-        crops = jev_crops(cs, results.get("outlines_v2") or results.get("outlines"), frames)
-        got = m.jev_decide([(cid, jpg, route.JEV_STATE, route.Q5[0], route.Q5[1]) for cid, jpg in crops.items()])
-        results["jev"] = {k: v for k, v in got.items() if k != "probs"}  # round trip, compute, requests: the plan's record
-        return got["probs"]
+        need = [c for c in cs if c["id"] not in jev_cache]
+        if need:
+            t = time.perf_counter()
+            crops = jev_crops(need, results.get("outlines_v2") or results.get("outlines"), frames)
+            t_crops = time.perf_counter() - t
+            got = m.jev_decide([(cid, jpg, route.JEV_STATE, route.Q5[0], route.Q5[1]) for cid, jpg in crops.items()])
+            jev_cache.update(got["probs"])
+            results.setdefault("jev_calls", []).append({**{k: v for k, v in got.items() if k != "probs"}, "asked": len(need), "crops_s": round(t_crops, 3)})
+            results["jev"] = {"calls": results["jev_calls"]}  # round trip, compute, requests, crops: the plan's record
+        return {c["id"]: jev_cache[c["id"]] for c in cs if c["id"] in jev_cache}
 
     def start_models():
         """r5b tier 1: routed and planned once the first names are in (cards v2; v1 / v3 when no identity pass runs), generating once
