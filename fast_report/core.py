@@ -724,14 +724,14 @@ def analyse(m, mp4, opts, clock, writer, log):
     seg_future = m.cpu_pool.submit(work.worker, dev_seg, "seg")
     cuts_ready = threading.Event()
     early = m.cpu_pool.submit(work.worker, dev_geo, "geo before cuts", cuts_ready) if dev_geo != dev_seg else None
-    # r5b: SAM 3's wave-2 words come from a VLM-free source (fast_report.vocab; the user: the VLM comes last and rarely): 'pe'
-    # (default: PE-Core zero-shot on the naming encoder, GPU 1), 'taxonomy', 'words' (a given list: the r5b comparison), or the
-    # round-4 Qwen scene vocabulary ('qwen', an opt-in comparison only)
+    # r5b: SAM 3's wave-2 words come from a VLM-free source (fast_report.vocab; the user: the VLM comes last and rarely): 'ram'
+    # (default: RAM++ tags, its own process on GPU 1, object nouns only), 'pe' (PE-Core zero-shot on the naming encoder), 'taxonomy',
+    # 'words' (a given list: the r5b comparison), or the round-4 Qwen scene vocabulary ('qwen', an opt-in comparison only)
     vocab_src = opts.get("vocab") or vocab.DEFAULT
     # r5b: the bank rows a run may read: never the scored site's (bank_exclude_site: the benches) nor those named (a bank build)
     bank_exclude = ([site] if opts.get("bank_exclude_site") else []) + list(opts.get("bank_exclude_sites") or [])
     site_family = json.loads(cascade.CALIBRATION.read_text()).get("site_family", {}).get(site, "unknown")
-    vlm_frames = vocab.pick_frames(n_total, vlm.VOCAB_FRAMES if vocab_src == "qwen" else vocab.FRAMES) if vocab_src in ("qwen", "pe") else []
+    vlm_frames = vocab.pick_frames(n_total, vlm.VOCAB_FRAMES if vocab_src == "qwen" else vocab.FRAMES) if vocab_src in ("qwen", "pe", "ram") else []
     frames, grays, futures, keys, chunk_at, chunk_done = [], [], [], [], [], {}
     decoded_all = threading.Event()
     results = {}
@@ -753,6 +753,11 @@ def analyse(m, mp4, opts, clock, writer, log):
             with clock.stage("vlm.vocab", n={"frames": len(vlm_frames)}):
                 pngs = [cv2.imencode(".png", raster_rgb(img))[1].tobytes() for img in seeked]
                 return vlm.vocab(pngs)
+        if vocab_src == "ram":
+            with clock.stage("vocab.ram", n={"frames": len(seeked)}):
+                r = m.ram.tags(seeked)
+            got = vocab.rank(vocab.object_tags(r["per_frame"], m.vocab["words"]), skip=wave1)
+            return [w for w, _ in got], {"scores": got, "ram_s": r["s"], "rule": "RAM++ tags (object nouns of the 'pe' word list), ranked by vocab.rank"}
         assert vocab_src == "pe", f"unknown vocabulary source {vocab_src}"
         with torch.inference_mode(), clock.stage("vocab.pe", gpu=m.namer_enc.dev, n={"frames": len(seeked), "words": len(m.vocab["words"])}):
             per = vocab.pe_scores(m.namer_enc, seeked, m.vocab["text"], m.vocab["words"], m.vocab["scale"])

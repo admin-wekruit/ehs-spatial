@@ -6,15 +6,20 @@ word. Sources compared in r5b (scripts/r5b_vocab.py; modal_apps/r5b_vocab.py mea
   'pe'        PE-Core-L zero-shot (the naming cascade's encoder, already resident) over WORDS: LVIS + Objects365 names + the
               taxonomy's classes and aliases + WORKSHOP + RETAIL, on square tiles of each frame (Apache-2.0 weights)
   'yoloe-pf'  YOLOE-26L prompt-free (its built-in 4585-tag vocabulary; AGPL-3.0: internal profile only), offline
-  'ram'       RAM++ (Recognize Anything Plus, Apache-2.0) image tags, offline
+  'ram'       RAM++ (Recognize Anything Plus, Apache-2.0 code and weights) image tags on the frames, kept when they are object
+              nouns of the 'pe' word list; in the pipeline one RAM++ process in its own venv (/opt/ram, the package's pins) on GPU 1
   'qwen'      the round-4 Qwen scene vocabulary (vlm.vocab): opt-in comparison only
+r5b's comparison (runs/r5b-vocab-results/compare.md) chose 'ram' by the rule written before its results were read (selection-rule.md):
+the most held-out items typed right over the three videos; 'pe' found ME340's workshop words but missed Walmart's shoes and boxes.
 """
 import numpy as np
 
 from fast_report import cards
 
 FRAMES, N_WORDS, PER_CLASS, MIN_SCORE, TILE_TOP = 16, 40, 2, .5, 5
-DEFAULT = "pe"  # r5b: the comparison's pick (runs/r5b-vocab-results); 'qwen' only when options ask
+DEFAULT = "ram"  # r5b: the comparison's pick (runs/r5b-vocab-results/compare.md); 'qwen' only when options ask
+RAM_PY, RAM_HF = "/opt/ram/bin/python", "/v/models/hf-r5b"  # the RAM++ venv; its weights and BERT tokenizer (modal_apps/r5b_vocab.py cached them)
+RAM_REPO, RAM_CKPT = "xinyu1205/recognize-anything-plus-model", "ram_plus_swin_large_14m.pth"
 TEXT = "/v/layers/label-bank/r5b/pe-text-173c4bb37cb3.npz"  # modal_apps/r5b_vocab.py: the word list's PE-Core text (x13's templates)
 RULE = (f"PE-Core-L zero-shot over the word list on {FRAMES} evenly spaced frames x 29 square tiles (3 scales); a word's score is the sum over "
         f"frames of its best tile's softmax p (a tile's top {TILE_TOP}); kept: score >= {MIN_SCORE}, <= {PER_CLASS} words a canonical "
@@ -132,6 +137,77 @@ def load(path, dev):
             "file": str(path), "sha256": hashlib.sha256(raw).hexdigest()}
 
 
+def object_tags(per_frame, words):
+    """Tagger output [{tag: p}] -> only the tags that are object nouns (the 'pe' word list: the taxonomy, LVIS, Objects365,
+    WORKSHOP, RETAIL): a tagger's scene and activity tags ('store', 'job', 'fill', 'courtyard') are never SAM 3 words."""
+    objs = {cards.norm(clean(w)) for w in words}
+    return [{t: p for t, p in d.items() if cards.norm(clean(t)) in objs} for d in per_frame]
+
+
+def ram_worker():
+    """The RAM++ process (its own venv, RAM_PY): boot loads RAM++ swin-L on its GPU (weights and tokenizer from RAM_HF, offline) and
+    tags a noise frame; then each {frames: [(h, w, 3) uint8 BGR]} -> {per_frame: [{tag: sigmoid p}] (the tags over RAM++'s own
+    per-class thresholds), s}. modal_apps/r5b_vocab.ram measured the same code off the pipeline."""
+    from fast_report import sam3d
+    st = {}
+
+    def boot():
+        import time as _t
+        import torch
+        from huggingface_hub import hf_hub_download
+        from ram import get_transform
+        from ram.models import ram_plus
+        t = _t.perf_counter()
+        model = ram_plus(pretrained=hf_hub_download(RAM_REPO, RAM_CKPT), image_size=384, vit="swin_l").eval().to("cuda")
+        got = []
+        model.fc.register_forward_hook(lambda m, i, o: got.append(o.detach()))
+        st.update(model=model, got=got, tf=get_transform(image_size=384), torch=torch, thr=model.class_threshold.cpu().numpy(),
+                  drop=set(np.asarray(getattr(model, "delete_tag_index", []), int).tolist()), tags=[str(x) for x in model.tag_list])
+        handle({"frames": [np.zeros((720, 1280, 3), np.uint8)] * 2}, None)
+        return {"load_s": round(_t.perf_counter() - t, 2), "tags": len(st["tags"]), "gib": round(torch.cuda.max_memory_reserved() / 2 ** 30, 2)}
+
+    def handle(msg, _):
+        import time as _t
+        from PIL import Image
+        torch, t = st["torch"], _t.perf_counter()
+        x = torch.stack([st["tf"](Image.fromarray(np.ascontiguousarray(f[..., ::-1]))) for f in msg["frames"]]).to("cuda")
+        st["got"].clear()
+        with torch.inference_mode():
+            st["model"].generate_tag(x)
+        p = torch.sigmoid(st["got"][-1].squeeze(-1).float()).cpu().numpy()
+        torch.cuda.empty_cache()  # GPU 1's other tenants (vLLM, SAM 3, the splat) get the activations back
+        per = [{st["tags"][j]: round(float(q[j]), 4) for j in np.flatnonzero(q > st["thr"]) if j not in st["drop"]} for q in p]
+        return {"per_frame": per, "s": round(_t.perf_counter() - t, 3)}
+    sam3d.serve(handle, boot)
+
+
+class Ram:
+    """The pipeline's RAM++ process on one GPU (sam3d.Pool, one worker); tags(frames) -> {per_frame, s}."""
+
+    def __init__(self, gpu):
+        from fast_report import sam3d
+        env = sam3d.worker_env(RAM_PY, CUDA_VISIBLE_DEVICES=gpu, HF_HOME=RAM_HF, HF_HUB_OFFLINE=1, TRANSFORMERS_OFFLINE=1)
+        self.pool = sam3d.Pool([RAM_PY, "-c", "from fast_report.vocab import ram_worker; ram_worker()"], 1, env, "ram")
+
+    def ready(self, timeout=None):
+        return self.pool.ready(timeout)[0]
+
+    def tags(self, frames, timeout=60):
+        return self.pool.submit({"frames": list(frames)}).result(timeout)
+
+    def close(self):
+        self.pool.close()
+
+
+def with_ram(image):
+    """/opt/ram: recognize-anything's pins (the versions modal_apps/r5b_vocab.ram_image ran), uv's Python 3.10."""
+    py = RAM_PY
+    return image.run_commands("python -m pip install uv==0.8.22", "uv venv --python 3.10 /opt/ram",
+                              f"uv pip install --python {py} torch==2.0.1 torchvision==0.15.2 timm==0.4.12 transformers==4.25.1 fairscale==0.4.4 "
+                              "pillow 'numpy<2' huggingface_hub==0.16.4 scipy opencv-python-headless",
+                              f"uv pip install --python {py} --no-deps git+https://github.com/xinyu1205/recognize-anything.git")
+
+
 def pick_frames(n_total, k=FRAMES):
     return sorted({int((i + .5) * n_total / k) for i in range(k)})
 
@@ -192,6 +268,7 @@ def self_check():
     assert len(t) == 29 and all(x + s <= 1280 and y + s <= 720 for x, y, s in t) and t[0] == (0, 0, 720) and t[2][0] == 560, t
     assert len(tiles(480, 640)) == 3 + 3 * 2 + 4 * 3, "a 4:3 frame: 480, 240 and 160 px squares"
     assert pick_frames(900, 4) == [112, 337, 562, 787]
+    assert object_tags([{"store": .9, "shoe": .8, "Job": .7, "shopping cart": .6}], ["shoe", "shopping cart", "box"]) == [{"shoe": .8, "shopping cart": .6}]
     print("vocab self-check ok: STOP words, candidate list order, rank (evidence, per-class cap), taxonomy + bank labels, tiles")
 
 

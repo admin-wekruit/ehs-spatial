@@ -34,7 +34,7 @@ DINO, PE_CORE, X13_HF = "facebook/dinov2-large", "hf-hub:timm/PE-Core-L-14-336",
 YOLO_PT = "/v/r4/yolo/yoloe-26l-seg-taxonomy.pt"  # modal_apps/r4_naming.py bakes the taxonomy in (AGPL-3.0, accepted for now)
 # r5b: the frozen snapshot every run reads (never written by a run; scripts/r5b_vocab.py bank builds the next one offline). Its
 # 'classes' / 'text' are the zero-shot's (every taxonomy class, x13's prompt ensemble); round 4's growing file was dinov2-l-v1.npz
-BANK = "/v/layers/label-bank/frozen/r5b-A.npz"
+BANK = "/v/layers/label-bank/frozen/r5b-B.npz"  # r5b-A (sha256 003c943f..., 2331 rows) + the Lightning factory clip's 62 VLM rows (cc5745c4...)
 CALIBRATION = Path(__file__).with_name("naming_calibration.json")
 K_VIEWS, PE_VIEWS, CROP_PAD, BATCH = 5, 3, .1, 64
 DINO_SIDE, PE_SIDE, DINO_MEAN, DINO_STD = 224, 336, (.485, .456, .406), (.229, .224, .225)
@@ -66,7 +66,7 @@ class Encoders:
         threads = cv2.getNumThreads()
         from ultralytics import YOLOE
         cv2.setNumThreads(threads)  # ultralytics sets 0 on import: the core's own cv2 work keeps its threads
-        self.dev, self.torch = dev, torch
+        self.dev, self.torch, self.lock = dev, torch, threading.Lock()  # r5b: YOLOE's predictor keeps state: one call at a time
         self.dino = AutoModel.from_pretrained(DINO, cache_dir=X13_HF, torch_dtype=torch.bfloat16).to(dev).eval()
         pe, _, pre = open_clip.create_model_and_transforms(PE_CORE, cache_dir=X13_HF)
         self.pe = pe.to(dev).eval().to(torch.bfloat16)
@@ -93,8 +93,10 @@ class Encoders:
         """[BGR uint8 frame] -> [(n,6) array: x0, y0, x1, y1 (source px), class index, score]."""
         out = []
         for s in range(0, len(bgr_frames), 16):
-            for r in self.yolo.predict(bgr_frames[s:s + 16], imgsz=YOLO_IMGSZ, conf=YOLO_CONF, half=True, verbose=False, max_det=300,
-                                       device=f"cuda:{self.dev.index}"):
+            with self.lock:  # an on-demand click (FastReport.click) may name beside the analysis' naming signals
+                res = self.yolo.predict(bgr_frames[s:s + 16], imgsz=YOLO_IMGSZ, conf=YOLO_CONF, half=True, verbose=False, max_det=300,
+                                        device=f"cuda:{self.dev.index}")
+            for r in res:
                 b = r.boxes
                 out.append(np.concatenate([b.xyxy.cpu().numpy(), b.cls.cpu().numpy()[:, None], b.conf.cpu().numpy()[:, None]], 1)
                            if len(b) else np.zeros((0, 6), np.float32))

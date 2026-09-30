@@ -341,11 +341,12 @@ def bench(a):
             print("prelude", site, voc, json.dumps({k: v["first"]["written_s"] for k, v in layer_times(rec).items()}), flush=True)
         for site in sites:
             clicked = False
-            for i, kind in enumerate(plan):
+            plan_s = plan if site == sites[0] or not a.plan_rest else a.plan_rest.split(",")  # r5b: the first video's first call after boot only
+            for i, kind in enumerate(plan_s):
                 kind, _, voc = kind.partition("@")
                 mp4, span, offset = window(site, kind, a.shift_s, out)
                 sha = hashlib.sha256(mp4).hexdigest()
-                last = site == sites[-1] and i == len(plan) - 1
+                last = site == sites[-1] and i == len(plan_s) - 1
                 report = f"mvp-{site}-{sha[:8]}-{int(time.time())}"
                 fl.put_blob(mirror_root, mp4)  # the client's own MP4 is never sent back
                 options = {**vocab_options(voc or a.vocab, site, words_file), "discover": a.discover, "client_has": [sha],
@@ -428,7 +429,8 @@ def clicks(fr, mirror_root, report, todo):
             continue
         ident = r.get("identity") or {}
         out.append({**c, "status": r.get("status"), "entity": r.get("entity"), "name": ident.get("name"), "decided_by": ident.get("decided_by"),
-                    "naming": ident.get("naming"), "kind": r.get("kind"), "timing": r.get("timing"), "round_trip_s": round(time.time() - t, 3)})
+                    "naming": ident.get("naming"), "vlm_requests": ident.get("vlm_requests"), "kind": r.get("kind"), "surface": r.get("surface"),
+                    "timing": r.get("timing"), "round_trip_s": round(time.time() - t, 3)})
     return out
 
 
@@ -519,6 +521,7 @@ if __name__ == "__main__":
     p.add_argument("--out", type=Path)
     p.add_argument("--sites", default="me340,samsclub-a2,walmart")
     p.add_argument("--plan", default="first,warm,warm,shifted", help="calls per video: first | warm | shifted | warm-off (r4: warm, --coverage off)")
+    p.add_argument("--plan-rest", default="", help="r5b: the plan of every video after the first (e.g. 'warm': one first call after boot in all)")
     p.add_argument("--shift-s", type=float, default=5.)
     p.add_argument("--click-latency", type=Path, help="C's headless click check result {p50_ms, p95_ms, n}")
     p.add_argument("--background-s", type=int, default=0)

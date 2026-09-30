@@ -64,7 +64,8 @@ def build_image():
                          "open3d==0.19.0", "shapely", "pydantic", "opencv-python-headless", "sentencepiece",
                          f"git+https://github.com/ByteDance-Seed/Depth-Anything-3.git@{DA3_CODE}")
             .run_commands("python -m venv /opt/vllm && PIP_EXTRA_INDEX_URL= /opt/vllm/bin/pip install -q vllm==0.11.0 transformers==4.57.1 pillow"))
-    out = splat.with_envs(sam3d.with_envs(base)).env({"HF_HUB_OFFLINE": "1", "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
+    from fast_report import vocab
+    out = vocab.with_ram(splat.with_envs(sam3d.with_envs(base))).env({"HF_HUB_OFFLINE": "1", "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
     # r4/naming: PE-Core-L (open_clip, x13's version) and YOLOE (Ultralytics, AGPL-3.0: accepted by the user for now); ultralytics
     # without its opencv-python dependency (the image has opencv-python-headless: two cv2 packages would overwrite each other)
     out = (out.pip_install("open_clip_torch==3.3.0", "matplotlib", "pyyaml", "requests", "psutil", "polars", "ultralytics-thop")
@@ -142,6 +143,8 @@ class FastReport:
         b["vllm_mps"] = VLLM_MPS
         lap("vllm_spawned_s")
         self.sam3d = sam3d.Workers(gpu=0, n=2)  # B: two SAM 3D processes under MPS on GPU 0 (~60 s load + 16 s warm-up, beside vLLM's load)
+        from fast_report import vocab
+        self.ram = vocab.Ram(1)  # r5b: RAM++ (the default wave-2 word source) in its own venv on GPU 1, loading beside the rest
         self.gate_pool = sam3d.GatePool(GATE_PROCS)  # the gate's prepare/assess processes (niced)
         self.proc_pool = ProcessPoolExecutor(PROCS, mp_context=multiprocessing.get_context("spawn"))
         self.proc_pool.map(core.warm_worker, range(PROCS))
@@ -170,6 +173,7 @@ class FastReport:
         lap("naming_encoders_gpu1_s")
         self.splat = splat.Worker(gpu=1, torch_home="/ckpt/torch")  # after vLLM sized its cache from GPU 1's free memory (B)
         b["sam3d"] = self.sam3d.ready()  # before this process warms up on GPU 0: SAM 3D's warm-up holds ~20 GB a process until it is done
+        b["ram"] = self.ram.ready(900)  # r5b
         lap("sam3d_ready_s")
         self.sams = {self.dev_geo: segment.Sam3(sam0, proc, self.dev_geo), self.dev_seg: segment.Sam3(sam.to(self.dev_seg), proc, self.dev_seg)}
         from fast_report import ondemand  # mvp3 D4 (b): SAM 3's tracker for on-demand clicks, GPU 1 (+0.9 GB), warmed below
@@ -255,7 +259,7 @@ class FastReport:
 
     @modal.exit()
     def stop(self):
-        for name in ("sam3d", "gate_pool", "splat"):
+        for name in ("sam3d", "gate_pool", "splat", "ram"):
             if getattr(self, name, None) is not None:
                 getattr(self, name).close()
         if getattr(self, "vllm", None) is not None:
@@ -276,9 +280,23 @@ class FastReport:
         except (LookupError, FileNotFoundError):
             VOLUMES["/v/layers"].reload()  # a report another container wrote
             st = ondemand.state("/v/layers", report_id)
-        out = ondemand.card(st, self.point, int(i), float(x), float(y), style=style)
+        # r5b: named through the cascade (the VLM last, one question per look-alike); style 'dim' / 'neighbours': round 3's Qwen A/B knobs
+        namer = self._namer(st) if style == "outline" else ondemand.name
+        out = ondemand.card(st, self.point, int(i), float(x), float(y), namer=namer, style=style)
         out["timing"]["container_s"] = round(time.perf_counter() - t, 3)
         return out
+
+    def _namer(self, st):
+        """The report's on-demand cascade namer (its frozen bank, its own VLM-named cards, its look-alike questions), one report at a
+        time like ondemand.state (a newer cards version starts a new one)."""
+        from fast_report import cascade, ondemand
+        key = (st["report"], st["cards_seq"])
+        if key not in getattr(self, "namers", {}):
+            fam = json.loads(cascade.CALIBRATION.read_text()).get("site_family", {}).get(st["site"], "unknown")
+            bank = cascade.Bank(st.get("bank_path") or cascade.BANK, exclude_site=st.get("bank_exclude"))
+            self.namers = {key: ondemand.CascadeNamer(self.namer_enc, bank, fam, st["video_sha"],
+                                                      ondemand.report_rows(st["root"], st["report"], st["vlm_named"]))}
+        return self.namers[key]
 
     @staticmethod
     def _try(fn, *a):

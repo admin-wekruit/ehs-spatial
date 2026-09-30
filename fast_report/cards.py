@@ -18,7 +18,9 @@ every number a card shows carries +-u and its scale (contract()).
 
     python -m fast_report.cards --self-check
 """
+import json
 import sys
+from pathlib import Path
 import time
 
 import numpy as np
@@ -316,7 +318,34 @@ TYPE_LABEL = {"storage": "shelf / rack / storage", "goods": "container / box / g
               "misc": "other item", "hazard": "spill"}
 TYPE_ONLY = " (type only)"
 ZS_FAMILY_MIN = .5  # a priori: zero-shot alone gives a family only when its summed family probability is at least this
+ZS_STRONG = .9  # r5b, a priori: a zero-shot family this sure outranks a lone SAM 3 word (ME340: locker doors and a fan under 'metal part')
 SHAPES = ("long thin object", "flat panel", "box-shaped object", "compact object", "object (shape not measured)")
+# r5b: the family vote's single-vote routes ('zero-shot strong', 'sam3 word alone', 'zero-shot alone') are shown only for the
+# families where they were right often enough on the dev labels (scripts/r5b_vocab.py fit: runs/mvp2-identity-study-001's items,
+# not the held-out ones); elsewhere the card is 'unidentified (<shape>)'. No file: every route is allowed (round 4's rule).
+FAMILY_FIT = Path(__file__).with_name("family_calibration.json")
+SINGLE_ROUTES = ("zero-shot strong", "sam3 word alone", "zero-shot alone")
+
+
+def family_fit(path=FAMILY_FIT):
+    """{route: {family: allowed}, 'default': {route: allowed}} from the fitted file (cached), or {} (every route allowed)."""
+    key = str(path)
+    if key not in _FIT:
+        _FIT[key] = json.loads(Path(path).read_text()) if Path(path).exists() else {}
+    return _FIT[key]
+
+
+_FIT = {}
+
+
+def allowed(fit, route, family):
+    r = (fit.get("routes") or {}).get(route) or {}
+    return bool(r[family]["ok"]) if family in r else bool((fit.get("default") or {}).get(route, True))
+
+
+def unidentified(shape):
+    """The name of a card no family vote was sure of: 'unidentified (<shape>)' (r5b; round 4 showed '<shape> (type only)')."""
+    return f"unidentified ({'shape not measured' if shape == SHAPES[4] else shape})"
 
 
 def family_of(name):
@@ -326,12 +355,14 @@ def family_of(name):
     return FAMILY.get(canonical(name))
 
 
-def family_vote(sam3=None, yolo=None, zero_shot_family=None, bank=None, vlm_named=False):
+def family_vote(sam3=None, yolo=None, zero_shot_family=None, bank=None, vlm_named=False, fit=None):
     """The cheap votes at family level -> (family, source) or (None, None). sam3 / yolo / bank: a class or a name; zero_shot_family:
-    (family, summed p). The SAM 3 word's family with any other vote agreeing; else two of the other three agreeing; else the
-    SAM 3 word's family alone (its detector saw that kind of thing); else zero-shot alone at p >= ZS_FAMILY_MIN. 'hazard'
-    (spill) is never a type without a VLM (a spill is an EHS claim)."""
+    (family, summed p). The SAM 3 word's family with any other vote agreeing; else two of the other three agreeing; then the
+    single-vote routes, each only for the families family_fit() allows (r5b): zero-shot at p >= ZS_STRONG ('zero-shot strong'),
+    the SAM 3 word's family alone, zero-shot at ZS_FAMILY_MIN <= p < ZS_STRONG. 'hazard' (spill) is never a type without a VLM
+    (a spill is an EHS claim)."""
     ok = lambda f: f is not None and (f != "hazard" or vlm_named)  # noqa: E731
+    fit = family_fit() if fit is None else fit
     zf, zp = (zero_shot_family or (None, 0.))
     f = {"sam3": family_of(sam3), "yolo": family_of(yolo), "zero-shot": zf, "bank": family_of(bank)}
     f = {k: v if ok(v) else None for k, v in f.items()}
@@ -342,10 +373,10 @@ def family_vote(sam3=None, yolo=None, zero_shot_family=None, bank=None, vlm_name
     two = next((x for x in other if other.count(x) >= 2), None)
     if two:
         return two, " + ".join(k for k in ("yolo", "zero-shot", "bank") if f[k] == two) + " (family)"
-    if f["sam3"]:
-        return f["sam3"], "sam3 word alone (family)"
-    if zf and ok(zf) and zp >= ZS_FAMILY_MIN:
-        return zf, "zero-shot alone (family)"
+    for route, fam, on in (("zero-shot strong", f["zero-shot"], zp >= ZS_STRONG), ("sam3 word alone", f["sam3"], True),
+                           ("zero-shot alone", f["zero-shot"], ZS_FAMILY_MIN <= zp < ZS_STRONG)):  # two bands: each route its own items
+        if fam and on and allowed(fit, route, fam):
+            return fam, f"{route} (family)"
     return None, None
 
 
@@ -1745,8 +1776,8 @@ def apply_name(card):
     cls = canonical(shown)
     if shown == UNIDENTIFIED or cls is None:  # r4/naming: every object card carries a type; an unnamed one shows it
         ident["type"] = type_of(ident, phys, cls)
-        if shown == UNIDENTIFIED:
-            shown = ident["name"] = ident["type"]["label"] + TYPE_ONLY
+        if shown == UNIDENTIFIED:  # r5b: a family shows as '<family label> (type only)', no family as 'unidentified (<shape>)'
+            shown = ident["name"] = ident["type"]["label"] + TYPE_ONLY if ident["type"]["family"] else unidentified(ident["type"]["label"])
             cls = None
     else:
         ident["type"] = type_of(ident, phys, cls)
@@ -2741,11 +2772,21 @@ def self_check():
                        {0: dict(shot, frame=fr, cam_floor=to_floor(cams[:, :3, 3], fr), u_pose_m=.04)}, [])
     assert pc3[0]["identity"]["name"].startswith("person? (small") and "lowest point" in pc3[0]["identity"]["note"], pc3[0]["identity"]
     # r4/naming: types. The family votes; the shape fallback; an unnamed card shows its type, idempotently, with no class prior
-    assert family_vote("cardboard box", None, ("storage", .9), None) == ("goods", "sam3 word alone (family)")
+    saved_fit = dict(_FIT)
+    _FIT[str(FAMILY_FIT)] = {}  # the rules themselves (no fitted file): every single-vote route allowed
+    assert family_vote("cardboard box", None, ("storage", .8), None) == ("goods", "sam3 word alone (family)")
+    assert family_vote("cardboard box", None, ("storage", .9), None) == ("storage", "zero-shot strong (family)"), "r5b: a sure zero-shot first"
     assert family_vote("carton", "crate", ("storage", .9), None) == ("goods", "sam3 word + yolo (family)")
     assert family_vote(None, "lathe", ("machine", .3), "~motor") == ("machine", "yolo + zero-shot (family)")
     assert family_vote(None, None, ("machine", .4), None) == (None, None) and family_vote(None, None, ("machine", .6), None)[0] == "machine"
     assert family_vote("puddle", None, ("hazard", .9), None) == (None, None), "a spill is never a type without a VLM"
+    # r5b: a single-vote route only for the families the dev labels allow; the route's default for the others
+    gate = {"routes": {"sam3 word alone": {"material": {"ok": False}, "goods": {"ok": True}}}, "default": {"sam3 word alone": False}}
+    assert family_vote("metal block", None, ("machine", .3), None, fit=gate) == (None, None)
+    assert family_vote("carton", None, ("machine", .3), None, fit=gate) == ("goods", "sam3 word alone (family)")
+    assert family_vote("lathe", None, ("tool", .3), None, fit=gate) == (None, None), "no fit for the family: the route's default"
+    assert family_vote("metal block", None, ("material", .3), None, fit=gate)[0] == "material", "two votes are never gated"
+    assert unidentified("compact object") == "unidentified (compact object)" and unidentified(SHAPES[4]) == "unidentified (shape not measured)"
     v = lambda x: {"value": x, "u": .01}  # noqa: E731
     assert shape_type({"height": v(.1), "width": v(2.), "depth": v(.2)}) == "long thin object"
     assert shape_type({"height": v(1.), "width": v(1.2), "depth": v(.05)}) == "flat panel"
@@ -2761,7 +2802,9 @@ def self_check():
     before = _json.dumps(card, sort_keys=True)
     assert _json.dumps(apply_name(card), sort_keys=True) == before, "apply_name is idempotent with a type"
     card["identity"]["naming"] = {"route": "unidentified"}
-    assert apply_name(card)["identity"]["name"] == "box-shaped object (type only)" and card["identity"]["type"]["family"] is None
+    assert apply_name(card)["identity"]["name"] == "unidentified (box-shaped object)" and card["identity"]["type"]["family"] is None
+    _FIT.clear()
+    _FIT.update(saved_fit)
     named = {"identity": {"proposed": "drill press", "decided_by": "vlm options", "naming": {"route": "vlm"}}, "physical": {}}
     assert apply_name(named)["identity"]["type"] == {"family": "machine", "label": "machine", "source": "the name"}
     print(f"cards self-check ok: robust extents within 5 % with flying pixels, fragment merge + cannot-link, depth not observed from one side, "
