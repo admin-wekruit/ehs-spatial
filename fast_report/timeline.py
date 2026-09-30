@@ -44,8 +44,8 @@ SIZE_RATIO = 2.  # a moved object keeps its size within this factor (robust box 
 LOOKBACK = 6     # windows an 'appeared' test looks back (the ones that could have seen the place)
 
 
-def sigma(z):
-    return np.sqrt(POSE_M ** 2 + (DEPTH_REL * np.asarray(z, float)) ** 2)
+def sigma(z, pose_m=POSE_M):
+    return np.sqrt(pose_m ** 2 + (DEPTH_REL * np.asarray(z, float)) ** 2)
 
 
 def iou3(a, b):
@@ -77,8 +77,9 @@ def near_min(w):
     return w["_dmin"], w["_person"]
 
 
-def place(points, w):
-    """How window w sees the place `points` occupied. -> {state, views: [per judged keyframe], best_key}."""
+def place(points, w, pose_m=POSE_M):
+    """How window w sees the place `points` occupied. -> {state, views: [per judged keyframe], best_key}. pose_m: the pose
+    error between the points and w's cameras (r5b: another visit's registration, larger than one video's 4 cm)."""
     h, wd = w["depth"].shape[1:]
     dmin, grown = near_min(w)
     views, seen = [], 0
@@ -91,7 +92,7 @@ def place(points, w):
         ui, vi, zz = u[inside].astype(int), v[inside].astype(int), z[inside]
         d, person = w["depth"][j][vi, ui], grown[j][vi, ui]
         valid = (d > 0) & ~person & (zz <= MAX_RANGE)
-        m = 2 * sigma(zz)
+        m = 2 * sigma(zz, pose_m)
         free, front = valid & (dmin[j][vi, ui] > zz * (1 + REL_MARGIN) + m), valid & (d < zz - m)
         pix = len(np.unique(vi[valid] * wd + ui[valid]))
         views.append({"key": int(key), "judged": int(valid.sum()) if pix >= MIN_PIX else 0, "free": int(free.sum()), "front": int(front.sum() + person.sum()),

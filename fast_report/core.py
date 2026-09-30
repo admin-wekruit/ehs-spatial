@@ -749,6 +749,8 @@ def analyse(m, mp4, opts, clock, writer, log):
         clock.mark("vocab_known")
         if use_cache and words:
             vlm.remember_site(site_path, words, video_sha)
+        if not opts.get("events", True):  # r5b: no event captions (their prompt asks about PPE and safety: the user's rule, none anywhere)
+            return []
         with clock.stage("vlm.events.frames"):
             windows = []
             for t0, t1 in video_events.bounds(len(frames) / fps, 12.):
@@ -1317,8 +1319,9 @@ def analyse(m, mp4, opts, clock, writer, log):
             naming["in_video"] += rows
         naming["bank"].add([r[0] for r in rows], [r[1] for r in rows])
         try:
-            naming["bank"].save()
-            saved = True
+            if opts.get("bank_save", True):  # r5b: False = the shared bank on the Volume stays as it was (a bench leaves no state behind)
+                naming["bank"].save()
+            saved = opts.get("bank_save", True)
         except Exception as error:  # noqa: BLE001  the names stand; the bank misses this pass's rows
             saved = repr(error)[:300]
         idents = {cid: cascade.identity(cmap[cid]["identity"], r, decided.get(cid)) for cid, r in recs.items()}
@@ -2199,6 +2202,18 @@ def analyse(m, mp4, opts, clock, writer, log):
                    objects=len(objects), cascade=casc, events_windows=len(ev), vllm_engine_stats=vlm.throughput(), vlm_questions=vlm.log_stats(t_call),
                    cut_chunks={"submitted_s": chunk_at, "done_s": [chunk_done.get(i) for i in range(len(futures))],
                                "work_s": [round(f.result()["s"], 3) for f in futures]})
+    if opts.get("visit_of"):  # r5b: this video as a revisit of the site map's report (fast_report.visits): the `visits` layer, on this clock
+        from fast_report import visits
+        try:
+            writer.drain()  # this report's own layers are in the store before the comparison reads them
+            with clock.stage("visits", gpu=dev_geo):
+                m.da3.restore()  # offloaded for SAM 3D after the last shot; run() restores it again at the end (off the clock)
+                summary["visits"] = visits.run("/v/layers", opts["visit_of"], writer.report_id, visits.Gpu(m.da3, m.namer_enc), writer, clock,
+                                               site=opts.get("visit_site"))[2]
+            clock.mark("visits_put")
+        except Exception:  # noqa: BLE001  the report stands without its visits layer; the reason is kept
+            import traceback
+            summary["visits"] = {"error": traceback.format_exc()[-3000:]}
     return summary
 
 

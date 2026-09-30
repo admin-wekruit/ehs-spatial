@@ -87,6 +87,7 @@ class Writer:
         self.volume, self.report_id, self.clock, self.root, self.report = volume, report_id, clock, Path(root), report
         self.sent = set(client_has)  # blobs the client already holds (its own MP4) are never sent back
         self.seq, self.versions, self.rows, self.pending, self.closing, self.busy = 0, {}, [], [], False, False
+        self.queued = self.handled = 0  # r5b: put() calls so far, and those the writer thread has written (drain)
         self.lock, self.ready = threading.Lock(), threading.Condition()
         self.inbox, self.outbox = queue.Queue(), queue.Queue()
         threading.Thread(target=self._write, name="layers.write", daemon=True).start()
@@ -99,6 +100,8 @@ class Writer:
     def put(self, layer, data, blobs=None, status="estimated", labels=()):
         """blobs: {role: (bytes, meta)}; meta (mediaType, format, byteLayout, ...) is copied into the patch. Returns nothing:
         the seq is given when the patch is written, so seqs follow write order and a viewer polling after=<last seq> misses none."""
+        with self.ready:
+            self.queued += 1
         self.inbox.put((layer, data, blobs or {}, status, list(labels), self.now()))
 
     def send(self, event):
@@ -109,6 +112,11 @@ class Writer:
         """What run() yields, in order, until close(): patch, written, error."""
         while (event := self.outbox.get()) is not None:
             yield event
+
+    def drain(self, timeout=120.):
+        """r5b: wait until every put() so far is written to the store (its patch file exists), not yet committed."""
+        with self.ready:
+            return self.ready.wait_for(lambda: self.handled >= self.queued, timeout)
 
     def close(self):
         """After the last put(): the last commit, then events() ends."""
@@ -145,7 +153,8 @@ class Writer:
             with self.ready:
                 self.pending += [row] if row else []
                 self.busy = not self.inbox.empty()  # more waiting: they join this commit
-                self.ready.notify()
+                self.handled += 1
+                self.ready.notify_all()
         with self.ready:
             self.closing = True
             self.ready.notify()

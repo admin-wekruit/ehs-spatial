@@ -290,6 +290,34 @@ class FastReport:
         return time.time()
 
     @modal.method()
+    def visit(self, a_report: str, b_report: str, site: str = ""):
+        """r5b: compare two finished reports (b a revisit of the site map a): the `visits` layer on b, its own clock (t0 = this
+        call; the comparison only, the analyses are done). Yields the writer's events, then {'type': 'run', ...}."""
+        import torch
+        from fast_report import visits
+        with self.run_lock:
+            if not (Path("/v/layers/reports") / a_report).exists() or not (Path("/v/layers/reports") / b_report).exists():
+                VOLUMES["/v/layers"].reload()  # reports another container wrote
+            clock = Clock()
+            vram = Vram([0, 1]).start()
+            price = usd_per_s(2, CPU, MEMORY_GIB)
+            writer = Writer(VOLUMES["/v/layers"], b_report, clock, root="/v/layers", report=lambda: clock.report(vram, price))
+            writer.seq = max([int(p.name[:6]) for p in (Path("/v/layers/reports") / b_report / "patches").glob("*.json")] or [0])  # after b's own
+            writer.versions["visits"] = sum(1 for _ in (Path("/v/layers/reports") / b_report / "patches").glob("*-visits.json"))
+            err, rec = None, None
+            try:
+                with clock.stage("visits", gpu=self.dev_geo):
+                    _, _, rec = visits.run("/v/layers", a_report, b_report, visits.Gpu(self.da3, self.namer_enc), writer, clock, site=site or None)
+            except Exception:  # noqa: BLE001
+                err = traceback.format_exc()[-3000:]
+            writer.close()
+            yield from writer.events()
+            vram.stop()
+            torch.cuda.empty_cache()
+            yield {"type": "run", "report": b_report, "run": {**clock.report(vram, price), "report": b_report, "visit_of": a_report, "error": err,
+                                                               "record": rec, "layers": writer.rows}}
+
+    @modal.method()
     def run(self, mp4: bytes, site: str, report_id: str, options: dict):
         """MP4 bytes in -> every writer event as it happens -> run.json last. One analysis at a time (clicks run beside it)."""
         with self.run_lock:
@@ -298,6 +326,8 @@ class FastReport:
     def _run(self, mp4, site, report_id, options):
         import torch
         from fast_report import core
+        if options.get("visit_of") and not (Path("/v/layers/reports") / options["visit_of"]).exists():
+            VOLUMES["/v/layers"].reload()  # r5b: a site map another container wrote (before the clock starts)
         clock = Clock()  # t0: the bytes are in the container
         vram = Vram([0, 1], source=options.get("vram_source", "auto")).start()  # whole-device memory, every process
         for d in (self.dev_geo, self.dev_seg):
@@ -396,7 +426,8 @@ MILESTONES = {  # name -> (layer, which version): the report's moments, each at 
     "judgements_v2": ("judgements", lambda d: bool(d.get("vlm_answers"))),
     "outlines_v2": ("outlines", lambda d: bool(d.get("densified"))), "pick_v2": ("pick", lambda d: "version_note" in d),
     "objects_v3": ("objects", lambda d: "densify" in d), "cards_v3": ("object_cards", lambda d: d.get("version") == 3),
-    "judgements_v3": ("judgements", lambda d: bool(d.get("vlm_answers")) and (d.get("version_of") or {}).get("object_cards") == 3)}
+    "judgements_v3": ("judgements", lambda d: bool(d.get("vlm_answers")) and (d.get("version_of") or {}).get("object_cards") == 3),
+    "visits": ("visits", lambda d: True)}
 
 
 def milestones(root, report, t0_unix):
@@ -530,13 +561,15 @@ def accuracy(plan: str, out: str, mirror_max_mb: float = 8.):
     boot = fr.boot_info.remote()
     boot.update(client_submitted_unix=submitted, submit_to_ready_s_two_clocks=round(boot["ready_unix"] - submitted, 1))
     (out / "boot.json").write_text(json.dumps(boot, indent=1, default=plain))
-    rows = []
+    rows, done = [], {}
     for i, c in enumerate(calls):
         mp4 = Path(c["mp4"]).read_bytes()
         digest = hashlib.sha256(mp4).hexdigest()
         report_id = f"acc-{c['site']}-{c['options'].get('label', c['options'].get('geometry', 'shot'))}-{digest[:8]}-{int(time.time())}"
         layers.put_blob(out, mp4)
         options = {"cache": False, "window_s": c["window_s"], "client_has": [digest], "display": False, **c["options"]}
+        if options.get("visit_of_site"):  # r5b: a revisit of an earlier call's report in this plan (its site name)
+            options["visit_of"] = done[options.pop("visit_of_site")]
         run = None
         for e in fr.run.remote_gen(mp4, c["site"], report_id, options):
             if e["type"] in ("patch", "written", "run"):
@@ -547,6 +580,7 @@ def accuracy(plan: str, out: str, mirror_max_mb: float = 8.):
                 print("  writer error:", json.dumps(e)[:1500], flush=True)
         run.update(first_call=i == 0, call=c, milestones=milestones(out, report_id, run["t0_unix"]))
         layers._write_json(out / "reports" / report_id / "run.json", run)
+        done[c["site"]] = report_id
         rows.append({"report": report_id, "site": c["site"], "geometry": options.get("label", options.get("geometry", "shot")), "first_call": i == 0, "error": run["error"],
                      "milestones": {k: v["written_s"] for k, v in run["milestones"].items()}, "flags": run["flags"],
                      "gpu_peak_gib": [g["peak_gb"] for g in run["gpu_peak"]], "usd_estimate": run["usd_estimate"]})
@@ -554,6 +588,65 @@ def accuracy(plan: str, out: str, mirror_max_mb: float = 8.):
         if run["error"]:
             print(run["error"][-3000:], flush=True)
         (out / "summary.json").write_text(json.dumps({"boot": boot, "runs": rows}, indent=1, default=plain))
+
+
+@app.local_entrypoint()
+def visits(pairs: str, out: str, mirror_max_mb: float = 8.):
+    """r5b: finished reports compared as visits of one site through one container (FastReport.visit: the `visits` layer on each
+    b report, its own clock). pairs: a JSON list of [a_report, b_report, site]."""
+    from fast_report import layers
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=True)
+    fr = FastReport()
+    submitted = time.time()
+    boot = fr.boot_info.remote()
+    boot.update(client_submitted_unix=submitted, submit_to_ready_s_two_clocks=round(boot["ready_unix"] - submitted, 1))
+    (out / "boot-visits.json").write_text(json.dumps(boot, indent=1, default=plain))
+    rows = []
+    for a, b, site in json.loads(Path(pairs).read_text()):
+        run = None
+        for e in fr.visit.remote_gen(a, b, site):
+            if e["type"] in ("patch", "written", "run"):
+                layers.mirror(e, out, int(mirror_max_mb * 1e6) if mirror_max_mb else None) if e["type"] != "run" else None
+            if e["type"] == "run":
+                run = e["run"]
+        (out / "reports" / b).mkdir(parents=True, exist_ok=True)
+        layers._write_json(out / "reports" / b / f"visit-run-{a}.json", run)
+        rows.append({"a": a, "b": b, "error": run["error"], "record": run["record"],
+                     "written_s": [r.get("written_s") for r in run["layers"] if r["layer"] == "visits"], "gpu_peak_gib": [g["peak_gb"] for g in run["gpu_peak"]],
+                     "usd_estimate": run.get("usd_estimate")})
+        print(json.dumps(rows[-1], default=plain)[:1500], flush=True)
+    (out / "visits-summary.json").write_text(json.dumps({"boot": boot, "pairs": rows}, indent=1, default=plain))
+
+
+@app.function(image=image, gpu="A100-80GB", volumes=VOLUMES, timeout=1800, retries=0)
+def visit_dev(pairs: list) -> list:
+    """r5b development: DA3 and DINOv2 alone on one GPU (no report container), each pair compared without writing to the report;
+    the GPU calls come back recorded (visits.Replay replays them on the Mac)."""
+    import io
+    import torch
+    from depth_anything_3.api import DepthAnything3
+    from transformers import AutoModel
+    from fast_report import cascade, core, visits as fv
+    dev = torch.device("cuda:0")
+    da3 = core.Da3(DepthAnything3.from_pretrained(DA3_MODEL, revision=DA3_REV, cache_dir="/v/da3/huggingface/hub").eval().to(dev), dev)
+    enc = cascade.Encoders.__new__(cascade.Encoders)  # DINOv2-L only: the naming encoder's own dino_embed, without PE-Core and YOLOE
+    enc.dev, enc.torch = dev, torch
+    enc.dino = AutoModel.from_pretrained(cascade.DINO, cache_dir=cascade.X13_HF, torch_dtype=torch.bfloat16).to(dev).eval()
+    out = []
+    for a, b in pairs:
+        rec = fv.Recorder(fv.Gpu(da3, enc))
+        t = time.perf_counter()
+        try:
+            data, blobs, r = fv.run("/v/layers", a, b, rec)
+            err = None
+        except Exception:  # noqa: BLE001
+            data, blobs, r, err = None, {}, None, traceback.format_exc()[-3000:]
+        buf = io.BytesIO()
+        rec.save(buf)
+        out.append({"a": a, "b": b, "data": data, "blobs": {k: v[0] for k, v in blobs.items()}, "record": r, "error": err, "s": round(time.perf_counter() - t, 2),
+                    "gpu_calls": buf.getvalue(), "peak_gib": round(torch.cuda.max_memory_allocated(dev) / 2 ** 30, 2)})
+    return out
 
 
 # ---------- evaluation (local numpy) ----------
