@@ -109,6 +109,20 @@ export function visitView(visits: any, showA: boolean, showB: boolean): VisitVie
   return { showA, showB, status, ghosts };
 }
 
+/** r5b integrate: a person as a simple figure (a 1.25 m body cylinder and a head) standing on the floor under point p, its axis the
+ *  shot's floor normal (the cards layer's floor frame); without a floor frame, a small marker at p. */
+export function figure(id: string, frame: string, ff: any, p: number[], timeRange: number[]) {
+  const mat = { alphaMode: "BLEND", baseColorFactor: [1, 1, 1, .85], color: [1, .78, .15], lighting: true };
+  const part = (sub: string, primitive: any, position: number[], quaternion = [0, 0, 0, 1]) => ({ id: `${id}:${sub}`, kind: "primitive", primitive,
+    coordinateFrameId: frame, timeRange, transform: { ...identity(frame), position, quaternion }, placementState: "confirmed", material: mat });
+  if (!ff?.z) return [part("marker", { kind: "box", dimensions: [.3, .3, .3] }, p)];
+  const n = ff.z, h = (p[0] - ff.origin_m[0]) * n[0] + (p[1] - ff.origin_m[1]) * n[1] + (p[2] - ff.origin_m[2]) * n[2];
+  const foot = p.map((v, k) => v - h * n[k]), at = (z: number) => foot.map((v, k) => v + z * n[k]);
+  const ax = [-n[1], n[0], 0], s = Math.hypot(ax[0], ax[1]), ang = Math.acos(Math.max(-1, Math.min(1, n[2])));  // local +z -> n
+  const q = s < 1e-9 ? (n[2] > 0 ? [0, 0, 0, 1] : [1, 0, 0, 0]) : [...ax.map(v => v / s * Math.sin(ang / 2)), Math.cos(ang / 2)];
+  return [part("body", { kind: "cylinder", radius: .2, height: 1.25 }, at(.63), q), part("head", { kind: "box", dimensions: [.24, .24, .26] }, at(1.45), q)];
+}
+
 export function liveDocument(report: string, layers: Record<string, Patch>, cards?: any[] | null, onDemand: any[] = [], cardShots?: any[] | null,
   visit?: VisitView | null): SceneDocument {
   const doc: any = { schemaVersion: 2, target: "scene", captureId: report, coordinateFrames: [], cameras: [], observations: [], entities: [],
@@ -142,8 +156,9 @@ export function liveDocument(report: string, layers: Record<string, Patch>, card
       ].filter(Boolean) });
   }
   // r5b (models): one model per object card, in this order: its generated model (tier 1, or a look-alike's copy placed on it), the
-  // primitive its fixed-shape class fits (card.model.tier 'primitive'), its observed surface (tier 0: a node of the shot's one GLB), and
-  // only without any of those the see-through box. The 3D label is the card's shown name (or its type), never the objects layer's word.
+  // primitive its fixed-shape class fits (card.model.tier 'primitive'), its observed surface (tier 0: a node of the shot's one GLB).
+  // r5b integrate: never a see-through box (an object without any of those is not drawn until its surface lands); the name is the
+  // card's shown name, drawn only for the hovered or selected object.
   const accepted = new Map<string, any>((models?.data.models || []).map((m: any) => [m.object, m]));
   const byCard = new Map<string, any>((cards || []).filter((c: any) => c.kind === "object").map((c: any) => [c.id, c]));
   const seen = new Map<string, any>((surfaces?.data.surfaces || []).map((r: any) => [r.object, r]));
@@ -158,9 +173,6 @@ export function liveDocument(report: string, layers: Record<string, Patch>, card
     const ownDm = card?.model?.tier === "primitive" ? card.model : null;
     const dm = ownDm && srcCard?.model?.tier === "primitive" ? { ...srcCard.model, position: ownDm.position, quaternion: ownDm.quaternion } : ownDm;
     const sf = seen.get(o.id), sglb = sf?.blob && surfaces.blobs[sf.blob];
-    const box = { id: "box:" + o.id, kind: "primitive", primitive: { kind: "box", dimensions: [0, 1, 2].map(k => Math.max(max[k] - min[k], .01)) },
-      coordinateFrameId: frame, transform: { ...identity(frame), position: [0, 1, 2].map(k => (min[k] + max[k]) / 2) }, placementState: "confirmed",
-      material: { alphaMode: "BLEND", baseColorFactor: [1, 1, 1, .05], color: [.45, .9, .8] } };
     const half = dm && (dm.kind === "cylinder" ? [dm.radius_m, dm.radius_m, dm.length_m / 2] : dm.size_m.map((v: number) => v / 2));
     // a generated model's bounds are in the shot frame (sam3d.judge / r5_bench.gate_mesh); the viewer reads them about the pose (a
     // look-alike's copy: its group's model's, the same GLB about its own centre)
@@ -171,10 +183,11 @@ export function liveDocument(report: string, layers: Record<string, Patch>, card
       : dm ? { id: "prim:" + o.id, kind: "primitive", primitive: modelPrimitive(dm), coordinateFrameId: frame,
         transform: { ...identity(frame), position: dm.position, quaternion: dm.quaternion }, placementState: "confirmed",
         bounds: { min: half.map((v: number) => -Math.max(v, .0025)), max: half.map((v: number) => Math.max(v, .0025)) },
-        material: { alphaMode: "BLEND", baseColorFactor: [1, 1, 1, .1], selectedFactor: [1, 1, 1, 1], color: [1, .72, .3] } }
+        material: { alphaMode: "BLEND", baseColorFactor: [1, 1, 1, 1], selectedFactor: [1, 1, 1, 1], color: [.86, .83, .76], lighting: true } }
       : sglb ? { id: "surface:" + o.id, kind: "generated_mesh", sourceKind: "observed_surface_model", assetId: asset(sglb), node: o.id, coordinateFrameId: frame,
         transform: identity(frame), placementState: "confirmed", bounds: sf.min && { min: sf.min, max: sf.max } }
-      : box;
+      : null;
+    if (!rep) continue;
     const vs = visit?.showB ? visit.status.get(o.id) : undefined;  // r5b: this visit's object coloured by what changed since the site map
     if (vs && VISIT_COLOR[vs] && rep.material) rep.material = { ...rep.material, color: VISIT_COLOR[vs], baseColorFactor: [1, 1, 1, vs === "static" ? .1 : .35] };
     const idn = card?.identity || {};
@@ -211,9 +224,9 @@ export function liveDocument(report: string, layers: Record<string, Patch>, card
     const frame = frameOf(t.shot), rules = (people.data.rules || []).filter((r: any) => r.track === undefined || r.track === t.id);
     // The viewer's model class draws it and lets it be picked; its status stays observed+estimated (fast.kind).
     // r5b: where the person is at the video's time (PeopleLoop's positions per 5 fps keyframe), beside the whole track
-    const pts: any[] = t.points || [], at = pts.map((q: any, i: number) => ({ id: `person-at:${t.id}:${i}`, kind: "primitive",
-      primitive: { kind: "box", dimensions: [.4, .4, .4] }, coordinateFrameId: frame, timeRange: [q.t, Math.min(pts[i + 1]?.t ?? q.t + .2, q.t + .4)],
-      transform: { ...identity(frame), position: q.xyz }, placementState: "confirmed", material: { alphaMode: "BLEND", baseColorFactor: [1, 1, 1, .6], color: [1, .8, .1] } }));
+    // r5b integrate: a simple standing figure (body and head) on the floor under the person's point, upright along the floor normal
+    const ff = shotFrames.get(t.shot), pts: any[] = t.points || [], at = pts.flatMap((q: any, i: number) => figure(`person-at:${t.id}:${i}`, frame, ff, q.xyz,
+      [q.t, Math.min(pts[i + 1]?.t ?? q.t + .2, q.t + .4)]));
     doc.entities.push({ id: "person:" + t.id, label: "person " + t.id, associationState: "association_pending", visible: true, observationRefs: [],
       activeModelRepresentationId: "track:" + t.id, fast: { kind: "person", ...t, points: undefined, rules },
       representations: [{ id: "track:" + t.id, kind: "generated_mesh", sourceKind: "people_track", assetId: asset(ref), coordinateFrameId: frame,

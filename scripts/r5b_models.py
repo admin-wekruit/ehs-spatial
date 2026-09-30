@@ -458,18 +458,20 @@ def gt_rows(dump_run, inputs, parts_of, recorded_k=1.):
             Q = Q[fc.main_cluster(Q, fc.EPS_MIN)]
             if len(Q) < 200:
                 continue
-            g = planar_parts(Q, np.zeros(len(Q), int), [], np.array([np.median(sh["cams"], 0)]))
+            g = planar_parts(Q, np.zeros(len(Q), int), [], np.array([np.median(sh["cams"], 0)]), gate=False)  # GT: every part
             gparts = [q for q in (g.get("parts") or []) if "value" in q["tilt_deg"]]
             R3 = np.eye(3)
             R3[:2, :2] = sh["R"]
             ours = []
             for i, p in enumerate(sp["parts"]):
-                t = cal(p["tilt_deg"], recorded_k=recorded_k)
+                t, gated = cal(p["tilt_deg"], recorded_k=recorded_k), False
+                if t is None and "value_if_measurable" in (p["tilt_deg"] or {}):  # r5b integrate: shown 'not measurable' (too few view sets
+                    t, gated = {"value": p["tilt_deg"]["value_if_measurable"], "u": p["tilt_deg"].get("u_if_measurable") or 0.}, True  # or u too wide)
                 if t is None:
                     continue
                 n = R3 @ np.asarray(p["normal"])
                 ours.append({"i": i, "t": t, "n": n, "c": np.r_[sh["R"] @ (sh["s"] * np.asarray(p["centre_m"][:2])) + sh["t"], sh["s"] * p["centre_m"][2]],
-                             "sub": t.get("n_subsets") or 0, "share": p.get("share"), "area": p.get("area_m2")})
+                             "sub": t.get("n_subsets") or 0, "share": p.get("share"), "area": p.get("area_m2"), "gated": gated})
             if not ours and not gparts:
                 continue
             size = max([max(q["sides_m"]) for q in g.get("parts") or []] + [.3])
@@ -478,10 +480,10 @@ def gt_rows(dump_run, inputs, parts_of, recorded_k=1.):
             for i, j in pairs:
                 o, q = ours[i], gparts[j]
                 v, u, gv = o["t"]["value"], o["t"]["u"], q["tilt_deg"]["value"]
-                rows.append({**base, "kind": "pair", "tilt": v, "u": u, "gt": gv, "err": abs(v - gv), "covered": abs(v - gv) <= u, "subsets": o["sub"],
+                rows.append({**base, "kind": "gated pair" if o["gated"] else "pair", "tilt": v, "u": u, "gt": gv, "err": abs(v - gv), "covered": abs(v - gv) <= u, "subsets": o["sub"],
                              "share": o["share"], "area_m2": o["area"],
                              "normal_deg": round(float(np.degrees(np.arccos(np.clip(abs(o["n"] @ np.asarray(q["normal"])), 0, 1)))), 2)})
-            rows += [{**base, "kind": "ours unmatched", "tilt": ours[i]["t"]["value"], "u": ours[i]["t"]["u"], "covered": False, "subsets": ours[i]["sub"],
+            rows += [{**base, "kind": "gated unmatched" if ours[i]["gated"] else "ours unmatched", "tilt": ours[i]["t"]["value"], "u": ours[i]["t"]["u"], "covered": False, "subsets": ours[i]["sub"],
                       "share": ours[i]["share"], "area_m2": ours[i]["area"], "gt_parts_on_card": len(gparts)} for i in lone_o]
             rows += [{**base, "kind": "gt unmatched", "gt": gparts[j]["tilt_deg"]["value"], "covered": False} for j in lone_g]
     return rows
@@ -501,7 +503,11 @@ def gt_table(rows):
                     "coverage_pairs": round(float(np.mean([r["covered"] for r in pr])), 3) if pr else None,
                     "coverage_all_ours": round(float(np.mean([r["covered"] for r in ours])), 3) if ours else None,
                     "pairs_over_30deg_normal": sum(r["normal_deg"] > 30 for r in pr), "gt_tilted_15_75": sum(15 <= r["gt"] <= 75 for r in gts),
-                    "err_on_gt_tilted_15_75": med([r["err"] for r in pr if 15 <= r["gt"] <= 75])}
+                    "err_on_gt_tilted_15_75": med([r["err"] for r in pr if 15 <= r["gt"] <= 75]),
+                    # r5b integrate: what the angle gate held back (shown 'not measurable'), scored the same way
+                    "gated_parts": sum(r["kind"] in ("gated pair", "gated unmatched") for r in rs), "gated_pairs": sum(r["kind"] == "gated pair" for r in rs),
+                    "gated_err_median_deg": med([r["err"] for r in rs if r["kind"] == "gated pair"]),
+                    "gated_err_p90_deg": med([r["err"] for r in rs if r["kind"] == "gated pair"], 90)}
     return out
 
 

@@ -119,7 +119,33 @@ export default function LiveReport({ reportId }: { reportId: string }) {
     const glb = (docRef.current.assets.find(a => a.id === id) as any)?.inlineGlb;  // r5b: an on-demand card's surface (base64 GLB)
     if (glb) return URL.createObjectURL(new Blob([Uint8Array.from(atob(glb), c => c.charCodeAt(0))], { type: "model/gltf-binary" }));
     if (inline) return URL.createObjectURL(new Blob([JSON.stringify(inline)], { type: "application/json" }));
+    if (id.startsWith("frame:")) {  // r5b integrate (overlay): a keyframe's photo, cut from the report's own video at its time
+      const t = (docRef.current.assets.find(a => a.id === id) as any)?.metadata?.videoTimestamp;
+      if (Number.isFinite(t)) return frameURL(t);
+    }
     throw Error("unknown_asset");
+  };
+  const grabber = useRef<{ v?: HTMLVideoElement; busy: Promise<unknown> }>({ busy: Promise.resolve() });
+  const frameURL = (t: number) => {  // one hidden video element, one seek at a time -> a JPEG object URL of the frame at t
+    const g = grabber.current, src = assetURL((docRef.current.annotations.find((a: any) => a.kind === "video_replay") as any)?.videoAssetId || "");
+    const run = async () => {
+      if (!src) throw Error("no_video");
+      if (!g.v || g.v.src !== new URL(src, location.href).href) {
+        const v = window.document.createElement("video");
+        v.muted = true; v.preload = "auto"; v.src = src;
+        await new Promise((ok, fail) => { v.addEventListener("loadeddata", ok, { once: true }); v.addEventListener("error", fail, { once: true }); });
+        g.v = v;
+      }
+      const v = g.v;
+      v.currentTime = t + 1e-3;
+      await new Promise(ok => v.addEventListener("seeked", ok, { once: true }));
+      const c = window.document.createElement("canvas");
+      c.width = v.videoWidth; c.height = v.videoHeight; c.getContext("2d")!.drawImage(v, 0, 0);
+      return URL.createObjectURL(await new Promise<Blob>(ok => c.toBlob(b => ok(b!), "image/jpeg", .9)));
+    };
+    const job = g.busy.then(run, run);
+    g.busy = job.catch(() => undefined);
+    return job;
   };
 
   const host = useRef<HTMLDivElement>(null), viewer = useRef<SceneViewer | undefined>(undefined), opened = useRef(false), follow = useRef(false);
@@ -157,12 +183,16 @@ export default function LiveReport({ reportId }: { reportId: string }) {
     if (!selected) return i === od.pick_index ? odMask : null;  // the on-demand mask, on its own keyframe
     return pickMask(pick, i, selected) ?? (o && i >= 0 && !pick.ready[i] ? pickMask(o, pickIndexAt(o.data.frames, t), selected) : null);
   } : undefined, [pick, selected, odMask]);
-  const [view, setView] = useState({ observed_surface: true, point_cloud: false, splats: true, labels: true, primitive: true });
+  // r5b integrate: no boxes and no always-on names (the hovered or selected object's name only); 'overlay': the 3D pane shows the video's
+  // keyframe with every model drawn from that keyframe's camera (the room's own surface hidden), following the video's time
+  const [view, setView] = useState({ observed_surface: true, point_cloud: false, splats: true, labels: true, primitive: true, overlay: false });
+  const layersOf = (v: typeof view) => ({ ...v, allBounds: false, showBounds: false, opacity: .85,
+    observed_surface: v.observed_surface && !v.overlay, point_cloud: v.point_cloud && !v.overlay });
   const [load, setLoad] = useState({ loaded: 0, total: 0 });
   useEffect(() => {
     (window as any).__live = stats;
     const v = mountSceneViewer(host.current!, {
-      locale: language, layers: { lighting: true, allBounds: view.primitive, editable: false, ...view },
+      locale: language, layers: { lighting: true, editable: false, ...layersOf(view) },
       resolveAsset: resolve,
       onEvent: (e) => {
         if (e.type === "selectionIntent") choose(e.entityId || null);
@@ -186,7 +216,7 @@ export default function LiveReport({ reportId }: { reportId: string }) {
     // The first cameras open a free view of the longest shot, never the (image-less) camera view.
     if (!opened.current && document.cameras.length) { opened.current = true; v.setCamera({ mode: "free" }); setFrame(currentCameras(document)[0].coordinateFrameId); }
   }, [document]);
-  useEffect(() => { viewer.current?.setLayers({ ...view, allBounds: view.primitive }); }, [view]);  // boxes: fill and outline together
+  useEffect(() => { viewer.current?.setLayers(layersOf(view)); }, [view]);
   useEffect(() => { viewer.current?.setSelection({ entityId: selected }); }, [selected]);
   const [inset, setInset] = useState<string | null>(null);
   useEffect(() => {  // r4 (models): the selected object's model alone in a corner of the 3D pane (the viewer's own preview capture), its shot opened
@@ -212,9 +242,16 @@ export default function LiveReport({ reportId }: { reportId: string }) {
     viewer.current?.setSplats(splat ? { key: splat.assetId, url: assetURL(splat.assetId)!, count: splat.count, coordinateFrameId: splat.coordinateFrameId } : null);
   }, [splat?.assetId]);
   // The report's one clock is the video: the camera path marks it, and "follow" stands the view where the camera stood.
+  const lastPhoto = useRef<string | null>(null);
   useEffect(() => {
     const place = (time: number) => {
       viewer.current?.setLayers({ time });
+      if (view.overlay) {  // r5b integrate: the keyframe nearest the video's time, in any shot, as the photo under the models
+        const cams = docRef.current.cameras as any[], at = (c: any) => (docRef.current.assets.find(a => a.id === c.imageId) as any)?.metadata?.videoTimestamp ?? 1e9;
+        const near = cams.reduce((a: any, b: any) => !a || Math.abs(at(b) - time) < Math.abs(at(a) - time) ? b : a, null);
+        if (near && near.id !== lastPhoto.current) { lastPhoto.current = near.id; setFrame(near.coordinateFrameId); viewer.current?.setCamera({ mode: "photo", cameraId: near.id }); }
+        return;
+      }
       if (!follow.current || !frame) return;
       const path = cameraPath(docRef.current, frame).filter(p => p.time !== null);
       if (!path.length) return;
@@ -226,7 +263,8 @@ export default function LiveReport({ reportId }: { reportId: string }) {
     const onTime = (event: Event) => place((event as CustomEvent<number>).detail);
     window.addEventListener("panoptes:video-time", onTime);
     return () => window.removeEventListener("panoptes:video-time", onTime);
-  }, [frame, following]);
+  }, [frame, following, view.overlay]);
+  useEffect(() => { if (!view.overlay && lastPhoto.current) { lastPhoto.current = null; viewer.current?.setCamera({ mode: "free" }); } }, [view.overlay]);
 
   const entity = document.entities.find(e => e.id === selected) as any;
   const labels = [...new Set(Object.values(layers).flatMap(p => p.labels || []))];
@@ -253,9 +291,10 @@ export default function LiveReport({ reportId }: { reportId: string }) {
           <div className="live-report-tools">
             {shots.map(s => <button key={s.id} aria-pressed={frame === s.id} onClick={() => { setFrame(s.id); follow.current = false; setFollowing(false);
               viewer.current?.setCamera({ mode: "free", cameraId: s.cameras[0]?.id }); }}>{tr("镜头", "Shot")} {Number(s.id.slice(5)) + 1} ({s.cameras.length})</button>)}
-            {(["observed_surface", "point_cloud", "primitive", "labels", ...(splat ? ["splats"] : [])] as const).map(k => <label key={k}>
+            {(["overlay", "observed_surface", "point_cloud", "primitive", "labels", ...(splat ? ["splats"] : [])] as const).map(k => <label key={k}>
               <input type="checkbox" checked={(view as any)[k]} onChange={e => setView(v => ({ ...v, [k]: e.target.checked }))} />
-              {({ observed_surface: tr("房间网格", "room mesh"), point_cloud: tr("点云", "points"), primitive: tr("物体框", "boxes"), labels: tr("名字", "names"), splats: tr("泼溅（相机附近）", "splats (near the path)") } as any)[k]}</label>)}
+              {({ overlay: tr("叠加在视频帧上", "overlay on the video frame"), observed_surface: tr("房间网格", "room mesh"), point_cloud: tr("点云", "points"),
+                 primitive: tr("简单形状", "simple shapes"), labels: tr("名字（悬停/选中）", "names (hover / selected)"), splats: tr("泼溅（相机附近）", "splats (near the path)") } as any)[k]}</label>)}
             {!!shots.length && <label><input type="checkbox" checked={following} onChange={e => { follow.current = e.target.checked; setFollowing(e.target.checked); }} />{tr("跟随视频相机", "follow the video camera")}</label>}
             <small>{load.total ? `${load.loaded}/${load.total}` : ""}</small>
             <small className="live-report-legend" title={tr("视频时间下的对象状态（只画有变化的对象）", "objects' state at the video's time (only objects with a change are drawn per interval)")}>

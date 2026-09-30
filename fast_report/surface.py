@@ -148,7 +148,7 @@ def tilt_deg(n):
     return float(np.degrees(np.arccos(np.clip(abs(n[2]) / max(np.linalg.norm(n), 1e-12), 0, 1))))
 
 
-def planar_parts(P, frame, subsets, cams, plumb_u_deg=None, k=None, keep=False):
+def planar_parts(P, frame, subsets, cams, plumb_u_deg=None, k=None, keep=False, gate=True):
     """P (N,3) floor-frame points (z up, floor z = 0), frame (N,) their local keyframes, subsets: lists of local keyframes (the
     card's view subsets), cams (n,3) floor-frame camera centres by local keyframe. -> {"parts": [...], "bends": [...], "s"} or a
     status with its reason. Each part: tilt_deg (value +- u), area_m2, centre_m, normal (towards the cameras that saw it), share.
@@ -213,7 +213,7 @@ def planar_parts(P, frame, subsets, cams, plumb_u_deg=None, k=None, keep=False):
                         "angle", k, vals if len(vals) >= 2 else None, unit="deg", scale=cards.SCALE_FREE)
         if fit(p) > FIT_MAX_DEG:  # the cards' rule for any angle: a patch this rough is curved, no angle
             v = {"status": "not measurable", "reason": f"a curved patch: fit term {fit(p):.0f} deg > {FIT_MAX_DEG:g}", "value_if_flat": v["value"]}
-        else:
+        elif gate:  # gate=False: every reading (a ground-truth cut into parts the same way, scripts/r5b_models.gt_rows)
             v = _gated(v, len(vals))
         rows.append({"name": chr(65 + len(rows)), "tilt_deg": v, "area_m2": round(float(np.prod(p["ext"])), 3), "centre_m": np.round(p["c"], 3).tolist(),
                      "normal": np.round(p["n"], 4).tolist(), "sides_m": np.round(p["ext"], 3).tolist(), "axes": np.round(p["ax"], 4).tolist(),
@@ -233,7 +233,7 @@ def planar_parts(P, frame, subsets, cams, plumb_u_deg=None, k=None, keep=False):
             v = cards.value(180 - fold, {"views": cards.spread(subs) if len(subs) >= 2 else None, "fit": float(np.hypot(fit(parts[a]), fit(parts[b])))},
                             "angle", k, [180 - s for s in subs] if len(subs) >= 2 else None, unit="deg", scale=cards.SCALE_FREE,
                             note="the angle between the two parts (180 = flat)")
-            v = _gated(v, len(subs))
+            v = _gated(v, len(subs)) if gate else v
             bends.append({"parts": [a, b], "names": [chr(65 + a), chr(65 + b)], "angle_deg": v})
     out = {"parts": rows, "bends": bends, "points": n, "tolerance_m": round(tau, 4), "s": round(time.perf_counter() - t0, 4),
            "note": "planar parts of the observed points (the video's own surface), each to the floor: 0 = horizontal, 90 = vertical"}

@@ -320,8 +320,15 @@ def bench(a):
         meta["app_id"] = app.app_id
         relay = NamerRelay(namer_q, out) if a.namer == "gemini" else None
         fr = holder["fr"] = FastReport(profile=a.profile)
+        jev_boot = None
+        if a.jev:  # r5b integrate: the router's cold start beside the report container's (a first ping after boot_info outlasted the
+            from modal_apps.fast_report_app import Jev  # container's 60 s scale-down window: the first call then booted it again)
+            jev_boot = threading.Thread(target=lambda: meta.setdefault("jev_pings", []).append(Jev().ping.remote()), daemon=True)
+            jev_boot.start()
         submitted = time.time()
         boot = fr.boot_info.remote()  # waits for the container: cold start, recorded, never counted as analysis
+        if jev_boot is not None:
+            jev_boot.join()
         boot = {**boot, "client_submitted_unix": submitted, "client_ready_unix": time.time(), "submit_to_ready_s_two_clocks": round(time.time() - submitted, 1)}
         (out / "boot.json").write_text(json.dumps(boot, indent=1))
         for j, pre in enumerate(filter(None, a.prelude.split(","))):  # r5b: unscored calls first (the bank build's clips)

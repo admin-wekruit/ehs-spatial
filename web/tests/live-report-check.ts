@@ -93,7 +93,7 @@ if(mvp>=0){
   console.log(`recorded pick layer check passed: ${mreport}, ${p.data.frames.length} frames, pick vs outline polygons ${(100*agree/n).toFixed(1)}% of ${n} points`);
 }
 import {sceneRepresentationTasks,readPacked,readGLB,primitive} from '../src/viewer/native-viewer.ts';
-import {modelPrimitive} from '../src/live-report.ts';
+import {modelPrimitive,figure} from '../src/live-report.ts';
 
 // ---------------- r4 (models): every kind of a card's display model builds a mesh, seen faces solid and guessed ones faint
 {
@@ -130,6 +130,12 @@ import {modelPrimitive} from '../src/live-report.ts';
   assert.deepEqual(r3.map((r:any)=>r.id),['prim:o@0','state:o@1'],'the model until it went; a red box at its place after');
   assert.equal(timeReps({...moved,time:{timeline:{changes:[],intervals:[]}}},'shot-0',ff,{id:'x',transform:{position:[0,0,0]}},{min:[0,0,0],max:[1,1,1]}).length,0,'no change: static');
   assert.equal(stateAt({kind:'person',time:{first_seen_s:1,positions:[{t:1},{t:1.2}]}},1.1).state,'present');
+  // r5b integrate: never a see-through box (an object with no model, primitive or surface is not drawn); a person is a standing figure
+  assert.equal(liveDocument('r',{objects:{layer:'objects',seq:1,data:{objects:[{id:'o',shot:0,word:'x',box_min_m:[0,0,0],box_max_m:[1,1,1]}]},blobs:{}} as any},[{id:'o',kind:'object'}]).entities.length,0);
+  const fig=figure('p','shot-0',{origin_m:[0,0,0],x:[1,0,0],z:[0,0,1]},[1,2,.9],[0,1]);
+  assert.equal(fig.length,2);assert.ok(Math.abs(fig[0].transform.position[2]-.63)<1e-9&&Math.abs(fig[1].transform.position[2]-1.45)<1e-9,'standing on the floor');
+  const down=figure('p','shot-0',{origin_m:[0,1.5,0],x:[1,0,0],z:[0,-1,0]},[0,1,2],[0,1])[0],q=down.transform.quaternion;
+  assert.ok(Math.abs(down.transform.position[1]-(1.5-.63))<1e-9&&Math.abs(q[0]-Math.SQRT1_2)<1e-9&&Math.abs(q[3]-Math.SQRT1_2)<1e-9,'upright along a y-down floor normal');
 }
 import {splatAnnotation} from '../src/viewer/splat-layer.ts';
 import {currentCameras,cameraPath} from '../src/core.ts';
@@ -155,7 +161,8 @@ assert.equal(walked.length,walk.keys.length);assert.ok(walked.every(p=>p.time!==
 const tasks=sceneRepresentationTasks(doc,frame,layers),ids=new Set(tasks.map(({r})=>r.id));
 const objects=all.objects.data.objects.filter((o:any)=>o.shot===walk.index),modeled=new Set(all.models.data.models.map((m:any)=>m.object));
 assert.ok(ids.has('room-mesh:'+walk.index)&&ids.has('room-points:'+walk.index),'room mesh and points');
-for(const o of objects)assert.ok(ids.has(modeled.has(o.id)?'model:'+o.id:'box:'+o.id),'object '+o.id);
+for(const o of objects)if(modeled.has(o.id))assert.ok(ids.has('model:'+o.id),'object '+o.id);
+assert.ok(![...ids].some(i=>i.startsWith('box:')),'no see-through boxes (r5b integrate)');
 for(const t of all.people.data.tracks.filter((t:any)=>t.shot===walk.index))assert.ok(ids.has('track:'+t.id),'track '+t.id);
 assert.ok(tasks.every(({r})=>r.coordinateFrameId===frame),'only the open shot is loaded');
 
