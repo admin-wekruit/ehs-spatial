@@ -1,0 +1,318 @@
+<title>Panoptes 物体层</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#F2F4F1; --panel:#FFFFFF; --ink:#17201D; --muted:#56635F; --line:#D3DAD6;
+  --accent:#0D7666; --accent-soft:#DCEEEA;
+  --good:#2C7A4C; --good-bg:#E1F1E6; --warn:#9A6212; --warn-bg:#F6EBD6; --bad:#AE4136; --bad-bg:#F7E2DF;
+  --run:#3B5BA5; --run-bg:#E3E9F6;
+  --shadow:0 1px 2px rgba(20,32,29,.06);
+  --f-display:"Barlow Condensed","PingFang SC","Hiragino Sans GB","Noto Sans CJK SC","Microsoft YaHei",sans-serif;
+  --f-body:"IBM Plex Sans","PingFang SC","Hiragino Sans GB","Noto Sans CJK SC","Microsoft YaHei",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#0F1513; --panel:#161F1C; --ink:#E2E9E6; --muted:#94A29D; --line:#2A3531;
+    --accent:#47B7A4; --accent-soft:#15302B;
+    --good:#62BE89; --good-bg:#16301F; --warn:#DDA650; --warn-bg:#33270F; --bad:#E57B6F; --bad-bg:#3A1D19;
+    --run:#89A6EA; --run-bg:#1A2440; --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0F1513; --panel:#161F1C; --ink:#E2E9E6; --muted:#94A29D; --line:#2A3531;
+  --accent:#47B7A4; --accent-soft:#15302B;
+  --good:#62BE89; --good-bg:#16301F; --warn:#DDA650; --warn-bg:#33270F; --bad:#E57B6F; --bad-bg:#3A1D19;
+  --run:#89A6EA; --run-bg:#1A2440; --shadow:none;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.6}
+.wrap{max-width:1040px;margin:0 auto;padding-inline:20px;padding-block:28px 64px;display:flex;flex-direction:column;gap:40px}
+h1,h2,h3{font-family:var(--f-display);font-weight:700;letter-spacing:.01em;text-wrap:balance;margin:0;line-height:1.15}
+h1{font-size:44px}
+h2{font-size:28px}
+h3{font-size:21px}
+p{margin:0;max-width:68ch}
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.lede{color:var(--muted);font-size:16px}
+header{display:flex;flex-direction:column;gap:14px}
+.strip{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 11px;font-size:13px;font-weight:500;white-space:nowrap;border:1px solid transparent}
+.chip::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.good{color:var(--good);background:var(--good-bg)}
+.warn{color:var(--warn);background:var(--warn-bg)}
+.bad{color:var(--bad);background:var(--bad-bg)}
+.run{color:var(--run);background:var(--run-bg)}
+section{display:flex;flex-direction:column;gap:16px}
+.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--panel);box-shadow:var(--shadow)}
+table{border-collapse:collapse;width:100%;min-width:640px;font-size:14px}
+th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+tr:last-child td{border-bottom:0}
+thead th{font-family:var(--f-mono);font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:500;background:transparent}
+td.k{font-weight:600;white-space:nowrap}
+.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.big{font-family:var(--f-display);font-size:24px;font-weight:700;line-height:1}
+.cell{display:flex;flex-direction:column;gap:6px}
+.sub{color:var(--muted);font-size:13px}
+.note{color:var(--muted);font-size:13px}
+.exp{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:22px;align-items:start;border-top:1px solid var(--line);padding-top:22px}
+.exp.wide{grid-template-columns:1fr}
+.exp .text{display:flex;flex-direction:column;gap:10px}
+.exp .head,.box .head{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px}
+ul{margin:0;padding-left:1.1em;display:flex;flex-direction:column;gap:4px}
+li{max-width:68ch}
+figure{margin:0;display:flex;flex-direction:column;gap:6px}
+figure img{display:block;width:100%;height:auto;border-radius:8px;border:1px solid var(--line);background:var(--panel)}
+figcaption{color:var(--muted);font-size:12.5px}
+.mini{min-width:0;font-size:13.5px}
+.mini td,.mini th{padding:7px 10px}
+.links{display:flex;flex-direction:column;gap:8px}
+.links a{font-family:var(--f-mono);font-size:13px;color:var(--accent);word-break:break-all}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow)}
+.tag{font-family:var(--f-mono);font-size:11.5px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 6px}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (max-width:760px){
+  h1{font-size:34px}
+  .exp,.two{grid-template-columns:1fr}
+}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">视频 → 可点的 3D 物体 · 2×A100 · 更新于 2026-09-29 20:25</div>
+  <h1>Panoptes 物体层</h1>
+  <p class="lede">目标：点视频里的任何东西，能知道它是什么（至少一个类型）、它的分割、它的物理信息和一个模型。判定先暂停。下面是第 4 轮的验收和这几天各个实验的结果。所有米制数值都是估计尺度（按相机离地 1.6 m 假设）。</p>
+  <div class="strip">
+    <span class="chip good">第 4 轮整合：完成</span>
+    <span class="chip warn">第 4 轮独立复核：部分成立</span>
+    <span class="chip good">模型外形 + 部件角度：完成</span>
+    <span class="chip warn">它的复核：部分成立</span>
+    <span class="chip good">快速 RecGen：完成</span>
+    <span class="chip good">Jev-Omni 路由：完成</span>
+    <span class="chip run">第 5 轮：进行中</span>
+  </div>
+</header>
+
+<section>
+  <h2>验收四项（第 4 轮，热启动）</h2>
+  <p class="note">每段视频随机抽 30 张卡片、60 次点击，人工逐个看（由检查 agent 标注，不是人）。括号里是第 3 轮。</p>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>项目</th><th>ME340 车间</th><th>Sam's Club</th><th>Walmart</th></tr></thead>
+    <tbody>
+      <tr><td class="k">类型</td>
+        <td><div class="cell"><span class="big num">95%</span><span class="sub">有类型 · 抽查 对/近/错/不清 14/5/3/8</span><span class="chip bad">未达标：留出样本类别对 0.51</span><span class="sub">复核再抽 20：9/2/4/5</span></div></td>
+        <td><div class="cell"><span class="big num">100%</span><span class="sub">抽查 21/2/3/4 · 复核 12/6/0/2</span><span class="chip good">留出类别对 1.00</span></div></td>
+        <td><div class="cell"><span class="big num">98%</span><span class="sub">抽查 29/1/0/0 · 复核 19/1/0/0</span><span class="chip good">留出类别对 0.83</span></div></td></tr>
+      <tr><td class="k">分割 / 点击</td>
+        <td><div class="cell"><span class="big num">0.87</span><span class="sub">点真实物体打开对的卡 27/31 · 轮廓对/部分/错 17/8/1</span><span class="sub">完整版物体覆盖 80/105（53）· 复核 20 次点击：11/11</span></div></td>
+        <td><div class="cell"><span class="big num">0.76</span><span class="sub">35/46 · 轮廓 28/0/0</span><span class="sub">覆盖 79/91（41）· 复核 15/15 · 有像素 99.5%</span></div></td>
+        <td><div class="cell"><span class="big num">0.82</span><span class="sub">33/40 · 轮廓 28/0/2</span><span class="sub">覆盖 61/74（38）· 复核 12/14 · 有像素 99.9%</span></div></td></tr>
+      <tr><td class="k">物理信息</td>
+        <td><div class="cell"><span class="big num">100%</span><span class="sub">字段齐全（带 ± 或写明原因）· 抽查合理 24，不清 5，不合理 1</span></div></td>
+        <td><div class="cell"><span class="big num">100%</span><span class="sub">合理 29，不合理 1</span></div></td>
+        <td><div class="cell"><span class="big num">100%</span><span class="sub">合理 28，不合理 2</span></div></td></tr>
+      <tr><td class="k">模型</td>
+        <td><div class="cell"><span class="big num">100%</span><span class="sub">都有模型 · 看着合理 26/30 · SAM 3D 网格 1 个</span><span class="sub">复核随机 20：不合理 3 · 方块 84%</span></div></td>
+        <td><div class="cell"><span class="big num">100%</span><span class="sub">合理 19/30 · SAM 3D 5 个 · 复核不合理 5/20</span><span class="chip warn">方块 89%</span></div></td>
+        <td><div class="cell"><span class="big num">100%</span><span class="sub">合理 19/30 · SAM 3D 4 个 · 复核不合理 8/20</span><span class="chip warn">方块 87%</span></div></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="box" id="r4-review">
+    <div class="head"><h3>第 4 轮独立复核：部分成立</h3><span class="chip warn">4 项里 3 项达标</span></div>
+    <p class="note">复核只在 CPU 上重算保存的数据，自己再看每段 20 张卡、20 次点击、20 个模型。数字都能复现。</p>
+    <ul>
+      <li><b>达标</b>：三段视频的分割、物理信息、模型"都有"；Sam's Club 和 Walmart 的类型。</li>
+      <li><b>ME340 类型未达标</b>：留出样本类别只对一半（0.51）。"材料 / 零件"成了兜底标签，376 张卡里 104 张，工具架、柜门、风扇、台钳大多被标成它。</li>
+      <li><b>"VLM 放最后"没做到</b>：开头第 0.4–8.6 s 先用 Qwen 给整段视频列一个词表，SAM 3 第二波按这些词找物体，77–90% 的物体是靠这些词找到的。点击新物体时，每次点击也会单独问一次 Qwen。</li>
+      <li><b>"判定先停"没做干净</b>：每次还有 2 个事件描述请求在问安全帽、反光背心和"安全备注"；词表请求也要了隐患类物体。判定模块默认仍开着（这次跑测手动关了，数字不受影响）。</li>
+      <li><b>其他</b>：模型 84–89% 仍是方块。宽度的"至多"上界对照真实尺寸有 8–28% 不成立。命名库是共享可写文件，每跑一次就变（1798→1998 行），结果依赖运行顺序。3D 面板标签用的还是旧词（"unidentified object"），不是卡片上的类型。</li>
+      <li><b>第 5 轮会改</b>：每段视频开头问一次 VLM 列词表（你已同意），和固定类别表 + 本地打标签模型对比，按效果选或合并；点击不再单独问 VLM；事件描述去掉安全问题，判定默认关；兜底标签改成"未识别（形状）"；命名库跑测时只读；看到的表面网格替代方块，RecGen 快速版只给复杂物体；宽度改成"未观测 / 至少"；物理数值按时间段给。</li>
+    </ul>
+  </div>
+  <div class="two">
+    <div class="box">
+      <h3>物理信息准不准（有真实尺寸的数据集）</h3>
+      <ul>
+        <li>用真实相机高度：高度误差中位数 <span class="num">2.1–3.0 cm</span>，顶部离地 <span class="num">1.6–4.2 cm</span>。</li>
+        <li>用假设的 1.6 m：顶部离地 <span class="num">5.7–21 cm</span>。误差主要来自尺度，现场输入真实相机高度就能消掉。</li>
+        <li>边走边拍只看到一面，所以深度大多只能给"至少 x"（有数字的只有 2–15% 的卡）。</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>速度（视频进容器起，秒，热启动）</h3>
+      <div class="scroll" style="box-shadow:none">
+      <table class="mini">
+        <thead><tr><th></th><th>ME340</th><th>Sam's</th><th>Walmart</th></tr></thead>
+        <tbody>
+          <tr><td>第一层 3D</td><td class="num">18</td><td class="num">15</td><td class="num">13</td></tr>
+          <tr><td>能点、出卡片</td><td class="num">43</td><td class="num">30</td><td class="num">31</td></tr>
+          <tr><td>全部类型</td><td class="num">98</td><td class="num">88</td><td class="num">93</td></tr>
+          <tr><td>模型全部到（写盘）</td><td class="num">183</td><td class="num">180</td><td class="num">182</td></tr>
+          <tr><td>VLM 调用次数</td><td class="num">51</td><td class="num">35</td><td class="num">22</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p class="note">第 2 轮每段视频要问 Gemini 329–790 个物体。显存峰值 ≤ 70.2 GiB。冷启动 157–182 s，不计入。</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>实验结果</h2>
+
+  <article class="exp">
+    <div class="text">
+      <div class="head"><h3>模型外形对上 + 部件角度</h3><span class="chip warn">复核：部分成立</span></div>
+      <p>回应"模型全是方块、角度读不出来"。三段视频，每段人工看 30 个物体。</p>
+      <ul>
+        <li><b>看到什么画什么</b>：用物体自己的 3D 点重建表面并上视频颜色，每个物体 14–25 ms，全部物体约 2 s。人工看：好/部分/错 <span class="num">38/52/0</span>，方块是 <span class="num">7/41/42</span>。</li>
+        <li><b>部件角度</b>：每个平面部件给出与地面的夹角 ± 误差。真实尺寸数据上中位误差 <span class="num">2.9°</span>，误差范围覆盖 <span class="num">90.7%</span>；按 30° 阈值能判的 235 个里 234 个判对。真正倾斜的面（15–75°）中位误差 7.6°。</li>
+        <li><b>RecGen（常驻，内部用）</b>看起来最好：<span class="num">58/27/5</span>，每个物体 7 s；SAM 3D <span class="num">29/36/8</span>；TRELLIS、TripoSR 更差；泼溅裁块边缘串色 20–53%。</li>
+        <li>角度只从看到的点量；生成的模型只用于显示。</li>
+        <li><b>复核提醒</b>：角度的准确度偏乐观。统计只算了和真实表面方向相差 30° 以内能配上的部件，大错进不了统计；三段视频里的倾斜部件还没人工逐个看；生成模型的"看到的面"只按距离判断，没检查相机是否正对。这三点第 5 轮修。</li>
+      </ul>
+      <p class="note">花费 $18.1。一次内部配置的 Sam's Club 运行显存到 75.9 GiB（超 72），已提交修复，未重跑。</p>
+    </div>
+    <figure>
+      <img src="{{img:g}}" alt="ME340 各种模型方法对比：留出视角 | 方块 | 看到的表面 | RecGen | SAM 3D | TRELLIS | TripoSR | 泼溅">
+      <figcaption>ME340：每行一个物体。列：留出视角 | 方块 | 看到的表面 | RecGen | SAM 3D | TRELLIS | TripoSR | 泼溅。数字是留出视角重合度，"+" 为通过。</figcaption>
+    </figure>
+  </article>
+
+  <article class="exp">
+    <div class="text">
+      <div class="head"><h3>部件角度长什么样</h3></div>
+      <p>每个物体的点被分成几个平面部件（不同颜色），左上角是每个部件与地面的角度 ± 误差，"1-2" 是两个部件之间的夹角。</p>
+    </div>
+    <figure>
+      <img src="{{img:h}}" alt="ME340 物体的平面部件和角度">
+      <figcaption>ME340 平面部件与角度。</figcaption>
+    </figure>
+  </article>
+
+  <article class="exp">
+    <div class="text">
+      <div class="head"><h3>快速 RecGen</h3><span class="chip good">3.3× 快</span></div>
+      <ul>
+        <li>每个物体 <span class="num">2.5 s</span>（原来 8.2–8.4 s）；两块 A100 上 20 / 40 / 70 个物体 <span class="num">19 / 36 / 62 s</span>（原来 53 / 103 / 184 s）。</li>
+        <li>通过率 9.3 vs 10.0（共 19 个），在检查本身的随机波动内；形状差异 1–2%，比换随机种子还小。</li>
+        <li>做法：第一阶段 12 步，第二阶段 8 步、关掉引导；只出带颜色的网格；视角成批融合；跳过 9–24 s 的导出。</li>
+        <li>商用替代：SAM 3D 快速版在同一批上差不多（2.98 s，10/19）。</li>
+      </ul>
+      <p class="note">花费 $7.38。RecGen 仅限内部使用（非商用许可）。</p>
+    </div>
+    <figure>
+      <img src="{{img:c}}" alt="快速 RecGen 对比原始 RecGen 和 SAM 3D">
+      <figcaption>列：留出视角 | 原始 RecGen ×2 种子 | 快速 RecGen ×3 种子 | SAM 3D。</figcaption>
+    </figure>
+  </article>
+
+  <article class="exp">
+    <div class="text">
+      <div class="head"><h3>Jev-Omni 路由：简单形状还是 RecGen</h3><span class="chip good">不用 VLM</span></div>
+      <p>313 个人工标注的物体，阈值只用另外两段视频定。</p>
+      <div class="scroll" style="box-shadow:none">
+      <table class="mini">
+        <thead><tr><th>路由</th><th>准确率</th></tr></thead>
+        <tbody>
+          <tr><td>全部简单形状</td><td class="num">0.70</td></tr>
+          <tr><td>只靠规则</td><td class="num">0.62–0.71</td></tr>
+          <tr><td>零样本</td><td class="num">0.80</td></tr>
+          <tr><td>本地 Qwen</td><td class="num">0.84</td></tr>
+          <tr><td>Jev-Omni 单独</td><td class="num">0.875</td></tr>
+          <tr><td>形状固定的类型走规则，其余 Jev-Omni</td><td class="num">0.90</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p class="note">0.90 偏乐观（类型表是看过标注后调的），稳妥估计 0.82–0.875。每个物体约 0.1 s。Walmart 整面鞋墙会有约 111 个送 RecGen，需要上限。花费 $1.56。</p>
+    </div>
+    <figure>
+      <img src="{{img:a}}" alt="Walmart 卡片：类型、物理信息和 SAM 3D 模型">
+      <figcaption>第 4 轮 Walmart：一只拖鞋，类型给成"container / box / goods (type only)"（错），物理信息带 ±，右下是 SAM 3D 网格。</figcaption>
+    </figure>
+  </article>
+
+  <article class="exp">
+    <div class="text">
+      <div class="head"><h3>分割与找全</h3></div>
+      <ul>
+        <li>同一个物体跨帧跟住，每个物体一张 3D 卡片。</li>
+        <li>完整版报告里的物体，被我们覆盖到的：ME340 53→80 / 105，Sam's 41→79 / 91，Walmart 38→61 / 74。拆碎和合错基本持平。</li>
+        <li>加了开放检测框（OWLv2）交给 SAM 补漏：点真实物体能打开对的卡从 0.67 到 0.81。还漏：货架立柱横梁、上层远处货物、画面边缘的腿。</li>
+      </ul>
+    </div>
+    <figure>
+      <img src="{{img:e}}" alt="ME340 同一物体跨帧的分割">
+      <figcaption>ME340：每行一个物体在不同帧的轮廓和类型名。</figcaption>
+    </figure>
+  </article>
+
+  <article class="exp">
+    <div class="text">
+      <div class="head"><h3>起名，VLM 放最后</h3></div>
+      <ul>
+        <li>顺序：SAM 3 的词 → 标签库 / 零样本 / YOLOE 再有一票同意 → 同类聚簇，每簇问一次本地 Qwen。</li>
+        <li>VLM 问题：每段视频 45 / 14 / 19 次（第 2 轮 Gemini 要看 329 / 787 / 790 个物体）。</li>
+        <li>零售认得准；车间弱：SAM 3 的词表在 ME340 上大多是"metal X"，也没有第二段车间视频来校准阈值。</li>
+      </ul>
+    </div>
+    <figure>
+      <img src="{{img:b}}" alt="ME340 只有类型的物体卡片，带物理信息和模型">
+      <figcaption>ME340："只给类型"的卡片，照样有物理信息和模型。</figcaption>
+    </figure>
+  </article>
+
+  <article class="exp wide">
+    <div class="text">
+      <div class="head"><h3>早先的对照实验</h3></div>
+      <p>LingBot 的点比快速点云细（纸箱印字、墙上的管线），但更噪；它作为可选的后台层。RecGen 在视频上也能出好模型（控制面板那一行），只从一面看到的机床会大片猜测（品红色）。</p>
+    </div>
+    <figure>
+      <img src="{{img:f}}" alt="同一位置的视频帧、快速点云和 LingBot 点云对比">
+      <figcaption>Sam's Club 同一位置：视频帧 | 快速 DA3 点云（3 cm）| LingBot 点（几种设置）| 完整版 LingBot 层。</figcaption>
+    </figure>
+    <figure>
+      <img src="{{img:d}}" alt="ME340 RecGen、SAM 3D 与方块对比">
+      <figcaption>ME340：留出视角 | RecGen | SAM 3D | 简单形状，品红为没看到而猜的面。</figcaption>
+    </figure>
+  </article>
+</section>
+
+<section>
+  <h2>还弱的地方</h2>
+  <ul>
+    <li><b>车间认物体</b>：留出样本类别对 0.51–0.62。需要第二段车间视频来校准，新场景类型的第一段视频先多用 VLM。</li>
+    <li><b>只看到一面</b>：深度和夹角大多量不出来。拍工位时绕着走半圈就能量。</li>
+    <li><b>尺度</b>：假设相机高度会让米制数值偏 6–21 cm；现场输入真实相机高度即可。</li>
+    <li><b>模型</b>：第 4 轮大多还是方块，零售有 9–11/30 看着不对；第 5 轮换成"看到的表面 + RecGen"。</li>
+    <li><b>已知小毛病</b>：圆柱和框架有些面没被相机看到却标成"看到"；现场分割的卡片模型还没画进 3D；现场分割需要 GPU 容器在线。</li>
+  </ul>
+</section>
+
+<section>
+  <h2>下一步：第 5 轮</h2>
+  <ul>
+    <li>每个物体：先出"看到什么画什么"的网格 + 部件角度（约 2 s，不用 GPU）。</li>
+    <li>复杂物体：Jev-Omni 路由后交给快速 RecGen（内部）或 SAM 3D（商用），1–2 分钟内陆续替换；简单结构（墙、箱、货架）保持简单形状。</li>
+    <li>跨时间：物理信息按时间段记录，变化超过两边误差才报；同一现场的不同视频对齐后报差异。</li>
+    <li>修上面列出的已知毛病，然后三段视频重新验收。</li>
+  </ul>
+</section>
+
+<section>
+  <h2>自己点着看</h2>
+  <p class="note">这三个链接只在这台 Mac 上能打开（本地查看器在运行时）。先暂停视频，再点画面里的东西。</p>
+  <div class="links">
+    <a href="http://localhost:5185/app.html#/live/mvp-me340-e84efffd-1790720411">localhost:5185 · ME340 车间</a>
+    <a href="http://localhost:5185/app.html#/live/mvp-samsclub-a2-d5e0c855-1790721476">localhost:5185 · Sam's Club</a>
+    <a href="http://localhost:5185/app.html#/live/mvp-walmart-c0761a2a-1790722201">localhost:5185 · Walmart</a>
+  </div>
+</section>
+</div>

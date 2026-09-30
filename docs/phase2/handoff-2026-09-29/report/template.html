@@ -1,0 +1,233 @@
+<title>Panoptes 第五轮</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#F2F4F1; --panel:#FFFFFF; --ink:#17201D; --muted:#56635F; --line:#D3DAD6;
+  --accent:#0D7666; --accent-soft:#DCEEEA;
+  --good:#2C7A4C; --good-bg:#E1F1E6; --warn:#9A6212; --warn-bg:#F6EBD6; --bad:#AE4136; --bad-bg:#F7E2DF;
+  --run:#3B5BA5; --run-bg:#E3E9F6;
+  --shadow:0 1px 2px rgba(20,32,29,.06);
+  --f-display:"Barlow Condensed","PingFang SC","Hiragino Sans GB","Noto Sans CJK SC","Microsoft YaHei",sans-serif;
+  --f-body:"IBM Plex Sans","PingFang SC","Hiragino Sans GB","Noto Sans CJK SC","Microsoft YaHei",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#0F1513; --panel:#161F1C; --ink:#E2E9E6; --muted:#94A29D; --line:#2A3531;
+    --accent:#47B7A4; --accent-soft:#15302B;
+    --good:#62BE89; --good-bg:#16301F; --warn:#DDA650; --warn-bg:#33270F; --bad:#E57B6F; --bad-bg:#3A1D19;
+    --run:#89A6EA; --run-bg:#1A2440; --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0F1513; --panel:#161F1C; --ink:#E2E9E6; --muted:#94A29D; --line:#2A3531;
+  --accent:#47B7A4; --accent-soft:#15302B;
+  --good:#62BE89; --good-bg:#16301F; --warn:#DDA650; --warn-bg:#33270F; --bad:#E57B6F; --bad-bg:#3A1D19;
+  --run:#89A6EA; --run-bg:#1A2440; --shadow:none;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.6}
+.wrap{max-width:1040px;margin:0 auto;padding-inline:20px;padding-block:28px 64px;display:flex;flex-direction:column;gap:40px}
+h1,h2,h3{font-family:var(--f-display);font-weight:700;letter-spacing:.01em;text-wrap:balance;margin:0;line-height:1.15}
+h1{font-size:44px}
+h2{font-size:28px}
+h3{font-size:21px}
+p{margin:0;max-width:68ch}
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.lede{color:var(--muted);font-size:16px}
+header{display:flex;flex-direction:column;gap:14px}
+.strip{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 11px;font-size:13px;font-weight:500;white-space:nowrap;border:1px solid transparent}
+.chip::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.good{color:var(--good);background:var(--good-bg)}
+.warn{color:var(--warn);background:var(--warn-bg)}
+.bad{color:var(--bad);background:var(--bad-bg)}
+.run{color:var(--run);background:var(--run-bg)}
+section{display:flex;flex-direction:column;gap:16px}
+.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--panel);box-shadow:var(--shadow)}
+table{border-collapse:collapse;width:100%;min-width:640px;font-size:14px}
+th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+tr:last-child td{border-bottom:0}
+thead th{font-family:var(--f-mono);font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:500;background:transparent}
+td.k{font-weight:600;white-space:nowrap}
+.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.big{font-family:var(--f-display);font-size:24px;font-weight:700;line-height:1}
+.cell{display:flex;flex-direction:column;gap:6px}
+.sub{color:var(--muted);font-size:13px}
+.note{color:var(--muted);font-size:13px}
+.exp{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:22px;align-items:start;border-top:1px solid var(--line);padding-top:22px}
+.exp.wide{grid-template-columns:1fr}
+.exp .text{display:flex;flex-direction:column;gap:10px}
+.exp .head,.box .head{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px}
+ul{margin:0;padding-left:1.1em;display:flex;flex-direction:column;gap:4px}
+li{max-width:68ch}
+figure{margin:0;display:flex;flex-direction:column;gap:6px}
+figure img{display:block;width:100%;height:auto;border-radius:8px;border:1px solid var(--line);background:var(--panel)}
+figcaption{color:var(--muted);font-size:12.5px}
+.mini{min-width:0;font-size:13.5px}
+.mini td,.mini th{padding:7px 10px}
+.links{display:flex;flex-direction:column;gap:8px}
+.links a{font-family:var(--f-mono);font-size:13px;color:var(--accent);word-break:break-all}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow)}
+.tag{font-family:var(--f-mono);font-size:11.5px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 6px}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (max-width:760px){
+  h1{font-size:34px}
+  .exp,.two{grid-template-columns:1fr}
+}
+.fig-note{color:var(--muted);font-size:12.5px}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">第 5 轮 · 2×A100 · 更新于 2026-09-29 22:50</div>
+  <h1>Panoptes 第五轮</h1>
+  <p class="lede">目标：视频里每个物体都有类型、分割、物理信息和外形对的模型，3D 视图能看出这个地方的大概重建。这一页是第 5 轮四条线（词表、模型、时间、多次到访）已经做完的效果。三条线合并后的 ME340 整体运行正在跑，出来后补上完整延迟和 3D 视图前后对比。</p>
+  <div class="strip">
+    <span class="chip good">四条线：完成</span>
+    <span class="chip run">ME340 合并运行：进行中</span>
+    <span class="chip warn">复核：未开始</span>
+  </div>
+</header>
+
+<section>
+  <h2>效果</h2>
+
+  <article class="exp">
+    <div class="text">
+      <div class="head"><h3>生成的模型贴上了物体</h3><span class="chip good">RecGen</span></div>
+      <p>Walmart 货架上的鞋和毛绒玩具。绿色是 RecGen 生成的模型，按视频相机的位置画回画面；白线是物体轮廓；黄色是第 4 轮的方块。</p>
+      <ul>
+        <li>生成的 9 个模型，人工看：外形对 <span class="num">8</span>、部分对 <span class="num">1</span>、错 <span class="num">0</span>。同样这 9 个，第 4 轮的方块是 <span class="num">0/7/2</span>。</li>
+        <li>问题：这一轮每段视频只有 <span class="num">0–9</span> 个物体用上了生成模型，分流规则太严。合并版改成所有复杂物体都生成，两块 A100 并行。</li>
+      </ul>
+    </div>
+    <figure>
+      <img src="{{img:gen}}" alt="Walmart 鞋和毛绒玩具：RecGen 模型（绿）对比第 4 轮方块（黄）">
+      <figcaption>左：物体轮廓 · 中：RecGen 模型 · 右：第 4 轮方块。</figcaption>
+    </figure>
+  </article>
+
+  <article class="exp">
+    <div class="text">
+      <div class="head"><h3>看到的表面代替方块</h3><span class="chip good">每个物体都有</span></div>
+      <p>ME340 车间。绿色是用物体自己的 3D 点重建的表面，黄色是第 4 轮的方块。出卡片后约 <span class="num">3 s</span> 就有这个模型。</p>
+      <ul>
+        <li>每段视频人工看 50 个，外形对 / 部分对 / 错：ME340 <span class="num">20/25/5</span>，Sam's Club <span class="num">26/19/2</span>，Walmart <span class="num">37/12/1</span>。</li>
+        <li>简单结构（墙、地面、板、梁、管）仍用简单形状：ME340 17 个，Sam's Club 324 个，Walmart 157 个。</li>
+      </ul>
+    </div>
+    <figure>
+      <img src="{{img:surf}}" alt="ME340：看到的表面（绿）对比方块（黄）">
+      <figcaption>左：物体轮廓 · 中：看到的表面 · 右：第 4 轮方块。</figcaption>
+    </figure>
+  </article>
+
+  <article class="exp">
+    <div class="text">
+      <div class="head"><h3>物体时间线</h3><span class="chip good">每张卡都有</span></div>
+      <p>Walmart 的一个纸箱：17.0 s 第一次看到，22 s 被标成"搬走"，并连到它的新位置。位置、高度、宽度按时间段给出，都带 ± 误差。</p>
+      <ul>
+        <li>三段视频所有物体卡都有时间线。没有东西动过的视频里，变化误报 <span class="num">0</span> 个。</li>
+        <li>人为插入的变化找到 <span class="num">5/9</span>；Walmart 插入变化的片段里有 <span class="num">3</span> 个误报。</li>
+        <li>时间线只多花 <span class="num">0–3 s</span>。</li>
+      </ul>
+    </div>
+    <figure>
+      <img src="{{img:time}}" alt="Walmart 纸箱的时间线卡片">
+      <figcaption>右侧卡片：时间条（青 = 看到，橙 = 搬走）和按时间段的物理值。</figcaption>
+    </figure>
+  </article>
+
+  <article class="exp">
+    <div class="text">
+      <div class="head"><h3>两次到访对比</h3><span class="chip warn">能对齐，变化找得少</span></div>
+      <p>同一个办公室的两段录像（TUM 数据集，有真实位置）：椅子移动了 <span class="num">2.46 ± 0.51 m</span>，记事本不见了，新出现了显示器和椅子。每条变化都带两次到访的证据画面。</p>
+      <ul>
+        <li>两段录像对齐误差 <span class="num">5–12 cm、1–3°</span>；第二次的物体约 <span class="num">9 成</span>能配上第一次。</li>
+        <li>真实变化找到得少：植物那组 43 个找到 6 个，泰迪熊那组 56 个找到 4 个。误报每次到访 0–1 个。</li>
+        <li>每次到访的分析只要 <span class="num">10–17 s</span>。</li>
+      </ul>
+    </div>
+    <figure>
+      <img src="{{img:visit}}" alt="两次到访：移动的椅子和证据画面">
+      <figcaption>右侧：变化清单和两次到访的证据画面。</figcaption>
+    </figure>
+  </article>
+
+  <article class="exp">
+    <div class="text">
+      <div class="head"><h3>倾斜角度：误报多</h3><span class="chip bad">要修</span></div>
+      <p>ME340 上被标成倾斜 15–75° 的部件，大多是线缆和小零件，误差 ±14–29°。人工看了 27 个，只有 1 个真是斜的。</p>
+      <ul>
+        <li>在有真实尺寸的数据上，每个部件都算进去：中位误差 <span class="num">1.6°</span>，最差的一成超过 <span class="num">12°</span>。</li>
+        <li>合并版的改法：只有多个视角都量到、而且误差小的部件才给角度，其他的写"测不了"。</li>
+      </ul>
+    </div>
+    <figure>
+      <img src="{{img:tilt}}" alt="ME340 被误标为倾斜的部件">
+      <figcaption>黄线：被当成倾斜平面的部件；白线：物体轮廓。</figcaption>
+    </figure>
+  </article>
+</section>
+
+<section>
+  <h2>延迟</h2>
+  <p class="note">从视频传进容器开始算，单位秒，热启动。括号里是第 4 轮。这些是各条线单独跑时测的；词表线跑的时候关掉了模型，所以模型时间取自模型线。合并版 ME340 的完整时间线出来后补上。</p>
+  <div class="scroll">
+  <table>
+    <thead><tr><th></th><th>ME340</th><th>Sam's Club</th><th>Walmart</th></tr></thead>
+    <tbody>
+      <tr><td class="k">第一层 3D</td><td class="num">20 (18)</td><td class="num">13 (15)</td><td class="num">12 (13)</td></tr>
+      <tr><td class="k">能点、出卡片</td><td class="num">34 (43)</td><td class="num">26 (30)</td><td class="num">26 (31)</td></tr>
+      <tr><td class="k">全部有类型</td><td class="num">67 (98)</td><td class="num">79 (88)</td><td class="num">74 (93)</td></tr>
+      <tr><td class="k">看到的表面模型</td><td colspan="3">出卡片后约 +3 s（第 4 轮这一步是方块）</td></tr>
+      <tr><td class="k">生成模型全到</td><td colspan="3">ME340 首次调用 199 s（第 4 轮首次调用 190 s，但那时基本是方块）。目标 150 s 以内，合并版用两块 A100 并行</td></tr>
+      <tr><td class="k">出卡片前的 VLM 调用</td><td class="num">0 (3)</td><td class="num">0 (3)</td><td class="num">0 (3)</td></tr>
+      <tr><td class="k">之后的 VLM 调用</td><td class="num">31 (48)</td><td class="num">27 (32)</td><td class="num">20 (19)</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section>
+  <h2>类型和覆盖</h2>
+  <div class="two">
+    <div class="box">
+      <h3>不先问 VLM 列词</h3>
+      <ul>
+        <li>词表改由本地的打标签模型（RAM++）出，出卡片前不再调用 VLM。</li>
+        <li>留出样本的类型准确率：ME340 <span class="num">0.60</span>（0.51），Sam's Club <span class="num">1.00</span>，Walmart <span class="num">0.79</span>（0.83）。</li>
+        <li>物体覆盖略降：ME340 <span class="num">73/105</span>（80），Sam's Club <span class="num">79/91</span>（79），Walmart <span class="num">58/74</span>（61）。</li>
+        <li>RAM++ 加 PE 两种词合在一起，ME340 覆盖回到 <span class="num">81/105</span>，准确率 0.57。</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>合并版怎么选</h3>
+      <ul>
+        <li>你同意每段视频开头问一次 VLM 列词。合并版会比较只用 Qwen、只用本地模型、两者合并这三种，按覆盖和准确率选。</li>
+        <li>点击时不再单独问 VLM；安全类问题全部去掉；判定默认关闭。</li>
+        <li>命名库在跑测时只读，不会因为运行顺序不同导致结果变化。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>还差什么</h2>
+  <ul>
+    <li><b>生成模型覆盖太少</b>：每段视频 0–9 个 → 所有复杂物体都生成，两块 A100 并行，生成一个显示一个。<span class="tag">合并中</span></li>
+    <li><b>3D 视图太乱</b>：满屏线框和标签 → 只画模型、放在真实位置；新增在视频上叠模型的检查。<span class="tag">合并中</span></li>
+    <li><b>倾斜误报</b> → 只在多个视角量到、误差小时才给角度。<span class="tag">合并中</span></li>
+    <li><b>变化找得少</b>：两次到访之间、以及视频内人为插入的变化，小物体配不上。</li>
+    <li><b>宽度</b>：不再乱给"至多"的范围后，有数字或范围的比例从 91/89/94% 降到 55/32/48%，需要补测量。</li>
+    <li><b>ME340 类型</b>：0.60，车间类的物体还是偏弱。</li>
+  </ul>
+  <p class="note">四条线花费约 $38（模型 $18.7、多次到访 $7.1、时间 $6.2、词表约 $6）。第 4 轮和更早的实验见 <a href="https://claude.ai/artifact/5Xhnj2SHg3pTmTNJLGZG9s">Panoptes 物体层</a>。所有人工检查由 agent 完成，不是人看的。</p>
+</section>
+</div>
